@@ -312,53 +312,104 @@ function TariffsManager({token}){
 }
 
 function Calculator({token,clients}){
-  const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [svc,setSvc]=useState("aereo_b_usa");const [qty,setQty]=useState("");const [val,setVal]=useState("");const [isBattery,setIsBattery]=useState(false);const [isPhone,setIsPhone]=useState(false);const [result,setResult]=useState(null);const [selClient,setSelClient]=useState("");
+  const [step,setStep]=useState(0);const [origin,setOrigin]=useState("");const [selClient,setSelClient]=useState("");
+  const [products,setProducts]=useState([{type:"general",description:"",unit_price:"",quantity:"1"}]);
+  const [pkgs,setPkgs]=useState([{qty:"1",length:"",width:"",height:"",weight:""}]);const [noDims,setNoDims]=useState(false);const [delivery,setDelivery]=useState("oficina");
+  const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [results,setResults]=useState(null);
   useEffect(()=>{(async()=>{const t=await dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"});setTariffs(Array.isArray(t)?t:[]);})();},[token]);
   useEffect(()=>{if(!selClient){setOverrides([]);return;}(async()=>{const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${selClient}&select=*`});setOverrides(Array.isArray(ov)?ov:[]);})();},[selClient,token]);
-  const svcInfo=SERVICES.find(s=>s.key===svc);const isAereo=svc.includes("aereo");const unit=svcInfo?.unit||"kg";
+
+  const addProduct=()=>setProducts(p=>[...p,{type:"general",description:"",unit_price:"",quantity:"1"}]);
+  const rmProduct=i=>setProducts(p=>p.filter((_,j)=>j!==i));
+  const chProd=(i,f,v)=>setProducts(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
+  const addPkg=()=>setPkgs(p=>[...p,{qty:"1",length:"",width:"",height:"",weight:""}]);
+  const rmPkg=i=>setPkgs(p=>p.filter((_,j)=>j!==i));
+  const chPkg=(i,f,v)=>setPkgs(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
+  const totalFob=products.reduce((s,p)=>s+(Number(p.unit_price||0)*Number(p.quantity||1)),0);
+  const hasPhones=products.some(p=>p.type==="celulares");
+
+  const calcTotals=()=>{let tw=0,tv=0,tc=0;pkgs.forEach(pk=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0),gw=Number(pk.weight||0);tw+=gw*q;if(l&&w&&h){tv+=((l*w*h)/5000)*q;tc+=((l*w*h)/1000000)*q;}});return{totWeight:tw,totVol:tv,totCBM:tc,billable:Math.max(tw,tv)};};
+
   const getEffRate=(t)=>{const ov=overrides.find(o=>o.tariff_id===t.id);return ov?Number(ov.custom_rate):Number(t.rate);};
-  const calc=()=>{const q=Number(qty)||0;const v=Number(val)||0;const svcTariffs=tariffs.filter(t=>t.service_key===svc);const rates=svcTariffs.filter(t=>t.type==="rate");const specials=svcTariffs.filter(t=>t.type==="special");const surcharges=svcTariffs.filter(t=>t.type==="surcharge");
-    let ratePerUnit=0;let costPerUnit=0;let rateTier="";let isCustom=false;
-    if(isPhone&&specials.find(s=>s.label?.toLowerCase().includes("celular"))){const sp=specials.find(s=>s.label?.toLowerCase().includes("celular"));ratePerUnit=getEffRate(sp);costPerUnit=Number(sp.cost||0);rateTier=sp.label;isCustom=!!overrides.find(o=>o.tariff_id===sp.id);}
-    else{for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(q>=min&&q<max){ratePerUnit=getEffRate(r);costPerUnit=Number(r.cost||0);rateTier=r.label;isCustom=!!overrides.find(o=>o.tariff_id===r.id);break;}}}
-    let revenue=q*ratePerUnit;let internalCost=q*costPerUnit;let batteryExtra=0;
-    if(isBattery){const bs=specials.find(s=>s.label?.toLowerCase().includes("bater"));if(bs){batteryExtra=q*Number(bs.rate);}}
-    let surchargeAmt=0;let surchargeInfo="";
-    if(q>0&&v>0){const valuePerUnit=v/q;for(const s of surcharges.sort((a,b)=>Number(b.min_qty)-Number(a.min_qty))){if(valuePerUnit>=Number(s.min_qty)){surchargeAmt=v*(Number(s.rate)/100);surchargeInfo=`${s.rate}% (valor/${unit} = $${valuePerUnit.toFixed(0)})`;break;}}}
-    const total=revenue+batteryExtra+surchargeAmt;const profit=total-internalCost;
-    setResult({rateTier,ratePerUnit,costPerUnit,revenue,internalCost,batteryExtra,surchargeAmt,surchargeInfo,total,profit,qty:q,val:v,isCustom});};
-  const rr=(l,v,bold,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:12}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:13,fontWeight:bold?700:600,color:accent?IC:bold?"#fff":"rgba(255,255,255,0.8)"}}>USD {v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
-  return <div>
-    <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 20px"}}>Calculadora de Importación</h2>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
-      <Card title="Datos del envío">
-        <Sel label="Cliente (para tarifas custom)" value={selClient} onChange={setSelClient} options={clients.map(c=>({value:c.id,label:`${c.client_code} — ${c.first_name} ${c.last_name}`}))} ph="Sin cliente (tarifa base)"/>
-        {selClient&&overrides.length>0&&<p style={{fontSize:11,color:IC,margin:"-8px 0 12px",fontWeight:600}}>Usando {overrides.length} tarifa(s) custom para este cliente</p>}
-        <Sel label="Servicio" value={svc} onChange={setSvc} options={SERVICES.map(s=>({value:s.key,label:s.label}))}/>
-        <Inp label={isAereo?"Peso (kg)":"CBM"} type="number" value={qty} onChange={setQty} step="0.01" placeholder={isAereo?"Ej: 25":"Ej: 1.5"}/>
-        <Inp label="Valor mercadería (USD)" type="number" value={val} onChange={setVal} step="0.01" placeholder="Ej: 5500"/>
-        {svc==="aereo_a_china"&&<div style={{marginBottom:12}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={isBattery} onChange={e=>setIsBattery(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Productos con baterías (+$2/kg)</span></label></div>}
-        {svc==="aereo_b_usa"&&<div style={{marginBottom:12}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={isPhone} onChange={e=>setIsPhone(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Es celular ($65/kg)</span></label></div>}
-        <Btn onClick={calc}>Calcular</Btn>
-      </Card>
-      <div>
-        <Card title="Cotización al cliente">
-          {result?<div>
-            <p style={{fontSize:12,color:result.isCustom?IC:"rgba(255,255,255,0.3)",margin:"0 0 12px",fontWeight:result.isCustom?600:400}}>{result.isCustom?"TARIFA CUSTOM: ":"Tarifa: "}{result.rateTier} — ${result.ratePerUnit}/{unit}</p>
-            {rr("Servicio Integral ARGENCARGO",result.revenue)}
-            {result.batteryExtra>0&&rr("Recargo baterías",result.batteryExtra)}
-            {result.surchargeAmt>0&&rr(`Recargo valor ${result.surchargeInfo}`,result.surchargeAmt)}
-            {rr("TOTAL CLIENTE",result.total,true,true)}
-          </div>:<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"2rem 0"}}>Ingresá los datos y hacé click en Calcular</p>}
-        </Card>
-        {result&&<Card title="Rentabilidad">
-          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>Cobro al cliente</span><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>USD {result.total.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>Costo flete ({result.qty} {unit} x ${result.costPerUnit})</span><span style={{fontSize:13,fontWeight:600,color:"#ff6b6b"}}>-USD {result.internalCost.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}><span style={{fontSize:15,fontWeight:700,color:"#fff"}}>GANANCIA</span><span style={{fontSize:18,fontWeight:700,color:result.profit>0?"#22c55e":"#ff6b6b"}}>USD {result.profit.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
-          {result.total>0&&<p style={{fontSize:12,color:"rgba(255,255,255,0.3)",margin:"4px 0 0"}}>Margen: {((result.profit/result.total)*100).toFixed(1)}%</p>}
-        </Card>}
-      </div>
-    </div>
+  const getFleteRate=(svcKey,amount)=>{const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate");for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return{rate:getEffRate(r),cost:Number(r.cost||0)};}return rates.length?{rate:getEffRate(rates[rates.length-1]),cost:Number(rates[rates.length-1].cost||0)}:{rate:0,cost:0};};
+  const getSurcharge=(svcKey,totalVal,amount)=>{const surcharges=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty)-Number(a.min_qty));if(amount<=0)return{pct:0,amt:0};const vpu=totalVal/amount;for(const s of surcharges){if(vpu>=Number(s.min_qty))return{pct:Number(s.rate),amt:totalVal*(Number(s.rate)/100)};}return{pct:0,amt:0};};
+
+  const calculate=()=>{
+    const{totWeight,totCBM}=calcTotals();const channels=[];
+    if(origin==="USA"){
+      if(totWeight>0){const{rate,cost}=hasPhones?{rate:65,cost:0}:getFleteRate("aereo_b_usa",totWeight);const flete=totWeight*rate;const fCost=totWeight*cost;const sur=getSurcharge("aereo_b_usa",totalFob,totWeight);
+        channels.push({key:"aereo_b_usa",name:"Aéreo Integral AC",info:"48-72 hs",flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totWeight.toFixed(1)} kg`});}
+      if(!hasPhones&&!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_b",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
+        channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totCBM.toFixed(4)} CBM`});}
+    }
+    setResults({channels,totWeight,totCBM});setStep(4);
+  };
+
+  const usd=v=>`USD ${v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const row=(l,v,bold,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:8}:{})}}><span style={{fontSize:12,color:bold?"#fff":"rgba(255,255,255,0.45)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:12,fontWeight:bold?700:600,color:accent?IC:bold?"#fff":"rgba(255,255,255,0.7)"}}>{usd(v)}</span></div>;
+  const clName=selClient?clients.find(c=>c.id===selClient):null;
+
+  return <div><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 20px"}}>Calculadora de Importación</h2>
+    {/* Client selector - always visible */}
+    <Card><Sel label="Cliente (para tarifas custom)" value={selClient} onChange={setSelClient} options={clients.map(c=>({value:c.id,label:`${c.client_code} — ${c.first_name} ${c.last_name}`}))} ph="Sin cliente (tarifa base)"/>
+    {selClient&&overrides.length>0&&<p style={{fontSize:11,color:IC,margin:"-8px 0 0",fontWeight:600}}>Usando {overrides.length} tarifa(s) custom</p>}</Card>
+
+    {step===0&&<div style={{display:"flex",gap:24,justifyContent:"center",padding:"2rem 0"}}>{[{k:"China",flag:"\ud83c\udde8\ud83c\uddf3"},{k:"USA",flag:"\ud83c\uddfa\ud83c\uddf8"}].map(c=><div key={c.k} onClick={()=>{setOrigin(c.k);setStep(1);}} style={{width:200,padding:"2.5rem 1.5rem",background:"rgba(255,255,255,0.03)",border:"1.5px solid rgba(255,255,255,0.08)",borderRadius:16,cursor:"pointer",textAlign:"center"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=IC;e.currentTarget.style.background="rgba(96,165,250,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.background="rgba(255,255,255,0.03)";}}><p style={{fontSize:52,margin:"0 0 16px"}}>{c.flag}</p><p style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>{c.k}</p></div>)}</div>}
+
+    {step===1&&origin==="USA"&&<Card title="PRODUCTOS">
+      {products.map((p,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:IC}}>Producto {i+1}</span>{products.length>1&&<Btn onClick={()=>rmProduct(i)} small variant="danger">Eliminar</Btn>}</div>
+        <div style={{display:"flex",gap:12,marginBottom:12}}>{[{k:"general",l:"Carga General"},{k:"celulares",l:"Celulares"}].map(t=><div key={t.k} onClick={()=>chProd(i,"type",t.k)} style={{flex:1,padding:"12px",textAlign:"center",borderRadius:10,border:`1.5px solid ${p.type===t.k?IC:"rgba(255,255,255,0.08)"}`,background:p.type===t.k?"rgba(96,165,250,0.1)":"transparent",cursor:"pointer"}}><span style={{fontSize:13,fontWeight:600,color:p.type===t.k?IC:"rgba(255,255,255,0.4)"}}>{t.l}</span></div>)}</div>
+        {p.type==="general"&&<Inp label="Descripción" value={p.description} onChange={v=>chProd(i,"description",v)} placeholder="Ej: Fundas de silicona"/>}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}><Inp label="Precio unit. (USD)" type="number" value={p.unit_price} onChange={v=>chProd(i,"unit_price",v)} placeholder="3.50"/><Inp label="Cantidad" type="number" value={p.quantity} onChange={v=>chProd(i,"quantity",v)} placeholder="1"/></div>
+      </div>)}
+      <button onClick={addProduct} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar producto</button>
+      {totalFob>0&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:12,marginTop:16,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Valor total</span><span style={{fontSize:16,fontWeight:700,color:IC}}>{usd(totalFob)}</span></div>}
+      <div style={{display:"flex",gap:12,marginTop:16}}><Btn variant="secondary" onClick={()=>{setStep(0);setOrigin("");}}>← Origen</Btn><Btn onClick={()=>setStep(2)} disabled={!products.some(p=>Number(p.unit_price)>0)}>Siguiente →</Btn></div>
+    </Card>}
+
+    {step===2&&origin==="USA"&&<Card title="PACKING LIST">
+      {pkgs.map((pk,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:IC}}>Bulto {i+1}</span>{pkgs.length>1&&<Btn onClick={()=>rmPkg(i)} small variant="danger">Eliminar</Btn>}</div>
+        <div style={{display:"grid",gridTemplateColumns:noDims?"1fr 1fr":"1fr 1fr 1fr 1fr 1fr",gap:"0 10px"}}>
+          <Inp label="Cant." type="number" value={pk.qty} onChange={v=>chPkg(i,"qty",v)} placeholder="1"/>
+          {!noDims&&<><Inp label="Largo cm" type="number" value={pk.length} onChange={v=>chPkg(i,"length",v)} placeholder="60"/><Inp label="Ancho cm" type="number" value={pk.width} onChange={v=>chPkg(i,"width",v)} placeholder="40"/><Inp label="Alto cm" type="number" value={pk.height} onChange={v=>chPkg(i,"height",v)} placeholder="35"/></>}
+          <Inp label="Peso kg" type="number" value={pk.weight} onChange={v=>chPkg(i,"weight",v)} placeholder="12"/>
+        </div>
+      </div>)}
+      <button onClick={addPkg} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar bulto</button>
+      <div style={{marginTop:12}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={noDims} onChange={e=>setNoDims(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>Sin medidas (solo aéreo)</span></label></div>
+      <div style={{display:"flex",gap:12,marginTop:16}}><Btn variant="secondary" onClick={()=>setStep(1)}>← Atrás</Btn><Btn onClick={()=>setStep(3)} disabled={!pkgs.some(p=>Number(p.weight)>0)}>Siguiente →</Btn></div>
+    </Card>}
+
+    {step===3&&origin==="USA"&&<Card title="ENTREGA EN DESTINO">
+      <div style={{display:"flex",gap:12,marginBottom:16}}>{[{k:"oficina",l:"Retiro por Oficina",sub:"Gratis"},{k:"caba",l:"Envío CABA",sub:"$20"},{k:"gba",l:"Envío a todo el país",sub:"A cotizar"}].map(d=><div key={d.k} onClick={()=>setDelivery(d.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:10,border:`1.5px solid ${delivery===d.k?IC:"rgba(255,255,255,0.08)"}`,background:delivery===d.k?"rgba(96,165,250,0.1)":"transparent",cursor:"pointer"}}><p style={{fontSize:14,fontWeight:700,color:delivery===d.k?IC:"rgba(255,255,255,0.5)",margin:"0 0 2px"}}>{d.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:0}}>{d.sub}</p></div>)}</div>
+      <div style={{display:"flex",gap:12}}><Btn variant="secondary" onClick={()=>setStep(2)}>← Atrás</Btn><Btn onClick={calculate}>Calcular costos →</Btn></div>
+    </Card>}
+
+    {step===4&&results&&<div>
+      <div style={{display:"flex",gap:12,marginBottom:16}}><button onClick={()=>setStep(3)} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← Volver</button><span style={{color:"rgba(255,255,255,0.1)"}}>|</span><button onClick={()=>{setStep(0);setResults(null);setOrigin("");setProducts([{type:"general",description:"",unit_price:"",quantity:"1"}]);setPkgs([{qty:"1",length:"",width:"",height:"",weight:""}]);setNoDims(false);setDelivery("oficina");}} style={{fontSize:13,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>Nueva cotización</button></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>{results.channels.map(ch=>{const delivCost=delivery==="caba"?20:0;const clientTotal=ch.total+delivCost;const profit=clientTotal-ch.fCost;return <div key={ch.key} style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem"}}>
+        <p style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{ch.name}</p>
+        {ch.info&&<span style={{fontSize:11,color:"rgba(255,255,255,0.35)",padding:"3px 10px",background:"rgba(255,255,255,0.05)",borderRadius:4}}>{ch.info}</span>}
+        <div style={{marginTop:14}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 8px"}}>COTIZACIÓN CLIENTE</p>
+          {row("Servicio Integral ARGENCARGO",ch.flete)}
+          {ch.surcharge>0&&row(`Recargo valor (${ch.surchargePct}%)`,ch.surcharge)}
+          {delivCost>0&&row("Envío CABA",delivCost)}
+          {row("TOTAL CLIENTE",clientTotal,true,true)}
+        </div>
+        <div style={{marginTop:16,background:"rgba(34,197,94,0.06)",borderRadius:10,border:"1px solid rgba(34,197,94,0.15)",padding:14}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 8px"}}>RENTABILIDAD</p>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Cobro</span><span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{usd(clientTotal)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Costo flete</span><span style={{fontSize:12,fontWeight:600,color:"#ff6b6b"}}>-{usd(ch.fCost)}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}><span style={{fontSize:14,fontWeight:700,color:"#fff"}}>GANANCIA</span><span style={{fontSize:16,fontWeight:700,color:profit>0?"#22c55e":"#ff6b6b"}}>{usd(profit)}</span></div>
+          {clientTotal>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Margen: {((profit/clientTotal)*100).toFixed(1)}%</p>}
+        </div>
+      </div>})}</div>
+    </div>}
+
+    {step>=1&&origin==="China"&&<Card><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:"0 0 8px"}}>Calculadora China — Próximamente</p><Btn variant="secondary" onClick={()=>{setStep(0);setOrigin("");}}>← Origen</Btn></Card>}
   </div>;
 }
 
