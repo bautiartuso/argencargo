@@ -100,24 +100,32 @@ function OperationDetail({op,token,onBack}){
         </div></div>;})()}
       </div>;})}
     </div>}
+    {!loading&&pkgs.length>0&&(()=>{const isAer=op.channel?.includes("aereo");const isMar=op.channel?.includes("maritimo");const pkData=pkgs.map(pk=>{const l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0),gw=Number(pk.gross_weight_kg||0);const vw=l&&w&&h?(l*w*h)/5000:0;const cbm=l&&w&&h?(l*w*h)/1000000:0;return{...pk,l,w,h,gw,vw,cbm};});const totGW=pkData.reduce((s,p)=>s+p.gw,0);const totVW=pkData.reduce((s,p)=>s+p.vw,0);const totCBM=pkData.reduce((s,p)=>s+p.cbm,0);const pf=isAer?(op.channel==="aereo_blanco"?Math.max(totGW,totVW):totGW):null;const dd=(label,val)=><div style={{textAlign:"center"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px",textTransform:"uppercase"}}>{label}</p><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{val}</p></div>;return <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.25rem 1.5rem",marginBottom:16}}>
+      <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 14px"}}>BULTOS</h3>
+      {pkData.map((pk,i)=><div key={pk.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.05)":"none",padding:"14px 0"}}>
+        <p style={{fontSize:13,fontWeight:700,color:IC,margin:"0 0 10px"}}>Bulto {pk.package_number}</p>
+        <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
+          {dd("Cantidad",pk.quantity||"—")}
+          {dd("Largo",pk.l?`${pk.l} cm`:"—")}
+          {dd("Alto",pk.h?`${pk.h} cm`:"—")}
+          {dd("Ancho",pk.w?`${pk.w} cm`:"—")}
+          {dd("Peso Bruto",pk.gw?`${pk.gw} kg`:"—")}
+          {dd("Peso Vol.",pk.vw?`${pk.vw.toFixed(2)} kg`:"—")}
+          {dd("CBM",pk.cbm?`${pk.cbm.toFixed(4)} m³`:"—")}
+        </div>
+      </div>)}
+      <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:14,display:"flex",gap:28,flexWrap:"wrap",alignItems:"center"}}>
+        {isAer&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px",textTransform:"uppercase"}}>Peso Facturable</p><p style={{fontSize:16,fontWeight:700,color:IC,margin:0}}>{pf?.toFixed(2)} kg</p></div>}
+        {isMar&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px",textTransform:"uppercase"}}>CBM Total</p><p style={{fontSize:16,fontWeight:700,color:IC,margin:0}}>{totCBM.toFixed(4)} m³</p></div>}
+        {isAer&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px",textTransform:"uppercase"}}>CBM Total</p><p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.6)",margin:0}}>{totCBM.toFixed(4)} m³</p></div>}
+        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px",textTransform:"uppercase"}}>Peso Bruto Total</p><p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.6)",margin:0}}>{totGW.toFixed(2)} kg</p></div>
+        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px",textTransform:"uppercase"}}>Peso Vol. Total</p><p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.6)",margin:0}}>{totVW.toFixed(2)} kg</p></div>
+      </div>
+    </div>})()}
     {!loading&&events.length>0&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.25rem 1.5rem"}}>
       <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 14px"}}>SEGUIMIENTO</h3>
       <div style={{position:"relative",paddingLeft:24}}><div style={{position:"absolute",left:7,top:8,bottom:8,width:2,background:"rgba(255,255,255,0.06)"}}/>
         {events.map((ev,i)=><div key={ev.id} style={{position:"relative",paddingBottom:i<events.length-1?20:0}}><div style={{position:"absolute",left:-19,top:6,width:12,height:12,borderRadius:"50%",background:i===0?IC:"rgba(255,255,255,0.1)",boxShadow:i===0?"0 0 0 4px rgba(96,165,250,0.2)":"none"}}/><div><div style={{display:"flex",justifyContent:"space-between"}}><p style={{fontSize:14,fontWeight:600,color:i===0?"#fff":"rgba(255,255,255,0.4)",margin:0}}>{ev.title}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.2)",margin:0,whiteSpace:"nowrap",marginLeft:12}}>{formatDate(ev.occurred_at)}</p></div>{ev.description&&<p style={{fontSize:13,color:"rgba(255,255,255,0.3)",margin:"3px 0 0"}}>{ev.description}</p>}{ev.location&&<p style={{fontSize:12,color:"rgba(255,255,255,0.2)",margin:"2px 0 0"}}>📍 {ev.location}</p>}</div></div>)}</div>
-    </div>}
-    {!loading&&pkgs.length>0&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.25rem 1.5rem",marginTop:16}}>
-      <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 14px"}}>BULTOS</h3>
-      {pkgs.map((pk,i)=>{const l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0),gw=Number(pk.gross_weight_kg||0);const isAer=op.channel?.includes("aereo");const vw=l&&w&&h?(isAer?(l*w*h)/5000:(l*w*h)/1000000):null;const dd=(label,val)=><div style={{textAlign:"center"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px",textTransform:"uppercase"}}>{label}</p><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{val}</p></div>;return <div key={pk.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.05)":"none",padding:"14px 0"}}>
-        <p style={{fontSize:13,fontWeight:700,color:IC,margin:"0 0 10px"}}>Bulto {pk.package_number}</p>
-        <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
-          {dd("Cantidad",pk.quantity||"—")}
-          {dd("Largo",l?`${l} cm`:"—")}
-          {dd("Alto",h?`${h} cm`:"—")}
-          {dd("Ancho",w?`${w} cm`:"—")}
-          {dd("Peso Bruto",gw?`${gw} kg`:"—")}
-          {dd(isAer?"Peso Vol.":"CBM",vw!=null?(isAer?`${vw.toFixed(2)} kg`:`${vw.toFixed(4)} m³`):"—")}
-        </div>
-      </div>;})}
     </div>}
     {loading&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.3)",padding:"2rem 0"}}>Cargando...</p>}
   </div>;
