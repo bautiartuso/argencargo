@@ -279,30 +279,35 @@ function ClientDetail({client,token,onBack,onSelectOp}){
 }
 
 function TariffsManager({token}){
-  const [tariffs,setTariffs]=useState([]);const [lo,setLo]=useState(true);const [selSvc,setSelSvc]=useState(null);const [msg,setMsg]=useState("");
+  const [tariffs,setTariffs]=useState([]);const [lo,setLo]=useState(true);const [selSvc,setSelSvc]=useState(null);const [msg,setMsg]=useState("");const [viewMode,setViewMode]=useState("sell");
   const load=async()=>{const t=await dq("tariffs",{token,filters:"?select=*&order=service_key.asc,sort_order.asc"});setTariffs(Array.isArray(t)?t:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const svcTariffs=selSvc?tariffs.filter(t=>t.service_key===selSvc):[];
   const rates=svcTariffs.filter(t=>t.type==="rate");const specials=svcTariffs.filter(t=>t.type==="special");const surcharges=svcTariffs.filter(t=>t.type==="surcharge");
   const saveTariff=async(t)=>{const{id,created_at,...rest}=t;await dq("tariffs",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Guardado");};
-  const addTariff=async(type)=>{const svc=SERVICES.find(s=>s.key===selSvc);const r=await dq("tariffs",{method:"POST",token,body:{service_key:selSvc,type,min_qty:0,max_qty:null,rate:0,unit:svc?.unit||"kg",label:"Nuevo rango",sort_order:svcTariffs.length+1}});if(Array.isArray(r))setTariffs(p=>[...p,...r]);else if(r?.id)setTariffs(p=>[...p,r]);flash("Agregado");};
+  const addTariff=async(type)=>{const svc=SERVICES.find(s=>s.key===selSvc);const r=await dq("tariffs",{method:"POST",token,body:{service_key:selSvc,type,min_qty:0,max_qty:null,rate:0,cost:0,unit:svc?.unit||"kg",label:"Nuevo rango",sort_order:svcTariffs.length+1}});if(Array.isArray(r))setTariffs(p=>[...p,...r]);else if(r?.id)setTariffs(p=>[...p,r]);flash("Agregado");};
   const delTariff=async(id)=>{await dq("tariffs",{method:"DELETE",token,filters:`?id=eq.${id}`});setTariffs(p=>p.filter(t=>t.id!==id));flash("Eliminado");};
   const chT=(id,f,v)=>{setTariffs(p=>p.map(t=>t.id===id?{...t,[f]:v}:t));};
+  const isCost=viewMode==="cost";
   const renderRow=(t)=><div key={t.id} style={{display:"flex",gap:8,alignItems:"end",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
     <div style={{flex:2}}><Inp label="Label" value={t.label} onChange={v=>chT(t.id,"label",v)} small/></div>
     <div style={{flex:1}}><Inp label="Min" type="number" value={t.min_qty} onChange={v=>chT(t.id,"min_qty",v)} step="0.01" small/></div>
     <div style={{flex:1}}><Inp label="Max" type="number" value={t.max_qty} onChange={v=>chT(t.id,"max_qty",v===""?null:v)} step="0.01" small/></div>
-    <div style={{flex:1}}><Inp label={t.type==="surcharge"?"% Recargo":"Tarifa"} type="number" value={t.rate} onChange={v=>chT(t.id,"rate",v)} step="0.01" small/></div>
+    <div style={{flex:1}}><Inp label={t.type==="surcharge"?"% Recargo":(isCost?"Costo":"Precio Venta")} type="number" value={isCost?t.cost:t.rate} onChange={v=>chT(t.id,isCost?"cost":"rate",v)} step="0.01" small/></div>
+    {!isCost&&t.type==="rate"&&<div style={{flex:1,paddingBottom:12,textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.2)",margin:"0 0 2px"}}>GANANCIA</p><p style={{fontSize:13,fontWeight:700,color:Number(t.rate)-Number(t.cost||0)>0?"#22c55e":"#ff6b6b",margin:0}}>${(Number(t.rate)-Number(t.cost||0)).toFixed(2)}</p></div>}
     <div style={{display:"flex",gap:4,paddingBottom:12}}><Btn onClick={()=>saveTariff(t)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delTariff(t.id)} small variant="danger">X</Btn></div>
   </div>;
-  if(!selSvc)return <div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Tarifas</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div>{lo?<p style={{color:"rgba(255,255,255,0.3)"}}>Cargando...</p>:SERVICES.map(svc=>{const cnt=tariffs.filter(t=>t.service_key===svc.key&&t.type==="rate").length;return <div key={svc.key} onClick={()=>setSelSvc(svc.key)} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"16px 20px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.03)";}}><div><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{svc.label}</p>{svc.info&&<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:"2px 0 0"}}>{svc.info}</p>}</div><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:12,color:"rgba(255,255,255,0.3)"}}>{cnt} rangos</span><span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></div></div>;})}</div>;
+  if(!selSvc)return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Tarifas</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div>
+    <div style={{display:"flex",gap:8,marginBottom:20}}>{[{k:"sell",l:"Precios de Venta"},{k:"cost",l:"Costos de Flete"}].map(m=><button key={m.k} onClick={()=>setViewMode(m.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:viewMode===m.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:viewMode===m.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:viewMode===m.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{m.l}</button>)}</div>
+    {lo?<p style={{color:"rgba(255,255,255,0.3)"}}>Cargando...</p>:SERVICES.map(svc=>{const svcRates=tariffs.filter(t=>t.service_key===svc.key&&t.type==="rate");if(!svcRates.length)return null;return <div key={svc.key} onClick={()=>setSelSvc(svc.key)} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"16px 20px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.03)";}}><div><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{svc.label}</p>{svc.info&&<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:"2px 0 0"}}>{svc.info}</p>}</div><div style={{display:"flex",alignItems:"center",gap:12}}>{svcRates.map(r=><span key={r.id} style={{fontSize:11,color:isCost?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.5)"}}>{r.label}: ${isCost?Number(r.cost||0):Number(r.rate)}</span>)}<span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></div></div>;})}</div>;
   const svcInfo=SERVICES.find(s=>s.key===selSvc);
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{display:"flex",alignItems:"center",gap:12}}><button onClick={()=>setSelSvc(null)} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← VOLVER</button><h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>{svcInfo?.label}</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div></div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{display:"flex",alignItems:"center",gap:12}}><button onClick={()=>setSelSvc(null)} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← VOLVER</button><h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>{svcInfo?.label} — {isCost?"Costos":"Precios de Venta"}</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div></div>
     <Card title="Rangos de tarifa" actions={<Btn onClick={()=>addTariff("rate")} small>+ Agregar rango</Btn>}>{rates.length>0?rates.map(renderRow):<p style={{color:"rgba(255,255,255,0.25)"}}>Sin rangos</p>}</Card>
-    <Card title="Tarifas especiales" actions={<Btn onClick={()=>addTariff("special")} small>+ Agregar especial</Btn>}>{specials.length>0?specials.map(t=><div key={t.id} style={{display:"flex",gap:8,alignItems:"end",padding:"8px 0"}}><div style={{flex:2}}><Inp label="Label" value={t.label} onChange={v=>chT(t.id,"label",v)} small/></div><div style={{flex:1}}><Inp label="Tarifa/unidad" type="number" value={t.rate} onChange={v=>chT(t.id,"rate",v)} step="0.01" small/></div><div style={{flex:2}}><Inp label="Notas" value={t.notes} onChange={v=>chT(t.id,"notes",v)} small/></div><div style={{display:"flex",gap:4,paddingBottom:12}}><Btn onClick={()=>saveTariff(t)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delTariff(t.id)} small variant="danger">X</Btn></div></div>):<p style={{color:"rgba(255,255,255,0.25)"}}>Sin tarifas especiales</p>}</Card>
-    <Card title="Recargos por valor" actions={<Btn onClick={()=>addTariff("surcharge")} small>+ Agregar recargo</Btn>}>{surcharges.length>0?surcharges.map(renderRow):<p style={{color:"rgba(255,255,255,0.25)"}}>Sin recargos</p>}</Card>
+    <Card title="Tarifas especiales" actions={<Btn onClick={()=>addTariff("special")} small>+ Agregar especial</Btn>}>{specials.length>0?specials.map(t=><div key={t.id} style={{display:"flex",gap:8,alignItems:"end",padding:"8px 0"}}><div style={{flex:2}}><Inp label="Label" value={t.label} onChange={v=>chT(t.id,"label",v)} small/></div><div style={{flex:1}}><Inp label={isCost?"Costo/un":"Tarifa/un"} type="number" value={isCost?t.cost:t.rate} onChange={v=>chT(t.id,isCost?"cost":"rate",v)} step="0.01" small/></div><div style={{flex:2}}><Inp label="Notas" value={t.notes} onChange={v=>chT(t.id,"notes",v)} small/></div><div style={{display:"flex",gap:4,paddingBottom:12}}><Btn onClick={()=>saveTariff(t)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delTariff(t.id)} small variant="danger">X</Btn></div></div>):<p style={{color:"rgba(255,255,255,0.25)"}}>Sin tarifas especiales</p>}</Card>
+    {!isCost&&<Card title="Recargos por valor" actions={<Btn onClick={()=>addTariff("surcharge")} small>+ Agregar recargo</Btn>}>{surcharges.length>0?surcharges.map(renderRow):<p style={{color:"rgba(255,255,255,0.25)"}}>Sin recargos</p>}</Card>}
   </div>;
 }
 
@@ -313,15 +318,15 @@ function Calculator({token,clients}){
   const svcInfo=SERVICES.find(s=>s.key===svc);const isAereo=svc.includes("aereo");const unit=svcInfo?.unit||"kg";
   const getEffRate=(t)=>{const ov=overrides.find(o=>o.tariff_id===t.id);return ov?Number(ov.custom_rate):Number(t.rate);};
   const calc=()=>{const q=Number(qty)||0;const v=Number(val)||0;const svcTariffs=tariffs.filter(t=>t.service_key===svc);const rates=svcTariffs.filter(t=>t.type==="rate");const specials=svcTariffs.filter(t=>t.type==="special");const surcharges=svcTariffs.filter(t=>t.type==="surcharge");
-    let ratePerUnit=0;let rateTier="";let isCustom=false;
-    if(isPhone&&specials.find(s=>s.label?.toLowerCase().includes("celular"))){const sp=specials.find(s=>s.label?.toLowerCase().includes("celular"));ratePerUnit=getEffRate(sp);rateTier=sp.label;isCustom=!!overrides.find(o=>o.tariff_id===sp.id);}
-    else{for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(q>=min&&q<max){ratePerUnit=getEffRate(r);rateTier=r.label;isCustom=!!overrides.find(o=>o.tariff_id===r.id);break;}}}
-    let baseCost=q*ratePerUnit;let batteryExtra=0;
+    let ratePerUnit=0;let costPerUnit=0;let rateTier="";let isCustom=false;
+    if(isPhone&&specials.find(s=>s.label?.toLowerCase().includes("celular"))){const sp=specials.find(s=>s.label?.toLowerCase().includes("celular"));ratePerUnit=getEffRate(sp);costPerUnit=Number(sp.cost||0);rateTier=sp.label;isCustom=!!overrides.find(o=>o.tariff_id===sp.id);}
+    else{for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(q>=min&&q<max){ratePerUnit=getEffRate(r);costPerUnit=Number(r.cost||0);rateTier=r.label;isCustom=!!overrides.find(o=>o.tariff_id===r.id);break;}}}
+    let revenue=q*ratePerUnit;let internalCost=q*costPerUnit;let batteryExtra=0;
     if(isBattery){const bs=specials.find(s=>s.label?.toLowerCase().includes("bater"));if(bs){batteryExtra=q*Number(bs.rate);}}
     let surchargeAmt=0;let surchargeInfo="";
     if(q>0&&v>0){const valuePerUnit=v/q;for(const s of surcharges.sort((a,b)=>Number(b.min_qty)-Number(a.min_qty))){if(valuePerUnit>=Number(s.min_qty)){surchargeAmt=v*(Number(s.rate)/100);surchargeInfo=`${s.rate}% (valor/${unit} = $${valuePerUnit.toFixed(0)})`;break;}}}
-    const total=baseCost+batteryExtra+surchargeAmt;
-    setResult({rateTier,ratePerUnit,baseCost,batteryExtra,surchargeAmt,surchargeInfo,total,qty:q,val:v,isCustom});};
+    const total=revenue+batteryExtra+surchargeAmt;const profit=total-internalCost;
+    setResult({rateTier,ratePerUnit,costPerUnit,revenue,internalCost,batteryExtra,surchargeAmt,surchargeInfo,total,profit,qty:q,val:v,isCustom});};
   const rr=(l,v,bold,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:12}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:13,fontWeight:bold?700:600,color:accent?IC:bold?"#fff":"rgba(255,255,255,0.8)"}}>USD {v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
   return <div>
     <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 20px"}}>Calculadora de Importación</h2>
@@ -330,21 +335,29 @@ function Calculator({token,clients}){
         <Sel label="Cliente (para tarifas custom)" value={selClient} onChange={setSelClient} options={clients.map(c=>({value:c.id,label:`${c.client_code} — ${c.first_name} ${c.last_name}`}))} ph="Sin cliente (tarifa base)"/>
         {selClient&&overrides.length>0&&<p style={{fontSize:11,color:IC,margin:"-8px 0 12px",fontWeight:600}}>Usando {overrides.length} tarifa(s) custom para este cliente</p>}
         <Sel label="Servicio" value={svc} onChange={setSvc} options={SERVICES.map(s=>({value:s.key,label:s.label}))}/>
-        <Inp label={isAereo?"Peso facturable (kg)":"CBM"} type="number" value={qty} onChange={setQty} step="0.01" placeholder={isAereo?"Ej: 25":"Ej: 1.5"}/>
+        <Inp label={isAereo?"Peso (kg)":"CBM"} type="number" value={qty} onChange={setQty} step="0.01" placeholder={isAereo?"Ej: 25":"Ej: 1.5"}/>
         <Inp label="Valor mercadería (USD)" type="number" value={val} onChange={setVal} step="0.01" placeholder="Ej: 5500"/>
         {svc==="aereo_a_china"&&<div style={{marginBottom:12}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={isBattery} onChange={e=>setIsBattery(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Productos con baterías (+$2/kg)</span></label></div>}
         {svc==="aereo_b_usa"&&<div style={{marginBottom:12}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={isPhone} onChange={e=>setIsPhone(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Es celular ($65/kg)</span></label></div>}
         <Btn onClick={calc}>Calcular</Btn>
       </Card>
-      <Card title="Resultado">
-        {result?<div>
-          <p style={{fontSize:12,color:result.isCustom?IC:"rgba(255,255,255,0.3)",margin:"0 0 12px",fontWeight:result.isCustom?600:400}}>{result.isCustom?"TARIFA CUSTOM: ":"Tarifa aplicada: "}{result.rateTier} — ${result.ratePerUnit}/{unit}</p>
-          {rr(`Flete (${result.qty} ${unit} x $${result.ratePerUnit})`,result.baseCost)}
-          {result.batteryExtra>0&&rr("Recargo baterías",result.batteryExtra)}
-          {result.surchargeAmt>0&&rr(`Recargo valor ${result.surchargeInfo}`,result.surchargeAmt)}
-          {rr("TOTAL",result.total,true,true)}
-        </div>:<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"2rem 0"}}>Ingresá los datos y hacé click en Calcular</p>}
-      </Card>
+      <div>
+        <Card title="Cotización al cliente">
+          {result?<div>
+            <p style={{fontSize:12,color:result.isCustom?IC:"rgba(255,255,255,0.3)",margin:"0 0 12px",fontWeight:result.isCustom?600:400}}>{result.isCustom?"TARIFA CUSTOM: ":"Tarifa: "}{result.rateTier} — ${result.ratePerUnit}/{unit}</p>
+            {rr("Servicio Integral ARGENCARGO",result.revenue)}
+            {result.batteryExtra>0&&rr("Recargo baterías",result.batteryExtra)}
+            {result.surchargeAmt>0&&rr(`Recargo valor ${result.surchargeInfo}`,result.surchargeAmt)}
+            {rr("TOTAL CLIENTE",result.total,true,true)}
+          </div>:<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"2rem 0"}}>Ingresá los datos y hacé click en Calcular</p>}
+        </Card>
+        {result&&<Card title="Rentabilidad">
+          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>Cobro al cliente</span><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>USD {result.total.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>Costo flete ({result.qty} {unit} x ${result.costPerUnit})</span><span style={{fontSize:13,fontWeight:600,color:"#ff6b6b"}}>-USD {result.internalCost.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}><span style={{fontSize:15,fontWeight:700,color:"#fff"}}>GANANCIA</span><span style={{fontSize:18,fontWeight:700,color:result.profit>0?"#22c55e":"#ff6b6b"}}>USD {result.profit.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+          {result.total>0&&<p style={{fontSize:12,color:"rgba(255,255,255,0.3)",margin:"4px 0 0"}}>Margen: {((result.profit/result.total)*100).toFixed(1)}%</p>}
+        </Card>}
+      </div>
     </div>
   </div>;
 }
