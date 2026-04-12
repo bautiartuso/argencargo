@@ -6,6 +6,7 @@ const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 const LOGO=`${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
 const B={primary:"#1B4F8A",light:"#2A6CB8",dark:"#0D3A6B",accent:"#4A90D9"};
 const DARK_BG="linear-gradient(160deg,#030810 0%,#071428 40%,#091b34 70%,#040e1c 100%)";
+const IC="#60a5fa";
 
 const sf=async(p,o={})=>{const r=await fetch(`${SB_URL}${p}`,{...o,headers:{apikey:SB_KEY,"Content-Type":"application/json",...(o.headers||{})}});return r.json();};
 const ac=async(e,b)=>sf(`/auth/v1/${e}`,{method:"POST",body:JSON.stringify(b)});
@@ -15,49 +16,54 @@ const PR=["Buenos Aires","CABA","Catamarca","Chaco","Chubut","Córdoba","Corrien
 const TX=[{value:"responsable_inscripto",label:"Responsable Inscripto"},{value:"monotributista",label:"Monotributista"},{value:"ninguna",label:"Ninguna de las anteriores"}];
 const INIT={first_name:"",last_name:"",whatsapp:"",email:"",password:"",confirm_password:"",street:"",floor_apt:"",postal_code:"",city:"",province:"",tax_condition:"ninguna",company_name:"",cuit:""};
 
-const OP_STEPS=[
-  {key:"proveedor",label:"Proveedor",icon:"📦"},
-  {key:"warehouse",label:"Warehouse\nArgencargo",icon:"🏭"},
-  {key:"documentacion",label:"Documentación",icon:"📄"},
-  {key:"en_transito",label:"En tránsito",icon:"🚢"},
-  {key:"arribo",label:"Arribo\nArgentina",icon:"🛬"},
-  {key:"aduana",label:"Gestión\naduanera",icon:"🛡️"},
-  {key:"liberacion",label:"Liberación",icon:"📋"},
-  {key:"entrega",label:"Entrega\nfinal",icon:"🚚"},
-  {key:"cerrada",label:"Operación\ncerrada",icon:"✅"},
+// SVG Icons - single color
+const SvgIcon=({d,active,current,size=20})=><svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={current?IC:active?"rgba(96,165,250,0.7)":"rgba(255,255,255,0.2)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={d}/></svg>;
+
+const STEP_ICONS=[
+  "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z", // box - proveedor
+  "M3 3h18v18H3zM3 9h18M3 15h18M9 3v18", // warehouse
+  "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8", // file - documentacion
+  "M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3", // transit
+  "M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", // arribo
+  "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4", // aduana
+  "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11", // liberacion
+  "M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z", // entrega
+  "M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4 12 14.01l-3-3", // cerrada
 ];
 
-const STATUS_TO_STEP={
-  pendiente:0,
-  en_deposito_origen:1,
-  en_preparacion:2,
-  en_transito:3,
-  en_aduana:5,
-  lista_retiro:6,
-  entregada:7,
-  cancelada:-1,
-};
+const OP_STEPS=[
+  {key:"proveedor",label:"Proveedor"},
+  {key:"warehouse",label:"Warehouse\nArgencargo"},
+  {key:"documentacion",label:"Documentación"},
+  {key:"en_transito",label:"En tránsito"},
+  {key:"arribo",label:"Arribo\nArgentina"},
+  {key:"aduana",label:"Gestión\naduanera"},
+  {key:"liberacion",label:"Liberación"},
+  {key:"entrega",label:"Entrega\nfinal"},
+  {key:"cerrada",label:"Operación\ncerrada"},
+];
 
+const STATUS_TO_STEP={pendiente:0,en_deposito_origen:1,en_preparacion:2,en_transito:3,en_aduana:5,lista_retiro:6,entregada:8,cancelada:-1};
 const STATUS_MAP={pendiente:{label:"PENDIENTE",color:"#94a3b8"},en_deposito_origen:{label:"EN DEPÓSITO ORIGEN",color:"#fbbf24"},en_preparacion:{label:"DOCUMENTACIÓN",color:"#a78bfa"},en_transito:{label:"EN TRÁNSITO",color:"#60a5fa"},en_aduana:{label:"GESTIÓN ADUANERA",color:"#fb923c"},lista_retiro:{label:"LIBERADO",color:"#34d399"},entregada:{label:"ENTREGADO",color:"#22c55e"},cancelada:{label:"CANCELADA",color:"#f87171"}};
 const CHANNEL_MAP={aereo_blanco:"Aéreo blanco",aereo_negro:"Aéreo negro",maritimo_blanco:"Marítimo blanco",maritimo_negro:"Marítimo negro"};
 
 const CLIENT_NAV=[
-  {key:"imports",label:"IMPORTACIONES",icon:"📦"},
-  {key:"calculator",label:"CALCULADORA",icon:"🧮"},
-  {key:"account",label:"ESTADO DE CUENTA",icon:"💲"},
-  {key:"points",label:"PUNTOS",icon:"⭐"},
-  {key:"rates",label:"TARIFAS",icon:"📊"},
-  {key:"profile",label:"MI PERFIL",icon:"👤"},
+  {key:"imports",label:"IMPORTACIONES",icon:"M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"},
+  {key:"calculator",label:"CALCULADORA",icon:"M4 4h16v16H4zM4 8h16M8 4v16"},
+  {key:"account",label:"ESTADO DE CUENTA",icon:"M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"},
+  {key:"points",label:"PUNTOS",icon:"M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"},
+  {key:"rates",label:"TARIFAS",icon:"M18 20V10M12 20V4M6 20v-6"},
+  {key:"profile",label:"MI PERFIL",icon:"M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"},
 ];
 const ADMIN_NAV=[
-  {key:"operations",label:"OPERACIONES",icon:"📦"},
-  {key:"clients",label:"CLIENTES",icon:"👥"},
-  {key:"finance",label:"FINANZAS",icon:"💰"},
-  {key:"warehouse",label:"DEPÓSITO",icon:"🏭"},
+  {key:"operations",label:"OPERACIONES",icon:"M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"},
+  {key:"clients",label:"CLIENTES",icon:"M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"},
+  {key:"finance",label:"FINANZAS",icon:"M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"},
+  {key:"warehouse",label:"DEPÓSITO",icon:"M3 3h18v18H3zM3 9h18M3 15h18M9 3v18"},
 ];
 const AGENT_NAV=[
-  {key:"packages",label:"CARGAR PAQUETES",icon:"📥"},
-  {key:"orders",label:"ÓRDENES",icon:"📋"},
+  {key:"packages",label:"CARGAR PAQUETES",icon:"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"},
+  {key:"orders",label:"ÓRDENES",icon:"M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
 ];
 
 function WorldMap(){
@@ -69,7 +75,6 @@ function WorldMap(){
   </svg>;
 }
 
-// ========= AUTH COMPONENTS =========
 function Inp({label,type="text",value,onChange,placeholder,req,error}){
   return <div style={{marginBottom:14}}>
     <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label>
@@ -88,7 +93,7 @@ function Sel({label,value,onChange,options,req,ph}){
     </select>
   </div>;
 }
-function Steps({cur,tot}){
+function Steps2({cur,tot}){
   return <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:20}}>
     {Array.from({length:tot},(_,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:6,flex:i<tot-1?1:"none"}}>
       <div style={{width:28,height:28,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:600,flexShrink:0,background:i<=cur?`linear-gradient(135deg,${B.accent},${B.primary})`:"rgba(255,255,255,0.08)",color:i<=cur?"#fff":"rgba(255,255,255,0.25)"}}>{i<cur?"✓":i+1}</div>
@@ -110,7 +115,7 @@ function AuthPage({children}){
       <div style={{maxWidth:420,width:"100%"}}>
         <div style={{textAlign:"center",marginBottom:28}}>
           <img src={LOGO} alt="Argencargo" style={{width:220,height:"auto",filter:"drop-shadow(0 0 20px rgba(74,144,217,0.4))"}}/>
-          <p style={{fontSize:13,color:"rgba(255,255,255,0.35)",margin:"10px 0 0",letterSpacing:"0.04em"}}>Soluciones integrales de comercio exterior</p>
+          <p style={{fontSize:13,color:"rgba(255,255,255,0.35)",margin:"10px 0 0"}}>Soluciones integrales de comercio exterior</p>
         </div>
         <div style={{background:"rgba(8,18,35,0.85)",backdropFilter:"blur(24px)",borderRadius:20,padding:"2rem 1.75rem",border:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}}>{children}</div>
         <p style={{textAlign:"center",fontSize:11,color:"rgba(255,255,255,0.2)",marginTop:16}}>Argencargo © 2026</p>
@@ -119,24 +124,22 @@ function AuthPage({children}){
   </div>;
 }
 
-// ========= OPERATION PROGRESS BAR =========
+// ========= OP PROGRESS =========
 function OpProgress({status}){
   const stepIdx=STATUS_TO_STEP[status]??0;
   return <div style={{display:"flex",alignItems:"flex-start",gap:0,padding:"12px 0"}}>
     {OP_STEPS.map((s,i)=>{
-      const active=i<=stepIdx;
-      const isCurrent=i===stepIdx;
+      const active=i<=stepIdx;const isCurrent=i===stepIdx;
       return <div key={s.key} style={{display:"flex",alignItems:"center",flex:i<OP_STEPS.length-1?1:"none"}}>
         <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,minWidth:48}}>
-          <div style={{
-            width:40,height:40,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,
-            background:isCurrent?"rgba(74,144,217,0.25)":active?"rgba(74,144,217,0.12)":"rgba(255,255,255,0.04)",
-            border:`1.5px solid ${isCurrent?"#60a5fa":active?"rgba(74,144,217,0.3)":"rgba(255,255,255,0.08)"}`,
-            boxShadow:isCurrent?"0 0 12px rgba(96,165,250,0.3)":"none",
-          }}>{s.icon}</div>
-          <span style={{fontSize:9,color:isCurrent?"#60a5fa":active?"rgba(255,255,255,0.6)":"rgba(255,255,255,0.25)",textAlign:"center",lineHeight:1.2,fontWeight:isCurrent?600:400,whiteSpace:"pre-line"}}>{s.label}</span>
+          <div style={{width:40,height:40,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",
+            background:isCurrent?"rgba(74,144,217,0.2)":active?"rgba(74,144,217,0.08)":"rgba(255,255,255,0.03)",
+            border:`1.5px solid ${isCurrent?"#60a5fa":active?"rgba(74,144,217,0.25)":"rgba(255,255,255,0.06)"}`,
+            boxShadow:isCurrent?"0 0 12px rgba(96,165,250,0.25)":"none",
+          }}><SvgIcon d={STEP_ICONS[i]} active={active} current={isCurrent}/></div>
+          <span style={{fontSize:9,color:isCurrent?"#60a5fa":active?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.2)",textAlign:"center",lineHeight:1.2,fontWeight:isCurrent?600:400,whiteSpace:"pre-line"}}>{s.label}</span>
         </div>
-        {i<OP_STEPS.length-1&&<div style={{flex:1,height:2,background:i<stepIdx?"#60a5fa":"rgba(255,255,255,0.06)",margin:"20px 4px 0",minWidth:12}}/>}
+        {i<OP_STEPS.length-1&&<div style={{flex:1,height:2,background:i<stepIdx?"#60a5fa":"rgba(255,255,255,0.05)",margin:"20px 4px 0",minWidth:8}}/>}
       </div>;
     })}
   </div>;
@@ -150,81 +153,53 @@ function OperationsList({ops,onSelect,client}){
   const code=client?.client_code||"";
 
   const stats=[
-    {label:"TOTAL IMPORTACIONES",value:ops.length,color:"#60a5fa",barColor:"#f59e0b"},
-    {label:"EN CURSO",value:active.length,color:"#fbbf24",barColor:"#3b82f6"},
-    {label:"FINALIZADAS",value:past.length,color:"#22c55e",barColor:"#22c55e"},
-    {label:"REPORTES",value:null,color:"#94a3b8",barColor:"#f59e0b",isButton:true},
+    {label:"TOTAL IMPORTACIONES",value:ops.length,color:"#60a5fa",bar:"#3b82f6"},
+    {label:"EN CURSO",value:active.length,color:"#60a5fa",bar:"#60a5fa"},
+    {label:"FINALIZADAS",value:past.length,color:"#22c55e",bar:"#22c55e"},
+    {label:"REPORTES",value:null,color:"#fff",bar:"#fff",isBtn:true},
   ];
 
-  const getItemsDesc=(op)=>{
-    const desc=op.description||"";
-    if(desc.length>60) return "CONSOLIDADO";
-    return desc.toUpperCase();
-  };
+  const getDesc=(op)=>{const d=op.description||"";return d.length>60?"CONSOLIDADO":d.toUpperCase();};
+  const getOrigin=(op)=>op.channel?.includes("aereo")?"China":"China"; // default, will come from DB later
 
   const renderOp=(op)=>{
     const st=STATUS_MAP[op.status]||{label:op.status,color:"#999"};
     const isAereo=op.channel?.includes("aereo");
-    const stepIdx=STATUS_TO_STEP[op.status]??0;
-
     return <div key={op.id} onClick={()=>onSelect(op)} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"1.25rem 1.5rem",cursor:"pointer",transition:"all 0.2s",marginBottom:12}}
       onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";e.currentTarget.style.borderColor="rgba(74,144,217,0.25)";}}
       onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.03)";e.currentTarget.style.borderColor="rgba(255,255,255,0.07)";}}>
-
-      {/* Header: code + status + date */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:13,fontWeight:700,color:"#fbbf24",fontFamily:"monospace",padding:"4px 10px",background:"rgba(251,191,36,0.12)",borderRadius:6,border:"1px solid rgba(251,191,36,0.25)"}}>{op.operation_code}</span>
-          <span style={{fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:6,color:st.color,border:`1px solid ${st.color}33`,background:`${st.color}15`}}>● {st.label}</span>
-        </div>
-        {op.eta&&op.status!=="entregada"&&<span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>ETA: {formatDate(op.eta)}</span>}
-        {op.delivered_at&&op.status==="entregada"&&<span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{formatDate(op.delivered_at)}</span>}
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+        <span style={{fontSize:13,fontWeight:700,color:"#fff",fontFamily:"monospace",padding:"4px 10px",background:"rgba(255,255,255,0.08)",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)"}}>{op.operation_code}</span>
+        <span style={{fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:6,color:st.color,border:`1px solid ${st.color}33`,background:`${st.color}15`}}>● {st.label}</span>
+        {op.eta&&op.status!=="entregada"&&<span style={{fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:6,color:"rgba(255,255,255,0.6)",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)"}}>ETA: {formatDate(op.eta)}</span>}
+        {op.delivered_at&&op.status==="entregada"&&<span style={{fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:6,color:"rgba(255,255,255,0.5)",background:"rgba(255,255,255,0.05)"}}>{formatDate(op.delivered_at)}</span>}
       </div>
-
-      {/* Description */}
-      <p style={{fontSize:15,fontWeight:600,color:"#fff",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.02em"}}>{getItemsDesc(op)}</p>
-
-      {/* Progress bar */}
+      <p style={{fontSize:15,fontWeight:600,color:"#fff",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.02em"}}>{getDesc(op)}</p>
       <OpProgress status={op.status}/>
-
-      {/* Bottom info */}
-      <div style={{display:"flex",gap:24,alignItems:"center",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginTop:8}}>
-        <div><span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase"}}>Bultos</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"2px 0 0"}}>{op.total_quantity||"—"}</p></div>
-        <div><span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase"}}>Origen</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"2px 0 0"}}>{op.channel?.includes("aereo")?"Aéreo":"Marítimo"}</p></div>
-        <div><span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase"}}>{isAereo?"Peso facturado":"CBM"}</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"2px 0 0"}}>{isAereo?(op.gross_weight_kg?`${op.gross_weight_kg} kg`:"—"):(op.cbm?`${op.cbm} m³`:"—")}</p></div>
-        <div><span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase"}}>Costos importación</span><p style={{fontSize:13,fontWeight:700,color:"#f59e0b",margin:"2px 0 0"}}>USD {Number(op.declared_value_usd||0).toLocaleString()}</p></div>
+      <div style={{display:"flex",gap:24,alignItems:"center",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginTop:8,flexWrap:"wrap"}}>
+        <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Bultos</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"2px 0 0"}}>{op.total_quantity||"—"}</p></div>
+        <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Origen</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"2px 0 0"}}>China</p></div>
+        <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Canal</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"2px 0 0"}}>{CHANNEL_MAP[op.channel]||"—"}</p></div>
+        <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{isAereo?"Peso facturado":"CBM"}</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"2px 0 0"}}>{isAereo?(op.gross_weight_kg?`${op.gross_weight_kg} kg`:"—"):(op.cbm?`${op.cbm} m³`:"—")}</p></div>
+        <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Costos importación</span><p style={{fontSize:13,fontWeight:700,color:"#60a5fa",margin:"2px 0 0"}}>USD {Number(op.declared_value_usd||0).toLocaleString()}</p></div>
       </div>
     </div>;
   };
 
   return <div>
-    {/* Title bar */}
     <div style={{background:"rgba(255,255,255,0.04)",borderRadius:12,border:"1px solid rgba(255,255,255,0.07)",padding:"16px 20px",marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div>
-        <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Mis importaciones</h2>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{code} — {name}</p>
-      </div>
+      <div><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Mis importaciones</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{code} — {name}</p></div>
     </div>
-
-    {/* Stats */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:24}}>
       {stats.map((s,i)=><div key={i} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"14px 16px",position:"relative",overflow:"hidden"}}>
-        <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:s.barColor}}/>
+        <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:s.bar}}/>
         <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"4px 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{s.label}</p>
-        {s.isButton?<button style={{fontSize:13,fontWeight:600,color:B.accent,background:"rgba(74,144,217,0.12)",border:"1px solid rgba(74,144,217,0.25)",borderRadius:6,padding:"4px 12px",cursor:"pointer",marginTop:2}}>Ver reporte</button>:<p style={{fontSize:28,fontWeight:700,color:s.color,margin:0}}>{s.value}</p>}
+        {s.isBtn?<button style={{fontSize:13,fontWeight:600,color:IC,background:"rgba(74,144,217,0.12)",border:"1px solid rgba(74,144,217,0.25)",borderRadius:6,padding:"4px 12px",cursor:"pointer",marginTop:2}}>Ver reporte</button>:<p style={{fontSize:28,fontWeight:700,color:s.color,margin:0}}>{s.value}</p>}
       </div>)}
     </div>
-
-    {/* Active operations */}
-    {active.length>0&&<>{active.map(renderOp)}</>}
-
-    {/* Past operations */}
-    {past.length>0&&<>
-      <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"24px 0 12px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Finalizadas ({past.length})</h3>
-      {past.map(renderOp)}
-    </>}
-
-    {ops.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.35)",fontSize:14,padding:"3rem 0"}}>No tenés operaciones todavía.</p>}
+    {active.length>0&&active.map(renderOp)}
+    {past.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"24px 0 12px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Finalizadas ({past.length})</h3>{past.map(renderOp)}</>}
+    {ops.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.3)",fontSize:14,padding:"3rem 0"}}>No tenés operaciones todavía.</p>}
   </div>;
 }
 
@@ -234,102 +209,91 @@ function OperationDetail({op,token,onBack}){
   useEffect(()=>{(async()=>{const [it,ev]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`})]);setItems(Array.isArray(it)?it:[]);setEvents(Array.isArray(ev)?ev:[]);setLoading(false);})();},[op.id,token]);
   const st=STATUS_MAP[op.status]||{label:op.status,color:"#999"};
   const isAereo=op.channel?.includes("aereo");
-
   return <div>
-    <button onClick={onBack} style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:B.accent,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:20,padding:0}}>← VOLVER</button>
+    <button onClick={onBack} style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:20,padding:0}}>← VOLVER</button>
     <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem",marginBottom:16}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-        <span style={{fontSize:14,fontWeight:700,color:"#fbbf24",fontFamily:"monospace",padding:"5px 12px",background:"rgba(251,191,36,0.12)",borderRadius:6,border:"1px solid rgba(251,191,36,0.25)"}}>{op.operation_code}</span>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"monospace",padding:"5px 12px",background:"rgba(255,255,255,0.08)",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)"}}>{op.operation_code}</span>
         <span style={{fontSize:12,fontWeight:700,padding:"5px 14px",borderRadius:6,color:st.color,border:`1px solid ${st.color}33`,background:`${st.color}15`}}>● {st.label}</span>
+        {op.eta&&op.status!=="entregada"&&<span style={{fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:6,color:"rgba(255,255,255,0.6)",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)"}}>ETA: {formatDate(op.eta)}</span>}
       </div>
       <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 16px",textTransform:"uppercase"}}>{op.description}</h2>
       <OpProgress status={op.status}/>
       <div style={{display:"flex",gap:28,alignItems:"center",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:14,marginTop:8,flexWrap:"wrap"}}>
-        {[{l:"Bultos",v:op.total_quantity||"—"},{l:"Origen",v:isAereo?"Aéreo":"Marítimo"},{l:isAereo?"Peso facturado":"CBM",v:isAereo?(op.gross_weight_kg?`${op.gross_weight_kg} kg`:"—"):(op.cbm?`${op.cbm} m³`:"—")},{l:"Costos importación",v:`USD ${Number(op.declared_value_usd||0).toLocaleString()}`,accent:true},{l:"NCM",v:op.ncm_code||"—"},{l:"Tracking proveedor",v:op.supplier_tracking||"—"},{l:"Tracking internacional",v:op.international_tracking||"—"},{l:"Carrier",v:op.international_carrier||"—"}].map((x,i)=><div key={i}><span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.35)",textTransform:"uppercase"}}>{x.l}</span><p style={{fontSize:13,fontWeight:600,color:x.accent?"#f59e0b":"#fff",margin:"2px 0 0",wordBreak:"break-all"}}>{x.v}</p></div>)}
+        {[{l:"Bultos",v:op.total_quantity||"—"},{l:"Origen",v:"China"},{l:"Canal",v:CHANNEL_MAP[op.channel]||"—"},{l:isAereo?"Peso facturado":"CBM",v:isAereo?(op.gross_weight_kg?`${op.gross_weight_kg} kg`:"—"):(op.cbm?`${op.cbm} m³`:"—")},{l:"Costos importación",v:`USD ${Number(op.declared_value_usd||0).toLocaleString()}`,accent:true},{l:"NCM",v:op.ncm_code||"—"},{l:"Tracking proveedor",v:op.supplier_tracking||"—"},{l:"Tracking internacional",v:op.international_tracking||"—"},{l:"Carrier",v:op.international_carrier||"—"}].map((x,i)=><div key={i}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{x.l}</span><p style={{fontSize:13,fontWeight:600,color:x.accent?IC:"#fff",margin:"2px 0 0",wordBreak:"break-all"}}>{x.v}</p></div>)}
       </div>
     </div>
     {!loading&&items.length>0&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.25rem 1.5rem",marginBottom:16}}>
       <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 14px"}}>PRODUCTOS</h3>
-      {items.map((it,i)=><div key={it.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderTop:i>0?"1px solid rgba(255,255,255,0.05)":"none"}}><div><p style={{fontSize:14,color:"#fff",margin:0,fontWeight:500}}>{it.description}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:"2px 0 0"}}>NCM: {it.ncm_code||"—"} · {it.quantity} uds</p></div><p style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>USD {(Number(it.unit_price_usd)*it.quantity).toLocaleString()}</p></div>)}
+      {items.map((it,i)=><div key={it.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderTop:i>0?"1px solid rgba(255,255,255,0.05)":"none"}}><div><p style={{fontSize:14,color:"#fff",margin:0,fontWeight:500}}>{it.description}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>NCM: {it.ncm_code||"—"} · {it.quantity} uds</p></div><p style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>USD {(Number(it.unit_price_usd)*it.quantity).toLocaleString()}</p></div>)}
     </div>}
     {!loading&&events.length>0&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.25rem 1.5rem"}}>
       <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 14px"}}>SEGUIMIENTO</h3>
       <div style={{position:"relative",paddingLeft:24}}>
         <div style={{position:"absolute",left:7,top:8,bottom:8,width:2,background:"rgba(255,255,255,0.06)"}}/>
         {events.map((ev,i)=><div key={ev.id} style={{position:"relative",paddingBottom:i<events.length-1?20:0}}>
-          <div style={{position:"absolute",left:-19,top:6,width:12,height:12,borderRadius:"50%",background:i===0?"#60a5fa":"rgba(255,255,255,0.1)",boxShadow:i===0?"0 0 0 4px rgba(96,165,250,0.2)":"none"}}/>
-          <div><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><p style={{fontSize:14,fontWeight:600,color:i===0?"#fff":"rgba(255,255,255,0.45)",margin:0}}>{ev.title}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.25)",margin:0,whiteSpace:"nowrap",marginLeft:12}}>{formatDate(ev.occurred_at)}</p></div>
-            {ev.description&&<p style={{fontSize:13,color:"rgba(255,255,255,0.35)",margin:"3px 0 0"}}>{ev.description}</p>}
-            {ev.location&&<p style={{fontSize:12,color:"rgba(255,255,255,0.25)",margin:"2px 0 0"}}>📍 {ev.location}</p>}</div>
+          <div style={{position:"absolute",left:-19,top:6,width:12,height:12,borderRadius:"50%",background:i===0?IC:"rgba(255,255,255,0.1)",boxShadow:i===0?"0 0 0 4px rgba(96,165,250,0.2)":"none"}}/>
+          <div><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}><p style={{fontSize:14,fontWeight:600,color:i===0?"#fff":"rgba(255,255,255,0.4)",margin:0}}>{ev.title}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.2)",margin:0,whiteSpace:"nowrap",marginLeft:12}}>{formatDate(ev.occurred_at)}</p></div>
+            {ev.description&&<p style={{fontSize:13,color:"rgba(255,255,255,0.3)",margin:"3px 0 0"}}>{ev.description}</p>}
+            {ev.location&&<p style={{fontSize:12,color:"rgba(255,255,255,0.2)",margin:"2px 0 0"}}>📍 {ev.location}</p>}</div>
         </div>)}
       </div>
     </div>}
-    {loading&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.35)",padding:"2rem 0"}}>Cargando...</p>}
+    {loading&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.3)",padding:"2rem 0"}}>Cargando...</p>}
   </div>;
 }
 
-// ========= PROFILE PAGE =========
+// ========= PROFILE =========
 function ProfilePage({client}){
-  if(!client) return null;
+  if(!client)return null;
   const fields=[{l:"Nombre",v:`${client.first_name} ${client.last_name}`},{l:"Código de cliente",v:client.client_code,mono:true},{l:"Email",v:client.email},{l:"WhatsApp",v:client.whatsapp},{l:"Dirección",v:`${client.street}${client.floor_apt?`, ${client.floor_apt}`:""}`},{l:"Localidad",v:`${client.city}, ${client.province}`},{l:"Código postal",v:client.postal_code},{l:"Condición IVA",v:client.tax_condition==="responsable_inscripto"?"Resp. Inscripto":client.tax_condition==="monotributista"?"Monotributista":"Consumidor final"}];
-  if(client.tax_condition==="responsable_inscripto"){fields.push({l:"Empresa",v:client.company_name||"—"},{l:"CUIT",v:client.cuit||"—"});}
+  if(client.tax_condition==="responsable_inscripto")fields.push({l:"Empresa",v:client.company_name||"—"},{l:"CUIT",v:client.cuit||"—"});
   return <div>
     <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 24px"}}>MI PERFIL</h2>
     <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem"}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-        {fields.map((f,i)=><div key={i}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{f.l}</p><p style={{fontSize:15,color:"#fff",margin:0,fontWeight:500,...(f.mono?{fontFamily:"monospace",fontSize:18,color:"#60a5fa",letterSpacing:"0.1em"}:{})}}>{f.v}</p></div>)}
+        {fields.map((f,i)=><div key={i}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{f.l}</p><p style={{fontSize:15,color:"#fff",margin:0,fontWeight:500,...(f.mono?{fontFamily:"monospace",fontSize:18,color:IC,letterSpacing:"0.1em"}:{})}}>{f.v}</p></div>)}
       </div>
     </div>
-    <div style={{background:"rgba(74,144,217,0.08)",borderRadius:12,border:"1px solid rgba(74,144,217,0.15)",padding:"16px 20px",marginTop:16}}>
-      <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:0,lineHeight:1.6}}>📦 Tu código de cliente es <strong style={{color:"#60a5fa",fontFamily:"monospace",letterSpacing:"0.1em"}}>{client.client_code}</strong>. Incluilo en todos los paquetes que envíes a nuestro depósito.</p>
+    <div style={{background:"rgba(74,144,217,0.06)",borderRadius:12,border:"1px solid rgba(74,144,217,0.12)",padding:"16px 20px",marginTop:16}}>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0,lineHeight:1.6}}>📦 Tu código de cliente es <strong style={{color:IC,fontFamily:"monospace",letterSpacing:"0.1em"}}>{client.client_code}</strong>. Incluilo en todos los paquetes que envíes a nuestro depósito.</p>
     </div>
   </div>;
 }
 
-// ========= DASHBOARD SHELL =========
+// ========= SHELL =========
 function DashShell({children,page,setPage,role,client,user,onLogout}){
   const name=client?`${client.first_name} ${client.last_name}`:user?.email||"Usuario";
   const code=client?.client_code||"";
   const nav=role==="admin"?ADMIN_NAV:role==="agente"?AGENT_NAV:CLIENT_NAV;
-
   return <div style={{minHeight:"100vh",display:"flex",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,position:"relative",overflow:"hidden"}}>
     <div style={{position:"absolute",inset:0,pointerEvents:"none"}}><WorldMap/></div>
     <div style={{width:220,flexShrink:0,background:"rgba(0,0,0,0.3)",borderRight:"1px solid rgba(255,255,255,0.05)",display:"flex",flexDirection:"column",position:"relative",zIndex:2}}>
-      <div style={{padding:"20px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
-        <img src={LOGO} alt="Argencargo" style={{width:"100%",height:"auto",maxHeight:50,objectFit:"contain"}}/>
-      </div>
-      {code&&<div style={{padding:"16px 16px 8px",textAlign:"center"}}>
-        <div style={{display:"inline-block",padding:"6px 16px",borderRadius:8,background:"rgba(74,144,217,0.1)",border:"1px solid rgba(74,144,217,0.2)"}}>
-          <p style={{fontSize:9,color:"rgba(255,255,255,0.35)",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700}}>Tu código</p>
-          <p style={{fontSize:18,fontWeight:700,color:"#60a5fa",margin:0,letterSpacing:"0.12em",fontFamily:"monospace"}}>{code}</p>
-        </div>
-      </div>}
+      <div style={{padding:"20px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><img src={LOGO} alt="Argencargo" style={{width:"100%",height:"auto",maxHeight:50,objectFit:"contain"}}/></div>
+      {code&&<div style={{padding:"16px 16px 8px",textAlign:"center"}}><div style={{display:"inline-block",padding:"6px 16px",borderRadius:8,background:"rgba(74,144,217,0.1)",border:"1px solid rgba(74,144,217,0.2)"}}><p style={{fontSize:9,color:"rgba(255,255,255,0.3)",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700}}>Tu código</p><p style={{fontSize:18,fontWeight:700,color:IC,margin:0,letterSpacing:"0.12em",fontFamily:"monospace"}}>{code}</p></div></div>}
       <nav style={{flex:1,padding:"12px 8px"}}>
         {nav.map(item=>(
           <button key={item.key} onClick={()=>setPage(item.key)} style={{
             width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 14px",marginBottom:2,
-            borderRadius:10,border:"none",cursor:"pointer",transition:"all 0.15s",fontSize:12,fontWeight:700,
-            letterSpacing:"0.04em",textTransform:"uppercase",
+            borderRadius:10,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,
+            letterSpacing:"0.04em",
             background:page===item.key?"rgba(74,144,217,0.15)":"transparent",
-            color:page===item.key?"#fff":"rgba(255,255,255,0.45)",
+            color:page===item.key?"#fff":"rgba(255,255,255,0.4)",
             borderLeft:page===item.key?`3px solid ${B.accent}`:"3px solid transparent",
           }}>
-            <span style={{fontSize:16}}>{item.icon}</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={page===item.key?IC:"rgba(255,255,255,0.35)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={item.icon}/></svg>
             {item.label}
           </button>
         ))}
       </nav>
       <div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-          <div style={{width:36,height:36,borderRadius:"50%",background:"rgba(74,144,217,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13,color:"#60a5fa"}}>
+          <div style={{width:36,height:36,borderRadius:"50%",background:"rgba(74,144,217,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13,color:IC}}>
             {(client?.first_name?.[0]||user?.email?.[0]||"U").toUpperCase()}{(client?.last_name?.[0]||"").toUpperCase()}
           </div>
-          <div style={{flex:1,minWidth:0}}>
-            <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>{role==="admin"?"Admin":role==="agente"?"Agente":"Cliente"}</p>
-          </div>
+          <div style={{flex:1,minWidth:0}}><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.25)",margin:0}}>{role==="admin"?"Admin":role==="agente"?"Agente":"Cliente"}</p></div>
         </div>
-        <button onClick={onLogout} style={{width:"100%",padding:"8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.4)",cursor:"pointer",fontWeight:600}}>Cerrar sesión</button>
+        <button onClick={onLogout} style={{width:"100%",padding:"8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.35)",cursor:"pointer",fontWeight:600}}>Cerrar sesión</button>
       </div>
     </div>
     <div style={{flex:1,overflow:"auto",position:"relative",zIndex:2}}>
@@ -345,18 +309,11 @@ function Dashboard({profile,client,user,token,onLogout}){
   const [ops,setOps]=useState([]);const [selectedOp,setSelectedOp]=useState(null);const [loadingOps,setLoadingOps]=useState(false);
   const loadOps=async()=>{setLoadingOps(true);const r=await dq("operations",{token,filters:"?select=*&order=created_at.desc"});setOps(Array.isArray(r)?r:[]);setLoadingOps(false);};
   useEffect(()=>{if(page==="imports"||page==="operations")loadOps();},[page]);
-
   return <DashShell page={page} setPage={(p)=>{setPage(p);setSelectedOp(null);}} role={role} client={client} user={user} onLogout={onLogout}>
-    {(page==="imports"||page==="operations")&&!selectedOp&&<>
-      {loadingOps?<p style={{textAlign:"center",color:"rgba(255,255,255,0.35)",padding:"3rem 0"}}>Cargando...</p>:<OperationsList ops={ops} onSelect={setSelectedOp} client={client}/>}
-    </>}
+    {(page==="imports"||page==="operations")&&!selectedOp&&<>{loadingOps?<p style={{textAlign:"center",color:"rgba(255,255,255,0.3)",padding:"3rem 0"}}>Cargando...</p>:<OperationsList ops={ops} onSelect={setSelectedOp} client={client}/>}</>}
     {(page==="imports"||page==="operations")&&selectedOp&&<OperationDetail op={selectedOp} token={token} onBack={()=>setSelectedOp(null)}/>}
     {page==="profile"&&<ProfilePage client={client}/>}
-    {!["imports","operations","profile"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}>
-      <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2>
-      <p style={{fontSize:14,color:"rgba(255,255,255,0.35)",margin:"0 0 24px"}}>Sección en desarrollo</p>
-      <div style={{display:"inline-block",padding:"12px 24px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",color:"rgba(255,255,255,0.4)",fontSize:13}}>Próximamente disponible</div>
-    </div>}
+    {!["imports","operations","profile"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.3)",margin:"0 0 24px"}}>Sección en desarrollo</p><div style={{display:"inline-block",padding:"12px 24px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",color:"rgba(255,255,255,0.35)",fontSize:13}}>Próximamente disponible</div></div>}
   </DashShell>;
 }
 
@@ -371,7 +328,7 @@ export default function Page(){
   const logout=()=>{setSession(null);setClient(null);setProfile(null);setForm(INIT);setStep(0);setView("login");setGErr("");setOkMsg("");};
 
   if(session&&profile) return <Dashboard profile={profile} client={client} user={session.user} token={session.token} onLogout={logout}/>;
-  if(okMsg) return <AuthPage><div style={{textAlign:"center"}}><div style={{width:60,height:60,borderRadius:"50%",background:"rgba(74,144,217,0.15)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px"}}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#4A90D9" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg></div><p style={{fontSize:15,color:"rgba(255,255,255,0.7)",lineHeight:1.7,margin:"0 0 24px"}}>{okMsg}</p><PBtn onClick={()=>{setOkMsg("");setView("login");setForm(INIT);setStep(0);}}>Ir a iniciar sesión</PBtn></div></AuthPage>;
+  if(okMsg) return <AuthPage><div style={{textAlign:"center"}}><div style={{width:60,height:60,borderRadius:"50%",background:"rgba(74,144,217,0.15)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px"}}><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={IC} strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg></div><p style={{fontSize:15,color:"rgba(255,255,255,0.65)",lineHeight:1.7,margin:"0 0 24px"}}>{okMsg}</p><PBtn onClick={()=>{setOkMsg("");setView("login");setForm(INIT);setStep(0);}}>Ir a iniciar sesión</PBtn></div></AuthPage>;
 
   return <AuthPage>
     {view==="login"?<>
@@ -384,10 +341,10 @@ export default function Page(){
     </>:<>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><h2 style={{fontSize:20,fontWeight:600,color:"#fff",margin:0}}>Crear cuenta</h2><span style={{fontSize:12,color:"rgba(255,255,255,0.3)",fontWeight:500}}>Paso {step+1}/3</span></div>
       <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 16px"}}>{ST[step]}</p>
-      <Steps cur={step} tot={3}/><ErrBox msg={gErr}/>
+      <Steps2 cur={step} tot={3}/><ErrBox msg={gErr}/>
       {step===0&&<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}><Inp label="Nombre" value={form.first_name} onChange={ch("first_name")} placeholder="Juan" req error={errors.first_name}/><Inp label="Apellido" value={form.last_name} onChange={ch("last_name")} placeholder="Pérez" req error={errors.last_name}/></div><Inp label="WhatsApp" type="tel" value={form.whatsapp} onChange={ch("whatsapp")} placeholder="+54 9 11 1234-5678" req error={errors.whatsapp}/><Inp label="Email" type="email" value={form.email} onChange={ch("email")} placeholder="tu@email.com" req error={errors.email}/><Inp label="Contraseña" type="password" value={form.password} onChange={ch("password")} placeholder="Mínimo 6 caracteres" req error={errors.password}/><Inp label="Confirmar contraseña" type="password" value={form.confirm_password} onChange={ch("confirm_password")} placeholder="Repetí tu contraseña" req error={errors.confirm_password}/></>}
       {step===1&&<><Inp label="Calle y número" value={form.street} onChange={ch("street")} placeholder="Av. Corrientes 1234" req error={errors.street}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}><Inp label="Piso / Depto" value={form.floor_apt} onChange={ch("floor_apt")} placeholder="3° B (opcional)"/><Inp label="Código postal" value={form.postal_code} onChange={ch("postal_code")} placeholder="1414" req error={errors.postal_code}/></div><Inp label="Localidad" value={form.city} onChange={ch("city")} placeholder="Palermo" req error={errors.city}/><Sel label="Provincia" value={form.province} onChange={ch("province")} options={PR} req ph="Seleccioná una provincia"/></>}
-      {step===2&&<><p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 14px"}}>Seleccioná tu condición frente al IVA.</p><div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>{TX.map(o=><label key={o.value} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",border:`1.5px solid ${form.tax_condition===o.value?B.accent:"rgba(255,255,255,0.08)"}`,borderRadius:10,cursor:"pointer",background:form.tax_condition===o.value?"rgba(74,144,217,0.1)":"rgba(255,255,255,0.02)"}}><div style={{width:18,height:18,borderRadius:"50%",flexShrink:0,border:`2px solid ${form.tax_condition===o.value?B.accent:"rgba(255,255,255,0.15)"}`,display:"flex",alignItems:"center",justifyContent:"center"}}>{form.tax_condition===o.value&&<div style={{width:10,height:10,borderRadius:"50%",background:B.accent}}/>}</div><span style={{fontSize:14,color:"rgba(255,255,255,0.75)"}}>{o.label}</span></label>)}</div>{form.tax_condition==="responsable_inscripto"&&<div style={{padding:14,background:"rgba(255,255,255,0.03)",borderRadius:10,marginBottom:8,border:"1px solid rgba(255,255,255,0.05)"}}><Inp label="Nombre de la empresa" value={form.company_name} onChange={ch("company_name")} placeholder="Mi Empresa S.R.L." req error={errors.company_name}/><Inp label="CUIT" value={form.cuit} onChange={ch("cuit")} placeholder="20-12345678-9" req error={errors.cuit}/></div>}</>}
+      {step===2&&<><p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 14px"}}>Seleccioná tu condición frente al IVA.</p><div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>{TX.map(o=><label key={o.value} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",border:`1.5px solid ${form.tax_condition===o.value?B.accent:"rgba(255,255,255,0.08)"}`,borderRadius:10,cursor:"pointer",background:form.tax_condition===o.value?"rgba(74,144,217,0.1)":"rgba(255,255,255,0.02)"}}><div style={{width:18,height:18,borderRadius:"50%",flexShrink:0,border:`2px solid ${form.tax_condition===o.value?B.accent:"rgba(255,255,255,0.15)"}`,display:"flex",alignItems:"center",justifyContent:"center"}}>{form.tax_condition===o.value&&<div style={{width:10,height:10,borderRadius:"50%",background:B.accent}}/>}</div><span style={{fontSize:14,color:"rgba(255,255,255,0.7)"}}>{o.label}</span></label>)}</div>{form.tax_condition==="responsable_inscripto"&&<div style={{padding:14,background:"rgba(255,255,255,0.03)",borderRadius:10,marginBottom:8,border:"1px solid rgba(255,255,255,0.05)"}}><Inp label="Nombre de la empresa" value={form.company_name} onChange={ch("company_name")} placeholder="Mi Empresa S.R.L." req error={errors.company_name}/><Inp label="CUIT" value={form.cuit} onChange={ch("cuit")} placeholder="20-12345678-9" req error={errors.cuit}/></div>}</>}
       <div style={{display:"flex",gap:12,marginTop:18}}>{step>0&&<SBtn onClick={()=>setStep(s=>s-1)}>Atrás</SBtn>}<PBtn onClick={step<2?()=>{if(val(step))setStep(s=>s+1);}:doRegister} disabled={loading}>{loading?"Creando...":step<2?"Siguiente →":"Crear cuenta"}</PBtn></div>
       <p style={{textAlign:"center",fontSize:13,color:"rgba(255,255,255,0.4)",marginTop:18,marginBottom:0}}>¿Ya tenés cuenta? <span onClick={()=>{setView("login");setStep(0);setGErr("");}} style={{color:B.accent,cursor:"pointer",fontWeight:600}}>Iniciá sesión</span></p>
     </>}
