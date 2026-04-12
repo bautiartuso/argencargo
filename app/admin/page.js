@@ -17,6 +17,7 @@ const SM={pendiente:{l:"PENDIENTE",c:"#94a3b8"},en_deposito_origen:{l:"EN DEPÓS
 const CM={aereo_blanco:"Aéreo A",aereo_negro:"Aéreo B",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B"};
 const STATUSES=Object.keys(SM);
 const CHANNELS=Object.keys(CM);
+const SERVICES=[{key:"aereo_a_china",label:"Aéreo A — China",unit:"kg",info:"7-10 días hábiles"},{key:"aereo_b_usa",label:"Aéreo B — USA",unit:"kg",info:"48-72 hs hábiles"},{key:"aereo_b_china",label:"Aéreo B — China",unit:"kg",info:"10-15 días hábiles"},{key:"maritimo_a_china",label:"Marítimo A — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo B — China/USA",unit:"cbm",info:""}];
 const formatDate=(d)=>{if(!d)return"—";return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});};
 const formatDateInput=(d)=>{if(!d)return"";return new Date(d).toISOString().split("T")[0];};
 
@@ -35,33 +36,41 @@ function AdminLogin({onLogin}){
 }
 
 function OperationsList({token,onSelect,onNew}){
-  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fStatus,setFStatus]=useState("");const [fChannel,setFChannel]=useState("");
-  useEffect(()=>{(async()=>{const [o,c]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=id,first_name,last_name,client_code"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setLo(false);})();},[token]);
-  const filtered=ops.filter(o=>{if(fStatus&&o.status!==fStatus)return false;if(fChannel&&o.channel!==fChannel)return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
+  const [ops,setOps]=useState([]);const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fStatuses,setFStatuses]=useState([]);const [fChannel,setFChannel]=useState("");const [sortCol,setSortCol]=useState("created_at");const [sortDir,setSortDir]=useState("desc");const [showStatusDrop,setShowStatusDrop]=useState(false);
+  useEffect(()=>{(async()=>{const o=await dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"});setOps(Array.isArray(o)?o:[]);setLo(false);})();},[token]);
+  const toggleStatus=(s)=>setFStatuses(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
+  const getOrigin=(ch)=>{if(ch?.includes("maritimo"))return"China";if(ch==="aereo_blanco")return"China";if(ch==="aereo_negro")return"USA/China";return"—";};
+  const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannel&&o.channel!==fChannel)return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
+  const sorted=[...filtered].sort((a,b)=>{let va=a[sortCol],vb=b[sortCol];if(sortCol==="client"){va=a.clients?`${a.clients.first_name} ${a.clients.last_name}`:"";vb=b.clients?`${b.clients.first_name} ${b.clients.last_name}`:"";}if(sortCol==="origin"){va=getOrigin(a.channel);vb=getOrigin(b.channel);}if(va==null)va="";if(vb==null)vb="";if(typeof va==="string")va=va.toLowerCase();if(typeof vb==="string")vb=vb.toLowerCase();if(va<vb)return sortDir==="asc"?-1:1;if(va>vb)return sortDir==="asc"?1:-1;return 0;});
+  const toggleSort=(col)=>{if(sortCol===col){setSortDir(d=>d==="asc"?"desc":"asc");}else{setSortCol(col);setSortDir("asc");}};
+  const SH=({label,col})=><th onClick={()=>toggleSort(col)} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:sortCol===col?IC:"rgba(255,255,255,0.3)",textTransform:"uppercase",cursor:"pointer",userSelect:"none"}}>{label} {sortCol===col?(sortDir==="asc"?"▲":"▼"):""}</th>;
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Operaciones</h2><Btn onClick={onNew}>+ Nueva operación</Btn></div>
-    <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+    <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
       <div style={{flex:1,minWidth:200}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por código, cliente o descripción..." style={{width:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
-      <select value={fStatus} onChange={e=>setFStatus(e.target.value)} style={{padding:"10px 14px",fontSize:12,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}><option value="" style={{background:"#0a1428"}}>Todos los estados</option>{STATUSES.map(s=><option key={s} value={s} style={{background:"#0a1428"}}>{SM[s].l}</option>)}</select>
+      <div style={{position:"relative"}}><button onClick={()=>setShowStatusDrop(p=>!p)} style={{padding:"10px 14px",fontSize:12,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{fStatuses.length>0?`${fStatuses.length} estados`:"Todos los estados"} ▼</button>
+        {showStatusDrop&&<div style={{position:"absolute",top:"100%",left:0,marginTop:4,background:"#0a1428",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:8,zIndex:10,minWidth:200}}>{STATUSES.map(s=><label key={s} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",borderRadius:4}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><input type="checkbox" checked={fStatuses.includes(s)} onChange={()=>toggleStatus(s)}/><span style={{fontSize:12,color:SM[s].c,fontWeight:600}}>{SM[s].l}</span></label>)}<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:4}}><button onClick={()=>{setFStatuses([]);setShowStatusDrop(false);}} style={{fontSize:11,color:IC,background:"none",border:"none",cursor:"pointer",padding:"4px 8px"}}>Limpiar filtros</button></div></div>}
+      </div>
       <select value={fChannel} onChange={e=>setFChannel(e.target.value)} style={{padding:"10px 14px",fontSize:12,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}><option value="" style={{background:"#0a1428"}}>Todos los canales</option>{CHANNELS.map(c=><option key={c} value={c} style={{background:"#0a1428"}}>{CM[c]}</option>)}</select>
     </div>
     {lo?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:
     <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-          {["Código","Cliente","Descripción","Canal","Estado","ETA",""].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
+          <SH label="Código" col="operation_code"/><SH label="Cliente" col="client"/><SH label="Descripción" col="description"/><SH label="Origen" col="origin"/><SH label="Canal" col="channel"/><SH label="Estado" col="status"/><SH label="ETA" col="eta"/><th style={{padding:"12px 14px"}}></th>
         </tr></thead>
-        <tbody>{filtered.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>onSelect(op)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+        <tbody>{sorted.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>onSelect(op)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
           <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{op.operation_code}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.7)"}}>{cn}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{op.description||"—"}</td>
+          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{getOrigin(op.channel)}</td>
           <td style={{padding:"12px 14px"}}><span style={{fontSize:11,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{CM[op.channel]||op.channel}</span></td>
           <td style={{padding:"12px 14px"}}><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>● {st.l}</span></td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)"}}>{formatDate(op.eta)}</td>
           <td style={{padding:"12px 14px"}}><span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></td>
         </tr>})}</tbody>
       </table>
-      {filtered.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:"2rem 0"}}>No se encontraron operaciones</p>}
+      {sorted.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:"2rem 0"}}>No se encontraron operaciones</p>}
     </div>}
   </div>;
 }
@@ -249,18 +258,88 @@ function ClientsList({token,onSelect}){
 }
 
 function ClientDetail({client,token,onBack,onSelectOp}){
-  const [ops,setOps]=useState([]);const [lo,setLo]=useState(true);
-  useEffect(()=>{(async()=>{const o=await dq("operations",{token,filters:`?client_id=eq.${client.id}&select=*&order=created_at.desc`});setOps(Array.isArray(o)?o:[]);setLo(false);})();},[client.id,token]);
+  const [ops,setOps]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("info");const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [msg,setMsg]=useState("");
+  useEffect(()=>{(async()=>{const [o,t,ov]=await Promise.all([dq("operations",{token,filters:`?client_id=eq.${client.id}&select=*&order=created_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=service_key.asc,sort_order.asc"}),dq("client_tariff_overrides",{token,filters:`?client_id=eq.${client.id}&select=*`})]);setOps(Array.isArray(o)?o:[]);setTariffs(Array.isArray(t)?t:[]);setOverrides(Array.isArray(ov)?ov:[]);setLo(false);})();},[client.id,token]);
+  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
+  const getOverride=(tid)=>overrides.find(o=>o.tariff_id===tid);
+  const setOverrideRate=async(tid,rate)=>{const existing=getOverride(tid);if(rate===""||rate==null){if(existing){await dq("client_tariff_overrides",{method:"DELETE",token,filters:`?id=eq.${existing.id}`});setOverrides(p=>p.filter(o=>o.id!==existing.id));flash("Tarifa custom eliminada");}return;}if(existing){await dq("client_tariff_overrides",{method:"PATCH",token,filters:`?id=eq.${existing.id}`,body:{custom_rate:Number(rate)}});setOverrides(p=>p.map(o=>o.id===existing.id?{...o,custom_rate:Number(rate)}:o));} else{const r=await dq("client_tariff_overrides",{method:"POST",token,body:{client_id:client.id,tariff_id:tid,custom_rate:Number(rate)}});if(Array.isArray(r))setOverrides(p=>[...p,...r]);else if(r?.id)setOverrides(p=>[...p,r]);}flash("Tarifa custom guardada");};
   const f=[{l:"Código",v:client.client_code,a:true},{l:"Nombre",v:`${client.first_name} ${client.last_name}`},{l:"Email",v:client.email},{l:"WhatsApp",v:client.whatsapp},{l:"Dirección",v:`${client.street}${client.floor_apt?`, ${client.floor_apt}`:""}`},{l:"Localidad",v:`${client.city}, ${client.province}`},{l:"CP",v:client.postal_code},{l:"IVA",v:client.tax_condition==="responsable_inscripto"?"Resp. Inscripto":client.tax_condition==="monotributista"?"Monotributista":"Consumidor final"},{l:"Puntos",v:client.points_balance||0}];
+  const tabs=[{k:"info",l:"Info"},{k:"ops",l:`Operaciones (${ops.length})`},{k:"tariffs",l:"Tarifas"}];
   return <div>
-    <button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:20,padding:0}}>← VOLVER</button>
-    <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 20px"}}>{client.first_name} {client.last_name}</h2>
-    <Card title="Datos del Cliente">
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>{f.map((x,i)=><div key={i}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px",textTransform:"uppercase"}}>{x.l}</p><p style={{fontSize:14,color:x.a?IC:"#fff",margin:0,fontWeight:500,...(x.a?{fontFamily:"monospace",fontSize:16}:{})}}>{x.v}</p></div>)}</div>
-    </Card>
-    <Card title={`Operaciones (${ops.length})`}>
-      {lo?<p style={{color:"rgba(255,255,255,0.3)"}}>Cargando...</p>:ops.length>0?ops.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};return <div key={op.id} onClick={()=>onSelectOp(op)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:13}}>{op.operation_code}</span><span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:4,color:st.c,background:`${st.c}15`}}>● {st.l}</span></div><div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{CM[op.channel]||op.channel}</span><span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></div></div>;}):<p style={{color:"rgba(255,255,255,0.25)"}}>Sin operaciones</p>}
-    </Card>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}><button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← VOLVER</button><h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>{client.first_name} {client.last_name}</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div>
+    <div style={{display:"flex",gap:8,marginBottom:16}}>{tabs.map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
+    {tab==="info"&&<Card title="Datos del Cliente"><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>{f.map((x,i)=><div key={i}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px",textTransform:"uppercase"}}>{x.l}</p><p style={{fontSize:14,color:x.a?IC:"#fff",margin:0,fontWeight:500,...(x.a?{fontFamily:"monospace",fontSize:16}:{})}}>{x.v}</p></div>)}</div></Card>}
+    {tab==="ops"&&<Card title="Operaciones">{lo?<p style={{color:"rgba(255,255,255,0.3)"}}>Cargando...</p>:ops.length>0?ops.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};return <div key={op.id} onClick={()=>onSelectOp(op)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:13}}>{op.operation_code}</span><span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:4,color:st.c,background:`${st.c}15`}}>● {st.l}</span></div><div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{CM[op.channel]||op.channel}</span><span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></div></div>;}):<p style={{color:"rgba(255,255,255,0.25)"}}>Sin operaciones</p>}</Card>}
+    {tab==="tariffs"&&<div>{SERVICES.map(svc=>{const svcRates=tariffs.filter(t=>t.service_key===svc.key);if(!svcRates.length)return null;return <Card key={svc.key} title={svc.label}><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"-8px 0 12px"}}>Dejá vacío para usar tarifa base. Poné un valor para aplicar tarifa promocional.</p>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}><th style={{padding:"8px 0",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)"}}>RANGO</th><th style={{padding:"8px 0",textAlign:"right",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)"}}>TARIFA BASE</th><th style={{padding:"8px 0",textAlign:"right",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)"}}>TARIFA CUSTOM</th></tr></thead>
+      <tbody>{svcRates.map(t=>{const ov=getOverride(t.id);return <tr key={t.id} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}><td style={{padding:"8px 0",color:"rgba(255,255,255,0.6)"}}>{t.label}</td><td style={{padding:"8px 0",textAlign:"right",color:ov?"rgba(255,255,255,0.3)":"#fff",fontWeight:600,textDecoration:ov?"line-through":"none"}}>${Number(t.rate).toLocaleString()}/{t.unit}</td><td style={{padding:"8px 0",textAlign:"right"}}><input type="number" value={ov?.custom_rate??""} onChange={e=>setOverrideRate(t.id,e.target.value)} placeholder="—" step="0.01" style={{width:80,padding:"4px 8px",fontSize:13,textAlign:"right",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:ov?"rgba(96,165,250,0.1)":"rgba(255,255,255,0.04)",color:ov?IC:"rgba(255,255,255,0.4)",outline:"none"}}/></td></tr>;})}</tbody></table></Card>;})}</div>}
+  </div>;
+}
+
+function TariffsManager({token}){
+  const [tariffs,setTariffs]=useState([]);const [lo,setLo]=useState(true);const [selSvc,setSelSvc]=useState(null);const [msg,setMsg]=useState("");
+  const load=async()=>{const t=await dq("tariffs",{token,filters:"?select=*&order=service_key.asc,sort_order.asc"});setTariffs(Array.isArray(t)?t:[]);setLo(false);};
+  useEffect(()=>{load();},[token]);
+  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
+  const svcTariffs=selSvc?tariffs.filter(t=>t.service_key===selSvc):[];
+  const rates=svcTariffs.filter(t=>t.type==="rate");const specials=svcTariffs.filter(t=>t.type==="special");const surcharges=svcTariffs.filter(t=>t.type==="surcharge");
+  const saveTariff=async(t)=>{const{id,created_at,...rest}=t;await dq("tariffs",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Guardado");};
+  const addTariff=async(type)=>{const svc=SERVICES.find(s=>s.key===selSvc);const r=await dq("tariffs",{method:"POST",token,body:{service_key:selSvc,type,min_qty:0,max_qty:null,rate:0,unit:svc?.unit||"kg",label:"Nuevo rango",sort_order:svcTariffs.length+1}});if(Array.isArray(r))setTariffs(p=>[...p,...r]);else if(r?.id)setTariffs(p=>[...p,r]);flash("Agregado");};
+  const delTariff=async(id)=>{await dq("tariffs",{method:"DELETE",token,filters:`?id=eq.${id}`});setTariffs(p=>p.filter(t=>t.id!==id));flash("Eliminado");};
+  const chT=(id,f,v)=>{setTariffs(p=>p.map(t=>t.id===id?{...t,[f]:v}:t));};
+  const renderRow=(t)=><div key={t.id} style={{display:"flex",gap:8,alignItems:"end",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+    <div style={{flex:2}}><Inp label="Label" value={t.label} onChange={v=>chT(t.id,"label",v)} small/></div>
+    <div style={{flex:1}}><Inp label="Min" type="number" value={t.min_qty} onChange={v=>chT(t.id,"min_qty",v)} step="0.01" small/></div>
+    <div style={{flex:1}}><Inp label="Max" type="number" value={t.max_qty} onChange={v=>chT(t.id,"max_qty",v===""?null:v)} step="0.01" small/></div>
+    <div style={{flex:1}}><Inp label={t.type==="surcharge"?"% Recargo":"Tarifa"} type="number" value={t.rate} onChange={v=>chT(t.id,"rate",v)} step="0.01" small/></div>
+    <div style={{display:"flex",gap:4,paddingBottom:12}}><Btn onClick={()=>saveTariff(t)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delTariff(t.id)} small variant="danger">X</Btn></div>
+  </div>;
+  if(!selSvc)return <div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Tarifas</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div>{lo?<p style={{color:"rgba(255,255,255,0.3)"}}>Cargando...</p>:SERVICES.map(svc=>{const cnt=tariffs.filter(t=>t.service_key===svc.key&&t.type==="rate").length;return <div key={svc.key} onClick={()=>setSelSvc(svc.key)} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"16px 20px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.03)";}}><div><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{svc.label}</p>{svc.info&&<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:"2px 0 0"}}>{svc.info}</p>}</div><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:12,color:"rgba(255,255,255,0.3)"}}>{cnt} rangos</span><span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></div></div>;})}</div>;
+  const svcInfo=SERVICES.find(s=>s.key===selSvc);
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{display:"flex",alignItems:"center",gap:12}}><button onClick={()=>setSelSvc(null)} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← VOLVER</button><h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>{svcInfo?.label}</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div></div>
+    <Card title="Rangos de tarifa" actions={<Btn onClick={()=>addTariff("rate")} small>+ Agregar rango</Btn>}>{rates.length>0?rates.map(renderRow):<p style={{color:"rgba(255,255,255,0.25)"}}>Sin rangos</p>}</Card>
+    <Card title="Tarifas especiales" actions={<Btn onClick={()=>addTariff("special")} small>+ Agregar especial</Btn>}>{specials.length>0?specials.map(t=><div key={t.id} style={{display:"flex",gap:8,alignItems:"end",padding:"8px 0"}}><div style={{flex:2}}><Inp label="Label" value={t.label} onChange={v=>chT(t.id,"label",v)} small/></div><div style={{flex:1}}><Inp label="Tarifa/unidad" type="number" value={t.rate} onChange={v=>chT(t.id,"rate",v)} step="0.01" small/></div><div style={{flex:2}}><Inp label="Notas" value={t.notes} onChange={v=>chT(t.id,"notes",v)} small/></div><div style={{display:"flex",gap:4,paddingBottom:12}}><Btn onClick={()=>saveTariff(t)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delTariff(t.id)} small variant="danger">X</Btn></div></div>):<p style={{color:"rgba(255,255,255,0.25)"}}>Sin tarifas especiales</p>}</Card>
+    <Card title="Recargos por valor" actions={<Btn onClick={()=>addTariff("surcharge")} small>+ Agregar recargo</Btn>}>{surcharges.length>0?surcharges.map(renderRow):<p style={{color:"rgba(255,255,255,0.25)"}}>Sin recargos</p>}</Card>
+  </div>;
+}
+
+function Calculator({token}){
+  const [tariffs,setTariffs]=useState([]);const [svc,setSvc]=useState("aereo_b_usa");const [qty,setQty]=useState("");const [val,setVal]=useState("");const [isBattery,setIsBattery]=useState(false);const [isPhone,setIsPhone]=useState(false);const [result,setResult]=useState(null);
+  useEffect(()=>{(async()=>{const t=await dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"});setTariffs(Array.isArray(t)?t:[]);})();},[token]);
+  const svcInfo=SERVICES.find(s=>s.key===svc);const isAereo=svc.includes("aereo");const unit=svcInfo?.unit||"kg";
+  const calc=()=>{const q=Number(qty)||0;const v=Number(val)||0;const svcTariffs=tariffs.filter(t=>t.service_key===svc);const rates=svcTariffs.filter(t=>t.type==="rate");const specials=svcTariffs.filter(t=>t.type==="special");const surcharges=svcTariffs.filter(t=>t.type==="surcharge");
+    let ratePerUnit=0;let rateTier="";
+    if(isPhone&&specials.find(s=>s.label?.toLowerCase().includes("celular"))){const sp=specials.find(s=>s.label?.toLowerCase().includes("celular"));ratePerUnit=Number(sp.rate);rateTier=sp.label;}
+    else{for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(q>=min&&q<max){ratePerUnit=Number(r.rate);rateTier=r.label;break;}}}
+    let baseCost=q*ratePerUnit;let batteryExtra=0;
+    if(isBattery){const bs=specials.find(s=>s.label?.toLowerCase().includes("bater"));if(bs){batteryExtra=q*Number(bs.rate);}}
+    let surchargeAmt=0;let surchargeInfo="";
+    if(q>0&&v>0){const valuePerUnit=v/q;for(const s of surcharges.sort((a,b)=>Number(b.min_qty)-Number(a.min_qty))){if(valuePerUnit>=Number(s.min_qty)){surchargeAmt=v*(Number(s.rate)/100);surchargeInfo=`${s.rate}% (valor/${unit} = $${valuePerUnit.toFixed(0)})`;break;}}}
+    const total=baseCost+batteryExtra+surchargeAmt;
+    setResult({rateTier,ratePerUnit,baseCost,batteryExtra,surchargeAmt,surchargeInfo,total,qty:q,val:v});};
+  const rr=(l,v,bold,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:12}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:13,fontWeight:bold?700:600,color:accent?IC:bold?"#fff":"rgba(255,255,255,0.8)"}}>USD {v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
+  return <div>
+    <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 20px"}}>Calculadora de Importación</h2>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
+      <Card title="Datos del envío">
+        <Sel label="Servicio" value={svc} onChange={setSvc} options={SERVICES.map(s=>({value:s.key,label:s.label}))}/>
+        <Inp label={isAereo?"Peso facturable (kg)":"CBM"} type="number" value={qty} onChange={setQty} step="0.01" placeholder={isAereo?"Ej: 25":"Ej: 1.5"}/>
+        <Inp label="Valor mercadería (USD)" type="number" value={val} onChange={setVal} step="0.01" placeholder="Ej: 5500"/>
+        {svc==="aereo_a_china"&&<div style={{marginBottom:12}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={isBattery} onChange={e=>setIsBattery(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Productos con baterías (+$2/kg)</span></label></div>}
+        {svc==="aereo_b_usa"&&<div style={{marginBottom:12}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={isPhone} onChange={e=>setIsPhone(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Es celular ($65/kg)</span></label></div>}
+        <Btn onClick={calc}>Calcular</Btn>
+      </Card>
+      <Card title="Resultado">
+        {result?<div>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.3)",margin:"0 0 12px"}}>Tarifa aplicada: {result.rateTier} — ${result.ratePerUnit}/{unit}</p>
+          {rr(`Flete (${result.qty} ${unit} x $${result.ratePerUnit})`,result.baseCost)}
+          {result.batteryExtra>0&&rr("Recargo baterías",result.batteryExtra)}
+          {result.surchargeAmt>0&&rr(`Recargo valor ${result.surchargeInfo}`,result.surchargeAmt)}
+          {rr("TOTAL",result.total,true,true)}
+        </div>:<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"2rem 0"}}>Ingresá los datos y hacé click en Calcular</p>}
+      </Card>
+    </div>
   </div>;
 }
 
@@ -268,7 +347,7 @@ function AdminDashboard({session,onLogout}){
   const [page,setPage]=useState("operations");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);
   const token=session.token;
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
-  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]}];
+  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]}];
   return <div style={{minHeight:"100vh",display:"flex",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG}}>
     <div style={{width:220,flexShrink:0,background:"rgba(0,0,0,0.3)",borderRight:"1px solid rgba(255,255,255,0.05)",display:"flex",flexDirection:"column"}}>
       <div style={{padding:"20px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><img src={LOGO} alt="AC" style={{width:"100%",height:"auto",maxHeight:50,objectFit:"contain"}}/></div>
@@ -282,6 +361,8 @@ function AdminDashboard({session,onLogout}){
       {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}}/>}
+      {page==="tariffs"&&<TariffsManager token={token}/>}
+      {page==="calculator"&&<Calculator token={token}/>}
     </div></div>
   </div>;
 }
