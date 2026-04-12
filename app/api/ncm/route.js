@@ -52,15 +52,15 @@ export async function POST(req) {
       }
     }
 
-    // Step 3: If AI didn't work or no DB match, try text search in our database
+    // Step 3: If AI didn't work or no DB match, try text search with each word separately
     if (!results.length) {
-      const searchTerms = description.split(/\s+/).filter(w => w.length > 3).slice(0, 3).join(' & ');
-      if (searchTerms) {
-        const r3 = await fetch(`${SB_URL}/rest/v1/ncm_database?description=fts.${encodeURIComponent(searchTerms)}&select=ncm_code,description,die,te&limit=10`, {
+      const words = description.split(/\s+/).filter(w => w.length > 2);
+      for (const word of words) {
+        const r3 = await fetch(`${SB_URL}/rest/v1/ncm_database?description=ilike.*${encodeURIComponent(word)}*&select=ncm_code,description,die,te&limit=10`, {
           headers: { apikey: SB_KEY }
         });
         const d3 = await r3.json();
-        if (Array.isArray(d3) && d3.length > 0) results = d3;
+        if (Array.isArray(d3) && d3.length > 0) { results = d3; break; }
       }
     }
 
