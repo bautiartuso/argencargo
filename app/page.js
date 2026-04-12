@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
-const LOGO = `${SB_URL}/storage/v1/object/public/assets/argencargo_logo.png`;
+const LOGO = `${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
 const B = {primary:"#1B4F8A",light:"#2A6CB8",dark:"#0D3A6B",accent:"#4A90D9",bg:"#E8F0FA"};
 
 const sf = async(p,o={})=>{const r=await fetch(`${SB_URL}${p}`,{...o,headers:{apikey:SB_KEY,"Content-Type":"application/json",...(o.headers||{})}});return r.json();};
@@ -151,7 +151,7 @@ function Dashboard({profile,client,user,token,onLogout}){
     <div style={{background:`linear-gradient(135deg,${B.dark},${B.primary})`,padding:"0 24px"}}>
       <div style={{maxWidth:900,margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"center",height:60}}>
         <div style={{display:"flex",alignItems:"center",gap:16}}>
-          <img src={LOGO} alt="AC" style={{height:36,filter:"brightness(0) invert(1) drop-shadow(0 1px 2px rgba(0,0,0,0.3))",cursor:"pointer"}} onClick={()=>{setPage("home");setSelectedOp(null);}}/>
+          <img src={LOGO} alt="AC" style={{height:36,cursor:"pointer"}} onClick={()=>{setPage("home");setSelectedOp(null);}}/>
           {page!=="home"&&<button onClick={()=>{setPage("home");setSelectedOp(null);}} style={{fontSize:13,color:"rgba(255,255,255,0.6)",background:"none",border:"none",cursor:"pointer"}}>← Inicio</button>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:14}}>
