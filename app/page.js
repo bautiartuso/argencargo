@@ -68,7 +68,7 @@ function AuthPage({children}){
     <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem 1rem",position:"relative",zIndex:3}}>
       <div style={{maxWidth:420,width:"100%"}}>
         <div style={{textAlign:"center",marginBottom:28}}>
-          <img src={LOGO} alt="Argencargo" style={{width:160,height:"auto",filter:"drop-shadow(0 4px 12px rgba(0,0,0,0.3))"}}/>
+          <img src={LOGO} alt="Argencargo" style={{width:120,height:120,objectFit:"contain",borderRadius:20,background:"rgba(255,255,255,0.95)",padding:12,boxShadow:"0 0 30px rgba(74,144,217,0.25), 0 8px 24px rgba(0,0,0,0.3)"}}/>
           <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",letterSpacing:"0.04em"}}>Soluciones integrales de comercio exterior</p>
         </div>
         <div style={{background:"rgba(12,25,45,0.8)",backdropFilter:"blur(24px)",borderRadius:20,padding:"2rem 1.75rem",border:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}}>{children}</div>
@@ -151,7 +151,7 @@ function Dashboard({profile,client,user,token,onLogout}){
     <div style={{background:`linear-gradient(135deg,${B.dark},${B.primary})`,padding:"0 24px"}}>
       <div style={{maxWidth:900,margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"center",height:60}}>
         <div style={{display:"flex",alignItems:"center",gap:16}}>
-          <img src={LOGO} alt="AC" style={{height:32,cursor:"pointer"}} onClick={()=>{setPage("home");setSelectedOp(null);}}/>
+          <img src={LOGO} alt="AC" style={{height:36,objectFit:"contain",borderRadius:8,background:"rgba(255,255,255,0.9)",padding:4,cursor:"pointer"}} onClick={()=>{setPage("home");setSelectedOp(null);}}/>
           {page!=="home"&&<button onClick={()=>{setPage("home");setSelectedOp(null);}} style={{fontSize:13,color:"rgba(255,255,255,0.6)",background:"none",border:"none",cursor:"pointer"}}>← Inicio</button>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:14}}>
