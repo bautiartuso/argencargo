@@ -149,6 +149,110 @@ function RatesPage({token,client}){
     </div>;})}
   </div>;
 }
+function CalculatorPage({token,client}){
+  const [step,setStep]=useState(1);const [desc,setDesc]=useState("");const [ncm,setNcm]=useState(null);const [ncmLoading,setNcmLoading]=useState(false);const [ncmManual,setNcmManual]=useState(false);
+  const [fob,setFob]=useState("");const [qty,setQty]=useState("1");const [weightKg,setWeightKg]=useState("");const [lenCm,setLenCm]=useState("");const [widCm,setWidCm]=useState("");const [heiCm,setHeiCm]=useState("");const [hasBattery,setHasBattery]=useState(false);const [isPhone,setIsPhone]=useState(false);
+  const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [results,setResults]=useState(null);
+  useEffect(()=>{(async()=>{const [t,c]=await Promise.all([dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"})]);setTariffs(Array.isArray(t)?t:[]);const cfg={};(Array.isArray(c)?c:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);})();},[token]);
+
+  const detectNCM=async()=>{if(!desc.trim())return;setNcmLoading(true);try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:desc})});const d=await r.json();if(d.fallback||d.error){setNcmManual(true);setNcmLoading(false);return;}setNcm(d);setNcmManual(false);}catch{setNcmManual(true);}setNcmLoading(false);};
+  const setManualNCM=(f,v)=>setNcm(p=>({...p,[f]:v}));
+
+  const calculate=()=>{
+    const fobVal=Number(fob)||0;const qtyVal=Number(qty)||1;const totalFob=fobVal*qtyVal;
+    const w=Number(weightKg)||0;const l=Number(lenCm)||0;const wi=Number(widCm)||0;const h=Number(heiCm)||0;
+    const totalWeight=w*qtyVal;const volWeight=l&&wi&&h?((l*wi*h)/5000)*qtyVal:0;const billableWeight=Math.max(totalWeight,volWeight);
+    const totalCBM=l&&wi&&h?((l*wi*h)/1000000)*qtyVal:0;
+    const certFleteAereo=billableWeight*(config.cert_flete_aereo_rate||3.5);
+    const certFleteMar=totalCBM*(config.cert_flete_maritimo_rate||80);
+    const cifAereo=(totalFob+certFleteAereo)/0.99;const segAereo=cifAereo*0.01;
+    const cifMar=(totalFob+certFleteMar)/0.99;const segMar=cifMar*0.01;
+    const dr=Number(ncm?.import_duty_rate||0)/100;const te=Number(ncm?.statistics_rate||0)/100;const ivaR=Number(ncm?.iva_rate||21)/100;
+    const gastoDoc=config.gasto_documental||120;const ivaDesemb=config.iva_desembolso||25.2;
+
+    const getFleteRate=(svcKey,amount,unit)=>{const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate");for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return Number(r.rate);}return rates.length?Number(rates[rates.length-1].rate):0;};
+    const getSurcharge=(svcKey,totalVal,amount)=>{const surcharges=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty)-Number(a.min_qty));if(amount<=0)return{pct:0,amt:0,label:""};const valPerUnit=totalVal/amount;for(const s of surcharges){if(valPerUnit>=Number(s.min_qty))return{pct:Number(s.rate),amt:totalVal*(Number(s.rate)/100),label:s.label};}return{pct:0,amt:0,label:""};};
+
+    const channels=[];
+
+    // Aéreo Courier Comercial (China) — canal A
+    if(billableWeight>0){const fleteRate=getFleteRate("aereo_a_china",billableWeight,"kg");const flete=billableWeight*fleteRate;
+      const derechos=cifAereo*dr;const tasa=cifAereo*te;const baseImp=cifAereo+derechos+tasa;const iva=baseImp*ivaR;
+      const battExtra=hasBattery?billableWeight*2:0;
+      const totalImp=derechos+tasa+iva+gastoDoc+ivaDesemb;const totalSvc=flete+segAereo+battExtra;
+      channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",origin:"China",info:"7-10 días hábiles",isBlanco:true,
+        breakdown:{fob:totalFob,certFlete:certFleteAereo,seguro:segAereo,cif:cifAereo,derechos,tasa,iva,gastoDoc,ivaDesemb,flete,fleteRate,battExtra,totalImp,totalSvc,total:totalImp+totalSvc},
+        unit:`${billableWeight.toFixed(1)} kg`,total:totalImp+totalSvc});}
+
+    // Aéreo Integral AC (USA) — canal B
+    if(billableWeight>0){const fleteRate=isPhone?65:getFleteRate("aereo_b_usa",billableWeight,"kg");const flete=billableWeight*fleteRate;
+      const sur=getSurcharge("aereo_b_usa",totalFob,billableWeight);
+      channels.push({key:"aereo_b_usa",name:"Aéreo Integral AC",origin:"USA",info:"48-72 hs hábiles",isBlanco:false,
+        breakdown:{fob:totalFob,flete,fleteRate,surcharge:sur.amt,surchargeLabel:sur.label,surchargePct:sur.pct,totalSvc:flete+sur.amt,total:flete+sur.amt},
+        unit:`${billableWeight.toFixed(1)} kg`,total:flete+sur.amt});}
+
+    // Aéreo Integral AC (China) — canal B
+    if(billableWeight>0){const fleteRate=getFleteRate("aereo_b_china",billableWeight,"kg");const flete=billableWeight*fleteRate;
+      const sur=getSurcharge("aereo_b_china",totalFob,billableWeight);
+      channels.push({key:"aereo_b_china",name:"Aéreo Integral AC",origin:"China",info:"10-15 días hábiles",isBlanco:false,
+        breakdown:{fob:totalFob,flete,fleteRate,surcharge:sur.amt,surchargeLabel:sur.label,surchargePct:sur.pct,totalSvc:flete+sur.amt,total:flete+sur.amt},
+        unit:`${billableWeight.toFixed(1)} kg`,total:flete+sur.amt});}
+
+    // Marítimo Carga LCL/FCL (China) — canal A
+    if(totalCBM>0){const fleteRate=getFleteRate("maritimo_a_china",totalCBM,"cbm");const flete=totalCBM*fleteRate;
+      const derechos=cifMar*dr;const tasa=cifMar*te;const baseImp=cifMar+derechos+tasa;
+      const iva=baseImp*ivaR;const ivaAdic=baseImp*0.20;const iigg=baseImp*0.06;const iibb=baseImp*0.05;
+      const totalImp=derechos+tasa+iva+ivaAdic+iigg+iibb;const totalSvc=flete+segMar;
+      channels.push({key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",origin:"China",info:"",isBlanco:true,
+        breakdown:{fob:totalFob,certFlete:certFleteMar,seguro:segMar,cif:cifMar,derechos,tasa,iva,ivaAdic,iigg,iibb,flete,fleteRate,totalImp,totalSvc,total:totalImp+totalSvc},
+        unit:`${totalCBM.toFixed(4)} CBM`,total:totalImp+totalSvc});}
+
+    // Marítimo Integral AC — canal B
+    if(totalCBM>0){const fleteRate=getFleteRate("maritimo_b",totalCBM,"cbm");const flete=totalCBM*fleteRate;
+      const sur=getSurcharge("maritimo_b",totalFob,totalCBM);
+      channels.push({key:"maritimo_b",name:"Marítimo Integral AC",origin:"China/USA",info:"",isBlanco:false,
+        breakdown:{fob:totalFob,flete,fleteRate,surcharge:sur.amt,surchargeLabel:sur.label,surchargePct:sur.pct,totalSvc:flete+sur.amt,total:flete+sur.amt},
+        unit:`${totalCBM.toFixed(4)} CBM`,total:flete+sur.amt});}
+
+    channels.sort((a,b)=>a.total-b.total);
+    setResults(channels);setStep(3);
+  };
+
+  const usd=v=>`USD ${v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const row=(l,v,bold,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:8}:{})}}><span style={{fontSize:12,color:bold?"#fff":"rgba(255,255,255,0.45)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:12,fontWeight:bold?700:600,color:accent?IC:bold?"#fff":"rgba(255,255,255,0.7)"}}>{usd(v)}</span></div>;
+
+  return <div><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>CALCULADORA DE IMPORTACIÓN</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.35)",margin:"0 0 24px"}}>Calculá el costo total de tu importación para todos los canales disponibles</p>
+    <div style={{display:"flex",gap:8,marginBottom:20}}>{[{n:1,l:"Mercadería"},{n:2,l:"Envío"},{n:3,l:"Resultados"}].map(s=><div key={s.n} style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:28,height:28,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,background:step>=s.n?"rgba(96,165,250,0.2)":"rgba(255,255,255,0.05)",color:step>=s.n?IC:"rgba(255,255,255,0.2)",border:`1.5px solid ${step>=s.n?IC:"rgba(255,255,255,0.08)"}`}}>{s.n}</div><span style={{fontSize:12,fontWeight:600,color:step>=s.n?"#fff":"rgba(255,255,255,0.25)"}}>{s.l}</span>{s.n<3&&<span style={{color:"rgba(255,255,255,0.1)",margin:"0 4px"}}>—</span>}</div>)}</div>
+
+    {step===1&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem"}}>
+      <div style={{marginBottom:16}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>¿Qué querés importar?</label><div style={{display:"flex",gap:8}}><input value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Ej: fundas de silicona para celular, auriculares bluetooth..." style={{flex:1,padding:"12px 14px",fontSize:14,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}} onKeyDown={e=>{if(e.key==="Enter")detectNCM();}}/><button onClick={detectNCM} disabled={ncmLoading||!desc.trim()} style={{padding:"12px 20px",fontSize:13,fontWeight:600,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff",whiteSpace:"nowrap",opacity:ncmLoading?0.6:1}}>{ncmLoading?"Clasificando...":"Clasificar"}</button></div></div>
+      {ncmManual&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:14,marginBottom:16,border:"1px solid rgba(255,255,255,0.06)"}}><p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:"0 0 10px"}}>Clasificación automática no disponible. Ingresá los datos manualmente:</p><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 12px"}}><Inp label="NCM" value={ncm?.ncm_code||""} onChange={v=>setManualNCM("ncm_code",v)} placeholder="3926.90.90"/><Inp label="Derechos %" type="number" value={ncm?.import_duty_rate||""} onChange={v=>setManualNCM("import_duty_rate",v)}/><Inp label="T. Estadística %" type="number" value={ncm?.statistics_rate||""} onChange={v=>setManualNCM("statistics_rate",v)}/><Inp label="IVA %" type="number" value={ncm?.iva_rate||""} onChange={v=>setManualNCM("iva_rate",v)}/></div></div>}
+      {ncm&&ncm.ncm_code&&!ncmManual&&<div style={{background:"rgba(96,165,250,0.08)",borderRadius:10,padding:14,marginBottom:16,border:"1px solid rgba(96,165,250,0.15)"}}><div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}><span style={{fontSize:14,fontFamily:"monospace",fontWeight:700,color:IC,padding:"4px 10px",background:"rgba(96,165,250,0.15)",borderRadius:6}}>{ncm.ncm_code}</span><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>{ncm.ncm_description}</span></div><div style={{display:"flex",gap:16,marginTop:10}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Derechos: <strong style={{color:"#fff"}}>{ncm.import_duty_rate}%</strong></span><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>T. Estadística: <strong style={{color:"#fff"}}>{ncm.statistics_rate}%</strong></span><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>IVA: <strong style={{color:"#fff"}}>{ncm.iva_rate}%</strong></span></div></div>}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}><Inp label="Valor FOB por unidad (USD)" type="number" value={fob} onChange={setFob} placeholder="Ej: 3.50"/><Inp label="Cantidad de unidades" type="number" value={qty} onChange={setQty} placeholder="1"/></div>
+      <div style={{marginTop:8}}><button onClick={()=>{if(!ncm?.ncm_code&&!ncmManual){setNcmManual(true);setNcm({ncm_code:"",import_duty_rate:"",statistics_rate:"3",iva_rate:"21"});return;}setStep(2);}} disabled={!fob} style={{padding:"12px 24px",fontSize:13,fontWeight:600,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff",opacity:fob?"1":"0.4"}}>Siguiente →</button></div>
+    </div>}
+
+    {step===2&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem"}}>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 16px"}}>Ingresá las dimensiones y peso de UN bulto/caja</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 12px"}}><Inp label="Peso por unidad (kg)" type="number" value={weightKg} onChange={setWeightKg} placeholder="0.5"/><Inp label="Largo (cm)" type="number" value={lenCm} onChange={setLenCm} placeholder="30"/><Inp label="Ancho (cm)" type="number" value={widCm} onChange={setWidCm} placeholder="20"/><Inp label="Alto (cm)" type="number" value={heiCm} onChange={setHeiCm} placeholder="15"/></div>
+      {(weightKg||lenCm)&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:12,marginBottom:16,display:"flex",gap:20,flexWrap:"wrap"}}>{(()=>{const w=Number(weightKg||0)*Number(qty||1);const l=Number(lenCm||0),wi=Number(widCm||0),h=Number(heiCm||0);const vw=l&&wi&&h?((l*wi*h)/5000)*Number(qty||1):0;const cbm=l&&wi&&h?((l*wi*h)/1000000)*Number(qty||1):0;const bw=Math.max(w,vw);return <><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>PESO TOTAL</p><p style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>{w.toFixed(2)} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>PESO VOL.</p><p style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>{vw.toFixed(2)} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>FACTURABLE</p><p style={{fontSize:14,fontWeight:700,color:IC,margin:0}}>{bw.toFixed(2)} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>CBM</p><p style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>{cbm.toFixed(4)} m³</p></div></>;})()}</div>}
+      <div style={{display:"flex",gap:20,marginBottom:16}}><label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}><input type="checkbox" checked={hasBattery} onChange={e=>setHasBattery(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Producto con baterías</span></label><label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}><input type="checkbox" checked={isPhone} onChange={e=>setIsPhone(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Es celular</span></label></div>
+      <div style={{display:"flex",gap:12}}><button onClick={()=>setStep(1)} style={{padding:"12px 20px",fontSize:13,fontWeight:600,borderRadius:10,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)",border:"1.5px solid rgba(255,255,255,0.12)",cursor:"pointer"}}>← Atrás</button><button onClick={calculate} disabled={!weightKg&&!lenCm} style={{padding:"12px 24px",fontSize:13,fontWeight:600,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>Calcular costos →</button></div>
+    </div>}
+
+    {step===3&&results&&<div>
+      <button onClick={()=>{setStep(1);setResults(null);}} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:16,padding:0}}>← Nueva cotización</button>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>{results.map((ch,i)=><div key={ch.key+ch.origin} style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:i===0?`1.5px solid ${IC}`:"1px solid rgba(255,255,255,0.07)",padding:"1.25rem",position:"relative"}}>
+        {i===0&&<div style={{position:"absolute",top:-1,left:20,padding:"2px 10px",background:IC,borderRadius:"0 0 6px 6px",fontSize:10,fontWeight:700,color:"#0a1428"}}>MEJOR PRECIO</div>}
+        <div style={{marginBottom:12}}><p style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>{ch.name}</p><div style={{display:"flex",gap:8,marginTop:4}}><span style={{fontSize:11,color:"rgba(255,255,255,0.35)",padding:"2px 8px",background:"rgba(255,255,255,0.05)",borderRadius:4}}>{ch.origin}</span>{ch.info&&<span style={{fontSize:11,color:"rgba(255,255,255,0.35)",padding:"2px 8px",background:"rgba(255,255,255,0.05)",borderRadius:4}}>{ch.info}</span>}<span style={{fontSize:11,color:"rgba(255,255,255,0.35)",padding:"2px 8px",background:"rgba(255,255,255,0.05)",borderRadius:4}}>{ch.unit}</span></div></div>
+        <div style={{marginBottom:8}}>
+          {ch.isBlanco?<>{row("Flete internacional",ch.breakdown.flete)}{ch.breakdown.battExtra>0&&row("Recargo baterías",ch.breakdown.battExtra)}{row("Seguro de carga",ch.breakdown.seguro)}{row("Derechos de importación ("+ncm?.import_duty_rate+"%)",ch.breakdown.derechos)}{row("Tasa de estadística ("+ncm?.statistics_rate+"%)",ch.breakdown.tasa)}{row("IVA ("+ncm?.iva_rate+"%)",ch.breakdown.iva)}{ch.breakdown.ivaAdic!=null&&row("IVA Adicional (20%)",ch.breakdown.ivaAdic)}{ch.breakdown.iigg!=null&&row("I.I.G.G. (6%)",ch.breakdown.iigg)}{ch.breakdown.iibb!=null&&row("I.I.B.B. (5%)",ch.breakdown.iibb)}{ch.breakdown.gastoDoc!=null&&row("Gasto documental",ch.breakdown.gastoDoc)}{ch.breakdown.ivaDesemb!=null&&row("IVA desembolso",ch.breakdown.ivaDesemb)}</>:<>{row("Flete ("+ch.breakdown.fleteRate+"/un)",ch.breakdown.flete)}{ch.breakdown.surcharge>0&&row("Recargo valor ("+ch.breakdown.surchargePct+"%)",ch.breakdown.surcharge)}</>}
+        </div>
+        {row("TOTAL",ch.total,true,true)}
+      </div>)}</div>
+    </div>}
+  </div>;
+}
 function DashShell({children,page,setPage,role,client,user,onLogout}){
   const name=client?`${client.first_name} ${client.last_name}`:user?.email||"";const code=client?.client_code||"";const nav=CN;
   return <div style={{minHeight:"100vh",display:"flex",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,position:"relative",overflow:"hidden"}}><div style={{position:"absolute",inset:0,pointerEvents:"none"}}><WorldMap/></div>
@@ -170,7 +274,8 @@ function Dashboard({profile,client,user,token,onLogout}){
     {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} onBack={()=>setSelOp(null)}/>}
     {page==="profile"&&<ProfilePage client={client}/>}
     {page==="rates"&&<RatesPage token={token} client={client}/>}
-    {!["imports","profile","rates"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.3)"}}>Sección en desarrollo</p></div>}
+    {page==="calculator"&&<CalculatorPage token={token} client={client}/>}
+    {!["imports","profile","rates","calculator"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.3)"}}>Sección en desarrollo</p></div>}
   </DashShell>;
 }
 export default function Page(){

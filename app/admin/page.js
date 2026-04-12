@@ -306,25 +306,29 @@ function TariffsManager({token}){
   </div>;
 }
 
-function Calculator({token}){
-  const [tariffs,setTariffs]=useState([]);const [svc,setSvc]=useState("aereo_b_usa");const [qty,setQty]=useState("");const [val,setVal]=useState("");const [isBattery,setIsBattery]=useState(false);const [isPhone,setIsPhone]=useState(false);const [result,setResult]=useState(null);
+function Calculator({token,clients}){
+  const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [svc,setSvc]=useState("aereo_b_usa");const [qty,setQty]=useState("");const [val,setVal]=useState("");const [isBattery,setIsBattery]=useState(false);const [isPhone,setIsPhone]=useState(false);const [result,setResult]=useState(null);const [selClient,setSelClient]=useState("");
   useEffect(()=>{(async()=>{const t=await dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"});setTariffs(Array.isArray(t)?t:[]);})();},[token]);
+  useEffect(()=>{if(!selClient){setOverrides([]);return;}(async()=>{const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${selClient}&select=*`});setOverrides(Array.isArray(ov)?ov:[]);})();},[selClient,token]);
   const svcInfo=SERVICES.find(s=>s.key===svc);const isAereo=svc.includes("aereo");const unit=svcInfo?.unit||"kg";
+  const getEffRate=(t)=>{const ov=overrides.find(o=>o.tariff_id===t.id);return ov?Number(ov.custom_rate):Number(t.rate);};
   const calc=()=>{const q=Number(qty)||0;const v=Number(val)||0;const svcTariffs=tariffs.filter(t=>t.service_key===svc);const rates=svcTariffs.filter(t=>t.type==="rate");const specials=svcTariffs.filter(t=>t.type==="special");const surcharges=svcTariffs.filter(t=>t.type==="surcharge");
-    let ratePerUnit=0;let rateTier="";
-    if(isPhone&&specials.find(s=>s.label?.toLowerCase().includes("celular"))){const sp=specials.find(s=>s.label?.toLowerCase().includes("celular"));ratePerUnit=Number(sp.rate);rateTier=sp.label;}
-    else{for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(q>=min&&q<max){ratePerUnit=Number(r.rate);rateTier=r.label;break;}}}
+    let ratePerUnit=0;let rateTier="";let isCustom=false;
+    if(isPhone&&specials.find(s=>s.label?.toLowerCase().includes("celular"))){const sp=specials.find(s=>s.label?.toLowerCase().includes("celular"));ratePerUnit=getEffRate(sp);rateTier=sp.label;isCustom=!!overrides.find(o=>o.tariff_id===sp.id);}
+    else{for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(q>=min&&q<max){ratePerUnit=getEffRate(r);rateTier=r.label;isCustom=!!overrides.find(o=>o.tariff_id===r.id);break;}}}
     let baseCost=q*ratePerUnit;let batteryExtra=0;
     if(isBattery){const bs=specials.find(s=>s.label?.toLowerCase().includes("bater"));if(bs){batteryExtra=q*Number(bs.rate);}}
     let surchargeAmt=0;let surchargeInfo="";
     if(q>0&&v>0){const valuePerUnit=v/q;for(const s of surcharges.sort((a,b)=>Number(b.min_qty)-Number(a.min_qty))){if(valuePerUnit>=Number(s.min_qty)){surchargeAmt=v*(Number(s.rate)/100);surchargeInfo=`${s.rate}% (valor/${unit} = $${valuePerUnit.toFixed(0)})`;break;}}}
     const total=baseCost+batteryExtra+surchargeAmt;
-    setResult({rateTier,ratePerUnit,baseCost,batteryExtra,surchargeAmt,surchargeInfo,total,qty:q,val:v});};
+    setResult({rateTier,ratePerUnit,baseCost,batteryExtra,surchargeAmt,surchargeInfo,total,qty:q,val:v,isCustom});};
   const rr=(l,v,bold,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:12}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:13,fontWeight:bold?700:600,color:accent?IC:bold?"#fff":"rgba(255,255,255,0.8)"}}>USD {v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
   return <div>
     <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 20px"}}>Calculadora de Importación</h2>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
       <Card title="Datos del envío">
+        <Sel label="Cliente (para tarifas custom)" value={selClient} onChange={setSelClient} options={clients.map(c=>({value:c.id,label:`${c.client_code} — ${c.first_name} ${c.last_name}`}))} ph="Sin cliente (tarifa base)"/>
+        {selClient&&overrides.length>0&&<p style={{fontSize:11,color:IC,margin:"-8px 0 12px",fontWeight:600}}>Usando {overrides.length} tarifa(s) custom para este cliente</p>}
         <Sel label="Servicio" value={svc} onChange={setSvc} options={SERVICES.map(s=>({value:s.key,label:s.label}))}/>
         <Inp label={isAereo?"Peso facturable (kg)":"CBM"} type="number" value={qty} onChange={setQty} step="0.01" placeholder={isAereo?"Ej: 25":"Ej: 1.5"}/>
         <Inp label="Valor mercadería (USD)" type="number" value={val} onChange={setVal} step="0.01" placeholder="Ej: 5500"/>
@@ -334,7 +338,7 @@ function Calculator({token}){
       </Card>
       <Card title="Resultado">
         {result?<div>
-          <p style={{fontSize:12,color:"rgba(255,255,255,0.3)",margin:"0 0 12px"}}>Tarifa aplicada: {result.rateTier} — ${result.ratePerUnit}/{unit}</p>
+          <p style={{fontSize:12,color:result.isCustom?IC:"rgba(255,255,255,0.3)",margin:"0 0 12px",fontWeight:result.isCustom?600:400}}>{result.isCustom?"TARIFA CUSTOM: ":"Tarifa aplicada: "}{result.rateTier} — ${result.ratePerUnit}/{unit}</p>
           {rr(`Flete (${result.qty} ${unit} x $${result.ratePerUnit})`,result.baseCost)}
           {result.batteryExtra>0&&rr("Recargo baterías",result.batteryExtra)}
           {result.surchargeAmt>0&&rr(`Recargo valor ${result.surchargeInfo}`,result.surchargeAmt)}
@@ -364,7 +368,7 @@ function AdminDashboard({session,onLogout}){
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
-      {page==="calculator"&&<Calculator token={token}/>}
+      {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
     </div></div>
   </div>;
 }
