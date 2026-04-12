@@ -182,18 +182,18 @@ function CalculatorPage({token,client}){
 
   const calculateUSA=()=>{
     const{totWeight,totVol,totCBM,billable}=calcTotals();const channels=[];
-    // Aéreo Integral AC (USA)
-    if(billable>0){const fleteRate=hasPhones?65:getFleteRate("aereo_b_usa",billable);const flete=billable*fleteRate;const sur=getSurcharge("aereo_b_usa",totalFob,billable);
-      channels.push({key:"aereo_b_usa",name:"Aéreo Integral AC",info:"48-72 hs hábiles",flete,fleteRate,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${billable.toFixed(1)} kg`});}
-    // Marítimo Integral AC
-    if(!noDims&&totCBM>0){const fleteRate=getFleteRate("maritimo_b",totCBM);const flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
-      channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",flete,fleteRate,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totCBM.toFixed(4)} CBM`});}
-    else if(noDims){channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",noCalc:true,total:0,unit:"—"});}
+    // Aéreo Integral AC (USA) — usa peso BRUTO, no volumétrico
+    if(totWeight>0){const fleteRate=hasPhones?65:getFleteRate("aereo_b_usa",totWeight);const flete=totWeight*fleteRate;const sur=getSurcharge("aereo_b_usa",totalFob,totWeight);
+      channels.push({key:"aereo_b_usa",name:"Aéreo Integral AC",info:"48-72 hs hábiles",flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totWeight.toFixed(1)} kg`});}
+    // Marítimo Integral AC — solo si NO es celulares
+    if(!hasPhones&&!noDims&&totCBM>0){const fleteRate=getFleteRate("maritimo_b",totCBM);const flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
+      channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totCBM.toFixed(4)} CBM`});}
+    else if(!hasPhones&&noDims){channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",noCalc:true,total:0,unit:"—"});}
     setResults({channels,totWeight,totVol,totCBM,billable});setStep(3);
   };
 
-  const makeWAMsg=(ch)=>{const{totWeight,totCBM}=calcTotals();const name=client?`${client.first_name} ${client.last_name}`:"Cliente";const code=client?.client_code||"—";
-    return encodeURIComponent(`Hola Bautista!\nMi nombre es ${name}, y quiero realizar esta importación!\n\nOrigen: USA\nMercadería: ${mercType}\nDetalle: ${prodSummary}\nValor Total: USD ${totalFob.toLocaleString(undefined,{minimumFractionDigits:2})}\nPeso Total: ${totWeight.toFixed(2)} kg\nCBM Total: ${totCBM.toFixed(4)} m³\nCanal elegido: ${ch.name}\n\nCódigo cliente: ${code}`);};
+  const makeWAMsg=(ch)=>{const{totWeight,totCBM}=calcTotals();const name=client?`${client.first_name} ${client.last_name}`:"Cliente";const code=client?.client_code||"—";const flag=origin==="USA"?"\ud83c\uddfa\ud83c\uddf8":"\ud83c\udde8\ud83c\uddf3";
+    return encodeURIComponent(`Hola Bautista!\nMi nombre es *${name}*, y quiero realizar esta importación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${mercType}*\nDetalle: *${prodSummary}*\nValor Total: *USD ${totalFob.toLocaleString(undefined,{minimumFractionDigits:2})}*\nPeso Total: *${totWeight.toFixed(2)} kg*\nCBM Total: *${totCBM.toFixed(4)} m³*\nCanal elegido: *${ch.name}*\n\nCódigo cliente: *${code}*`);};
 
   const usd=v=>`USD ${v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const row=(l,v,bold,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:8}:{})}}><span style={{fontSize:12,color:bold?"#fff":"rgba(255,255,255,0.45)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:12,fontWeight:bold?700:600,color:accent?IC:bold?"#fff":"rgba(255,255,255,0.7)"}}>{usd(v)}</span></div>;
@@ -238,21 +238,23 @@ function CalculatorPage({token,client}){
 
     {/* USA FLOW - Step 3: Results */}
     {step===3&&origin==="USA"&&results&&<div>
-      <button onClick={()=>{setStep(0);setResults(null);setOrigin("");setProducts([{type:"general",description:"",unit_price:"",quantity:"1"}]);setPkgs([{qty:"1",length:"",width:"",height:"",weight:""}]);setNoDims(false);}} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:16,padding:0}}>← Nueva cotización</button>
+      <div style={{display:"flex",gap:12,marginBottom:16}}><button onClick={()=>setStep(2)} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← Volver al Packing List</button><span style={{color:"rgba(255,255,255,0.1)"}}>|</span><button onClick={()=>{setStep(0);setResults(null);setOrigin("");setProducts([{type:"general",description:"",unit_price:"",quantity:"1"}]);setPkgs([{qty:"1",length:"",width:"",height:"",weight:""}]);setNoDims(false);}} style={{fontSize:13,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>Nueva cotización</button></div>
       <div style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:14,marginBottom:20,display:"flex",gap:24,flexWrap:"wrap"}}>
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>VALOR MERCADERÍA</p><p style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>{usd(totalFob)}</p></div>
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>PESO BRUTO</p><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{results.totWeight.toFixed(2)} kg</p></div>
         {results.totCBM>0&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>CBM</p><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{results.totCBM.toFixed(4)} m³</p></div>}
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>FACTURABLE</p><p style={{fontSize:15,fontWeight:700,color:IC,margin:0}}>{results.billable.toFixed(2)} kg</p></div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>{results.channels.map(ch=><div key={ch.key} style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem",display:"flex",flexDirection:"column"}}>
-        <div style={{marginBottom:14}}><p style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{ch.name}</p>{ch.info&&<span style={{fontSize:11,color:"rgba(255,255,255,0.35)",padding:"3px 10px",background:"rgba(255,255,255,0.05)",borderRadius:4}}>{ch.info}</span>}</div>
+      <div style={{display:"grid",gridTemplateColumns:results.channels.length>1?"1fr 1fr":"1fr",gap:20}}>{results.channels.map(ch=><div key={ch.key} style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem",display:"flex",flexDirection:"column"}}>
+        <div style={{marginBottom:14}}><p style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{ch.name}</p>
+          {ch.key==="aereo_b_usa"&&<div style={{marginTop:8,padding:"10px 16px",background:"linear-gradient(135deg,rgba(96,165,250,0.15),rgba(74,144,217,0.1))",border:"1px solid rgba(96,165,250,0.25)",borderRadius:10}}><p style={{fontSize:18,fontWeight:700,color:IC,margin:0,textAlign:"center"}}>Entrega en 48-72 hs hábiles</p></div>}
+        </div>
         {ch.noCalc?<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"1.5rem 0"}}><p style={{fontSize:13,color:"rgba(255,255,255,0.3)",textAlign:"center"}}>No se puede calcular sin las medidas de las cajas</p></div>:<div style={{flex:1}}>
-          {row(`Flete ($${ch.fleteRate}/${ch.key.includes("maritimo")?"CBM":"kg"})`,ch.flete)}
+          {row("Servicio Integral ARGENCARGO",ch.flete)}
           {ch.surcharge>0&&row(`Recargo valor (${ch.surchargePct}%)`,ch.surcharge)}
           {row("TOTAL",ch.total,true,true)}
         </div>}
-        <a href={`https://wa.me/5491125088580?text=${makeWAMsg(ch)}`} target="_blank" rel="noopener noreferrer" style={{display:"block",width:"100%",padding:"12px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:ch.noCalc?"not-allowed":"pointer",background:ch.noCalc?"rgba(255,255,255,0.04)":`linear-gradient(135deg,#25D366,#128C7E)`,color:ch.noCalc?"rgba(255,255,255,0.2)":"#fff",textAlign:"center",textDecoration:"none",marginTop:16,boxSizing:"border-box",pointerEvents:ch.noCalc?"none":"auto"}}>Avanzar con esta importación →</a>
+        <a href={`https://wa.me/5491125088580?text=${makeWAMsg(ch)}`} target="_blank" rel="noopener noreferrer" style={{display:"block",width:"100%",padding:"14px",fontSize:14,fontWeight:700,borderRadius:10,border:"none",cursor:ch.noCalc?"not-allowed":"pointer",background:ch.noCalc?"rgba(255,255,255,0.04)":`linear-gradient(135deg,#25D366,#128C7E)`,color:ch.noCalc?"rgba(255,255,255,0.2)":"#fff",textAlign:"center",textDecoration:"none",marginTop:16,boxSizing:"border-box",pointerEvents:ch.noCalc?"none":"auto"}}>Avanzar con esta importación →</a>
       </div>)}</div>
     </div>}
 
