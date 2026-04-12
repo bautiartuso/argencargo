@@ -39,9 +39,9 @@ function OperationsList({token,onSelect,onNew}){
   const [ops,setOps]=useState([]);const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fStatuses,setFStatuses]=useState([]);const [fChannel,setFChannel]=useState("");const [sortCol,setSortCol]=useState("created_at");const [sortDir,setSortDir]=useState("desc");const [showStatusDrop,setShowStatusDrop]=useState(false);
   useEffect(()=>{(async()=>{const o=await dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"});setOps(Array.isArray(o)?o:[]);setLo(false);})();},[token]);
   const toggleStatus=(s)=>setFStatuses(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
-  const getOrigin=(ch)=>{if(ch?.includes("maritimo"))return"China";if(ch==="aereo_blanco")return"China";if(ch==="aereo_negro")return"USA/China";return"—";};
+  const getOrigin=(op)=>op.origin||"China";
   const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannel&&o.channel!==fChannel)return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
-  const sorted=[...filtered].sort((a,b)=>{let va=a[sortCol],vb=b[sortCol];if(sortCol==="client"){va=a.clients?`${a.clients.first_name} ${a.clients.last_name}`:"";vb=b.clients?`${b.clients.first_name} ${b.clients.last_name}`:"";}if(sortCol==="origin"){va=getOrigin(a.channel);vb=getOrigin(b.channel);}if(va==null)va="";if(vb==null)vb="";if(typeof va==="string")va=va.toLowerCase();if(typeof vb==="string")vb=vb.toLowerCase();if(va<vb)return sortDir==="asc"?-1:1;if(va>vb)return sortDir==="asc"?1:-1;return 0;});
+  const sorted=[...filtered].sort((a,b)=>{let va=a[sortCol],vb=b[sortCol];if(sortCol==="client"){va=a.clients?`${a.clients.first_name} ${a.clients.last_name}`:"";vb=b.clients?`${b.clients.first_name} ${b.clients.last_name}`:"";}if(sortCol==="origin"){va=getOrigin(a);vb=getOrigin(b);}if(va==null)va="";if(vb==null)vb="";if(typeof va==="string")va=va.toLowerCase();if(typeof vb==="string")vb=vb.toLowerCase();if(va<vb)return sortDir==="asc"?-1:1;if(va>vb)return sortDir==="asc"?1:-1;return 0;});
   const toggleSort=(col)=>{if(sortCol===col){setSortDir(d=>d==="asc"?"desc":"asc");}else{setSortCol(col);setSortDir("asc");}};
   const SH=({label,col})=><th onClick={()=>toggleSort(col)} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:sortCol===col?IC:"rgba(255,255,255,0.3)",textTransform:"uppercase",cursor:"pointer",userSelect:"none"}}>{label} {sortCol===col?(sortDir==="asc"?"▲":"▼"):""}</th>;
   return <div>
@@ -63,7 +63,7 @@ function OperationsList({token,onSelect,onNew}){
           <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{op.operation_code}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.7)"}}>{cn}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{op.description||"—"}</td>
-          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{getOrigin(op.channel)}</td>
+          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{getOrigin(op)}</td>
           <td style={{padding:"12px 14px"}}><span style={{fontSize:11,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{CM[op.channel]||op.channel}</span></td>
           <td style={{padding:"12px 14px"}}><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>● {st.l}</span></td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)"}}>{formatDate(op.eta)}</td>
@@ -76,11 +76,11 @@ function OperationsList({token,onSelect,onNew}){
 }
 
 function NewOperation({token,clients,onBack,onCreated}){
-  const [form,setForm]=useState({client_id:"",channel:"aereo_blanco",description:"",eta:""});const [lo,setLo]=useState(false);const [err,setErr]=useState("");
+  const [form,setForm]=useState({client_id:"",channel:"aereo_blanco",origin:"China",description:"",eta:""});const [lo,setLo]=useState(false);const [err,setErr]=useState("");
   const ch=f=>v=>setForm(p=>({...p,[f]:v}));
   const create=async()=>{if(!form.client_id||!form.description){setErr("Cliente y descripción son requeridos");return;}setLo(true);setErr("");
     const existing=await dq("operations",{token,filters:"?select=operation_code&order=operation_code.desc&limit=1"});const last=Array.isArray(existing)&&existing[0]?parseInt(existing[0].operation_code.replace("AC-",""))||0:0;const code=`AC-${String(last+1).padStart(4,"0")}`;
-    const r=await dq("operations",{method:"POST",token,body:{operation_code:code,client_id:form.client_id,channel:form.channel,description:form.description,eta:form.eta||null,status:"pendiente",created_by:null}});
+    const r=await dq("operations",{method:"POST",token,body:{operation_code:code,client_id:form.client_id,channel:form.channel,origin:form.origin,description:form.description,eta:form.eta||null,status:"pendiente",created_by:null}});
     if(r.error||r.message){setErr(r.error||r.message);setLo(false);return;}setLo(false);onCreated(Array.isArray(r)?r[0]:r);};
   return <div>
     <button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:20,padding:0}}>← VOLVER</button>
@@ -88,6 +88,7 @@ function NewOperation({token,clients,onBack,onCreated}){
     <Card>
       <Sel label="Cliente" value={form.client_id} onChange={ch("client_id")} options={clients.map(c=>({value:c.id,label:`${c.client_code} — ${c.first_name} ${c.last_name}`}))} ph="Seleccionar cliente"/>
       <Sel label="Canal" value={form.channel} onChange={ch("channel")} options={CHANNELS.map(c=>({value:c,label:CM[c]}))}/>
+      <Sel label="Origen" value={form.origin} onChange={ch("origin")} options={[{value:"China",label:"China"},{value:"USA",label:"USA"}]}/>
       <Inp label="Descripción" value={form.description} onChange={ch("description")} placeholder="Ej: Fundas de silicona para iPhone"/>
       <Inp label="ETA" type="date" value={form.eta} onChange={ch("eta")}/>
       {err&&<p style={{fontSize:12,color:"#ff6b6b",margin:"0 0 12px"}}>{err}</p>}
@@ -138,6 +139,7 @@ function OperationEditor({op:initOp,token,onBack}){
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
         <Sel label="Estado" value={op.status} onChange={chOp("status")} options={STATUSES.map(s=>({value:s,label:SM[s].l}))}/>
         <Sel label="Canal" value={op.channel} onChange={chOp("channel")} options={CHANNELS.map(c=>({value:c,label:CM[c]}))}/>
+        <Sel label="Origen" value={op.origin} onChange={chOp("origin")} options={[{value:"China",label:"China"},{value:"USA",label:"USA"}]}/>
         <Inp label="Descripción" value={op.description} onChange={chOp("description")}/>
         <Inp label="ETA" type="date" value={formatDateInput(op.eta)} onChange={chOp("eta")}/>
         <Inp label="Tracking Internacional" value={op.international_tracking} onChange={chOp("international_tracking")}/>
