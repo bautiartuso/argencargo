@@ -96,8 +96,8 @@ function NewOperation({token,clients,onBack,onCreated}){
 }
 
 function OperationEditor({op:initOp,token,onBack,onDelete}){
-  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");
-  const load=async()=>{setLo(true);const [it,pk,ev,tf]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);setLo(false);};
+  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");
+  const load=async()=>{setLo(true);const [it,pk,ev,tf,cc]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);setLo(false);};
   useEffect(()=>{load();},[op.id]);
   const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const deleteOp=async()=>{if(!confirm(`¿Eliminar operación ${op.operation_code}? Se borrarán también sus productos, bultos y eventos.`))return;
@@ -138,9 +138,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {lo?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:<>
 
     {tab==="general"&&<>
-      <Card title="Estado" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
+      <Card title="Estado" actions={<Btn onClick={()=>{if(!op.description){const autoDesc=items.map(it=>it.description).filter(Boolean).join(", ");if(autoDesc)chOp("description")(autoDesc);}saveOp();}} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
         <Sel label="Estado de la carga" value={op.status} onChange={chOp("status")} options={STATUSES.map(s=>({value:s,label:SM[s].l}))}/>
-        <Inp label="Descripción" value={op.description} onChange={chOp("description")}/>
+        <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
         <Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>
       </Card>
       <Card title="Resumen">
@@ -156,20 +156,48 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </Card>
     </>}
 
-    {tab==="budget"&&(()=>{const totalFob=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);const totalTax=items.reduce((s,it)=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);if(!isBlanco)return s;let t=0;if(it.import_duty_rate!=null)t+=fob*(Number(it.import_duty_rate)/100);if(it.statistics_rate!=null)t+=fob*(Number(it.statistics_rate)/100);if(it.iva_rate!=null)t+=fob*(Number(it.iva_rate)/100);if(it.documentary_expense!=null)t+=Number(it.documentary_expense);if(it.iva_additional_rate!=null)t+=fob*(Number(it.iva_additional_rate)/100);if(it.iigg_rate!=null)t+=fob*(Number(it.iigg_rate)/100);if(it.iibb_rate!=null)t+=fob*(Number(it.iibb_rate)/100);return s+t;},0);
-      let pf=0;pkgs.forEach(p=>{const gw=Number(p.gross_weight_kg||0);const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);pf+=Math.max(gw,l&&w&&h?(l*w*h)/5000:0);});
-      const fleteRate=tariffs?.length?((r)=>{const rates=tariffs.filter(t=>t.service_key===(op.channel==="aereo_blanco"?"aereo_a_china":"maritimo_a_china")&&t.type==="rate");for(const rt of rates){const min=Number(rt.min_qty||0),max=rt.max_qty!=null?Number(rt.max_qty):Infinity;if(pf>=min&&pf<max)return Number(rt.rate);}return rates.length?Number(rates[rates.length-1].rate):0;})():0;
-      const flete=op.channel?.includes("aereo")?pf*fleteRate:pkgs.reduce((s,p)=>{const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);return s+(l&&w&&h?(l*w*h)/1000000:0);},0)*fleteRate;
-      const totalSvc=Number(op.total_services||0);const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
-      return <Card title="Presupuesto (auto-calculado)" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
-        <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0"}}><span style={{color:"rgba(255,255,255,0.5)"}}>Total Impuestos</span><span style={{fontWeight:600,color:"#fff"}}>USD {totalTax.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
-        <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0"}}><span style={{color:"rgba(255,255,255,0.5)"}}>Flete estimado</span><span style={{fontWeight:600,color:"#fff"}}>USD {flete.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px",marginTop:12}}>
-          <Inp label="Total Servicios (USD)" type="number" value={op.total_services} onChange={chOp("total_services")} step="0.01"/>
-          <Inp label="Costo Envío a Domicilio (USD)" type="number" value={op.shipping_cost} onChange={chOp("shipping_cost")} step="0.01"/>
+    {tab==="budget"&&(()=>{
+      const totalFob=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
+      // Peso facturable (per-bulto max)
+      let pf=0,totCBM=0,totGW=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});
+      // Flete
+      const svcKey=op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="aereo_negro"?"aereo_b_china":op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b";
+      const fleteAmt=op.channel?.includes("aereo")?pf:totCBM;
+      const getRate=(sk,amt)=>{const rates=tariffs.filter(t=>t.service_key===sk);for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amt>=min&&amt<max)return Number(r.rate);}return rates.length?Number(rates[rates.length-1].rate):0;};
+      const fleteRate=getRate(svcKey,fleteAmt);const flete=fleteAmt*fleteRate;
+      // CIF (ficticio para presupuesto cliente)
+      const certFlRate=op.channel?.includes("aereo")?(config.cert_flete_aereo_ficticio||3.5):(config.cert_flete_maritimo_ficticio||100);
+      const certFlAmt=op.channel?.includes("aereo")?pf*certFlRate:totCBM*certFlRate;
+      const seguro=(totalFob+certFlAmt)*0.01;const cif=totalFob+certFlAmt+seguro;
+      // Impuestos per-item sobre CIF proporcional
+      const getDesembolso=(c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;};
+      let totalTax=0;
+      if(isBlanco){items.forEach(it=>{const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const pct=totalFob>0?itemFob/totalFob:1;
+        const iCert=certFlAmt*pct;const iSeg=(itemFob+iCert)*0.01;const iCif=itemFob+iCert+iSeg;
+        const dr=Number(it.import_duty_rate||0)/100;const te=Number(it.statistics_rate||0)/100;const ivaR=Number(it.iva_rate||21)/100;
+        const die=iCif*dr;const tasa=iCif*te;const bi=iCif+die+tasa;const iva=bi*ivaR;
+        let t=die+tasa+iva;
+        if(isMaritimo){t+=bi*0.20+bi*0.06+bi*0.05;}
+        else{const desemb=getDesembolso(cif)*pct;t+=desemb+desemb*0.21;}
+        totalTax+=t;});}
+      const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
+      const totalAbonar=isBlanco?(totalTax+flete+seguro+shipCost):(flete+shipCost);
+      const rw=(l,v)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>USD {v.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>;
+      return <Card title="Presupuesto (auto-calculado)">
+        {isBlanco?<>
+          {rw("Total Impuestos",totalTax)}
+          {rw("Flete internacional",flete)}
+          {rw("Seguro de carga",seguro)}
+        </>:<>
+          {rw("Servicio Integral ARGENCARGO",flete)}
+        </>}
+        {shipCost>0&&rw("Envío a domicilio",shipCost)}
+        <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}><span style={{fontSize:16,fontWeight:700,color:"#fff"}}>TOTAL A ABONAR</span><span style={{fontSize:20,fontWeight:700,color:IC}}>USD {totalAbonar.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px",marginTop:12,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
+          <Inp label="Envío a Domicilio (USD)" type="number" value={op.shipping_cost} onChange={chOp("shipping_cost")} step="0.01"/>
+          <div style={{paddingTop:22}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.shipping_to_door||false} onChange={e=>chOp("shipping_to_door")(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Envío a domicilio</span></label></div>
         </div>
-        <div style={{marginBottom:12}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.shipping_to_door||false} onChange={e=>chOp("shipping_to_door")(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Envío a domicilio</span></label></div>
-        <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",borderTop:"1px solid rgba(255,255,255,0.08)"}}><span style={{fontWeight:700,color:"#fff"}}>TOTAL A ABONAR</span><span style={{fontSize:18,fontWeight:700,color:IC}}>USD {(totalTax+totalSvc+shipCost).toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+        <Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar envío"}</Btn>
       </Card>;})()}
 
     {tab==="items"&&<Card title="Productos" actions={<Btn onClick={addItem} small>+ Agregar producto</Btn>}>
