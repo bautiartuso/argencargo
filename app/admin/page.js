@@ -677,6 +677,99 @@ function AdminSettings({token,session}){
   </div>;
 }
 
+function FinanceDashboard({token}){
+  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("all");
+  useEffect(()=>{(async()=>{const [o,c,q]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setLo(false);})();},[token]);
+
+  const now=new Date();const thisMonth=now.getMonth();const thisYear=now.getFullYear();
+  const filterByPeriod=(items,dateField)=>{if(period==="all")return items;return items.filter(i=>{const d=new Date(i[dateField]);if(period==="month")return d.getMonth()===thisMonth&&d.getFullYear()===thisYear;if(period==="year")return d.getFullYear()===thisYear;return true;});};
+
+  const closedOps=ops.filter(o=>o.status==="operacion_cerrada"||o.status==="entregada");
+  const activeOps=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="entregada"&&o.status!=="cancelada");
+  const periodOps=filterByPeriod(closedOps,"closed_at");
+  const periodAll=filterByPeriod(ops,"created_at");
+
+  const calcGan=(o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);return{ing,cost,gan:ing-cost};};
+
+  const totalIng=periodOps.reduce((s,o)=>s+calcGan(o).ing,0);
+  const totalCost=periodOps.reduce((s,o)=>s+calcGan(o).cost,0);
+  const totalGan=totalIng-totalCost;
+  const margen=totalIng>0?((totalGan/totalIng)*100):0;
+
+  // By channel
+  const byChannel={};periodOps.forEach(o=>{const ch=o.channel||"unknown";if(!byChannel[ch])byChannel[ch]={count:0,ing:0,cost:0};byChannel[ch].count++;const g=calcGan(o);byChannel[ch].ing+=g.ing;byChannel[ch].cost+=g.cost;});
+
+  // By origin
+  const byOrigin={};periodOps.forEach(o=>{const or=o.origin||"China";if(!byOrigin[or])byOrigin[or]={count:0,ing:0};byOrigin[or].count++;byOrigin[or].ing+=calcGan(o).ing;});
+
+  // Top clients
+  const byClient={};periodOps.forEach(o=>{const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—";if(!byClient[cn])byClient[cn]={count:0,ing:0,gan:0};byClient[cn].count++;const g=calcGan(o);byClient[cn].ing+=g.ing;byClient[cn].gan+=g.gan;});
+  const topClients=Object.entries(byClient).sort((a,b)=>b[1].ing-a[1].ing).slice(0,5);
+
+  // New clients this month
+  const newClients=clients.filter(c=>{const d=new Date(c.created_at);return d.getMonth()===thisMonth&&d.getFullYear()===thisYear;}).length;
+  const pendingQuotes=quotes.filter(q=>q.status==="pending").length;
+
+  const usd=v=>`USD ${v.toLocaleString(undefined,{minimumFractionDigits:2})}`;
+  const stat=(l,v,color,big)=><div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px",textTransform:"uppercase"}}>{l}</p><p style={{fontSize:big?28:20,fontWeight:700,color:color||"#fff",margin:0}}>{v}</p></div>;
+
+  if(lo)return <p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+      <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Dashboard Financiero</h2>
+      <div style={{display:"flex",gap:8}}>{[{k:"month",l:"Este mes"},{k:"year",l:"Este año"},{k:"all",l:"Todo"}].map(p=><button key={p.k} onClick={()=>setPeriod(p.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:period===p.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:period===p.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:period===p.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{p.l}</button>)}</div>
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:24}}>
+      {stat("Ingresos totales",usd(totalIng),"#fff",true)}
+      {stat("Costos totales",usd(totalCost),"#ff6b6b")}
+      {stat("Ganancia neta",usd(totalGan),totalGan>0?"#22c55e":"#ff6b6b",true)}
+      {stat("Margen",`${margen.toFixed(1)}%`,margen>20?"#22c55e":"#fb923c")}
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:24}}>
+      {stat("Operaciones activas",activeOps.length,IC)}
+      {stat("Operaciones cerradas",closedOps.length,"#22c55e")}
+      {stat("Clientes nuevos (mes)",newClients,"#a78bfa")}
+      {stat("Cotizaciones pendientes",pendingQuotes,"#fbbf24")}
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
+      <Card title="Ganancia por canal">
+        {Object.entries(byChannel).map(([ch,d])=>{const gan=d.ing-d.cost;return <div key={ch} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <div><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{CM[ch]||ch}</span><span style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginLeft:8}}>({d.count} ops)</span></div>
+          <div style={{textAlign:"right"}}><span style={{fontSize:13,fontWeight:700,color:gan>0?"#22c55e":"#ff6b6b"}}>{usd(gan)}</span></div>
+        </div>;})}
+        {Object.keys(byChannel).length===0&&<p style={{color:"rgba(255,255,255,0.25)"}}>Sin datos</p>}
+      </Card>
+      <Card title="Por origen">
+        {Object.entries(byOrigin).map(([or,d])=><div key={or} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{or==="China"?"🇨🇳":"🇺🇸"} {or} ({d.count} ops)</span>
+          <span style={{fontSize:13,fontWeight:600,color:IC}}>{usd(d.ing)}</span>
+        </div>)}
+        {Object.keys(byOrigin).length===0&&<p style={{color:"rgba(255,255,255,0.25)"}}>Sin datos</p>}
+      </Card>
+    </div>
+
+    <Card title="Top clientes">
+      {topClients.length>0?<table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+          <th style={{padding:"8px 0",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)"}}>CLIENTE</th>
+          <th style={{padding:"8px 0",textAlign:"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)"}}>OPS</th>
+          <th style={{padding:"8px 0",textAlign:"right",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)"}}>INGRESOS</th>
+          <th style={{padding:"8px 0",textAlign:"right",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)"}}>GANANCIA</th>
+        </tr></thead>
+        <tbody>{topClients.map(([name,d],i)=><tr key={name} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <td style={{padding:"8px 0",color:"#fff",fontWeight:500}}>{i+1}. {name}</td>
+          <td style={{padding:"8px 0",textAlign:"center",color:"rgba(255,255,255,0.5)"}}>{d.count}</td>
+          <td style={{padding:"8px 0",textAlign:"right",color:"#fff"}}>{usd(d.ing)}</td>
+          <td style={{padding:"8px 0",textAlign:"right",fontWeight:700,color:d.gan>0?"#22c55e":"#ff6b6b"}}>{usd(d.gan)}</td>
+        </tr>)}</tbody>
+      </table>:<p style={{color:"rgba(255,255,255,0.25)"}}>Sin datos</p>}
+    </Card>
+  </div>;
+}
+
 function QuotesList({token}){
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");
   useEffect(()=>{(async()=>{const q=await dq("quotes",{token,filters:"?select=*&order=created_at.desc"});setQuotes(Array.isArray(q)?q:[]);setLo(false);})();},[token]);
@@ -714,7 +807,7 @@ function AdminDashboard({session,onLogout}){
   const [page,setPage]=useState("operations");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);
   const token=session.token;
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
-  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
+  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
   return <div style={{minHeight:"100vh",display:"flex",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG}}>
     <div style={{width:220,flexShrink:0,background:"rgba(0,0,0,0.3)",borderRight:"1px solid rgba(255,255,255,0.05)",display:"flex",flexDirection:"column"}}>
       <div style={{padding:"20px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><img src={LOGO} alt="AC" style={{width:"100%",height:"auto",maxHeight:50,objectFit:"contain"}}/></div>
@@ -728,6 +821,7 @@ function AdminDashboard({session,onLogout}){
       {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
+      {page==="dashboard"&&<FinanceDashboard token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
       {page==="quotes"&&<QuotesList token={token}/>}
