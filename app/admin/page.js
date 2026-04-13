@@ -53,25 +53,32 @@ function OperationsList({token,onSelect,onNew}){
       </div>
       <select value={fChannel} onChange={e=>setFChannel(e.target.value)} style={{padding:"10px 14px",fontSize:12,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}><option value="" style={{background:"#0a1428"}}>Todos los canales</option>{CHANNELS.map(c=><option key={c} value={c} style={{background:"#0a1428"}}>{CM[c]}</option>)}</select>
     </div>
-    {lo?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:
-    <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+    {lo?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:(()=>{
+    const active=sorted.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="entregada"&&o.status!=="cancelada");
+    const closed=sorted.filter(o=>o.status==="operacion_cerrada"||o.status==="entregada"||o.status==="cancelada");
+    const totalGanancia=closed.reduce((s,o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);return s+(ing-cost);},0);
+    const renderTable=(rows,showGanancia)=><div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-          <SH label="Código" col="operation_code"/><SH label="Cliente" col="client"/><SH label="Descripción" col="description"/><SH label="Origen" col="origin"/><SH label="Canal" col="channel"/><SH label="Estado" col="status"/><SH label="ETA" col="eta"/><th style={{padding:"12px 14px"}}></th>
+          <SH label="Código" col="operation_code"/><SH label="Cliente" col="client"/><SH label="Descripción" col="description"/><SH label="Canal" col="channel"/><SH label="Estado" col="status"/><SH label="ETA" col="eta"/>{showGanancia&&<th style={{padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Ganancia</th>}<th style={{padding:"12px 14px"}}></th>
         </tr></thead>
-        <tbody>{sorted.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>onSelect(op)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+        <tbody>{rows.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const ing=Number(op.budget_total||0);const cost=Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0);const gan=ing-cost;
+        return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>onSelect(op)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
           <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{op.operation_code}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.7)"}}>{cn}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{op.description||"—"}</td>
-          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{getOrigin(op)}</td>
           <td style={{padding:"12px 14px"}}><span style={{fontSize:11,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{CM[op.channel]||op.channel}</span></td>
           <td style={{padding:"12px 14px"}}><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>● {st.l}</span></td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)"}}>{formatDate(op.eta)}</td>
+          {showGanancia&&<td style={{padding:"12px 14px",fontWeight:700,color:gan>0?"#22c55e":cost>0?"#ff6b6b":"rgba(255,255,255,0.2)"}}>{cost>0?`USD ${gan.toLocaleString(undefined,{minimumFractionDigits:2})}`:"—"}</td>}
           <td style={{padding:"12px 14px"}}><span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></td>
         </tr>})}</tbody>
       </table>
-      {sorted.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:"2rem 0"}}>No se encontraron operaciones</p>}
-    </div>}
+      {rows.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:"2rem 0"}}>No hay operaciones</p>}
+    </div>;
+    return <>{active.length>0&&<><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 12px"}}>Operaciones activas ({active.length})</h3>{renderTable(active,false)}</>}
+    {closed.length>0&&<><h3 style={{fontSize:14,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"24px 0 12px"}}>Operaciones cerradas ({closed.length}) {totalGanancia!==0&&<span style={{fontSize:13,fontWeight:600,color:totalGanancia>0?"#22c55e":"#ff6b6b",marginLeft:12}}>Ganancia total: USD {totalGanancia.toLocaleString(undefined,{minimumFractionDigits:2})}</span>}</h3>{renderTable(closed,true)}</>}
+    {active.length===0&&closed.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:"2rem 0"}}>No se encontraron operaciones</p>}</>;})()}
   </div>;
 }
 
@@ -79,7 +86,7 @@ function NewOperation({token,clients,onBack,onCreated}){
   const [form,setForm]=useState({client_id:"",channel:"aereo_blanco",origin:"China"});const [lo,setLo]=useState(false);const [err,setErr]=useState("");
   const ch=f=>v=>setForm(p=>({...p,[f]:v}));
   const create=async()=>{if(!form.client_id){setErr("Seleccioná un cliente");return;}setLo(true);setErr("");
-    const existing=await dq("operations",{token,filters:"?select=operation_code&order=operation_code.desc&limit=1"});const last=Array.isArray(existing)&&existing[0]?parseInt(existing[0].operation_code.replace("AC-",""))||0:0;const code=`AC-${String(last+1).padStart(4,"0")}`;
+    const existing=await dq("operations",{token,filters:"?select=operation_code&order=operation_code.asc"});const used=new Set((Array.isArray(existing)?existing:[]).map(e=>parseInt(e.operation_code.replace("AC-",""))));let num=1;while(used.has(num))num++;const code=`AC-${String(num).padStart(4,"0")}`;
     const r=await dq("operations",{method:"POST",token,body:{operation_code:code,client_id:form.client_id,channel:form.channel,origin:form.origin,status:"pendiente",created_by:null}});
     if(r?.error||r?.message){setErr(r.error||r.message);setLo(false);return;}setLo(false);onCreated(Array.isArray(r)?r[0]:r);};
   return <div>
