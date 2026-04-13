@@ -259,7 +259,7 @@ function ClientsList({token,onSelect}){
   </div>;
 }
 
-function ClientDetail({client:initClient,token,onBack,onSelectOp}){
+function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   const [cl,setCl]=useState(initClient);const [ops,setOps]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("info");const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [msg,setMsg]=useState("");const [saving,setSaving]=useState(false);
   useEffect(()=>{(async()=>{const [o,t,ov]=await Promise.all([dq("operations",{token,filters:`?client_id=eq.${cl.id}&select=*&order=created_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=service_key.asc,sort_order.asc"}),dq("client_tariff_overrides",{token,filters:`?client_id=eq.${cl.id}&select=*`})]);setOps(Array.isArray(o)?o:[]);setTariffs(Array.isArray(t)?t:[]);setOverrides(Array.isArray(ov)?ov:[]);setLo(false);})();},[cl.id,token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
@@ -267,9 +267,10 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp}){
   const setOverrideRate=async(tid,rate)=>{const existing=getOverride(tid);if(rate===""||rate==null){if(existing){await dq("client_tariff_overrides",{method:"DELETE",token,filters:`?id=eq.${existing.id}`});setOverrides(p=>p.filter(o=>o.id!==existing.id));flash("Tarifa custom eliminada");}return;}if(existing){await dq("client_tariff_overrides",{method:"PATCH",token,filters:`?id=eq.${existing.id}`,body:{custom_rate:Number(rate)}});setOverrides(p=>p.map(o=>o.id===existing.id?{...o,custom_rate:Number(rate)}:o));} else{const r=await dq("client_tariff_overrides",{method:"POST",token,body:{client_id:cl.id,tariff_id:tid,custom_rate:Number(rate)}});if(Array.isArray(r))setOverrides(p=>[...p,...r]);else if(r?.id)setOverrides(p=>[...p,r]);}flash("Tarifa custom guardada");};
   const chCl=f=>v=>setCl(p=>({...p,[f]:v}));
   const saveClient=async()=>{setSaving(true);const{id,created_at,updated_at,auth_user_id,...rest}=cl;await dq("clients",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Cliente guardado");setSaving(false);};
+  const deleteClient=async()=>{if(!confirm(`¿Estás seguro de eliminar a ${cl.first_name} ${cl.last_name}? Esta acción no se puede deshacer.`))return;await dq("clients",{method:"DELETE",token,filters:`?id=eq.${cl.id}`});onDelete();};
   const tabs=[{k:"info",l:"Info"},{k:"ops",l:`Operaciones (${ops.length})`},{k:"tariffs",l:"Tarifas"}];
   return <div>
-    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}><button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← VOLVER</button><h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>{cl.first_name} {cl.last_name}</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}><div style={{display:"flex",alignItems:"center",gap:12}}><button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← VOLVER</button><h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>{cl.first_name} {cl.last_name}</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div><Btn onClick={deleteClient} variant="danger" small>Eliminar cliente</Btn></div>
     <div style={{display:"flex",gap:8,marginBottom:16}}>{tabs.map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
     {tab==="info"&&<Card title="Datos del Cliente" actions={<Btn onClick={saveClient} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
@@ -617,7 +618,7 @@ function AdminDashboard({session,onLogout}){
       {page==="operations"&&selOp&&<OperationEditor op={selOp} token={token} onBack={()=>setSelOp(null)}/>}
       {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
-      {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}}/>}
+      {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
       {page==="quotes"&&<QuotesList token={token}/>}
