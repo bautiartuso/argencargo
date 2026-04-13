@@ -62,7 +62,7 @@ async function classifyWithOpenAI(description, apiKey) {
     method: "POST",
     headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       max_tokens: 50,
       messages: [{ role: "user", content: `Sos un despachante de aduana argentino. Clasificá esta mercadería en el NCM argentino (8 dígitos formato XXXX.XX.XX). Respondé SOLO el código NCM.\n\nMercadería: ${description}` }]
     })
