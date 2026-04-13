@@ -245,7 +245,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
       </div>)}
       {events.length===0&&<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"1rem 0"}}>No hay eventos de seguimiento.</p>}
-    </Card>}
+    </Card>
     </>}
     </>}
   </div>;
