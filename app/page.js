@@ -157,8 +157,8 @@ function CalculatorPage({token,client}){
   const [hasBattery,setHasBattery]=useState(false);const [expandedCh,setExpandedCh]=useState(null);
   // Keep global ncm for backward compat in calculations (use first product's NCM)
   const ncm=products.find(p=>p.ncm?.ncm_code)?.ncm||null;const ncmManual=false;
-  const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [results,setResults]=useState(null);
-  useEffect(()=>{(async()=>{const [t,c]=await Promise.all([dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"})]);setTariffs(Array.isArray(t)?t:[]);const cfg={};(Array.isArray(c)?c:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);})();},[token]);
+  const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [config,setConfig]=useState({});const [results,setResults]=useState(null);
+  useEffect(()=>{(async()=>{const [t,c,ov]=await Promise.all([dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"}),client?.id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${client.id}&select=*`}):Promise.resolve([])]);setTariffs(Array.isArray(t)?t:[]);setOverrides(Array.isArray(ov)?ov:[]);const cfg={};(Array.isArray(c)?c:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);})();},[token,client?.id]);
 
   const addProduct=()=>setProducts(p=>[...p,{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false}]);
   const rmProduct=i=>setProducts(p=>p.filter((_,j)=>j!==i));
@@ -178,7 +178,8 @@ function CalculatorPage({token,client}){
     return{totWeight,totVol,totCBM,billable:Math.max(totWeight,totVol)};
   };
 
-  const getFleteRate=(svcKey,amount)=>{const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate");for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return Number(r.rate);}return rates.length?Number(rates[rates.length-1].rate):0;};
+  const getEffRate=(t)=>{const ov=overrides.find(o=>o.tariff_id===t.id);return ov?Number(ov.custom_rate):Number(t.rate);};
+  const getFleteRate=(svcKey,amount)=>{const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate");for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return getEffRate(r);}return rates.length?getEffRate(rates[rates.length-1]):0;};
   const getSurcharge=(svcKey,totalVal,amount)=>{const surcharges=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty)-Number(a.min_qty));if(amount<=0)return{pct:0,amt:0};const vpu=totalVal/amount;for(const s of surcharges){if(vpu>=Number(s.min_qty))return{pct:Number(s.rate),amt:totalVal*(Number(s.rate)/100)};}return{pct:0,amt:0};};
 
   const calculateUSA=()=>{
