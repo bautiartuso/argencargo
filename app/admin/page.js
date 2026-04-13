@@ -839,7 +839,7 @@ function FinanceDashboard({token}){
 }
 
 function QuotesList({token}){
-  const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");
+  const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");const [selQuote,setSelQuote]=useState(null);
   useEffect(()=>{(async()=>{const q=await dq("quotes",{token,filters:"?select=*&order=created_at.desc"});setQuotes(Array.isArray(q)?q:[]);setLo(false);})();},[token]);
   const updateStatus=async(id,status)=>{await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{status}});setQuotes(p=>p.map(q=>q.id===id?{...q,status}:q));};
   const ST={pending:{l:"Pendiente",c:"#fbbf24"},contacted:{l:"Contactado",c:"#60a5fa"},converted:{l:"Convertida",c:"#22c55e"},rejected:{l:"Rechazada",c:"#f87171"}};
@@ -856,7 +856,7 @@ function QuotesList({token}){
           {["Fecha","Cliente","Origen","Canal","FOB","Costo","Estado","Acción"].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
         </tr></thead>
         <tbody>{filtered.map(q=>{const st=ST[q.status]||{l:q.status,c:"#999"};const prods=typeof q.products==="string"?JSON.parse(q.products):q.products;const prodDesc=Array.isArray(prods)?prods.map(p=>p.description||p.type).join(", "):"";
-        return <tr key={q.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+        return <tr key={q.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>setSelQuote(q)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{formatDate(q.created_at)}</td>
           <td style={{padding:"12px 14px"}}><span style={{fontFamily:"monospace",fontWeight:700,color:IC,fontSize:12}}>{q.client_code}</span><br/><span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{q.client_name}</span></td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{q.origin}</td>
@@ -864,10 +864,39 @@ function QuotesList({token}){
           <td style={{padding:"12px 14px",color:"#fff",fontWeight:600}}>USD {Number(q.total_fob||0).toLocaleString()}</td>
           <td style={{padding:"12px 14px",color:IC,fontWeight:700}}>USD {Number(q.total_cost||0).toLocaleString()}</td>
           <td style={{padding:"12px 14px"}}><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>{st.l}</span></td>
-          <td style={{padding:"12px 14px"}}><select value={q.status} onChange={e=>updateStatus(q.id,e.target.value)} style={{padding:"4px 8px",fontSize:11,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>{Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#0a1428"}}>{v.l}</option>)}</select></td>
+          <td style={{padding:"12px 14px"}} onClick={e=>e.stopPropagation()}><select value={q.status} onChange={e=>updateStatus(q.id,e.target.value)} style={{padding:"4px 8px",fontSize:11,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>{Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#0a1428"}}>{v.l}</option>)}</select></td>
         </tr>;})}</tbody>
       </table>
     </div>}
+    {/* Quote detail modal */}
+    {selQuote&&(()=>{const q=selQuote;const prods=typeof q.products==="string"?JSON.parse(q.products):q.products||[];const pkgs=typeof q.packages==="string"?JSON.parse(q.packages):q.packages||[];const st=ST[q.status]||{l:q.status,c:"#999"};
+    return <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setSelQuote(null)}>
+      <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}/>
+      <div style={{position:"relative",maxWidth:700,width:"90%",maxHeight:"85vh",overflow:"auto",background:"#0a1428",borderRadius:20,border:"1px solid rgba(255,255,255,0.1)",padding:"2rem",boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div><h3 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Cotización</h3><p style={{fontSize:12,color:"rgba(255,255,255,0.3)",margin:0}}>{formatDate(q.created_at)}</p></div>
+          <div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:6,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>{st.l}</span><button onClick={()=>setSelQuote(null)} style={{fontSize:20,background:"none",border:"none",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>✕</button></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:20}}>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>CLIENTE</p><p style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>{q.client_name}</p><p style={{fontSize:11,fontFamily:"monospace",color:IC,margin:"2px 0 0"}}>{q.client_code}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>ORIGEN</p><p style={{fontSize:14,color:"#fff",margin:0}}>{q.origin}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>CANAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{q.channel_name}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>VALOR FOB</p><p style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>USD {Number(q.total_fob||0).toLocaleString(undefined,{minimumFractionDigits:2})}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>COSTO TOTAL</p><p style={{fontSize:14,fontWeight:700,color:IC,margin:0}}>USD {Number(q.total_cost||0).toLocaleString(undefined,{minimumFractionDigits:2})}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>ENTREGA</p><p style={{fontSize:14,color:"#fff",margin:0}}>{q.delivery||"—"}</p></div>
+          {q.total_weight>0&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>PESO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{Number(q.total_weight).toFixed(2)} kg</p></div>}
+          {q.total_cbm>0&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>CBM</p><p style={{fontSize:14,color:"#fff",margin:0}}>{Number(q.total_cbm).toFixed(4)} m³</p></div>}
+        </div>
+        {Array.isArray(prods)&&prods.length>0&&<div style={{marginBottom:16}}><h4 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>PRODUCTOS</h4>
+          {prods.map((p,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}><span style={{color:"rgba(255,255,255,0.6)"}}>{p.description||p.type} x{p.quantity}</span><span style={{fontWeight:600,color:"#fff"}}>USD {(Number(p.unit_price||0)*Number(p.quantity||1)).toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>)}
+        </div>}
+        {Array.isArray(pkgs)&&pkgs.length>0&&<div><h4 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>BULTOS</h4>
+          {pkgs.map((pk,i)=><div key={i} style={{display:"flex",gap:16,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:12,color:"rgba(255,255,255,0.5)"}}>
+            <span>Bulto {i+1}</span><span>Cant: {pk.qty||1}</span>{pk.length&&<span>{pk.length}x{pk.width}x{pk.height} cm</span>}<span>Peso: {pk.weight} kg</span>
+          </div>)}
+        </div>}
+      </div>
+    </div>;})()}
   </div>;
 }
 
