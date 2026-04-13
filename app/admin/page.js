@@ -121,7 +121,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const addEvt=async()=>{const r=await dq("tracking_events",{method:"POST",token,body:{operation_id:op.id,title:"Nuevo evento",occurred_at:new Date().toISOString(),is_visible_to_client:true,created_by:null}});if(Array.isArray(r))setEvents(p=>[...r,...p]);else if(r.id)setEvents(p=>[r,...p]);flash("Evento agregado");};
   const delEvt=async(id)=>{await dq("tracking_events",{method:"DELETE",token,filters:`?id=eq.${id}`});setEvents(p=>p.filter(x=>x.id!==id));flash("Evento eliminado");};
 
-  const tabs=[{k:"general",l:"General"},{k:"budget",l:"Presupuesto"},{k:"items",l:"Productos"},{k:"packages",l:"Bultos"},{k:"tracking",l:"Seguimiento"}];
+  const tabs=[{k:"general",l:"General"},{k:"budget",l:"Presupuesto"},{k:"items",l:"Productos"},{k:"packages",l:"Bultos"},{k:"tracking",l:"Seguimiento"},{k:"finance",l:"Finanzas"}];
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
   const chItem=(idx,f,v)=>{setItems(p=>{const n=[...p];n[idx]={...n[idx],[f]:v};return n;});};
   const chPkg=(idx,f,v)=>{setPkgs(p=>{const n=[...p];n[idx]={...n[idx],[f]:v};return n;});};
@@ -278,6 +278,54 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       {events.length===0&&<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"1rem 0"}}>No hay eventos de seguimiento.</p>}
     </Card>
     </>}
+
+    {tab==="finance"&&(()=>{
+      const costFlete=Number(op.cost_flete||0);const costImp=Number(op.cost_impuestos_reales||0);const costDoc=Number(op.cost_gasto_documental||0);const costSeg=Number(op.cost_seguro||0);const costLocal=Number(op.cost_flete_local||0);const costOtros=Number(op.cost_otros||0);
+      const totalCostos=costFlete+costImp+costDoc+costSeg+costLocal+costOtros;
+      const ingresos=Number(op.budget_total||0);
+      const ganancia=ingresos-totalCostos;
+      const margen=ingresos>0?((ganancia/ingresos)*100):0;
+      const rw=(l,v,bold,color)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:10}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:bold?16:13,fontWeight:bold?700:600,color:color||"#fff"}}>USD {v.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>;
+      return <>
+      <Card title="Costos reales" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
+          <Inp label="Costo flete (agente/carrier)" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>
+          <Inp label="Impuestos reales pagados" type="number" value={op.cost_impuestos_reales} onChange={chOp("cost_impuestos_reales")} step="0.01"/>
+          <Inp label="Gasto documental real" type="number" value={op.cost_gasto_documental} onChange={chOp("cost_gasto_documental")} step="0.01"/>
+          <Inp label="Seguro real" type="number" value={op.cost_seguro} onChange={chOp("cost_seguro")} step="0.01"/>
+          <Inp label="Flete local" type="number" value={op.cost_flete_local} onChange={chOp("cost_flete_local")} step="0.01"/>
+          <Inp label="Otros costos" type="number" value={op.cost_otros} onChange={chOp("cost_otros")} step="0.01"/>
+        </div>
+        <Inp label="Notas de costos" value={op.cost_notas} onChange={chOp("cost_notas")} placeholder="Ej: Consolidado con AC-0002, gasto doc compartido..."/>
+      </Card>
+      <Card title="Rentabilidad de la operación">
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+          <div style={{background:"rgba(96,165,250,0.06)",borderRadius:12,padding:16,border:"1px solid rgba(96,165,250,0.12)"}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px",textTransform:"uppercase"}}>Ingresos (lo que cobra el cliente)</p>
+            <p style={{fontSize:24,fontWeight:700,color:IC,margin:0}}>USD {ingresos.toLocaleString(undefined,{minimumFractionDigits:2})}</p>
+          </div>
+          <div style={{background:"rgba(255,80,80,0.06)",borderRadius:12,padding:16,border:"1px solid rgba(255,80,80,0.12)"}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px",textTransform:"uppercase"}}>Costos totales</p>
+            <p style={{fontSize:24,fontWeight:700,color:"#ff6b6b",margin:0}}>USD {totalCostos.toLocaleString(undefined,{minimumFractionDigits:2})}</p>
+          </div>
+        </div>
+        <div style={{marginTop:16}}>
+          {rw("Costo flete",costFlete)}
+          {rw("Impuestos reales",costImp)}
+          {rw("Gasto documental",costDoc)}
+          {costSeg>0&&rw("Seguro",costSeg)}
+          {costLocal>0&&rw("Flete local",costLocal)}
+          {costOtros>0&&rw("Otros",costOtros)}
+          {rw("TOTAL COSTOS",totalCostos,true,"#ff6b6b")}
+        </div>
+        <div style={{marginTop:20,background:ganancia>0?"rgba(34,197,94,0.08)":"rgba(255,80,80,0.08)",borderRadius:12,padding:20,border:`1px solid ${ganancia>0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,textAlign:"center"}}>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px",textTransform:"uppercase"}}>Ganancia neta</p>
+          <p style={{fontSize:32,fontWeight:700,color:ganancia>0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>USD {ganancia.toLocaleString(undefined,{minimumFractionDigits:2})}</p>
+          <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:0}}>Margen: {margen.toFixed(1)}%</p>
+        </div>
+      </Card>
+      </>;})()}
+
     </>}
   </div>;
 }
