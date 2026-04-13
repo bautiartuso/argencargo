@@ -164,7 +164,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       let pf=0,totCBM=0,totGW=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});
       // Flete (uses client custom rate if available)
       const svcKey=op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="aereo_negro"?"aereo_b_china":op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b";
-      const fleteAmt=op.channel?.includes("aereo")?pf:totCBM;
+      const fleteAmt=op.channel?.includes("aereo")?pf:(op.channel==="maritimo_blanco"?Math.max(totCBM,1):totCBM);
       const getRate=(sk,amt)=>{const rates=tariffs.filter(t=>t.service_key===sk);for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amt>=min&&amt<max){const ov=clientOverrides.find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):Number(r.rate);}}return rates.length?Number(rates[rates.length-1].rate):0;};
       const fleteRate=getRate(svcKey,fleteAmt);const flete=fleteAmt*fleteRate;
       // CIF: RI sees real, others see ficticio. Marítimo always ficticio.

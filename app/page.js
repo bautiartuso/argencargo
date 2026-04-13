@@ -246,7 +246,7 @@ function CalculatorPage({token,client}){
         flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,pesoBruto:totWeight,unit:`${totWeight.toFixed(1)} kg`});}
 
     // Marítimo Carga LCL/FCL (A) — SIEMPRE ficticio
-    if(!noDims&&totCBM>0){const fleteRate=getFleteRate("maritimo_a_china",totCBM);const flete=totCBM*fleteRate;
+    if(!noDims&&totCBM>0){const cbmFact=Math.max(totCBM,1);const fleteRate=getFleteRate("maritimo_a_china",cbmFact);const flete=cbmFact*fleteRate;
       const certFlete=totCBM*certMarFict;
       const seguro=(totalFob+certFlete)*0.01;
       const totalCifMar=totalFob+certFlete+seguro;
