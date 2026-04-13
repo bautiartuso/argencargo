@@ -60,7 +60,7 @@ function OperationsList({token,onSelect,onNew}){
     const renderTable=(rows,showGanancia)=><div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-          <SH label="Código" col="operation_code"/><SH label="Cliente" col="client"/><SH label="Descripción" col="description"/><SH label="Canal" col="channel"/><SH label="Estado" col="status"/><SH label="ETA" col="eta"/>{showGanancia&&<th style={{padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Ganancia</th>}<th style={{padding:"12px 14px"}}></th>
+          <SH label="Código" col="operation_code"/><SH label="Cliente" col="client"/><SH label="Descripción" col="description"/><SH label="Canal" col="channel"/><SH label="Estado" col="status"/>{showGanancia?<th style={{padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Cerrada</th>:<SH label="ETA" col="eta"/>}{showGanancia&&<th style={{padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Ganancia</th>}<th style={{padding:"12px 14px"}}></th>
         </tr></thead>
         <tbody>{rows.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const ing=Number(op.budget_total||0);const cost=Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0);const gan=ing-cost;
         return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>onSelect(op)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
@@ -69,8 +69,8 @@ function OperationsList({token,onSelect,onNew}){
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{op.description||"—"}</td>
           <td style={{padding:"12px 14px"}}><span style={{fontSize:11,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{CM[op.channel]||op.channel}</span></td>
           <td style={{padding:"12px 14px"}}><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>● {st.l}</span></td>
-          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)"}}>{formatDate(op.eta)}</td>
-          {showGanancia&&<td style={{padding:"12px 14px",fontWeight:700,color:gan>0?"#22c55e":cost>0?"#ff6b6b":"rgba(255,255,255,0.2)"}}>{cost>0?`USD ${gan.toLocaleString(undefined,{minimumFractionDigits:2})}`:"—"}</td>}
+          {showGanancia?<td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)"}}>{formatDate(op.closed_at)}</td>:<td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)"}}>{formatDate(op.eta)}</td>}
+          {showGanancia&&<td style={{padding:"12px 14px",fontWeight:700,color:gan>0?"#22c55e":"#ff6b6b"}}>{ing>0?`USD ${gan.toLocaleString(undefined,{minimumFractionDigits:2})}`:"—"}</td>}
           <td style={{padding:"12px 14px"}}><span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></td>
         </tr>})}</tbody>
       </table>
@@ -114,7 +114,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     await dq("operations",{method:"DELETE",token,filters:`?id=eq.${op.id}`});onDelete();};
   const isBlanco=op.channel?.includes("blanco");const isAereo=op.channel?.includes("aereo");const isMaritimo=op.channel?.includes("maritimo");
 
-  const saveOp=async()=>{setSaving(true);const{id,clients,...rest}=op;delete rest.created_at;delete rest.updated_at;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Operación guardada");setSaving(false);};
+  const saveOp=async()=>{setSaving(true);const{id,clients,...rest}=op;delete rest.created_at;delete rest.updated_at;
+    if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();
+    if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});setOp(p=>({...p,closed_at:rest.closed_at}));flash("Operación guardada");setSaving(false);};
 
   const saveItem=async(it)=>{const{id,...rest}=it;delete rest.created_at;await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Producto guardado");};
   const addItem=async()=>{const r=await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:"Nuevo producto",quantity:1,unit_price_usd:0}});if(Array.isArray(r))setItems(p=>[...p,...r]);else if(r.id)setItems(p=>[...p,r]);flash("Producto agregado");};
