@@ -87,8 +87,8 @@ function NewOperation({token,clients,onBack,onCreated}){
     <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 20px"}}>Nueva Operación</h2>
     <Card>
       <Sel label="Cliente" value={form.client_id} onChange={ch("client_id")} options={clients.map(c=>({value:c.id,label:`${c.client_code} — ${c.first_name} ${c.last_name}`}))} ph="Seleccionar cliente"/>
-      <Sel label="Canal" value={form.channel} onChange={ch("channel")} options={CHANNELS.map(c=>({value:c,label:CM[c]}))}/>
-      <Sel label="Origen" value={form.origin} onChange={ch("origin")} options={[{value:"China",label:"China"},{value:"USA",label:"USA"}]}/>
+      <Sel label="Origen" value={form.origin} onChange={v=>{ch("origin")(v);if(v==="USA"&&(form.channel==="aereo_blanco"||form.channel==="maritimo_blanco"))ch("channel")("aereo_negro");}} options={[{value:"China",label:"China"},{value:"USA",label:"USA"}]}/>
+      <Sel label="Canal" value={form.channel} onChange={ch("channel")} options={form.origin==="USA"?[{value:"aereo_negro",label:"Aéreo B"},{value:"maritimo_negro",label:"Marítimo B"}]:CHANNELS.map(c=>({value:c,label:CM[c]}))}/>
       {err&&<p style={{fontSize:12,color:"#ff6b6b",margin:"0 0 12px"}}>{err}</p>}
       <div style={{display:"flex",gap:12,marginTop:8}}><Btn onClick={create} disabled={lo}>{lo?"Creando...":"Crear operación"}</Btn><Btn variant="secondary" onClick={onBack}>Cancelar</Btn></div>
     </Card>
