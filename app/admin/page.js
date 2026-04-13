@@ -519,6 +519,37 @@ function Calculator({token,clients}){
   </div>;
 }
 
+function AdminSettings({token,session}){
+  const [curPw,setCurPw]=useState("");const [newPw,setNewPw]=useState("");const [confPw,setConfPw]=useState("");const [msg,setMsg]=useState("");const [err,setErr]=useState("");const [lo,setLo]=useState(false);
+  const changePw=async()=>{if(!curPw||!newPw){setErr("Completá todos los campos");return;}if(newPw.length<6){setErr("La nueva contraseña debe tener al menos 6 caracteres");return;}if(newPw!==confPw){setErr("Las contraseñas no coinciden");return;}
+    setLo(true);setErr("");setMsg("");
+    // Verify current password by re-logging
+    const check=await sf("/auth/v1/token?grant_type=password",{method:"POST",body:JSON.stringify({email:session.user.email,password:curPw})});
+    if(check?.error){setErr("Contraseña actual incorrecta");setLo(false);return;}
+    // Update password
+    const r=await sf("/auth/v1/user",{method:"PUT",body:JSON.stringify({password:newPw}),headers:{Authorization:`Bearer ${token}`}});
+    if(r?.error){setErr(r.error.message||"Error al cambiar contraseña");setLo(false);return;}
+    setMsg("Contraseña cambiada exitosamente");setCurPw("");setNewPw("");setConfPw("");setLo(false);};
+  return <div><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 20px"}}>Configuración</h2>
+    <Card title="Cambiar contraseña">
+      <div style={{maxWidth:400}}>
+        <Inp label="Contraseña actual" type="password" value={curPw} onChange={setCurPw} placeholder="••••••••"/>
+        <Inp label="Nueva contraseña" type="password" value={newPw} onChange={setNewPw} placeholder="Mínimo 6 caracteres"/>
+        <Inp label="Confirmar nueva contraseña" type="password" value={confPw} onChange={setConfPw} placeholder="Repetí la nueva contraseña"/>
+        {err&&<p style={{fontSize:12,color:"#ff6b6b",margin:"0 0 12px",padding:"8px 12px",background:"rgba(255,80,80,0.1)",borderRadius:8}}>{err}</p>}
+        {msg&&<p style={{fontSize:12,color:"#22c55e",margin:"0 0 12px",padding:"8px 12px",background:"rgba(34,197,94,0.1)",borderRadius:8}}>{msg}</p>}
+        <Btn onClick={changePw} disabled={lo}>{lo?"Cambiando...":"Cambiar contraseña"}</Btn>
+      </div>
+    </Card>
+    <Card title="Información de la cuenta">
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>EMAIL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{session.user.email}</p></div>
+        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>ROL</p><p style={{fontSize:14,color:IC,margin:0,fontWeight:600}}>Administrador</p></div>
+      </div>
+    </Card>
+  </div>;
+}
+
 function QuotesList({token}){
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");
   useEffect(()=>{(async()=>{const q=await dq("quotes",{token,filters:"?select=*&order=created_at.desc"});setQuotes(Array.isArray(q)?q:[]);setLo(false);})();},[token]);
@@ -556,7 +587,7 @@ function AdminDashboard({session,onLogout}){
   const [page,setPage]=useState("operations");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);
   const token=session.token;
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
-  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]}];
+  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
   return <div style={{minHeight:"100vh",display:"flex",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG}}>
     <div style={{width:220,flexShrink:0,background:"rgba(0,0,0,0.3)",borderRight:"1px solid rgba(255,255,255,0.05)",display:"flex",flexDirection:"column"}}>
       <div style={{padding:"20px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><img src={LOGO} alt="AC" style={{width:"100%",height:"auto",maxHeight:50,objectFit:"contain"}}/></div>
@@ -573,6 +604,7 @@ function AdminDashboard({session,onLogout}){
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
       {page==="quotes"&&<QuotesList token={token}/>}
+      {page==="settings"&&<AdminSettings token={token} session={session}/>}
     </div></div>
   </div>;
 }
