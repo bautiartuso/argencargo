@@ -18,8 +18,8 @@ const CM={aereo_blanco:"Aéreo A",aereo_negro:"Aéreo B",maritimo_blanco:"Marít
 const STATUSES=Object.keys(SM);
 const CHANNELS=Object.keys(CM);
 const SERVICES=[{key:"aereo_a_china",label:"Aéreo A — China",unit:"kg",info:"7-10 días hábiles"},{key:"aereo_b_usa",label:"Aéreo B — USA",unit:"kg",info:"48-72 hs hábiles"},{key:"aereo_b_china",label:"Aéreo B — China",unit:"kg",info:"10-15 días hábiles"},{key:"maritimo_a_china",label:"Marítimo A — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo B — China/USA",unit:"cbm",info:""}];
-const formatDate=(d)=>{if(!d)return"—";return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});};
-const formatDateInput=(d)=>{if(!d)return"";return new Date(d).toISOString().split("T")[0];};
+const formatDate=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return new Date(y,m-1,day).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});};
+const formatDateInput=(d)=>{if(!d)return"";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/))return s;return new Date(d).toISOString().split("T")[0];};
 
 function Inp({label,type="text",value,onChange,placeholder,small,step}){return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</label><input type={type} value={value||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder} step={step} style={{width:"100%",padding:small?"8px 10px":"10px 12px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}} onFocus={e=>{e.target.style.borderColor=IC;}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.1)";}}/></div>;}
 
