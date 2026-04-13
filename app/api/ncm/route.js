@@ -83,9 +83,12 @@ export async function POST(req) {
 
     // Try Gemini (free, no credit card needed)
     const geminiKey = process.env.GEMINI_API_KEY;
+    console.log("API keys available:", { gemini: !!geminiKey, openai: !!process.env.OPENAI_API_KEY });
     if (geminiKey && !suggestedCode) {
-      try { suggestedCode = await classifyWithGemini(description, geminiKey); }
-      catch (e) { console.error("Gemini error:", e.message); }
+      try {
+        suggestedCode = await classifyWithGemini(description, geminiKey);
+        console.log("Gemini result:", suggestedCode);
+      } catch (e) { console.error("Gemini error:", e.message); }
     }
 
     // Fallback: OpenAI
