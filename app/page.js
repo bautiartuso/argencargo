@@ -396,13 +396,14 @@ function CalculatorPage({token,client}){
       {(()=>{const cheapest=results.channels.reduce((a,b)=>a.total<b.total?a:b);const delivCost=delivery==="caba"?20:0;
       const aereos=results.channels.filter(c=>c.key.includes("aereo"));const maritimos=results.channels.filter(c=>c.key.includes("maritimo"));
       const renderCard=(ch)=>{const isCheapest=ch.key===cheapest.key;const isFastest=ch.key==="aereo_a_china";const isAereo=ch.key.includes("aereo");const total=ch.total+delivCost;
-      return <div key={ch.key} style={{background:"rgba(255,255,255,0.03)",borderRadius:16,border:`1.5px solid ${isFastest?"rgba(251,146,60,0.4)":isCheapest?"rgba(34,197,94,0.4)":"rgba(255,255,255,0.07)"}`,padding:"1.5rem",marginBottom:16}}>
+      return <div key={ch.key} style={{background:"rgba(255,255,255,0.03)",borderRadius:16,border:`1.5px solid ${isFastest?"rgba(251,146,60,0.4)":isCheapest?"rgba(34,197,94,0.4)":"rgba(255,255,255,0.07)"}`,padding:"1.5rem",marginBottom:16,display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24}}>{isAereo?"✈️":"🚢"}</span><p style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>{ch.name}</p></div>
           {isFastest&&<span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:8,background:"rgba(251,146,60,0.15)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.3)"}}>⚡ El más Rápido</span>}
           {isCheapest&&!isFastest&&<span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:8,background:"rgba(34,197,94,0.15)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)"}}>💵 El más Económico</span>}
         </div>
-        {ch.info&&<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:"0 0 16px"}}>{ch.info}</p>}
+        {ch.info&&<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:"0 0 12px",minHeight:0}}>{ch.info}</p>}
+        {!ch.info&&<div style={{height:12}}/>}
         <div style={{background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"20px",marginBottom:16,textAlign:"center"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px",textTransform:"uppercase"}}>Costo de importación</p>
           <p style={{fontSize:32,fontWeight:700,color:IC,margin:0}}>{usd(total)}</p>
@@ -415,7 +416,8 @@ function CalculatorPage({token,client}){
       const modalCh=expandedCh?results.channels.find(c=>c.key===expandedCh):null;
       const isAereoModal=expandedCh?.includes("aereo");
 
-      return <><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"start"}}><div>{aereos.map(renderCard)}</div><div>{maritimos.map(renderCard)}</div></div>
+      const maxLen=Math.max(aereos.length,maritimos.length);const pairs=[];for(let i=0;i<maxLen;i++)pairs.push([aereos[i],maritimos[i]]);
+      return <><div>{pairs.map((pair,pi)=><div key={pi} style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"stretch",marginBottom:0}}>{pair.map(ch=>ch?renderCard(ch):<div key={"empty"+pi}/>)}</div>)}</div>
       {modalCh&&<div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setExpandedCh(null)}>
         <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}/>
         <div style={{position:"relative",maxWidth:650,width:"90%",maxHeight:"85vh",overflow:"auto",background:"#0a1428",borderRadius:20,border:"1px solid rgba(255,255,255,0.1)",padding:"2rem",boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
