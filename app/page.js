@@ -154,7 +154,7 @@ function CalculatorPage({token,client}){
   // USA flow
   const [products,setProducts]=useState([{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false}]);
   const [pkgs,setPkgs]=useState([{qty:"1",length:"",width:"",height:"",weight:""}]);const [noDims,setNoDims]=useState(false);const [delivery,setDelivery]=useState("oficina");
-  const [hasBattery,setHasBattery]=useState(false);
+  const [hasBattery,setHasBattery]=useState(false);const [expandedCh,setExpandedCh]=useState(null);
   // Keep global ncm for backward compat in calculations (use first product's NCM)
   const ncm=products.find(p=>p.ncm?.ncm_code)?.ncm||null;const ncmManual=false;
   const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [results,setResults]=useState(null);
@@ -203,7 +203,8 @@ function CalculatorPage({token,client}){
   const calculateChina=()=>{
     const{totWeight,totCBM}=calcTotals();const channels=[];
     const dr=Number(ncm?.import_duty_rate||0)/100;const te=Number(ncm?.statistics_rate||0)/100;const ivaR=Number(ncm?.iva_rate||21)/100;
-    const gastoDoc=config.gasto_documental||120;const ivaDesemb=config.iva_desembolso||25.2;
+    const getDesembolso=(cif)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(cif<max)return amt;return 120;};
+    const calcDesemb=(cif)=>{const tasa=getDesembolso(cif);return{tasa,ivaDesemb:tasa*0.21,totalDesemb:tasa+tasa*0.21};};
     const isRI=client?.tax_condition==="responsable_inscripto";
     // Cert flete: real vs ficticio según condición IVA
     const certAerReal=config.cert_flete_aereo_real||2.5;const certAerFict=config.cert_flete_aereo_ficticio||3.5;
@@ -216,9 +217,10 @@ function CalculatorPage({token,client}){
       const certFlete=isRI?(totWeight*certAerReal):(facturable*certAerFict);
       const seguro=(totalFob+certFlete)*0.01;const cif=totalFob+certFlete+seguro;
       const derechos=cif*dr;const tasa_e=cif*te;const baseImp=cif+derechos+tasa_e;const iva=baseImp*ivaR;
-      const battExtra=hasBattery?facturable*2:0;const totalImp=derechos+tasa_e+iva+gastoDoc+ivaDesemb;const totalSvc=flete+seguro+battExtra;
+      const desemb=calcDesemb(cif);
+      const battExtra=hasBattery?facturable*2:0;const totalImp=derechos+tasa_e+iva+desemb.totalDesemb;const totalSvc=flete+seguro+battExtra;
       channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles",isBlanco:true,
-        flete,seguro,cif,derechos,tasa_e,iva,gastoDoc,ivaDesemb,battExtra,totalImp,totalSvc,total:totalImp+totalSvc,unit:`${facturable.toFixed(1)} kg`});}
+        flete,seguro,cif,derechos,tasa_e,iva,desembolso:desemb.tasa,ivaDesemb:desemb.ivaDesemb,battExtra,totalImp,totalSvc,total:totalImp+totalSvc,unit:`${facturable.toFixed(1)} kg`});}
 
     // Aéreo Integral AC (B) - sin impuestos, peso bruto
     if(totWeight>0){const fleteRate=getFleteRate("aereo_b_china",totWeight);const flete=totWeight*fleteRate;const sur=getSurcharge("aereo_b_china",totalFob,totWeight);
@@ -384,10 +386,21 @@ function CalculatorPage({token,client}){
         {ncm?.ncm_code&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>NCM</p><p style={{fontSize:15,fontWeight:600,color:IC,margin:0,fontFamily:"monospace"}}>{ncm.ncm_code}</p></div>}
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>ENTREGA</p><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{DELIV[delivery]}</p></div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>{results.channels.map((ch,i)=>{const delivCost=delivery==="caba"?20:0;return <div key={ch.key} style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:i===0?`1.5px solid ${IC}`:"1px solid rgba(255,255,255,0.07)",padding:"1.25rem",position:"relative",display:"flex",flexDirection:"column"}}>
-        {i===0&&<div style={{position:"absolute",top:-1,left:20,padding:"2px 10px",background:IC,borderRadius:"0 0 6px 6px",fontSize:10,fontWeight:700,color:"#0a1428"}}>MEJOR PRECIO</div>}
-        <div style={{marginBottom:12}}><p style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{ch.name}</p>{ch.info&&<span style={{fontSize:11,color:"rgba(255,255,255,0.35)",padding:"3px 10px",background:"rgba(255,255,255,0.05)",borderRadius:4}}>{ch.info}</span>}</div>
-        <div style={{flex:1}}>
+      {(()=>{const cheapest=results.channels.reduce((a,b)=>a.total<b.total?a:b);const fastest=results.channels.find(c=>c.key==="aereo_a_china");const delivCost=delivery==="caba"?20:0;
+      return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>{results.channels.map(ch=>{const isCheapest=ch.key===cheapest.key;const isFastest=ch.key==="aereo_a_china";const isAereo=ch.key.includes("aereo");const exp=expandedCh===ch.key;const total=ch.total+delivCost;
+      return <div key={ch.key} style={{background:"rgba(255,255,255,0.03)",borderRadius:16,border:`1.5px solid ${isFastest?"rgba(251,146,60,0.4)":isCheapest?"rgba(34,197,94,0.4)":"rgba(255,255,255,0.07)"}`,padding:"1.5rem",display:"flex",flexDirection:"column"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24}}>{isAereo?"✈️":"🚢"}</span><p style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>{ch.name}</p></div>
+          {isFastest&&<span style={{fontSize:12,fontWeight:700,padding:"4px 12px",borderRadius:8,background:"rgba(251,146,60,0.15)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.3)"}}>⚡ El más Rápido</span>}
+          {isCheapest&&!isFastest&&<span style={{fontSize:12,fontWeight:700,padding:"4px 12px",borderRadius:8,background:"rgba(34,197,94,0.15)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)"}}>💵 El más Económico</span>}
+        </div>
+        {ch.info&&<p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"-8px 0 16px"}}>{ch.info}</p>}
+        <div style={{background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"16px 20px",marginBottom:16,textAlign:"center"}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px",textTransform:"uppercase"}}>Costo de importación</p>
+          <p style={{fontSize:28,fontWeight:700,color:IC,margin:0}}>{usd(total)}</p>
+        </div>
+        <button onClick={()=>setExpandedCh(exp?null:ch.key)} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",background:"none",border:"none",borderTop:"1px solid rgba(255,255,255,0.06)",cursor:"pointer",color:"rgba(255,255,255,0.4)",fontSize:13,fontWeight:600}}>Ver desglose detallado <span style={{fontSize:16}}>{exp?"▲":"▼"}</span></button>
+        {exp&&<div style={{padding:"8px 0"}}>
           {ch.isBlanco?<>
             {row("Servicio de flete",ch.flete)}
             {ch.battExtra>0&&row("Recargo baterías",ch.battExtra)}
@@ -396,18 +409,15 @@ function CalculatorPage({token,client}){
             {row(`Tasa de estadística (${ncm?.statistics_rate}%)`,ch.tasa_e)}
             {row(`IVA (${ncm?.iva_rate}%)`,ch.iva)}
             {ch.isMar&&<>{row("IVA Adicional (20%)",ch.ivaAdic)}{row("I.I.G.G. (6%)",ch.iigg)}{row("I.I.B.B. (5%)",ch.iibb)}</>}
-            {!ch.isMar&&<>{row("Gasto documental",ch.gastoDoc)}{row("IVA desembolso",ch.ivaDesemb)}</>}
-            {delivCost>0&&row("Envío CABA",delivCost)}
-            {row("TOTAL",ch.total+delivCost,true,true)}
+            {!ch.isMar&&<>{row("Tasa de desembolso",ch.desembolso||0)}{row("IVA desembolso",ch.ivaDesemb||0)}</>}
           </>:<>
             {row("Servicio Integral ARGENCARGO",ch.flete)}
             {ch.surcharge>0&&row(`Recargo valor (${ch.surchargePct}%)`,ch.surcharge)}
-            {delivCost>0&&row("Envío CABA",delivCost)}
-            {row("TOTAL",ch.total+delivCost,true,true)}
           </>}
-        </div>
-        <a href={`https://wa.me/5491125088580?text=${makeWAMsg(ch)}`} target="_blank" rel="noopener noreferrer" style={{display:"block",width:"100%",padding:"14px",fontSize:14,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,#25D366,#128C7E)`,color:"#fff",textAlign:"center",textDecoration:"none",marginTop:16,boxSizing:"border-box"}}>Avanzar con esta importación →</a>
-      </div>})}</div>
+          {delivCost>0&&row("Envío CABA",delivCost)}
+        </div>}
+        <a href={`https://wa.me/5491125088580?text=${makeWAMsg(ch)}`} target="_blank" rel="noopener noreferrer" style={{display:"block",width:"100%",padding:"14px",fontSize:14,fontWeight:700,borderRadius:12,border:"none",cursor:"pointer",background:`linear-gradient(135deg,#25D366,#128C7E)`,color:"#fff",textAlign:"center",textDecoration:"none",marginTop:12,boxSizing:"border-box"}}>Avanzar con esta importación →</a>
+      </div>})}</div>;})()}
     </div>}
   </div>;
 }
