@@ -76,12 +76,12 @@ function OperationsList({token,onSelect,onNew}){
 }
 
 function NewOperation({token,clients,onBack,onCreated}){
-  const [form,setForm]=useState({client_id:"",channel:"aereo_blanco",origin:"China",description:"",eta:""});const [lo,setLo]=useState(false);const [err,setErr]=useState("");
+  const [form,setForm]=useState({client_id:"",channel:"aereo_blanco",origin:"China"});const [lo,setLo]=useState(false);const [err,setErr]=useState("");
   const ch=f=>v=>setForm(p=>({...p,[f]:v}));
-  const create=async()=>{if(!form.client_id||!form.description){setErr("Cliente y descripción son requeridos");return;}setLo(true);setErr("");
+  const create=async()=>{if(!form.client_id){setErr("Seleccioná un cliente");return;}setLo(true);setErr("");
     const existing=await dq("operations",{token,filters:"?select=operation_code&order=operation_code.desc&limit=1"});const last=Array.isArray(existing)&&existing[0]?parseInt(existing[0].operation_code.replace("AC-",""))||0:0;const code=`AC-${String(last+1).padStart(4,"0")}`;
-    const r=await dq("operations",{method:"POST",token,body:{operation_code:code,client_id:form.client_id,channel:form.channel,origin:form.origin,description:form.description,eta:form.eta||null,status:"pendiente",created_by:null}});
-    if(r.error||r.message){setErr(r.error||r.message);setLo(false);return;}setLo(false);onCreated(Array.isArray(r)?r[0]:r);};
+    const r=await dq("operations",{method:"POST",token,body:{operation_code:code,client_id:form.client_id,channel:form.channel,origin:form.origin,status:"pendiente",created_by:null}});
+    if(r?.error||r?.message){setErr(r.error||r.message);setLo(false);return;}setLo(false);onCreated(Array.isArray(r)?r[0]:r);};
   return <div>
     <button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:20,padding:0}}>← VOLVER</button>
     <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 20px"}}>Nueva Operación</h2>
@@ -89,19 +89,20 @@ function NewOperation({token,clients,onBack,onCreated}){
       <Sel label="Cliente" value={form.client_id} onChange={ch("client_id")} options={clients.map(c=>({value:c.id,label:`${c.client_code} — ${c.first_name} ${c.last_name}`}))} ph="Seleccionar cliente"/>
       <Sel label="Canal" value={form.channel} onChange={ch("channel")} options={CHANNELS.map(c=>({value:c,label:CM[c]}))}/>
       <Sel label="Origen" value={form.origin} onChange={ch("origin")} options={[{value:"China",label:"China"},{value:"USA",label:"USA"}]}/>
-      <Inp label="Descripción" value={form.description} onChange={ch("description")} placeholder="Ej: Fundas de silicona para iPhone"/>
-      <Inp label="ETA" type="date" value={form.eta} onChange={ch("eta")}/>
       {err&&<p style={{fontSize:12,color:"#ff6b6b",margin:"0 0 12px"}}>{err}</p>}
       <div style={{display:"flex",gap:12,marginTop:8}}><Btn onClick={create} disabled={lo}>{lo?"Creando...":"Crear operación"}</Btn><Btn variant="secondary" onClick={onBack}>Cancelar</Btn></div>
     </Card>
   </div>;
 }
 
-function OperationEditor({op:initOp,token,onBack}){
+function OperationEditor({op:initOp,token,onBack,onDelete}){
   const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");
   const load=async()=>{setLo(true);const [it,pk,ev]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setLo(false);};
   useEffect(()=>{load();},[op.id]);
   const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
+  const deleteOp=async()=>{if(!confirm(`¿Eliminar operación ${op.operation_code}? Se borrarán también sus productos, bultos y eventos.`))return;
+    await Promise.all([dq("operation_items",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`}),dq("operation_packages",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`}),dq("tracking_events",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`})]);
+    await dq("operations",{method:"DELETE",token,filters:`?id=eq.${op.id}`});onDelete();};
   const isBlanco=op.channel?.includes("blanco");const isAereo=op.channel?.includes("aereo");const isMaritimo=op.channel?.includes("maritimo");
 
   const saveOp=async()=>{setSaving(true);const{id,clients,...rest}=op;delete rest.created_at;delete rest.updated_at;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Operación guardada");setSaving(false);};
@@ -131,6 +132,7 @@ function OperationEditor({op:initOp,token,onBack}){
         <span style={{fontSize:16,fontWeight:700,color:"#fff",fontFamily:"monospace",padding:"4px 10px",background:"rgba(255,255,255,0.08)",borderRadius:6}}>{op.operation_code}</span>
         {msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}
       </div>
+      <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
     </div>
     <div style={{display:"flex",gap:8,marginBottom:16}}>{tabs.map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
     {lo?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:<>
@@ -615,7 +617,7 @@ function AdminDashboard({session,onLogout}){
     </div>
     <div style={{flex:1,overflow:"auto"}}><div style={{maxWidth:1100,margin:"0 auto",padding:"28px 32px"}}>
       {page==="operations"&&!selOp&&!newOp&&<OperationsList token={token} onSelect={setSelOp} onNew={()=>setNewOp(true)}/>}
-      {page==="operations"&&selOp&&<OperationEditor op={selOp} token={token} onBack={()=>setSelOp(null)}/>}
+      {page==="operations"&&selOp&&<OperationEditor op={selOp} token={token} onBack={()=>setSelOp(null)} onDelete={()=>setSelOp(null)}/>}
       {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
