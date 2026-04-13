@@ -293,11 +293,28 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {tab==="finance"&&(()=>{
       const costFlete=Number(op.cost_flete||0);const costImp=Number(op.cost_impuestos_reales||0);const costDoc=Number(op.cost_gasto_documental||0);const costSeg=Number(op.cost_seguro||0);const costLocal=Number(op.cost_flete_local||0);const costOtros=Number(op.cost_otros||0);
       const totalCostos=costFlete+costImp+costDoc+costSeg+costLocal+costOtros;
-      const ingresos=Number(op.budget_total||0);
-      const ganancia=ingresos-totalCostos;
-      const margen=ingresos>0?((ganancia/ingresos)*100):0;
+      const presupuesto=Number(op.budget_total||0);
+      const cobro=Number(op.collected_amount||0)||presupuesto;
+      const feePct=Number(op.collection_fee_pct||0);const isTransf=op.collection_method==="transferencia";
+      const comision=isTransf?cobro*(feePct/100):0;
+      const ingresoNeto=cobro-comision;
+      const ganancia=ingresoNeto-totalCostos;
+      const margen=ingresoNeto>0?((ganancia/ingresoNeto)*100):0;
       const rw=(l,v,bold,color)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:10}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:bold?16:13,fontWeight:bold?700:600,color:color||"#fff"}}>USD {v.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>;
       return <>
+      <Card title="Cobro" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
+          <Inp label={`Monto cobrado (${op.collection_currency||"USD"})`} type="number" value={op.collected_amount||op.budget_total} onChange={chOp("collected_amount")} step="0.01"/>
+          <Sel label="Método de cobro" value={op.collection_method||"transferencia"} onChange={chOp("collection_method")} options={[{value:"efectivo",label:"Efectivo"},{value:"transferencia",label:"Transferencia"},{value:"cripto",label:"Cripto"}]}/>
+          <Sel label="Moneda" value={op.collection_currency||"USD"} onChange={chOp("collection_currency")} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
+          {(op.collection_method==="transferencia")&&<Inp label="Comisión transferencia %" type="number" value={op.collection_fee_pct||2} onChange={chOp("collection_fee_pct")} step="0.1"/>}
+          {op.collection_currency==="ARS"&&<Inp label="Tipo de cambio (ARS/USD)" type="number" value={op.collection_exchange_rate} onChange={chOp("collection_exchange_rate")} step="0.01" placeholder="Ej: 1200"/>}
+          <Inp label="Fecha de cobro" type="date" value={op.collection_date||""} onChange={chOp("collection_date")}/>
+        </div>
+        <div style={{marginBottom:8}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.is_collected||false} onChange={e=>chOp("is_collected")(e.target.checked)}/><span style={{fontSize:13,color:op.is_collected?"#22c55e":"rgba(255,255,255,0.5)",fontWeight:op.is_collected?600:400}}>{op.is_collected?"Operación cobrada ✓":"Marcar como cobrada"}</span></label></div>
+      </Card>
       <Card title="Costos reales" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
           <Inp label="Costo flete (agente/carrier)" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>
@@ -307,28 +324,17 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <Inp label="Flete local" type="number" value={op.cost_flete_local} onChange={chOp("cost_flete_local")} step="0.01"/>
           <Inp label="Otros costos" type="number" value={op.cost_otros} onChange={chOp("cost_otros")} step="0.01"/>
         </div>
-        <Inp label="Notas de costos" value={op.cost_notas} onChange={chOp("cost_notas")} placeholder="Ej: Consolidado con AC-0002, gasto doc compartido..."/>
+        <Inp label="Notas" value={op.cost_notas} onChange={chOp("cost_notas")} placeholder="Ej: Consolidado con AC-0002..."/>
       </Card>
-      <Card title="Rentabilidad de la operación">
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <div style={{background:"rgba(96,165,250,0.06)",borderRadius:12,padding:16,border:"1px solid rgba(96,165,250,0.12)"}}>
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px",textTransform:"uppercase"}}>Ingresos (lo que cobra el cliente)</p>
-            <p style={{fontSize:24,fontWeight:700,color:IC,margin:0}}>USD {ingresos.toLocaleString(undefined,{minimumFractionDigits:2})}</p>
-          </div>
-          <div style={{background:"rgba(255,80,80,0.06)",borderRadius:12,padding:16,border:"1px solid rgba(255,80,80,0.12)"}}>
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px",textTransform:"uppercase"}}>Costos totales</p>
-            <p style={{fontSize:24,fontWeight:700,color:"#ff6b6b",margin:0}}>USD {totalCostos.toLocaleString(undefined,{minimumFractionDigits:2})}</p>
-          </div>
+      <Card title="Rentabilidad">
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:16}}>
+          <div style={{background:"rgba(96,165,250,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(96,165,250,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>PRESUPUESTO</p><p style={{fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0}}>USD {presupuesto.toLocaleString(undefined,{minimumFractionDigits:2})}</p></div>
+          <div style={{background:"rgba(34,197,94,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(34,197,94,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>COBRO NETO</p><p style={{fontSize:18,fontWeight:700,color:"#22c55e",margin:0}}>USD {ingresoNeto.toLocaleString(undefined,{minimumFractionDigits:2})}</p></div>
+          <div style={{background:"rgba(255,80,80,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(255,80,80,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>COSTOS</p><p style={{fontSize:18,fontWeight:700,color:"#ff6b6b",margin:0}}>USD {totalCostos.toLocaleString(undefined,{minimumFractionDigits:2})}</p></div>
         </div>
-        <div style={{marginTop:16}}>
-          {rw("Costo flete",costFlete)}
-          {rw("Impuestos reales",costImp)}
-          {rw("Gasto documental",costDoc)}
-          {costSeg>0&&rw("Seguro",costSeg)}
-          {costLocal>0&&rw("Flete local",costLocal)}
-          {costOtros>0&&rw("Otros",costOtros)}
-          {rw("TOTAL COSTOS",totalCostos,true,"#ff6b6b")}
-        </div>
+        {rw("Cobro bruto",cobro)}{comision>0&&rw(`Comisión transferencia (${feePct}%)`,-comision,false,"#ff6b6b")}{rw("Cobro neto",ingresoNeto)}
+        <div style={{height:8}}/>
+        {rw("Costo flete",costFlete)}{rw("Impuestos reales",costImp)}{rw("Gasto documental",costDoc)}{costSeg>0&&rw("Seguro",costSeg)}{costLocal>0&&rw("Flete local",costLocal)}{costOtros>0&&rw("Otros",costOtros)}{rw("TOTAL COSTOS",totalCostos,true,"#ff6b6b")}
         <div style={{marginTop:20,background:ganancia>0?"rgba(34,197,94,0.08)":"rgba(255,80,80,0.08)",borderRadius:12,padding:20,border:`1px solid ${ganancia>0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,textAlign:"center"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px",textTransform:"uppercase"}}>Ganancia neta</p>
           <p style={{fontSize:32,fontWeight:700,color:ganancia>0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>USD {ganancia.toLocaleString(undefined,{minimumFractionDigits:2})}</p>
