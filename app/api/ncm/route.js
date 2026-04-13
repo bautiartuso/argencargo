@@ -45,40 +45,64 @@ function pickBest(results) {
 }
 
 export async function POST(req) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
   try {
     const { description } = await req.json();
     if (!description) return Response.json({ error: "Description required" }, { status: 400 });
 
-    // PRIORITY 1: Use AI to get NCM code, then look up real rates in our database
-    if (apiKey) {
+    let suggestedCode = null;
+    const prompt = `Sos un despachante de aduana argentino. Clasificá esta mercadería en el NCM argentino (Nomenclatura Común del Mercosur, 8 dígitos formato XXXX.XX.XX). Respondé SOLO el código NCM, nada más.\n\nMercadería: ${description}`;
+
+    // Try OpenAI first
+    if (openaiKey && !suggestedCode) {
+      try {
+        const r = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            max_tokens: 50,
+            messages: [{ role: "user", content: prompt }]
+          })
+        });
+        if (r.ok) {
+          const data = await r.json();
+          const text = data.choices?.[0]?.message?.content?.trim() || "";
+          const match = text.match(/\d{4}\.\d{2}\.\d{2}/);
+          if (match) suggestedCode = match[0];
+        }
+      } catch (e) { console.error("OpenAI error:", e.message); }
+    }
+
+    // Fallback to Anthropic
+    if (anthropicKey && !suggestedCode) {
       try {
         const r = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
-          headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({
             model: "claude-3-5-sonnet-20241022",
-            max_tokens: 100,
-            messages: [{ role: "user", content: `Sos un despachante de aduana argentino. Clasificá esta mercadería en el NCM argentino (Nomenclatura Común del Mercosur, 8 dígitos formato XXXX.XX.XX). Respondé SOLO el código NCM, nada más.\n\nMercadería: ${description}` }]
+            max_tokens: 50,
+            messages: [{ role: "user", content: prompt }]
           })
         });
         if (r.ok) {
           const data = await r.json();
           const text = data.content?.[0]?.text?.trim() || "";
           const match = text.match(/\d{4}\.\d{2}\.\d{2}/);
-          if (match) {
-            const results = await searchDB(match[0]);
-            if (results.length > 0) return Response.json(pickBest(results));
-          }
+          if (match) suggestedCode = match[0];
         }
-      } catch (e) {
-        console.error("AI error:", e.message);
-      }
+      } catch (e) { console.error("Anthropic error:", e.message); }
     }
 
-    // PRIORITY 2: No AI or AI+DB didn't match — return fallback
-    // Don't try text search because it's unreliable (e.g., "fundas" matches wrong category)
+    // Look up in database
+    if (suggestedCode) {
+      const results = await searchDB(suggestedCode);
+      if (results.length > 0) return Response.json(pickBest(results));
+    }
+
     return Response.json({ error: "No se pudo clasificar la mercadería", fallback: true }, { status: 200 });
 
   } catch (e) {
