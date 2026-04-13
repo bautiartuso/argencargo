@@ -63,8 +63,11 @@ async function classifyWithOpenAI(description, apiKey) {
     headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "gpt-4o",
-      max_tokens: 50,
-      messages: [{ role: "user", content: `Sos un despachante de aduana argentino. Clasificá esta mercadería en el NCM argentino (8 dígitos formato XXXX.XX.XX). Respondé SOLO el código NCM.\n\nMercadería: ${description}` }]
+      max_tokens: 200,
+      messages: [
+        { role: "system", content: "Sos un despachante de aduana argentino experto en clasificación arancelaria NCM. El usuario importa productos desde China para reventa en Argentina. Cuando dice 'fundas de teléfono' se refiere a fundas protectoras de silicona/TPU para celulares (NCM 3926.90.90), NO a equipos de telecomunicaciones. Cuando dice 'auriculares' se refiere a auriculares de audio (NCM 8518.30.00), NO a equipos de telecom." },
+        { role: "user", content: `¿Cuál es la NCM más común para importar "${description}" desde China? Pensá en qué clasificación usa la aduana argentina para este tipo de producto cuando se importa en cantidad para reventa. Respondé con el código NCM de 8 dígitos (XXXX.XX.XX) en la primera línea, y opcionalmente una breve explicación después.` }
+      ]
     })
   });
   if (!r.ok) return null;
