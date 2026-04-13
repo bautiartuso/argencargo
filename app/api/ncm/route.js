@@ -77,10 +77,30 @@ async function classifyWithOpenAI(description, apiKey) {
   return match ? match[0] : null;
 }
 
+// Manual overrides for products that AI consistently misclassifies
+const OVERRIDES = [
+  {keywords:["auricular","headphone","earphone","earbuds","earbud","tws","headset","auriculares"],ncm:"8518.30.00",desc:"Auriculares",die:35,te:3},
+  {keywords:["parlante","altavoz","speaker","bocina","boombox"],ncm:"8518.22.00",desc:"Altavoces/Parlantes",die:35,te:3},
+];
+
+function checkOverride(description) {
+  const lower = description.toLowerCase();
+  for (const ov of OVERRIDES) {
+    if (ov.keywords.some(k => lower.includes(k))) {
+      return { ncm_code: ov.ncm, ncm_description: ov.desc, import_duty_rate: ov.die, statistics_rate: ov.te, iva_rate: 21, source: "override" };
+    }
+  }
+  return null;
+}
+
 export async function POST(req) {
   try {
     const { description } = await req.json();
     if (!description) return Response.json({ error: "Description required" }, { status: 400 });
+
+    // Check manual overrides first
+    const override = checkOverride(description);
+    if (override) return Response.json(override);
 
     let suggestedCode = null;
 
