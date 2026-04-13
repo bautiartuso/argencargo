@@ -259,8 +259,10 @@ function CalculatorPage({token,client}){
 
   const DELIV={oficina:"Retiro por Oficina (Gratis)",caba:"Envío CABA ($20)",gba:"Envío a todo el país (A cotizar)"};
   const saveQuote=async(ch)=>{const{totWeight,totCBM}=calcTotals();try{await dq("quotes",{method:"POST",token,body:{client_id:client?.id||null,client_name:client?`${client.first_name} ${client.last_name}`:"Anónimo",client_code:client?.client_code||"—",origin,channel_key:ch.key,channel_name:ch.name,products:JSON.stringify(products),packages:JSON.stringify(pkgs),delivery,total_fob:totalFob,total_weight:totWeight,total_cbm:totCBM,total_cost:ch.total+(delivery==="caba"?20:0)}});}catch(e){console.error("Error saving quote:",e);}};
-  const makeWAMsg=(ch)=>{const{totWeight,totCBM}=calcTotals();const name=client?`${client.first_name} ${client.last_name}`:"Cliente";const code=client?.client_code||"—";const flag=origin==="USA"?"\ud83c\uddfa\ud83c\uddf8":"\ud83c\udde8\ud83c\uddf3";
-    return encodeURIComponent(`Hola Bautista!\nMi nombre es *${name}*, y quiero realizar esta importación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${mercType}*\nDetalle: *${prodSummary}*\nValor Total: *USD ${totalFob.toLocaleString(undefined,{minimumFractionDigits:2})}*\nPeso Total: *${totWeight.toFixed(2)} kg*\nCBM Total: *${totCBM.toFixed(4)} m³*\n\nEntrega en Destino: *${DELIV[delivery]}*\n\nCódigo cliente: *${code}*`);};
+  const makeWAMsg=(ch)=>{const{totWeight,totCBM}=calcTotals();const name=client?`${client.first_name} ${client.last_name}`:"Cliente";const code=client?.client_code||"—";const flag=origin==="USA"?"\ud83c\uddfa\ud83c\uddf8":"\ud83c\udde8\ud83c\uddf3";const isAereo=ch.key?.includes("aereo");const delivCost=delivery==="caba"?20:0;const total=ch.total+delivCost;
+    const usdF=v=>`USD ${v.toLocaleString(undefined,{minimumFractionDigits:2})}`;
+    if(ch.isBlanco){return encodeURIComponent(`Hola Bautista! Acabo de cotizar una importación y quiero avanzar con la operación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${prodSummary}*\nValor Total: *${usdF(totalFob)}*\n${isAereo?`Peso Total: *${totWeight.toFixed(2)} kg*`:`CBM Total: *${totCBM.toFixed(4)} m³*`}\n\nImpuestos estimados: *${usdF(ch.totalImp||0)}*\nFlete Internacional: *${usdF(ch.flete||0)}*\nSeguro: *${usdF(ch.seguro||0)}*\nEntrega en Destino: *${DELIV[delivery]}*\nTotal estimado: *${usdF(total)}*\n\nCódigo cliente: *${code}*`);}
+    return encodeURIComponent(`Hola Bautista! Acabo de cotizar una importación y quiero avanzar con la operación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${prodSummary}*\n\nTipo de envío: *${ch.name}*\n\nValor Total: *${usdF(totalFob)}*\n${isAereo?`Peso Total: *${totWeight.toFixed(2)} kg*`:`CBM Total: *${totCBM.toFixed(4)} m³*`}\nEntrega en Destino: *${DELIV[delivery]}*\n\nCódigo cliente: *${code}*`);};
 
   const usd=v=>`USD ${v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const row=(l,v,bold,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:8}:{})}}><span style={{fontSize:12,color:bold?"#fff":"rgba(255,255,255,0.45)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:12,fontWeight:bold?700:600,color:accent?IC:bold?"#fff":"rgba(255,255,255,0.7)"}}>{usd(v)}</span></div>;
@@ -321,18 +323,36 @@ function CalculatorPage({token,client}){
         {results.totCBM>0&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>CBM</p><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{results.totCBM.toFixed(4)} m³</p></div>}
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>ENTREGA</p><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{DELIV[delivery]}</p></div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:results.channels.length>1?"1fr 1fr":"1fr",gap:20}}>{results.channels.map(ch=><div key={ch.key} style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem",display:"flex",flexDirection:"column"}}>
-        <div style={{marginBottom:14}}><p style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{ch.name}</p>
-          {ch.key==="aereo_b_usa"&&<div style={{marginTop:8,padding:"10px 16px",background:"linear-gradient(135deg,rgba(96,165,250,0.15),rgba(74,144,217,0.1))",border:"1px solid rgba(96,165,250,0.25)",borderRadius:10}}><p style={{fontSize:18,fontWeight:700,color:IC,margin:0,textAlign:"center"}}>Entrega en 48-72 hs hábiles</p></div>}
+      <div style={{display:"grid",gridTemplateColumns:results.channels.length>1?"1fr 1fr":"1fr",gap:20}}>{results.channels.map(ch=>{const isAereo=ch.key?.includes("aereo");const delivCost=delivery==="caba"?20:0;const total=ch.noCalc?0:ch.total+delivCost;
+      return <div key={ch.key} style={{background:"rgba(255,255,255,0.03)",borderRadius:16,border:`1.5px solid ${ch.key==="aereo_b_usa"?"rgba(251,146,60,0.4)":"rgba(255,255,255,0.07)"}`,padding:"1.5rem",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24}}>{isAereo?"✈️":"🚢"}</span><p style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>{ch.name}</p></div>
+          {ch.key==="aereo_b_usa"&&<span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:8,background:"rgba(251,146,60,0.15)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.3)"}}>⚡ 48-72 hs</span>}
         </div>
-        {ch.noCalc?<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"1.5rem 0"}}><p style={{fontSize:13,color:"rgba(255,255,255,0.3)",textAlign:"center"}}>No se puede calcular sin las medidas de las cajas</p></div>:<div style={{flex:1}}>
-          {row("Servicio Integral ARGENCARGO",ch.flete)}
-          {ch.surcharge>0&&row(`Recargo valor (${ch.surchargePct}%)`,ch.surcharge)}
-          {delivery==="caba"&&row("Envío CABA",20)}
-          {row("TOTAL",ch.total+(delivery==="caba"?20:0),true,true)}
-        </div>}
-        <a href={`https://wa.me/5491125088580?text=${makeWAMsg(ch)}`} onClick={()=>saveQuote(ch)} target="_blank" rel="noopener noreferrer" style={{display:"block",width:"100%",padding:"14px",fontSize:14,fontWeight:700,borderRadius:10,border:"none",cursor:ch.noCalc?"not-allowed":"pointer",background:ch.noCalc?"rgba(255,255,255,0.04)":`linear-gradient(135deg,#25D366,#128C7E)`,color:ch.noCalc?"rgba(255,255,255,0.2)":"#fff",textAlign:"center",textDecoration:"none",marginTop:16,boxSizing:"border-box",pointerEvents:ch.noCalc?"none":"auto"}}>Avanzar con esta importación →</a>
-      </div>)}</div>
+        {ch.noCalc?<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"1.5rem 0"}}><p style={{fontSize:13,color:"rgba(255,255,255,0.3)",textAlign:"center"}}>No se puede calcular sin las medidas de las cajas</p></div>:<>
+        <div style={{background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"20px",marginBottom:16,textAlign:"center"}}>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>Costo de importación</p>
+          <p style={{fontSize:32,fontWeight:700,color:"#fff",margin:0}}>{usd(total)}</p>
+        </div>
+        <button onClick={()=>setExpandedCh(expandedCh===ch.key?null:ch.key)} style={{width:"100%",padding:"12px",fontSize:13,fontWeight:600,borderRadius:10,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",cursor:"pointer",color:"rgba(255,255,255,0.5)",marginBottom:12}}>Ver desglose detallado ▼</button>
+        </>}
+        <a href={`https://wa.me/5491125088580?text=${makeWAMsg(ch)}`} onClick={()=>saveQuote(ch)} target="_blank" rel="noopener noreferrer" style={{display:"block",width:"100%",padding:"14px",fontSize:14,fontWeight:700,borderRadius:12,border:"none",cursor:ch.noCalc?"not-allowed":"pointer",background:ch.noCalc?"rgba(255,255,255,0.04)":`linear-gradient(135deg,#25D366,#128C7E)`,color:ch.noCalc?"rgba(255,255,255,0.2)":"#fff",textAlign:"center",textDecoration:"none",boxSizing:"border-box",pointerEvents:ch.noCalc?"none":"auto"}}>Avanzar con esta importación →</a>
+      </div>})}</div>
+      {/* USA Modal desglose */}
+      {expandedCh&&results.channels.find(c=>c.key===expandedCh)&&(()=>{const mc=results.channels.find(c=>c.key===expandedCh);const delivCost=delivery==="caba"?20:0;const total=mc.total+delivCost;
+      return <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setExpandedCh(null)}>
+        <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}/>
+        <div style={{position:"relative",maxWidth:500,width:"90%",background:"#0a1428",borderRadius:20,border:"1px solid rgba(255,255,255,0.1)",padding:"2rem",boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+            <h3 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>{mc.name}</h3>
+            <button onClick={()=>setExpandedCh(null)} style={{fontSize:20,background:"none",border:"none",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>✕</button>
+          </div>
+          {row("Servicio Integral ARGENCARGO",mc.flete)}
+          {mc.surcharge>0&&row(`Recargo valor (${mc.surchargePct}%)`,mc.surcharge)}
+          {delivCost>0&&row("Envío CABA",delivCost)}
+          {row("TOTAL",total,true,true)}
+        </div>
+      </div>;})()}
     </div>}
 
     {/* CHINA FLOW - Step 1: Products + NCM per product */}
@@ -410,11 +430,10 @@ function CalculatorPage({token,client}){
           {isFastest&&<span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:8,background:"rgba(251,146,60,0.15)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.3)"}}>⚡ El más Rápido</span>}
           {isCheapest&&!isFastest&&<span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:8,background:"rgba(34,197,94,0.15)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)"}}>💵 El más Económico</span>}
         </div>
-        {ch.info&&<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:"0 0 12px",minHeight:0}}>{ch.info}</p>}
-        {!ch.info&&<div style={{height:12}}/>}
+        {origin==="USA"&&ch.info&&<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:"0 0 12px"}}>{ch.info}</p>}
         <div style={{background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"20px",marginBottom:16,textAlign:"center"}}>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px",textTransform:"uppercase"}}>Costo de importación</p>
-          <p style={{fontSize:32,fontWeight:700,color:IC,margin:0}}>{usd(total)}</p>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>Costo de importación</p>
+          <p style={{fontSize:32,fontWeight:700,color:"#fff",margin:0}}>{usd(total)}</p>
         </div>
         <button onClick={()=>setExpandedCh(expandedCh===ch.key?null:ch.key)} style={{width:"100%",padding:"12px",fontSize:13,fontWeight:600,borderRadius:10,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",cursor:"pointer",color:"rgba(255,255,255,0.5)",marginBottom:12}}>Ver desglose detallado ▼</button>
         <a href={`https://wa.me/5491125088580?text=${makeWAMsg(ch)}`} onClick={()=>saveQuote(ch)} target="_blank" rel="noopener noreferrer" style={{display:"block",width:"100%",padding:"14px",fontSize:14,fontWeight:700,borderRadius:12,border:"none",cursor:"pointer",background:`linear-gradient(135deg,#25D366,#128C7E)`,color:"#fff",textAlign:"center",textDecoration:"none",boxSizing:"border-box"}}>Avanzar con esta importación →</a>
@@ -477,14 +496,14 @@ function CalculatorPage({token,client}){
 }
 function DashShell({children,page,setPage,role,client,user,onLogout}){
   const name=client?`${client.first_name} ${client.last_name}`:user?.email||"";const code=client?.client_code||"";const nav=CN;
-  return <div style={{minHeight:"100vh",display:"flex",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,position:"relative",overflow:"hidden"}}><div style={{position:"absolute",inset:0,pointerEvents:"none"}}><WorldMap/></div>
-    <div style={{width:220,flexShrink:0,background:"rgba(0,0,0,0.3)",borderRight:"1px solid rgba(255,255,255,0.05)",display:"flex",flexDirection:"column",position:"sticky",top:0,height:"100vh",zIndex:2}}>
+  return <div style={{minHeight:"100vh",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,position:"relative"}}><div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0}}><WorldMap/></div>
+    <div style={{width:220,position:"fixed",top:0,left:0,bottom:0,background:"rgba(3,8,16,0.95)",borderRight:"1px solid rgba(255,255,255,0.05)",display:"flex",flexDirection:"column",zIndex:10,overflow:"auto"}}>
       <div style={{padding:"20px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><img src={LOGO} alt="AC" style={{width:"100%",height:"auto",maxHeight:50,objectFit:"contain"}}/></div>
       {code&&<div style={{padding:"16px 16px 8px",textAlign:"center"}}><div style={{display:"inline-block",padding:"6px 16px",borderRadius:8,background:"rgba(74,144,217,0.1)",border:"1px solid rgba(74,144,217,0.2)"}}><p style={{fontSize:9,color:"rgba(255,255,255,0.3)",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700}}>Tu código</p><p style={{fontSize:18,fontWeight:700,color:IC,margin:0,letterSpacing:"0.12em",fontFamily:"monospace"}}>{code}</p></div></div>}
       <nav style={{flex:1,padding:"12px 8px"}}>{nav.map(item=><button key={item.key} onClick={()=>setPage(item.key)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 14px",marginBottom:2,borderRadius:10,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,letterSpacing:"0.04em",background:page===item.key?"rgba(74,144,217,0.15)":"transparent",color:page===item.key?"#fff":"rgba(255,255,255,0.4)",borderLeft:page===item.key?`3px solid ${B.accent}`:"3px solid transparent"}}><NI p={item.p} a={page===item.key}/>{item.label}</button>)}</nav>
       <div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.05)"}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:36,height:36,borderRadius:"50%",background:"rgba(74,144,217,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13,color:IC}}>{(client?.first_name?.[0]||"U").toUpperCase()}{(client?.last_name?.[0]||"").toUpperCase()}</div><div style={{flex:1,minWidth:0}}><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.25)",margin:0}}>Cliente</p></div></div><button onClick={onLogout} style={{width:"100%",padding:"8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.35)",cursor:"pointer",fontWeight:600}}>Cerrar sesión</button></div>
     </div>
-    <div style={{flex:1,overflow:"auto",position:"relative",zIndex:2}}><div style={{maxWidth:1000,margin:"0 auto",padding:"28px 32px"}}>{children}</div></div>
+    <div style={{marginLeft:220,minHeight:"100vh",position:"relative",zIndex:1}}><div style={{maxWidth:1000,margin:"0 auto",padding:"28px 32px"}}>{children}</div></div>
   </div>;
 }
 function Dashboard({profile,client,user,token,onLogout}){
