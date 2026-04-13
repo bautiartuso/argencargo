@@ -679,13 +679,16 @@ function AdminSettings({token,session}){
 
 function FinancePanel({token}){
   const [entries,setEntries]=useState([]);const [cats,setCats]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("all");const [showAdd,setShowAdd]=useState(null);const [msg,setMsg]=useState("");
-  const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),description:"",category_id:"",type:"ingreso",amount:"",notes:""});
-  const load=async()=>{const [e,c]=await Promise.all([dq("finance_entries",{token,filters:"?select=*,finance_categories(name)&order=date.desc,created_at.desc"}),dq("finance_categories",{token,filters:"?select=*&order=type.asc,sort_order.asc"})]);setEntries(Array.isArray(e)?e:[]);setCats(Array.isArray(c)?c:[]);setLo(false);};
+  const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),description:"",category_id:"",type:"ingreso",amount:"",notes:"",payment_method:"efectivo",payment_due_date:"",operation_id:""});
+  const [allOps,setAllOps]=useState([]);
+  const load=async()=>{const [e,c,o]=await Promise.all([dq("finance_entries",{token,filters:"?select=*,finance_categories(name)&order=date.desc,created_at.desc"}),dq("finance_categories",{token,filters:"?select=*&order=type.asc,sort_order.asc"}),dq("operations",{token,filters:"?select=id,operation_code,description,budget_total&order=created_at.desc"})]);setEntries(Array.isArray(e)?e:[]);setCats(Array.isArray(c)?c:[]);setAllOps(Array.isArray(o)?o:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const addEntry=async()=>{if(!newEntry.description||!newEntry.amount||!newEntry.category_id)return;
-    const r=await dq("finance_entries",{method:"POST",token,body:{...newEntry,amount:Number(newEntry.amount)}});
-    if(r?.id||Array.isArray(r)){load();setShowAdd(null);setNewEntry({date:new Date().toISOString().slice(0,10),description:"",category_id:"",type:showAdd||"ingreso",amount:"",notes:""});flash("Movimiento agregado");}};
+    const body={...newEntry,amount:Number(newEntry.amount),is_paid:newEntry.payment_method!=="tarjeta_credito"};
+    if(!body.payment_due_date)delete body.payment_due_date;if(!body.operation_id)delete body.operation_id;
+    const r=await dq("finance_entries",{method:"POST",token,body});
+    if(r?.id||Array.isArray(r)){load();setShowAdd(null);setNewEntry({date:new Date().toISOString().slice(0,10),description:"",category_id:"",type:"ingreso",amount:"",notes:"",payment_method:"efectivo",payment_due_date:"",operation_id:""});flash("Movimiento agregado");}};
   const delEntry=async(id)=>{await dq("finance_entries",{method:"DELETE",token,filters:`?id=eq.${id}`});setEntries(p=>p.filter(e=>e.id!==id));flash("Eliminado");};
   const filtered=tab==="all"?entries:entries.filter(e=>e.type===tab);
   const totalIng=entries.filter(e=>e.type==="ingreso").reduce((s,e)=>s+Number(e.amount||0),0);
@@ -708,24 +711,31 @@ function FinancePanel({token}){
         <Inp label="Descripción" value={newEntry.description} onChange={v=>setNewEntry(p=>({...p,description:v}))} placeholder="Ej: FRANP / SEIKO"/>
         <Sel label="Categoría" value={newEntry.category_id} onChange={v=>setNewEntry(p=>({...p,category_id:v}))} options={cats.filter(c=>c.type===showAdd).map(c=>({value:c.id,label:c.name}))} ph="Seleccionar"/>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
         <Inp label="Monto (USD)" type="number" value={newEntry.amount} onChange={v=>setNewEntry(p=>({...p,amount:v}))} step="0.01" placeholder="0.00"/>
+        <Sel label="Método de pago" value={newEntry.payment_method} onChange={v=>setNewEntry(p=>({...p,payment_method:v}))} options={[{value:"efectivo",label:"Efectivo"},{value:"transferencia",label:"Transferencia"},{value:"tarjeta_credito",label:"Tarjeta Crédito"},{value:"tarjeta_debito",label:"Tarjeta Débito"}]}/>
+        {newEntry.payment_method==="tarjeta_credito"&&<Inp label="Fecha pago real" type="date" value={newEntry.payment_due_date} onChange={v=>setNewEntry(p=>({...p,payment_due_date:v}))}/>}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+        {showAdd==="ingreso"&&<Sel label="Operación (opcional)" value={newEntry.operation_id} onChange={v=>setNewEntry(p=>({...p,operation_id:v||null}))} options={allOps.map(o=>({value:o.id,label:`${o.operation_code} — ${o.description||"Sin desc"}`}))} ph="Sin vincular"/>}
         <Inp label="Notas" value={newEntry.notes} onChange={v=>setNewEntry(p=>({...p,notes:v}))} placeholder="Opcional"/>
       </div>
       <div style={{display:"flex",gap:8}}><Btn onClick={addEntry}>Guardar</Btn><Btn variant="secondary" onClick={()=>setShowAdd(null)}>Cancelar</Btn></div>
     </Card>}
+    {(()=>{const deudaTC=entries.filter(e=>e.payment_method==="tarjeta_credito"&&!e.is_paid).reduce((s,e)=>s+Number(e.amount||0),0);return deudaTC>0&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:12,padding:"14px 20px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><p style={{fontSize:12,fontWeight:700,color:"#fb923c",margin:0}}>Deuda en tarjeta de crédito</p><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Gastos con tarjeta pendientes de pago</p></div><p style={{fontSize:20,fontWeight:700,color:"#fb923c",margin:0}}>{usd(deudaTC)}</p></div>;})()}
     <div style={{display:"flex",gap:8,marginBottom:16}}>{[{k:"all",l:"Todos"},{k:"ingreso",l:"Ingresos"},{k:"gasto",l:"Gastos"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
     {lo?<p style={{color:"rgba(255,255,255,0.3)"}}>Cargando...</p>:<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-          {["Fecha","Descripción","Categoría","Monto","Notas",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
+          {["Fecha","Descripción","Categoría","Monto","Pago","Notas",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
         </tr></thead>
         <tbody>{filtered.map(e=><tr key={e.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
           <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{formatDate(e.date)}</td>
           <td style={{padding:"10px 12px",color:"#fff"}}>{e.description}</td>
           <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)"}}>{e.finance_categories?.name||"—"}</td>
           <td style={{padding:"10px 12px",fontWeight:700,color:e.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{e.type==="gasto"?"-":""}{usd(Number(e.amount||0))}</td>
-          <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.3)",fontSize:11}}>{e.notes||""}</td>
+          <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:e.payment_method==="tarjeta_credito"?"rgba(251,146,60,0.15)":"rgba(255,255,255,0.05)",color:e.payment_method==="tarjeta_credito"?"#fb923c":"rgba(255,255,255,0.4)"}}>{e.payment_method==="tarjeta_credito"?"TC":e.payment_method==="tarjeta_debito"?"TD":e.payment_method==="transferencia"?"TRF":"EF"}</span>{e.payment_method==="tarjeta_credito"&&!e.is_paid&&<span style={{fontSize:9,color:"#fb923c",marginLeft:4}}>⏳</span>}</td>
+          <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.3)",fontSize:11}}>{e.notes||""}{e.operation_id&&<span style={{fontSize:9,color:IC,marginLeft:4}}>📦</span>}</td>
           <td style={{padding:"10px 12px"}}><button onClick={()=>delEntry(e.id)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>X</button></td>
         </tr>)}</tbody>
       </table>
