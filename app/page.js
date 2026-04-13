@@ -32,7 +32,7 @@ function formatDate(d){if(!d)return"—";return new Date(d).toLocaleDateString("
 function AuthPage({children}){return <div style={{minHeight:"100vh",display:"flex",position:"relative",overflow:"hidden",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif"}}><div style={{position:"absolute",inset:0,background:DARK_BG}}/><div style={{position:"absolute",inset:0}}><WorldMap/></div><div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem 1rem",position:"relative",zIndex:3}}><div style={{maxWidth:420,width:"100%"}}><div style={{textAlign:"center",marginBottom:28}}><img src={LOGO} alt="AC" style={{width:220,height:"auto",filter:"drop-shadow(0 0 20px rgba(74,144,217,0.4))"}}/><p style={{fontSize:13,color:"rgba(255,255,255,0.35)",margin:"10px 0 0"}}>Soluciones integrales de comercio exterior</p></div><div style={{background:"rgba(8,18,35,0.85)",backdropFilter:"blur(24px)",borderRadius:20,padding:"2rem 1.75rem",border:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}}>{children}</div><p style={{textAlign:"center",fontSize:11,color:"rgba(255,255,255,0.2)",marginTop:16}}>Argencargo © 2026</p></div></div></div>;}
 function SI({k,a,cur,isA,sz=22}){let key=k;if(k==="en_transito")key=isA?"en_transito_aereo":"en_transito_maritimo";const ps=SP[key]||[];const co=cur?IC:a?"rgba(96,165,250,0.6)":"rgba(255,255,255,0.15)";return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={co} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{ps.map((d,i)=><path key={i} d={d}/>)}</svg>;}
 function NI({p,a,sz=18}){return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={a?IC:"rgba(255,255,255,0.3)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{p.map((d,i)=><path key={i} d={d}/>)}</svg>;}
-function OpProgress({status,isAereo}){const si=S2S[status]??0;return <div style={{display:"flex",alignItems:"center",padding:"16px 0"}}>{OS.map((s,i)=>{const a=i<=si;const cur=i===si;return <div key={s.k} style={{display:"flex",alignItems:"center",flex:1}}><div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,width:"100%"}}><div style={{width:42,height:42,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",background:cur?"rgba(74,144,217,0.2)":a?"rgba(74,144,217,0.08)":"rgba(255,255,255,0.03)",border:`1.5px solid ${cur?IC:a?"rgba(74,144,217,0.25)":"rgba(255,255,255,0.06)"}`,boxShadow:cur?"0 0 12px rgba(96,165,250,0.2)":"none"}}><SI k={s.k} a={a} cur={cur} isA={isAereo}/></div><span style={{fontSize:9,color:cur?IC:a?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.18)",textAlign:"center",lineHeight:1.2,fontWeight:cur?700:400,whiteSpace:"pre-line",minHeight:20}}>{s.l}</span></div>{i<OS.length-1&&<div style={{width:24,height:2,background:i<si?IC:"rgba(255,255,255,0.06)",flexShrink:0,marginTop:-20}}/>}</div>})}</div>;}
+function OpProgress({status,isAereo}){const si=S2S[status]??0;return <div className="op-progress" style={{display:"flex",alignItems:"center",padding:"16px 0"}}>{OS.map((s,i)=>{const a=i<=si;const cur=i===si;return <div key={s.k} style={{display:"flex",alignItems:"center",flex:1}}><div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,width:"100%"}}><div style={{width:42,height:42,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",background:cur?"rgba(74,144,217,0.2)":a?"rgba(74,144,217,0.08)":"rgba(255,255,255,0.03)",border:`1.5px solid ${cur?IC:a?"rgba(74,144,217,0.25)":"rgba(255,255,255,0.06)"}`,boxShadow:cur?"0 0 12px rgba(96,165,250,0.2)":"none"}}><SI k={s.k} a={a} cur={cur} isA={isAereo}/></div><span style={{fontSize:9,color:cur?IC:a?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.18)",textAlign:"center",lineHeight:1.2,fontWeight:cur?700:400,whiteSpace:"pre-line",minHeight:20}}>{s.l}</span></div>{i<OS.length-1&&<div style={{width:24,height:2,background:i<si?IC:"rgba(255,255,255,0.06)",flexShrink:0,marginTop:-20}}/>}</div>})}</div>;}
 function OperationsList({ops,onSelect,client}){
   const act=ops.filter(o=>o.status!=="entregada"&&o.status!=="cancelada");
   const past=ops.filter(o=>o.status==="entregada"||o.status==="cancelada");
@@ -59,7 +59,7 @@ function OperationsList({ops,onSelect,client}){
   </div>;};
   return <div>
     <div style={{background:"rgba(255,255,255,0.04)",borderRadius:12,border:"1px solid rgba(255,255,255,0.07)",padding:"16px 20px",marginBottom:20}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Mis importaciones</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{code} — {name}</p></div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:24}}>{stats.map((s,i)=><div key={i} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"14px 16px",position:"relative",overflow:"hidden"}}><div style={{position:"absolute",top:0,left:0,right:0,height:3,background:s.b}}/><p style={{fontSize:10,fontWeight:700,color:"#fff",margin:"4px 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{s.l}</p>{s.btn?<button style={{fontSize:13,fontWeight:600,color:IC,background:"rgba(74,144,217,0.12)",border:"1px solid rgba(74,144,217,0.25)",borderRadius:6,padding:"4px 12px",cursor:"pointer",marginTop:2}}>Ver reporte</button>:<p style={{fontSize:28,fontWeight:700,color:s.c,margin:0}}>{s.v}</p>}</div>)}</div>
+    <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:24}}>{stats.map((s,i)=><div key={i} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"14px 16px",position:"relative",overflow:"hidden"}}><div style={{position:"absolute",top:0,left:0,right:0,height:3,background:s.b}}/><p style={{fontSize:10,fontWeight:700,color:"#fff",margin:"4px 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{s.l}</p>{s.btn?<button style={{fontSize:13,fontWeight:600,color:IC,background:"rgba(74,144,217,0.12)",border:"1px solid rgba(74,144,217,0.25)",borderRadius:6,padding:"4px 12px",cursor:"pointer",marginTop:2}}>Ver reporte</button>:<p style={{fontSize:28,fontWeight:700,color:s.c,margin:0}}>{s.v}</p>}</div>)}</div>
     {act.length>0&&act.map(renderOp)}
     {past.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"24px 0 12px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Finalizadas ({past.length})</h3>{past.map(renderOp)}</>}
     {ops.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.3)",padding:"3rem 0"}}>No tenés operaciones todavía.</p>}
@@ -293,7 +293,7 @@ function CalculatorPage({token,client}){
       <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 16px"}}>PACKING LIST</h3>
       {pkgs.map((pk,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:IC}}>Bulto {i+1}</span>{pkgs.length>1&&<button onClick={()=>rmPkg(i)} style={{fontSize:11,padding:"4px 10px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>Eliminar</button>}</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 10px"}}>
+        <div className="grid-5" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 10px"}}>
           <Inp label="Cant. bultos" type="number" value={pk.qty} onChange={v=>chPkg(i,"qty",v)} placeholder="1"/>
           {!noDims&&<><Inp label="Largo (cm)" type="number" value={pk.length} onChange={v=>chPkg(i,"length",v)} placeholder="60"/><Inp label="Ancho (cm)" type="number" value={pk.width} onChange={v=>chPkg(i,"width",v)} placeholder="40"/><Inp label="Alto (cm)" type="number" value={pk.height} onChange={v=>chPkg(i,"height",v)} placeholder="35"/></>}
           <Inp label="Peso (kg)" type="number" value={pk.weight} onChange={v=>chPkg(i,"weight",v)} placeholder="12"/>
@@ -323,7 +323,7 @@ function CalculatorPage({token,client}){
         {results.totCBM>0&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>CBM</p><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{results.totCBM.toFixed(4)} m³</p></div>}
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>ENTREGA</p><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{DELIV[delivery]}</p></div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:results.channels.length>1?"1fr 1fr":"1fr",gap:20}}>{results.channels.map(ch=>{const isAereo=ch.key?.includes("aereo");const delivCost=delivery==="caba"?20:0;const total=ch.noCalc?0:ch.total+delivCost;
+      <div className="grid-2" style={{display:"grid",gridTemplateColumns:results.channels.length>1?"1fr 1fr":"1fr",gap:20}}>{results.channels.map(ch=>{const isAereo=ch.key?.includes("aereo");const delivCost=delivery==="caba"?20:0;const total=ch.noCalc?0:ch.total+delivCost;
       return <div key={ch.key} style={{background:"rgba(255,255,255,0.03)",borderRadius:16,border:`1.5px solid ${ch.key==="aereo_b_usa"?"rgba(251,146,60,0.4)":"rgba(255,255,255,0.07)"}`,padding:"1.5rem",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24}}>{isAereo?"✈️":"🚢"}</span><p style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>{ch.name}</p></div>
@@ -388,7 +388,7 @@ function CalculatorPage({token,client}){
       {pkgs.map((pk,i)=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0),gw=Number(pk.weight||0);const bruto=gw*q;const vol=l&&w&&h?((l*w*h)/5000)*q:0;const isVol=vol>bruto&&!noDims;
       return <div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:IC}}>Bulto {i+1}</span>{pkgs.length>1&&<button onClick={()=>rmPkg(i)} style={{fontSize:11,padding:"4px 10px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>Eliminar</button>}</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 10px"}}>
+        <div className="grid-5" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 10px"}}>
           <Inp label="Cant. bultos" type="number" value={pk.qty} onChange={v=>chPkg(i,"qty",v)} placeholder="1"/>
           {!noDims&&<><Inp label="Largo (cm)" type="number" value={pk.length} onChange={v=>chPkg(i,"length",v)} placeholder="60"/><Inp label="Ancho (cm)" type="number" value={pk.width} onChange={v=>chPkg(i,"width",v)} placeholder="40"/><Inp label="Alto (cm)" type="number" value={pk.height} onChange={v=>chPkg(i,"height",v)} placeholder="35"/></>}
           <Inp label="Peso (kg)" type="number" value={pk.weight} onChange={v=>chPkg(i,"weight",v)} placeholder="12"/>
@@ -444,7 +444,7 @@ function CalculatorPage({token,client}){
       const isAereoModal=expandedCh?.includes("aereo");
 
       const maxLen=Math.max(aereos.length,maritimos.length);const pairs=[];for(let i=0;i<maxLen;i++)pairs.push([aereos[i],maritimos[i]]);
-      return <><div>{pairs.map((pair,pi)=><div key={pi} style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"stretch",marginBottom:0}}>{pair.map(ch=>ch?renderCard(ch):<div key={"empty"+pi}/>)}</div>)}</div>
+      return <><div>{pairs.map((pair,pi)=><div key={pi} className="grid-2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"stretch",marginBottom:0}}>{pair.map(ch=>ch?renderCard(ch):<div key={"empty"+pi}/>)}</div>)}</div>
       {modalCh&&<div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setExpandedCh(null)}>
         <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}/>
         <div style={{position:"relative",maxWidth:650,width:"90%",maxHeight:"85vh",overflow:"auto",background:"#0a1428",borderRadius:20,border:"1px solid rgba(255,255,255,0.1)",padding:"2rem",boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
@@ -495,15 +495,50 @@ function CalculatorPage({token,client}){
   </div>;
 }
 function DashShell({children,page,setPage,role,client,user,onLogout}){
-  const name=client?`${client.first_name} ${client.last_name}`:user?.email||"";const code=client?.client_code||"";const nav=CN;
+  const name=client?`${client.first_name} ${client.last_name}`:user?.email||"";const code=client?.client_code||"";const nav=CN;const [mobOpen,setMobOpen]=useState(false);
+  const sidebarContent=<>
+    <div style={{padding:"20px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center"}}><img src={LOGO} alt="AC" style={{height:40,objectFit:"contain"}}/><button className="mob-close" onClick={()=>setMobOpen(false)} style={{display:"none",background:"none",border:"none",color:"#fff",fontSize:20,cursor:"pointer"}}>✕</button></div>
+    {code&&<div style={{padding:"16px 16px 8px",textAlign:"center"}}><div style={{display:"inline-block",padding:"6px 16px",borderRadius:8,background:"rgba(74,144,217,0.1)",border:"1px solid rgba(74,144,217,0.2)"}}><p style={{fontSize:9,color:"rgba(255,255,255,0.3)",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700}}>Tu código</p><p style={{fontSize:18,fontWeight:700,color:IC,margin:0,letterSpacing:"0.12em",fontFamily:"monospace"}}>{code}</p></div></div>}
+    <nav style={{flex:1,padding:"12px 8px"}}>{nav.map(item=><button key={item.key} onClick={()=>{setPage(item.key);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 14px",marginBottom:2,borderRadius:10,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,letterSpacing:"0.04em",background:page===item.key?"rgba(74,144,217,0.15)":"transparent",color:page===item.key?"#fff":"rgba(255,255,255,0.4)",borderLeft:page===item.key?`3px solid ${B.accent}`:"3px solid transparent"}}><NI p={item.p} a={page===item.key}/>{item.label}</button>)}</nav>
+    <div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.05)"}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:36,height:36,borderRadius:"50%",background:"rgba(74,144,217,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13,color:IC}}>{(client?.first_name?.[0]||"U").toUpperCase()}{(client?.last_name?.[0]||"").toUpperCase()}</div><div style={{flex:1,minWidth:0}}><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.25)",margin:0}}>Cliente</p></div></div><button onClick={onLogout} style={{width:"100%",padding:"8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.35)",cursor:"pointer",fontWeight:600}}>Cerrar sesión</button></div>
+  </>;
   return <div style={{minHeight:"100vh",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,position:"relative"}}><div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0}}><WorldMap/></div>
-    <div style={{width:220,position:"fixed",top:0,left:0,bottom:0,background:"rgba(3,8,16,0.95)",borderRight:"1px solid rgba(255,255,255,0.05)",display:"flex",flexDirection:"column",zIndex:10,overflow:"auto"}}>
-      <div style={{padding:"20px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><img src={LOGO} alt="AC" style={{width:"100%",height:"auto",maxHeight:50,objectFit:"contain"}}/></div>
-      {code&&<div style={{padding:"16px 16px 8px",textAlign:"center"}}><div style={{display:"inline-block",padding:"6px 16px",borderRadius:8,background:"rgba(74,144,217,0.1)",border:"1px solid rgba(74,144,217,0.2)"}}><p style={{fontSize:9,color:"rgba(255,255,255,0.3)",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700}}>Tu código</p><p style={{fontSize:18,fontWeight:700,color:IC,margin:0,letterSpacing:"0.12em",fontFamily:"monospace"}}>{code}</p></div></div>}
-      <nav style={{flex:1,padding:"12px 8px"}}>{nav.map(item=><button key={item.key} onClick={()=>setPage(item.key)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 14px",marginBottom:2,borderRadius:10,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,letterSpacing:"0.04em",background:page===item.key?"rgba(74,144,217,0.15)":"transparent",color:page===item.key?"#fff":"rgba(255,255,255,0.4)",borderLeft:page===item.key?`3px solid ${B.accent}`:"3px solid transparent"}}><NI p={item.p} a={page===item.key}/>{item.label}</button>)}</nav>
-      <div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.05)"}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:36,height:36,borderRadius:"50%",background:"rgba(74,144,217,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13,color:IC}}>{(client?.first_name?.[0]||"U").toUpperCase()}{(client?.last_name?.[0]||"").toUpperCase()}</div><div style={{flex:1,minWidth:0}}><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.25)",margin:0}}>Cliente</p></div></div><button onClick={onLogout} style={{width:"100%",padding:"8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.35)",cursor:"pointer",fontWeight:600}}>Cerrar sesión</button></div>
+    <style>{`
+      @media(max-width:768px){
+        .sidebar-desktop{display:none!important}
+        .mob-header{display:flex!important}
+        .mob-close{display:block!important}
+        .main-content{margin-left:0!important;padding-top:60px!important}
+        .main-inner{padding:16px!important}
+        .mob-overlay{display:block!important}
+        .mob-sidebar{display:flex!important}
+        .grid-2{grid-template-columns:1fr!important}
+        .grid-4{grid-template-columns:1fr 1fr!important}
+        .grid-5{grid-template-columns:1fr 1fr!important}
+        .stats-grid{grid-template-columns:1fr 1fr!important}
+        .op-progress{overflow-x:auto;-webkit-overflow-scrolling:touch}
+        .op-info{flex-wrap:wrap!important;gap:12px!important}
+        h2{font-size:18px!important}
+      }
+      @media(min-width:769px){
+        .mob-header{display:none!important}
+        .mob-sidebar{display:none!important}
+        .mob-overlay{display:none!important}
+      }
+    `}</style>
+    {/* Mobile header */}
+    <div className="mob-header" style={{display:"none",position:"fixed",top:0,left:0,right:0,height:56,background:"rgba(3,8,16,0.95)",borderBottom:"1px solid rgba(255,255,255,0.05)",alignItems:"center",justifyContent:"space-between",padding:"0 16px",zIndex:20}}>
+      <button onClick={()=>setMobOpen(true)} style={{background:"none",border:"none",color:"#fff",fontSize:22,cursor:"pointer",padding:4}}>☰</button>
+      <img src={LOGO} alt="AC" style={{height:30}}/>
+      {code&&<span style={{fontSize:12,fontWeight:700,color:IC,fontFamily:"monospace"}}>{code}</span>}
     </div>
-    <div style={{marginLeft:220,minHeight:"100vh",position:"relative",zIndex:1}}><div style={{maxWidth:1000,margin:"0 auto",padding:"28px 32px"}}>{children}</div></div>
+    {/* Mobile overlay */}
+    {mobOpen&&<div className="mob-overlay" style={{display:"none",position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:25}} onClick={()=>setMobOpen(false)}/>}
+    {/* Mobile sidebar */}
+    {mobOpen&&<div className="mob-sidebar" style={{display:"none",position:"fixed",top:0,left:0,bottom:0,width:280,background:"rgba(3,8,16,0.98)",borderRight:"1px solid rgba(255,255,255,0.05)",flexDirection:"column",zIndex:30,overflow:"auto"}}>{sidebarContent}</div>}
+    {/* Desktop sidebar */}
+    <div className="sidebar-desktop" style={{width:220,position:"fixed",top:0,left:0,bottom:0,background:"rgba(3,8,16,0.95)",borderRight:"1px solid rgba(255,255,255,0.05)",display:"flex",flexDirection:"column",zIndex:10,overflow:"auto"}}>{sidebarContent}</div>
+    <div className="main-content" style={{marginLeft:220,minHeight:"100vh",position:"relative",zIndex:1}}><div className="main-inner" style={{maxWidth:1000,margin:"0 auto",padding:"28px 32px"}}>{children}</div></div>
   </div>;
 }
 function Dashboard({profile,client,user,token,onLogout}){
