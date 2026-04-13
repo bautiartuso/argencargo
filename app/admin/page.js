@@ -173,8 +173,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const totalFob=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
       // Peso facturable (per-bulto max)
       let pf=0,totCBM=0,totGW=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});
-      // If no items but budget already stored in DB, use stored values
-      const hasStoredBudget=items.length===0&&Number(op.budget_total||0)>0;
+      // Solo operaciones cerradas (históricas) usan valores guardados
+      const hasStoredBudget=op.status==="operacion_cerrada"&&Number(op.budget_total||0)>0;
       const isRI=opClient?.tax_condition==="responsable_inscripto";
       let totalTax,flete,seguro,totalAbonar;
       if(hasStoredBudget){
