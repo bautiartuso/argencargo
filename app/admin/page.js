@@ -677,6 +677,63 @@ function AdminSettings({token,session}){
   </div>;
 }
 
+function FinancePanel({token}){
+  const [entries,setEntries]=useState([]);const [cats,setCats]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("all");const [showAdd,setShowAdd]=useState(null);const [msg,setMsg]=useState("");
+  const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),description:"",category_id:"",type:"ingreso",amount:"",notes:""});
+  const load=async()=>{const [e,c]=await Promise.all([dq("finance_entries",{token,filters:"?select=*,finance_categories(name)&order=date.desc,created_at.desc"}),dq("finance_categories",{token,filters:"?select=*&order=type.asc,sort_order.asc"})]);setEntries(Array.isArray(e)?e:[]);setCats(Array.isArray(c)?c:[]);setLo(false);};
+  useEffect(()=>{load();},[token]);
+  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
+  const addEntry=async()=>{if(!newEntry.description||!newEntry.amount||!newEntry.category_id)return;
+    const r=await dq("finance_entries",{method:"POST",token,body:{...newEntry,amount:Number(newEntry.amount)}});
+    if(r?.id||Array.isArray(r)){load();setShowAdd(null);setNewEntry({date:new Date().toISOString().slice(0,10),description:"",category_id:"",type:showAdd||"ingreso",amount:"",notes:""});flash("Movimiento agregado");}};
+  const delEntry=async(id)=>{await dq("finance_entries",{method:"DELETE",token,filters:`?id=eq.${id}`});setEntries(p=>p.filter(e=>e.id!==id));flash("Eliminado");};
+  const filtered=tab==="all"?entries:entries.filter(e=>e.type===tab);
+  const totalIng=entries.filter(e=>e.type==="ingreso").reduce((s,e)=>s+Number(e.amount||0),0);
+  const totalGas=entries.filter(e=>e.type==="gasto").reduce((s,e)=>s+Number(e.amount||0),0);
+  const usd=v=>`USD ${v.toLocaleString(undefined,{minimumFractionDigits:2})}`;
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+      <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Finanzas</h2>
+      <div style={{display:"flex",gap:8}}><Btn onClick={()=>{setShowAdd("ingreso");setNewEntry(p=>({...p,type:"ingreso"}));}} small>+ Ingreso</Btn><Btn onClick={()=>{setShowAdd("gasto");setNewEntry(p=>({...p,type:"gasto"}));}} small variant="danger">+ Gasto</Btn></div>
+    </div>
+    {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:20}}>
+      <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px"}}>INGRESOS</p><p style={{fontSize:22,fontWeight:700,color:"#22c55e",margin:0}}>{usd(totalIng)}</p></div>
+      <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px"}}>GASTOS</p><p style={{fontSize:22,fontWeight:700,color:"#ff6b6b",margin:0}}>{usd(totalGas)}</p></div>
+      <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px"}}>GANANCIA</p><p style={{fontSize:22,fontWeight:700,color:totalIng-totalGas>0?"#22c55e":"#ff6b6b",margin:0}}>{usd(totalIng-totalGas)}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"4px 0 0"}}>Margen: {totalIng>0?((totalIng-totalGas)/totalIng*100).toFixed(1):"0"}%</p></div>
+    </div>
+    {showAdd&&<Card title={showAdd==="ingreso"?"Nuevo ingreso":"Nuevo gasto"}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
+        <Inp label="Fecha" type="date" value={newEntry.date} onChange={v=>setNewEntry(p=>({...p,date:v}))}/>
+        <Inp label="Descripción" value={newEntry.description} onChange={v=>setNewEntry(p=>({...p,description:v}))} placeholder="Ej: FRANP / SEIKO"/>
+        <Sel label="Categoría" value={newEntry.category_id} onChange={v=>setNewEntry(p=>({...p,category_id:v}))} options={cats.filter(c=>c.type===showAdd).map(c=>({value:c.id,label:c.name}))} ph="Seleccionar"/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+        <Inp label="Monto (USD)" type="number" value={newEntry.amount} onChange={v=>setNewEntry(p=>({...p,amount:v}))} step="0.01" placeholder="0.00"/>
+        <Inp label="Notas" value={newEntry.notes} onChange={v=>setNewEntry(p=>({...p,notes:v}))} placeholder="Opcional"/>
+      </div>
+      <div style={{display:"flex",gap:8}}><Btn onClick={addEntry}>Guardar</Btn><Btn variant="secondary" onClick={()=>setShowAdd(null)}>Cancelar</Btn></div>
+    </Card>}
+    <div style={{display:"flex",gap:8,marginBottom:16}}>{[{k:"all",l:"Todos"},{k:"ingreso",l:"Ingresos"},{k:"gasto",l:"Gastos"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
+    {lo?<p style={{color:"rgba(255,255,255,0.3)"}}>Cargando...</p>:<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+          {["Fecha","Descripción","Categoría","Monto","Notas",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
+        </tr></thead>
+        <tbody>{filtered.map(e=><tr key={e.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{formatDate(e.date)}</td>
+          <td style={{padding:"10px 12px",color:"#fff"}}>{e.description}</td>
+          <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)"}}>{e.finance_categories?.name||"—"}</td>
+          <td style={{padding:"10px 12px",fontWeight:700,color:e.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{e.type==="gasto"?"-":""}{usd(Number(e.amount||0))}</td>
+          <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.3)",fontSize:11}}>{e.notes||""}</td>
+          <td style={{padding:"10px 12px"}}><button onClick={()=>delEntry(e.id)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>X</button></td>
+        </tr>)}</tbody>
+      </table>
+      {filtered.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:"2rem 0"}}>No hay movimientos</p>}
+    </div>}
+  </div>;
+}
+
 function FinanceDashboard({token}){
   const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("all");
   useEffect(()=>{(async()=>{const [o,c,q]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setLo(false);})();},[token]);
@@ -808,7 +865,7 @@ function AdminDashboard({session,onLogout}){
   const [page,setPage]=useState("operations");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);
   const token=session.token;
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
-  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
+  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"finance",label:"FINANZAS",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
   return <div style={{minHeight:"100vh",display:"flex",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG}}>
     <div style={{width:220,flexShrink:0,background:"rgba(0,0,0,0.3)",borderRight:"1px solid rgba(255,255,255,0.05)",display:"flex",flexDirection:"column"}}>
       <div style={{padding:"20px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><img src={LOGO} alt="AC" style={{width:"100%",height:"auto",maxHeight:50,objectFit:"contain"}}/></div>
@@ -823,6 +880,7 @@ function AdminDashboard({session,onLogout}){
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
       {page==="dashboard"&&<FinanceDashboard token={token}/>}
+      {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
       {page==="quotes"&&<QuotesList token={token}/>}
