@@ -271,7 +271,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <Inp label="Ubicación" value={ev.location} onChange={v=>chEvt(i,"location",v)} small/>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
-          <Inp label="Fecha" type="datetime-local" value={ev.occurred_at?ev.occurred_at.slice(0,16):""} onChange={v=>chEvt(i,"occurred_at",v?new Date(v).toISOString():null)} small/>
+          <Inp label="Fecha" type="datetime-local" value={ev.occurred_at?ev.occurred_at.slice(0,16):""} onChange={v=>chEvt(i,"occurred_at",v?v+":00":null)} small/>
           <div style={{marginBottom:12,paddingTop:22}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={ev.is_visible_to_client!==false} onChange={e=>chEvt(i,"is_visible_to_client",e.target.checked)}/><span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Visible para el cliente</span></label></div>
         </div>
       </div>)}
