@@ -84,7 +84,7 @@ function OperationDetail({op,token,onBack}){
       return <div className="op-info" style={{display:"flex",gap:28,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:14,marginTop:4,flexWrap:"wrap"}}>
         {[{l:"Bultos",v:op.total_quantity||pkgs.length||"—"},{l:"Origen",v:op.origin||"China"},{l:"Canal",v:CM[op.channel]||"—"},
           ...(isA?[{l:"Peso Bruto",v:totGW?`${totGW.toFixed(1)} kg`:"—"},{l:"Peso Facturable",v:pf?`${pf.toFixed(1)} kg`:"—",a:true}]:[{l:"CBM",v:totCBM?`${totCBM.toFixed(4)} m³`:"—",a:true}]),
-          {l:"Valor FOB",v:`USD ${Number(op.declared_value_usd||0).toLocaleString()}`}
+          {l:"Total a abonar",v:(()=>{const isB=op.channel?.includes("negro");const tax=items.reduce((s,it)=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);if(isB)return s;let t=0;if(it.import_duty_rate!=null)t+=fob*(Number(it.import_duty_rate)/100);if(it.statistics_rate!=null)t+=fob*(Number(it.statistics_rate)/100);if(it.iva_rate!=null)t+=fob*(Number(it.iva_rate)/100);if(it.documentary_expense!=null)t+=Number(it.documentary_expense);if(it.iva_additional_rate!=null)t+=fob*(Number(it.iva_additional_rate)/100);if(it.iigg_rate!=null)t+=fob*(Number(it.iigg_rate)/100);if(it.iibb_rate!=null)t+=fob*(Number(it.iibb_rate)/100);return s+t;},0);const svc=Number(op.total_services||0);const ship=op.shipping_to_door?Number(op.shipping_cost||0):0;const tot=tax+svc+ship;return tot>0?`USD ${tot.toLocaleString(undefined,{minimumFractionDigits:2})}`:"Pendiente";})(),a:true}
         ].map((x,i)=><div key={i}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{x.l}</span><p style={{fontSize:13,fontWeight:600,color:x.a?IC:"#fff",margin:"2px 0 0"}}>{x.v}</p></div>)}
       </div>;})()}
     </div>
