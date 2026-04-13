@@ -298,9 +298,22 @@ function TariffsManager({token}){
     {!isCost&&t.type==="rate"&&<div style={{flex:1,paddingBottom:12,textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.2)",margin:"0 0 2px"}}>GANANCIA</p><p style={{fontSize:13,fontWeight:700,color:Number(t.rate)-Number(t.cost||0)>0?"#22c55e":"#ff6b6b",margin:0}}>${(Number(t.rate)-Number(t.cost||0)).toFixed(2)}</p></div>}
     <div style={{display:"flex",gap:4,paddingBottom:12}}><Btn onClick={()=>saveTariff(t)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delTariff(t.id)} small variant="danger">X</Btn></div>
   </div>;
+  // Cert flete config
+  const [certConfig,setCertConfig]=useState([]);const [certLoaded,setCertLoaded]=useState(false);
+  useEffect(()=>{if(!certLoaded){(async()=>{const r=await dq("calc_config",{token,filters:"?key=like.cert_flete_*&select=*"});setCertConfig(Array.isArray(r)?r:[]);setCertLoaded(true);})();}},[token,certLoaded]);
+  const saveCertConfig=async(key,val)=>{await dq("calc_config",{method:"PATCH",token,filters:`?key=eq.${key}`,body:{value:Number(val)}});flash("Guardado");};
+  const getCert=(key)=>certConfig.find(c=>c.key===key);
+
   if(!selSvc)return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Tarifas</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div>
     <div style={{display:"flex",gap:8,marginBottom:20}}>{[{k:"sell",l:"Precios de Venta"},{k:"cost",l:"Costos de Flete"}].map(m=><button key={m.k} onClick={()=>setViewMode(m.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:viewMode===m.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:viewMode===m.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:viewMode===m.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{m.l}</button>)}</div>
+    {certLoaded&&<Card title="Certificación de Flete (CIF)"><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"-8px 0 12px"}}>Valores para calcular el CIF. Real = lo declarado ante aduana. Ficticio = lo que ve el cliente.</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 12px"}}>{[
+        {k:"cert_flete_aereo_real",l:"Aéreo REAL (USD/kg bruto)"},
+        {k:"cert_flete_aereo_ficticio",l:"Aéreo FICTICIO (USD/kg fact.)"},
+        {k:"cert_flete_maritimo_real",l:"Marítimo REAL (USD/CBM)"},
+        {k:"cert_flete_maritimo_ficticio",l:"Marítimo FICTICIO (USD/CBM)"}
+      ].map(f=>{const c=getCert(f.k);return <div key={f.k} style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4}}>{f.l}</label><input type="number" value={c?.value||""} onChange={e=>{setCertConfig(p=>p.map(x=>x.key===f.k?{...x,value:e.target.value}:x));}} onBlur={e=>saveCertConfig(f.k,e.target.value)} step="0.1" style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>;})}</div></Card>}
     {lo?<p style={{color:"rgba(255,255,255,0.3)"}}>Cargando...</p>:SERVICES.map(svc=>{const svcRates=tariffs.filter(t=>t.service_key===svc.key&&t.type==="rate");if(!svcRates.length)return null;return <div key={svc.key} onClick={()=>setSelSvc(svc.key)} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"16px 20px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.03)";}}><div><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{svc.label}</p>{svc.info&&<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:"2px 0 0"}}>{svc.info}</p>}</div><div style={{display:"flex",alignItems:"center",gap:12}}>{svcRates.map(r=><span key={r.id} style={{fontSize:11,color:isCost?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.5)"}}>{r.label}: ${isCost?Number(r.cost||0):Number(r.rate)}</span>)}<span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></div></div>;})}</div>;
   const svcInfo=SERVICES.find(s=>s.key===selSvc);
   return <div>
@@ -349,24 +362,39 @@ function Calculator({token,clients}){
     if(origin==="China"){
       const dr=Number(ncm?.import_duty_rate||0)/100;const te=Number(ncm?.statistics_rate||0)/100;const ivaR=Number(ncm?.iva_rate||21)/100;
       const gastoDoc=config.gasto_documental||120;const ivaDesemb=config.iva_desembolso||25.2;
-      const certFlAer=config.cert_flete_aereo_rate||3.5;const certFlMar=config.cert_flete_maritimo_rate||80;
+      const certAerReal=config.cert_flete_aereo_real||2.5;const certAerFict=config.cert_flete_aereo_ficticio||3.5;
+      const certMarReal=config.cert_flete_maritimo_real||50;const certMarFict=config.cert_flete_maritimo_ficticio||100;
+
+      const calcCIF=(fob,certFl)=>{const seg=(fob+certFl)*0.01;return{cif:fob+certFl+seg,seguro:seg};};
+      const calcTax=(cif,isMar)=>{const d=cif*dr;const t=cif*te;const bi=cif+d+t;const iv=bi*ivaR;
+        if(isMar){const ia=bi*0.20;const ig=bi*0.06;const ib=bi*0.05;return{derechos:d,tasa_e:t,iva:iv,ivaAdic:ia,iigg:ig,iibb:ib,totalImp:d+t+iv+ia+ig+ib};}
+        return{derechos:d,tasa_e:t,iva:iv,gastoDoc,ivaDesemb,totalImp:d+t+iv+gastoDoc+ivaDesemb};};
+
       // Aéreo Courier Comercial (A)
       if(totWeight>0){let vw=0;pkgs.forEach(pk=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0);if(l&&w&&h)vw+=((l*w*h)/5000)*q;});const fact=Math.max(totWeight,vw);
         const{rate,cost}=getFleteRate("aereo_a_china",fact);const flete=fact*rate;const fCost=fact*cost;
-        const certFl=fact*certFlAer;const cif=(totalFob+certFl)/0.99;const seguro=cif*0.01;
-        const derechos=cif*dr;const tasa_e=cif*te;const baseImp=cif+derechos+tasa_e;const iva=baseImp*ivaR;
-        const battExtra=hasBattery?fact*2:0;const totalImp=derechos+tasa_e+iva+gastoDoc+ivaDesemb;const totalSvc=flete+seguro+battExtra;
-        channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días",isBlanco:true,flete,fCost,seguro,derechos,tasa_e,iva,gastoDoc,ivaDesemb,battExtra,totalImp,totalSvc,total:totalImp+totalSvc,unit:`${fact.toFixed(1)} kg`});}
+        // CIF ficticio (lo que ve el cliente no-RI)
+        const certFlFict=fact*certAerFict;const{cif:cifFict,seguro:segFict}=calcCIF(totalFob,certFlFict);const taxFict=calcTax(cifFict,false);
+        // CIF real (lo que se declara / lo que ve RI)
+        const certFlReal=totWeight*certAerReal;const{cif:cifReal,seguro:segReal}=calcCIF(totalFob,certFlReal);const taxReal=calcTax(cifReal,false);
+        const battExtra=hasBattery?fact*2:0;
+        const gananciaImp=taxFict.totalImp-taxReal.totalImp;
+        channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días",isBlanco:true,
+          flete,fCost,seguro:segFict,cif:cifFict,battExtra,...taxFict,totalSvc:flete+segFict+battExtra,total:taxFict.totalImp+flete+segFict+battExtra,
+          cifReal,cifFict,impReal:taxReal.totalImp,impFict:taxFict.totalImp,gananciaImp,
+          unit:`${fact.toFixed(1)} kg`});}
       // Aéreo Integral AC (B)
       if(totWeight>0){const{rate,cost}=getFleteRate("aereo_b_china",totWeight);const flete=totWeight*rate;const fCost=totWeight*cost;const sur=getSurcharge("aereo_b_china",totalFob,totWeight);
         channels.push({key:"aereo_b_china",name:"Aéreo Integral AC",info:"10-15 días",isBlanco:false,flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totWeight.toFixed(1)} kg`});}
       // Marítimo Carga LCL/FCL (A)
       if(!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_a_china",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;
-        const certFl=totCBM*certFlMar;const cif=(totalFob+certFl)/0.99;const seguro=cif*0.01;
-        const derechos=cif*dr;const tasa_e=cif*te;const baseImp=cif+derechos+tasa_e;
-        const iva=baseImp*ivaR;const ivaAdic=baseImp*0.20;const iigg=baseImp*0.06;const iibb=baseImp*0.05;
-        const totalImp=derechos+tasa_e+iva+ivaAdic+iigg+iibb;const totalSvc=flete+seguro;
-        channels.push({key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"",isBlanco:true,isMar:true,flete,fCost,seguro,derechos,tasa_e,iva,ivaAdic,iigg,iibb,totalImp,totalSvc,total:totalImp+totalSvc,unit:`${totCBM.toFixed(4)} CBM`});}
+        const certFlFict=totCBM*certMarFict;const{cif:cifFict,seguro:segFict}=calcCIF(totalFob,certFlFict);const taxFict=calcTax(cifFict,true);
+        const certFlReal=totCBM*certMarReal;const{cif:cifReal,seguro:segReal}=calcCIF(totalFob,certFlReal);const taxReal=calcTax(cifReal,true);
+        const gananciaImp=taxFict.totalImp-taxReal.totalImp;
+        channels.push({key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"",isBlanco:true,isMar:true,
+          flete,fCost,seguro:segFict,cif:cifFict,...taxFict,totalSvc:flete+segFict,total:taxFict.totalImp+flete+segFict,
+          cifReal,cifFict,impReal:taxReal.totalImp,impFict:taxFict.totalImp,gananciaImp,
+          unit:`${totCBM.toFixed(4)} CBM`});}
       // Marítimo Integral AC (B)
       if(!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_b",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
         channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",isBlanco:false,flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totCBM.toFixed(4)} CBM`});}
@@ -419,7 +447,7 @@ function Calculator({token,clients}){
 
     {step===4&&results&&<div>
       <div style={{display:"flex",gap:12,marginBottom:16}}><button onClick={()=>setStep(3)} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← Volver</button><span style={{color:"rgba(255,255,255,0.1)"}}>|</span><button onClick={()=>{setStep(0);setResults(null);setOrigin("");setProducts([{type:"general",description:"",unit_price:"",quantity:"1"}]);setPkgs([{qty:"1",length:"",width:"",height:"",weight:""}]);setNoDims(false);setDelivery("oficina");setNcm(null);setNcmManual(false);setHasBattery(false);}} style={{fontSize:13,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>Nueva cotización</button></div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>{results.channels.map(ch=>{const delivCost=delivery==="caba"?20:0;const clientTotal=ch.total+delivCost;const profit=clientTotal-(ch.fCost||0);return <div key={ch.key} style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>{results.channels.map(ch=>{const delivCost=delivery==="caba"?20:0;const clientTotal=ch.total+delivCost;const gananciaFlete=ch.flete-(ch.fCost||0);const gananciaImp=ch.gananciaImp||0;const gananciaTotal=gananciaFlete+gananciaImp;return <div key={ch.key} style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem"}}>
         <p style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{ch.name}</p>
         {ch.info&&<span style={{fontSize:11,color:"rgba(255,255,255,0.35)",padding:"3px 10px",background:"rgba(255,255,255,0.05)",borderRadius:4}}>{ch.info}</span>}
         <div style={{marginTop:14}}>
@@ -437,10 +465,14 @@ function Calculator({token,clients}){
         </div>
         <div style={{marginTop:16,background:"rgba(34,197,94,0.06)",borderRadius:10,border:"1px solid rgba(34,197,94,0.15)",padding:14}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 8px"}}>RENTABILIDAD</p>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Cobro</span><span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{usd(clientTotal)}</span></div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Costo flete</span><span style={{fontSize:12,fontWeight:600,color:"#ff6b6b"}}>-{usd(ch.fCost||0)}</span></div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}><span style={{fontSize:14,fontWeight:700,color:"#fff"}}>GANANCIA</span><span style={{fontSize:16,fontWeight:700,color:profit>0?"#22c55e":"#ff6b6b"}}>{usd(profit)}</span></div>
-          {clientTotal>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Margen: {((profit/clientTotal)*100).toFixed(1)}%</p>}
+          <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Ganancia flete</span><span style={{fontSize:12,fontWeight:600,color:"#22c55e"}}>{usd(gananciaFlete)}</span></div>
+          {ch.isBlanco&&gananciaImp>0&&<>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Ganancia oculta (CIF)</span><span style={{fontSize:12,fontWeight:600,color:"#22c55e"}}>{usd(gananciaImp)}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span style={{fontSize:10,color:"rgba(255,255,255,0.25)"}}>CIF real: {usd(ch.cifReal||0)} → Imp real: {usd(ch.impReal||0)}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span style={{fontSize:10,color:"rgba(255,255,255,0.25)"}}>CIF ficticio: {usd(ch.cifFict||0)} → Imp ficticio: {usd(ch.impFict||0)}</span></div>
+          </>}
+          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}><span style={{fontSize:14,fontWeight:700,color:"#fff"}}>GANANCIA TOTAL</span><span style={{fontSize:16,fontWeight:700,color:gananciaTotal>0?"#22c55e":"#ff6b6b"}}>{usd(gananciaTotal)}</span></div>
+          {clientTotal>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Margen: {((gananciaTotal/clientTotal)*100).toFixed(1)}%</p>}
         </div>
       </div>})}</div>
     </div>}

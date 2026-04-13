@@ -204,31 +204,36 @@ function CalculatorPage({token,client}){
     const{totWeight,totCBM}=calcTotals();const channels=[];
     const dr=Number(ncm?.import_duty_rate||0)/100;const te=Number(ncm?.statistics_rate||0)/100;const ivaR=Number(ncm?.iva_rate||21)/100;
     const gastoDoc=config.gasto_documental||120;const ivaDesemb=config.iva_desembolso||25.2;
-    const certFleteAerRate=config.cert_flete_aereo_rate||3.5;const certFleteMarRate=config.cert_flete_maritimo_rate||80;
-    const billable=Math.max(totWeight,0);// canal B usa peso bruto
+    const isRI=client?.tax_condition==="responsable_inscripto";
+    // Cert flete: real vs ficticio según condición IVA
+    const certAerReal=config.cert_flete_aereo_real||2.5;const certAerFict=config.cert_flete_aereo_ficticio||3.5;
+    const certMarReal=config.cert_flete_maritimo_real||50;const certMarFict=config.cert_flete_maritimo_ficticio||100;
 
     // Aéreo Courier Comercial (A) - con impuestos
-    if(totWeight>0){const facturable=Math.max(totWeight,(()=>{let vw=0;pkgs.forEach(pk=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0);if(l&&w&&h)vw+=((l*w*h)/5000)*q;});return vw;})());
+    if(totWeight>0){let vw=0;pkgs.forEach(pk=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0);if(l&&w&&h)vw+=((l*w*h)/5000)*q;});const facturable=Math.max(totWeight,vw);
       const fleteRate=getFleteRate("aereo_a_china",facturable);const flete=facturable*fleteRate;
-      const certFlete=facturable*certFleteAerRate;const cif=(totalFob+certFlete)/0.99;const seguro=cif*0.01;
+      // CIF: RI ve real (bruto × $2.5), otros ven ficticio (facturable × $3.5)
+      const certFlete=isRI?(totWeight*certAerReal):(facturable*certAerFict);
+      const seguro=(totalFob+certFlete)*0.01;const cif=totalFob+certFlete+seguro;
       const derechos=cif*dr;const tasa_e=cif*te;const baseImp=cif+derechos+tasa_e;const iva=baseImp*ivaR;
       const battExtra=hasBattery?facturable*2:0;const totalImp=derechos+tasa_e+iva+gastoDoc+ivaDesemb;const totalSvc=flete+seguro+battExtra;
       channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles",isBlanco:true,
-        flete,seguro,derechos,tasa_e,iva,gastoDoc,ivaDesemb,battExtra,totalImp,totalSvc,total:totalImp+totalSvc,unit:`${facturable.toFixed(1)} kg`});}
+        flete,seguro,cif,derechos,tasa_e,iva,gastoDoc,ivaDesemb,battExtra,totalImp,totalSvc,total:totalImp+totalSvc,unit:`${facturable.toFixed(1)} kg`});}
 
     // Aéreo Integral AC (B) - sin impuestos, peso bruto
     if(totWeight>0){const fleteRate=getFleteRate("aereo_b_china",totWeight);const flete=totWeight*fleteRate;const sur=getSurcharge("aereo_b_china",totalFob,totWeight);
       channels.push({key:"aereo_b_china",name:"Aéreo Integral AC",info:"10-15 días hábiles",isBlanco:false,
         flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totWeight.toFixed(1)} kg`});}
 
-    // Marítimo Carga LCL/FCL (A) - con impuestos completos
+    // Marítimo Carga LCL/FCL (A) - con impuestos completos, SIEMPRE ficticio
     if(!noDims&&totCBM>0){const fleteRate=getFleteRate("maritimo_a_china",totCBM);const flete=totCBM*fleteRate;
-      const certFlete=totCBM*certFleteMarRate;const cif=(totalFob+certFlete)/0.99;const seguro=cif*0.01;
+      const certFlete=totCBM*certMarFict;// siempre ficticio para marítimo
+      const seguro=(totalFob+certFlete)*0.01;const cif=totalFob+certFlete+seguro;
       const derechos=cif*dr;const tasa_e=cif*te;const baseImp=cif+derechos+tasa_e;
       const iva=baseImp*ivaR;const ivaAdic=baseImp*0.20;const iigg=baseImp*0.06;const iibb=baseImp*0.05;
       const totalImp=derechos+tasa_e+iva+ivaAdic+iigg+iibb;const totalSvc=flete+seguro;
       channels.push({key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"",isBlanco:true,isMar:true,
-        flete,seguro,derechos,tasa_e,iva,ivaAdic,iigg,iibb,totalImp,totalSvc,total:totalImp+totalSvc,unit:`${totCBM.toFixed(4)} CBM`});}
+        flete,seguro,cif,derechos,tasa_e,iva,ivaAdic,iigg,iibb,totalImp,totalSvc,total:totalImp+totalSvc,unit:`${totCBM.toFixed(4)} CBM`});}
 
     // Marítimo Integral AC (B) - sin impuestos, peso bruto... no, marítimo usa CBM
     if(!noDims&&totCBM>0){const fleteRate=getFleteRate("maritimo_b",totCBM);const flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
