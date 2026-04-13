@@ -48,12 +48,10 @@ function OperationsList({ops,onSelect,client}){
     </div>
     <p style={{fontSize:15,fontWeight:600,color:"#fff",margin:"0 0 10px",textTransform:"uppercase"}}>{gd(op)}</p>
     <OpProgress status={op.status} isAereo={isA}/>
-    <div style={{display:"flex",gap:24,alignItems:"center",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginTop:4,flexWrap:"wrap"}}>
-      <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Bultos</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"2px 0 0"}}>{op.total_quantity||"—"}</p></div>
-      <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Origen</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"2px 0 0"}}>China</p></div>
+    <div className="op-info" style={{display:"flex",gap:24,alignItems:"center",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginTop:4,flexWrap:"wrap"}}>
+      <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Origen</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"2px 0 0"}}>{op.origin||"China"}</p></div>
       <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Canal</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"2px 0 0"}}>{CM[op.channel]||"—"}</p></div>
-      <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{isA?"Peso/CBM":"CBM"}</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"2px 0 0"}}>{isA?(op.gross_weight_kg?`${op.gross_weight_kg} kg`:"—"):(op.cbm?`${op.cbm} m³`:"—")}</p></div>
-      <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Costos importación</span><p style={{fontSize:13,fontWeight:700,color:IC,margin:"2px 0 0"}}>USD {Number(op.declared_value_usd||0).toLocaleString()}</p></div>
+      <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>Total a abonar</span><p style={{fontSize:13,fontWeight:700,color:IC,margin:"2px 0 0"}}>{Number(op.budget_total||0)>0?`USD ${Number(op.budget_total).toLocaleString(undefined,{minimumFractionDigits:2})}`:"Pendiente"}</p></div>
     </div>
     <div style={{marginTop:14,textAlign:"right"}}><button onClick={()=>onSelect(op)} style={{fontSize:13,fontWeight:600,color:IC,background:"rgba(74,144,217,0.1)",border:"1px solid rgba(74,144,217,0.2)",borderRadius:8,padding:"8px 20px",cursor:"pointer"}}>Ver detalles →</button></div>
   </div>;};
