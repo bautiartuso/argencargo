@@ -140,10 +140,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {tab==="general"&&<>
       <Card title="Estado" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
         <Sel label="Estado de la carga" value={op.status} onChange={chOp("status")} options={STATUSES.map(s=>({value:s,label:SM[s].l}))}/>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
-          <Inp label="Descripción" value={op.description} onChange={chOp("description")}/>
-          <Inp label="ETA" type="date" value={formatDateInput(op.eta)} onChange={chOp("eta")}/>
-        </div>
+        <Inp label="Descripción" value={op.description} onChange={chOp("description")}/>
         <Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>
       </Card>
       <Card title="Resumen">
@@ -208,6 +205,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Bulto {pk.package_number}</p>
           <div style={{display:"flex",gap:6}}><Btn onClick={()=>savePkg(pk)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delPkg(pk.id)} small variant="danger">Eliminar</Btn></div>
         </div>
+        <Inp label="Seguimiento nacional" value={pk.national_tracking} onChange={v=>chPkg(i,"national_tracking",v)} placeholder="Código de seguimiento nacional" small/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 12px"}}>
           <Inp label="Cantidad" type="number" value={pk.quantity} onChange={v=>chPkg(i,"quantity",v?parseInt(v):1)} small/>
           <Inp label="Largo cm" type="number" value={pk.length_cm} onChange={v=>chPkg(i,"length_cm",v)} step="0.1" small/>
@@ -222,9 +220,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     </Card>}
 
     {tab==="tracking"&&<><Card title="Carrier & Tracking" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
         <Inp label="Carrier Internacional" value={op.international_carrier} onChange={chOp("international_carrier")} placeholder="Ej: DHL, FedEx, UPS"/>
         <Inp label="Tracking Internacional" value={op.international_tracking} onChange={chOp("international_tracking")} placeholder="Número de seguimiento"/>
+        <Inp label="ETA" type="date" value={formatDateInput(op.eta)} onChange={chOp("eta")}/>
       </div>
       <p style={{fontSize:11,color:"rgba(255,255,255,0.25)",margin:"4px 0 0"}}>Integración con APIs de tracking (DHL/FedEx/UPS) próximamente</p>
     </Card>
