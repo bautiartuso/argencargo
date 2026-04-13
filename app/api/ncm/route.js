@@ -46,7 +46,7 @@ async function classifyWithGemini(description, apiKey) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: `Sos un despachante de aduana argentino experto en clasificación arancelaria NCM (Nomenclatura Común del Mercosur). Clasificá esta mercadería con el código NCM de 8 dígitos (formato XXXX.XX.XX). Respondé SOLO el código, nada más.\n\nEjemplos:\n- auriculares bluetooth → 8518.30.00\n- fundas de celular silicona → 3926.90.90\n- smartwatch → 8517.62.72\n- protector pantalla vidrio → 7007.19.00\n- cargador USB → 8504.40.90\n- zapatillas deportivas → 6404.11.00\n\nMercadería: ${description}` }] }],
+      contents: [{ parts: [{ text: `Sos un despachante de aduana argentino experto en clasificación arancelaria NCM (Nomenclatura Común del Mercosur). Clasificá esta mercadería con el código NCM de 8 dígitos (formato XXXX.XX.XX). Respondé SOLO el código, nada más.\n\nIMPORTANTE: Los auriculares (bluetooth, inalámbricos, con cable, headphones, earbuds, TWS) SIEMPRE van en 8518.30.00, NO en 8517.\n\nEjemplos:\n- auriculares bluetooth/TWS/inalámbricos → 8518.30.00\n- parlantes/altavoces → 8518.22.00\n- fundas de celular silicona → 3926.90.90\n- smartwatch → 8517.62.72\n- protector pantalla vidrio → 7007.19.00\n- cargador USB → 8504.40.90\n- zapatillas deportivas → 6404.11.00\n- power bank → 8507.60.00\n\nMercadería: ${description}` }] }],
       generationConfig: { maxOutputTokens: 50 }
     })
   });
