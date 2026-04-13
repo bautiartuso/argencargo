@@ -202,8 +202,12 @@ function CalculatorPage({token,client}){
 
   const calculateChina=()=>{
     const{totWeight,totCBM}=calcTotals();const channels=[];
-    let volWeight=0;pkgs.forEach(pk=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0);if(l&&w&&h)volWeight+=((l*w*h)/5000)*q;});
-    const facturable=Math.max(totWeight,volWeight);
+    // Peso facturable = suma del max(bruto, vol) POR BULTO, no global
+    let facturable=0;let volWeightTotal=0;
+    const pkgDetails=pkgs.map(pk=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0),gw=Number(pk.weight||0);
+      const bruto=gw*q;const vol=l&&w&&h?((l*w*h)/5000)*q:0;const fact=Math.max(bruto,vol);volWeightTotal+=vol;
+      return{bruto,vol,fact,isVolumetric:vol>bruto};});
+    facturable=pkgDetails.reduce((s,p)=>s+p.fact,0);
     const getDesembolso=(cif)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(cif<max)return amt;return 120;};
     const isRI=client?.tax_condition==="responsable_inscripto";
     const certAerReal=config.cert_flete_aereo_real||2.5;const certAerFict=config.cert_flete_aereo_ficticio||3.5;
@@ -229,7 +233,7 @@ function CalculatorPage({token,client}){
       const totalImp=items.reduce((s,it)=>s+it.totalImp,0);const totalSvc=flete+seguro+battExtra;
       channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles",isBlanco:true,
         flete,seguro,battExtra,totalImp,totalSvc,total:totalImp+totalSvc,items,
-        pesoBruto:totWeight,pesoVol:volWeight,pesoFact:facturable,unit:`${facturable.toFixed(1)} kg`});}
+        pesoBruto:totWeight,pesoVol:volWeightTotal,pesoFact:facturable,pkgDetails,unit:`${facturable.toFixed(1)} kg`});}
 
     // Aéreo Integral AC (B) — peso bruto
     if(totWeight>0){const fleteRate=getFleteRate("aereo_b_china",totWeight);const flete=totWeight*fleteRate;const sur=getSurcharge("aereo_b_china",totalFob,totWeight);
@@ -360,17 +364,20 @@ function CalculatorPage({token,client}){
     {/* CHINA FLOW - Step 2: Packing List */}
     {step===2&&origin==="China"&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem"}}>
       <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 16px"}}>PACKING LIST</h3>
-      {pkgs.map((pk,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
+      {pkgs.map((pk,i)=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0),gw=Number(pk.weight||0);const bruto=gw*q;const vol=l&&w&&h?((l*w*h)/5000)*q:0;const isVol=vol>bruto&&!noDims;
+      return <div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:IC}}>Bulto {i+1}</span>{pkgs.length>1&&<button onClick={()=>rmPkg(i)} style={{fontSize:11,padding:"4px 10px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>Eliminar</button>}</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 10px"}}>
           <Inp label="Cant. bultos" type="number" value={pk.qty} onChange={v=>chPkg(i,"qty",v)} placeholder="1"/>
           {!noDims&&<><Inp label="Largo (cm)" type="number" value={pk.length} onChange={v=>chPkg(i,"length",v)} placeholder="60"/><Inp label="Ancho (cm)" type="number" value={pk.width} onChange={v=>chPkg(i,"width",v)} placeholder="40"/><Inp label="Alto (cm)" type="number" value={pk.height} onChange={v=>chPkg(i,"height",v)} placeholder="35"/></>}
           <Inp label="Peso (kg)" type="number" value={pk.weight} onChange={v=>chPkg(i,"weight",v)} placeholder="12"/>
         </div>
-      </div>)}
+        {(bruto>0||vol>0)&&<div style={{display:"flex",gap:16,marginTop:-4,marginBottom:4,fontSize:11,color:"rgba(255,255,255,0.3)"}}><span>Peso bruto total: <strong style={{color:"#fff"}}>{bruto.toFixed(1)} kg</strong></span>{!noDims&&vol>0&&<span>Peso volumétrico total: <strong style={{color:"#fff"}}>{vol.toFixed(1)} kg</strong></span>}</div>}
+        {isVol&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:8,padding:"8px 12px",marginBottom:4}}><p style={{fontSize:12,color:"#fb923c",margin:0,fontWeight:500}}>Tené en cuenta que el peso volumétrico de este bulto es <strong>{vol.toFixed(1)} kg</strong> (mayor al bruto de {bruto.toFixed(1)} kg)</p></div>}
+      </div>;})}
       <button onClick={addPkg} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar otro bulto</button>
       <div style={{marginTop:16,marginBottom:8}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={noDims} onChange={e=>setNoDims(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>Desconozco las medidas de las cajas</span></label>{noDims&&<div style={{background:"rgba(251,146,60,0.1)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:8,padding:"10px 14px",marginTop:8}}><p style={{fontSize:12,color:"#fb923c",margin:0,fontWeight:500}}>Sin las medidas no se pueden calcular los costos marítimos.</p></div>}</div>
-      {(()=>{const{totWeight,totCBM}=calcTotals();return totWeight>0&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:12,marginTop:12,display:"flex",gap:20,flexWrap:"wrap"}}><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>PESO BRUTO</p><p style={{fontSize:14,fontWeight:700,color:IC,margin:0}}>{totWeight.toFixed(2)} kg</p></div>{!noDims&&totCBM>0&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>CBM</p><p style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>{totCBM.toFixed(4)} m³</p></div>}</div>;})()}
+      {(()=>{const{totWeight,totCBM}=calcTotals();let pf=0;pkgs.forEach(pk=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0),gw=Number(pk.weight||0);pf+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});return totWeight>0&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:12,marginTop:12,display:"flex",gap:20,flexWrap:"wrap"}}><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>PESO BRUTO</p><p style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>{totWeight.toFixed(2)} kg</p></div>{!noDims&&pf>totWeight&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>PESO FACTURABLE</p><p style={{fontSize:14,fontWeight:700,color:IC,margin:0}}>{pf.toFixed(2)} kg</p></div>}{!noDims&&totCBM>0&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>CBM</p><p style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>{totCBM.toFixed(4)} m³</p></div>}</div>;})()}
       <div style={{display:"flex",gap:12,marginTop:16}}><button onClick={()=>setStep(1)} style={{padding:"12px 20px",fontSize:13,fontWeight:600,borderRadius:10,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)",border:"1.5px solid rgba(255,255,255,0.12)",cursor:"pointer"}}>← Atrás</button><button onClick={()=>setStep(3)} disabled={!pkgs.some(p=>Number(p.weight)>0)} style={{padding:"12px 24px",fontSize:13,fontWeight:600,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff",opacity:pkgs.some(p=>Number(p.weight)>0)?1:0.4}}>Siguiente →</button></div>
     </div>}
 
