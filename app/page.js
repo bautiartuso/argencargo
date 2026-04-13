@@ -258,6 +258,7 @@ function CalculatorPage({token,client}){
   };
 
   const DELIV={oficina:"Retiro por Oficina (Gratis)",caba:"Envío CABA ($20)",gba:"Envío a todo el país (A cotizar)"};
+  const saveQuote=async(ch)=>{const{totWeight,totCBM}=calcTotals();try{await dq("quotes",{method:"POST",token,body:{client_id:client?.id||null,client_name:client?`${client.first_name} ${client.last_name}`:"Anónimo",client_code:client?.client_code||"—",origin,channel_key:ch.key,channel_name:ch.name,products:JSON.stringify(products),packages:JSON.stringify(pkgs),delivery,total_fob:totalFob,total_weight:totWeight,total_cbm:totCBM,total_cost:ch.total+(delivery==="caba"?20:0)}});}catch(e){console.error("Error saving quote:",e);}};
   const makeWAMsg=(ch)=>{const{totWeight,totCBM}=calcTotals();const name=client?`${client.first_name} ${client.last_name}`:"Cliente";const code=client?.client_code||"—";const flag=origin==="USA"?"\ud83c\uddfa\ud83c\uddf8":"\ud83c\udde8\ud83c\uddf3";
     return encodeURIComponent(`Hola Bautista!\nMi nombre es *${name}*, y quiero realizar esta importación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${mercType}*\nDetalle: *${prodSummary}*\nValor Total: *USD ${totalFob.toLocaleString(undefined,{minimumFractionDigits:2})}*\nPeso Total: *${totWeight.toFixed(2)} kg*\nCBM Total: *${totCBM.toFixed(4)} m³*\n\nEntrega en Destino: *${DELIV[delivery]}*\n\nCódigo cliente: *${code}*`);};
 
@@ -330,7 +331,7 @@ function CalculatorPage({token,client}){
           {delivery==="caba"&&row("Envío CABA",20)}
           {row("TOTAL",ch.total+(delivery==="caba"?20:0),true,true)}
         </div>}
-        <a href={`https://wa.me/5491125088580?text=${makeWAMsg(ch)}`} target="_blank" rel="noopener noreferrer" style={{display:"block",width:"100%",padding:"14px",fontSize:14,fontWeight:700,borderRadius:10,border:"none",cursor:ch.noCalc?"not-allowed":"pointer",background:ch.noCalc?"rgba(255,255,255,0.04)":`linear-gradient(135deg,#25D366,#128C7E)`,color:ch.noCalc?"rgba(255,255,255,0.2)":"#fff",textAlign:"center",textDecoration:"none",marginTop:16,boxSizing:"border-box",pointerEvents:ch.noCalc?"none":"auto"}}>Avanzar con esta importación →</a>
+        <a href={`https://wa.me/5491125088580?text=${makeWAMsg(ch)}`} onClick={()=>saveQuote(ch)} target="_blank" rel="noopener noreferrer" style={{display:"block",width:"100%",padding:"14px",fontSize:14,fontWeight:700,borderRadius:10,border:"none",cursor:ch.noCalc?"not-allowed":"pointer",background:ch.noCalc?"rgba(255,255,255,0.04)":`linear-gradient(135deg,#25D366,#128C7E)`,color:ch.noCalc?"rgba(255,255,255,0.2)":"#fff",textAlign:"center",textDecoration:"none",marginTop:16,boxSizing:"border-box",pointerEvents:ch.noCalc?"none":"auto"}}>Avanzar con esta importación →</a>
       </div>)}</div>
     </div>}
 
@@ -416,7 +417,7 @@ function CalculatorPage({token,client}){
           <p style={{fontSize:32,fontWeight:700,color:IC,margin:0}}>{usd(total)}</p>
         </div>
         <button onClick={()=>setExpandedCh(expandedCh===ch.key?null:ch.key)} style={{width:"100%",padding:"12px",fontSize:13,fontWeight:600,borderRadius:10,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",cursor:"pointer",color:"rgba(255,255,255,0.5)",marginBottom:12}}>Ver desglose detallado ▼</button>
-        <a href={`https://wa.me/5491125088580?text=${makeWAMsg(ch)}`} target="_blank" rel="noopener noreferrer" style={{display:"block",width:"100%",padding:"14px",fontSize:14,fontWeight:700,borderRadius:12,border:"none",cursor:"pointer",background:`linear-gradient(135deg,#25D366,#128C7E)`,color:"#fff",textAlign:"center",textDecoration:"none",boxSizing:"border-box"}}>Avanzar con esta importación →</a>
+        <a href={`https://wa.me/5491125088580?text=${makeWAMsg(ch)}`} onClick={()=>saveQuote(ch)} target="_blank" rel="noopener noreferrer" style={{display:"block",width:"100%",padding:"14px",fontSize:14,fontWeight:700,borderRadius:12,border:"none",cursor:"pointer",background:`linear-gradient(135deg,#25D366,#128C7E)`,color:"#fff",textAlign:"center",textDecoration:"none",boxSizing:"border-box"}}>Avanzar con esta importación →</a>
       </div>;};
 
       {/* Modal for desglose */}
