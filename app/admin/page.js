@@ -360,39 +360,46 @@ function Calculator({token,clients}){
         channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",isBlanco:false,flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totCBM.toFixed(4)} CBM`});}
     }
     if(origin==="China"){
-      const dr=Number(ncm?.import_duty_rate||0)/100;const te=Number(ncm?.statistics_rate||0)/100;const ivaR=Number(ncm?.iva_rate||21)/100;
-      const gastoDoc=config.gasto_documental||120;const ivaDesemb=config.iva_desembolso||25.2;
       const certAerReal=config.cert_flete_aereo_real||2.5;const certAerFict=config.cert_flete_aereo_ficticio||3.5;
       const certMarReal=config.cert_flete_maritimo_real||50;const certMarFict=config.cert_flete_maritimo_ficticio||100;
+      const getDesembolso=(cif)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(cif<max)return amt;return 120;};
 
-      const calcCIF=(fob,certFl)=>{const seg=(fob+certFl)*0.01;return{cif:fob+certFl+seg,seguro:seg};};
-      const calcTax=(cif,isMar)=>{const d=cif*dr;const t=cif*te;const bi=cif+d+t;const iv=bi*ivaR;
-        if(isMar){const ia=bi*0.20;const ig=bi*0.06;const ib=bi*0.05;return{derechos:d,tasa_e:t,iva:iv,ivaAdic:ia,iigg:ig,iibb:ib,totalImp:d+t+iv+ia+ig+ib};}
-        return{derechos:d,tasa_e:t,iva:iv,gastoDoc,ivaDesemb,totalImp:d+t+iv+gastoDoc+ivaDesemb};};
+      // Peso facturable per-bulto (same as client)
+      let fact=0;pkgs.forEach(pk=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0),gw=Number(pk.weight||0);fact+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});
+
+      // Per-item tax helper (same as client)
+      const calcItemTax=(p,certFl,isMar,totalCif)=>{const itemFob=Number(p.unit_price||0)*Number(p.quantity||1);const pct=totalFob>0?itemFob/totalFob:1;
+        const iCert=certFl*pct;const iSeg=(itemFob+iCert)*0.01;const iCif=itemFob+iCert+iSeg;
+        const dr=Number(p.ncm?.import_duty_rate||0)/100;const te_r=Number(p.ncm?.statistics_rate||0)/100;const ivaR=Number(p.ncm?.iva_rate||21)/100;
+        const die=iCif*dr;const te=iCif*te_r;const bi=iCif+die+te;const iva=bi*ivaR;let tot=die+te+iva;
+        if(isMar){const ia=bi*0.20;const ig=bi*0.06;const ib=bi*0.05;tot+=ia+ig+ib;}
+        else{const tasa=getDesembolso(totalCif)*pct;tot+=tasa+tasa*0.21;}
+        return tot;};
 
       // Aéreo Courier Comercial (A)
-      if(totWeight>0){let vw=0;pkgs.forEach(pk=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0);if(l&&w&&h)vw+=((l*w*h)/5000)*q;});const fact=Math.max(totWeight,vw);
-        const{rate,cost}=getFleteRate("aereo_a_china",fact);const flete=fact*rate;const fCost=fact*cost;
-        // CIF ficticio (lo que ve el cliente no-RI)
-        const certFlFict=fact*certAerFict;const{cif:cifFict,seguro:segFict}=calcCIF(totalFob,certFlFict);const taxFict=calcTax(cifFict,false);
-        // CIF real (lo que se declara / lo que ve RI)
-        const certFlReal=totWeight*certAerReal;const{cif:cifReal,seguro:segReal}=calcCIF(totalFob,certFlReal);const taxReal=calcTax(cifReal,false);
-        const battExtra=hasBattery?fact*2:0;
-        const gananciaImp=taxFict.totalImp-taxReal.totalImp;
+      if(fact>0){const{rate,cost}=getFleteRate("aereo_a_china",fact);const flete=fact*rate;const fCost=fact*cost;
+        const certFlFict=fact*certAerFict;const segFict=(totalFob+certFlFict)*0.01;const cifFict=totalFob+certFlFict+segFict;
+        const certFlReal=totWeight*certAerReal;const segReal=(totalFob+certFlReal)*0.01;const cifReal=totalFob+certFlReal+segReal;
+        const validProds=products.filter(p=>Number(p.unit_price)>0);
+        const impFict=validProds.reduce((s,p)=>s+calcItemTax(p,certFlFict,false,cifFict),0);
+        const impReal=validProds.reduce((s,p)=>s+calcItemTax(p,certFlReal,false,cifReal),0);
+        const battExtra=hasBattery?fact*2:0;const gananciaImp=impFict-impReal;
         channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días",isBlanco:true,
-          flete,fCost,seguro:segFict,cif:cifFict,battExtra,...taxFict,totalSvc:flete+segFict+battExtra,total:taxFict.totalImp+flete+segFict+battExtra,
-          cifReal,cifFict,impReal:taxReal.totalImp,impFict:taxFict.totalImp,gananciaImp,
-          unit:`${fact.toFixed(1)} kg`});}
+          flete,fCost,seguro:segFict,battExtra,totalImp:impFict,totalSvc:flete+segFict+battExtra,total:impFict+flete+segFict+battExtra,
+          cifReal,cifFict,impReal,impFict,gananciaImp,unit:`${fact.toFixed(1)} kg`});}
       // Aéreo Integral AC (B)
       if(totWeight>0){const{rate,cost}=getFleteRate("aereo_b_china",totWeight);const flete=totWeight*rate;const fCost=totWeight*cost;const sur=getSurcharge("aereo_b_china",totalFob,totWeight);
         channels.push({key:"aereo_b_china",name:"Aéreo Integral AC",info:"10-15 días",isBlanco:false,flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totWeight.toFixed(1)} kg`});}
       // Marítimo Carga LCL/FCL (A)
       if(!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_a_china",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;
-        const certFlFict=totCBM*certMarFict;const{cif:cifFict,seguro:segFict}=calcCIF(totalFob,certFlFict);const taxFict=calcTax(cifFict,true);
-        const certFlReal=totCBM*certMarReal;const{cif:cifReal,seguro:segReal}=calcCIF(totalFob,certFlReal);const taxReal=calcTax(cifReal,true);
-        const gananciaImp=taxFict.totalImp-taxReal.totalImp;
+        const certFlFict=totCBM*certMarFict;const segFict=(totalFob+certFlFict)*0.01;const cifFict=totalFob+certFlFict+segFict;
+        const certFlReal=totCBM*certMarReal;const segReal=(totalFob+certFlReal)*0.01;const cifReal=totalFob+certFlReal+segReal;
+        const validProds=products.filter(p=>Number(p.unit_price)>0);
+        const impFict=validProds.reduce((s,p)=>s+calcItemTax(p,certFlFict,true,cifFict),0);
+        const impReal=validProds.reduce((s,p)=>s+calcItemTax(p,certFlReal,true,cifReal),0);
+        const gananciaImp=impFict-impReal;
         channels.push({key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"",isBlanco:true,isMar:true,
-          flete,fCost,seguro:segFict,cif:cifFict,...taxFict,totalSvc:flete+segFict,total:taxFict.totalImp+flete+segFict,
+          flete,fCost,seguro:segFict,totalImp:impFict,totalSvc:flete+segFict,total:impFict+flete+segFict,
           cifReal,cifFict,impReal:taxReal.totalImp,impFict:taxFict.totalImp,gananciaImp,
           unit:`${totCBM.toFixed(4)} CBM`});}
       // Marítimo Integral AC (B)
