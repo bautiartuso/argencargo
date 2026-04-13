@@ -197,7 +197,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <Inp label="Envío a Domicilio (USD)" type="number" value={op.shipping_cost} onChange={chOp("shipping_cost")} step="0.01"/>
           <div style={{paddingTop:22}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.shipping_to_door||false} onChange={e=>chOp("shipping_to_door")(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Envío a domicilio</span></label></div>
         </div>
-        <Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar envío"}</Btn>
+        <div style={{display:"flex",gap:12,marginTop:8}}><Btn onClick={async()=>{setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar,shipping_cost:Number(op.shipping_cost||0),shipping_to_door:op.shipping_to_door||false,total_services:0}});setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}));flash("Presupuesto sincronizado");setSaving(false);}} disabled={saving}>{saving?"Guardando...":"Sincronizar presupuesto"}</Btn></div>
       </Card>;})()}
 
     {tab==="items"&&<Card title="Productos" actions={<Btn onClick={addItem} small>+ Agregar producto</Btn>}>
