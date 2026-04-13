@@ -96,8 +96,8 @@ function NewOperation({token,clients,onBack,onCreated}){
 }
 
 function OperationEditor({op:initOp,token,onBack,onDelete}){
-  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");
-  const load=async()=>{setLo(true);const [it,pk,ev]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setLo(false);};
+  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");
+  const load=async()=>{setLo(true);const [it,pk,ev,tf]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);setLo(false);};
   useEffect(()=>{load();},[op.id]);
   const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const deleteOp=async()=>{if(!confirm(`¿Eliminar operación ${op.operation_code}? Se borrarán también sus productos, bultos y eventos.`))return;
@@ -137,35 +137,43 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     <div style={{display:"flex",gap:8,marginBottom:16}}>{tabs.map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
     {lo?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:<>
 
-    {tab==="general"&&<Card title="Información General" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
-        <Sel label="Estado" value={op.status} onChange={chOp("status")} options={STATUSES.map(s=>({value:s,label:SM[s].l}))}/>
-        <Sel label="Canal" value={op.channel} onChange={chOp("channel")} options={CHANNELS.map(c=>({value:c,label:CM[c]}))}/>
-        <Sel label="Origen" value={op.origin} onChange={chOp("origin")} options={[{value:"China",label:"China"},{value:"USA",label:"USA"}]}/>
-        <Inp label="Descripción" value={op.description} onChange={chOp("description")}/>
-        <Inp label="ETA" type="date" value={formatDateInput(op.eta)} onChange={chOp("eta")}/>
-        <Inp label="Tracking Internacional" value={op.international_tracking} onChange={chOp("international_tracking")}/>
-        <Inp label="Carrier Internacional" value={op.international_carrier} onChange={chOp("international_carrier")}/>
-        <Inp label="Código NCM" value={op.ncm_code} onChange={chOp("ncm_code")}/>
-        <Inp label="Cantidad total" type="number" value={op.total_quantity} onChange={v=>chOp("total_quantity")(v?parseInt(v):null)}/>
-        <Inp label="Valor declarado USD" type="number" value={op.declared_value_usd} onChange={chOp("declared_value_usd")} step="0.01"/>
-        <Inp label="Peso bruto kg" type="number" value={op.gross_weight_kg} onChange={chOp("gross_weight_kg")} step="0.01"/>
-        <Inp label="CBM" type="number" value={op.cbm} onChange={chOp("cbm")} step="0.0001"/>
-      </div>
-      <Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>
-    </Card>}
+    {tab==="general"&&<>
+      <Card title="Estado" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
+        <Sel label="Estado de la carga" value={op.status} onChange={chOp("status")} options={STATUSES.map(s=>({value:s,label:SM[s].l}))}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
+          <Inp label="Descripción" value={op.description} onChange={chOp("description")}/>
+          <Inp label="ETA" type="date" value={formatDateInput(op.eta)} onChange={chOp("eta")}/>
+        </div>
+        <Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>
+      </Card>
+      <Card title="Resumen">
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16}}>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>CANAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{CM[op.channel]||op.channel}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>ORIGEN</p><p style={{fontSize:14,color:"#fff",margin:0}}>{op.origin||"—"}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>PRODUCTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{items.length}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>BULTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{pkgs.length}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>VALOR FOB</p><p style={{fontSize:14,color:"#fff",margin:0}}>USD {items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0).toLocaleString()}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>PESO BRUTO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{pkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0),0).toFixed(1)} kg</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>EVENTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{events.length}</p></div>
+        </div>
+      </Card>
+    </>}
 
-    {tab==="budget"&&<Card title="Presupuesto" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
-        <Inp label="Total Servicios (USD)" type="number" value={op.total_services} onChange={chOp("total_services")} step="0.01"/>
-        <Inp label="Costo Envío a Domicilio (USD)" type="number" value={op.shipping_cost} onChange={chOp("shipping_cost")} step="0.01"/>
-      </div>
-      <div style={{marginBottom:12}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.shipping_to_door||false} onChange={e=>chOp("shipping_to_door")(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Envío a domicilio habilitado</span></label></div>
-      {items.length>0&&<div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:14,marginTop:8}}>
-        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",marginBottom:8,textTransform:"uppercase"}}>Total Impuestos (calculado de productos)</p>
-        <p style={{fontSize:18,fontWeight:700,color:IC,margin:0}}>USD {items.reduce((s,it)=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);let t=0;if(!isBlanco)return s;if(it.import_duty_rate!=null)t+=fob*(Number(it.import_duty_rate)/100);if(it.statistics_rate!=null)t+=fob*(Number(it.statistics_rate)/100);if(it.iva_rate!=null)t+=fob*(Number(it.iva_rate)/100);if(it.documentary_expense!=null)t+=Number(it.documentary_expense);if(it.iva_additional_rate!=null)t+=fob*(Number(it.iva_additional_rate)/100);if(it.iigg_rate!=null)t+=fob*(Number(it.iigg_rate)/100);if(it.iibb_rate!=null)t+=fob*(Number(it.iibb_rate)/100);return s+t;},0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-      </div>}
-    </Card>}
+    {tab==="budget"&&(()=>{const totalFob=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);const totalTax=items.reduce((s,it)=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);if(!isBlanco)return s;let t=0;if(it.import_duty_rate!=null)t+=fob*(Number(it.import_duty_rate)/100);if(it.statistics_rate!=null)t+=fob*(Number(it.statistics_rate)/100);if(it.iva_rate!=null)t+=fob*(Number(it.iva_rate)/100);if(it.documentary_expense!=null)t+=Number(it.documentary_expense);if(it.iva_additional_rate!=null)t+=fob*(Number(it.iva_additional_rate)/100);if(it.iigg_rate!=null)t+=fob*(Number(it.iigg_rate)/100);if(it.iibb_rate!=null)t+=fob*(Number(it.iibb_rate)/100);return s+t;},0);
+      let pf=0;pkgs.forEach(p=>{const gw=Number(p.gross_weight_kg||0);const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);pf+=Math.max(gw,l&&w&&h?(l*w*h)/5000:0);});
+      const fleteRate=tariffs?.length?((r)=>{const rates=tariffs.filter(t=>t.service_key===(op.channel==="aereo_blanco"?"aereo_a_china":"maritimo_a_china")&&t.type==="rate");for(const rt of rates){const min=Number(rt.min_qty||0),max=rt.max_qty!=null?Number(rt.max_qty):Infinity;if(pf>=min&&pf<max)return Number(rt.rate);}return rates.length?Number(rates[rates.length-1].rate):0;})():0;
+      const flete=op.channel?.includes("aereo")?pf*fleteRate:pkgs.reduce((s,p)=>{const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);return s+(l&&w&&h?(l*w*h)/1000000:0);},0)*fleteRate;
+      const totalSvc=Number(op.total_services||0);const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
+      return <Card title="Presupuesto (auto-calculado)" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
+        <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0"}}><span style={{color:"rgba(255,255,255,0.5)"}}>Total Impuestos</span><span style={{fontWeight:600,color:"#fff"}}>USD {totalTax.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+        <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0"}}><span style={{color:"rgba(255,255,255,0.5)"}}>Flete estimado</span><span style={{fontWeight:600,color:"#fff"}}>USD {flete.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px",marginTop:12}}>
+          <Inp label="Total Servicios (USD)" type="number" value={op.total_services} onChange={chOp("total_services")} step="0.01"/>
+          <Inp label="Costo Envío a Domicilio (USD)" type="number" value={op.shipping_cost} onChange={chOp("shipping_cost")} step="0.01"/>
+        </div>
+        <div style={{marginBottom:12}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.shipping_to_door||false} onChange={e=>chOp("shipping_to_door")(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Envío a domicilio</span></label></div>
+        <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",borderTop:"1px solid rgba(255,255,255,0.08)"}}><span style={{fontWeight:700,color:"#fff"}}>TOTAL A ABONAR</span><span style={{fontSize:18,fontWeight:700,color:IC}}>USD {(totalTax+totalSvc+shipCost).toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
+      </Card>;})()}
 
     {tab==="items"&&<Card title="Productos" actions={<Btn onClick={addItem} small>+ Agregar producto</Btn>}>
       {items.map((it,i)=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);return <div key={it.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
@@ -173,46 +181,54 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Producto {i+1} — FOB: USD {fob.toLocaleString(undefined,{minimumFractionDigits:2})}</p>
           <div style={{display:"flex",gap:6}}><Btn onClick={()=>saveItem(it)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delItem(it.id)} small variant="danger">Eliminar</Btn></div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",gap:"0 12px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"0 12px"}}>
           <Inp label="Descripción" value={it.description} onChange={v=>chItem(i,"description",v)} small/>
-          <Inp label="Cantidad" type="number" value={it.quantity} onChange={v=>chItem(i,"quantity",v?parseInt(v):0)} small/>
           <Inp label="Precio unit. USD" type="number" value={it.unit_price_usd} onChange={v=>chItem(i,"unit_price_usd",v)} step="0.01" small/>
-          <Inp label="NCM" value={it.ncm_code} onChange={v=>chItem(i,"ncm_code",v)} small/>
+          <Inp label="Cantidad" type="number" value={it.quantity} onChange={v=>chItem(i,"quantity",v?parseInt(v):0)} small/>
         </div>
-        {isBlanco&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:8,padding:"12px",border:"1px solid rgba(255,255,255,0.04)",marginTop:4}}>
+        <div style={{background:"rgba(255,255,255,0.02)",borderRadius:8,padding:"12px",border:"1px solid rgba(255,255,255,0.04)",marginTop:4}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 8px",textTransform:"uppercase"}}>Tasas Impositivas</p>
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"0 12px"}}>
-            <Inp label="Derechos Imp. %" type="number" value={it.import_duty_rate} onChange={v=>chItem(i,"import_duty_rate",v)} step="0.01" small/>
-            <Inp label="Tasa Estad. %" type="number" value={it.statistics_rate} onChange={v=>chItem(i,"statistics_rate",v)} step="0.01" small/>
+            <Inp label="DIE %" type="number" value={it.import_duty_rate} onChange={v=>chItem(i,"import_duty_rate",v)} step="0.01" small/>
+            <Inp label="TE %" type="number" value={it.statistics_rate} onChange={v=>chItem(i,"statistics_rate",v)} step="0.01" small/>
             <Inp label="IVA %" type="number" value={it.iva_rate} onChange={v=>chItem(i,"iva_rate",v)} step="0.01" small/>
             {isAereo&&<Inp label="Gasto Doc. $" type="number" value={it.documentary_expense} onChange={v=>chItem(i,"documentary_expense",v)} step="0.01" small/>}
             {isMaritimo&&<><Inp label="IVA Adic. %" type="number" value={it.iva_additional_rate} onChange={v=>chItem(i,"iva_additional_rate",v)} step="0.01" small/>
             <Inp label="IIGG %" type="number" value={it.iigg_rate} onChange={v=>chItem(i,"iigg_rate",v)} step="0.01" small/>
             <Inp label="IIBB %" type="number" value={it.iibb_rate} onChange={v=>chItem(i,"iibb_rate",v)} step="0.01" small/></>}
           </div>
-        </div>}
+        </div>
       </div>;})}
-      {items.length===0&&<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"1rem 0"}}>No hay productos. Hacé click en "Agregar producto" para empezar.</p>}
+      {items.length===0&&<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"1rem 0"}}>No hay productos.</p>}
     </Card>}
 
     {tab==="packages"&&<Card title="Bultos" actions={<Btn onClick={addPkg} small>+ Agregar bulto</Btn>}>
-      {pkgs.map((pk,i)=>{const l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0);const vw=l&&w&&h?(l*w*h)/5000:0;const cbm=l&&w&&h?(l*w*h)/1000000:0;return <div key={pk.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
+      {pkgs.map((pk,i)=>{const q=Number(pk.quantity||1),l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0),gw=Number(pk.gross_weight_kg||0);const bruto=gw*q;const vw=l&&w&&h?((l*w*h)/5000)*q:0;const cbm=l&&w&&h?((l*w*h)/1000000)*q:0;return <div key={pk.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Bulto {pk.package_number}{vw>0?` — Vol: ${vw.toFixed(2)} kg | CBM: ${cbm.toFixed(4)} m³`:""}</p>
+          <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Bulto {pk.package_number}</p>
           <div style={{display:"flex",gap:6}}><Btn onClick={()=>savePkg(pk)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delPkg(pk.id)} small variant="danger">Eliminar</Btn></div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:"0 12px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 12px"}}>
           <Inp label="Cantidad" type="number" value={pk.quantity} onChange={v=>chPkg(i,"quantity",v?parseInt(v):1)} small/>
           <Inp label="Largo cm" type="number" value={pk.length_cm} onChange={v=>chPkg(i,"length_cm",v)} step="0.1" small/>
           <Inp label="Ancho cm" type="number" value={pk.width_cm} onChange={v=>chPkg(i,"width_cm",v)} step="0.1" small/>
           <Inp label="Alto cm" type="number" value={pk.height_cm} onChange={v=>chPkg(i,"height_cm",v)} step="0.1" small/>
-          <Inp label="Peso bruto kg" type="number" value={pk.gross_weight_kg} onChange={v=>chPkg(i,"gross_weight_kg",v)} step="0.1" small/>
+          <Inp label="Peso unit. kg" type="number" value={pk.gross_weight_kg} onChange={v=>chPkg(i,"gross_weight_kg",v)} step="0.1" small/>
         </div>
+        {(bruto>0||vw>0)&&<div style={{display:"flex",gap:16,marginTop:8,fontSize:11,color:"rgba(255,255,255,0.3)"}}><span>Bruto total: <strong style={{color:"#fff"}}>{bruto.toFixed(1)} kg</strong></span>{vw>0&&<span>Vol: <strong style={{color:"#fff"}}>{vw.toFixed(1)} kg</strong></span>}{cbm>0&&<span>CBM: <strong style={{color:"#fff"}}>{cbm.toFixed(4)} m³</strong></span>}{vw>bruto&&<span style={{color:"#fb923c"}}>Volumétrico mayor</span>}</div>}
       </div>;})}
+      {pkgs.length>0&&(()=>{let pf=0,totGW=0,totCBM=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});return <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:12,marginTop:8,display:"flex",gap:20}}><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>PESO FACTURABLE</p><p style={{fontSize:16,fontWeight:700,color:IC,margin:0}}>{pf.toFixed(2)} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>PESO BRUTO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{totGW.toFixed(2)} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>CBM TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{totCBM.toFixed(4)} m³</p></div></div>;})()}
       {pkgs.length===0&&<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"1rem 0"}}>No hay bultos.</p>}
     </Card>}
 
-    {tab==="tracking"&&<Card title="Seguimiento" actions={<Btn onClick={addEvt} small>+ Agregar evento</Btn>}>
+    {tab==="tracking"&&<><Card title="Carrier & Tracking" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
+        <Inp label="Carrier Internacional" value={op.international_carrier} onChange={chOp("international_carrier")} placeholder="Ej: DHL, FedEx, UPS"/>
+        <Inp label="Tracking Internacional" value={op.international_tracking} onChange={chOp("international_tracking")} placeholder="Número de seguimiento"/>
+      </div>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.25)",margin:"4px 0 0"}}>Integración con APIs de tracking (DHL/FedEx/UPS) próximamente</p>
+    </Card>
+    <Card title="Eventos de seguimiento" actions={<Btn onClick={addEvt} small>+ Agregar evento</Btn>}>
       {events.map((ev,i)=><div key={ev.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>{ev.title||"Sin título"} — {formatDate(ev.occurred_at)}</p>
