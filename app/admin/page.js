@@ -181,7 +181,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       // Peso facturable (per-bulto max)
       let pf=0,totCBM=0,totGW=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});
       // Solo operaciones cerradas (históricas) usan valores guardados
-      const hasStoredBudget=op.status==="operacion_cerrada"&&Number(op.budget_total||0)>0;
+      // Usar presupuesto guardado si: (a) no hay productos cargados Y hay budget en DB, o (b) operación cerrada con budget
+      const hasStoredBudget=Number(op.budget_total||0)>0&&(items.length===0||op.status==="operacion_cerrada");
       const isRI=opClient?.tax_condition==="responsable_inscripto";
       let totalTax,flete,seguro,totalAbonar;
       if(hasStoredBudget){
@@ -1100,7 +1101,7 @@ function ShipmentsTracking({token,onSelectOp}){
     <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-          {[{k:"op",l:"Op"},{k:"client",l:"Cliente"},{k:"desc",l:"Mercadería"},{k:"origin",l:"Origen"},{k:"channel",l:"Canal"},{k:"tracking",l:"Tracking"},{k:null,l:""}].map((h,hi)=><th key={hi} onClick={()=>h.k&&toggleSort(h.k)} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:sortCol===h.k?IC:"rgba(255,255,255,0.3)",textTransform:"uppercase",cursor:h.k?"pointer":"default",userSelect:"none"}}>{h.l}{sortCol===h.k&&h.k&&<span style={{marginLeft:4}}>{sortDir==="asc"?"▲":"▼"}</span>}</th>)}
+          {[{k:"op",l:"Op"},{k:"client",l:"Cliente"},{k:"desc",l:"Mercadería"},{k:"origin",l:"Origen"},{k:"channel",l:"Canal"},{k:"tracking",l:"Tracking"}].map((h,hi)=><th key={hi} onClick={()=>h.k&&toggleSort(h.k)} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:sortCol===h.k?IC:"rgba(255,255,255,0.3)",textTransform:"uppercase",cursor:h.k?"pointer":"default",userSelect:"none"}}>{h.l}{sortCol===h.k&&h.k&&<span style={{marginLeft:4}}>{sortDir==="asc"?"▲":"▼"}</span>}</th>)}
         </tr></thead>
         <tbody>{filtered.map((r,i)=>{const cc=r.carrier?carrierColors[r.carrier.toUpperCase()]||IC:null;return <tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
           <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12,userSelect:"text"}}>{r.op.operation_code}</td>
@@ -1115,7 +1116,6 @@ function ShipmentsTracking({token,onSelectOp}){
               <span style={{fontFamily:"monospace",fontSize:12,fontWeight:600,color:"#fff",userSelect:"all"}}>{r.tracking}</span>
             </div>}
           </td>
-          <td style={{padding:"12px 14px"}}><button onClick={()=>onSelectOp(r.op)} style={{color:IC,fontSize:11,fontWeight:600,background:"rgba(74,144,217,0.1)",border:"1px solid rgba(74,144,217,0.2)",borderRadius:6,padding:"5px 10px",cursor:"pointer"}}>Ver →</button></td>
         </tr>;})}</tbody>
       </table>
     </div>}
