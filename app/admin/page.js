@@ -478,17 +478,34 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           }
         }
         // Auto-create finance_entry for impuestos ARS
+        const impMethod=op.cost_impuestos_method||"tarjeta_credito";
         if(impArs>0&&op.cost_impuestos_card_closing){
           const existImp=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&description=like.Impuestos*&auto_generated=eq.true&select=id`});
           if(!Array.isArray(existImp)||existImp.length===0){
-            await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Impuestos ${op.operation_code}`,amount_ars:impArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_impuestos_card_closing,is_paid:false,auto_generated:true,operation_id:id}});
+            if(impMethod==="efectivo"){
+              // Contado: dollarizar de una y registrar como pagado. cost_impuestos_card_closing funciona como tipo de cambio
+              const rate=Number(op.cost_impuestos_card_closing||0);
+              if(rate>0){const usdAmt=Math.round((impArs/rate)*100)/100;
+                await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Impuestos ${op.operation_code} (ARS ${impArs.toLocaleString("es-AR")} @ ${rate})`,amount:usdAmt,amount_ars:impArs,exchange_rate:rate,currency:"USD",payment_method:"efectivo",is_paid:true,auto_generated:true,operation_id:id}});
+                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{cost_impuestos_reales:usdAmt}});setOp(p=>({...p,cost_impuestos_reales:usdAmt}));}
+            } else {
+              await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Impuestos ${op.operation_code}`,amount_ars:impArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_impuestos_card_closing,is_paid:false,auto_generated:true,operation_id:id}});
+            }
           }
         }
         // Auto-create finance_entry for gasto documental ARS
+        const docMethod=op.cost_gasto_doc_method||"tarjeta_credito";
         if(docArs>0&&op.cost_gasto_doc_card_closing){
           const existDoc=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&description=like.Gasto doc*&auto_generated=eq.true&select=id`});
           if(!Array.isArray(existDoc)||existDoc.length===0){
-            await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Gasto documental ${op.operation_code}`,amount_ars:docArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_gasto_doc_card_closing,is_paid:false,auto_generated:true,operation_id:id}});
+            if(docMethod==="efectivo"){
+              const rate=Number(op.cost_gasto_doc_card_closing||0);
+              if(rate>0){const usdAmt=Math.round((docArs/rate)*100)/100;
+                await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Gasto documental ${op.operation_code} (ARS ${docArs.toLocaleString("es-AR")} @ ${rate})`,amount:usdAmt,amount_ars:docArs,exchange_rate:rate,currency:"USD",payment_method:"efectivo",is_paid:true,auto_generated:true,operation_id:id}});
+                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{cost_gasto_documental:usdAmt}});setOp(p=>({...p,cost_gasto_documental:usdAmt}));}
+            } else {
+              await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Gasto documental ${op.operation_code}`,amount_ars:docArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_gasto_doc_card_closing,is_paid:false,auto_generated:true,operation_id:id}});
+            }
           }
         }
         // Auto-create/update consolidated "Costos" entry in finanzas (USD costs)
@@ -511,20 +528,22 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           {(op.cost_flete_method||"cuenta_corriente")==="cuenta_corriente"&&<div style={{paddingTop:22}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>SALDO CC</p><p style={{fontSize:16,fontWeight:700,color:ccBalance>0?"#22c55e":"#ff6b6b",margin:0}}>USD {ccBalance.toLocaleString("en-US",{minimumFractionDigits:2})}</p></div>}
         </div>
         <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 8px",textTransform:"uppercase"}}>Impuestos (TC en ARS)</p>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 8px",textTransform:"uppercase"}}>Impuestos (ARS)</p>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
+            <Sel label="Método de pago" value={op.cost_impuestos_method||"tarjeta_credito"} onChange={chOp("cost_impuestos_method")} options={[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"}]}/>
             <Inp label="Monto ARS" type="number" value={op.cost_impuestos_ars} onChange={chOp("cost_impuestos_ars")} step="0.01"/>
-            <Inp label="Cierre de tarjeta" type="date" value={op.cost_impuestos_card_closing||""} onChange={chOp("cost_impuestos_card_closing")}/>
-            <div style={{paddingTop:22}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>USD EQUIV.</p><p style={{fontSize:14,fontWeight:600,color:Number(op.cost_impuestos_reales||0)>0?IC:"#fbbf24",margin:0}}>{Number(op.cost_impuestos_reales||0)>0?`USD ${Number(op.cost_impuestos_reales).toLocaleString("en-US",{minimumFractionDigits:2})}`:"Pendiente"}</p></div>
+            {(op.cost_impuestos_method||"tarjeta_credito")==="tarjeta_credito"?<Inp label="Cierre de tarjeta" type="date" value={op.cost_impuestos_card_closing||""} onChange={chOp("cost_impuestos_card_closing")}/>:<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_impuestos_card_closing&&!isNaN(Number(op.cost_impuestos_card_closing))?op.cost_impuestos_card_closing:""} onChange={chOp("cost_impuestos_card_closing")} step="0.01" placeholder="Ej: 1410"/>}
           </div>
+          <p style={{fontSize:11,fontWeight:600,color:Number(op.cost_impuestos_reales||0)>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {Number(op.cost_impuestos_reales||0)>0?`USD ${Number(op.cost_impuestos_reales).toLocaleString("en-US",{minimumFractionDigits:2})}`:(op.cost_impuestos_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}</p>
         </div>
         <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 8px",textTransform:"uppercase"}}>Gasto Documental (TC en ARS)</p>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 8px",textTransform:"uppercase"}}>Gasto Documental (ARS)</p>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
+            <Sel label="Método de pago" value={op.cost_gasto_doc_method||"tarjeta_credito"} onChange={chOp("cost_gasto_doc_method")} options={[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"}]}/>
             <Inp label="Monto ARS" type="number" value={op.cost_gasto_documental_ars} onChange={chOp("cost_gasto_documental_ars")} step="0.01"/>
-            <Inp label="Cierre de tarjeta" type="date" value={op.cost_gasto_doc_card_closing||""} onChange={chOp("cost_gasto_doc_card_closing")}/>
-            <div style={{paddingTop:22}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>USD EQUIV.</p><p style={{fontSize:14,fontWeight:600,color:Number(op.cost_gasto_documental||0)>0?IC:"#fbbf24",margin:0}}>{Number(op.cost_gasto_documental||0)>0?`USD ${Number(op.cost_gasto_documental).toLocaleString("en-US",{minimumFractionDigits:2})}`:"Pendiente"}</p></div>
+            {(op.cost_gasto_doc_method||"tarjeta_credito")==="tarjeta_credito"?<Inp label="Cierre de tarjeta" type="date" value={op.cost_gasto_doc_card_closing||""} onChange={chOp("cost_gasto_doc_card_closing")}/>:<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_gasto_doc_card_closing&&!isNaN(Number(op.cost_gasto_doc_card_closing))?op.cost_gasto_doc_card_closing:""} onChange={chOp("cost_gasto_doc_card_closing")} step="0.01" placeholder="Ej: 1410"/>}
           </div>
+          <p style={{fontSize:11,fontWeight:600,color:Number(op.cost_gasto_documental||0)>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {Number(op.cost_gasto_documental||0)>0?`USD ${Number(op.cost_gasto_documental).toLocaleString("en-US",{minimumFractionDigits:2})}`:(op.cost_gasto_doc_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}</p>
         </div>
         <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 8px",textTransform:"uppercase"}}>Otros costos (USD)</p>
@@ -1027,10 +1046,14 @@ function FinancePanel({token}){
       const bal=ccMvs.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):-Number(m.amount_usd)),0);
       const addAnticipo=async()=>{if(!ccForm.amount)return;await dq("supplier_account_movements",{method:"POST",token,body:{type:"anticipo",amount_usd:Number(ccForm.amount),description:ccForm.description||"Anticipo",date:ccForm.date}});setCcForm({date:new Date().toISOString().slice(0,10),amount:"",description:""});setShowCcForm(false);load();flash("Anticipo cargado");};
       const delMv=async(id)=>{await dq("supplier_account_movements",{method:"DELETE",token,filters:`?id=eq.${id}`});load();flash("Movimiento eliminado");};
+      const saldarCuenta=async()=>{if(Math.abs(bal)<0.01){alert("La cuenta ya está en 0");return;}const tipo=bal>0?"deduccion":"anticipo";const monto=Math.abs(bal);if(!confirm(`Esto va a crear un movimiento de ${tipo==="anticipo"?"anticipo":"deducción"} por USD ${monto.toFixed(2)} para dejar el saldo en 0. ¿Confirmás?`))return;await dq("supplier_account_movements",{method:"POST",token,body:{type:tipo,amount_usd:monto,description:`Saldo manual - llevar cuenta a 0`,date:new Date().toISOString().slice(0,10)}});load();flash("Cuenta saldada");};
       return <>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
         <div style={{background:"rgba(34,197,94,0.06)",borderRadius:12,padding:"20px",border:"1px solid rgba(34,197,94,0.15)",textAlign:"center"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px"}}>SALDO DISPONIBLE</p><p style={{fontSize:28,fontWeight:700,color:bal>0?"#22c55e":"#ff6b6b",margin:0}}>{usd(bal)}</p></div>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}><Btn onClick={()=>setShowCcForm(!showCcForm)}>+ Cargar Anticipo</Btn></div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,flexWrap:"wrap"}}>
+          <Btn onClick={()=>setShowCcForm(!showCcForm)}>+ Cargar Anticipo</Btn>
+          {Math.abs(bal)>=0.01&&<Btn variant="secondary" onClick={saldarCuenta}>Saldar cuenta (dejar en 0)</Btn>}
+        </div>
       </div>
       {showCcForm&&<Card title="Nuevo anticipo">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
