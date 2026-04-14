@@ -104,10 +104,11 @@ function NewOperation({token,clients,onBack,onCreated}){
 }
 
 function OperationEditor({op:initOp,token,onBack,onDelete}){
-  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);
+  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);
   const loadCCBalance=async()=>{const mvs=await dq("supplier_account_movements",{token,filters:"?select=type,amount_usd"});if(Array.isArray(mvs)){const bal=mvs.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):(-Number(m.amount_usd))),0);setCcBalance(bal);}};
   const load=async()=>{setLo(true);const [it,pk,ev,tf,cc]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
     if(op.client_id){const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*`});setOpClient(Array.isArray(cl)?cl[0]:null);const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);}
+    const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
     await loadCCBalance();setLo(false);};
   useEffect(()=>{load();},[op.id]);
   const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
@@ -133,7 +134,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const addEvt=async()=>{const r=await dq("tracking_events",{method:"POST",token,body:{operation_id:op.id,title:"Nuevo evento",occurred_at:new Date().toISOString(),is_visible_to_client:true,created_by:null}});if(Array.isArray(r))setEvents(p=>[...r,...p]);else if(r.id)setEvents(p=>[r,...p]);flash("Evento agregado");};
   const delEvt=async(id)=>{await dq("tracking_events",{method:"DELETE",token,filters:`?id=eq.${id}`});setEvents(p=>p.filter(x=>x.id!==id));flash("Evento eliminado");};
 
-  const tabs=[{k:"general",l:"General"},{k:"budget",l:"Presupuesto"},{k:"items",l:"Productos"},{k:"packages",l:"Bultos"},{k:"tracking",l:"Seguimiento"},{k:"finance",l:"Finanzas"}];
+  const tabs=[{k:"general",l:"General"},{k:"budget",l:"Presupuesto"},{k:"items",l:"Productos"},{k:"packages",l:"Bultos"},{k:"tracking",l:"Seguimiento"},{k:"payments",l:"Pagos"},{k:"finance",l:"Finanzas"}];
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
   const chItem=(idx,f,v)=>{setItems(p=>{const n=[...p];n[idx]={...n[idx],[f]:v};return n;});};
   const chPkg=(idx,f,v)=>{setPkgs(p=>{const n=[...p];n[idx]={...n[idx],[f]:v};return n;});};
@@ -302,6 +303,87 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     </Card>
     </>}
 
+    {tab==="payments"&&(()=>{
+      const [showNewPmt,setShowNewPmt]=useState(false);
+      const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});
+      const totalAnticipado=payments.filter(p=>p.client_paid).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
+      const totalGirado=payments.filter(p=>p.giro_status==="confirmado").reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
+      const totalGanPagos=payments.reduce((s,p)=>s+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);
+      const savePmt=async()=>{if(!newPmt.client_amount_usd)return;setSaving(true);
+        const body={...newPmt,client_amount_usd:Number(newPmt.client_amount_usd),giro_amount_usd:Number(newPmt.giro_amount_usd||0),cost_comision_giro:Number(newPmt.cost_comision_giro||0),operation_id:op.id,client_id:op.client_id};
+        await dq("payment_management",{method:"POST",token,body});
+        const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
+        setShowNewPmt(false);setNewPmt({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});flash("Pago creado");setSaving(false);};
+      const updatePmt=async(pmtId,field,value)=>{
+        await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pmtId}`,body:{[field]:value}});
+        // Auto finance entries
+        if(field==="client_paid"&&value===true){
+          const pmt=payments.find(p=>p.id===pmtId);
+          await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pmtId}`,body:{client_paid:true,client_paid_date:new Date().toISOString().slice(0,10)}});
+          await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"ingreso",description:`Anticipo pago ${op.operation_code}`,amount:Number(pmt.client_amount_usd),currency:"USD",payment_method:pmt.client_payment_method||"transferencia",is_paid:true,auto_generated:true,operation_id:op.id}});
+          // Update total_anticipos
+          const newTotal=payments.filter(p=>p.client_paid||(p.id===pmtId)).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{total_anticipos:newTotal}});
+          setOp(p=>({...p,total_anticipos:newTotal}));
+        }
+        if(field==="giro_status"&&value==="confirmado"){
+          const pmt=payments.find(p=>p.id===pmtId);
+          await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pmtId}`,body:{giro_status:"confirmado",giro_date:new Date().toISOString().slice(0,10)}});
+          await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Giro exterior ${op.operation_code}`,amount:Number(pmt.giro_amount_usd||0)+Number(pmt.cost_comision_giro||0),currency:"USD",payment_method:"transferencia",is_paid:true,auto_generated:true,operation_id:op.id}});
+        }
+        const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);flash("Actualizado");
+      };
+      const delPmt=async(pmtId)=>{await dq("payment_management",{method:"DELETE",token,filters:`?id=eq.${pmtId}`});setPayments(p=>p.filter(x=>x.id!==pmtId));flash("Eliminado");};
+      const usdF=v=>`USD ${Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      const GST={pendiente:{l:"Pendiente",c:"#fbbf24"},enviado:{l:"Enviado",c:"#60a5fa"},confirmado:{l:"Confirmado",c:"#22c55e"}};
+      return <>
+      <Card title="Gestión de Pagos" actions={<Btn onClick={()=>setShowNewPmt(true)} small>+ Nuevo pago</Btn>}>
+        {payments.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:20}}>
+          <div style={{background:"rgba(34,197,94,0.06)",borderRadius:10,padding:14,border:"1px solid rgba(34,197,94,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>ANTICIPADO</p><p style={{fontSize:18,fontWeight:700,color:"#22c55e",margin:0}}>{usdF(totalAnticipado)}</p></div>
+          <div style={{background:"rgba(96,165,250,0.06)",borderRadius:10,padding:14,border:"1px solid rgba(96,165,250,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>GIRADO</p><p style={{fontSize:18,fontWeight:700,color:IC,margin:0}}>{usdF(totalGirado)}</p></div>
+          <div style={{background:totalGanPagos>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)",borderRadius:10,padding:14,border:`1px solid ${totalGanPagos>=0?"rgba(34,197,94,0.12)":"rgba(255,80,80,0.12)"}`,textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 4px"}}>GANANCIA PAGOS</p><p style={{fontSize:18,fontWeight:700,color:totalGanPagos>=0?"#22c55e":"#ff6b6b",margin:0}}>{usdF(totalGanPagos)}</p></div>
+        </div>}
+        {payments.map((pm,i)=>{const gan=Number(pm.client_amount_usd||0)-Number(pm.giro_amount_usd||0)-Number(pm.cost_comision_giro||0);const gs=GST[pm.giro_status]||{l:pm.giro_status,c:"#999"};
+          return <div key={pm.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:13,fontWeight:700,color:IC}}>Pago {i+1}</span>
+                {pm.description&&<span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>— {pm.description}</span>}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:gs.c,background:`${gs.c}15`,border:`1px solid ${gs.c}33`}}>Giro: {gs.l}</span>
+                <button onClick={()=>delPmt(pm.id)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>X</button>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,fontSize:12}}>
+              <div><p style={{color:"rgba(255,255,255,0.3)",margin:"0 0 2px",fontSize:10,fontWeight:700}}>CLIENTE PAGA</p><p style={{color:"#fff",fontWeight:600,margin:0}}>{usdF(pm.client_amount_usd)}</p></div>
+              <div><p style={{color:"rgba(255,255,255,0.3)",margin:"0 0 2px",fontSize:10,fontWeight:700}}>GIRO AL EXTERIOR</p><p style={{color:"#fff",fontWeight:600,margin:0}}>{usdF(pm.giro_amount_usd||0)}</p></div>
+              <div><p style={{color:"rgba(255,255,255,0.3)",margin:"0 0 2px",fontSize:10,fontWeight:700}}>COMISIÓN GIRO</p><p style={{color:"#ff6b6b",fontWeight:600,margin:0}}>{usdF(pm.cost_comision_giro||0)}</p></div>
+              <div><p style={{color:"rgba(255,255,255,0.3)",margin:"0 0 2px",fontSize:10,fontWeight:700}}>GANANCIA</p><p style={{color:gan>=0?"#22c55e":"#ff6b6b",fontWeight:700,margin:0}}>{usdF(gan)}</p></div>
+            </div>
+            <div style={{display:"flex",gap:16,marginTop:10,alignItems:"center"}}>
+              <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={pm.client_paid||false} onChange={e=>{if(e.target.checked&&!pm.client_paid)updatePmt(pm.id,"client_paid",true);}}/><span style={{fontSize:12,color:pm.client_paid?"#22c55e":"rgba(255,255,255,0.4)",fontWeight:pm.client_paid?600:400}}>{pm.client_paid?`Pagado ${formatDate(pm.client_paid_date)}`:"Cliente no pagó"}</span></label>
+              {pm.giro_status!=="confirmado"&&<Sel label="" value={pm.giro_status} onChange={v=>updatePmt(pm.id,"giro_status",v)} options={[{value:"pendiente",label:"Pendiente"},{value:"enviado",label:"Enviado"},{value:"confirmado",label:"Confirmado"}]}/>}
+            </div>
+          </div>;})}
+        {payments.length===0&&!showNewPmt&&<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"1rem 0"}}>No hay gestiones de pago.</p>}
+      </Card>
+      {showNewPmt&&<Card title="Nueva gestión de pago">
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
+          <Inp label="Monto que paga el cliente (USD)" type="number" value={newPmt.client_amount_usd} onChange={v=>setNewPmt(p=>({...p,client_amount_usd:v}))} step="0.01"/>
+          <Inp label="Monto a girar al exterior (USD)" type="number" value={newPmt.giro_amount_usd} onChange={v=>setNewPmt(p=>({...p,giro_amount_usd:v}))} step="0.01"/>
+          <Inp label="Comisión del servicio de giro (USD)" type="number" value={newPmt.cost_comision_giro} onChange={v=>setNewPmt(p=>({...p,cost_comision_giro:v}))} step="0.01"/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
+          <Inp label="Descripción" value={newPmt.description} onChange={v=>setNewPmt(p=>({...p,description:v}))} placeholder="Ej: Pago proveedor Alibaba"/>
+          <Sel label="Método de pago del cliente" value={newPmt.client_payment_method} onChange={v=>setNewPmt(p=>({...p,client_payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Efectivo"},{value:"cripto",label:"Cripto"}]}/>
+        </div>
+        {Number(newPmt.client_amount_usd||0)>0&&Number(newPmt.giro_amount_usd||0)>0&&<div style={{background:"rgba(34,197,94,0.06)",borderRadius:8,padding:12,marginBottom:12,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Ganancia estimada</span><span style={{fontSize:14,fontWeight:700,color:"#22c55e"}}>{usdF(Number(newPmt.client_amount_usd)-Number(newPmt.giro_amount_usd)-Number(newPmt.cost_comision_giro||0))}</span></div>}
+        <div style={{display:"flex",gap:8}}><Btn onClick={savePmt} disabled={saving}>{saving?"Guardando...":"Guardar"}</Btn><Btn variant="secondary" onClick={()=>setShowNewPmt(false)}>Cancelar</Btn></div>
+      </Card>}
+      </>;
+    })()}
+
     {tab==="finance"&&(()=>{
       const costFlete=Number(op.cost_flete||0);const costImp=Number(op.cost_impuestos_reales||0);const costDoc=Number(op.cost_gasto_documental||0);const costSeg=Number(op.cost_seguro||0);const costLocal=Number(op.cost_flete_local||0);const costOtros=Number(op.cost_otros||0);
       const totalCostos=costFlete+costImp+costDoc+costSeg+costLocal+costOtros;
@@ -335,6 +417,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           {op.collection_currency==="ARS"&&<Inp label="Tipo de cambio (ARS/USD)" type="number" value={op.collection_exchange_rate} onChange={chOp("collection_exchange_rate")} step="0.01" placeholder="Ej: 1200"/>}
           <Inp label="Fecha de cobro" type="date" value={op.collection_date||""} onChange={chOp("collection_date")}/>
         </div>
+        {Number(op.total_anticipos||0)>0&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.12)",borderRadius:10,padding:"12px 16px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><p style={{fontSize:12,fontWeight:600,color:IC,margin:0}}>Anticipos descontados (gestión de pagos)</p><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Presupuesto: USD {Number(op.budget_total||0).toLocaleString("en-US",{minimumFractionDigits:2})} - Anticipos: USD {Number(op.total_anticipos).toLocaleString("en-US",{minimumFractionDigits:2})}</p></div><p style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Saldo: USD {(Number(op.budget_total||0)-Number(op.total_anticipos||0)).toLocaleString("en-US",{minimumFractionDigits:2})}</p></div>}
         <div style={{marginBottom:8}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.is_collected||false} onChange={e=>chOp("is_collected")(e.target.checked)}/><span style={{fontSize:13,color:op.is_collected?"#22c55e":"rgba(255,255,255,0.5)",fontWeight:op.is_collected?600:400}}>{op.is_collected?"Operación cobrada ✓":"Marcar como cobrada"}</span></label></div>
       </Card>
       <Card title="Costos reales" actions={<Btn onClick={async()=>{setSaving(true);
