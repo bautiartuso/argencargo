@@ -184,7 +184,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         totalAbonar=Number(op.budget_total||0);
       } else {
       // Flete (uses client custom rate if available)
-      const svcKey=op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="aereo_negro"?"aereo_b_china":op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b";
+      const isUSA=op.origin==="USA";const svcKey=op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="aereo_negro"?(isUSA?"aereo_b_usa":"aereo_b_china"):op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b";
       const fleteAmt=op.channel?.includes("aereo")?pf:(op.channel==="maritimo_blanco"?Math.max(totCBM,1):totCBM);
       const getRate=(sk,amt)=>{const rates=tariffs.filter(t=>t.service_key===sk);for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amt>=min&&amt<max){const ov=clientOverrides.find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):Number(r.rate);}}return rates.length?Number(rates[rates.length-1].rate):0;};
       const fleteRate=getRate(svcKey,fleteAmt);flete=fleteAmt*fleteRate;
