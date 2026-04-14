@@ -56,7 +56,7 @@ function OperationsList({token,onSelect,onNew}){
     </div>
     {lo?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:(()=>{
     const active=sorted.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
-    const closed=sorted.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada");
+    const closed=sorted.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada").sort((a,b)=>{const da=a.closed_at?String(a.closed_at).slice(0,10):"";const db=b.closed_at?String(b.closed_at).slice(0,10):"";return db.localeCompare(da);});
     const totalGanancia=closed.reduce((s,o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);return s+(ing-cost);},0);
     const renderTable=(rows,showGanancia)=><div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
@@ -324,8 +324,13 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         // Auto finance entries
         if(field==="client_paid"&&value===true){
           const pmt=payments.find(p=>p.id===pmtId);
+          if(pmt?.client_paid)return; // ya está marcado, evitar duplicar
           await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pmtId}`,body:{client_paid:true,client_paid_date:new Date().toISOString().slice(0,10)}});
-          await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"ingreso",description:`Anticipo pago ${op.operation_code}`,amount:Number(pmt.client_amount_usd),currency:"USD",payment_method:pmt.client_payment_method||"transferencia",is_paid:true,auto_generated:true,operation_id:op.id}});
+          // Check duplicate before creating finance entry
+          const existing=await dq("finance_entries",{token,filters:`?operation_id=eq.${op.id}&description=eq.Anticipo pago ${op.operation_code}&auto_generated=eq.true&amount=eq.${Number(pmt.client_amount_usd)}&select=id`});
+          if(!Array.isArray(existing)||existing.length===0){
+            await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"ingreso",description:`Anticipo pago ${op.operation_code}`,amount:Number(pmt.client_amount_usd),currency:"USD",payment_method:pmt.client_payment_method||"transferencia",is_paid:true,auto_generated:true,operation_id:op.id}});
+          }
           // Update total_anticipos
           const newTotal=payments.filter(p=>p.client_paid||(p.id===pmtId)).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{total_anticipos:newTotal}});
@@ -333,8 +338,13 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         }
         if(field==="giro_status"&&value==="confirmado"){
           const pmt=payments.find(p=>p.id===pmtId);
+          if(pmt?.giro_status==="confirmado")return;
           await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pmtId}`,body:{giro_status:"confirmado",giro_date:new Date().toISOString().slice(0,10)}});
-          await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Giro exterior ${op.operation_code}`,amount:Number(pmt.giro_amount_usd||0)+Number(pmt.cost_comision_giro||0),currency:"USD",payment_method:"transferencia",is_paid:true,auto_generated:true,operation_id:op.id}});
+          const giroAmt=Number(pmt.giro_amount_usd||0)+Number(pmt.cost_comision_giro||0);
+          const existing=await dq("finance_entries",{token,filters:`?operation_id=eq.${op.id}&description=eq.Giro exterior ${op.operation_code}&auto_generated=eq.true&amount=eq.${giroAmt}&select=id`});
+          if(!Array.isArray(existing)||existing.length===0){
+            await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Giro exterior ${op.operation_code}`,amount:giroAmt,currency:"USD",payment_method:"transferencia",is_paid:true,auto_generated:true,operation_id:op.id}});
+          }
         }
         const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);flash("Actualizado");
       };
@@ -415,9 +425,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       <Card title="Cobro" actions={<Btn onClick={async()=>{await saveOp();
         // Auto-create finance_entry when marking as collected
         if(op.is_collected){
-          const existing=await dq("finance_entries",{token,filters:`?operation_id=eq.${op.id}&type=eq.ingreso&auto_generated=eq.true&select=id`});
-          if(!Array.isArray(existing)||existing.length===0){
-            const amt=Number(op.collected_amount||op.budget_total||0);
+          const existing=await dq("finance_entries",{token,filters:`?operation_id=eq.${op.id}&description=eq.Cobro ${op.operation_code}&auto_generated=eq.true&select=id`});
+          // Calc amt: budget_total minus already-paid anticipos (since those are separate ingresos)
+          const amt=Number(op.collected_amount||0)>0?Number(op.collected_amount):(Number(op.budget_total||0)-Number(op.total_anticipos||0));
+          if(amt>0&&(!Array.isArray(existing)||existing.length===0)){
             await dq("finance_entries",{method:"POST",token,body:{date:op.collection_date||new Date().toISOString().slice(0,10),type:"ingreso",description:`Cobro ${op.operation_code}`,amount:amt,currency:op.collection_currency||"USD",payment_method:op.collection_method||"transferencia",is_paid:true,auto_generated:true,operation_id:op.id}});
             flash("Ingreso registrado en finanzas");
           }
@@ -466,6 +477,17 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const existDoc=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&description=like.Gasto doc*&auto_generated=eq.true&select=id`});
           if(!Array.isArray(existDoc)||existDoc.length===0){
             await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Gasto documental ${op.operation_code}`,amount_ars:docArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_gasto_doc_card_closing,is_paid:false,auto_generated:true,operation_id:id}});
+          }
+        }
+        // Auto-create/update consolidated "Costos" entry in finanzas (USD costs)
+        const totalCostosUSD=Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0);
+        if(totalCostosUSD>0){
+          const existCost=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&description=eq.Costos ${op.operation_code}&auto_generated=eq.true&select=id`});
+          const dateForCost=op.closed_at?op.closed_at.slice(0,10):new Date().toISOString().slice(0,10);
+          if(Array.isArray(existCost)&&existCost.length>0){
+            await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existCost[0].id}`,body:{amount:totalCostosUSD,date:dateForCost}});
+          } else {
+            await dq("finance_entries",{method:"POST",token,body:{date:dateForCost,type:"gasto",description:`Costos ${op.operation_code}`,amount:totalCostosUSD,currency:"USD",payment_method:"transferencia",is_paid:true,auto_generated:true,operation_id:id}});
           }
         }
         flash("Costos guardados");setSaving(false);
