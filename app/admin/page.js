@@ -1021,6 +1021,102 @@ function FinancePanel({token}){
   </div>;
 }
 
+function ShipmentsTracking({token,onSelectOp}){
+  const [ops,setOps]=useState([]);const [pkgs,setPkgs]=useState([]);const [items,setItems]=useState([]);const [lo,setLo]=useState(true);const [fChannel,setFChannel]=useState("");const [search,setSearch]=useState("");
+  useEffect(()=>{(async()=>{
+    // Solo operaciones activas (no cerradas, no canceladas, no entregadas)
+    const o=await dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&status=neq.operacion_cerrada&status=neq.cancelada&status=neq.entregada&order=created_at.desc"});
+    const opIds=Array.isArray(o)?o.map(x=>x.id):[];
+    if(opIds.length===0){setOps([]);setPkgs([]);setItems([]);setLo(false);return;}
+    const idsCsv=opIds.join(",");
+    const [pk,it]=await Promise.all([
+      dq("operation_packages",{token,filters:`?operation_id=in.(${idsCsv})&select=*&order=package_number.asc`}),
+      dq("operation_items",{token,filters:`?operation_id=in.(${idsCsv})&select=*`})
+    ]);
+    setOps(o);setPkgs(Array.isArray(pk)?pk:[]);setItems(Array.isArray(it)?it:[]);setLo(false);
+  })();},[token]);
+
+  // Build rows according to channel logic
+  const buildRows=()=>{const rows=[];
+    ops.forEach(op=>{
+      const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";
+      const opItems=items.filter(i=>i.operation_id===op.id);
+      const opPkgs=pkgs.filter(p=>p.operation_id===op.id);
+      const desc=op.description||opItems.map(i=>i.description).filter(Boolean).join(", ")||"—";
+      const isCanalB=op.channel?.includes("negro");
+      const isAereoA=op.channel==="aereo_blanco";
+      const isMaritimoA=op.channel==="maritimo_blanco";
+      if(isCanalB){
+        // Una línea por bulto que tenga national_tracking
+        const withTracking=opPkgs.filter(p=>p.national_tracking?.trim());
+        if(withTracking.length===0){
+          rows.push({op,client:cn,desc,origin:op.origin||"—",channel:op.channel,tracking:"—",carrier:null,trackingType:"Sin tracking"});
+        } else {
+          withTracking.forEach(p=>{
+            rows.push({op,client:cn,desc,origin:op.origin||"—",channel:op.channel,tracking:p.national_tracking,carrier:null,trackingType:`Bulto ${p.package_number}`});
+          });
+        }
+      } else if(isAereoA){
+        // Tracking internacional + carrier
+        const tr=op.international_tracking?.trim();
+        const car=op.international_carrier?.trim();
+        rows.push({op,client:cn,desc,origin:op.origin||"—",channel:op.channel,tracking:tr||"—",carrier:car||null,trackingType:car?car.toUpperCase():"Internacional"});
+      } else if(isMaritimoA){
+        // Solo info de mercadería, sin código
+        rows.push({op,client:cn,desc,origin:op.origin||"—",channel:op.channel,tracking:"—",carrier:null,trackingType:"Marítimo"});
+      }
+    });
+    return rows;
+  };
+
+  const allRows=buildRows();
+  const filtered=allRows.filter(r=>{
+    if(fChannel&&r.channel!==fChannel)return false;
+    if(search){const s=search.toLowerCase();return r.client.toLowerCase().includes(s)||r.desc.toLowerCase().includes(s)||r.tracking.toLowerCase().includes(s)||r.op.operation_code.toLowerCase().includes(s);}
+    return true;
+  });
+
+  const carrierColors={DHL:"#fbbf24",FEDEX:"#a78bfa",UPS:"#fb923c"};
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
+      <div>
+        <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Seguimientos en tránsito</h2>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>{filtered.length} {filtered.length===1?"paquete":"paquetes"} en operaciones activas</p>
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <input type="text" placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)} style={{padding:"8px 12px",fontSize:12,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/>
+        <select value={fChannel} onChange={e=>setFChannel(e.target.value)} style={{padding:"8px 12px",fontSize:12,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
+          <option value="" style={{background:"#0a1428"}}>Todos los canales</option>
+          {CHANNELS.map(c=><option key={c} value={c} style={{background:"#0a1428"}}>{CM[c]}</option>)}
+        </select>
+      </div>
+    </div>
+    {lo?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"3rem 0"}}>Cargando...</p>:filtered.length===0?<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes en tránsito</p>:
+    <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+          {["Op","Cliente","Mercadería","Origen","Canal","Tracking",""].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
+        </tr></thead>
+        <tbody>{filtered.map((r,i)=>{const cc=r.carrier?carrierColors[r.carrier.toUpperCase()]||IC:null;return <tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>onSelectOp(r.op)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+          <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12}}>{r.op.operation_code}</td>
+          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.7)"}}>{r.client}</td>
+          <td style={{padding:"12px 14px",color:"#fff",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.desc}</td>
+          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{r.origin==="China"?"🇨🇳":r.origin==="USA"?"🇺🇸":""} {r.origin}</td>
+          <td style={{padding:"12px 14px"}}><span style={{fontSize:11,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{CM[r.channel]||r.channel}</span></td>
+          <td style={{padding:"12px 14px"}}>
+            {r.tracking==="—"?<span style={{color:"rgba(255,255,255,0.3)",fontStyle:"italic",fontSize:12}}>{r.trackingType}</span>:<div>
+              {cc&&<span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:`${cc}20`,color:cc,marginRight:6}}>{r.trackingType}</span>}
+              {!cc&&<span style={{fontSize:10,color:"rgba(255,255,255,0.3)",display:"block",marginBottom:2}}>{r.trackingType}</span>}
+              <span style={{fontFamily:"monospace",fontSize:12,fontWeight:600,color:"#fff"}}>{r.tracking}</span>
+            </div>}
+          </td>
+          <td style={{padding:"12px 14px"}}><span style={{color:IC,fontSize:11,fontWeight:600}}>Ver →</span></td>
+        </tr>;})}</tbody>
+      </table>
+    </div>}
+  </div>;
+}
+
 function FinanceDashboard({token}){
   const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
   useEffect(()=>{(async()=>{const [o,c,q,fe]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setLo(false);})();},[token]);
@@ -1272,7 +1368,7 @@ function AdminDashboard({session,onLogout}){
   const [page,setPage]=useState("operations");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);
   const token=session.token;
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
-  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"finance",label:"FINANZAS",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
+  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"shipments",label:"SEGUIMIENTOS",p:["M16 3h5v5","M21 3l-7 7","M8 21H3v-5","M3 21l7-7","M21 16v5h-5","M21 21l-7-7","M3 8V3h5","M3 3l7 7"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"finance",label:"FINANZAS",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
   return <div style={{height:"100vh",display:"flex",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden"}}>
     <div style={{width:220,flexShrink:0,background:"rgba(0,0,0,0.3)",borderRight:"1px solid rgba(255,255,255,0.05)",display:"flex",flexDirection:"column",height:"100vh",position:"sticky",top:0}}>
       <div style={{padding:"20px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><img src={LOGO} alt="AC" style={{width:"100%",height:"auto",maxHeight:50,objectFit:"contain"}}/></div>
@@ -1287,6 +1383,7 @@ function AdminDashboard({session,onLogout}){
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
       {page==="dashboard"&&<FinanceDashboard token={token}/>}
+      {page==="shipments"&&<ShipmentsTracking token={token} onSelectOp={op=>{setPage("operations");setSelOp(op);}}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
