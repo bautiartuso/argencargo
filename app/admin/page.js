@@ -542,7 +542,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </>;})()}
 
     {tab==="notifs"&&(()=>{
-      const cn=opClient?`${opClient.first_name} ${opClient.last_name}`:"Cliente";
+      const cn=opClient?.first_name||"Cliente";
       const wa=opClient?.whatsapp?String(opClient.whatsapp).replace(/[^0-9]/g,""):"";
       const email=opClient?.email||"";
       const desc=op.description||items.map(it=>it.description).filter(Boolean).join(", ")||"tu carga";
