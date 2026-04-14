@@ -902,12 +902,14 @@ function FinancePanel({token}){
 }
 
 function FinanceDashboard({token}){
-  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("all");
+  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
   useEffect(()=>{(async()=>{const [o,c,q]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setLo(false);})();},[token]);
 
   const now=new Date();const thisMonth=now.getMonth();const thisYear=now.getFullYear();
   const today=now.toISOString().slice(0,10);const weekAgo=new Date(now-7*86400000).toISOString().slice(0,10);
-  const filterByPeriod=(items,dateField)=>{if(period==="all")return items;return items.filter(i=>{if(!i[dateField])return false;const ds=i[dateField].slice(0,10);const d=new Date(i[dateField]);if(period==="today")return ds===today;if(period==="week")return ds>=weekAgo;if(period==="month")return d.getMonth()===thisMonth&&d.getFullYear()===thisYear;if(period==="year")return d.getFullYear()===thisYear;return true;});};
+  const parseLocalDate=(d)=>{const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return{y:Number(y),m:Number(m)-1,d:Number(day),ds:s};}return{y:0,m:0,d:0,ds:""};};
+  const [selY,selM]=(selMonth||"").split("-").map(Number);
+  const filterByPeriod=(items,dateField)=>{if(period==="all")return items;return items.filter(i=>{if(!i[dateField])return false;const p=parseLocalDate(i[dateField]);if(period==="today")return p.ds===today;if(period==="week")return p.ds>=weekAgo;if(period==="month")return p.m===(selM-1)&&p.y===selY;if(period==="year")return p.y===thisYear;return true;});};
 
   const closedOps=ops.filter(o=>o.status==="operacion_cerrada");
   const activeOps=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
@@ -933,7 +935,7 @@ function FinanceDashboard({token}){
 
   // Monthly profit (last 6 months)
   const MN=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-  const monthly=[];for(let i=5;i>=0;i--){const d=new Date(thisYear,thisMonth-i,1);const m=d.getMonth();const y=d.getFullYear();const mOps=closedOps.filter(o=>{if(!o.closed_at)return false;const cd=new Date(o.closed_at.slice(0,10).replace(/-/g,"/"));return cd.getMonth()===m&&cd.getFullYear()===y;});const ing=mOps.reduce((s,o)=>s+calcGan(o).ing,0);const cost=mOps.reduce((s,o)=>s+calcGan(o).cost,0);monthly.push({label:`${MN[m]} ${y}`,ing,cost,gan:ing-cost,ops:mOps.length});}
+  const monthly=[];for(let i=5;i>=0;i--){const d=new Date(thisYear,thisMonth-i,1);const m=d.getMonth();const y=d.getFullYear();const mOps=closedOps.filter(o=>{if(!o.closed_at)return false;const p=parseLocalDate(o.closed_at);return p.m===m&&p.y===y;});const ing=mOps.reduce((s,o)=>s+calcGan(o).ing,0);const cost=mOps.reduce((s,o)=>s+calcGan(o).cost,0);monthly.push({label:`${MN[m]} ${y}`,ing,cost,gan:ing-cost,ops:mOps.length});}
   const maxMonthGan=Math.max(...monthly.map(m=>Math.abs(m.gan)),1);
   const maxMonthOps=Math.max(...monthly.map(m=>m.ops),1);
 
@@ -957,9 +959,15 @@ function FinanceDashboard({token}){
 
   if(lo)return <p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
       <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Dashboard Financiero</h2>
-      <div style={{display:"flex",gap:8}}>{[{k:"today",l:"Hoy"},{k:"week",l:"Esta semana"},{k:"month",l:"Este mes"},{k:"year",l:"Este año"},{k:"all",l:"Todo"}].map(p=><button key={p.k} onClick={()=>setPeriod(p.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:period===p.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:period===p.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:period===p.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{p.l}</button>)}</div>
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>{[{k:"month",l:"Mes"},{k:"year",l:"Año"},{k:"all",l:"Todo"}].map(p=><button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k==="month")setSelMonth(`${thisYear}-${String(thisMonth+1).padStart(2,"0")}`);}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:period===p.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:period===p.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:period===p.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{p.l}</button>)}
+        {period==="month"&&<div style={{display:"flex",alignItems:"center",gap:6,marginLeft:8}}>
+          <button onClick={()=>{const[y,m]=selMonth.split("-").map(Number);const d=new Date(y,m-2,1);setSelMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);}} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.05)",color:"#fff",cursor:"pointer"}}>←</button>
+          <span style={{fontSize:13,fontWeight:700,color:"#fff",minWidth:100,textAlign:"center"}}>{(()=>{const MN=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];return `${MN[selM-1]} ${selY}`;})()}</span>
+          <button onClick={()=>{const[y,m]=selMonth.split("-").map(Number);const d=new Date(y,m,1);setSelMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);}} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.05)",color:"#fff",cursor:"pointer"}}>→</button>
+        </div>}
+      </div>
     </div>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:24}}>
