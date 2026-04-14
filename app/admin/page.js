@@ -435,9 +435,13 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         // Auto-create finance_entry when marking as collected
         if(op.is_collected){
           const existing=await dq("finance_entries",{token,filters:`?operation_id=eq.${op.id}&description=eq.Cobro ${op.operation_code}&auto_generated=eq.true&select=id`});
-          const amt=Number(op.collected_amount||0)>0?Number(op.collected_amount):Number(op.budget_total||0);
-          if(amt>0&&(!Array.isArray(existing)||existing.length===0)){
-            await dq("finance_entries",{method:"POST",token,body:{date:op.collection_date||new Date().toISOString().slice(0,10),type:"ingreso",description:`Cobro ${op.operation_code}`,amount:amt,currency:op.collection_currency||"USD",payment_method:op.collection_method||"transferencia",is_paid:true,auto_generated:true,operation_id:op.id}});
+          const amtRaw=Number(op.collected_amount||0)>0?Number(op.collected_amount):Number(op.budget_total||0);
+          const isArs=(op.collection_currency||"USD")==="ARS";
+          const rate=Number(op.collection_exchange_rate||0);
+          if(isArs&&!rate){alert("El cobro es en ARS: tenés que cargar el tipo de cambio antes de guardar");return;}
+          const amtUsd=isArs?(amtRaw/rate):amtRaw;
+          if(amtUsd>0&&(!Array.isArray(existing)||existing.length===0)){
+            await dq("finance_entries",{method:"POST",token,body:{date:op.collection_date||new Date().toISOString().slice(0,10),type:"ingreso",description:`Cobro ${op.operation_code}${isArs?` (ARS ${amtRaw.toLocaleString("es-AR")} @ ${rate})`:""}`,amount:amtUsd,currency:"USD",payment_method:op.collection_method||"transferencia",is_paid:true,auto_generated:true,operation_id:op.id,...(isArs?{amount_ars:amtRaw,exchange_rate:rate}:{})}});
             flash("Ingreso registrado en finanzas");
           }
         }
