@@ -65,14 +65,14 @@ function OperationsList({token,onSelect,onNew}){
         </tr></thead>
         <tbody>{rows.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const ing=Number(op.budget_total||0);const gan=calcGan(op);
         return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>onSelect(op)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-          <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{op.operation_code}</td>
-          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.7)"}}>{cn}</td>
+          <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff",whiteSpace:"nowrap"}}>{op.operation_code}</td>
+          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}>{cn}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{op.description||"—"}</td>
-          <td style={{padding:"12px 14px"}}><span style={{fontSize:11,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{CM[op.channel]||op.channel}</span></td>
-          <td style={{padding:"12px 14px"}}><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>● {st.l}</span></td>
-          {showGanancia?<td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)"}}>{formatDate(op.closed_at)}</td>:<td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)"}}>{formatDate(op.eta)}</td>}
-          {showGanancia&&<td style={{padding:"12px 14px",fontWeight:700,color:gan>0?"#22c55e":"#ff6b6b"}}>{ing>0?`USD ${gan.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"}</td>}
-          <td style={{padding:"12px 14px"}}><span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></td>
+          <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}><span style={{fontSize:11,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{CM[op.channel]||op.channel}</span></td>
+          <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`,whiteSpace:"nowrap",display:"inline-block"}}>● {st.l}</span></td>
+          {showGanancia?<td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>{formatDate(op.closed_at)}</td>:<td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>{formatDate(op.eta)}</td>}
+          {showGanancia&&<td style={{padding:"12px 14px",fontWeight:700,color:gan>0?"#22c55e":"#ff6b6b",whiteSpace:"nowrap"}}>{ing>0?`USD ${gan.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"}</td>}
+          <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}><span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></td>
         </tr>})}</tbody>
       </table>
       {rows.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:"2rem 0"}}>No hay operaciones</p>}
