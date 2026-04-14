@@ -902,7 +902,6 @@ function FinanceDashboard({token}){
   const closedOps=ops.filter(o=>o.status==="operacion_cerrada");
   const activeOps=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
   const periodOps=filterByPeriod(closedOps,"closed_at");
-  const periodAll=filterByPeriod(ops,"created_at");
 
   const calcGan=(o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);return{ing,cost,gan:ing-cost};};
 
@@ -911,22 +910,40 @@ function FinanceDashboard({token}){
   const totalGan=totalIng-totalCost;
   const margen=totalIng>0?((totalGan/totalIng)*100):0;
 
-  // By channel
+  // By channel with margin
   const byChannel={};periodOps.forEach(o=>{const ch=o.channel||"unknown";if(!byChannel[ch])byChannel[ch]={count:0,ing:0,cost:0};byChannel[ch].count++;const g=calcGan(o);byChannel[ch].ing+=g.ing;byChannel[ch].cost+=g.cost;});
 
   // By origin
   const byOrigin={};periodOps.forEach(o=>{const or=o.origin||"China";if(!byOrigin[or])byOrigin[or]={count:0,ing:0};byOrigin[or].count++;byOrigin[or].ing+=calcGan(o).ing;});
 
-  // Top clients
+  // Top clients sorted by PROFIT
   const byClient={};periodOps.forEach(o=>{const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—";if(!byClient[cn])byClient[cn]={count:0,ing:0,gan:0};byClient[cn].count++;const g=calcGan(o);byClient[cn].ing+=g.ing;byClient[cn].gan+=g.gan;});
-  const topClients=Object.entries(byClient).sort((a,b)=>b[1].ing-a[1].ing).slice(0,5);
+  const topClients=Object.entries(byClient).sort((a,b)=>b[1].gan-a[1].gan).slice(0,5);
+  const maxClientGan=topClients.length>0?Math.max(...topClients.map(([,d])=>Math.abs(d.gan)),1):1;
 
-  // New clients this month
+  // Monthly profit (last 6 months)
+  const MN=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const monthly=[];for(let i=5;i>=0;i--){const d=new Date(thisYear,thisMonth-i,1);const m=d.getMonth();const y=d.getFullYear();const mOps=closedOps.filter(o=>{if(!o.closed_at)return false;const cd=new Date(o.closed_at.slice(0,10).replace(/-/g,"/"));return cd.getMonth()===m&&cd.getFullYear()===y;});const ing=mOps.reduce((s,o)=>s+calcGan(o).ing,0);const cost=mOps.reduce((s,o)=>s+calcGan(o).cost,0);monthly.push({label:`${MN[m]} ${y}`,ing,cost,gan:ing-cost,ops:mOps.length});}
+  const maxMonthGan=Math.max(...monthly.map(m=>Math.abs(m.gan)),1);
+  const maxMonthOps=Math.max(...monthly.map(m=>m.ops),1);
+
+  // Cost breakdown
+  const costBreakdown=[
+    {label:"Flete",value:periodOps.reduce((s,o)=>s+Number(o.cost_flete||0),0),color:"#60a5fa"},
+    {label:"Impuestos",value:periodOps.reduce((s,o)=>s+Number(o.cost_impuestos_reales||0),0),color:"#f97316"},
+    {label:"Gasto doc.",value:periodOps.reduce((s,o)=>s+Number(o.cost_gasto_documental||0),0),color:"#a78bfa"},
+    {label:"Seguro",value:periodOps.reduce((s,o)=>s+Number(o.cost_seguro||0),0),color:"#fbbf24"},
+    {label:"Flete local",value:periodOps.reduce((s,o)=>s+Number(o.cost_flete_local||0),0),color:"#34d399"},
+    {label:"Otros",value:periodOps.reduce((s,o)=>s+Number(o.cost_otros||0),0),color:"#fb7185"}
+  ].filter(c=>c.value>0);
+  const totalCostBreak=costBreakdown.reduce((s,c)=>s+c.value,0);
+
   const newClients=clients.filter(c=>{const d=new Date(c.created_at);return d.getMonth()===thisMonth&&d.getFullYear()===thisYear;}).length;
   const pendingQuotes=quotes.filter(q=>q.status==="pending").length;
 
   const usd=v=>`USD ${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const stat=(l,v,color,big)=><div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px",textTransform:"uppercase"}}>{l}</p><p style={{fontSize:big?28:20,fontWeight:700,color:color||"#fff",margin:0}}>{v}</p></div>;
+  const bar=(pct,color)=><div style={{flex:1,height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden"}}><div style={{width:`${Math.min(Math.max(pct,0),100)}%`,height:"100%",background:color,borderRadius:4,transition:"width 0.3s"}}/></div>;
 
   if(lo)return <p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
   return <div>
@@ -950,38 +967,71 @@ function FinanceDashboard({token}){
     </div>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
-      <Card title="Ganancia por canal">
-        {Object.entries(byChannel).map(([ch,d])=>{const gan=d.ing-d.cost;return <div key={ch} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-          <div><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{CM[ch]||ch}</span><span style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginLeft:8}}>({d.count} ops)</span></div>
-          <div style={{textAlign:"right"}}><span style={{fontSize:13,fontWeight:700,color:gan>0?"#22c55e":"#ff6b6b"}}>{usd(gan)}</span></div>
+      <Card title="Ganancia mensual (últimos 6 meses)">
+        {monthly.map((m,i)=>{const pct=(Math.abs(m.gan)/maxMonthGan)*100;return <div key={i} style={{marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+            <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",minWidth:70}}>{m.label}</span>
+            <span style={{fontSize:12,fontWeight:700,color:m.gan>0?"#22c55e":m.gan<0?"#ff6b6b":"rgba(255,255,255,0.3)"}}>{m.gan!==0?usd(m.gan):"—"}</span>
+          </div>
+          {bar(pct,m.gan>0?"#22c55e":"#ff6b6b")}
         </div>;})}
-        {Object.keys(byChannel).length===0&&<p style={{color:"rgba(255,255,255,0.25)"}}>Sin datos</p>}
       </Card>
-      <Card title="Por origen">
-        {Object.entries(byOrigin).map(([or,d])=><div key={or} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-          <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{or==="China"?"🇨🇳":"🇺🇸"} {or} ({d.count} ops)</span>
-          <span style={{fontSize:13,fontWeight:600,color:IC}}>{usd(d.ing)}</span>
-        </div>)}
-        {Object.keys(byOrigin).length===0&&<p style={{color:"rgba(255,255,255,0.25)"}}>Sin datos</p>}
+      <Card title="Operaciones por mes">
+        {monthly.map((m,i)=>{const pct=(m.ops/maxMonthOps)*100;const prev=i>0?monthly[i-1].ops:0;const trend=i>0?(m.ops>prev?"↑":m.ops<prev?"↓":"="):"";const trendColor=m.ops>prev?"#22c55e":m.ops<prev?"#ff6b6b":"rgba(255,255,255,0.3)";return <div key={i} style={{marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+            <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",minWidth:70}}>{m.label}</span>
+            <div><span style={{fontSize:12,fontWeight:700,color:"#fff"}}>{m.ops} ops</span>{trend&&<span style={{fontSize:11,color:trendColor,marginLeft:6}}>{trend}</span>}</div>
+          </div>
+          {bar(pct,IC)}
+        </div>;})}
       </Card>
     </div>
 
-    <Card title="Top clientes">
-      {topClients.length>0?<table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-          <th style={{padding:"8px 0",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)"}}>CLIENTE</th>
-          <th style={{padding:"8px 0",textAlign:"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)"}}>OPS</th>
-          <th style={{padding:"8px 0",textAlign:"right",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)"}}>INGRESOS</th>
-          <th style={{padding:"8px 0",textAlign:"right",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)"}}>GANANCIA</th>
-        </tr></thead>
-        <tbody>{topClients.map(([name,d],i)=><tr key={name} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-          <td style={{padding:"8px 0",color:"#fff",fontWeight:500}}>{i+1}. {name}</td>
-          <td style={{padding:"8px 0",textAlign:"center",color:"rgba(255,255,255,0.5)"}}>{d.count}</td>
-          <td style={{padding:"8px 0",textAlign:"right",color:"#fff"}}>{usd(d.ing)}</td>
-          <td style={{padding:"8px 0",textAlign:"right",fontWeight:700,color:d.gan>0?"#22c55e":"#ff6b6b"}}>{usd(d.gan)}</td>
-        </tr>)}</tbody>
-      </table>:<p style={{color:"rgba(255,255,255,0.25)"}}>Sin datos</p>}
-    </Card>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
+      <Card title="Ganancia por canal">
+        {(()=>{const entries=Object.entries(byChannel);const maxGan=Math.max(...entries.map(([,d])=>Math.abs(d.ing-d.cost)),1);return entries.map(([ch,d])=>{const gan=d.ing-d.cost;const mg=d.ing>0?((gan/d.ing)*100):0;const pct=(Math.abs(gan)/maxGan)*100;return <div key={ch} style={{marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+            <div><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{CM[ch]||ch}</span><span style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginLeft:8}}>({d.count} ops)</span></div>
+            <div><span style={{fontSize:13,fontWeight:700,color:gan>0?"#22c55e":"#ff6b6b"}}>{usd(gan)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.3)",marginLeft:8}}>{mg.toFixed(1)}%</span></div>
+          </div>
+          {bar(pct,gan>0?"#22c55e":"#ff6b6b")}
+        </div>;});})()}
+        {Object.keys(byChannel).length===0&&<p style={{color:"rgba(255,255,255,0.25)"}}>Sin datos</p>}
+      </Card>
+      <Card title="Desglose de costos">
+        {costBreakdown.length>0?<>
+          <div style={{height:12,borderRadius:6,overflow:"hidden",display:"flex",marginBottom:16}}>
+            {costBreakdown.map((c,i)=><div key={i} style={{width:`${(c.value/totalCostBreak)*100}%`,background:c.color,height:"100%"}}/>)}
+          </div>
+          {costBreakdown.map((c,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:3,background:c.color}}/><span style={{fontSize:12,color:"rgba(255,255,255,0.6)"}}>{c.label}</span></div>
+            <div><span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{usd(c.value)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.3)",marginLeft:8}}>{((c.value/totalCostBreak)*100).toFixed(1)}%</span></div>
+          </div>)}
+        </>:<p style={{color:"rgba(255,255,255,0.25)"}}>Sin datos</p>}
+      </Card>
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
+      <Card title="Top clientes por rentabilidad">
+        {topClients.length>0?topClients.map(([name,d],i)=>{const mg=d.ing>0?((d.gan/d.ing)*100):0;const pct=(Math.abs(d.gan)/maxClientGan)*100;return <div key={name} style={{marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+            <div><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{i+1}. {name}</span><span style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginLeft:8}}>({d.count} ops)</span></div>
+            <div><span style={{fontSize:13,fontWeight:700,color:d.gan>0?"#22c55e":"#ff6b6b"}}>{usd(d.gan)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.3)",marginLeft:8}}>{mg.toFixed(1)}%</span></div>
+          </div>
+          {bar(pct,d.gan>0?"#22c55e":"#ff6b6b")}
+        </div>;}):<p style={{color:"rgba(255,255,255,0.25)"}}>Sin datos</p>}
+      </Card>
+      <Card title="Por origen">
+        {Object.entries(byOrigin).map(([or,d])=>{const maxOr=Math.max(...Object.values(byOrigin).map(v=>v.ing),1);const pct=(d.ing/maxOr)*100;return <div key={or} style={{marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+            <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{or==="China"?"🇨🇳":"🇺🇸"} {or} ({d.count} ops)</span>
+            <span style={{fontSize:13,fontWeight:600,color:IC}}>{usd(d.ing)}</span>
+          </div>
+          {bar(pct,or==="China"?"#f97316":"#60a5fa")}
+        </div>;})}
+        {Object.keys(byOrigin).length===0&&<p style={{color:"rgba(255,255,255,0.25)"}}>Sin datos</p>}
+      </Card>
+    </div>
   </div>;
 }
 
