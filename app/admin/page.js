@@ -228,7 +228,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </>}
         {shipCost>0&&rw("Envío a domicilio",shipCost)}
         <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}><span style={{fontSize:16,fontWeight:700,color:"#fff"}}>TOTAL A ABONAR</span><span style={{fontSize:20,fontWeight:700,color:IC}}>USD {totalAbonar.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
-        {hasStoredBudget&&<p style={{fontSize:11,color:"rgba(255,255,255,0.25)",margin:"8px 0 0",fontStyle:"italic"}}>Presupuesto cargado manualmente (sin productos/bultos)</p>}
+        {hasStoredBudget&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)",gap:12,flexWrap:"wrap"}}>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic",flex:1}}>Presupuesto cargado manualmente. Si querés recalcular con productos/bultos, limpialo primero.</p>
+          <Btn variant="danger" small onClick={async()=>{if(!confirm("¿Limpiar presupuesto guardado? Se borrarán los valores actuales y podrás recargar productos/bultos para recalcular."))return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0}});setOp(p=>({...p,budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0}));flash("Presupuesto limpiado");setSaving(false);}} disabled={saving}>Limpiar presupuesto</Btn>
+        </div>}
         {!hasStoredBudget&&<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px",marginTop:12,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
           <Inp label="Envío a Domicilio (USD)" type="number" value={op.shipping_cost} onChange={chOp("shipping_cost")} step="0.01"/>
           <div style={{paddingTop:22}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.shipping_to_door||false} onChange={e=>chOp("shipping_to_door")(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Envío a domicilio</span></label></div>
