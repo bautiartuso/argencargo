@@ -971,27 +971,29 @@ function FinanceDashboard({token}){
     </div>
 
     {(()=>{
+      // Ingresos: todo lo cobrado (finance_entries ingresos)
       const totIngresos=finEntries.filter(e=>e.type==="ingreso").reduce((s,e)=>s+Number(e.amount||0),0);
-      const totGastosPagados=finEntries.filter(e=>e.type==="gasto"&&e.is_paid).reduce((s,e)=>s+Number(e.amount||0),0);
-      const deudaTC=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.payment_method==="tarjeta_credito").reduce((s,e)=>s+Number(e.amount||e.amount_ars?0:0),0);
+      // Costos: gastos pagados en finanzas + costos de TODAS las operaciones (flete, impuestos, etc)
+      const totGastosFinanzas=finEntries.filter(e=>e.type==="gasto"&&e.is_paid).reduce((s,e)=>s+Number(e.amount||0),0);
+      const totCostosOps=ops.reduce((s,o)=>s+Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0),0);
+      // Deuda TC pendiente en ARS
       const deudaTCArs=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="ARS").reduce((s,e)=>s+Number(e.amount_ars||0),0);
-      const cashDisponible=totIngresos-totGastosPagados;
-      const cashReal=cashDisponible;// deuda TC en ARS no se resta hasta dollarizar
+      const cashDisponible=totIngresos-totCostosOps;
       return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:24}}>
-        <div style={{background:"linear-gradient(135deg,rgba(34,197,94,0.1),rgba(34,197,94,0.03))",border:"1px solid rgba(34,197,94,0.2)",borderRadius:14,padding:"20px 24px"}}>
+        <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.1),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(255,80,80,0.1),rgba(255,80,80,0.03))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,borderRadius:14,padding:"20px 24px"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Cash disponible</p>
-          <p style={{fontSize:32,fontWeight:700,color:"#22c55e",margin:"0 0 4px"}}>{usd(cashDisponible)}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>Ingresos ({usd(totIngresos)}) - Gastos pagados ({usd(totGastosPagados)})</p>
+          <p style={{fontSize:32,fontWeight:700,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>{usd(cashDisponible)}</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>Cobrado ({usd(totIngresos)}) - Costos ({usd(totCostosOps)})</p>
         </div>
         <div style={{background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:14,padding:"20px 24px"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Deuda tarjeta de crédito</p>
           <p style={{fontSize:28,fontWeight:700,color:deudaTCArs>0?"#fb923c":"rgba(255,255,255,0.2)",margin:"0 0 4px"}}>{deudaTCArs>0?`ARS ${deudaTCArs.toLocaleString("es-AR",{minimumFractionDigits:2})}`:"Sin deuda"}</p>
           <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>{deudaTCArs>0?"Pendiente de dollarización":"Todo al día ✓"}</p>
         </div>
-        <div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:14,padding:"20px 24px"}}>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Cash neto estimado</p>
-          <p style={{fontSize:28,fontWeight:700,color:IC,margin:"0 0 4px"}}>{deudaTCArs>0?"A dollarizar":usd(cashDisponible)}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>{deudaTCArs>0?"Dollarizá la TC para ver el neto real":"Disponible = Cash real"}</p>
+        <div style={{background:"rgba(255,80,80,0.04)",border:"1px solid rgba(255,80,80,0.12)",borderRadius:14,padding:"20px 24px"}}>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Costos totales acumulados</p>
+          <p style={{fontSize:28,fontWeight:700,color:"#ff6b6b",margin:"0 0 4px"}}>{usd(totCostosOps)}</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>Flete + Impuestos + Gasto doc + Otros</p>
         </div>
       </div>;
     })()}
