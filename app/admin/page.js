@@ -902,8 +902,8 @@ function FinancePanel({token}){
 }
 
 function FinanceDashboard({token}){
-  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
-  useEffect(()=>{(async()=>{const [o,c,q]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setLo(false);})();},[token]);
+  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
+  useEffect(()=>{(async()=>{const [o,c,q,fe]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setLo(false);})();},[token]);
 
   const now=new Date();const thisMonth=now.getMonth();const thisYear=now.getFullYear();
   const today=now.toISOString().slice(0,10);const weekAgo=new Date(now-7*86400000).toISOString().slice(0,10);
@@ -969,6 +969,32 @@ function FinanceDashboard({token}){
         </div>}
       </div>
     </div>
+
+    {(()=>{
+      const totIngresos=finEntries.filter(e=>e.type==="ingreso").reduce((s,e)=>s+Number(e.amount||0),0);
+      const totGastosPagados=finEntries.filter(e=>e.type==="gasto"&&e.is_paid).reduce((s,e)=>s+Number(e.amount||0),0);
+      const deudaTC=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.payment_method==="tarjeta_credito").reduce((s,e)=>s+Number(e.amount||e.amount_ars?0:0),0);
+      const deudaTCArs=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="ARS").reduce((s,e)=>s+Number(e.amount_ars||0),0);
+      const cashDisponible=totIngresos-totGastosPagados;
+      const cashReal=cashDisponible;// deuda TC en ARS no se resta hasta dollarizar
+      return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:24}}>
+        <div style={{background:"linear-gradient(135deg,rgba(34,197,94,0.1),rgba(34,197,94,0.03))",border:"1px solid rgba(34,197,94,0.2)",borderRadius:14,padding:"20px 24px"}}>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Cash disponible</p>
+          <p style={{fontSize:32,fontWeight:700,color:"#22c55e",margin:"0 0 4px"}}>{usd(cashDisponible)}</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>Ingresos ({usd(totIngresos)}) - Gastos pagados ({usd(totGastosPagados)})</p>
+        </div>
+        <div style={{background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:14,padding:"20px 24px"}}>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Deuda tarjeta de crédito</p>
+          <p style={{fontSize:28,fontWeight:700,color:deudaTCArs>0?"#fb923c":"rgba(255,255,255,0.2)",margin:"0 0 4px"}}>{deudaTCArs>0?`ARS ${deudaTCArs.toLocaleString("es-AR",{minimumFractionDigits:2})}`:"Sin deuda"}</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>{deudaTCArs>0?"Pendiente de dollarización":"Todo al día ✓"}</p>
+        </div>
+        <div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:14,padding:"20px 24px"}}>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Cash neto estimado</p>
+          <p style={{fontSize:28,fontWeight:700,color:IC,margin:"0 0 4px"}}>{deudaTCArs>0?"A dollarizar":usd(cashDisponible)}</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>{deudaTCArs>0?"Dollarizá la TC para ver el neto real":"Disponible = Cash real"}</p>
+        </div>
+      </div>;
+    })()}
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:24}}>
       {stat("Ingresos totales",usd(totalIng),"#fff",true)}
