@@ -157,6 +157,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         <Sel label="Estado de la carga" value={op.status} onChange={chOp("status")} options={STATUSES.map(s=>({value:s,label:SM[s].l}))}/>
         <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
         <Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>
+        {op.channel?.includes("aereo")&&<div style={{padding:"10px 14px",background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:8,marginBottom:8}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.has_battery||false} onChange={e=>chOp("has_battery")(e.target.checked)}/><span style={{fontSize:13,color:op.has_battery?"#fb923c":"rgba(255,255,255,0.5)",fontWeight:op.has_battery?600:400}}>🔋 La carga tiene baterías {op.has_battery?"(+$2/kg en flete aéreo A)":""}</span></label></div>}
       </Card>
       <Card title="Resumen">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16}}>
@@ -189,6 +190,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const fleteAmt=op.channel?.includes("aereo")?(op.channel==="aereo_negro"?Math.max(pf,1):pf):(op.channel==="maritimo_blanco"?Math.max(totCBM,1):totCBM);
       const getRate=(sk,amt)=>{const rates=tariffs.filter(t=>t.service_key===sk);for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amt>=min&&amt<max){const ov=clientOverrides.find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):Number(r.rate);}}return rates.length?Number(rates[rates.length-1].rate):0;};
       const fleteRate=getRate(svcKey,fleteAmt);flete=fleteAmt*fleteRate;
+      // Recargo baterías solo en aéreo A (Courier Comercial) - $2 por kg
+      if(op.channel==="aereo_blanco"&&op.has_battery)flete+=fleteAmt*2;
       // CIF: RI sees real, others see ficticio. Marítimo always ficticio.
       const isAereoOp=op.channel?.includes("aereo");
       const certFlRate=isAereoOp?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
