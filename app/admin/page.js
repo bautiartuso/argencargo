@@ -123,16 +123,20 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});setOp(p=>({...p,closed_at:rest.closed_at}));flash("Operación guardada");setSaving(false);};
 
   const saveItem=async(it)=>{const{id,...rest}=it;delete rest.created_at;await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Producto guardado");};
-  const addItem=async()=>{const r=await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:"Nuevo producto",quantity:1,unit_price_usd:0}});if(Array.isArray(r))setItems(p=>[...p,...r]);else if(r.id)setItems(p=>[...p,r]);flash("Producto agregado");};
-  const delItem=async(id)=>{await dq("operation_items",{method:"DELETE",token,filters:`?id=eq.${id}`});setItems(p=>p.filter(x=>x.id!==id));flash("Producto eliminado");};
+  const addItem=async()=>{await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:"Nuevo producto",quantity:1,unit_price_usd:0}});await reloadItems();flash("Producto agregado");};
+  const delItem=async(id)=>{await dq("operation_items",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadItems();flash("Producto eliminado");};
+
+  const reloadPkgs=async()=>{const pk=await dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`});setPkgs(Array.isArray(pk)?pk:[]);};
+  const reloadItems=async()=>{const it=await dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setItems(Array.isArray(it)?it:[]);};
+  const reloadEvents=async()=>{const ev=await dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`});setEvents(Array.isArray(ev)?ev:[]);};
 
   const savePkg=async(pk)=>{const{id,...rest}=pk;delete rest.created_at;await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Bulto guardado");};
-  const addPkg=async()=>{const num=pkgs.length+1;const r=await dq("operation_packages",{method:"POST",token,body:{operation_id:op.id,package_number:num,quantity:1}});if(Array.isArray(r))setPkgs(p=>[...p,...r]);else if(r.id)setPkgs(p=>[...p,r]);flash("Bulto agregado");};
-  const delPkg=async(id)=>{await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${id}`});setPkgs(p=>p.filter(x=>x.id!==id));flash("Bulto eliminado");};
+  const addPkg=async()=>{const num=pkgs.length+1;await dq("operation_packages",{method:"POST",token,body:{operation_id:op.id,package_number:num,quantity:1}});await reloadPkgs();flash("Bulto agregado");};
+  const delPkg=async(id)=>{await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadPkgs();flash("Bulto eliminado");};
 
   const saveEvt=async(ev)=>{const{id,...rest}=ev;delete rest.created_at;await dq("tracking_events",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Evento guardado");};
-  const addEvt=async()=>{const r=await dq("tracking_events",{method:"POST",token,body:{operation_id:op.id,title:"Nuevo evento",occurred_at:new Date().toISOString(),is_visible_to_client:true,created_by:null}});if(Array.isArray(r))setEvents(p=>[...r,...p]);else if(r.id)setEvents(p=>[r,...p]);flash("Evento agregado");};
-  const delEvt=async(id)=>{await dq("tracking_events",{method:"DELETE",token,filters:`?id=eq.${id}`});setEvents(p=>p.filter(x=>x.id!==id));flash("Evento eliminado");};
+  const addEvt=async()=>{await dq("tracking_events",{method:"POST",token,body:{operation_id:op.id,title:"Nuevo evento",occurred_at:new Date().toISOString(),is_visible_to_client:true,created_by:null}});await reloadEvents();flash("Evento agregado");};
+  const delEvt=async(id)=>{await dq("tracking_events",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadEvents();flash("Evento eliminado");};
 
   const tabs=[{k:"general",l:"General"},{k:"budget",l:"Presupuesto"},{k:"items",l:"Productos"},{k:"packages",l:"Bultos"},{k:"tracking",l:"Seguimiento"},{k:"payments",l:"Pagos"},{k:"finance",l:"Finanzas"}];
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
