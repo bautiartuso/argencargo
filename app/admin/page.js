@@ -110,7 +110,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     if(op.client_id){const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*`});setOpClient(Array.isArray(cl)?cl[0]:null);const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);}
     const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
     await loadCCBalance();setLo(false);};
-  useEffect(()=>{load();const onFocus=()=>{if(document.visibilityState==="visible")load();};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[op.id]);
+  useEffect(()=>{load();let last=Date.now();const onFocus=()=>{if(document.visibilityState==="visible"&&Date.now()-last>5000){last=Date.now();load();}};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[op.id]);
   const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const deleteOp=async()=>{if(!confirm(`¿Eliminar operación ${op.operation_code}? Se borrarán también sus productos, bultos y eventos.`))return;
     await Promise.all([dq("operation_items",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`}),dq("operation_packages",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`}),dq("tracking_events",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`})]);
@@ -1022,7 +1022,8 @@ function FinancePanel({token}){
 }
 
 function ShipmentsTracking({token,onSelectOp}){
-  const [ops,setOps]=useState([]);const [pkgs,setPkgs]=useState([]);const [items,setItems]=useState([]);const [lo,setLo]=useState(true);const [fChannel,setFChannel]=useState("");const [search,setSearch]=useState("");
+  const [ops,setOps]=useState([]);const [pkgs,setPkgs]=useState([]);const [items,setItems]=useState([]);const [lo,setLo]=useState(true);const [fChannel,setFChannel]=useState("");const [search,setSearch]=useState("");const [sortCol,setSortCol]=useState("op");const [sortDir,setSortDir]=useState("desc");
+  const toggleSort=(col)=>{if(sortCol===col){setSortDir(d=>d==="asc"?"desc":"asc");}else{setSortCol(col);setSortDir("asc");}};
   useEffect(()=>{(async()=>{
     // Solo operaciones activas (no cerradas, no canceladas, no entregadas)
     const o=await dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&status=neq.operacion_cerrada&status=neq.cancelada&status=neq.entregada&order=created_at.desc"});
@@ -1074,6 +1075,10 @@ function ShipmentsTracking({token,onSelectOp}){
     if(fChannel&&r.channel!==fChannel)return false;
     if(search){const s=search.toLowerCase();return r.client.toLowerCase().includes(s)||r.desc.toLowerCase().includes(s)||r.tracking.toLowerCase().includes(s)||r.op.operation_code.toLowerCase().includes(s);}
     return true;
+  }).sort((a,b)=>{
+    const getVal=(r)=>{if(sortCol==="op")return r.op.operation_code;if(sortCol==="client")return r.client;if(sortCol==="desc")return r.desc;if(sortCol==="origin")return r.origin;if(sortCol==="channel")return CM[r.channel]||r.channel;if(sortCol==="tracking")return r.tracking;return"";};
+    const va=String(getVal(a)).toLowerCase(),vb=String(getVal(b)).toLowerCase();
+    return sortDir==="asc"?va.localeCompare(vb):vb.localeCompare(va);
   });
 
   const carrierColors={DHL:"#fbbf24",FEDEX:"#a78bfa",UPS:"#fb923c"};
@@ -1095,22 +1100,22 @@ function ShipmentsTracking({token,onSelectOp}){
     <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-          {["Op","Cliente","Mercadería","Origen","Canal","Tracking",""].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
+          {[{k:"op",l:"Op"},{k:"client",l:"Cliente"},{k:"desc",l:"Mercadería"},{k:"origin",l:"Origen"},{k:"channel",l:"Canal"},{k:"tracking",l:"Tracking"},{k:null,l:""}].map((h,hi)=><th key={hi} onClick={()=>h.k&&toggleSort(h.k)} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:sortCol===h.k?IC:"rgba(255,255,255,0.3)",textTransform:"uppercase",cursor:h.k?"pointer":"default",userSelect:"none"}}>{h.l}{sortCol===h.k&&h.k&&<span style={{marginLeft:4}}>{sortDir==="asc"?"▲":"▼"}</span>}</th>)}
         </tr></thead>
-        <tbody>{filtered.map((r,i)=>{const cc=r.carrier?carrierColors[r.carrier.toUpperCase()]||IC:null;return <tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>onSelectOp(r.op)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-          <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12}}>{r.op.operation_code}</td>
-          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.7)"}}>{r.client}</td>
-          <td style={{padding:"12px 14px",color:"#fff",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.desc}</td>
-          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{r.origin==="China"?"🇨🇳":r.origin==="USA"?"🇺🇸":""} {r.origin}</td>
+        <tbody>{filtered.map((r,i)=>{const cc=r.carrier?carrierColors[r.carrier.toUpperCase()]||IC:null;return <tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12,userSelect:"text"}}>{r.op.operation_code}</td>
+          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.7)",userSelect:"text"}}>{r.client}</td>
+          <td style={{padding:"12px 14px",color:"#fff",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",userSelect:"text"}}>{r.desc}</td>
+          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",userSelect:"text"}}>{r.origin==="China"?"🇨🇳":r.origin==="USA"?"🇺🇸":""} {r.origin}</td>
           <td style={{padding:"12px 14px"}}><span style={{fontSize:11,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{CM[r.channel]||r.channel}</span></td>
-          <td style={{padding:"12px 14px"}}>
+          <td style={{padding:"12px 14px",userSelect:"text"}}>
             {r.tracking==="—"?<span style={{color:"rgba(255,255,255,0.3)",fontStyle:"italic",fontSize:12}}>{r.trackingType}</span>:<div>
               {cc&&<span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:`${cc}20`,color:cc,marginRight:6}}>{r.trackingType}</span>}
               {!cc&&<span style={{fontSize:10,color:"rgba(255,255,255,0.3)",display:"block",marginBottom:2}}>{r.trackingType}</span>}
-              <span style={{fontFamily:"monospace",fontSize:12,fontWeight:600,color:"#fff"}}>{r.tracking}</span>
+              <span style={{fontFamily:"monospace",fontSize:12,fontWeight:600,color:"#fff",userSelect:"all"}}>{r.tracking}</span>
             </div>}
           </td>
-          <td style={{padding:"12px 14px"}}><span style={{color:IC,fontSize:11,fontWeight:600}}>Ver →</span></td>
+          <td style={{padding:"12px 14px"}}><button onClick={()=>onSelectOp(r.op)} style={{color:IC,fontSize:11,fontWeight:600,background:"rgba(74,144,217,0.1)",border:"1px solid rgba(74,144,217,0.2)",borderRadius:6,padding:"5px 10px",cursor:"pointer"}}>Ver →</button></td>
         </tr>;})}</tbody>
       </table>
     </div>}
