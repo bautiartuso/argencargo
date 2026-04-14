@@ -418,7 +418,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const costFlete=Number(op.cost_flete||0);const costImp=Number(op.cost_impuestos_reales||0);const costDoc=Number(op.cost_gasto_documental||0);const costSeg=Number(op.cost_seguro||0);const costLocal=Number(op.cost_flete_local||0);const costOtros=Number(op.cost_otros||0);
       const totalCostos=costFlete+costImp+costDoc+costSeg+costLocal+costOtros;
       const presupuesto=Number(op.budget_total||0);
-      const cobro=Number(op.collected_amount||0)||presupuesto;
+      // Si el cobro es en ARS, convertir a USD usando el exchange rate
+      const cobroRaw=Number(op.collected_amount||0);
+      const isArsCollection=op.collection_currency==="ARS";
+      const colRate=Number(op.collection_exchange_rate||0);
+      const cobroUsd=isArsCollection&&colRate>0?cobroRaw/colRate:cobroRaw;
+      const cobro=cobroUsd||presupuesto;
       const feePct=Number(op.collection_fee_pct||0);const isTransf=op.collection_method==="transferencia";
       const comision=isTransf?cobro*(feePct/100):0;
       const ingresoNeto=cobro-comision;
