@@ -971,19 +971,17 @@ function FinanceDashboard({token}){
     </div>
 
     {(()=>{
-      // Ingresos: todo lo cobrado (finance_entries ingresos)
-      const totIngresos=finEntries.filter(e=>e.type==="ingreso").reduce((s,e)=>s+Number(e.amount||0),0);
-      // Costos: gastos pagados en finanzas + costos de TODAS las operaciones (flete, impuestos, etc)
-      const totGastosFinanzas=finEntries.filter(e=>e.type==="gasto"&&e.is_paid).reduce((s,e)=>s+Number(e.amount||0),0);
+      // Cash flow solo desde operaciones (evita duplicación con finance_entries)
+      const totCobrado=ops.filter(o=>o.is_collected).reduce((s,o)=>s+Number(o.budget_total||0),0);
       const totCostosOps=ops.reduce((s,o)=>s+Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0),0);
-      // Deuda TC pendiente en ARS
+      // Deuda TC pendiente en ARS (de finance_entries)
       const deudaTCArs=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="ARS").reduce((s,e)=>s+Number(e.amount_ars||0),0);
-      const cashDisponible=totIngresos-totCostosOps;
+      const cashDisponible=totCobrado-totCostosOps;
       return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:24}}>
         <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.1),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(255,80,80,0.1),rgba(255,80,80,0.03))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,borderRadius:14,padding:"20px 24px"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Cash disponible</p>
           <p style={{fontSize:32,fontWeight:700,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>{usd(cashDisponible)}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>Cobrado ({usd(totIngresos)}) - Costos ({usd(totCostosOps)})</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>Cobrado ({usd(totCobrado)}) - Costos ({usd(totCostosOps)})</p>
         </div>
         <div style={{background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:14,padding:"20px 24px"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Deuda tarjeta de crédito</p>
