@@ -55,8 +55,8 @@ function OperationsList({token,onSelect,onNew}){
       <select value={fChannel} onChange={e=>setFChannel(e.target.value)} style={{padding:"10px 14px",fontSize:12,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}><option value="" style={{background:"#0a1428"}}>Todos los canales</option>{CHANNELS.map(c=><option key={c} value={c} style={{background:"#0a1428"}}>{CM[c]}</option>)}</select>
     </div>
     {lo?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:(()=>{
-    const active=sorted.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="entregada"&&o.status!=="cancelada");
-    const closed=sorted.filter(o=>o.status==="operacion_cerrada"||o.status==="entregada"||o.status==="cancelada");
+    const active=sorted.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
+    const closed=sorted.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada");
     const totalGanancia=closed.reduce((s,o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);return s+(ing-cost);},0);
     const renderTable=(rows,showGanancia)=><div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
@@ -899,8 +899,8 @@ function FinanceDashboard({token}){
   const today=now.toISOString().slice(0,10);const weekAgo=new Date(now-7*86400000).toISOString().slice(0,10);
   const filterByPeriod=(items,dateField)=>{if(period==="all")return items;return items.filter(i=>{if(!i[dateField])return false;const ds=i[dateField].slice(0,10);const d=new Date(i[dateField]);if(period==="today")return ds===today;if(period==="week")return ds>=weekAgo;if(period==="month")return d.getMonth()===thisMonth&&d.getFullYear()===thisYear;if(period==="year")return d.getFullYear()===thisYear;return true;});};
 
-  const closedOps=ops.filter(o=>o.status==="operacion_cerrada"||o.status==="entregada");
-  const activeOps=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="entregada"&&o.status!=="cancelada");
+  const closedOps=ops.filter(o=>o.status==="operacion_cerrada");
+  const activeOps=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
   const periodOps=filterByPeriod(closedOps,"closed_at");
   const periodAll=filterByPeriod(ops,"created_at");
 
