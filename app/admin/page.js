@@ -331,7 +331,18 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         }
         const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);flash("Actualizado");
       };
-      const delPmt=async(pmtId)=>{await dq("payment_management",{method:"DELETE",token,filters:`?id=eq.${pmtId}`});setPayments(p=>p.filter(x=>x.id!==pmtId));flash("Eliminado");};
+      const delPmt=async(pmtId)=>{
+        // Delete associated finance entries (anticipo + giro)
+        await dq("finance_entries",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}&auto_generated=eq.true&description=like.Anticipo pago*`});
+        await dq("finance_entries",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}&auto_generated=eq.true&description=like.Giro exterior*`});
+        await dq("payment_management",{method:"DELETE",token,filters:`?id=eq.${pmtId}`});
+        // Recalculate total_anticipos
+        const remaining=payments.filter(x=>x.id!==pmtId&&x.client_paid);
+        const newTotal=remaining.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{total_anticipos:newTotal}});
+        setOp(p=>({...p,total_anticipos:newTotal}));
+        setPayments(p=>p.filter(x=>x.id!==pmtId));flash("Eliminado");
+      };
       const usdF=v=>`USD ${Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
       const GST={pendiente:{l:"Pendiente",c:"#fbbf24"},enviado:{l:"Enviado",c:"#60a5fa"},confirmado:{l:"Confirmado",c:"#22c55e"}};
       return <>
