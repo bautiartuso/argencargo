@@ -21,7 +21,7 @@ const OS=[{k:"proveedor",l:"Proveedor"},{k:"warehouse",l:"Warehouse\nArgencargo"
 const S2S={pendiente:0,en_deposito_origen:1,en_preparacion:2,en_transito:3,arribo_argentina:4,en_aduana:5,lista_retiro:6,entregada:7,operacion_cerrada:8,cancelada:-1};
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},lista_retiro:{l:"LIBERACIÓN",c:"#34d399"},entregada:{l:"ENTREGA FINAL",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
 const CM={aereo_blanco:"Aéreo Courier Comercial",aereo_negro:"Aéreo Integral AC",maritimo_blanco:"Marítimo Carga LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
-const CN=[{key:"imports",label:"IMPORTACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"account",label:"ESTADO DE CUENTA",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"points",label:"PUNTOS",p:["M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"]},{key:"profile",label:"MI PERFIL",p:["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
+const CN=[{key:"imports",label:"IMPORTACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"services",label:"SERVICIOS",p:["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"]},{key:"account",label:"ESTADO DE CUENTA",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"points",label:"PUNTOS",p:["M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"]},{key:"profile",label:"MI PERFIL",p:["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
 function WorldMap(){const d=[[120,80],[135,85],[150,78],[165,90],[180,85],[200,95],[215,88],[230,92],[250,100],[265,95],[280,105],[300,98],[320,110],[335,105],[350,115],[370,108],[390,120],[410,112],[430,125],[450,118],[470,130],[490,122],[510,135],[530,128],[550,140],[570,132],[590,145],[610,138],[630,150],[140,120],[160,130],[180,125],[200,140],[220,135],[240,145],[260,138],[280,150],[300,142],[320,155],[340,148],[360,158],[380,152],[400,162],[420,155],[440,165],[460,158],[480,170],[500,162],[520,175],[540,168],[560,180],[580,172],[600,185],[620,178]];const l=[[200,95,450,118],[300,98,520,135],[180,125,400,162],[280,150,500,208],[350,115,570,132]];return <svg width="100%" height="100%" viewBox="0 0 750 320" preserveAspectRatio="xMidYMid slice" style={{position:"absolute",inset:0,opacity:0.05,pointerEvents:"none"}}>{l.map((v,i)=><line key={i} x1={v[0]} y1={v[1]} x2={v[2]} y2={v[3]} stroke="#4A90D9" strokeWidth="0.5" opacity="0.4"/>)}{d.map((v,i)=><circle key={i} cx={v[0]} cy={v[1]} r={1.5} fill="#4A90D9" opacity="0.5"/>)}</svg>;}
 function Inp({label,type="text",value,onChange,placeholder,req,error}){return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label><input type={type} value={value||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:`1.5px solid ${error?"#ff6b6b":"rgba(255,255,255,0.12)"}`,borderRadius:10,background:"rgba(255,255,255,0.07)",color:"#fff",outline:"none"}} onFocus={e=>{e.target.style.borderColor=B.accent;}} onBlur={e=>{e.target.style.borderColor=error?"#ff6b6b":"rgba(255,255,255,0.12)";}}/>{error&&<p style={{fontSize:11,color:"#ff6b6b",margin:"4px 0 0"}}>{error}</p>}</div>;}
 function Sel({label,value,onChange,options,req,ph}){return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label><select value={value} onChange={e=>onChange(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.07)",color:value?"#fff":"rgba(255,255,255,0.35)",outline:"none"}}>{ph&&<option value="" style={{background:"#0a1428"}}>{ph}</option>}{options.map(o=><option key={typeof o==="string"?o:o.value} value={typeof o==="string"?o:o.value} style={{background:"#0a1428",color:"#fff"}}>{typeof o==="string"?o:o.label}</option>)}</select></div>;}
@@ -521,6 +521,38 @@ function CalculatorPage({token,client}){
     </div>}
   </div>;
 }
+function ServicesPage({client}){
+  const code=client?.client_code||"";const name=client?`${client.first_name}`:"";
+  const services=[
+    {icon:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"],title:"Gestión de Pagos Internacionales",desc:"Realizamos el giro al exterior para que puedas pagar a tu proveedor de forma segura y rápida. Nos encargamos de toda la operatoria cambiaria.",cta:"Necesito hacer un pago internacional",color:"#22c55e",tag:"Popular"},
+    {icon:["M21 21l-6-6m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0z"],title:"Búsqueda de Proveedores",desc:"¿No sabés dónde comprar? Buscamos proveedores verificados en China y USA para tu producto. Negociamos precios y condiciones por vos.",cta:"Quiero que me busquen un proveedor",color:"#60a5fa",tag:null},
+    {icon:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"],title:"Inspección de Mercadería",desc:"Verificamos la calidad de tu mercadería en origen antes de que se envíe. Fotos, videos y reportes detallados para que compres con tranquilidad.",cta:"Quiero inspeccionar mi mercadería",color:"#a78bfa",tag:null},
+    {icon:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"],title:"Consolidación de Carga",desc:"Juntamos mercadería de varios proveedores en un solo envío para optimizar costos de flete. Ideal si comprás en múltiples fábricas.",cta:"Quiero consolidar mi carga",color:"#fb923c",tag:null},
+    {icon:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8","M10 9H8"],title:"Asesoramiento Aduanero",desc:"Te orientamos sobre clasificación arancelaria, requisitos de importación, documentación necesaria y régimen impositivo de tu mercadería.",cta:"Necesito asesoramiento",color:"#f97316",tag:null},
+    {icon:["M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z","M7 7h.01"],title:"Seguro de Carga",desc:"Protegé tu inversión con cobertura integral durante todo el trayecto. Cubrimos pérdida total, daños parciales y extravíos.",cta:"Quiero asegurar mi carga",color:"#ef4444",tag:null}
+  ];
+  const makeWA=(svc)=>encodeURIComponent(`Hola Bautista! Soy ${name} (${code}).\n\n${svc.cta}.\n\n¿Me podrías dar más información sobre el servicio de *${svc.title}*?\n\nGracias!`);
+  return <div>
+    <div style={{marginBottom:24}}>
+      <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>Nuestros Servicios</h2>
+      <p style={{fontSize:14,color:"rgba(255,255,255,0.4)",margin:0}}>Soluciones integrales para tu comercio exterior</p>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}} className="grid-2">
+      {services.map((svc,i)=><div key={i} style={{background:"rgba(255,255,255,0.03)",borderRadius:16,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem",display:"flex",flexDirection:"column",justifyContent:"space-between",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:svc.color}}/>
+        {svc.tag&&<span style={{position:"absolute",top:14,right:14,fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:6,background:`${svc.color}20`,color:svc.color,border:`1px solid ${svc.color}33`}}>{svc.tag}</span>}
+        <div>
+          <div style={{width:44,height:44,borderRadius:12,background:`${svc.color}15`,border:`1px solid ${svc.color}25`,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14}}>
+            <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={svc.color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{svc.icon.map((d,j)=><path key={j} d={d}/>)}</svg>
+          </div>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 8px"}}>{svc.title}</h3>
+          <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"0 0 20px",lineHeight:1.5}}>{svc.desc}</p>
+        </div>
+        <a href={`https://wa.me/5491125088580?text=${makeWA(svc)}`} target="_blank" rel="noopener noreferrer" style={{display:"block",width:"100%",padding:"12px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,#25D366,#128C7E)`,color:"#fff",textAlign:"center",textDecoration:"none",boxSizing:"border-box"}}>{svc.cta} →</a>
+      </div>)}
+    </div>
+  </div>;
+}
 function DashShell({children,page,setPage,role,client,user,onLogout}){
   const name=client?`${client.first_name} ${client.last_name}`:user?.email||"";const code=client?.client_code||"";const nav=CN;const [mobOpen,setMobOpen]=useState(false);
   const sidebarContent=<>
@@ -578,6 +610,7 @@ function Dashboard({profile,client,user,token,onLogout}){
     {page==="profile"&&<ProfilePage client={client}/>}
     {page==="rates"&&<RatesPage token={token} client={client}/>}
     {page==="calculator"&&<CalculatorPage token={token} client={client}/>}
+    {page==="services"&&<ServicesPage client={client}/>}
     {!["imports","profile","rates","calculator"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.3)"}}>Sección en desarrollo</p></div>}
   </DashShell>;
 }
