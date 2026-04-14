@@ -64,7 +64,15 @@ function OperationsList({ops,onSelect,client}){
   </div>;
 }
 function OperationDetail({op,token,onBack}){
-  const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({});
+  const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);
+  const canDocument=op.status==="en_preparacion";
+  const addDocItem=()=>setDocItems(p=>[...p,{description:"",quantity:"1",unit_price_usd:""}]);
+  const rmDocItem=(i)=>setDocItems(p=>p.filter((_,j)=>j!==i));
+  const chDocItem=(i,f,v)=>setDocItems(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
+  const saveDocs=async()=>{const valid=docItems.filter(d=>d.description?.trim()&&Number(d.quantity)>0&&Number(d.unit_price_usd)>0);if(valid.length===0){alert("Completá al menos un producto");return;}setSavingDocs(true);
+    for(const d of valid){await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:d.description,quantity:Number(d.quantity),unit_price_usd:Number(d.unit_price_usd)}});}
+    setShowDocPanel(false);setDocItems([]);await loadAll();setSavingDocs(false);
+  };
   const toggleSection=(s)=>setOpenSections(p=>({...p,[s]:!p[s]}));
   const loadAll=async()=>{const [it,ev,pk,pm]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`})]);setItems(Array.isArray(it)?it:[]);setEvents(Array.isArray(ev)?ev:[]);setPkgs(Array.isArray(pk)?pk:[]);setPmts(Array.isArray(pm)?pm:[]);setLoading(false);};
   useEffect(()=>{loadAll();let last=Date.now();const onFocus=()=>{if(document.visibilityState==="visible"&&Date.now()-last>5000){last=Date.now();loadAll();}};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[op.id,token]);
@@ -87,6 +95,33 @@ function OperationDetail({op,token,onBack}){
         ].map((x,i)=><div key={i}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{x.l}</span><p style={{fontSize:13,fontWeight:600,color:x.a?IC:"#fff",margin:"2px 0 0"}}>{x.v}</p></div>)}
       </div>;})()}
     </div>
+    {canDocument&&!loading&&<div style={{background:"linear-gradient(135deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04))",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12,marginBottom:showDocPanel?16:0}}>
+        <div>
+          <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>📋 Completá la documentación de tu carga</h3>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:0}}>{items.length>0?`Tenés ${items.length} producto${items.length>1?"s":""} cargado${items.length>1?"s":""}. Podés agregar más:`:"Necesitamos los datos de la mercadería para avanzar con el envío"}</p>
+        </div>
+        <button onClick={()=>{setShowDocPanel(!showDocPanel);if(!showDocPanel&&docItems.length===0)setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);}} style={{padding:"10px 20px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>{showDocPanel?"Cerrar":"+ Agregar productos"}</button>
+      </div>
+      {showDocPanel&&<div style={{borderTop:"1px solid rgba(96,165,250,0.2)",paddingTop:14}}>
+        {docItems.map((it,i)=><div key={i} style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontSize:11,fontWeight:700,color:IC}}>Producto {i+1}</span>
+            {docItems.length>1&&<button onClick={()=>rmDocItem(i)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>Eliminar</button>}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:8}}>
+            <div><label style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.4)",display:"block",marginBottom:3}}>DESCRIPCIÓN</label><input type="text" value={it.description} onChange={e=>chDocItem(i,"description",e.target.value)} placeholder="Ej: Smartwatches" style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
+            <div><label style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.4)",display:"block",marginBottom:3}}>CANTIDAD</label><input type="text" inputMode="decimal" value={it.quantity} onChange={e=>{const v=e.target.value;if(v===""||/^\d*\.?\d*$/.test(v))chDocItem(i,"quantity",v);}} placeholder="1" style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
+            <div><label style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.4)",display:"block",marginBottom:3}}>PRECIO UNIT. USD</label><input type="text" inputMode="decimal" value={it.unit_price_usd} onChange={e=>{const v=e.target.value;if(v===""||/^\d*\.?\d*$/.test(v))chDocItem(i,"unit_price_usd",v);}} placeholder="0.00" style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
+          </div>
+          {Number(it.quantity)>0&&Number(it.unit_price_usd)>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"6px 0 0"}}>Subtotal: USD {(Number(it.quantity)*Number(it.unit_price_usd)).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+        </div>)}
+        <button onClick={addDocItem} style={{width:"100%",padding:"10px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer",marginBottom:12}}>+ Agregar otro producto</button>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={saveDocs} disabled={savingDocs} style={{flex:1,padding:"12px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:savingDocs?"not-allowed":"pointer",background:savingDocs?"rgba(255,255,255,0.08)":`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>{savingDocs?"Guardando...":"Guardar productos"}</button>
+        </div>
+      </div>}
+    </div>}
     {!loading&&(()=>{const bt=Number(op.budget_total||0);const bTax=Number(op.budget_taxes||0);const bFlete=Number(op.budget_flete||0);const bSeg=Number(op.budget_seguro||0);const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;const isB=op.channel?.includes("negro");const hasBudget=bt>0;
       // Pagos pendientes (cliente NO pagó todavía) - se suman al total a abonar
       const pmtsPendientes=pmts.filter(p=>!p.client_paid).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
@@ -665,7 +700,10 @@ function DashShell({children,page,setPage,role,client,user,onLogout}){
 }
 function Dashboard({profile,client,user,token,onLogout}){
   const [page,setPage]=useState("imports");const [ops,setOps]=useState([]);const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);
-  const loadOps=async()=>{setLo(true);const r=await dq("operations",{token,filters:"?select=*&order=created_at.desc"});setOps(Array.isArray(r)?r:[]);setLo(false);};
+  const loadOps=async()=>{setLo(true);const r=await dq("operations",{token,filters:"?select=*&order=created_at.desc"});const list=Array.isArray(r)?r:[];setOps(list);setLo(false);
+    // Deep-link: ?op=AC-XXXX → auto-open that operation
+    if(typeof window!=="undefined"){const params=new URLSearchParams(window.location.search);const opCode=params.get("op");if(opCode){const found=list.find(o=>o.operation_code===opCode);if(found){setSelOp(found);setPage("imports");window.history.replaceState({},"",window.location.pathname);}}}
+  };
   useEffect(()=>{if(page==="imports")loadOps();},[page]);
   useEffect(()=>{let last=Date.now();const onFocus=()=>{if(document.visibilityState==="visible"&&page==="imports"&&!selOp&&Date.now()-last>5000){last=Date.now();loadOps();}};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[page,selOp]);
   return <DashShell page={page} setPage={p=>{setPage(p);setSelOp(null);}} role="cliente" client={client} user={user} onLogout={onLogout}>
