@@ -314,7 +314,17 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const margen=ingresoNeto>0?((ganancia/ingresoNeto)*100):0;
       const rw=(l,v,bold,color)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:10}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:bold?16:13,fontWeight:bold?700:600,color:color||"#fff"}}>USD {v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
       return <>
-      <Card title="Cobro" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
+      <Card title="Cobro" actions={<Btn onClick={async()=>{await saveOp();
+        // Auto-create finance_entry when marking as collected
+        if(op.is_collected){
+          const existing=await dq("finance_entries",{token,filters:`?operation_id=eq.${op.id}&type=eq.ingreso&auto_generated=eq.true&select=id`});
+          if(!Array.isArray(existing)||existing.length===0){
+            const amt=Number(op.collected_amount||op.budget_total||0);
+            await dq("finance_entries",{method:"POST",token,body:{date:op.collection_date||new Date().toISOString().slice(0,10),type:"ingreso",description:`Cobro ${op.operation_code}`,amount:amt,currency:op.collection_currency||"USD",payment_method:op.collection_method||"transferencia",is_paid:true,auto_generated:true,operation_id:op.id}});
+            flash("Ingreso registrado en finanzas");
+          }
+        }
+      }} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
           <Inp label={`Monto cobrado (${op.collection_currency||"USD"})`} type="number" value={op.collected_amount||op.budget_total} onChange={chOp("collected_amount")} step="0.01"/>
           <Sel label="Método de cobro" value={op.collection_method||"transferencia"} onChange={chOp("collection_method")} options={[{value:"efectivo",label:"Efectivo"},{value:"transferencia",label:"Transferencia"},{value:"cripto",label:"Cripto"}]}/>
@@ -1036,8 +1046,8 @@ function FinanceDashboard({token}){
 }
 
 function QuotesList({token}){
-  const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");const [selQuote,setSelQuote]=useState(null);
-  useEffect(()=>{(async()=>{const q=await dq("quotes",{token,filters:"?select=*&order=created_at.desc"});setQuotes(Array.isArray(q)?q:[]);setLo(false);})();},[token]);
+  const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");const [selQuote,setSelQuote]=useState(null);const [clientsMap,setClientsMap]=useState({});
+  useEffect(()=>{(async()=>{const [q,cl]=await Promise.all([dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("clients",{token,filters:"?select=id,first_name,last_name,whatsapp,client_code"})]);setQuotes(Array.isArray(q)?q:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setLo(false);})();},[token]);
   const updateStatus=async(id,status)=>{await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{status}});setQuotes(p=>p.map(q=>q.id===id?{...q,status}:q));};
   const ST={pending:{l:"Pendiente",c:"#fbbf24"},contacted:{l:"Contactado",c:"#60a5fa"},converted:{l:"Convertida",c:"#22c55e"},rejected:{l:"Rechazada",c:"#f87171"}};
   const filtered=fStatus?quotes.filter(q=>q.status===fStatus):quotes;
@@ -1092,6 +1102,13 @@ function QuotesList({token}){
             <span>Bulto {i+1}</span><span>Cant: {pk.qty||1}</span>{pk.length&&<span>{pk.length}x{pk.width}x{pk.height} cm</span>}<span>Peso: {pk.weight} kg</span>
           </div>)}
         </div>}
+        {(()=>{const cl=q.client_id?clientsMap[q.client_id]:null;const wa=cl?.whatsapp;const prodDesc=Array.isArray(prods)?prods.map(p=>p.description||p.type).join(", "):"";
+          const waMsg=encodeURIComponent(`Hola ${q.client_name}! Vi que cotizaste una importación de *${prodDesc}* por *${q.channel_name}* desde *${q.origin}* el ${formatDate(q.created_at)}.\n\n¿Pudiste avanzar con la operación? ¿Necesitás más información?\n\nQuedo a disposición!`);
+          return <div style={{display:"flex",gap:10,marginTop:20,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+            {wa&&<a href={`https://wa.me/${wa.replace(/[^0-9]/g,"")}?text=${waMsg}`} target="_blank" rel="noopener noreferrer" style={{flex:1,display:"block",padding:"12px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textAlign:"center",textDecoration:"none"}}>Consultar por WhatsApp</a>}
+            {!wa&&<p style={{fontSize:12,color:"rgba(255,255,255,0.3)",fontStyle:"italic"}}>Sin WhatsApp registrado</p>}
+            <select value={q.status} onChange={e=>{updateStatus(q.id,e.target.value);setSelQuote({...q,status:e.target.value});}} style={{padding:"10px 14px",fontSize:12,fontWeight:600,border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>{Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#0a1428"}}>{v.l}</option>)}</select>
+          </div>;})()}
       </div>
     </div>;})()}
   </div>;
