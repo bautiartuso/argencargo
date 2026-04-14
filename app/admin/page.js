@@ -36,12 +36,12 @@ function AdminLogin({onLogin}){
 }
 
 function OperationsList({token,onSelect,onNew}){
-  const [ops,setOps]=useState([]);const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fStatuses,setFStatuses]=useState([]);const [fChannel,setFChannel]=useState("");const [sortCol,setSortCol]=useState("created_at");const [sortDir,setSortDir]=useState("desc");const [showStatusDrop,setShowStatusDrop]=useState(false);
-  useEffect(()=>{(async()=>{const o=await dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"});setOps(Array.isArray(o)?o:[]);setLo(false);})();},[token]);
+  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fStatuses,setFStatuses]=useState([]);const [fChannel,setFChannel]=useState("");const [sortCol,setSortCol]=useState("created_at");const [sortDir,setSortDir]=useState("desc");const [showStatusDrop,setShowStatusDrop]=useState(false);
+  useEffect(()=>{(async()=>{const [o,pm]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro"})]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
   const toggleStatus=(s)=>setFStatuses(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
   const getOrigin=(op)=>op.origin||"China";
   const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannel&&o.channel!==fChannel)return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
-  const calcGan=(o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);return ing-cost;};
+  const calcGan=(o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtGan=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);return ing-cost+pmtGan;};
   const sorted=[...filtered].sort((a,b)=>{let va=a[sortCol],vb=b[sortCol];if(sortCol==="client"){va=a.clients?`${a.clients.first_name} ${a.clients.last_name}`:"";vb=b.clients?`${b.clients.first_name} ${b.clients.last_name}`:"";}if(sortCol==="origin"){va=getOrigin(a);vb=getOrigin(b);}if(sortCol==="ganancia"){va=calcGan(a);vb=calcGan(b);}if(va==null)va="";if(vb==null)vb="";if(typeof va==="string")va=va.toLowerCase();if(typeof vb==="string")vb=vb.toLowerCase();if(va<vb)return sortDir==="asc"?-1:1;if(va>vb)return sortDir==="asc"?1:-1;return 0;});
   const toggleSort=(col)=>{if(sortCol===col){setSortDir(d=>d==="asc"?"desc":"asc");}else{setSortCol(col);setSortDir("asc");}};
   const SH=({label,col})=><th onClick={()=>toggleSort(col)} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:sortCol===col?IC:"rgba(255,255,255,0.3)",textTransform:"uppercase",cursor:"pointer",userSelect:"none"}}>{label} {sortCol===col?(sortDir==="asc"?"▲":"▼"):""}</th>;
@@ -57,13 +57,13 @@ function OperationsList({token,onSelect,onNew}){
     {lo?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:(()=>{
     const active=sorted.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
     const closed=sorted.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada").sort((a,b)=>{const da=a.closed_at?String(a.closed_at).slice(0,10):"";const db=b.closed_at?String(b.closed_at).slice(0,10):"";return db.localeCompare(da);});
-    const totalGanancia=closed.reduce((s,o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);return s+(ing-cost);},0);
+    const totalGanancia=closed.reduce((s,o)=>s+calcGan(o),0);
     const renderTable=(rows,showGanancia)=><div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
           <SH label="Código" col="operation_code"/><SH label="Cliente" col="client"/><SH label="Descripción" col="description"/><SH label="Canal" col="channel"/><SH label="Estado" col="status"/>{showGanancia?<SH label="Cerrada" col="closed_at"/>:<SH label="ETA" col="eta"/>}{showGanancia&&<SH label="Ganancia" col="ganancia"/>}<th style={{padding:"12px 14px"}}></th>
         </tr></thead>
-        <tbody>{rows.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const ing=Number(op.budget_total||0);const cost=Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0);const gan=ing-cost;
+        <tbody>{rows.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const ing=Number(op.budget_total||0);const gan=calcGan(op);
         return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>onSelect(op)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
           <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{op.operation_code}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.7)"}}>{cn}</td>
@@ -1171,8 +1171,8 @@ function ShipmentsTracking({token,onSelectOp}){
 }
 
 function FinanceDashboard({token}){
-  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
-  useEffect(()=>{(async()=>{const [o,c,q,fe]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setLo(false);})();},[token]);
+  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
+  useEffect(()=>{(async()=>{const [o,c,q,fe,pm]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
 
   const now=new Date();const thisMonth=now.getMonth();const thisYear=now.getFullYear();
   const today=now.toISOString().slice(0,10);const weekAgo=new Date(now-7*86400000).toISOString().slice(0,10);
@@ -1184,7 +1184,7 @@ function FinanceDashboard({token}){
   const activeOps=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
   const periodOps=filterByPeriod(closedOps,"closed_at");
 
-  const calcGan=(o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);return{ing,cost,gan:ing-cost};};
+  const calcGan=(o)=>{const baseIng=Number(o.budget_total||0);const baseCost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtIng=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtCost=pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);const ing=baseIng+pmtIng;const cost=baseCost+pmtCost;return{ing,cost,gan:ing-cost};};
 
   const totalIng=periodOps.reduce((s,o)=>s+calcGan(o).ing,0);
   const totalCost=periodOps.reduce((s,o)=>s+calcGan(o).cost,0);
@@ -1241,16 +1241,21 @@ function FinanceDashboard({token}){
 
     {(()=>{
       // Cash flow solo desde operaciones (evita duplicación con finance_entries)
-      const totCobrado=ops.filter(o=>o.is_collected).reduce((s,o)=>s+Number(o.budget_total||0),0);
+      const totCobradoOps=ops.filter(o=>o.is_collected).reduce((s,o)=>s+Number(o.budget_total||0),0);
+      // Cobrado de gestión de pagos (solo client_paid)
+      const totCobradoPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.reduce((a,p)=>a+Number(p.client_amount_usd||0),0);},0);
+      const totCobrado=totCobradoOps+totCobradoPmts;
       const totCostosOps=ops.reduce((s,o)=>s+Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0),0);
+      const totCostosPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0);
+      const totCostosTotales=totCostosOps+totCostosPmts;
       // Deuda TC pendiente en ARS (de finance_entries)
       const deudaTCArs=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="ARS").reduce((s,e)=>s+Number(e.amount_ars||0),0);
-      const cashDisponible=totCobrado-totCostosOps;
+      const cashDisponible=totCobrado-totCostosTotales;
       return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:24}}>
         <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.1),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(255,80,80,0.1),rgba(255,80,80,0.03))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,borderRadius:14,padding:"20px 24px"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Cash disponible</p>
           <p style={{fontSize:32,fontWeight:700,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>{usd(cashDisponible)}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>Cobrado ({usd(totCobrado)}) - Costos ({usd(totCostosOps)})</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>Cobrado ({usd(totCobrado)}) - Costos ({usd(totCostosTotales)})</p>
         </div>
         <div style={{background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:14,padding:"20px 24px"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Deuda tarjeta de crédito</p>
@@ -1259,8 +1264,8 @@ function FinanceDashboard({token}){
         </div>
         <div style={{background:"rgba(255,80,80,0.04)",border:"1px solid rgba(255,80,80,0.12)",borderRadius:14,padding:"20px 24px"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Costos totales acumulados</p>
-          <p style={{fontSize:28,fontWeight:700,color:"#ff6b6b",margin:"0 0 4px"}}>{usd(totCostosOps)}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>Flete + Impuestos + Gasto doc + Otros</p>
+          <p style={{fontSize:28,fontWeight:700,color:"#ff6b6b",margin:"0 0 4px"}}>{usd(totCostosTotales)}</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>Operación + Gestión de pagos</p>
         </div>
       </div>;
     })()}
