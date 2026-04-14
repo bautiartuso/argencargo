@@ -426,8 +426,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         // Auto-create finance_entry when marking as collected
         if(op.is_collected){
           const existing=await dq("finance_entries",{token,filters:`?operation_id=eq.${op.id}&description=eq.Cobro ${op.operation_code}&auto_generated=eq.true&select=id`});
-          // Calc amt: budget_total minus already-paid anticipos (since those are separate ingresos)
-          const amt=Number(op.collected_amount||0)>0?Number(op.collected_amount):(Number(op.budget_total||0)-Number(op.total_anticipos||0));
+          const amt=Number(op.collected_amount||0)>0?Number(op.collected_amount):Number(op.budget_total||0);
           if(amt>0&&(!Array.isArray(existing)||existing.length===0)){
             await dq("finance_entries",{method:"POST",token,body:{date:op.collection_date||new Date().toISOString().slice(0,10),type:"ingreso",description:`Cobro ${op.operation_code}`,amount:amt,currency:op.collection_currency||"USD",payment_method:op.collection_method||"transferencia",is_paid:true,auto_generated:true,operation_id:op.id}});
             flash("Ingreso registrado en finanzas");
