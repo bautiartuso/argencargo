@@ -110,7 +110,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     if(op.client_id){const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*`});setOpClient(Array.isArray(cl)?cl[0]:null);const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);}
     const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
     await loadCCBalance();setLo(false);};
-  useEffect(()=>{load();},[op.id]);
+  useEffect(()=>{load();const onFocus=()=>{if(document.visibilityState==="visible")load();};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[op.id]);
   const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const deleteOp=async()=>{if(!confirm(`¿Eliminar operación ${op.operation_code}? Se borrarán también sus productos, bultos y eventos.`))return;
     await Promise.all([dq("operation_items",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`}),dq("operation_packages",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`}),dq("tracking_events",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`})]);
