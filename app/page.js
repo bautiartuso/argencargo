@@ -34,8 +34,8 @@ function SI({k,a,cur,isA,sz=22}){let key=k;if(k==="en_transito")key=isA?"en_tran
 function NI({p,a,sz=18}){return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={a?IC:"rgba(255,255,255,0.3)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{p.map((d,i)=><path key={i} d={d}/>)}</svg>;}
 function OpProgress({status,isAereo}){const si=S2S[status]??0;return <div className="op-progress" style={{display:"flex",alignItems:"center",padding:"16px 0"}}>{OS.map((s,i)=>{const a=i<=si;const cur=i===si;return <div key={s.k} style={{display:"flex",alignItems:"center",flex:1}}><div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,width:"100%"}}><div style={{width:42,height:42,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",background:cur?"rgba(74,144,217,0.2)":a?"rgba(74,144,217,0.08)":"rgba(255,255,255,0.03)",border:`1.5px solid ${cur?IC:a?"rgba(74,144,217,0.25)":"rgba(255,255,255,0.06)"}`,boxShadow:cur?"0 0 12px rgba(96,165,250,0.2)":"none"}}><SI k={s.k} a={a} cur={cur} isA={isAereo}/></div><span style={{fontSize:9,color:cur?IC:a?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.18)",textAlign:"center",lineHeight:1.2,fontWeight:cur?700:400,whiteSpace:"pre-line",minHeight:20}}>{s.l}</span></div>{i<OS.length-1&&<div style={{width:24,height:2,background:i<si?IC:"rgba(255,255,255,0.06)",flexShrink:0,marginTop:-20}}/>}</div>})}</div>;}
 function OperationsList({ops,onSelect,client}){
-  const act=ops.filter(o=>o.status!=="entregada"&&o.status!=="operacion_cerrada"&&o.status!=="cancelada");
-  const past=ops.filter(o=>o.status==="entregada"||o.status==="operacion_cerrada"||o.status==="cancelada");
+  const act=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
+  const past=ops.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada");
   const name=client?`${client.first_name} ${client.last_name}`:"";
   const code=client?.client_code||"";
   const stats=[{l:"TOTAL IMPORTACIONES",v:ops.length,c:"#fff",b:"#3b82f6"},{l:"EN CURSO",v:act.length,c:"#60a5fa",b:"#60a5fa"},{l:"FINALIZADAS",v:past.length,c:"#22c55e",b:"#22c55e"},{l:"REPORTES",v:null,b:"#fff",btn:true}];
@@ -87,10 +87,23 @@ function OperationDetail({op,token,onBack}){
       </div>;})()}
     </div>
     {!loading&&(()=>{const bt=Number(op.budget_total||0);const bTax=Number(op.budget_taxes||0);const bFlete=Number(op.budget_flete||0);const bSeg=Number(op.budget_seguro||0);const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;const isB=op.channel?.includes("negro");const hasBudget=bt>0;
-      const bRow=(l,v,bold,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:12}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:13,fontWeight:bold?700:600,color:accent?IC:bold?"#fff":"rgba(255,255,255,0.8)"}}>USD {v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
+      // Pagos pendientes (cliente NO pagó todavía) - se suman al total a abonar
+      const pmtsPendientes=pmts.filter(p=>!p.client_paid).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
+      // Pagos ya pagados - se descuentan del total
+      const pmtsPagados=pmts.filter(p=>p.client_paid).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
+      const totalAbonar=bt+pmtsPendientes-pmtsPagados;
+      const bRow=(l,v,bold,accent,color)=><div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:12}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:13,fontWeight:bold?700:600,color:color||(accent?IC:bold?"#fff":"rgba(255,255,255,0.8)")}}>{v<0?"-":""}USD {Math.abs(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
       return <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.25rem 1.5rem",marginBottom:16}}>
       <button onClick={()=>toggleSection("budget")} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",padding:0,marginBottom:openSections.budget?14:0}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>PRESUPUESTO</h3><span style={{color:"rgba(255,255,255,0.3)",fontSize:14}}>{openSections.budget?"▲":"▼"}</span></button>
-      {openSections.budget&&hasBudget?<div>{!isB&&bTax>0&&bRow("Total Impuestos",bTax)}{bFlete>0&&bRow(isB?"Servicio Integral ARGENCARGO":"Flete internacional",bFlete)}{!isB&&bSeg>0&&bRow("Seguro de carga",bSeg)}{shipCost>0&&bRow("Envío a Domicilio",shipCost)}{bRow("A abonar a Argencargo",bt,true,true)}</div>:openSections.budget?<p style={{fontSize:13,color:"rgba(255,255,255,0.3)",margin:0}}>Presupuesto pendiente de confirmación</p>:null}
+      {openSections.budget&&hasBudget?<div>
+        {!isB&&bTax>0&&bRow("Total Impuestos",bTax)}
+        {bFlete>0&&bRow(isB?"Servicio Integral ARGENCARGO":"Flete internacional",bFlete)}
+        {!isB&&bSeg>0&&bRow("Seguro de carga",bSeg)}
+        {shipCost>0&&bRow("Envío a Domicilio",shipCost)}
+        {pmtsPendientes>0&&bRow("Gestión de pagos (pendiente)",pmtsPendientes,false,false,"#fb923c")}
+        {pmtsPagados>0&&bRow("Anticipado en gestión de pagos",-pmtsPagados,false,false,"#22c55e")}
+        {bRow(pmtsPagados>0?"Saldo a abonar":"A abonar a Argencargo",totalAbonar,true,true)}
+      </div>:openSections.budget?<p style={{fontSize:13,color:"rgba(255,255,255,0.3)",margin:0}}>Presupuesto pendiente de confirmación</p>:null}
     </div>;})()}
     {!loading&&items.length>0&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.25rem 1.5rem",marginBottom:16}}>
       <button onClick={()=>toggleSection("products")} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",padding:0,marginBottom:openSections.products?14:0}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>PRODUCTOS ({items.length})</h3><span style={{color:"rgba(255,255,255,0.3)",fontSize:14}}>{openSections.products?"▲":"▼"}</span></button>
