@@ -189,7 +189,7 @@ function CalculatorPage({token,client}){
   const calculateUSA=()=>{
     const{totWeight,totVol,totCBM,billable}=calcTotals();const channels=[];
     // Aéreo Integral AC (USA) — usa peso BRUTO, no volumétrico
-    if(totWeight>0){const fleteRate=hasPhones?65:getFleteRate("aereo_b_usa",totWeight);const flete=totWeight*fleteRate;const sur=getSurcharge("aereo_b_usa",totalFob,totWeight);
+    if(totWeight>0){const bw=Math.max(totWeight,1);const fleteRate=hasPhones?65:getFleteRate("aereo_b_usa",bw);const flete=bw*fleteRate;const sur=getSurcharge("aereo_b_usa",totalFob,bw);
       channels.push({key:"aereo_b_usa",name:"Aéreo Integral AC",info:"48-72 hs hábiles",flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totWeight.toFixed(1)} kg`});}
     // Marítimo Integral AC — solo si NO es celulares
     if(!hasPhones&&!noDims&&totCBM>0){const fleteRate=getFleteRate("maritimo_b",totCBM);const flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
@@ -241,7 +241,7 @@ function CalculatorPage({token,client}){
         pesoBruto:totWeight,pesoVol:volWeightTotal,pesoFact:facturable,pkgDetails,unit:`${facturable.toFixed(1)} kg`});}
 
     // Aéreo Integral AC (B) — peso bruto
-    if(totWeight>0){const fleteRate=getFleteRate("aereo_b_china",totWeight);const flete=totWeight*fleteRate;const sur=getSurcharge("aereo_b_china",totalFob,totWeight);
+    if(totWeight>0){const bw=Math.max(totWeight,1);const fleteRate=getFleteRate("aereo_b_china",bw);const flete=bw*fleteRate;const sur=getSurcharge("aereo_b_china",totalFob,bw);
       channels.push({key:"aereo_b_china",name:"Aéreo Integral AC",info:"10-15 días hábiles",isBlanco:false,
         flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,pesoBruto:totWeight,unit:`${totWeight.toFixed(1)} kg`});}
 
