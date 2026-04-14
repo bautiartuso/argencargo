@@ -954,9 +954,9 @@ function FinanceDashboard({token}){
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:24}}>
       {stat("Ingresos totales",usd(totalIng),"#fff",true)}
-      {stat("Costos totales",usd(totalCost),"#ff6b6b")}
+      {stat("Costos totales",usd(totalCost),"#ff6b6b",true)}
       {stat("Ganancia neta",usd(totalGan),totalGan>0?"#22c55e":"#ff6b6b",true)}
-      {stat("Margen",`${margen.toFixed(1)}%`,margen>20?"#22c55e":"#fb923c")}
+      {stat("Margen",`${margen.toFixed(1)}%`,margen>20?"#22c55e":"#fb923c",true)}
     </div>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:24}}>
