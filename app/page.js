@@ -157,7 +157,7 @@ function CalculatorPage({token,client}){
   const [step,setStep]=useState(0);const [origin,setOrigin]=useState("");
   // USA flow
   const [products,setProducts]=useState([{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false}]);
-  const [pkgs,setPkgs]=useState([{qty:"1",length:"",width:"",height:"",weight:""}]);const [noDims,setNoDims]=useState(false);const [delivery,setDelivery]=useState("oficina");
+  const [pkgs,setPkgs]=useState([{qty:"1",length:"",width:"",height:"",weight:""}]);const [noDims,setNoDims]=useState(false);const clientAutoZone=(()=>{if(!client)return"oficina";const c=(client.city||"").toLowerCase();const p=(client.province||"").toLowerCase();if(c.includes("capital")||c.includes("caba")||p.includes("capital")||p==="caba")return"caba";if(p.includes("buenos aires")||c.includes("buenos aires"))return"gba";return"oficina";})();const [delivery,setDelivery]=useState(clientAutoZone);
   const [hasBattery,setHasBattery]=useState(false);const [expandedCh,setExpandedCh]=useState(null);
   // Keep global ncm for backward compat in calculations (use first product's NCM)
   const ncm=products.find(p=>p.ncm?.ncm_code)?.ncm||null;const ncmManual=false;
@@ -262,12 +262,15 @@ function CalculatorPage({token,client}){
     setResults({channels,totWeight,totCBM});setStep(4);
   };
 
-  const DELIV={oficina:"Retiro por Oficina (Gratis)",caba:"Envío CABA ($20)",gba:"Envío a todo el país (A cotizar)"};
-  const saveQuote=async(ch)=>{const{totWeight,totCBM}=calcTotals();try{await dq("quotes",{method:"POST",token,body:{client_id:client?.id||null,client_name:client?`${client.first_name} ${client.last_name}`:"Anónimo",client_code:client?.client_code||"—",origin,channel_key:ch.key,channel_name:ch.name,products:products,packages:pkgs,delivery,total_fob:totalFob,total_weight:totWeight,total_cbm:totCBM,total_cost:ch.total+(delivery==="caba"?20:0)}});}catch(e){console.error("Error saving quote:",e);}};
-  const makeWAMsg=(ch)=>{const{totWeight,totCBM}=calcTotals();const name=client?`${client.first_name} ${client.last_name}`:"Cliente";const code=client?.client_code||"—";const flag=origin==="USA"?"\ud83c\uddfa\ud83c\uddf8":"\ud83c\udde8\ud83c\uddf3";const isAereo=ch.key?.includes("aereo");const delivCost=delivery==="caba"?20:0;const total=ch.total+delivCost;
+  const getShipCost=(zone,weight)=>{if(zone==="oficina")return 0;const ranges=[[25,config.envio_caba_0_25||20],[50,config.envio_caba_25_50||30],[100,config.envio_caba_50_100||50],[Infinity,config.envio_caba_100||75]];let cost=0;for(const[max,amt]of ranges){if(weight<max){cost=amt;break;}}if(zone==="gba")cost+=(config.envio_gba_extra||10);return cost;};
+  const clientZone=(()=>{if(!client)return null;const c=(client.city||"").toLowerCase();const p=(client.province||"").toLowerCase();if(c.includes("capital")||c.includes("caba")||p.includes("capital")||p==="caba")return"caba";if(p.includes("buenos aires")||c.includes("buenos aires"))return"gba";return null;})();
+  const autoDelivLabel=(()=>{if(delivery==="oficina")return"Retiro por Oficina (Gratis)";const{totWeight}=calcTotals();const cost=getShipCost(delivery,totWeight);return delivery==="caba"?`Envío CABA (USD ${cost})`:`Envío GBA (USD ${cost})`;})();
+  const DELIV={oficina:"Retiro por Oficina (Gratis)",caba:"Envío CABA",gba:"Envío GBA"};
+  const saveQuote=async(ch)=>{const{totWeight,totCBM}=calcTotals();try{await dq("quotes",{method:"POST",token,body:{client_id:client?.id||null,client_name:client?`${client.first_name} ${client.last_name}`:"Anónimo",client_code:client?.client_code||"—",origin,channel_key:ch.key,channel_name:ch.name,products:products,packages:pkgs,delivery,total_fob:totalFob,total_weight:totWeight,total_cbm:totCBM,total_cost:ch.total+(getShipCost(delivery,calcTotals().totWeight))}});}catch(e){console.error("Error saving quote:",e);}};
+  const makeWAMsg=(ch)=>{const{totWeight,totCBM}=calcTotals();const name=client?`${client.first_name} ${client.last_name}`:"Cliente";const code=client?.client_code||"—";const flag=origin==="USA"?"\ud83c\uddfa\ud83c\uddf8":"\ud83c\udde8\ud83c\uddf3";const isAereo=ch.key?.includes("aereo");const delivCost=getShipCost(delivery,calcTotals().totWeight);const total=ch.total+delivCost;
     const usdF=v=>`USD ${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-    if(ch.isBlanco){return encodeURIComponent(`Hola Bautista! Acabo de cotizar una importación y quiero avanzar con la operación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${prodSummary}*\nValor Total: *${usdF(totalFob)}*\n${isAereo?`Peso Total: *${totWeight.toFixed(2)} kg*`:`CBM Total: *${totCBM.toFixed(4)} m³*`}\n\nImpuestos estimados: *${usdF(ch.totalImp||0)}*\nFlete Internacional: *${usdF(ch.flete||0)}*\nSeguro: *${usdF(ch.seguro||0)}*\nEntrega en Destino: *${DELIV[delivery]}*\nTotal estimado: *${usdF(total)}*\n\nCódigo cliente: *${code}*`);}
-    return encodeURIComponent(`Hola Bautista! Acabo de cotizar una importación y quiero avanzar con la operación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${prodSummary}*\n\nTipo de envío: *${ch.name}*\n\nValor Total: *${usdF(totalFob)}*\n${isAereo?`Peso Total: *${totWeight.toFixed(2)} kg*`:`CBM Total: *${totCBM.toFixed(4)} m³*`}\nEntrega en Destino: *${DELIV[delivery]}*\n\nCódigo cliente: *${code}*`);};
+    if(ch.isBlanco){return encodeURIComponent(`Hola Bautista! Acabo de cotizar una importación y quiero avanzar con la operación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${prodSummary}*\nValor Total: *${usdF(totalFob)}*\n${isAereo?`Peso Total: *${totWeight.toFixed(2)} kg*`:`CBM Total: *${totCBM.toFixed(4)} m³*`}\n\nImpuestos estimados: *${usdF(ch.totalImp||0)}*\nFlete Internacional: *${usdF(ch.flete||0)}*\nSeguro: *${usdF(ch.seguro||0)}*\nEntrega en Destino: *${autoDelivLabel}*\nTotal estimado: *${usdF(total)}*\n\nCódigo cliente: *${code}*`);}
+    return encodeURIComponent(`Hola Bautista! Acabo de cotizar una importación y quiero avanzar con la operación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${prodSummary}*\n\nTipo de envío: *${ch.name}*\n\nValor Total: *${usdF(totalFob)}*\n${isAereo?`Peso Total: *${totWeight.toFixed(2)} kg*`:`CBM Total: *${totCBM.toFixed(4)} m³*`}\nEntrega en Destino: *${autoDelivLabel}*\n\nCódigo cliente: *${code}*`);};
 
   const usd=v=>`USD ${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const row=(l,v,bold,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:8}:{})}}><span style={{fontSize:12,color:bold?"#fff":"rgba(255,255,255,0.45)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:12,fontWeight:bold?700:600,color:accent?IC:bold?"#fff":"rgba(255,255,255,0.7)"}}>{usd(v)}</span></div>;
@@ -311,13 +314,14 @@ function CalculatorPage({token,client}){
     </div>}
 
     {/* USA FLOW - Step 3: Delivery */}
-    {step===3&&origin==="USA"&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem"}}>
+    {step===3&&origin==="USA"&&(()=>{const{totWeight}=calcTotals();const shipOpts=[{k:"oficina",l:"Retiro por Oficina",sub:"Gratis"},{k:"caba",l:"Envío CABA",sub:`USD ${getShipCost("caba",totWeight)}`},{k:"gba",l:"Envío GBA",sub:`USD ${getShipCost("gba",totWeight)}`}];return <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem"}}>
       <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 16px"}}>ENTREGA EN DESTINO</h3>
-      <div style={{display:"flex",gap:12,marginBottom:20}}>{[{k:"oficina",l:"Retiro por Oficina",sub:"Gratis"},{k:"caba",l:"Envío CABA",sub:"$20.00"},{k:"gba",l:"Envío a todo el país",sub:"A cotizar"}].map(d=><div key={d.k} onClick={()=>setDelivery(d.k)} style={{flex:1,padding:"16px",textAlign:"center",borderRadius:12,border:`1.5px solid ${delivery===d.k?IC:"rgba(255,255,255,0.08)"}`,background:delivery===d.k?"rgba(96,165,250,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer"}}><p style={{fontSize:15,fontWeight:700,color:delivery===d.k?IC:"rgba(255,255,255,0.6)",margin:"0 0 4px"}}>{d.l}</p><p style={{fontSize:13,fontWeight:600,color:delivery===d.k?"rgba(255,255,255,0.8)":"rgba(255,255,255,0.35)",margin:0}}>{d.sub}</p></div>)}</div>
+      {clientZone&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.12)",borderRadius:10,padding:"10px 14px",marginBottom:14}}><p style={{fontSize:12,color:IC,margin:0,fontWeight:500}}>Tu dirección registrada es de <strong>{clientZone==="caba"?"CABA":"GBA"}</strong> — seleccionamos envío automáticamente</p></div>}
+      <div style={{display:"flex",gap:12,marginBottom:20}}>{shipOpts.map(d=><div key={d.k} onClick={()=>setDelivery(d.k)} style={{flex:1,padding:"16px",textAlign:"center",borderRadius:12,border:`1.5px solid ${delivery===d.k?IC:"rgba(255,255,255,0.08)"}`,background:delivery===d.k?"rgba(96,165,250,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer"}}><p style={{fontSize:15,fontWeight:700,color:delivery===d.k?IC:"rgba(255,255,255,0.6)",margin:"0 0 4px"}}>{d.l}</p><p style={{fontSize:13,fontWeight:600,color:delivery===d.k?"rgba(255,255,255,0.8)":"rgba(255,255,255,0.35)",margin:0}}>{d.sub}</p></div>)}</div>
       {delivery==="oficina"&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.12)",borderRadius:10,padding:"14px 18px",marginBottom:16}}><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"0 0 6px"}}>Nuestras Oficinas</p><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"0 0 4px"}}>Av. Callao 1137, CABA — Lunes a Viernes de 9:00 a 19:00 hs</p><p style={{fontSize:14,color:"#22c55e",margin:0,fontWeight:600}}>Se puede abonar al momento de retirar</p></div>}
       {(delivery==="caba"||delivery==="gba")&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:10,padding:"14px 18px",marginBottom:16}}><p style={{fontSize:12,color:"#fb923c",margin:0,fontWeight:500}}>Para envíos a domicilio, la carga debe abonarse previamente antes de ser despachada. Sin excepción.</p></div>}
       <div style={{display:"flex",gap:12,marginTop:8}}><button onClick={()=>setStep(2)} style={{padding:"12px 20px",fontSize:13,fontWeight:600,borderRadius:10,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)",border:"1.5px solid rgba(255,255,255,0.12)",cursor:"pointer"}}>← Atrás</button><button onClick={calculateUSA} style={{padding:"12px 24px",fontSize:13,fontWeight:600,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>Calcular costos →</button></div>
-    </div>}
+    </div>;})()}
 
     {/* USA FLOW - Step 4: Results */}
     {step===4&&origin==="USA"&&results&&<div>
@@ -328,7 +332,7 @@ function CalculatorPage({token,client}){
         {results.totCBM>0&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>CBM</p><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{results.totCBM.toFixed(4)} m³</p></div>}
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>ENTREGA</p><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{DELIV[delivery]}</p></div>
       </div>
-      <div className="grid-2" style={{display:"grid",gridTemplateColumns:results.channels.length>1?"1fr 1fr":"1fr",gap:20}}>{results.channels.map(ch=>{const isAereo=ch.key?.includes("aereo");const delivCost=delivery==="caba"?20:0;const total=ch.noCalc?0:ch.total+delivCost;
+      <div className="grid-2" style={{display:"grid",gridTemplateColumns:results.channels.length>1?"1fr 1fr":"1fr",gap:20}}>{results.channels.map(ch=>{const isAereo=ch.key?.includes("aereo");const delivCost=getShipCost(delivery,calcTotals().totWeight);const total=ch.noCalc?0:ch.total+delivCost;
       return <div key={ch.key} style={{background:"rgba(255,255,255,0.03)",borderRadius:16,border:`1.5px solid ${ch.key==="aereo_b_usa"?"rgba(251,146,60,0.4)":"rgba(255,255,255,0.07)"}`,padding:"1.5rem",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:24}}>{isAereo?"✈️":"🚢"}</span><p style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>{ch.name}</p></div>
@@ -344,7 +348,7 @@ function CalculatorPage({token,client}){
         <a href={`https://wa.me/5491125088580?text=${makeWAMsg(ch)}`} onClick={()=>saveQuote(ch)} target="_blank" rel="noopener noreferrer" style={{display:"block",width:"100%",padding:"14px",fontSize:14,fontWeight:700,borderRadius:12,border:"none",cursor:ch.noCalc?"not-allowed":"pointer",background:ch.noCalc?"rgba(255,255,255,0.04)":`linear-gradient(135deg,#25D366,#128C7E)`,color:ch.noCalc?"rgba(255,255,255,0.2)":"#fff",textAlign:"center",textDecoration:"none",boxSizing:"border-box",pointerEvents:ch.noCalc?"none":"auto"}}>Avanzar con esta importación →</a>
       </div>})}</div>
       {/* USA Modal desglose */}
-      {expandedCh&&results.channels.find(c=>c.key===expandedCh)&&(()=>{const mc=results.channels.find(c=>c.key===expandedCh);const delivCost=delivery==="caba"?20:0;const total=mc.total+delivCost;
+      {expandedCh&&results.channels.find(c=>c.key===expandedCh)&&(()=>{const mc=results.channels.find(c=>c.key===expandedCh);const delivCost=getShipCost(delivery,calcTotals().totWeight);const total=mc.total+delivCost;
       return <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setExpandedCh(null)}>
         <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}/>
         <div style={{position:"relative",maxWidth:500,width:"90%",background:"#0a1428",borderRadius:20,border:"1px solid rgba(255,255,255,0.1)",padding:"2rem",boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
@@ -354,7 +358,7 @@ function CalculatorPage({token,client}){
           </div>
           {row("Servicio Integral ARGENCARGO",mc.flete)}
           {mc.surcharge>0&&row(`Recargo valor (${mc.surchargePct}%)`,mc.surcharge)}
-          {delivCost>0&&row("Envío CABA",delivCost)}
+          {delivCost>0&&row(delivery==="gba"?"Envío GBA":"Envío CABA",delivCost)}
           {row("TOTAL",total,true,true)}
         </div>
       </div>;})()}
@@ -408,13 +412,14 @@ function CalculatorPage({token,client}){
     </div>}
 
     {/* CHINA FLOW - Step 3: Delivery */}
-    {step===3&&origin==="China"&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem"}}>
+    {step===3&&origin==="China"&&(()=>{const{totWeight}=calcTotals();const shipOpts=[{k:"oficina",l:"Retiro por Oficina",sub:"Gratis"},{k:"caba",l:"Envío CABA",sub:`USD ${getShipCost("caba",totWeight)}`},{k:"gba",l:"Envío GBA",sub:`USD ${getShipCost("gba",totWeight)}`}];return <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem"}}>
       <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 16px"}}>ENTREGA EN DESTINO</h3>
-      <div style={{display:"flex",gap:12,marginBottom:20}}>{[{k:"oficina",l:"Retiro por Oficina",sub:"Gratis"},{k:"caba",l:"Envío CABA",sub:"$20.00"},{k:"gba",l:"Envío a todo el país",sub:"A cotizar"}].map(d=><div key={d.k} onClick={()=>setDelivery(d.k)} style={{flex:1,padding:"16px",textAlign:"center",borderRadius:12,border:`1.5px solid ${delivery===d.k?IC:"rgba(255,255,255,0.08)"}`,background:delivery===d.k?"rgba(96,165,250,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer"}}><p style={{fontSize:15,fontWeight:700,color:delivery===d.k?IC:"rgba(255,255,255,0.6)",margin:"0 0 4px"}}>{d.l}</p><p style={{fontSize:13,fontWeight:600,color:delivery===d.k?"rgba(255,255,255,0.8)":"rgba(255,255,255,0.35)",margin:0}}>{d.sub}</p></div>)}</div>
+      {clientZone&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.12)",borderRadius:10,padding:"10px 14px",marginBottom:14}}><p style={{fontSize:12,color:IC,margin:0,fontWeight:500}}>Tu dirección registrada es de <strong>{clientZone==="caba"?"CABA":"GBA"}</strong> — seleccionamos envío automáticamente</p></div>}
+      <div style={{display:"flex",gap:12,marginBottom:20}}>{shipOpts.map(d=><div key={d.k} onClick={()=>setDelivery(d.k)} style={{flex:1,padding:"16px",textAlign:"center",borderRadius:12,border:`1.5px solid ${delivery===d.k?IC:"rgba(255,255,255,0.08)"}`,background:delivery===d.k?"rgba(96,165,250,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer"}}><p style={{fontSize:15,fontWeight:700,color:delivery===d.k?IC:"rgba(255,255,255,0.6)",margin:"0 0 4px"}}>{d.l}</p><p style={{fontSize:13,fontWeight:600,color:delivery===d.k?"rgba(255,255,255,0.8)":"rgba(255,255,255,0.35)",margin:0}}>{d.sub}</p></div>)}</div>
       {delivery==="oficina"&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.12)",borderRadius:10,padding:"14px 18px",marginBottom:16}}><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"0 0 6px"}}>Nuestras Oficinas</p><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"0 0 4px"}}>Av. Callao 1137, CABA — Lunes a Viernes de 9:00 a 19:00 hs</p><p style={{fontSize:14,color:"#22c55e",margin:0,fontWeight:600}}>Se puede abonar al momento de retirar</p></div>}
       {(delivery==="caba"||delivery==="gba")&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:10,padding:"14px 18px",marginBottom:16}}><p style={{fontSize:12,color:"#fb923c",margin:0,fontWeight:500}}>Para envíos a domicilio, la carga debe abonarse previamente antes de ser despachada. Sin excepción.</p></div>}
       <div style={{display:"flex",gap:12,marginTop:8}}><button onClick={()=>setStep(2)} style={{padding:"12px 20px",fontSize:13,fontWeight:600,borderRadius:10,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)",border:"1.5px solid rgba(255,255,255,0.12)",cursor:"pointer"}}>← Atrás</button><button onClick={calculateChina} style={{padding:"12px 24px",fontSize:13,fontWeight:600,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>Calcular costos →</button></div>
-    </div>}
+    </div>;})()}
 
     {/* CHINA FLOW - Step 4: Results */}
     {step===4&&origin==="China"&&results&&<div>
@@ -426,7 +431,7 @@ function CalculatorPage({token,client}){
         {ncm?.ncm_code&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>NCM</p><p style={{fontSize:15,fontWeight:600,color:IC,margin:0,fontFamily:"monospace"}}>{ncm.ncm_code}</p></div>}
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.25)",margin:"0 0 2px"}}>ENTREGA</p><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{DELIV[delivery]}</p></div>
       </div>
-      {(()=>{const cheapest=results.channels.reduce((a,b)=>a.total<b.total?a:b);const delivCost=delivery==="caba"?20:0;
+      {(()=>{const cheapest=results.channels.reduce((a,b)=>a.total<b.total?a:b);const delivCost=getShipCost(delivery,calcTotals().totWeight);
       const aereos=results.channels.filter(c=>c.key.includes("aereo"));const maritimos=results.channels.filter(c=>c.key.includes("maritimo"));
       const renderCard=(ch)=>{const isCheapest=ch.key===cheapest.key;const isFastest=ch.key==="aereo_a_china";const isAereo=ch.key.includes("aereo");const total=ch.total+delivCost;
       return <div key={ch.key} style={{background:"rgba(255,255,255,0.03)",borderRadius:16,border:`1.5px solid ${isFastest?"rgba(251,146,60,0.4)":isCheapest?"rgba(34,197,94,0.4)":"rgba(255,255,255,0.07)"}`,padding:"1.5rem",marginBottom:16,display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
@@ -484,13 +489,13 @@ function CalculatorPage({token,client}){
             {row("Costo de envío",modalCh.flete)}
             {modalCh.battExtra>0&&row("Recargo baterías",modalCh.battExtra)}
             {row("Seguro",modalCh.seguro)}
-            {delivCost>0&&row("Envío CABA",delivCost)}
+            {delivCost>0&&row(delivery==="gba"?"Envío GBA":"Envío CABA",delivCost)}
             {row("TOTAL",modalCh.total+delivCost,true,true)}
           </div>
           </>:<div>
             {row("Servicio Integral ARGENCARGO",modalCh.flete)}
             {modalCh.surcharge>0&&row(`Recargo valor (${modalCh.surchargePct}%)`,modalCh.surcharge)}
-            {delivCost>0&&row("Envío CABA",delivCost)}
+            {delivCost>0&&row(delivery==="gba"?"Envío GBA":"Envío CABA",delivCost)}
             {row("TOTAL",modalCh.total+delivCost,true,true)}
           </div>}
         </div>
