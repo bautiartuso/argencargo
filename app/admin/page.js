@@ -138,7 +138,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const addEvt=async()=>{await dq("tracking_events",{method:"POST",token,body:{operation_id:op.id,title:"Nuevo evento",occurred_at:new Date().toISOString(),is_visible_to_client:true,created_by:null}});await reloadEvents();flash("Evento agregado");};
   const delEvt=async(id)=>{await dq("tracking_events",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadEvents();flash("Evento eliminado");};
 
-  const tabs=[{k:"general",l:"General"},{k:"budget",l:"Presupuesto"},{k:"items",l:"Productos"},{k:"packages",l:"Bultos"},{k:"tracking",l:"Seguimiento"},{k:"payments",l:"Pagos"},{k:"finance",l:"Finanzas"}];
+  const tabs=[{k:"general",l:"General"},{k:"budget",l:"Presupuesto"},{k:"items",l:"Productos"},{k:"packages",l:"Bultos"},{k:"tracking",l:"Seguimiento"},{k:"payments",l:"Pagos"},{k:"finance",l:"Finanzas"},{k:"notifs",l:"Notificaciones"}];
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
   const chItem=(idx,f,v)=>{setItems(p=>{const n=[...p];n[idx]={...n[idx],[f]:v};return n;});};
   const chPkg=(idx,f,v)=>{setPkgs(p=>{const n=[...p];n[idx]={...n[idx],[f]:v};return n;});};
@@ -540,6 +540,43 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
       </Card>
       </>;})()}
+
+    {tab==="notifs"&&(()=>{
+      const cn=opClient?`${opClient.first_name} ${opClient.last_name}`:"Cliente";
+      const wa=opClient?.whatsapp?String(opClient.whatsapp).replace(/[^0-9]/g,""):"";
+      const email=opClient?.email||"";
+      const desc=op.description||items.map(it=>it.description).filter(Boolean).join(", ")||"tu carga";
+      const code=op.operation_code;
+      const NOTIFS=[
+        {key:"warehouse",status:"en_deposito_origen",icon:"📦",title:"Llegada al Warehouse",subject:`${code} - Tu carga llegó al warehouse Argencargo`,msg:`¡Hola ${cn}! 👋\n\nTe avisamos que tu carga *${desc}* (${code}) llegó al warehouse de Argencargo en origen. Próximamente será preparada para el envío internacional.\n\nSeguí el estado en tu portal de cliente.\n\n¡Saludos!\nEquipo Argencargo`},
+        {key:"transito",status:"en_transito",icon:"✈️",title:"En Tránsito Internacional",subject:`${code} - Tu carga está en tránsito`,msg:`¡Hola ${cn}! 🛫\n\n¡Buenas noticias! Tu carga *${desc}* (${code}) ya está en tránsito internacional rumbo a Argentina.\n\nTe seguimos avisando cuando llegue al país.\n\n¡Saludos!\nEquipo Argencargo`},
+        {key:"arribo",status:"arribo_argentina",icon:"🇦🇷",title:"Arribo a Argentina",subject:`${code} - Tu carga llegó a Argentina`,msg:`¡Hola ${cn}! 🎉\n\nTu carga *${desc}* (${code}) llegó a Argentina. Estamos procesando los despachos aduaneros, te avisamos en cuanto esté liberada.\n\n¡Saludos!\nEquipo Argencargo`},
+        {key:"aduana",status:"en_aduana",icon:"📋",title:"En Gestión Aduanera",subject:`${code} - Procesando despachos aduaneros`,msg:`¡Hola ${cn}!\n\nTu carga *${desc}* (${code}) está en proceso de gestión aduanera. Te avisamos en cuanto esté liberada para retirar.\n\n¡Saludos!\nEquipo Argencargo`},
+        {key:"liberacion",status:"lista_retiro",icon:"✅",title:"Lista para Retiro",subject:`${code} - Tu carga está lista para retirar`,msg:`¡Hola ${cn}! ✅\n\n¡Tu carga *${desc}* (${code}) ya está liberada y disponible en nuestra oficina!\n\n📍 Av. Callao 1137, CABA\n🕐 Lun a Vie de 9:00 a 19:00 hs\n\nCoordinemos el retiro o envío. ¡Te esperamos!\n\nEquipo Argencargo`},
+        {key:"entregada",status:"entregada",icon:"📬",title:"Entregada",subject:`${code} - Tu carga fue entregada`,msg:`¡Hola ${cn}! 📬\n\nConfirmamos la entrega exitosa de tu carga *${desc}* (${code}).\n\n¡Esperamos haberte brindado un excelente servicio! Cualquier consulta no dudes en escribirnos.\n\n¡Saludos!\nEquipo Argencargo`},
+        {key:"cerrada",status:"operacion_cerrada",icon:"🎯",title:"Operación Cerrada",subject:`${code} - Operación cerrada`,msg:`¡Hola ${cn}!\n\nTu operación *${code}* (${desc}) ha sido cerrada exitosamente. Todos los pagos y trámites están completos.\n\n¡Gracias por confiar en Argencargo! Esperamos volver a trabajar juntos pronto.\n\nEquipo Argencargo`}
+      ];
+      return <div>
+        {!opClient&&<div style={{padding:"14px 18px",background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:10,marginBottom:16}}><p style={{fontSize:13,color:"#fb923c",margin:0}}>⚠️ No hay cliente asignado a esta operación</p></div>}
+        {opClient&&!wa&&!email&&<div style={{padding:"14px 18px",background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:10,marginBottom:16}}><p style={{fontSize:13,color:"#fb923c",margin:0}}>⚠️ El cliente no tiene WhatsApp ni email cargados</p></div>}
+        {opClient&&<div style={{display:"flex",gap:16,marginBottom:16,padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.12)",borderRadius:10,fontSize:12,color:"rgba(255,255,255,0.6)",flexWrap:"wrap"}}>
+          <span><strong style={{color:"#fff"}}>Cliente:</strong> {cn}</span>
+          {wa&&<span><strong style={{color:"#fff"}}>WhatsApp:</strong> +{wa}</span>}
+          {email&&<span><strong style={{color:"#fff"}}>Email:</strong> {email}</span>}
+        </div>}
+        {NOTIFS.map(n=>{const isCurrent=op.status===n.status;return <Card key={n.key} title={`${n.icon} ${n.title}${isCurrent?" — Estado actual":""}`}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8,marginBottom:12}}>
+            <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 4px",textTransform:"uppercase"}}>Asunto (email)</p><p style={{fontSize:13,color:"#fff",margin:0,padding:"8px 12px",background:"rgba(255,255,255,0.04)",borderRadius:6,border:"1px solid rgba(255,255,255,0.06)"}}>{n.subject}</p></div>
+            <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 4px",textTransform:"uppercase"}}>Mensaje</p><textarea defaultValue={n.msg} id={`msg-${n.key}`} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit",minHeight:130,resize:"vertical",lineHeight:1.5}}/></div>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {wa&&<a href="#" onClick={e=>{e.preventDefault();const m=document.getElementById(`msg-${n.key}`).value;window.open(`https://wa.me/${wa}?text=${encodeURIComponent(m)}`,"_blank");}} style={{flex:1,minWidth:140,padding:"10px 16px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textAlign:"center",textDecoration:"none"}}>📱 Enviar por WhatsApp</a>}
+            {email&&<a href="#" onClick={e=>{e.preventDefault();const m=document.getElementById(`msg-${n.key}`).value;window.location.href=`mailto:${email}?subject=${encodeURIComponent(n.subject)}&body=${encodeURIComponent(m)}`;}} style={{flex:1,minWidth:140,padding:"10px 16px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#60a5fa,#3b82f6)",color:"#fff",textAlign:"center",textDecoration:"none"}}>📧 Enviar por Email</a>}
+            <button onClick={()=>{const m=document.getElementById(`msg-${n.key}`).value;navigator.clipboard.writeText(m);flash("Mensaje copiado");}} style={{padding:"10px 16px",fontSize:13,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.7)",cursor:"pointer"}}>📋 Copiar</button>
+          </div>
+        </Card>;})}
+      </div>;
+    })()}
 
     </>}
   </div>;
