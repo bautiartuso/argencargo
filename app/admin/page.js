@@ -1046,14 +1046,10 @@ function FinancePanel({token}){
       const bal=ccMvs.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):-Number(m.amount_usd)),0);
       const addAnticipo=async()=>{if(!ccForm.amount)return;await dq("supplier_account_movements",{method:"POST",token,body:{type:"anticipo",amount_usd:Number(ccForm.amount),description:ccForm.description||"Anticipo",date:ccForm.date}});setCcForm({date:new Date().toISOString().slice(0,10),amount:"",description:""});setShowCcForm(false);load();flash("Anticipo cargado");};
       const delMv=async(id)=>{await dq("supplier_account_movements",{method:"DELETE",token,filters:`?id=eq.${id}`});load();flash("Movimiento eliminado");};
-      const saldarCuenta=async()=>{if(Math.abs(bal)<0.01){alert("La cuenta ya está en 0");return;}const tipo=bal>0?"deduccion":"anticipo";const monto=Math.abs(bal);if(!confirm(`Esto va a crear un movimiento de ${tipo==="anticipo"?"anticipo":"deducción"} por USD ${monto.toFixed(2)} para dejar el saldo en 0. ¿Confirmás?`))return;await dq("supplier_account_movements",{method:"POST",token,body:{type:tipo,amount_usd:monto,description:`Saldo manual - llevar cuenta a 0`,date:new Date().toISOString().slice(0,10)}});load();flash("Cuenta saldada");};
       return <>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
         <div style={{background:"rgba(34,197,94,0.06)",borderRadius:12,padding:"20px",border:"1px solid rgba(34,197,94,0.15)",textAlign:"center"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px"}}>SALDO DISPONIBLE</p><p style={{fontSize:28,fontWeight:700,color:bal>0?"#22c55e":"#ff6b6b",margin:0}}>{usd(bal)}</p></div>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,flexWrap:"wrap"}}>
-          <Btn onClick={()=>setShowCcForm(!showCcForm)}>+ Cargar Anticipo</Btn>
-          {Math.abs(bal)>=0.01&&<Btn variant="secondary" onClick={saldarCuenta}>Saldar cuenta (dejar en 0)</Btn>}
-        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}><Btn onClick={()=>setShowCcForm(!showCcForm)}>+ Cargar Anticipo</Btn></div>
       </div>
       {showCcForm&&<Card title="Nuevo anticipo">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
