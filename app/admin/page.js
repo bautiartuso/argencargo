@@ -452,7 +452,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <Sel label="Moneda" value={op.collection_currency||"USD"} onChange={chOp("collection_currency")} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]}/>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
-          {(op.collection_method==="transferencia")&&<Inp label="Comisión transferencia %" type="number" value={op.collection_fee_pct||2} onChange={chOp("collection_fee_pct")} step="0.1"/>}
+          {(op.collection_method==="transferencia")&&<Inp label="Comisión transferencia %" type="number" value={op.collection_fee_pct||""} onChange={chOp("collection_fee_pct")} step="0.1" placeholder="0"/>}
           {op.collection_currency==="ARS"&&<Inp label="Tipo de cambio (ARS/USD)" type="number" value={op.collection_exchange_rate} onChange={chOp("collection_exchange_rate")} step="0.01" placeholder="Ej: 1200"/>}
           <Inp label="Fecha de cobro" type="date" value={op.collection_date||""} onChange={chOp("collection_date")}/>
         </div>
