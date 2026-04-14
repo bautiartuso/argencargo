@@ -104,10 +104,11 @@ function NewOperation({token,clients,onBack,onCreated}){
 }
 
 function OperationEditor({op:initOp,token,onBack,onDelete}){
-  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");
+  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);
+  const loadCCBalance=async()=>{const mvs=await dq("supplier_account_movements",{token,filters:"?select=type,amount_usd"});if(Array.isArray(mvs)){const bal=mvs.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):(-Number(m.amount_usd))),0);setCcBalance(bal);}};
   const load=async()=>{setLo(true);const [it,pk,ev,tf,cc]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
     if(op.client_id){const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*`});setOpClient(Array.isArray(cl)?cl[0]:null);const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);}
-    setLo(false);};
+    await loadCCBalance();setLo(false);};
   useEffect(()=>{load();},[op.id]);
   const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const deleteOp=async()=>{if(!confirm(`¿Eliminar operación ${op.operation_code}? Se borrarán también sus productos, bultos y eventos.`))return;
@@ -200,7 +201,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         const dr=Number(it.import_duty_rate||0)/100;const te=Number(it.statistics_rate||0)/100;const ivaR=Number(it.iva_rate||21)/100;
         const die=iCif*dr;const tasa=iCif*te;const bi=iCif+die+tasa;const iva=bi*ivaR;
         let t=die+tasa+iva;
-        if(isMaritimo){t+=bi*0.20+bi*0.06+bi*0.05;}
+        if(isMaritimo){const ivaAdicR=Number(it.iva_additional_rate||20)/100;const iiggR=Number(it.iigg_rate||6)/100;const iibbR=Number(it.iibb_rate||5)/100;t+=bi*ivaAdicR+bi*iiggR+bi*iibbR;}
         else{const desemb=getDesembolso(cif)*pct;t+=desemb+desemb*0.21;}
         totalTax+=t;});}
       const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
@@ -326,16 +327,71 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
         <div style={{marginBottom:8}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.is_collected||false} onChange={e=>chOp("is_collected")(e.target.checked)}/><span style={{fontSize:13,color:op.is_collected?"#22c55e":"rgba(255,255,255,0.5)",fontWeight:op.is_collected?600:400}}>{op.is_collected?"Operación cobrada ✓":"Marcar como cobrada"}</span></label></div>
       </Card>
-      <Card title="Costos reales" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
-          <Inp label="Costo flete (agente/carrier)" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>
-          <Inp label="Impuestos reales pagados" type="number" value={op.cost_impuestos_reales} onChange={chOp("cost_impuestos_reales")} step="0.01"/>
-          <Inp label="Gasto documental real" type="number" value={op.cost_gasto_documental} onChange={chOp("cost_gasto_documental")} step="0.01"/>
-          <Inp label="Seguro real" type="number" value={op.cost_seguro} onChange={chOp("cost_seguro")} step="0.01"/>
-          <Inp label="Flete local" type="number" value={op.cost_flete_local} onChange={chOp("cost_flete_local")} step="0.01"/>
-          <Inp label="Otros costos" type="number" value={op.cost_otros} onChange={chOp("cost_otros")} step="0.01"/>
+      <Card title="Costos reales" actions={<Btn onClick={async()=>{setSaving(true);
+        // Save flete
+        const fleteMethod=op.cost_flete_method||"cuenta_corriente";
+        const fleteAmt=Number(op.cost_flete||0);
+        // Save impuestos + gasto doc ARS → auto-create finance_entries
+        const impArs=Number(op.cost_impuestos_ars||0);
+        const docArs=Number(op.cost_gasto_documental_ars||0);
+        // Save operation first
+        const{id,clients,...rest}=op;delete rest.created_at;delete rest.updated_at;
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
+        // CC deduction for flete if new
+        if(fleteMethod==="cuenta_corriente"&&fleteAmt>0){
+          const existing=await dq("supplier_account_movements",{token,filters:`?operation_id=eq.${id}&type=eq.deduccion&select=id`});
+          if(!Array.isArray(existing)||existing.length===0){
+            await dq("supplier_account_movements",{method:"POST",token,body:{type:"deduccion",amount_usd:fleteAmt,description:`Flete ${op.operation_code}`,operation_id:id,date:new Date().toISOString().slice(0,10)}});
+            await loadCCBalance();
+          }
+        }
+        // Auto-create finance_entry for impuestos ARS
+        if(impArs>0&&op.cost_impuestos_card_closing){
+          const existImp=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&description=like.Impuestos*&auto_generated=eq.true&select=id`});
+          if(!Array.isArray(existImp)||existImp.length===0){
+            await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Impuestos ${op.operation_code}`,amount_ars:impArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_impuestos_card_closing,is_paid:false,auto_generated:true,operation_id:id}});
+          }
+        }
+        // Auto-create finance_entry for gasto documental ARS
+        if(docArs>0&&op.cost_gasto_doc_card_closing){
+          const existDoc=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&description=like.Gasto doc*&auto_generated=eq.true&select=id`});
+          if(!Array.isArray(existDoc)||existDoc.length===0){
+            await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Gasto documental ${op.operation_code}`,amount_ars:docArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_gasto_doc_card_closing,is_paid:false,auto_generated:true,operation_id:id}});
+          }
+        }
+        flash("Costos guardados");setSaving(false);
+      }} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 8px",textTransform:"uppercase"}}>Flete</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px",marginBottom:16}}>
+          <Inp label="Costo flete (USD)" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>
+          <Sel label="Método de pago" value={op.cost_flete_method||"cuenta_corriente"} onChange={chOp("cost_flete_method")} options={[{value:"cuenta_corriente",label:"Cuenta Corriente"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"}]}/>
+          {(op.cost_flete_method||"cuenta_corriente")==="cuenta_corriente"&&<div style={{paddingTop:22}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>SALDO CC</p><p style={{fontSize:16,fontWeight:700,color:ccBalance>0?"#22c55e":"#ff6b6b",margin:0}}>USD {ccBalance.toLocaleString("en-US",{minimumFractionDigits:2})}</p></div>}
         </div>
-        <Inp label="Notas" value={op.cost_notas} onChange={chOp("cost_notas")} placeholder="Ej: Consolidado con AC-0002..."/>
+        <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 8px",textTransform:"uppercase"}}>Impuestos (TC en ARS)</p>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
+            <Inp label="Monto ARS" type="number" value={op.cost_impuestos_ars} onChange={chOp("cost_impuestos_ars")} step="0.01"/>
+            <Inp label="Cierre de tarjeta" type="date" value={op.cost_impuestos_card_closing||""} onChange={chOp("cost_impuestos_card_closing")}/>
+            <div style={{paddingTop:22}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>USD EQUIV.</p><p style={{fontSize:14,fontWeight:600,color:Number(op.cost_impuestos_reales||0)>0?IC:"#fbbf24",margin:0}}>{Number(op.cost_impuestos_reales||0)>0?`USD ${Number(op.cost_impuestos_reales).toLocaleString("en-US",{minimumFractionDigits:2})}`:"Pendiente"}</p></div>
+          </div>
+        </div>
+        <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 8px",textTransform:"uppercase"}}>Gasto Documental (TC en ARS)</p>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
+            <Inp label="Monto ARS" type="number" value={op.cost_gasto_documental_ars} onChange={chOp("cost_gasto_documental_ars")} step="0.01"/>
+            <Inp label="Cierre de tarjeta" type="date" value={op.cost_gasto_doc_card_closing||""} onChange={chOp("cost_gasto_doc_card_closing")}/>
+            <div style={{paddingTop:22}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>USD EQUIV.</p><p style={{fontSize:14,fontWeight:600,color:Number(op.cost_gasto_documental||0)>0?IC:"#fbbf24",margin:0}}>{Number(op.cost_gasto_documental||0)>0?`USD ${Number(op.cost_gasto_documental).toLocaleString("en-US",{minimumFractionDigits:2})}`:"Pendiente"}</p></div>
+          </div>
+        </div>
+        <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 8px",textTransform:"uppercase"}}>Otros costos (USD)</p>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
+            <Inp label="Seguro real" type="number" value={op.cost_seguro} onChange={chOp("cost_seguro")} step="0.01"/>
+            <Inp label="Flete local" type="number" value={op.cost_flete_local} onChange={chOp("cost_flete_local")} step="0.01"/>
+            <Inp label="Otros costos" type="number" value={op.cost_otros} onChange={chOp("cost_otros")} step="0.01"/>
+          </div>
+          <Inp label="Notas" value={op.cost_notas} onChange={chOp("cost_notas")} placeholder="Ej: Consolidado con AC-0002..."/>
+        </div>
       </Card>
       <Card title="Rentabilidad">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:16}}>
@@ -698,7 +754,9 @@ function FinancePanel({token}){
   const [entries,setEntries]=useState([]);const [cats,setCats]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("all");const [showAdd,setShowAdd]=useState(null);const [msg,setMsg]=useState("");
   const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),description:"",category_id:"",type:"ingreso",amount:"",notes:"",payment_method:"efectivo",payment_due_date:"",operation_id:""});
   const [allOps,setAllOps]=useState([]);
-  const load=async()=>{const [e,c,o]=await Promise.all([dq("finance_entries",{token,filters:"?select=*,finance_categories(name)&order=date.desc,created_at.desc"}),dq("finance_categories",{token,filters:"?select=*&order=type.asc,sort_order.asc"}),dq("operations",{token,filters:"?select=id,operation_code,description,budget_total&order=created_at.desc"})]);setEntries(Array.isArray(e)?e:[]);setCats(Array.isArray(c)?c:[]);setAllOps(Array.isArray(o)?o:[]);setLo(false);};
+  const [ccMvs,setCcMvs]=useState([]);const [ccForm,setCcForm]=useState({date:new Date().toISOString().slice(0,10),amount:"",description:""});const [showCcForm,setShowCcForm]=useState(false);
+  const [dollarPending,setDollarPending]=useState([]);const [dollarRates,setDollarRates]=useState({});
+  const load=async()=>{const [e,c,o,cc,dp]=await Promise.all([dq("finance_entries",{token,filters:"?select=*,finance_categories(name)&order=date.desc,created_at.desc"}),dq("finance_categories",{token,filters:"?select=*&order=type.asc,sort_order.asc"}),dq("operations",{token,filters:"?select=id,operation_code,description,budget_total&order=created_at.desc"}),dq("supplier_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&currency=eq.ARS&exchange_rate=is.null&auto_generated=eq.true&order=card_closing_date.asc"})]);setEntries(Array.isArray(e)?e:[]);setCats(Array.isArray(c)?c:[]);setAllOps(Array.isArray(o)?o:[]);setCcMvs(Array.isArray(cc)?cc:[]);setDollarPending(Array.isArray(dp)?dp:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const addEntry=async()=>{if(!newEntry.description||!newEntry.amount||!newEntry.category_id)return;
@@ -739,9 +797,9 @@ function FinancePanel({token}){
       </div>
       <div style={{display:"flex",gap:8}}><Btn onClick={addEntry}>Guardar</Btn><Btn variant="secondary" onClick={()=>setShowAdd(null)}>Cancelar</Btn></div>
     </Card>}
-    {(()=>{const deudaTC=entries.filter(e=>e.payment_method==="tarjeta_credito"&&!e.is_paid).reduce((s,e)=>s+Number(e.amount||0),0);return deudaTC>0&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:12,padding:"14px 20px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><p style={{fontSize:12,fontWeight:700,color:"#fb923c",margin:0}}>Deuda en tarjeta de crédito</p><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Gastos con tarjeta pendientes de pago</p></div><p style={{fontSize:20,fontWeight:700,color:"#fb923c",margin:0}}>{usd(deudaTC)}</p></div>;})()}
-    <div style={{display:"flex",gap:8,marginBottom:16}}>{[{k:"all",l:"Todos"},{k:"ingreso",l:"Ingresos"},{k:"gasto",l:"Gastos"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
-    {lo?<p style={{color:"rgba(255,255,255,0.3)"}}>Cargando...</p>:<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+    {tab!=="cc"&&tab!=="dollar"&&(()=>{const deudaTC=entries.filter(e=>e.payment_method==="tarjeta_credito"&&!e.is_paid).reduce((s,e)=>s+Number(e.amount||0),0);return deudaTC>0&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:12,padding:"14px 20px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><p style={{fontSize:12,fontWeight:700,color:"#fb923c",margin:0}}>Deuda en tarjeta de crédito</p><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Gastos con tarjeta pendientes de pago</p></div><p style={{fontSize:20,fontWeight:700,color:"#fb923c",margin:0}}>{usd(deudaTC)}</p></div>;})()}
+    <div style={{display:"flex",gap:8,marginBottom:16}}>{[{k:"all",l:"Todos"},{k:"ingreso",l:"Ingresos"},{k:"gasto",l:"Gastos"},{k:"cc",l:"Cuenta Corriente"},{k:"dollar",l:"Dollarización"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
+    {tab!=="cc"&&tab!=="dollar"&&(lo?<p style={{color:"rgba(255,255,255,0.3)"}}>Cargando...</p>:<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
           {["Fecha","Descripción","Categoría","Monto","Pago","Notas",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
@@ -757,7 +815,79 @@ function FinancePanel({token}){
         </tr>)}</tbody>
       </table>
       {filtered.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:"2rem 0"}}>No hay movimientos</p>}
-    </div>}
+    </div>)}
+    {tab==="cc"&&(()=>{
+      const bal=ccMvs.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):-Number(m.amount_usd)),0);
+      const addAnticipo=async()=>{if(!ccForm.amount)return;await dq("supplier_account_movements",{method:"POST",token,body:{type:"anticipo",amount_usd:Number(ccForm.amount),description:ccForm.description||"Anticipo",date:ccForm.date}});setCcForm({date:new Date().toISOString().slice(0,10),amount:"",description:""});setShowCcForm(false);load();flash("Anticipo cargado");};
+      const delMv=async(id)=>{await dq("supplier_account_movements",{method:"DELETE",token,filters:`?id=eq.${id}`});load();flash("Movimiento eliminado");};
+      return <>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
+        <div style={{background:"rgba(34,197,94,0.06)",borderRadius:12,padding:"20px",border:"1px solid rgba(34,197,94,0.15)",textAlign:"center"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px"}}>SALDO DISPONIBLE</p><p style={{fontSize:28,fontWeight:700,color:bal>0?"#22c55e":"#ff6b6b",margin:0}}>{usd(bal)}</p></div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}><Btn onClick={()=>setShowCcForm(!showCcForm)}>+ Cargar Anticipo</Btn></div>
+      </div>
+      {showCcForm&&<Card title="Nuevo anticipo">
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
+          <Inp label="Fecha" type="date" value={ccForm.date} onChange={v=>setCcForm(p=>({...p,date:v}))}/>
+          <Inp label="Monto USD" type="number" value={ccForm.amount} onChange={v=>setCcForm(p=>({...p,amount:v}))} step="0.01" placeholder="5000"/>
+          <Inp label="Descripción" value={ccForm.description} onChange={v=>setCcForm(p=>({...p,description:v}))} placeholder="Ej: Transferencia junio"/>
+        </div>
+        <div style={{display:"flex",gap:8}}><Btn onClick={addAnticipo}>Guardar</Btn><Btn variant="secondary" onClick={()=>setShowCcForm(false)}>Cancelar</Btn></div>
+      </Card>}
+      <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+            {["Fecha","Tipo","Monto","Descripción","Operación",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
+          </tr></thead>
+          <tbody>{ccMvs.map(m=>{const op=allOps.find(o=>o.id===m.operation_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{formatDate(m.date)}</td>
+            <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:m.type==="anticipo"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:m.type==="anticipo"?"#22c55e":"#ff6b6b"}}>{m.type==="anticipo"?"ANTICIPO":"DEDUCCIÓN"}</span></td>
+            <td style={{padding:"10px 12px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":"#ff6b6b"}}>{m.type==="anticipo"?"+":"-"}{usd(Number(m.amount_usd))}</td>
+            <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)"}}>{m.description||"—"}</td>
+            <td style={{padding:"10px 12px",color:IC,fontSize:12,fontFamily:"monospace"}}>{op?.operation_code||"—"}</td>
+            <td style={{padding:"10px 12px"}}><button onClick={()=>delMv(m.id)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>X</button></td>
+          </tr>})}</tbody>
+        </table>
+        {ccMvs.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:"2rem 0"}}>No hay movimientos</p>}
+      </div></>;
+    })()}
+    {tab==="dollar"&&(()=>{
+      // Group pending ARS entries by card_closing_date
+      const groups={};dollarPending.forEach(e=>{const k=e.card_closing_date||"sin_fecha";if(!groups[k])groups[k]=[];groups[k].push(e);});
+      const dollarize=async(closingDate)=>{const rate=Number(dollarRates[closingDate]||0);if(!rate){alert("Ingresá el tipo de cambio");return;}
+        const ents=groups[closingDate];
+        for(const e of ents){
+          const usdAmt=Number(e.amount_ars)/rate;
+          await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${e.id}`,body:{amount:Math.round(usdAmt*100)/100,exchange_rate:rate,dollarized_at:new Date().toISOString(),is_paid:true}});
+          // Update linked operation cost
+          if(e.operation_id){
+            const field=e.description?.includes("Impuestos")?"cost_impuestos_reales":"cost_gasto_documental";
+            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${e.operation_id}`,body:{[field]:Math.round(usdAmt*100)/100}});
+          }
+        }
+        load();flash(`Dollarizados ${ents.length} gastos al TC $${rate}`);
+      };
+      return <>
+      {Object.keys(groups).length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:"2rem 0"}}>No hay gastos pendientes de dollarización</p>}
+      {Object.entries(groups).map(([closingDate,ents])=>{
+        const totalArs=ents.reduce((s,e)=>s+Number(e.amount_ars||0),0);
+        const rate=Number(dollarRates[closingDate]||0);
+        return <Card key={closingDate} title={`Cierre: ${formatDate(closingDate)}`}>
+          <div style={{marginBottom:12}}>
+            {ents.map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+              <span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>{e.description}</span>
+              <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>ARS {Number(e.amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2})}</span>
+            </div>)}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",marginTop:4}}><span style={{fontSize:14,fontWeight:700,color:"#fff"}}>Total ARS</span><span style={{fontSize:16,fontWeight:700,color:IC}}>ARS {totalArs.toLocaleString("es-AR",{minimumFractionDigits:2})}</span></div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px",alignItems:"end"}}>
+            <Inp label="Tipo de cambio (ARS/USD)" type="number" value={dollarRates[closingDate]||""} onChange={v=>setDollarRates(p=>({...p,[closingDate]:v}))} step="0.01" placeholder="Ej: 1250"/>
+            <div style={{paddingTop:22}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 2px"}}>EQUIVALENTE USD</p><p style={{fontSize:16,fontWeight:700,color:rate>0?"#22c55e":"rgba(255,255,255,0.2)",margin:0}}>{rate>0?usd(totalArs/rate):"—"}</p></div>
+            <Btn onClick={()=>dollarize(closingDate)} disabled={!rate}>Dollarizar</Btn>
+          </div>
+        </Card>;
+      })}
+      </>;
+    })()}
   </div>;
 }
 
