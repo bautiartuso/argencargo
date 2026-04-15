@@ -555,7 +555,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
     <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.5rem",marginBottom:16}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
         <h3 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.flight_code}</h3>
-        <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:stColors[flight.status],background:`${stColors[flight.status]}20`,border:`1px solid ${stColors[flight.status]}40`,textTransform:"uppercase"}}>{t["flight_status_"+flight.status]}</span>
+        {(()=>{const ready=flight.status==="preparando"&&flight.invoice_presented_at;const c=ready?"#22c55e":stColors[flight.status];return <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:c,background:`${c}20`,border:`1px solid ${c}40`,textTransform:"uppercase"}}>{ready?t.flight_status_listo:t["flight_status_"+flight.status]}</span>;})()}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:14}}>
         <div>
