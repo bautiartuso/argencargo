@@ -38,7 +38,7 @@ function AdminLogin({onLogin}){
 function OperationsList({token,onSelect,onNew}){
   const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fStatuses,setFStatuses]=useState([]);const [fChannel,setFChannel]=useState("");const [sortCol,setSortCol]=useState("smart");const [sortDir,setSortDir]=useState("asc");const [showStatusDrop,setShowStatusDrop]=useState(false);
   // Peso por estado: mayor valor = más cerca de entrega (aparece arriba)
-  const STATUS_WEIGHT={lista_retiro:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,entregada:1,operacion_cerrada:0,cancelada:0};
+  const STATUS_WEIGHT={entregada:9,lista_retiro:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
   useEffect(()=>{(async()=>{const [o,pm]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro"})]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
   const toggleStatus=(s)=>setFStatuses(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
   const getOrigin=(op)=>op.origin||"China";
@@ -1601,7 +1601,7 @@ function ShipmentsTracking({token,onSelectOp}){
 
 function FinanceDashboard({token}){
   const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
-  useEffect(()=>{(async()=>{const [o,c,q,fe,pm]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
+  useEffect(()=>{(async()=>{const [o,c,q,fe,pm]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
 
   const now=new Date();const thisMonth=now.getMonth();const thisYear=now.getFullYear();
   const today=now.toISOString().slice(0,10);const weekAgo=new Date(now-7*86400000).toISOString().slice(0,10);
@@ -1669,14 +1669,21 @@ function FinanceDashboard({token}){
     </div>
 
     {(()=>{
-      // Cash flow solo desde operaciones (evita duplicación con finance_entries)
+      // Cash flow REAL: solo plata que ya entró/salió
+      // Ingresos: budget de ops cobradas + pmts donde cliente ya pagó
       const totCobradoOps=ops.filter(o=>o.is_collected).reduce((s,o)=>s+Number(o.budget_total||0),0);
-      // Cobrado de gestión de pagos (solo client_paid)
-      const totCobradoPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.reduce((a,p)=>a+Number(p.client_amount_usd||0),0);},0);
+      const totCobradoPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.client_paid).reduce((a,p)=>a+Number(p.client_amount_usd||0),0);},0);
       const totCobrado=totCobradoOps+totCobradoPmts;
+      // Costos: todos los costos de ops + giros YA enviados (confirmado)
       const totCostosOps=ops.reduce((s,o)=>s+Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0),0);
-      const totCostosPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0);
+      const totCostosPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.giro_status==="confirmado").reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0);
       const totCostosTotales=totCostosOps+totCostosPmts;
+      // Giros colgados: enviados pero cliente no pagó aún
+      const girosColgados=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.giro_status==="confirmado"&&!p.client_paid).reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0);
+      // Clientes pagaron pero giro no enviado
+      const girosPendientes=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.client_paid&&p.giro_status!=="confirmado").reduce((a,p)=>a+Number(p.giro_amount_usd||0),0);},0);
+      // Margen operaciones activas (cobradas pero no cerradas) — explica por qué disponible > ganancia neta
+      const margenActivas=ops.filter(o=>o.is_collected&&o.status!=="operacion_cerrada"&&o.status!=="cancelada").reduce((s,o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);return s+(ing-cost);},0);
       // Deuda TC pendiente en ARS (de finance_entries)
       const deudaTCArs=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="ARS").reduce((s,e)=>s+Number(e.amount_ars||0),0);
       const cashDisponible=totCobrado-totCostosTotales;
@@ -1684,7 +1691,10 @@ function FinanceDashboard({token}){
         <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.1),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(255,80,80,0.1),rgba(255,80,80,0.03))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,borderRadius:14,padding:"20px 24px"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Cash disponible</p>
           <p style={{fontSize:32,fontWeight:700,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>{usd(cashDisponible)}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:0}}>Cobrado ({usd(totCobrado)}) - Costos ({usd(totCostosTotales)})</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"0 0 4px"}}>Cobrado ({usd(totCobrado)}) - Costos ({usd(totCostosTotales)})</p>
+          {margenActivas!==0&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:4}}>↳ {usd(margenActivas)} margen ops activas (aún no ganancia)</p>}
+          {girosColgados>0&&<p style={{fontSize:10,color:"#fb923c",margin:"2px 0 0"}}>⚠ {usd(girosColgados)} giros enviados sin cobrar cliente</p>}
+          {girosPendientes>0&&<p style={{fontSize:10,color:"#60a5fa",margin:"2px 0 0"}}>⏳ {usd(girosPendientes)} cobrados, giro pendiente envío</p>}
         </div>
         <div style={{background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:14,padding:"20px 24px"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Deuda tarjeta de crédito</p>
