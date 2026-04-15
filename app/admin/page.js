@@ -1678,12 +1678,14 @@ function FinanceDashboard({token}){
       const totCostosOps=ops.reduce((s,o)=>s+Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0),0);
       const totCostosPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.giro_status==="confirmado").reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0);
       const totCostosTotales=totCostosOps+totCostosPmts;
-      // Giros colgados: enviados pero cliente no pagó aún
-      const girosColgados=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.giro_status==="confirmado"&&!p.client_paid).reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0);
+      // Colgados: lo que DEBE el cliente (client_amount) − anticipos. Eso es plata real pendiente de cobrar.
+      const girosColgadosDetail=[];
+      ops.forEach(o=>{const pmts=pmtsByOp[o.id]||[];const colgados=pmts.filter(p=>p.giro_status==="confirmado"&&!p.client_paid);if(colgados.length===0)return;const debe=colgados.reduce((a,p)=>a+Number(p.client_amount_usd||0),0);const ant=Number(o.total_anticipos||0);const real=Math.max(0,debe-ant);if(real>0)girosColgadosDetail.push({code:o.operation_code,client:o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—",debe,anticipo:ant,real});});
+      const girosColgados=girosColgadosDetail.reduce((s,d)=>s+d.real,0);
       // Clientes pagaron pero giro no enviado
       const girosPendientes=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.client_paid&&p.giro_status!=="confirmado").reduce((a,p)=>a+Number(p.giro_amount_usd||0),0);},0);
-      // Margen operaciones activas (cobradas pero no cerradas) — explica por qué disponible > ganancia neta
-      const margenActivas=ops.filter(o=>o.is_collected&&o.status!=="operacion_cerrada"&&o.status!=="cancelada").reduce((s,o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);return s+(ing-cost);},0);
+      // Margen operaciones activas (TODAS las no cerradas/canceladas): ingreso (budget+pmts cobrados) - costos
+      const margenActivas=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada").reduce((s,o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtGan=pmts.reduce((a,p)=>a+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);return s+(ing-cost)+pmtGan;},0);
       // Deuda TC pendiente en ARS (de finance_entries)
       const deudaTCArs=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="ARS").reduce((s,e)=>s+Number(e.amount_ars||0),0);
       const cashDisponible=totCobrado-totCostosTotales;
@@ -1693,7 +1695,7 @@ function FinanceDashboard({token}){
           <p style={{fontSize:32,fontWeight:700,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>{usd(cashDisponible)}</p>
           <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"0 0 4px"}}>Cobrado ({usd(totCobrado)}) - Costos ({usd(totCostosTotales)})</p>
           {margenActivas!==0&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:4}}>↳ {usd(margenActivas)} margen ops activas (aún no ganancia)</p>}
-          {girosColgados>0&&<p style={{fontSize:10,color:"#fb923c",margin:"2px 0 0"}}>⚠ {usd(girosColgados)} giros enviados sin cobrar cliente</p>}
+          {girosColgados>0&&<p style={{fontSize:10,color:"#fb923c",margin:"2px 0 0",cursor:"help"}} title={girosColgadosDetail.map(d=>`${d.code} ${d.client}: debe ${usd(d.debe)}${d.anticipo>0?` − anticipo ${usd(d.anticipo)}`:""} = ${usd(d.real)} pendiente`).join("\n")}>⚠ {usd(girosColgados)} pendiente de cobrar al cliente ({girosColgadosDetail.length})</p>}
           {girosPendientes>0&&<p style={{fontSize:10,color:"#60a5fa",margin:"2px 0 0"}}>⏳ {usd(girosPendientes)} cobrados, giro pendiente envío</p>}
         </div>
         <div style={{background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:14,padding:"20px 24px"}}>
