@@ -55,7 +55,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     </div>
     {op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&!op.consolidation_confirmed&&<div style={{marginTop:14,background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <span style={{fontSize:12,fontWeight:600,color:"#fbbf24"}}>📦 Tu paquete ya llegó a nuestro depósito. ¿Vas a enviar más paquetes o es el único?</span>
-      <button onClick={async(e)=>{e.stopPropagation();await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}});onReload&&onReload();}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>✅ Es el único, pueden enviarlo</button>
+      <button onClick={async(e)=>{e.stopPropagation();const btn=e.currentTarget;btn.disabled=true;btn.textContent="Confirmando...";try{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}});onReload&&await onReload();}catch(err){btn.disabled=false;btn.textContent="✅ Es el único, pueden enviarlo";}}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>✅ Es el único, pueden enviarlo</button>
     </div>}
     {(op.status==="en_preparacion"||(op.status==="en_deposito_origen"&&op.consolidation_confirmed))&&(itemsByOp[op.id]||0)===0&&<div style={{marginTop:14,background:"linear-gradient(135deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04))",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <span style={{fontSize:12,fontWeight:600,color:IC}}>📋 Completá la documentación de tu carga para avanzar</span>
@@ -121,6 +121,10 @@ function OperationDetail({op,token,onBack}){
         <button onClick={()=>{setShowDocPanel(!showDocPanel);if(!showDocPanel&&docItems.length===0)setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);}} style={{padding:"10px 20px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>{showDocPanel?"Cerrar":"+ Agregar productos"}</button>
       </div>
       {showDocPanel&&<div style={{borderTop:"1px solid rgba(96,165,250,0.2)",paddingTop:14}}>
+        <div style={{padding:"10px 14px",background:"rgba(251,191,36,0.1)",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:10,marginBottom:14}}>
+          <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:"0 0 4px"}}>⚠️ Importante: describí cada producto con el mayor detalle posible</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:0,lineHeight:1.5}}>Necesitamos saber exactamente qué contiene tu paquete para la documentación aduanera. En vez de "electrónica", poné "smartwatch Xiaomi Band 8 Pro". Cuanto más específico, mejor.</p>
+        </div>
         {docItems.map((it,i)=><div key={i} style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
             <span style={{fontSize:11,fontWeight:700,color:IC}}>Producto {i+1}</span>
@@ -192,6 +196,7 @@ function OperationDetail({op,token,onBack}){
           {dd("CBM",pk.cbm?`${pk.cbm.toFixed(4)} m³`:"—")}
           {pk.national_tracking&&pk.national_tracking!=="—"?<div style={{textAlign:"center"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px",textTransform:"uppercase"}}>Tracking</p><a href={`https://parcelsapp.com/en/tracking/${pk.national_tracking}`} target="_blank" rel="noopener noreferrer" style={{fontSize:13,fontWeight:600,color:"#60a5fa",textDecoration:"underline",fontFamily:"monospace"}}>{pk.national_tracking}</a></div>:dd("Tracking","—")}
         </div>
+        {pk.l&&pk.w&&pk.h&&pk.vw>pk.gw&&<p style={{fontSize:11,fontWeight:600,color:"#f59e0b",margin:"8px 0 0",lineHeight:1.4,background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:6,padding:"6px 10px"}}>⚠️ El peso volumétrico ({pk.vw.toFixed(1)} kg) supera al peso bruto ({pk.gw.toFixed(1)} kg). Se facturará por peso volumétrico.</p>}
       </div>)}
       {openSections.packages&&<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:14,display:"flex",gap:28,flexWrap:"wrap",alignItems:"center"}}>
         {isAer&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px",textTransform:"uppercase"}}>Peso Facturable</p><p style={{fontSize:16,fontWeight:700,color:IC,margin:0}}>{pf.toFixed(2)} kg</p></div>}
