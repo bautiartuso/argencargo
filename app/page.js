@@ -33,7 +33,7 @@ function AuthPage({children}){return <div style={{minHeight:"100vh",display:"fle
 function SI({k,a,cur,isA,sz=22,alert}){let key=k;if(k==="en_transito")key=isA?"en_transito_aereo":"en_transito_maritimo";const ps=SP[key]||[];const co=alert?"#fbbf24":cur?IC:a?"rgba(96,165,250,0.6)":"rgba(255,255,255,0.15)";return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={co} strokeWidth={alert?2:1.5} strokeLinecap="round" strokeLinejoin="round">{ps.map((d,i)=><path key={i} d={d}/>)}</svg>;}
 function NI({p,a,sz=18}){return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={a?IC:"rgba(255,255,255,0.3)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{p.map((d,i)=><path key={i} d={d}/>)}</svg>;}
 function OpProgress({status,isAereo,onActionClick}){const si=S2S[status]??0;const isDoc=status==="en_preparacion";return <div className="op-progress" style={{display:"flex",alignItems:"center",padding:"16px 0"}}>{OS.map((s,i)=>{const a=i<=si;const cur=i===si;const isAlert=cur&&s.k==="documentacion"&&isDoc;const handleClick=isAlert&&onActionClick?(e)=>{e.stopPropagation();onActionClick();}:null;return <div key={s.k} style={{display:"flex",alignItems:"center",flex:1}}><div onClick={handleClick} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,width:"100%",cursor:handleClick?"pointer":"default"}}><div style={{width:42,height:42,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",background:isAlert?"rgba(251,191,36,0.25)":cur?"rgba(74,144,217,0.2)":a?"rgba(74,144,217,0.08)":"rgba(255,255,255,0.03)",border:`1.5px solid ${isAlert?"#fbbf24":cur?IC:a?"rgba(74,144,217,0.25)":"rgba(255,255,255,0.06)"}`,boxShadow:isAlert?"0 0 16px rgba(251,191,36,0.5)":cur?"0 0 12px rgba(96,165,250,0.2)":"none",animation:isAlert?"pulse 1.5s ease-in-out infinite":"none"}}><SI k={s.k} a={a} cur={cur} isA={isAereo} alert={isAlert}/></div><span style={{fontSize:9,color:isAlert?"#fbbf24":cur?IC:a?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.18)",textAlign:"center",lineHeight:1.2,fontWeight:isAlert||cur?700:400,whiteSpace:"pre-line",minHeight:20}}>{isAlert?"COMPLETAR":s.l}</span></div>{i<OS.length-1&&<div style={{width:24,height:2,background:i<si?IC:"rgba(255,255,255,0.06)",flexShrink:0,marginTop:-20}}/>}</div>})}</div>;}
-function OperationsList({ops,onSelect,client,token,onReload}){
+function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={}}){
   const act=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
   const past=ops.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada");
   const name=client?`${client.first_name} ${client.last_name}`:"";
@@ -55,7 +55,11 @@ function OperationsList({ops,onSelect,client,token,onReload}){
     </div>
     {op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&!op.consolidation_confirmed&&<div style={{marginTop:14,background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <span style={{fontSize:12,fontWeight:600,color:"#fbbf24"}}>📦 Paquete en warehouse — ¿esperás más?</span>
-      <button onClick={async(e)=>{e.stopPropagation();await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString()}});onReload&&onReload();}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>✅ Listo, no espero más</button>
+      <button onClick={async(e)=>{e.stopPropagation();await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}});onReload&&onReload();}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>✅ Listo, no espero más</button>
+    </div>}
+    {(op.status==="en_preparacion"||(op.status==="en_deposito_origen"&&op.consolidation_confirmed))&&(itemsByOp[op.id]||0)===0&&<div style={{marginTop:14,background:"linear-gradient(135deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04))",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <span style={{fontSize:12,fontWeight:600,color:IC}}>📋 Completá la documentación de tu carga para avanzar</span>
+      <button onClick={(e)=>{e.stopPropagation();onSelect(op);}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>+ Agregar productos</button>
     </div>}
     <div style={{marginTop:14,textAlign:"right"}}><button onClick={()=>onSelect(op)} style={{fontSize:13,fontWeight:600,color:IC,background:"rgba(74,144,217,0.1)",border:"1px solid rgba(74,144,217,0.2)",borderRadius:8,padding:"8px 20px",cursor:"pointer"}}>Ver detalles →</button></div>
   </div>;};
@@ -103,7 +107,7 @@ function OperationDetail({op,token,onBack}){
       <h3 style={{fontSize:15,fontWeight:700,color:"#fbbf24",margin:"0 0 6px"}}>📦 ¿Tu carga está completa?</h3>
       <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Tu paquete llegó al warehouse en China. Si esperás más paquetes para consolidar en este envío, esperá a que lleguen. Si no, marcá "Listo" para que avancemos con la documentación y el envío.</p>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-        <button onClick={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString()}});loadAll();}} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>✅ Listo, no espero más paquetes</button>
+        <button onClick={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}});loadAll();}} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>✅ Listo, no espero más paquetes</button>
         <button style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",cursor:"default"}}>📦 Esperar más paquetes</button>
       </div>
     </div>}
@@ -711,15 +715,15 @@ function DashShell({children,page,setPage,role,client,user,onLogout}){
   </div>;
 }
 function Dashboard({profile,client,user,token,onLogout}){
-  const [page,setPage]=useState("imports");const [ops,setOps]=useState([]);const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);
-  const loadOps=async()=>{setLo(true);const r=await dq("operations",{token,filters:"?select=*&order=created_at.desc"});const list=Array.isArray(r)?r:[];setOps(list);setLo(false);
+  const [page,setPage]=useState("imports");const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);
+  const loadOps=async()=>{setLo(true);const [r,it]=await Promise.all([dq("operations",{token,filters:"?select=*&order=created_at.desc"}),dq("operation_items",{token,filters:"?select=operation_id"})]);const list=Array.isArray(r)?r:[];setOps(list);const m={};(Array.isArray(it)?it:[]).forEach(x=>{m[x.operation_id]=(m[x.operation_id]||0)+1;});setItemsByOp(m);setLo(false);
     // Deep-link: ?op=AC-XXXX → auto-open that operation
     if(typeof window!=="undefined"){const params=new URLSearchParams(window.location.search);const opCode=params.get("op");if(opCode){const found=list.find(o=>o.operation_code===opCode);if(found){setSelOp(found);setPage("imports");window.history.replaceState({},"",window.location.pathname);}}}
   };
   useEffect(()=>{if(page==="imports")loadOps();},[page]);
   useEffect(()=>{let last=Date.now();const onFocus=()=>{if(document.visibilityState==="visible"&&page==="imports"&&!selOp&&Date.now()-last>5000){last=Date.now();loadOps();}};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[page,selOp]);
   return <DashShell page={page} setPage={p=>{setPage(p);setSelOp(null);}} role="cliente" client={client} user={user} onLogout={onLogout}>
-    {page==="imports"&&!selOp&&<>{lo?<p style={{textAlign:"center",color:"rgba(255,255,255,0.3)",padding:"3rem 0"}}>Cargando...</p>:<OperationsList ops={ops} onSelect={setSelOp} client={client} token={token} onReload={loadOps}/>}</>}
+    {page==="imports"&&!selOp&&<>{lo?<p style={{textAlign:"center",color:"rgba(255,255,255,0.3)",padding:"3rem 0"}}>Cargando...</p>:<OperationsList ops={ops} onSelect={setSelOp} client={client} token={token} onReload={loadOps} itemsByOp={itemsByOp}/>}</>}
     {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} onBack={()=>setSelOp(null)}/>}
     {page==="profile"&&<ProfilePage client={client}/>}
     {page==="rates"&&<RatesPage token={token} client={client}/>}
