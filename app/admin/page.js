@@ -1141,7 +1141,15 @@ function FinancePanel({token}){
 
 function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceItems,depositPkgs,onReload,onFlash,onBack,usd}){
   const a=signups.find(s=>s.auth_user_id===flight.agent_id);
-  const opsUnique=Array.from(new Map([...depositOps,...allOps].filter(o=>flightOps.some(fo=>fo.operation_id===o.id)).map(o=>[o.id,o])).values());
+  // Ops del vuelo: buscar en depositOps/allOps, y si no están (porque cambiaron de status), cargar directo
+  const [flightOpsData,setFlightOpsData]=useState([]);
+  useEffect(()=>{(async()=>{
+    const opIds=flightOps.map(fo=>fo.operation_id).filter(Boolean);
+    if(opIds.length===0){setFlightOpsData([]);return;}
+    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name)`});
+    setFlightOpsData(Array.isArray(r)?r:[]);
+  })();},[flightOps.length,token]);
+  const opsUnique=flightOpsData.length>0?flightOpsData:Array.from(new Map([...depositOps,...allOps].filter(o=>flightOps.some(fo=>fo.operation_id===o.id)).map(o=>[o.id,o])).values());
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
   const updateFlight=async(body)=>{await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body});onReload();};
   const [savedAddrs,setSavedAddrs]=useState([]);const [showNewAddr,setShowNewAddr]=useState(false);const [newAddr,setNewAddr]=useState({label:"",name:"",tax_id:"",address:"",postal_code:"",phone:"",email:""});
@@ -1153,7 +1161,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const [items,setItems]=useState(invoiceItems);
   useEffect(()=>{setItems(invoiceItems);},[invoiceItems]);
   const chItem=(i,f,v)=>setItems(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
-  const saveItem=async(it)=>{await dq("flight_invoice_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{description:it.description,quantity:Number(it.quantity||0),unit_price_declared_usd:Number(it.unit_price_declared_usd||0),hs_code:it.hs_code||"",notes:it.notes||""}});onFlash("Item guardado");};
+  const saveItem=async(it)=>{await dq("flight_invoice_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{description:it.description,quantity:Number(it.quantity||0),unit_price_declared_usd:Number(it.unit_price_declared_usd||0),hs_code:it.hs_code||"",notes:it.notes||""}});onFlash("Item guardado");onReload();};
   const addItem=async()=>{const opId=opsUnique[0]?.id;if(!opId)return;const r=await dq("flight_invoice_items",{method:"POST",token,body:{flight_id:flight.id,operation_id:opId,description:"",quantity:1,unit_price_declared_usd:0,hs_code:"",sort_order:items.length+1}});const created=Array.isArray(r)?r[0]:r;if(created?.id)setItems(p=>[...p,created]);onReload();};
   const delItem=async(id)=>{await dq("flight_invoice_items",{method:"DELETE",token,filters:`?id=eq.${id}`});setItems(p=>p.filter(x=>x.id!==id));onReload();};
   const markReceived=async()=>{
@@ -1221,9 +1229,19 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       </div>
       <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"12px 0 8px",textTransform:"uppercase"}}>Operaciones en este vuelo</p>
       <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px",marginBottom:16}}>
-        {opsUnique.map(o=>{const fo=flightOps.find(x=>x.operation_id===o.id);const w=depositPkgs.filter(p=>p.operation_id===o.id).reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);return <div key={o.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-          <span style={{fontSize:13,color:"#fff"}}><strong style={{fontFamily:"monospace"}}>{o.operation_code}</strong> — {o.clients?o.clients.first_name:"—"} — {o.description||"—"}</span>
-          <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{w?`${w.toFixed(2)} kg`:""}{fo?.cost_share_usd?` · ${usd(fo.cost_share_usd)}`:""}</span>
+        {opsUnique.map(o=>{const fo=flightOps.find(x=>x.operation_id===o.id);const pkgs=depositPkgs.filter(p=>p.operation_id===o.id);const w=pkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);return <div key={o.id} style={{padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:pkgs.length>0?6:0}}>
+            <span style={{fontSize:13,color:"#fff"}}><strong style={{fontFamily:"monospace"}}>{o.operation_code}</strong> — {o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{pkgs.length} bultos · {w.toFixed(2)} kg{fo?.cost_share_usd?` · ${usd(fo.cost_share_usd)}`:""}</span>
+          </div>
+          {pkgs.length>0&&<div style={{marginLeft:16,fontSize:11,color:"rgba(255,255,255,0.4)"}}>
+            {pkgs.map(p=><div key={p.id} style={{display:"flex",gap:12,padding:"2px 0"}}>
+              <span>#{p.package_number}</span>
+              <span>{p.national_tracking||"—"}</span>
+              <span>{p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—"}</span>
+              {p.length_cm&&p.width_cm&&p.height_cm?<span>{p.length_cm}×{p.width_cm}×{p.height_cm} cm</span>:null}
+            </div>)}
+          </div>}
         </div>;})}
       </div>
     </Card>
