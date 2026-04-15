@@ -1273,7 +1273,10 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         </div>}
       </div>
       <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"14px 0 8px",textTransform:"uppercase"}}>📋 Items — HS code + valor declarado</p>
-      {items.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem 0",margin:0}}>No hay items. Los items se clonan de los productos que carga el cliente.</p>:
+      {items.length===0?<div>
+        <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem 0",margin:0}}>No hay items todavía. Agregá manualmente o esperá a que el cliente complete la documentación.</p>
+        <div style={{display:"flex",justifyContent:"center",marginTop:10}}><button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button></div>
+      </div>:
       <div>
         {items.map((it,i)=>{const op=opsUnique.find(o=>o.id===it.operation_id);return <div key={it.id} style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 12px",marginBottom:10}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
