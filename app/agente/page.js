@@ -560,7 +560,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:14}}>
         <div>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px",textTransform:"uppercase"}}>{t.invoice}</p>
-          {flight.invoice_url?<a href={`${SB_URL}/storage/v1/object/authenticated/invoices/${flight.invoice_url}`} target="_blank" rel="noopener noreferrer" onClick={async(e)=>{e.preventDefault();const r=await fetch(`${SB_URL}/storage/v1/object/authenticated/invoices/${flight.invoice_url}`,{headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY}});if(r.ok){const blob=await r.blob();const url=URL.createObjectURL(blob);window.open(url,"_blank");}else alert("Error");}} style={{fontSize:13,color:"#22c55e",fontWeight:600,textDecoration:"none"}}>📄 {t.download_invoice}</a>:<p style={{fontSize:13,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>}
+          {flight.invoice_presented_at?<p style={{fontSize:13,color:"#22c55e",fontWeight:600,margin:0}}>✅ Factura presentada</p>:<p style={{fontSize:13,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>}
         </div>
         <div>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px",textTransform:"uppercase"}}>{t.destination}</p>
