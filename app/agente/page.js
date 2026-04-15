@@ -131,24 +131,48 @@ function AuthScreen({onLogin,lang,setLang,t}){
   const [mode,setMode]=useState("login");
   const [email,setEmail]=useState("");const [pass,setPass]=useState("");const [fName,setFName]=useState("");const [lName,setLName]=useState("");
   const [err,setErr]=useState("");const [lo,setLo]=useState(false);
+  const ensureSignup=async(token,userId)=>{
+    // Si ya existe agent_signup, no crear duplicado
+    const existing=await dq("agent_signups",{token,filters:`?auth_user_id=eq.${userId}&select=id&limit=1`});
+    if(Array.isArray(existing)&&existing.length>0)return;
+    await dq("agent_signups",{method:"POST",token,body:{auth_user_id:userId,email,first_name:fName||"",last_name:lName||"",language:lang,status:"pending"}});
+  };
   const login=async()=>{if(!email||!pass){setErr(t.err_generic);return;}setLo(true);setErr("");
     const r=await ac("token?grant_type=password",{email,password:pass});
     if(r.access_token){const sess={access_token:r.access_token,user:r.user};saveSession(sess);onLogin(sess);}
-    else setErr(r.error_description||r.msg||t.err_generic);
+    else setErr(r.error_description||r.msg||r.message||t.err_generic);
     setLo(false);};
   const signup=async()=>{if(!email||!pass||!fName){setErr(t.err_generic);return;}setLo(true);setErr("");
     const r=await ac("signup",{email,password:pass,data:{first_name:fName,last_name:lName,role:"agente_pending"}});
-    if(r.access_token||r.user){const userId=r.user?.id;const token=r.access_token;
-      // Crear agent_signup (si hay token, con él; sino ya quedará pendiente de login)
-      if(token&&userId){await dq("agent_signups",{method:"POST",token,body:{auth_user_id:userId,email,first_name:fName,last_name:lName,language:lang,status:"pending"}});}
-      // Intentar login inmediato
+    // Si error pero el mail ya existe → intentar login con esas credenciales
+    const errMsg=(r.error_description||r.msg||r.message||r.error||"").toString().toLowerCase();
+    if(errMsg.includes("already")||errMsg.includes("registered")||errMsg.includes("user already")){
+      // Intentar login: si la pass es correcta, lo dejamos pasar y creamos el agent_signup
       const l=await ac("token?grant_type=password",{email,password:pass});
-      if(l.access_token){const sess={access_token:l.access_token,user:l.user};
-        // Si no creamos el signup antes por falta de token, crearlo ahora
-        if(!token){await dq("agent_signups",{method:"POST",token:l.access_token,body:{auth_user_id:l.user.id,email,first_name:fName,last_name:lName,language:lang,status:"pending"}});}
-        saveSession(sess);onLogin(sess);}
-      else setErr(l.error_description||l.msg||t.err_generic);
-    } else setErr(r.error_description||r.msg||t.err_generic);
+      if(l.access_token){
+        await ensureSignup(l.access_token,l.user.id);
+        const sess={access_token:l.access_token,user:l.user};saveSession(sess);onLogin(sess);
+      } else {
+        setErr("Ya existe una cuenta con ese email. Probá iniciar sesión o usar otro email.");
+      }
+      setLo(false);return;
+    }
+    if(r.access_token||r.user){
+      const userId=r.user?.id;
+      const token=r.access_token;
+      if(token&&userId){await ensureSignup(token,userId);}
+      // Intentar login inmediato (por si signup no devolvió token)
+      const l=await ac("token?grant_type=password",{email,password:pass});
+      if(l.access_token){
+        if(!token)await ensureSignup(l.access_token,l.user.id);
+        const sess={access_token:l.access_token,user:l.user};saveSession(sess);onLogin(sess);
+      } else {
+        // Email confirmation activado en Supabase
+        setErr("Cuenta creada. Confirmá el email para poder ingresar (revisá tu casilla).");
+      }
+    } else {
+      setErr(r.error_description||r.msg||r.message||t.err_generic);
+    }
     setLo(false);};
   return <div style={{minHeight:"100vh",background:BG,display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem 1rem",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif"}}>
     <div style={{maxWidth:420,width:"100%"}}>
