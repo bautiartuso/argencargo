@@ -57,7 +57,9 @@ const GENERIC_TITLES = {
   "CC": "En gestión aduanera", "customs-clearance": "En gestión aduanera",
   "RC": "Arribo al país de destino", "IA": "Arribo al país de destino",
   "ID": "En distribución local", "OD": "En reparto final",
-  "DL": "Entregado", "delivered": "Entregado",
+  // DHL/FedEx/UPS entregan a oficina Argencargo, NO al cliente final.
+  // El estado "entregado al cliente" lo marca manualmente Argencargo cuando hace la entrega final.
+  "DL": "Carga recibida en Argencargo — coordinamos entrega", "delivered": "Carga recibida en Argencargo — coordinamos entrega",
   // Problemas
   "EX": "Demora en tránsito", "failure": "Incidencia en el envío",
   "exception": "Incidencia en el envío", "RT": "Reintento de entrega"
@@ -79,7 +81,7 @@ export function genericTitleFor(status_code, fallback) {
   if (status_code && GENERIC_TITLES[status_code]) return GENERIC_TITLES[status_code];
   // Fuzzy fallback: si el título crudo contiene palabras clave
   const f = (fallback || "").toLowerCase();
-  if (f.includes("deliver")) return "Entregado";
+  if (f.includes("deliver")) return "Carga recibida en Argencargo — coordinamos entrega";
   if (f.includes("transit") || f.includes("in transit")) return "En tránsito internacional";
   if (f.includes("customs") || f.includes("aduana")) return "En gestión aduanera";
   if (f.includes("picked up") || f.includes("pickup")) return "Carga recolectada en origen";
