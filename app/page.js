@@ -695,7 +695,7 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
     <div style={{padding:"20px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center"}}><img src={LOGO} alt="AC" style={{height:40,objectFit:"contain"}}/><button className="mob-close" onClick={()=>setMobOpen(false)} style={{display:"none",background:"none",border:"none",color:"#fff",fontSize:20,cursor:"pointer"}}>✕</button></div>
     {code&&<div style={{padding:"16px 16px 8px",textAlign:"center"}}><div style={{display:"inline-block",padding:"6px 16px",borderRadius:8,background:"rgba(74,144,217,0.1)",border:"1px solid rgba(74,144,217,0.2)"}}><p style={{fontSize:9,color:"rgba(255,255,255,0.4)",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700}}>Tu código</p><p style={{fontSize:18,fontWeight:700,color:IC,margin:0,letterSpacing:"0.12em",fontFamily:"monospace"}}>{code}</p></div></div>}
     <nav style={{flex:1,padding:"12px 8px"}}>{nav.map(item=><button key={item.key} onClick={()=>{setPage(item.key);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 14px",marginBottom:2,borderRadius:10,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,letterSpacing:"0.04em",background:page===item.key?"rgba(74,144,217,0.15)":"transparent",color:page===item.key?"#fff":"rgba(255,255,255,0.4)",borderLeft:page===item.key?`3px solid ${B.accent}`:"3px solid transparent"}}><NI p={item.p} a={page===item.key}/>{item.label}</button>)}</nav>
-    <div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.08)"}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:36,height:36,borderRadius:"50%",background:"rgba(74,144,217,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13,color:IC}}>{(client?.first_name?.[0]||"U").toUpperCase()}{(client?.last_name?.[0]||"").toUpperCase()}</div><div style={{flex:1,minWidth:0}}><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>Cliente</p></div>{token&&<NotifBell token={token}/>}</div><button onClick={onLogout} style={{width:"100%",padding:"8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.45)",cursor:"pointer",fontWeight:600}}>Cerrar sesión</button></div>
+    <div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.08)"}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:36,height:36,borderRadius:"50%",background:"rgba(74,144,217,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13,color:IC}}>{(client?.first_name?.[0]||"U").toUpperCase()}{(client?.last_name?.[0]||"").toUpperCase()}</div><div style={{flex:1,minWidth:0}}><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>Cliente</p></div></div><button onClick={onLogout} style={{width:"100%",padding:"8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.45)",cursor:"pointer",fontWeight:600}}>Cerrar sesión</button></div>
   </>;
   return <div style={{minHeight:"100vh",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,position:"relative"}}><div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0}}><WorldMap/></div>
     <style>{`
@@ -704,6 +704,7 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
         .sidebar-desktop{display:none!important}
         .mob-header{display:flex!important}
         .mob-close{display:block!important}
+        .desktop-notif-bar{display:none!important}
         .main-content{margin-left:0!important;padding-top:60px!important}
         .main-inner{padding:16px!important}
         .mob-overlay{display:block!important}
@@ -720,6 +721,7 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
         .mob-header{display:none!important}
         .mob-sidebar{display:none!important}
         .mob-overlay{display:none!important}
+        .desktop-notif-bar{display:flex!important}
       }
     `}</style>
     {/* Mobile header */}
@@ -734,7 +736,9 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
     {mobOpen&&<div className="mob-sidebar" style={{display:"none",position:"fixed",top:0,left:0,bottom:0,width:280,background:"rgba(15,27,48,0.98)",borderRight:"1px solid rgba(255,255,255,0.08)",flexDirection:"column",zIndex:30,overflow:"auto"}}>{sidebarContent}</div>}
     {/* Desktop sidebar */}
     <div className="sidebar-desktop" style={{width:220,position:"fixed",top:0,left:0,bottom:0,background:"rgba(15,27,48,0.95)",borderRight:"1px solid rgba(255,255,255,0.08)",display:"flex",flexDirection:"column",zIndex:10,overflow:"auto"}}>{sidebarContent}</div>
-    <div className="main-content" style={{marginLeft:220,minHeight:"100vh",position:"relative",zIndex:1}}><div className="main-inner" style={{maxWidth:1000,margin:"0 auto",padding:"28px 32px"}}>{children}</div></div>
+    <div className="main-content" style={{marginLeft:220,minHeight:"100vh",position:"relative",zIndex:1}}>
+      <div className="desktop-notif-bar" style={{display:"flex",alignItems:"center",justifyContent:"flex-end",padding:"12px 32px 0",gap:12}}>{token&&<NotifBell token={token}/>}</div>
+      <div className="main-inner" style={{maxWidth:1000,margin:"0 auto",padding:"28px 32px"}}>{children}</div></div>
   </div>;
 }
 function Dashboard({profile,client,user,token,onLogout}){
