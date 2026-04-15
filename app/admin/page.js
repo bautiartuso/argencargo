@@ -1928,7 +1928,20 @@ function QuotesList({token}){
           {q.total_cbm>0&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>CBM</p><p style={{fontSize:14,color:"#fff",margin:0}}>{Number(q.total_cbm).toFixed(4)} m³</p></div>}
         </div>
         {Array.isArray(prods)&&prods.length>0&&<div style={{marginBottom:16}}><h4 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>PRODUCTOS</h4>
-          {prods.map((p,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}><span style={{color:"rgba(255,255,255,0.6)"}}>{p.description||p.type} x{p.quantity}</span><span style={{fontWeight:600,color:"#fff"}}>USD {(Number(p.unit_price||0)*Number(p.quantity||1)).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>)}
+          {prods.map((p,i)=>{const fobItem=Number(p.unit_price||0)*Number(p.quantity||1);const nc=p.ncm||{};return <div key={i} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:nc.ncm_code?8:0,flexWrap:"wrap",gap:8}}>
+              <div><p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>{p.description||p.type}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>Cantidad: {p.quantity} · Unitario: USD {Number(p.unit_price||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+              <p style={{fontSize:14,fontWeight:700,color:IC,margin:0}}>FOB: USD {fobItem.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            </div>
+            {nc.ncm_code&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:8,padding:"8px 12px",display:"grid",gridTemplateColumns:"auto 1fr auto auto auto",gap:12,alignItems:"center",fontSize:11}}>
+              <span style={{fontFamily:"monospace",fontWeight:700,color:IC}}>NCM {nc.ncm_code}</span>
+              <span style={{color:"rgba(255,255,255,0.5)"}}>{nc.ncm_description||""}</span>
+              <span style={{color:"rgba(255,255,255,0.5)"}}>Derechos <strong style={{color:"#fff"}}>{nc.import_duty_rate||0}%</strong></span>
+              <span style={{color:"rgba(255,255,255,0.5)"}}>TE <strong style={{color:"#fff"}}>{nc.statistics_rate||0}%</strong></span>
+              <span style={{color:"rgba(255,255,255,0.5)"}}>IVA <strong style={{color:"#fff"}}>{nc.iva_rate||21}%</strong></span>
+            </div>}
+            {!nc.ncm_code&&<p style={{fontSize:11,color:"rgba(251,191,36,0.7)",margin:0}}>⚠ Sin clasificación NCM</p>}
+          </div>;})}
         </div>}
         {Array.isArray(pkgs)&&pkgs.length>0&&<div><h4 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>BULTOS</h4>
           {pkgs.map((pk,i)=><div key={i} style={{display:"flex",gap:16,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:12,color:"rgba(255,255,255,0.5)"}}>

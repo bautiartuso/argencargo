@@ -624,7 +624,19 @@ function QuotesPage({token,client}){
           </div>
           <button onClick={()=>delQuote(q.id)} style={{fontSize:10,padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>Eliminar</button>
         </div>
-        <p style={{fontSize:14,fontWeight:500,color:"#fff",margin:"0 0 10px",lineHeight:1.4}}>{prodDesc||"Sin descripción"}</p>
+        {Array.isArray(prods)&&prods.length>0?<div style={{marginBottom:12}}>{prods.map((p,i)=>{const fobItem=Number(p.unit_price||0)*Number(p.quantity||1);const nc=p.ncm||{};return <div key={i} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 12px",marginBottom:6}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:nc.ncm_code?6:0,flexWrap:"wrap",gap:8}}>
+            <div><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{p.description||p.type}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>Cant. {p.quantity} · Unit. {usd(p.unit_price)}</p></div>
+            <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>FOB {usd(fobItem)}</p>
+          </div>
+          {nc.ncm_code&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:6,padding:"6px 10px",display:"flex",flexWrap:"wrap",gap:10,alignItems:"center",fontSize:10.5}}>
+            <span style={{fontFamily:"monospace",fontWeight:700,color:IC}}>NCM {nc.ncm_code}</span>
+            {nc.ncm_description&&<span style={{color:"rgba(255,255,255,0.5)"}}>{nc.ncm_description}</span>}
+            <span style={{color:"rgba(255,255,255,0.5)",marginLeft:"auto"}}>Derechos <strong style={{color:"#fff"}}>{nc.import_duty_rate||0}%</strong></span>
+            <span style={{color:"rgba(255,255,255,0.5)"}}>TE <strong style={{color:"#fff"}}>{nc.statistics_rate||0}%</strong></span>
+            <span style={{color:"rgba(255,255,255,0.5)"}}>IVA <strong style={{color:"#fff"}}>{nc.iva_rate||21}%</strong></span>
+          </div>}
+        </div>;})}</div>:<p style={{fontSize:14,fontWeight:500,color:"#fff",margin:"0 0 10px",lineHeight:1.4}}>{prodDesc||"Sin descripción"}</p>}
         <div style={{display:"flex",gap:20,flexWrap:"wrap",paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",alignItems:"center"}}>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>VALOR FOB</p><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{usd(q.total_fob)}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{isAereo?"PESO":"CBM"}</p><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{isAereo?`${Number(q.total_weight).toFixed(2)} kg`:`${Number(q.total_cbm).toFixed(4)} m³`}</p></div>
@@ -730,7 +742,7 @@ function Dashboard({profile,client,user,token,onLogout}){
     {page==="calculator"&&<CalculatorPage token={token} client={client}/>}
     {page==="services"&&<ServicesPage client={client}/>}
     {page==="quotes"&&<QuotesPage token={token} client={client}/>}
-    {!["imports","profile","rates","calculator"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.4)"}}>Sección en desarrollo</p></div>}
+    {!["imports","profile","rates","calculator","services","quotes"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.4)"}}>Sección en desarrollo</p></div>}
   </DashShell>;
 }
 export default function Page(){
