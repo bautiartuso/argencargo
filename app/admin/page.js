@@ -1120,6 +1120,12 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const opsUnique=Array.from(new Map([...depositOps,...allOps].filter(o=>flightOps.some(fo=>fo.operation_id===o.id)).map(o=>[o.id,o])).values());
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
   const updateFlight=async(body)=>{await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body});onReload();};
+  const [savedAddrs,setSavedAddrs]=useState([]);const [showNewAddr,setShowNewAddr]=useState(false);const [newAddr,setNewAddr]=useState({label:"",name:"",tax_id:"",address:"",postal_code:"",phone:"",email:""});
+  const loadAddrs=async()=>{const r=await dq("shipping_addresses",{token,filters:"?select=*&order=is_default.desc,created_at.desc"});setSavedAddrs(Array.isArray(r)?r:[]);};
+  useEffect(()=>{loadAddrs();},[]);
+  const applyAddr=(a)=>updateFlight({dest_name:a.name||"",dest_tax_id:a.tax_id||"",dest_address:a.address||"",dest_postal_code:a.postal_code||"",dest_phone:a.phone||"",dest_email:a.email||"",destination_address:[a.name,a.address,a.postal_code].filter(Boolean).join(", ")});
+  const saveNewAddr=async()=>{if(!newAddr.label||!newAddr.address){onFlash("Falta etiqueta o dirección");return;}await dq("shipping_addresses",{method:"POST",token,body:newAddr});setNewAddr({label:"",name:"",tax_id:"",address:"",postal_code:"",phone:"",email:""});setShowNewAddr(false);loadAddrs();onFlash("Dirección guardada");};
+  const delAddr=async(id)=>{if(!confirm("¿Eliminar dirección?"))return;await dq("shipping_addresses",{method:"DELETE",token,filters:`?id=eq.${id}`});loadAddrs();};
   const [items,setItems]=useState(invoiceItems);
   useEffect(()=>{setItems(invoiceItems);},[invoiceItems]);
   const chItem=(i,f,v)=>setItems(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
@@ -1133,7 +1139,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     onReload();onFlash("Vuelo recibido");onBack();
   };
   const totalDeclaredUSD=items.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_declared_usd||0),0);
-  const canDispatch=flight.status==="preparando"&&items.length>0&&items.every(it=>it.hs_code&&it.description&&Number(it.unit_price_declared_usd)>0)&&flight.destination_address;
+  const canDispatch=flight.status==="preparando"&&items.length>0&&items.every(it=>it.hs_code&&it.description&&Number(it.unit_price_declared_usd)>0)&&(flight.dest_address||flight.destination_address);
   const printInvoice=()=>{
     const w=window.open("","_blank");if(!w)return;
     const itemsByOp={};items.forEach(it=>{if(!itemsByOp[it.operation_id])itemsByOp[it.operation_id]=[];itemsByOp[it.operation_id].push(it);});
@@ -1152,7 +1158,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       <h1>COMMERCIAL INVOICE — ${flight.flight_code}</h1>
       <p class="sub">Argencargo · ${flight.dispatched_at?new Date(flight.dispatched_at).toLocaleDateString("en-US"):new Date().toLocaleDateString("en-US")}</p>
       <div class="info">
-        <div><strong>From:</strong> Agent in China<br/><strong>To:</strong> ${flight.destination_address||"—"}</div>
+        <div><strong>From:</strong> Agent in China<br/><strong>To:</strong> ${[flight.dest_name,flight.dest_address,flight.dest_postal_code].filter(Boolean).join(", ")||flight.destination_address||"—"}${flight.dest_tax_id?`<br/><strong>Tax ID:</strong> ${flight.dest_tax_id}`:""}${flight.dest_phone?`<br/><strong>Phone:</strong> ${flight.dest_phone}`:""}${flight.dest_email?`<br/><strong>Email:</strong> ${flight.dest_email}`:""}</div>
         <div><strong>Carrier:</strong> ${flight.international_carrier||"—"}<br/><strong>Tracking:</strong> ${flight.international_tracking||"—"}</div>
       </div>
       <table>
@@ -1178,7 +1184,50 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{w?`${w.toFixed(2)} kg`:""}{fo?.cost_share_usd?` · ${usd(fo.cost_share_usd)}`:""}</span>
         </div>;})}
       </div>
-      <Inp label="Dirección de envío (Bs As)" value={flight.destination_address||""} onChange={v=>updateFlight({destination_address:v})} placeholder="Av. Callao 1137, CABA"/>
+      <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginTop:4}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textTransform:"uppercase"}}>Dirección de envío (Bs As)</p>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+            {savedAddrs.length>0&&<select onChange={e=>{const a=savedAddrs.find(x=>x.id===e.target.value);if(a)applyAddr(a);e.target.value="";}} style={{padding:"6px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>
+              <option value="" style={{background:"#0a1428"}}>Cargar dirección guardada…</option>
+              {savedAddrs.map(a=><option key={a.id} value={a.id} style={{background:"#0a1428"}}>{a.label}{a.is_default?" ⭐":""}</option>)}
+            </select>}
+            <button onClick={()=>setShowNewAddr(!showNewAddr)} style={{padding:"6px 10px",fontSize:11,fontWeight:600,border:"1px solid rgba(96,165,250,0.25)",borderRadius:6,background:"rgba(96,165,250,0.1)",color:IC,cursor:"pointer"}}>{showNewAddr?"✕":"+ Guardar como predeterminada"}</button>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+          <Inp label="Nombre" value={flight.dest_name||""} onChange={v=>updateFlight({dest_name:v})} placeholder="Razón social o nombre"/>
+          <Inp label="CUIT / Tax ID" value={flight.dest_tax_id||""} onChange={v=>updateFlight({dest_tax_id:v})} placeholder="20-12345678-9"/>
+        </div>
+        <Inp label="Dirección" value={flight.dest_address||""} onChange={v=>updateFlight({dest_address:v,destination_address:v})} placeholder="Av. Callao 1137, CABA"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr",gap:"0 12px"}}>
+          <Inp label="Código Postal" value={flight.dest_postal_code||""} onChange={v=>updateFlight({dest_postal_code:v})} placeholder="C1024AAQ"/>
+          <Inp label="Teléfono" value={flight.dest_phone||""} onChange={v=>updateFlight({dest_phone:v})} placeholder="+54 11 ..."/>
+          <Inp label="Email" value={flight.dest_email||""} onChange={v=>updateFlight({dest_email:v})} placeholder="contacto@ejemplo.com"/>
+        </div>
+        {showNewAddr&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:8,padding:"12px 14px",marginTop:10}}>
+          <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px"}}>NUEVA DIRECCIÓN PREDETERMINADA</p>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+            <Inp label="Etiqueta" value={newAddr.label} onChange={v=>setNewAddr(p=>({...p,label:v}))} placeholder="Ej: Depósito CABA"/>
+            <Inp label="Nombre" value={newAddr.name} onChange={v=>setNewAddr(p=>({...p,name:v}))}/>
+            <Inp label="CUIT / Tax ID" value={newAddr.tax_id} onChange={v=>setNewAddr(p=>({...p,tax_id:v}))}/>
+            <Inp label="Código Postal" value={newAddr.postal_code} onChange={v=>setNewAddr(p=>({...p,postal_code:v}))}/>
+          </div>
+          <Inp label="Dirección" value={newAddr.address} onChange={v=>setNewAddr(p=>({...p,address:v}))}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+            <Inp label="Teléfono" value={newAddr.phone} onChange={v=>setNewAddr(p=>({...p,phone:v}))}/>
+            <Inp label="Email" value={newAddr.email} onChange={v=>setNewAddr(p=>({...p,email:v}))}/>
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:6}}>
+            <Btn small onClick={saveNewAddr}>Guardar</Btn>
+            <Btn small variant="secondary" onClick={()=>setShowNewAddr(false)}>Cancelar</Btn>
+          </div>
+        </div>}
+        {savedAddrs.length>0&&<div style={{marginTop:10}}>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Direcciones guardadas</p>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{savedAddrs.map(a=><div key={a.id} style={{display:"flex",alignItems:"center",gap:4,padding:"4px 8px",fontSize:11,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,color:"rgba(255,255,255,0.6)"}}>{a.label}{a.is_default?" ⭐":""}<button onClick={()=>delAddr(a.id)} style={{marginLeft:4,fontSize:10,padding:"1px 5px",borderRadius:3,border:"none",background:"rgba(255,80,80,0.15)",color:"#ff6b6b",cursor:"pointer"}}>X</button></div>)}</div>
+        </div>}
+      </div>
     </Card>
     <Card title="Factura de exportación (HS code + valor declarado)" actions={<div style={{display:"flex",gap:8}}><Btn small variant="secondary" onClick={printInvoice} disabled={items.length===0}>📄 Ver / Imprimir</Btn></div>}>
       {items.length===0?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"1rem 0",margin:0}}>No hay items. Los items se clonan de los productos que carga el cliente.</p>:
