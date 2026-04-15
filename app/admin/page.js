@@ -1139,25 +1139,84 @@ function FinancePanel({token}){
   </div>;
 }
 
+function AnticipoForm({token,agentId,onSaved}){
+  const [date,setDate]=useState(new Date().toISOString().slice(0,10));
+  const [amount,setAmount]=useState("");
+  const [desc,setDesc]=useState("");
+  const [saving,setSaving]=useState(false);
+  const save=async()=>{if(!amount)return;setSaving(true);await dq("agent_account_movements",{method:"POST",token,body:{agent_id:agentId,date,type:"anticipo",amount_usd:Number(amount),description:desc||"Anticipo"}});setSaving(false);onSaved();};
+  return <div style={{background:"rgba(34,197,94,0.04)",border:"1px solid rgba(34,197,94,0.15)",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr 1fr",gap:10,alignItems:"end"}}>
+      <Inp label="Fecha" type="date" value={date} onChange={setDate}/>
+      <Inp label="Monto USD" type="number" value={amount} onChange={setAmount} step="0.01"/>
+      <Inp label="Descripción" value={desc} onChange={setDesc} placeholder="Ej: Pago vuelo FL-0003"/>
+      <Btn small onClick={save} disabled={saving||!amount}>{saving?"...":"Guardar"}</Btn>
+    </div>
+  </div>;
+}
+
 function AgentsPanel({token}){
-  const [tab,setTab]=useState("signups");
+  const [tab,setTab]=useState("deposito");
   const [signups,setSignups]=useState([]);
   const [profiles,setProfiles]=useState({});
   const [unassigned,setUnassigned]=useState([]);
   const [allOps,setAllOps]=useState([]);
+  const [depositOps,setDepositOps]=useState([]);
+  const [depositPkgs,setDepositPkgs]=useState([]);
+  const [flights,setFlights]=useState([]);
+  const [flightOps,setFlightOps]=useState([]);
+  const [accMovements,setAccMovements]=useState([]);
+  const [selectedOps,setSelectedOps]=useState([]);
+  const [selFlight,setSelFlight]=useState(null);
+  const [showAnticipoForm,setShowAnticipoForm]=useState(null);
   const [lo,setLo]=useState(true);
   const [msg,setMsg]=useState("");
   const load=async()=>{setLo(true);
-    const [r,u,o]=await Promise.all([
+    const [r,u,o,depOps,depPkgs,fl,flOps,accM]=await Promise.all([
       dq("agent_signups",{token,filters:"?select=*&order=created_at.desc"}),
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
-      dq("operations",{token,filters:"?select=id,operation_code,client_id,clients(client_code,first_name,last_name)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&consolidation_confirmed=eq.false&order=created_at.desc"})
+      dq("operations",{token,filters:"?select=id,operation_code,client_id,clients(client_code,first_name,last_name)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&consolidation_confirmed=eq.false&order=created_at.desc"}),
+      dq("operations",{token,filters:"?select=id,operation_code,description,client_id,created_by_agent_id,status,consolidation_confirmed,clients(client_code,first_name,last_name)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
+      dq("operation_packages",{token,filters:"?select=*&order=package_number.asc"}),
+      dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
+      dq("flight_operations",{token,filters:"?select=*"}),
+      dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"})
     ]);
     setSignups(Array.isArray(r)?r:[]);setUnassigned(Array.isArray(u)?u:[]);setAllOps(Array.isArray(o)?o:[]);
+    setDepositOps(Array.isArray(depOps)?depOps:[]);setDepositPkgs(Array.isArray(depPkgs)?depPkgs:[]);
+    setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(flOps)?flOps:[]);setAccMovements(Array.isArray(accM)?accM:[]);
     const ids=(Array.isArray(r)?r:[]).map(s=>s.auth_user_id).filter(Boolean);
     if(ids.length>0){const pr=await dq("profiles",{token,filters:`?id=in.(${ids.join(",")})&select=id,role`});const m={};(Array.isArray(pr)?pr:[]).forEach(p=>{m[p.id]=p;});setProfiles(m);}
     setLo(false);};
   useEffect(()=>{load();},[token]);
+  // Helpers
+  const approvedAgents=signups.filter(s=>s.status==="approved");
+  const opsInFlightIds=new Set(flightOps.map(fo=>fo.operation_id));
+  const availableForFlight=depositOps.filter(o=>o.consolidation_confirmed&&!opsInFlightIds.has(o.id));
+  const opPackages=(opId)=>depositPkgs.filter(p=>p.operation_id===opId);
+  const opWeight=(opId)=>opPackages(opId).reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);
+  const agentBalance=(agentId)=>accMovements.filter(m=>m.agent_id===agentId).reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):-Number(m.amount_usd)),0);
+  const toggleSelOp=(opId)=>setSelectedOps(p=>p.includes(opId)?p.filter(x=>x!==opId):[...p,opId]);
+  const createFlight=async()=>{
+    if(selectedOps.length===0)return;
+    const ops=availableForFlight.filter(o=>selectedOps.includes(o.id));
+    const agentIds=[...new Set(ops.map(o=>o.created_by_agent_id))];
+    if(agentIds.length>1){alert("Solo podés agrupar ops del MISMO agente. Las que seleccionaste son de varios agentes distintos.");return;}
+    const agentId=agentIds[0];
+    if(!agentId){alert("Las ops seleccionadas no tienen agente asignado");return;}
+    // Próximo flight_code
+    const lastFl=flights[0];
+    const lastNum=lastFl?parseInt(lastFl.flight_code.replace(/\D/g,""),10)||0:0;
+    const newCode=`FL-${String(lastNum+1).padStart(4,"0")}`;
+    const r=await dq("flights",{method:"POST",token,body:{flight_code:newCode,agent_id:agentId,status:"preparando"}});
+    const created=Array.isArray(r)?r[0]:r;
+    if(!created?.id){alert("Error creando vuelo");return;}
+    // Crear flight_operations
+    for(const op of ops){const w=opWeight(op.id);
+      await dq("flight_operations",{method:"POST",token,body:{flight_id:created.id,operation_id:op.id,weight_kg:w}});
+    }
+    setSelectedOps([]);load();flash(`Vuelo ${newCode} creado`);setTab("flights");setSelFlight(created.id);
+  };
   const assignToOp=async(pkg,opId)=>{
     if(!opId)return;
     // Fetch op to get next package_number
@@ -1184,14 +1243,152 @@ function AgentsPanel({token}){
   };
   const reject=async(s)=>{if(!confirm(`¿Rechazar a ${s.email}?`))return;await dq("agent_signups",{method:"PATCH",token,filters:`?id=eq.${s.id}`,body:{status:"rejected"}});load();flash("Agente rechazado");};
   const ST={pending:{l:"Pendiente",c:"#fbbf24"},approved:{l:"Aprobado",c:"#22c55e"},rejected:{l:"Rechazado",c:"#ff6b6b"}};
+  const flight=flights.find(f=>f.id===selFlight);
+  const flightOpsForSel=flight?flightOps.filter(fo=>fo.flight_id===flight.id):[];
+  const usd=(v)=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-      <div><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Agentes</h2><p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Aprobar solicitudes y gestionar paquetes huérfanos</p></div>
+      <div><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Agentes y Vuelos</h2><p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Depósito, vuelos consolidados, cuentas corrientes y solicitudes</p></div>
     </div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
-    <div style={{display:"flex",gap:8,marginBottom:16}}>
-      {[{k:"signups",l:"Solicitudes y agentes"},{k:"orphans",l:`Paquetes huérfanos (${unassigned.length})`}].map(tb=><button key={tb.k} onClick={()=>setTab(tb.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===tb.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===tb.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===tb.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{tb.l}</button>)}
+    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+      {[{k:"deposito",l:`Depósito (${depositOps.length})`},{k:"flights",l:`Vuelos (${flights.length})`},{k:"accounts",l:`CC Agentes (${approvedAgents.length})`},{k:"signups",l:"Solicitudes"},{k:"orphans",l:`Huérfanos (${unassigned.length})`}].map(tb=><button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===tb.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===tb.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===tb.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{tb.l}</button>)}
     </div>
+
+    {tab==="deposito"&&(()=>{
+      // Agrupar por agente
+      const byAgent={};depositOps.forEach(o=>{const k=o.created_by_agent_id||"sin_agente";if(!byAgent[k])byAgent[k]={ops:[],agentName:""};byAgent[k].ops.push(o);});
+      Object.keys(byAgent).forEach(k=>{const a=approvedAgents.find(s=>s.auth_user_id===k);byAgent[k].agentName=a?(a.first_name+" "+(a.last_name||"")):"(sin agente)";});
+      return <div>
+        {selectedOps.length>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.25)",borderRadius:10,marginBottom:14}}>
+          <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>{selectedOps.length} operación(es) seleccionada(s)</p>
+          <div style={{display:"flex",gap:8}}>
+            <Btn variant="secondary" small onClick={()=>setSelectedOps([])}>Limpiar</Btn>
+            <Btn small onClick={createFlight}>+ Crear vuelo con seleccionadas</Btn>
+          </div>
+        </div>}
+        {Object.keys(byAgent).length===0&&<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes en depósito</p>}
+        {Object.entries(byAgent).map(([agentId,grp])=>{return <div key={agentId} style={{marginBottom:20}}>
+          <h3 style={{fontSize:13,fontWeight:700,color:IC,margin:"0 0 10px",textTransform:"uppercase"}}>{grp.agentName} ({grp.ops.length} ops)</h3>
+          <div style={{background:"rgba(255,255,255,0.03)",borderRadius:10,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                {["✓","Op","Cliente","Mercadería","Bultos","Peso","Estado","Consolidación"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
+              </tr></thead>
+              <tbody>{grp.ops.map(o=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const pkgsCount=opPackages(o.id).length;const canSelect=o.consolidation_confirmed&&!inFlight;return <tr key={o.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:0.5}}>
+                <td style={{padding:"10px 12px"}}>{canSelect?<input type="checkbox" checked={selectedOps.includes(o.id)} onChange={()=>toggleSelOp(o.id)}/>:""}</td>
+                <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12}}>{o.operation_code}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)"}}>{o.clients?`${o.clients.client_code} - ${o.clients.first_name}`:"—"}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.description||"—"}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)"}}>{pkgsCount}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)"}}>{w?`${w.toFixed(2)} kg`:"—"}</td>
+                <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)"}}>{SM[o.status]?.l||o.status}</span></td>
+                <td style={{padding:"10px 12px"}}>
+                  {inFlight?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(96,165,250,0.15)",color:IC}}>EN VUELO</span>:
+                  o.consolidation_confirmed?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>✓ LISTO</span>:
+                  <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24"}}>⏳ ESPERANDO</span>}
+                </td>
+              </tr>;})}</tbody>
+            </table>
+          </div>
+        </div>;})}
+      </div>;
+    })()}
+
+    {tab==="flights"&&!selFlight&&<div>
+      {flights.length===0?<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"3rem 0"}}>No hay vuelos creados todavía</p>:
+      <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+            {["Código","Agente","Estado","Ops","Peso","Costo","Tracking","Creado",""].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
+          </tr></thead>
+          <tbody>{flights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const a=signups.find(s=>s.auth_user_id===f.agent_id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};return <tr key={f.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:700,color:"#fff"}}>{f.flight_code}</td>
+            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{a?(a.first_name+" "+(a.last_name||"")):"—"}</td>
+            <td style={{padding:"12px 14px"}}><span style={{fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,color:stColors[f.status],background:`${stColors[f.status]}20`,border:`1px solid ${stColors[f.status]}40`,textTransform:"uppercase"}}>{f.status}</span></td>
+            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{ops.length}</td>
+            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_weight_kg?`${Number(f.total_weight_kg).toFixed(2)} kg`:"—"}</td>
+            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_cost_usd?usd(f.total_cost_usd):"—"}</td>
+            <td style={{padding:"12px 14px",fontFamily:"monospace",fontSize:11,color:"rgba(255,255,255,0.5)"}}>{f.international_tracking||"—"}</td>
+            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{formatDate(f.created_at)}</td>
+            <td style={{padding:"12px 14px"}}><button onClick={()=>setSelFlight(f.id)} style={{color:IC,fontSize:11,fontWeight:600,background:"rgba(74,144,217,0.1)",border:"1px solid rgba(74,144,217,0.2)",borderRadius:6,padding:"5px 10px",cursor:"pointer"}}>Ver →</button></td>
+          </tr>;})}</tbody>
+        </table>
+      </div>}
+    </div>}
+
+    {tab==="flights"&&selFlight&&flight&&(()=>{
+      const a=signups.find(s=>s.auth_user_id===flight.agent_id);
+      const ops=depositOps.concat(allOps).filter(o=>flightOpsForSel.some(fo=>fo.operation_id===o.id));
+      const opsUnique=Array.from(new Map(ops.map(o=>[o.id,o])).values());
+      const updateFlight=async(body)=>{await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body});load();flash("Vuelo actualizado");};
+      const markReceived=async()=>{
+        if(!confirm(`¿Marcar ${flight.flight_code} como recibido en Bs As? Las ops cambiarán a 'arribo_argentina'.`))return;
+        await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{status:"recibido",received_at:new Date().toISOString()}});
+        for(const fo of flightOpsForSel){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"arribo_argentina"}});}
+        load();flash("Vuelo recibido");setSelFlight(null);
+      };
+      const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
+      return <div>
+        <button onClick={()=>setSelFlight(null)} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:14,padding:0}}>← VOLVER A VUELOS</button>
+        <Card title={`${flight.flight_code} — ${a?(a.first_name+" "+(a.last_name||"")):""}`}>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+            <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:stColors[flight.status],background:`${stColors[flight.status]}20`,border:`1px solid ${stColors[flight.status]}40`,textTransform:"uppercase"}}>{flight.status}</span>
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{flightOpsForSel.length} operaciones</span>
+          </div>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"12px 0 8px",textTransform:"uppercase"}}>Operaciones en este vuelo</p>
+          <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px",marginBottom:16}}>
+            {opsUnique.map(o=>{const fo=flightOpsForSel.find(x=>x.operation_id===o.id);return <div key={o.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+              <span style={{fontSize:13,color:"#fff"}}><strong style={{fontFamily:"monospace"}}>{o.operation_code}</strong> — {o.clients?o.clients.first_name:"—"} — {o.description||"—"}</span>
+              <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{fo?.weight_kg?`${Number(fo.weight_kg).toFixed(2)} kg`:""}{fo?.cost_share_usd?` · ${usd(fo.cost_share_usd)}`:""}</span>
+            </div>;})}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
+            <Inp label="Dirección de envío (Bs As)" value={flight.destination_address||""} onChange={v=>updateFlight({destination_address:v})} placeholder="Av. Callao 1137, CABA"/>
+            <div><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Factura de exportación (PDF)</label>
+              {flight.invoice_url?<div style={{padding:"10px 12px",background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:8}}>
+                <a href={`${SB_URL}/storage/v1/object/public/invoices/${flight.invoice_url}`} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:"#22c55e",fontWeight:600,textDecoration:"none"}}>📄 Ver factura</a>
+                <button onClick={()=>updateFlight({invoice_url:null,invoice_uploaded_at:null})} style={{fontSize:10,marginLeft:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>Quitar</button>
+              </div>:<input type="file" accept="application/pdf,image/*" onChange={async(e)=>{const f=e.target.files[0];if(!f)return;const path=`${flight.id}.${f.name.split(".").pop()}`;
+                const r=await fetch(`${SB_URL}/storage/v1/object/invoices/${path}`,{method:"POST",headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY,"Content-Type":f.type},body:f});
+                if(r.ok)updateFlight({invoice_url:path,invoice_uploaded_at:new Date().toISOString()});else alert("Error subiendo archivo");
+              }} style={{width:"100%",padding:"8px",fontSize:12,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.7)"}}/>}
+            </div>
+          </div>
+          {flight.status==="despachado"&&<div style={{marginTop:14,padding:"12px 14px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:10}}>
+            <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase"}}>Datos del despacho (cargados por agente)</p>
+            <div style={{display:"flex",gap:24,flexWrap:"wrap",fontSize:12}}>
+              <span><strong style={{color:"#fff"}}>Carrier:</strong> {flight.international_carrier||"—"}</span>
+              <span><strong style={{color:"#fff"}}>Tracking:</strong> {flight.international_tracking||"—"}</span>
+              <span><strong style={{color:"#fff"}}>Pago:</strong> {flight.payment_method||"—"}</span>
+              <span><strong style={{color:"#fff"}}>Despachado:</strong> {formatDate(flight.dispatched_at)}</span>
+            </div>
+            <div style={{marginTop:10}}><Btn small onClick={markReceived}>✓ Marcar como recibido en Bs As</Btn></div>
+          </div>}
+        </Card>
+      </div>;
+    })()}
+
+    {tab==="accounts"&&<div>
+      {approvedAgents.length===0?<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"3rem 0"}}>No hay agentes aprobados</p>:
+      approvedAgents.map(a=>{const bal=agentBalance(a.auth_user_id);const movs=accMovements.filter(m=>m.agent_id===a.auth_user_id);return <Card key={a.id} title={`${a.first_name} ${a.last_name||""} — ${a.email}`}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:12,flexWrap:"wrap"}}>
+          <div style={{background:"rgba(34,197,94,0.06)",borderRadius:10,padding:"14px 18px",border:"1px solid rgba(34,197,94,0.15)"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 4px"}}>SALDO</p><p style={{fontSize:22,fontWeight:700,color:bal>0?"#22c55e":bal<0?"#ff6b6b":"#fff",margin:0}}>{usd(bal)}</p></div>
+          <Btn small onClick={()=>setShowAnticipoForm(showAnticipoForm===a.auth_user_id?null:a.auth_user_id)}>+ Cargar anticipo</Btn>
+        </div>
+        {showAnticipoForm===a.auth_user_id&&<AnticipoForm token={token} agentId={a.auth_user_id} onSaved={()=>{setShowAnticipoForm(null);load();flash("Anticipo cargado");}}/>}
+        {movs.length>0?<table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{["Fecha","Tipo","Monto","Descripción","Vuelo"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+          <tbody>{movs.map(m=>{const fl=flights.find(f=>f.id===m.flight_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)"}}>{formatDate(m.date)}</td>
+            <td style={{padding:"8px 12px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:m.type==="anticipo"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:m.type==="anticipo"?"#22c55e":"#ff6b6b"}}>{m.type==="anticipo"?"ANTICIPO":"DEDUCCIÓN"}</span></td>
+            <td style={{padding:"8px 12px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":"#ff6b6b"}}>{m.type==="anticipo"?"+":"-"}{usd(m.amount_usd)}</td>
+            <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)"}}>{m.description||"—"}</td>
+            <td style={{padding:"8px 12px",fontFamily:"monospace",color:IC,fontSize:11}}>{fl?fl.flight_code:"—"}</td>
+          </tr>;})}</tbody>
+        </table>:<p style={{fontSize:12,color:"rgba(255,255,255,0.3)",margin:0,textAlign:"center",padding:"1rem 0"}}>Sin movimientos</p>}
+      </Card>;})}
+    </div>}
     {tab==="orphans"&&<>
       {unassigned.length===0?<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes huérfanos</p>:
       <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>

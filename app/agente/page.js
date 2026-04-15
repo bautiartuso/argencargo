@@ -66,7 +66,36 @@ const I18N={
     bultos:"Bultos",
     add_bulto:"+ Agregar otro bulto",
     bulto_n:"Bulto",
-    remove:"Quitar"
+    remove:"Quitar",
+    tab_packages:"Paquetes",
+    tab_flights:"Vuelos",
+    tab_account:"Mi cuenta",
+    flight:"Vuelo",
+    flight_status_preparando:"Preparando",
+    flight_status_despachado:"Despachado",
+    flight_status_recibido:"Recibido",
+    no_flights:"Aún no tenés vuelos asignados",
+    invoice:"Factura de exportación",
+    no_invoice_yet:"El admin todavía no subió la factura",
+    download_invoice:"Descargar factura",
+    destination:"Dirección de destino",
+    no_destination_yet:"El admin todavía no cargó la dirección",
+    operations_in_flight:"Operaciones del vuelo",
+    dispatch_form:"Despachar vuelo",
+    total_weight:"Peso total (kg)",
+    total_cost:"Costo total (USD)",
+    intl_tracking:"Tracking internacional",
+    courier:"Courier",
+    payment_method_label:"Método de pago",
+    method_cc:"Cuenta corriente",
+    method_cash:"Contado",
+    method_transfer:"Transferencia",
+    confirm_dispatch:"Confirmar despacho",
+    dispatch_warning:"Una vez confirmado, no podrás editar el vuelo. Las ops cambiarán a 'En tránsito'.",
+    balance:"Saldo",
+    no_movements:"Sin movimientos",
+    movement_anticipo:"Anticipo",
+    movement_deduccion:"Deducción"
   },
   zh:{
     login_title:"代理门户",
@@ -119,7 +148,36 @@ const I18N={
     bultos:"包裹",
     add_bulto:"+ 添加另一个包裹",
     bulto_n:"包裹",
-    remove:"删除"
+    remove:"删除",
+    tab_packages:"包裹",
+    tab_flights:"航班",
+    tab_account:"我的账户",
+    flight:"航班",
+    flight_status_preparando:"准备中",
+    flight_status_despachado:"已发送",
+    flight_status_recibido:"已接收",
+    no_flights:"您还没有指定的航班",
+    invoice:"出口发票",
+    no_invoice_yet:"管理员尚未上传发票",
+    download_invoice:"下载发票",
+    destination:"目的地地址",
+    no_destination_yet:"管理员尚未填写地址",
+    operations_in_flight:"航班操作",
+    dispatch_form:"发送航班",
+    total_weight:"总重量 (公斤)",
+    total_cost:"总费用 (美元)",
+    intl_tracking:"国际物流单号",
+    courier:"快递",
+    payment_method_label:"付款方式",
+    method_cc:"往来账户",
+    method_cash:"现金",
+    method_transfer:"转账",
+    confirm_dispatch:"确认发送",
+    dispatch_warning:"确认后，您将无法编辑航班。操作将更改为'运输中'。",
+    balance:"余额",
+    no_movements:"无动向",
+    movement_anticipo:"预付款",
+    movement_deduccion:"扣除"
   }
 };
 
@@ -220,27 +278,36 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const [signup,setSignup]=useState(null);
   const [loading,setLoading]=useState(true);
   const [packages,setPackages]=useState([]);
+  const [flights,setFlights]=useState([]);
+  const [flightOps,setFlightOps]=useState([]);
+  const [account,setAccount]=useState([]);
   const [showForm,setShowForm]=useState(false);
   const [flashMsg,setFlashMsg]=useState("");
+  const [tab,setTab]=useState("packages");
+  const [selFlight,setSelFlight]=useState(null);
+
+  const reloadAll=async()=>{
+    const [pk,fl,fo,acc]=await Promise.all([
+      dq("operation_packages",{token,filters:"?select=*,operations!inner(operation_code,client_id,clients(client_code,first_name))&order=created_at.desc&limit=20"}),
+      dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
+      dq("flight_operations",{token,filters:"?select=*"}),
+      dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"})
+    ]);
+    setPackages(Array.isArray(pk)?pk:[]);setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(fo)?fo:[]);setAccount(Array.isArray(acc)?acc:[]);
+  };
 
   useEffect(()=>{(async()=>{
-    // Check signup status
     const sgn=await dq("agent_signups",{token,filters:`?auth_user_id=eq.${userId}&select=*&limit=1`});
     const s=Array.isArray(sgn)&&sgn[0]?sgn[0]:null;
     setSignup(s);
-    if(s?.status==="approved"){
-      const pk=await dq("operation_packages",{token,filters:"?select=*,operations!inner(operation_code,client_id,clients(client_code,first_name))&order=created_at.desc&limit=20"});
-      setPackages(Array.isArray(pk)?pk:[]);
-    }
+    if(s?.status==="approved")await reloadAll();
     setLoading(false);
   })();},[token,userId]);
 
-  const reloadPackages=async()=>{
-    const pk=await dq("operation_packages",{token,filters:"?select=*,operations!inner(operation_code,client_id,clients(client_code,first_name))&order=created_at.desc&limit=20"});
-    setPackages(Array.isArray(pk)?pk:[]);
-  };
-
+  const reloadPackages=reloadAll;
   const flash=(m)=>{setFlashMsg(m);setTimeout(()=>setFlashMsg(""),3000);};
+  const balance=account.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):-Number(m.amount_usd)),0);
+  const usdF=(v)=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   if(loading)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:BG,color:"rgba(255,255,255,0.4)"}}>...</div>;
 
@@ -264,33 +331,172 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     </SimpleShell>;
   }
 
+  const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
+
   return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout}>
     <div style={{marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
       <div>
         <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{t.hello}, {signup.first_name||signup.email}</h2>
         <p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>🟢 {t.active_in} {signup.country||"China"}</p>
       </div>
-      {!showForm&&<Btn onClick={()=>setShowForm(true)}>+ {t.register_pkg}</Btn>}
+      {tab==="packages"&&!showForm&&<Btn onClick={()=>setShowForm(true)}>+ {t.register_pkg}</Btn>}
     </div>
     {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.1)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:10,fontSize:13,color:"#22c55e",marginBottom:16}}>{flashMsg}</div>}
-    {showForm&&<NewPackageForm token={token} lang={lang} t={t} agentId={userId} onCancel={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);reloadPackages();flash(t.success);}}/>}
-    <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden",marginTop:16}}>
-      <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.recent_pkgs} ({packages.length})</h3></div>
-      {packages.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.3)",margin:0}}>{t.no_pkgs}</p>:
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-          {[t.op,t.client,t.tracking,t.weight,t.date].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
-        </tr></thead>
-        <tbody>{packages.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-          <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{p.operations?.operation_code||"—"}</td>
-          <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)"}}>{p.operations?.clients?.client_code||"—"}</td>
-          <td style={{padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{p.national_tracking||"—"}</td>
-          <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.5)"}}>{p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—"}</td>
-          <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{new Date(p.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</td>
-        </tr>)}</tbody>
-      </table>}
+    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+      {[{k:"packages",l:`${t.tab_packages} (${packages.length})`},{k:"flights",l:`${t.tab_flights} (${flights.length})`},{k:"account",l:`${t.tab_account} · ${usdF(balance)}`}].map(tb=><button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===tb.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===tb.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===tb.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{tb.l}</button>)}
     </div>
+
+    {tab==="packages"&&<>
+      {showForm&&<NewPackageForm token={token} lang={lang} t={t} agentId={userId} onCancel={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);reloadPackages();flash(t.success);}}/>}
+      <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden",marginTop:16}}>
+        <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.recent_pkgs} ({packages.length})</h3></div>
+        {packages.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.3)",margin:0}}>{t.no_pkgs}</p>:
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+            {[t.op,t.client,t.tracking,t.weight,t.date].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
+          </tr></thead>
+          <tbody>{packages.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{p.operations?.operation_code||"—"}</td>
+            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)"}}>{p.operations?.clients?.client_code||"—"}</td>
+            <td style={{padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{p.national_tracking||"—"}</td>
+            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.5)"}}>{p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—"}</td>
+            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{new Date(p.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</td>
+          </tr>)}</tbody>
+        </table>}
+      </div>
+    </>}
+
+    {tab==="flights"&&!selFlight&&<>
+      {flights.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.3)",padding:"3rem 0"}}>{t.no_flights}</p>:
+      <div style={{display:"grid",gap:12}}>{flights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <div key={f.id} onClick={()=>setSelFlight(f.id)} style={{cursor:"pointer",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"1rem 1.25rem"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:8}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{f.flight_code}</span>
+            <span style={{fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,color:stColors[f.status],background:`${stColors[f.status]}20`,border:`1px solid ${stColors[f.status]}40`,textTransform:"uppercase"}}>{t["flight_status_"+f.status]}</span>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{ops.length} ops</span>
+          </div>
+          <span style={{color:IC,fontSize:12,fontWeight:600}}>{t.flight} →</span>
+        </div>
+        {f.invoice_url?<p style={{fontSize:11,color:"#22c55e",margin:0}}>📄 {t.invoice} ✓</p>:<p style={{fontSize:11,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>}
+        {f.destination_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>📍 {f.destination_address}</p>}
+      </div>;})}</div>}
+    </>}
+
+    {tab==="flights"&&selFlight&&(()=>{const f=flights.find(x=>x.id===selFlight);if(!f)return null;const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <FlightDetail token={token} flight={f} flightOps={ops} packages={packages} t={t} onBack={()=>setSelFlight(null)} onDispatched={()=>{reloadAll();setSelFlight(null);flash(t.success);}}/>;})()}
+
+    {tab==="account"&&<div>
+      <div style={{display:"flex",gap:16,marginBottom:20,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:200,background:bal=>(bal>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)"),borderRadius:14,padding:"20px 24px",border:`1px solid ${balance>=0?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)"}`,backgroundColor:balance>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)"}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>{t.balance}</p>
+          <p style={{fontSize:32,fontWeight:700,color:balance>=0?"#22c55e":"#ff6b6b",margin:0}}>{usdF(balance)}</p>
+        </div>
+      </div>
+      <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+        {account.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.3)",margin:0}}>{t.no_movements}</p>:
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{[t.date,"Tipo","Monto","Descripción",t.flight].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+          <tbody>{account.map(m=>{const fl=flights.find(f=>f.id===m.flight_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{new Date(m.date).toLocaleDateString("es-AR")}</td>
+            <td style={{padding:"10px 14px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:m.type==="anticipo"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:m.type==="anticipo"?"#22c55e":"#ff6b6b",textTransform:"uppercase"}}>{m.type==="anticipo"?t.movement_anticipo:t.movement_deduccion}</span></td>
+            <td style={{padding:"10px 14px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":"#ff6b6b"}}>{m.type==="anticipo"?"+":"-"}{usdF(m.amount_usd)}</td>
+            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{m.description||"—"}</td>
+            <td style={{padding:"10px 14px",fontFamily:"monospace",color:IC,fontSize:11}}>{fl?fl.flight_code:"—"}</td>
+          </tr>;})}</tbody>
+        </table>}
+      </div>
+    </div>}
   </SimpleShell>;
+}
+
+function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
+  const [totalWeight,setTotalWeight]=useState(flight.total_weight_kg||"");
+  const [totalCost,setTotalCost]=useState(flight.total_cost_usd||"");
+  const [tracking,setTracking]=useState(flight.international_tracking||"");
+  const [carrier,setCarrier]=useState(flight.international_carrier||"DHL");
+  const [pmtMethod,setPmtMethod]=useState(flight.payment_method||"cuenta_corriente");
+  const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState("");
+  const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
+  const usdF=(v)=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const dispatch=async()=>{
+    if(!totalWeight||!totalCost||!tracking){setErr(t.err_generic);return;}
+    if(!confirm(t.dispatch_warning))return;
+    setSaving(true);setErr("");
+    const w=Number(totalWeight),c=Number(totalCost);
+    // 1. Update flight
+    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{total_weight_kg:w,total_cost_usd:c,international_tracking:tracking,international_carrier:carrier,payment_method:pmtMethod,status:"despachado",dispatched_at:new Date().toISOString()}});
+    // 2. Distribute cost by weight + update each operation
+    for(const fo of flightOps){
+      const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);
+      const opW=opPkgs.reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);
+      const share=w>0?(opW/w)*c:0;
+      await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{weight_kg:opW,cost_share_usd:share}});
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"en_transito",international_tracking:tracking,international_carrier:carrier,cost_flete:share}});
+    }
+    // 3. If CC, register movement
+    if(pmtMethod==="cuenta_corriente"){
+      await dq("agent_account_movements",{method:"POST",token,body:{agent_id:flight.agent_id,type:"deduccion",amount_usd:c,description:`Costo vuelo ${flight.flight_code}`,flight_id:flight.id,date:new Date().toISOString().slice(0,10)}});
+    }
+    setSaving(false);
+    onDispatched();
+  };
+  return <div>
+    <button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:14,padding:0}}>← {t.tab_flights}</button>
+    <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem",marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+        <h3 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.flight_code}</h3>
+        <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:stColors[flight.status],background:`${stColors[flight.status]}20`,border:`1px solid ${stColors[flight.status]}40`,textTransform:"uppercase"}}>{t["flight_status_"+flight.status]}</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:14}}>
+        <div>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 4px",textTransform:"uppercase"}}>{t.invoice}</p>
+          {flight.invoice_url?<a href={`${SB_URL}/storage/v1/object/authenticated/invoices/${flight.invoice_url}`} target="_blank" rel="noopener noreferrer" onClick={async(e)=>{e.preventDefault();const r=await fetch(`${SB_URL}/storage/v1/object/authenticated/invoices/${flight.invoice_url}`,{headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY}});if(r.ok){const blob=await r.blob();const url=URL.createObjectURL(blob);window.open(url,"_blank");}else alert("Error");}} style={{fontSize:13,color:"#22c55e",fontWeight:600,textDecoration:"none"}}>📄 {t.download_invoice}</a>:<p style={{fontSize:13,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>}
+        </div>
+        <div>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 4px",textTransform:"uppercase"}}>{t.destination}</p>
+          <p style={{fontSize:13,color:flight.destination_address?"#fff":"#fbbf24",margin:0}}>{flight.destination_address||t.no_destination_yet}</p>
+        </div>
+      </div>
+      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"12px 0 8px",textTransform:"uppercase"}}>{t.operations_in_flight} ({flightOps.length})</p>
+      <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px"}}>
+        {flightOps.map(fo=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);const w=opPkgs.reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);return <div key={fo.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <span style={{fontSize:12,color:"#fff"}}>{opPkgs[0]?.operations?.operation_code||"OP"} — {opPkgs[0]?.operations?.clients?.client_code||""}</span>
+          <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{w.toFixed(2)} kg{fo.cost_share_usd?` · ${usdF(fo.cost_share_usd)}`:""}</span>
+        </div>;})}
+      </div>
+    </div>
+    {flight.status==="preparando"&&<div style={{background:"rgba(96,165,250,0.06)",border:"1.5px solid rgba(96,165,250,0.25)",borderRadius:14,padding:"1.5rem"}}>
+      <h3 style={{fontSize:15,fontWeight:700,color:IC,margin:"0 0 14px"}}>{t.dispatch_form}</h3>
+      {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+        <Inp label={t.total_weight} type="number" value={totalWeight} onChange={setTotalWeight} req placeholder="50"/>
+        <Inp label={t.total_cost} type="number" value={totalCost} onChange={setTotalCost} req placeholder="500"/>
+        <Inp label={t.intl_tracking} value={tracking} onChange={setTracking} req placeholder="1Z999AA10123456784"/>
+        <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.courier}</label>
+          <select value={carrier} onChange={e=>setCarrier(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
+            {["DHL","FedEx","UPS"].map(c=><option key={c} value={c} style={{background:"#0a1428"}}>{c}</option>)}
+          </select>
+        </div>
+        <div style={{marginBottom:14,gridColumn:"span 2"}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.payment_method_label}</label>
+          <select value={pmtMethod} onChange={e=>setPmtMethod(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
+            <option value="cuenta_corriente" style={{background:"#0a1428"}}>{t.method_cc}</option>
+            <option value="efectivo" style={{background:"#0a1428"}}>{t.method_cash}</option>
+            <option value="transferencia" style={{background:"#0a1428"}}>{t.method_transfer}</option>
+          </select>
+        </div>
+      </div>
+      <Btn onClick={dispatch} disabled={saving||!totalWeight||!totalCost||!tracking}>{saving?t.saving:t.confirm_dispatch}</Btn>
+    </div>}
+    {flight.status!=="preparando"&&<div style={{padding:"14px 18px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:10}}>
+      <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase"}}>Datos del despacho</p>
+      <div style={{display:"flex",gap:24,flexWrap:"wrap",fontSize:12,color:"rgba(255,255,255,0.6)"}}>
+        <span><strong style={{color:"#fff"}}>{t.total_weight}:</strong> {flight.total_weight_kg} kg</span>
+        <span><strong style={{color:"#fff"}}>{t.total_cost}:</strong> {usdF(flight.total_cost_usd)}</span>
+        <span><strong style={{color:"#fff"}}>{t.courier}:</strong> {flight.international_carrier}</span>
+        <span><strong style={{color:"#fff"}}>{t.intl_tracking}:</strong> {flight.international_tracking}</span>
+      </div>
+    </div>}
+  </div>;
 }
 
 function SimpleShell({children,lang,setLang,t,onLogout}){
