@@ -548,7 +548,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
   const [err,setErr]=useState("");
 
   // Cargar todos los clientes
-  useEffect(()=>{(async()=>{const cl=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=client_code.asc"});setAllClients(Array.isArray(cl)?cl:[]);})();},[token]);
+  useEffect(()=>{if(!token)return;(async()=>{const cl=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=client_code.asc"});if(!Array.isArray(cl)){console.error("[agente] error cargando clientes:",cl);setAllClients([]);return;}setAllClients(cl);})();},[token]);
 
   const selectedClient=allClients.find(c=>c.id===clientId);
 
