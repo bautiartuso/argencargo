@@ -91,7 +91,7 @@ function OperationDetail({op,token,onBack}){
       return <div className="op-info" style={{display:"flex",gap:28,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:14,marginTop:4,flexWrap:"wrap"}}>
         {[{l:"Bultos",v:pkgs.length>0?pkgs.reduce((s,p)=>s+Number(p.quantity||1),0):op.total_quantity||"—"},{l:"Origen",v:op.origin||"China"},{l:"Canal",v:CM[op.channel]||"—"},
           ...(isA?[{l:"Peso Bruto",v:totGW?`${totGW.toFixed(1)} kg`:"—"},{l:"Peso Facturable",v:pf?`${pf.toFixed(1)} kg`:"—",a:true}]:[{l:"CBM",v:totCBM?`${totCBM.toFixed(4)} m³`:"—",a:true}]),
-          {l:"Total a abonar",v:Number(op.budget_total||0)>0?`USD ${Number(op.budget_total).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"Pendiente",a:true}
+          {l:"Total a abonar",v:(()=>{const bt=Number(op.budget_total||0);if(bt<=0)return"Pendiente";const pmtTotal=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtAnt=Number(op.total_anticipos||0);const saldo=bt+Math.max(0,pmtTotal-pmtAnt);return `USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;})(),a:true}
         ].map((x,i)=><div key={i}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{x.l}</span><p style={{fontSize:13,fontWeight:600,color:x.a?IC:"#fff",margin:"2px 0 0"}}>{x.v}</p></div>)}
       </div>;})()}
     </div>
@@ -131,11 +131,11 @@ function OperationDetail({op,token,onBack}){
       </div>}
     </div>}
     {!loading&&(()=>{const bt=Number(op.budget_total||0);const bTax=Number(op.budget_taxes||0);const bFlete=Number(op.budget_flete||0);const bSeg=Number(op.budget_seguro||0);const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;const isB=op.channel?.includes("negro");const hasBudget=bt>0;
-      // Pagos pendientes (cliente NO pagó todavía) - se suman al total a abonar
-      const pmtsPendientes=pmts.filter(p=>!p.client_paid).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
-      // Pagos ya pagados - se descuentan del total
-      const pmtsPagados=pmts.filter(p=>p.client_paid).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
-      const totalAbonar=bt+pmtsPendientes-pmtsPagados;
+      // Gestión de pagos: total acordado vs lo ya cobrado
+      const pmtTotal=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
+      const pmtAnticipado=Number(op.total_anticipos||0);
+      const pmtPendiente=Math.max(0,pmtTotal-pmtAnticipado);
+      const totalAbonar=bt+pmtPendiente;
       const bRow=(l,v,bold,accent,color)=><div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:12}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:13,fontWeight:bold?700:600,color:color||(accent?IC:bold?"#fff":"rgba(255,255,255,0.8)")}}>{v<0?"-":""}USD {Math.abs(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
       return <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.25rem 1.5rem",marginBottom:16}}>
       <button onClick={()=>toggleSection("budget")} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",padding:0,marginBottom:openSections.budget?14:0}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>PRESUPUESTO</h3><span style={{color:"rgba(255,255,255,0.3)",fontSize:14}}>{openSections.budget?"▲":"▼"}</span></button>
@@ -144,9 +144,8 @@ function OperationDetail({op,token,onBack}){
         {bFlete>0&&bRow(isB?"Servicio Integral ARGENCARGO":"Flete internacional",bFlete)}
         {!isB&&bSeg>0&&bRow("Seguro de carga",bSeg)}
         {shipCost>0&&bRow("Envío a Domicilio",shipCost)}
-        {pmtsPendientes>0&&bRow("Gestión de pagos (pendiente)",pmtsPendientes,false,false,"#fb923c")}
-        {pmtsPagados>0&&bRow("Anticipado en gestión de pagos",-pmtsPagados,false,false,"#22c55e")}
-        {bRow(pmtsPagados>0?"Saldo a abonar":"A abonar a Argencargo",totalAbonar,true,true)}
+        {pmtTotal>0&&bRow(`Gestión de pagos${pmtAnticipado>0?` (cobrado USD ${pmtAnticipado.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})} de USD ${pmtTotal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}`,pmtPendiente,false,false,pmtPendiente>0?"#fb923c":"#22c55e")}
+        {bRow(pmtAnticipado>0?"Saldo a abonar":"A abonar a Argencargo",totalAbonar,true,true)}
       </div>:openSections.budget?<p style={{fontSize:13,color:"rgba(255,255,255,0.3)",margin:0}}>Presupuesto pendiente de confirmación</p>:null}
     </div>;})()}
     {!loading&&items.length>0&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.25rem 1.5rem",marginBottom:16}}>
