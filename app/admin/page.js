@@ -972,12 +972,15 @@ function FinancePanel({token}){
   const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",payment_method:"transferencia"});
   const [allOps,setAllOps]=useState([]);const [allPmts,setAllPmts]=useState([]);
   const [dollarPending,setDollarPending]=useState([]);const [dollarRates,setDollarRates]=useState({});
-  const load=async()=>{const [e,o,pm,dp]=await Promise.all([
+  const [agentMvs,setAgentMvs]=useState([]);const [agentSignups,setAgentSignups]=useState([]);
+  const load=async()=>{const [e,o,pm,dp,am,ag]=await Promise.all([
     dq("finance_entries",{token,filters:"?select=*&auto_generated=is.false&order=date.desc,created_at.desc"}),
-    dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,closed_at,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(first_name,last_name,client_code)&order=created_at.desc"}),
+    dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,closed_at,cost_flete,cost_flete_method,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(first_name,last_name,client_code)&order=created_at.desc"}),
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)"}),
-    dq("finance_entries",{token,filters:"?select=*&currency=eq.ARS&exchange_rate=is.null&auto_generated=eq.true&order=card_closing_date.asc"})
-  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setLo(false);};
+    dq("finance_entries",{token,filters:"?select=*&currency=eq.ARS&exchange_rate=is.null&auto_generated=eq.true&order=card_closing_date.asc"}),
+    dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),
+    dq("agent_signups",{token,filters:"?select=auth_user_id,first_name,last_name"})
+  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const addEntry=async()=>{
@@ -996,8 +999,11 @@ function FinancePanel({token}){
   const ledger=[];
   allOps.forEach(o=>{
     if(o.is_collected){const amt=Number(o.collected_amount||o.budget_total||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const usdAmt=isArs&&rate?amt/rate:amt;if(usdAmt>0)ledger.push({date:o.collection_date||o.closed_at?.slice(0,10)||"—",type:"ingreso",origen:"op",code:o.operation_code,desc:`Cobro ${o.operation_code} — ${o.clients?o.clients.last_name:""}`,amount:usdAmt,detail:isArs?`ARS ${amt.toLocaleString("es-AR")} @ ${rate}`:""});}
-    const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
-    if(cost>0)ledger.push({date:o.closed_at?.slice(0,10)||"—",type:"gasto",origen:"op",code:o.operation_code,desc:`Costos ${o.operation_code}`,amount:cost,detail:""});
+    // Cost_flete via cuenta_corriente: NO se incluye en libro diario (la salida de cash ya está en el anticipo al agente)
+    const fleteMethod=o.cost_flete_method||"cuenta_corriente";
+    const fleteForLedger=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);
+    const cost=fleteForLedger+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
+    if(cost>0)ledger.push({date:o.closed_at?.slice(0,10)||"—",type:"gasto",origen:"op",code:o.operation_code,desc:`Costos ${o.operation_code}`,amount:cost,detail:fleteMethod==="cuenta_corriente"&&Number(o.cost_flete||0)>0?`(flete CC ${usd(Number(o.cost_flete))} ya cubierto por anticipo)`:""});
   });
   allPmts.forEach(p=>{
     const code=p.operations?.operation_code||"";
@@ -1005,6 +1011,7 @@ function FinancePanel({token}){
     if(p.giro_status==="confirmado"){const g=Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0);if(g>0)ledger.push({date:p.giro_date||"—",type:"gasto",origen:"pmt",code,desc:`Giro exterior ${code}`,amount:g,detail:p.description||""});}
   });
   entries.forEach(e=>{ledger.push({date:e.date,type:e.type,origen:"manual",code:"",desc:e.description,amount:Number(e.amount||0),detail:e.detail||"",cat:e.category,recurring:e.is_recurring,id:e.id});});
+  agentMvs.filter(m=>m.type==="anticipo").forEach(m=>{const ag=agentSignups.find(a=>a.auth_user_id===m.agent_id);const agName=ag?`${ag.first_name} ${ag.last_name}`:"agente";const recv=Number(m.amount_received_usd||m.amount_usd);ledger.push({date:m.date,type:"gasto",origen:"agente",code:"",desc:`Anticipo a ${agName}`,amount:Number(m.amount_usd||0),detail:m.amount_received_usd&&recv!==Number(m.amount_usd)?`Recibió ${usd(recv)}, comisión ${usd(Number(m.amount_usd)-recv)}`:(m.description||"")});});
   ledger.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   const ledgerIngresos=ledger.filter(l=>l.type==="ingreso").reduce((s,l)=>s+l.amount,0);
   const ledgerGastosOp=ledger.filter(l=>l.type==="gasto"&&l.origen!=="manual").reduce((s,l)=>s+l.amount,0);
@@ -1057,7 +1064,7 @@ function FinancePanel({token}){
         <tbody>{ledger.map((l,i)=><tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
           <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{l.date==="—"?"—":formatDate(l.date)}</td>
           <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,fontWeight:700,background:l.type==="ingreso"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:l.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{l.type==="ingreso"?"INGRESO":"GASTO"}</span></td>
-          <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.5)"}}>{l.origen==="op"?"OP":l.origen==="pmt"?"PMT":"FIJO"}</span></td>
+          <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.5)"}}>{l.origen==="op"?"OP":l.origen==="pmt"?"PMT":l.origen==="agente"?"AGENTE":"GASTO"}</span></td>
           <td style={{padding:"10px 12px",color:"#fff"}}>{l.desc}</td>
           <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{l.detail||(l.cat?CAT_LBL[l.cat]:"")}</td>
           <td style={{padding:"10px 12px",fontWeight:700,color:l.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{l.type==="gasto"?"-":""}{usd(l.amount)}</td>
@@ -1658,7 +1665,8 @@ function FinanceDashboard({token}){
       const totCobradoPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.client_paid).reduce((a,p)=>a+Number(p.client_amount_usd||0),0);},0);
       const totCobrado=totCobradoOps+totCobradoPmts;
       // Costos: todos los costos de ops + giros YA enviados (confirmado)
-      const totCostosOps=ops.reduce((s,o)=>s+Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0),0);
+      // Costos op para cash flow: excluir cost_flete cuando method=cuenta_corriente (ya se contó en el anticipo al agente)
+      const totCostosOps=ops.reduce((s,o)=>{const fleteMethod=o.cost_flete_method||"cuenta_corriente";const fleteCash=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);return s+fleteCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);},0);
       const totCostosPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.giro_status==="confirmado").reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0);
       // Anticipos a agentes (cash real que sale)
       const totAnticiposAgentes=agentMvs.filter(m=>m.type==="anticipo").reduce((s,m)=>s+Number(m.amount_usd||0),0);
