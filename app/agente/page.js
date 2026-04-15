@@ -143,7 +143,8 @@ function AuthScreen({onLogin,lang,setLang,t}){
     else setErr(r.error_description||r.msg||r.message||t.err_generic);
     setLo(false);};
   const signup=async()=>{if(!email||!pass||!fName){setErr(t.err_generic);return;}setLo(true);setErr("");
-    const r=await ac("signup",{email,password:pass,data:{first_name:fName,last_name:lName,role:"agente_pending"}});
+    // Importante: no mandar role inválido, el trigger castea a user_role enum (admin/agente/cliente). Default: cliente. Después al aprobar se cambia a agente.
+    const r=await ac("signup",{email,password:pass,data:{first_name:fName,last_name:lName}});
     // Si error pero el mail ya existe → intentar login con esas credenciales
     const errMsg=(r.error_description||r.msg||r.message||r.error||"").toString().toLowerCase();
     if(errMsg.includes("already")||errMsg.includes("registered")||errMsg.includes("user already")){
