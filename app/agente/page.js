@@ -116,7 +116,12 @@ const I18N={
     stats_total_pkgs:"Paquetes totales recibidos",
     stats_flights_completed:"Vuelos completados",
     stats_total_kg:"Kg despachados",
-    stats_total_usd:"Total facturado"
+    stats_total_usd:"Total facturado",
+    cc_type:"Tipo",
+    cc_amount:"Monto",
+    cc_description:"Descripción",
+    search_deposit:"Buscar en depósito...",
+    confirm:"Confirmar",
   },
   zh:{
     login_title:"代理门户",
@@ -205,7 +210,12 @@ const I18N={
     stats_total_pkgs:"总收到包裹",
     stats_flights_completed:"完成的航班",
     stats_total_kg:"已发货公斤数",
-    stats_total_usd:"总计费"
+    stats_total_usd:"总计费",
+    cc_type:"类型",
+    cc_amount:"金额",
+    cc_description:"描述",
+    search_deposit:"搜索仓库...",
+    confirm:"确认",
   }
 };
 
@@ -316,6 +326,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const [flashMsg,setFlashMsg]=useState("");
   const [tab,setTab]=useState("deposit");
   const [selFlight,setSelFlight]=useState(null);
+  const [depositSearch,setDepositSearch]=useState("");
 
   const reloadAll=async()=>{
     const [pk,fl,fo,acc]=await Promise.all([
@@ -366,7 +377,9 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
   // Computed: paquetes en depósito (op no asignada a ningún vuelo)
   const flightOpIds=new Set(flightOps.map(fo=>fo.operation_id));
-  const depositPkgs=packages.filter(p=>!flightOpIds.has(p.operation_id));
+  const depositPkgsAll=packages.filter(p=>!flightOpIds.has(p.operation_id));
+  const depositPkgs=depositPkgsAll.filter(p=>!depositSearch||[p.operations?.operation_code,p.operations?.clients?.client_code,p.national_tracking].some(v=>(v||"").toLowerCase().includes(depositSearch.toLowerCase())));
+  const depositTotalKg=depositPkgsAll.reduce((s,p)=>s+Number(p.gross_weight_kg||0),0).toFixed(2);
   const activeFlights=flights.filter(f=>f.status!=="recibido");
   const historyFlights=flights.filter(f=>f.status==="recibido");
 
@@ -399,7 +412,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.1)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:10,fontSize:13,color:"#22c55e",marginBottom:16}}>{flashMsg}</div>}
     <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
       {[
-        {k:"deposit",l:`${t.tab_deposit} (${depositPkgs.length})`},
+        {k:"deposit",l:`${t.tab_deposit} (${depositPkgsAll.length}) \u00b7 ${depositTotalKg} kg`},
         {k:"active_flights",l:`${t.tab_active_flights} (${activeFlights.length})`},
         {k:"history",l:`${t.tab_history} (${historyFlights.length})`},
         {k:"stats",l:t.tab_stats},
@@ -410,8 +423,9 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     {/* TAB 1: Depósito — paquetes sin vuelo */}
     {tab==="deposit"&&<>
       {showForm&&<NewPackageForm token={token} lang={lang} t={t} agentId={userId} onCancel={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);reloadPackages();flash(t.success);}}/>}
-      <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden",marginTop:16}}>
-        <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.tab_deposit} ({depositPkgs.length})</h3></div>
+      <input value={depositSearch} onChange={e=>setDepositSearch(e.target.value)} placeholder={t.search_deposit} style={{width:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",marginTop:16,marginBottom:0}}/>
+      <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden",marginTop:10}}>
+        <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.tab_deposit} ({depositPkgs.length}) {"\u00b7"} {depositTotalKg} kg</h3></div>
         {depositPkgs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",margin:0}}>{t.no_pkgs}</p>:
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
@@ -469,7 +483,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
       <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden"}}>
         {account.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",margin:0}}>{t.no_movements}</p>:
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{[t.date,"Tipo","Monto","Descripción",t.flight].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{[t.date,t.cc_type,t.cc_amount,t.cc_description,t.flight].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
           <tbody>{account.map(m=>{const fl=flights.find(f=>f.id===m.flight_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{new Date(m.date).toLocaleDateString("es-AR")}</td>
             <td style={{padding:"10px 14px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:m.type==="anticipo"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:m.type==="anticipo"?"#22c55e":"#ff6b6b",textTransform:"uppercase"}}>{m.type==="anticipo"?t.movement_anticipo:t.movement_deduccion}</span></td>
@@ -493,13 +507,13 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
   const [pmtMethod,setPmtMethod]=useState(flight.payment_method||"cuenta_corriente");
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
+  const [confirmDispatch,setConfirmDispatch]=useState(false);
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
   const usdF=(v)=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   useEffect(()=>{(async()=>{const r=await dq("flight_invoice_items",{token,filters:`?flight_id=eq.${flight.id}&select=*&order=sort_order.asc`});setInvoiceItems(Array.isArray(r)?r:[]);})();},[flight.id,token]);
   const dispatch=async()=>{
     if(!totalCost||!tracking){setErr(t.err_generic);return;}
     if(autoWeight<=0){setErr("El peso total es 0 - cargá peso en los bultos primero");return;}
-    if(!confirm(t.dispatch_warning))return;
     setSaving(true);setErr("");
     const w=autoWeight,c=Number(totalCost);
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{total_weight_kg:w,total_cost_usd:c,international_tracking:tracking,international_carrier:carrier,payment_method:pmtMethod,status:"despachado",dispatched_at:new Date().toISOString()}});
@@ -589,7 +603,14 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
           </select>
         </div>
       </div>
-      <Btn onClick={dispatch} disabled={saving||!totalCost||!tracking||autoWeight<=0}>{saving?t.saving:t.confirm_dispatch}</Btn>
+      {!confirmDispatch?<Btn onClick={()=>setConfirmDispatch(true)} disabled={saving||!totalCost||!tracking||autoWeight<=0}>{t.confirm_dispatch}</Btn>:
+      <div style={{padding:"14px 18px",background:"rgba(251,191,36,0.1)",border:"1.5px solid rgba(251,191,36,0.35)",borderRadius:10}}>
+        <p style={{fontSize:13,color:"#fbbf24",margin:"0 0 12px",fontWeight:600}}>{t.dispatch_warning}</p>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={dispatch} disabled={saving} style={{flex:1,padding:"10px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,cursor:saving?"not-allowed":"pointer",background:"rgba(251,191,36,0.25)",color:"#fbbf24"}}>{saving?t.saving:t.confirm}</button>
+          <button onClick={()=>setConfirmDispatch(false)} disabled={saving} style={{flex:1,padding:"10px",fontSize:13,fontWeight:700,border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:8,cursor:"pointer",background:"transparent",color:"rgba(255,255,255,0.5)"}}>{t.cancel}</button>
+        </div>
+      </div>}
     </Card>}
     {flight.status!=="preparando"&&<div style={{padding:"14px 18px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:10}}>
       <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase"}}>Datos del despacho</p>

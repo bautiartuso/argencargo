@@ -61,6 +61,26 @@ async function syncOne(origin, op) {
     const m = String(d.eta).match(/^(\d{4}-\d{2}-\d{2})/);
     if (m) patch.eta = m[1];
   }
+
+  // Auto-status: si algún evento indica arribo al país destino Y op está en_transito → arribo_argentina
+  if (op.status === "en_transito" && inserted > 0) {
+    const arrivalCodes = new Set(["RC", "IA", "customs-clearance", "CC"]);
+    const arrivalKeywords = ["arrived", "arrival", "arribo", "customs", "aduana", "clearance", "import"];
+    const hasArrival = (d.events || []).some(ev => {
+      if (ev.status_code && arrivalCodes.has(ev.status_code)) return true;
+      const txt = `${ev.title||""} ${ev.description||""} ${ev.location||""}`.toLowerCase();
+      return arrivalKeywords.some(kw => txt.includes(kw)) && (txt.includes("argentin") || txt.includes("buenos aires") || txt.includes("ezeiza"));
+    });
+    if (hasArrival) patch.status = "arribo_argentina";
+  }
+
+  // Auto-status: si courier entregó (DL) Y op está en_transito o arribo → lista_retiro (recibido en oficina)
+  if (["en_transito", "arribo_argentina"].includes(op.status) && inserted > 0) {
+    const deliveryCodes = new Set(["DL", "delivered", "OK"]);
+    const hasDelivery = (d.events || []).some(ev => ev.status_code && deliveryCodes.has(ev.status_code));
+    if (hasDelivery) patch.status = "lista_retiro";
+  }
+
   if (Object.keys(patch).length) {
     await fetch(`${SB_URL}/rest/v1/operations?id=eq.${op.id}`, {
       method: "PATCH",

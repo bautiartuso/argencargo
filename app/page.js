@@ -72,7 +72,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
   </div>;
 }
 function OperationDetail({op,token,onBack}){
-  const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);
+  const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);
   const canDocument=op.status==="en_preparacion"||op.status==="en_deposito_origen";
   const addDocItem=()=>setDocItems(p=>[...p,{description:"",quantity:"1",unit_price_usd:""}]);
   const rmDocItem=(i)=>setDocItems(p=>p.filter((_,j)=>j!==i));
@@ -189,6 +189,7 @@ function OperationDetail({op,token,onBack}){
           {dd("Peso Bruto",pk.gw?`${pk.gw} kg`:"—")}
           {dd("Peso Vol.",pk.vw?`${pk.vw.toFixed(2)} kg`:"—")}
           {dd("CBM",pk.cbm?`${pk.cbm.toFixed(4)} m³`:"—")}
+          {pk.national_tracking&&pk.national_tracking!=="—"?<div style={{textAlign:"center"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px",textTransform:"uppercase"}}>Tracking</p><a href={`https://parcelsapp.com/en/tracking/${pk.national_tracking}`} target="_blank" rel="noopener noreferrer" style={{fontSize:13,fontWeight:600,color:"#60a5fa",textDecoration:"underline",fontFamily:"monospace"}}>{pk.national_tracking}</a></div>:dd("Tracking","—")}
         </div>
       </div>)}
       {openSections.packages&&<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:14,display:"flex",gap:28,flexWrap:"wrap",alignItems:"center"}}>

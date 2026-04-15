@@ -1685,6 +1685,66 @@ function ShipmentsTracking({token,onSelectOp}){
   </div>;
 }
 
+function DashboardKPIs({token}){
+  const [data,setData]=useState(null);const [lo,setLo]=useState(true);
+  useEffect(()=>{(async()=>{
+    const now=new Date();const y=now.getFullYear();const m=String(now.getMonth()+1).padStart(2,"0");
+    const monthStart=`${y}-${m}-01`;
+    const [ops,flights,unPkgs,signups]=await Promise.all([
+      dq("operations",{token,filters:"?select=id,op_code,status,budget_total,eta,updated_at,created_at"}),
+      dq("flights",{token,filters:"?select=id,status"}),
+      dq("unassigned_packages",{token,filters:"?select=id&assigned_to_op_id=is.null"}),
+      dq("agent_signups",{token,filters:"?select=id&status=eq.pending"})
+    ]);
+    const o=Array.isArray(ops)?ops:[];const fl=Array.isArray(flights)?flights:[];
+    const finalStates=["entregada","operacion_cerrada","cancelada"];
+    const activeOps=o.filter(x=>!finalStates.includes(x.status));
+    const transitOps=o.filter(x=>x.status==="en_transito");
+    const activeFlights=fl.filter(x=>x.status==="preparando"||x.status==="despachado");
+    const monthOps=o.filter(x=>x.created_at&&x.created_at.slice(0,7)===`${y}-${m}`);
+    const ingresosMes=monthOps.reduce((s,x)=>s+Number(x.budget_total||0),0);
+    const fiveDaysAgo=new Date(now-5*86400000).toISOString();
+    const staleOps=o.filter(x=>!finalStates.includes(x.status)&&x.updated_at&&x.updated_at<fiveDaysAgo);
+    const todayStr=now.toISOString().slice(0,10);
+    const transitStates=["en_transito","en_aduana","preparando_envio"];
+    const etaPassed=o.filter(x=>x.eta&&x.eta<todayStr&&transitStates.includes(x.status));
+    setData({activeOps:activeOps.length,transitOps:transitOps.length,activeFlights:activeFlights.length,ingresosMes,staleOps,etaPassed:etaPassed.length,orphanPkgs:(Array.isArray(unPkgs)?unPkgs:[]).length,pendingAgents:(Array.isArray(signups)?signups:[]).length});
+    setLo(false);
+  })();},[token]);
+  if(lo)return <p style={{color:"rgba(255,255,255,0.5)",padding:20}}>Cargando dashboard...</p>;
+  if(!data)return null;
+  const kpis=[
+    {label:"Ops Activas",value:data.activeOps,color:"#60a5fa"},
+    {label:"En Tránsito",value:data.transitOps,color:"#a78bfa"},
+    {label:"Vuelos en Curso",value:data.activeFlights,color:"#fbbf24"},
+    {label:"Ingresos Mes",value:`$${data.ingresosMes.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}`,color:"#22c55e"}
+  ];
+  const alerts=[
+    {label:"Ops Estancadas",desc:"Sin cambios hace +5 días",value:data.staleOps.length,color:data.staleOps.length>0?"#ef4444":"#22c55e",items:data.staleOps.slice(0,10).map(x=>x.op_code||x.id)},
+    {label:"ETA Pasada",desc:"En tránsito con ETA vencida",value:data.etaPassed,color:data.etaPassed>0?"#ef4444":"#22c55e"},
+    {label:"Paquetes Huérfanos",desc:"Sin operación asignada",value:data.orphanPkgs,color:data.orphanPkgs>0?"#f59e0b":"#22c55e"},
+    {label:"Agentes Pendientes",desc:"Solicitudes por aprobar",value:data.pendingAgents,color:data.pendingAgents>0?"#f59e0b":"#22c55e"}
+  ];
+  return <div style={{marginBottom:28}}>
+    <h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:"0 0 16px"}}>KPIs</h2>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:24}}>
+      {kpis.map((k,i)=><div key={i} style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:`1px solid rgba(255,255,255,0.1)`,padding:"20px 18px",borderLeft:`4px solid ${k.color}`}}>
+        <div style={{fontSize:28,fontWeight:800,color:"#fff",marginBottom:4}}>{k.value}</div>
+        <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{k.label}</div>
+      </div>)}
+    </div>
+    <h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:"0 0 16px"}}>Alertas</h2>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14}}>
+      {alerts.map((a,i)=><div key={i} style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:`1px solid ${a.color}33`,padding:"18px 16px",borderLeft:`4px solid ${a.color}`}}>
+        <div style={{fontSize:24,fontWeight:800,color:a.color,marginBottom:2}}>{a.value}</div>
+        <div style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:2}}>{a.label}</div>
+        <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{a.desc}</div>
+        {a.items&&a.items.length>0&&<div style={{marginTop:8,fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.6}}>{a.items.map((c,j)=><span key={j} style={{display:"inline-block",background:"rgba(255,255,255,0.08)",borderRadius:4,padding:"2px 6px",marginRight:4,marginBottom:4}}>{c}</span>)}</div>}
+      </div>)}
+    </div>
+  </div>;
+}
+
 function FinanceDashboard({token}){
   const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
   useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
@@ -2073,7 +2133,7 @@ function AdminDashboard({session,onLogout}){
       {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
-      {page==="dashboard"&&<FinanceDashboard token={token}/>}
+      {page==="dashboard"&&<><DashboardKPIs token={token}/><FinanceDashboard token={token}/></>}
       {page==="shipments"&&<ShipmentsTracking token={token} onSelectOp={op=>{setPage("operations");setSelOp(op);}}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
