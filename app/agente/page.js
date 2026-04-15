@@ -81,8 +81,10 @@ const I18N={
     add_bulto:"+ Agregar otro bulto",
     bulto_n:"Bulto",
     remove:"Quitar",
-    tab_packages:"Paquetes",
-    tab_flights:"Vuelos",
+    tab_deposit:"Depósito",
+    tab_active_flights:"Vuelos activos",
+    tab_history:"Histórico",
+    tab_stats:"Estadísticas",
     tab_account:"Mi cuenta",
     flight:"Vuelo",
     flight_status_preparando:"Preparando",
@@ -109,7 +111,12 @@ const I18N={
     balance:"Saldo",
     no_movements:"Sin movimientos",
     movement_anticipo:"Anticipo",
-    movement_deduccion:"Deducción"
+    movement_deduccion:"Deducción",
+    stats_current_deposit:"En depósito ahora",
+    stats_total_pkgs:"Paquetes totales recibidos",
+    stats_flights_completed:"Vuelos completados",
+    stats_total_kg:"Kg despachados",
+    stats_total_usd:"Total facturado"
   },
   zh:{
     login_title:"代理门户",
@@ -163,8 +170,10 @@ const I18N={
     add_bulto:"+ 添加另一个包裹",
     bulto_n:"包裹",
     remove:"删除",
-    tab_packages:"包裹",
-    tab_flights:"航班",
+    tab_deposit:"仓库",
+    tab_active_flights:"活跃航班",
+    tab_history:"历史",
+    tab_stats:"统计",
     tab_account:"我的账户",
     flight:"航班",
     flight_status_preparando:"准备中",
@@ -191,7 +200,12 @@ const I18N={
     balance:"余额",
     no_movements:"无动向",
     movement_anticipo:"预付款",
-    movement_deduccion:"扣除"
+    movement_deduccion:"扣除",
+    stats_current_deposit:"当前在仓库",
+    stats_total_pkgs:"总收到包裹",
+    stats_flights_completed:"完成的航班",
+    stats_total_kg:"已发货公斤数",
+    stats_total_usd:"总计费"
   }
 };
 
@@ -298,7 +312,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const [account,setAccount]=useState([]);
   const [showForm,setShowForm]=useState(false);
   const [flashMsg,setFlashMsg]=useState("");
-  const [tab,setTab]=useState("packages");
+  const [tab,setTab]=useState("deposit");
   const [selFlight,setSelFlight]=useState(null);
 
   const reloadAll=async()=>{
@@ -348,29 +362,60 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
 
+  // Computed: paquetes en depósito (op no asignada a ningún vuelo)
+  const flightOpIds=new Set(flightOps.map(fo=>fo.operation_id));
+  const depositPkgs=packages.filter(p=>!flightOpIds.has(p.operation_id));
+  const activeFlights=flights.filter(f=>f.status!=="recibido");
+  const historyFlights=flights.filter(f=>f.status==="recibido");
+
+  // Stats
+  const statFlightsCompleted=historyFlights.length;
+  const statTotalKg=flights.filter(f=>f.total_weight_kg).reduce((s,f)=>s+Number(f.total_weight_kg||0),0);
+  const statTotalUsd=flights.filter(f=>f.total_cost_usd).reduce((s,f)=>s+Number(f.total_cost_usd||0),0);
+
+  const FlightCard=({f})=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <div onClick={()=>setSelFlight(f.id)} style={{cursor:"pointer",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:"1rem 1.25rem"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:8}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{f.flight_code}</span>
+        <span style={{fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,color:stColors[f.status],background:`${stColors[f.status]}20`,border:`1px solid ${stColors[f.status]}40`,textTransform:"uppercase"}}>{t["flight_status_"+f.status]}</span>
+        <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{ops.length} ops</span>
+      </div>
+      <span style={{color:IC,fontSize:12,fontWeight:600}}>{t.flight} →</span>
+    </div>
+    {f.invoice_presented_at?<p style={{fontSize:11,color:"#22c55e",margin:0}}>📄 {t.invoice} ✓</p>:<p style={{fontSize:11,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>}
+    {f.destination_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>📍 {f.destination_address}</p>}
+  </div>;};
+
   return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout}>
     <div style={{marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
       <div>
         <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{t.hello}, {signup.first_name||signup.email}</h2>
         <p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>🟢 {t.active_in} {signup.country||"China"}</p>
       </div>
-      {tab==="packages"&&!showForm&&<Btn onClick={()=>setShowForm(true)}>+ {t.register_pkg}</Btn>}
+      {tab==="deposit"&&!showForm&&<Btn onClick={()=>setShowForm(true)}>+ {t.register_pkg}</Btn>}
     </div>
     {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.1)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:10,fontSize:13,color:"#22c55e",marginBottom:16}}>{flashMsg}</div>}
     <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-      {[{k:"packages",l:`${t.tab_packages} (${packages.length})`},{k:"flights",l:`${t.tab_flights} (${flights.length})`},{k:"account",l:`${t.tab_account} · ${usdF(balance)}`}].map(tb=><button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===tb.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===tb.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:tab===tb.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{tb.l}</button>)}
+      {[
+        {k:"deposit",l:`${t.tab_deposit} (${depositPkgs.length})`},
+        {k:"active_flights",l:`${t.tab_active_flights} (${activeFlights.length})`},
+        {k:"history",l:`${t.tab_history} (${historyFlights.length})`},
+        {k:"stats",l:t.tab_stats},
+        {k:"account",l:`${t.tab_account} · ${usdF(balance)}`}
+      ].map(tb=><button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===tb.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===tb.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:tab===tb.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{tb.l}</button>)}
     </div>
 
-    {tab==="packages"&&<>
+    {/* TAB 1: Depósito — paquetes sin vuelo */}
+    {tab==="deposit"&&<>
       {showForm&&<NewPackageForm token={token} lang={lang} t={t} agentId={userId} onCancel={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);reloadPackages();flash(t.success);}}/>}
       <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden",marginTop:16}}>
-        <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.recent_pkgs} ({packages.length})</h3></div>
-        {packages.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",margin:0}}>{t.no_pkgs}</p>:
+        <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.tab_deposit} ({depositPkgs.length})</h3></div>
+        {depositPkgs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",margin:0}}>{t.no_pkgs}</p>:
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
             {[t.op,t.client,t.tracking,t.weight,t.date].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
           </tr></thead>
-          <tbody>{packages.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <tbody>{depositPkgs.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{p.operations?.operation_code||"—"}</td>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)"}}>{p.operations?.clients?.client_code||"—"}</td>
             <td style={{padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{p.national_tracking||"—"}</td>
@@ -381,24 +426,37 @@ function Dashboard({session,onLogout,lang,setLang,t}){
       </div>
     </>}
 
-    {tab==="flights"&&!selFlight&&<>
-      {flights.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>{t.no_flights}</p>:
-      <div style={{display:"grid",gap:12}}>{flights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <div key={f.id} onClick={()=>setSelFlight(f.id)} style={{cursor:"pointer",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:"1rem 1.25rem"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:8}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{f.flight_code}</span>
-            <span style={{fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,color:stColors[f.status],background:`${stColors[f.status]}20`,border:`1px solid ${stColors[f.status]}40`,textTransform:"uppercase"}}>{t["flight_status_"+f.status]}</span>
-            <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{ops.length} ops</span>
-          </div>
-          <span style={{color:IC,fontSize:12,fontWeight:600}}>{t.flight} →</span>
-        </div>
-        {f.invoice_url?<p style={{fontSize:11,color:"#22c55e",margin:0}}>📄 {t.invoice} ✓</p>:<p style={{fontSize:11,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>}
-        {f.destination_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>📍 {f.destination_address}</p>}
-      </div>;})}</div>}
+    {/* TAB 2: Vuelos activos (preparando / despachado) */}
+    {tab==="active_flights"&&!selFlight&&<>
+      {activeFlights.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>{t.no_flights}</p>:
+      <div style={{display:"grid",gap:12}}>{activeFlights.map(f=><FlightCard key={f.id} f={f}/>)}</div>}
     </>}
 
-    {tab==="flights"&&selFlight&&(()=>{const f=flights.find(x=>x.id===selFlight);if(!f)return null;const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <FlightDetail token={token} flight={f} flightOps={ops} packages={packages} t={t} onBack={()=>setSelFlight(null)} onDispatched={()=>{reloadAll();setSelFlight(null);flash(t.success);}}/>;})()}
+    {/* TAB 3: Histórico (recibido) */}
+    {tab==="history"&&!selFlight&&<>
+      {historyFlights.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>{t.no_flights}</p>:
+      <div style={{display:"grid",gap:12}}>{historyFlights.map(f=><FlightCard key={f.id} f={f}/>)}</div>}
+    </>}
 
+    {/* Flight detail (shared by active_flights + history) */}
+    {(tab==="active_flights"||tab==="history")&&selFlight&&(()=>{const f=flights.find(x=>x.id===selFlight);if(!f)return null;const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <FlightDetail token={token} flight={f} flightOps={ops} packages={packages} t={t} onBack={()=>setSelFlight(null)} onDispatched={()=>{reloadAll();setSelFlight(null);flash(t.success);}}/>;})()}
+
+    {/* TAB 4: Estadísticas */}
+    {tab==="stats"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
+      {[
+        {label:t.stats_current_deposit,value:depositPkgs.length,icon:"📦",color:"#60a5fa"},
+        {label:t.stats_total_pkgs,value:packages.length,icon:"📬",color:"#a78bfa"},
+        {label:t.stats_flights_completed,value:statFlightsCompleted,icon:"✈️",color:"#22c55e"},
+        {label:t.stats_total_kg,value:`${statTotalKg.toFixed(1)} kg`,icon:"⚖️",color:"#fbbf24"},
+        {label:t.stats_total_usd,value:usdF(statTotalUsd),icon:"💵",color:"#34d399"}
+      ].map(s=><div key={s.label} style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"20px 24px"}}>
+        <p style={{fontSize:28,margin:"0 0 4px"}}>{s.icon}</p>
+        <p style={{fontSize:28,fontWeight:700,color:s.color,margin:"0 0 6px"}}>{s.value}</p>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textTransform:"uppercase"}}>{s.label}</p>
+      </div>)}
+    </div>}
+
+    {/* TAB 5: Cuenta corriente */}
     {tab==="account"&&<div>
       <div style={{display:"flex",gap:16,marginBottom:20,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:200,background:bal=>(bal>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)"),borderRadius:14,padding:"20px 24px",border:`1px solid ${balance>=0?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)"}`,backgroundColor:balance>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)"}}>
@@ -459,7 +517,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
     onDispatched();
   };
   return <div>
-    <button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:14,padding:0}}>← {t.tab_flights}</button>
+    <button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:14,padding:0}}>← {t.tab_active_flights}</button>
     <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.5rem",marginBottom:16}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
         <h3 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.flight_code}</h3>
