@@ -184,6 +184,7 @@ const I18N={
 function Inp({label,type="text",value,onChange,placeholder,req}){return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label><input type={type} value={value||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}} onFocus={e=>{e.target.style.borderColor=IC;}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";}}/></div>;}
 
 function Btn({children,onClick,disabled,variant="primary",type="button"}){const bg=variant==="secondary"?"rgba(255,255,255,0.06)":`linear-gradient(135deg,${B_ACCENT},${B_PRIMARY})`;return <button type={type} onClick={onClick} disabled={disabled} style={{width:"100%",padding:"13px",fontSize:14,fontWeight:700,border:variant==="secondary"?"1.5px solid rgba(255,255,255,0.12)":"none",borderRadius:10,cursor:disabled?"not-allowed":"pointer",background:disabled?"rgba(255,255,255,0.06)":bg,color:disabled?"rgba(255,255,255,0.3)":"#fff",opacity:disabled?0.6:1}}>{children}</button>;}
+function Card({title,children}){return <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.25rem 1.5rem",marginBottom:14}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{title}</h3>{children}</div>;}
 
 const B_PRIMARY="#1B4F8A",B_ACCENT="#4A90D9";
 
@@ -409,7 +410,9 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 }
 
 function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
-  const [totalWeight,setTotalWeight]=useState(flight.total_weight_kg||"");
+  const [invoiceItems,setInvoiceItems]=useState([]);
+  // Peso total calculado automáticamente desde los bultos
+  const autoWeight=flightOps.reduce((s,fo)=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);return s+opPkgs.reduce((a,p)=>a+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);},0);
   const [totalCost,setTotalCost]=useState(flight.total_cost_usd||"");
   const [tracking,setTracking]=useState(flight.international_tracking||"");
   const [carrier,setCarrier]=useState(flight.international_carrier||"DHL");
@@ -418,12 +421,13 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
   const [err,setErr]=useState("");
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
   const usdF=(v)=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  useEffect(()=>{(async()=>{const r=await dq("flight_invoice_items",{token,filters:`?flight_id=eq.${flight.id}&select=*&order=sort_order.asc`});setInvoiceItems(Array.isArray(r)?r:[]);})();},[flight.id,token]);
   const dispatch=async()=>{
-    if(!totalWeight||!totalCost||!tracking){setErr(t.err_generic);return;}
+    if(!totalCost||!tracking){setErr(t.err_generic);return;}
+    if(autoWeight<=0){setErr("El peso total es 0 - cargá peso en los bultos primero");return;}
     if(!confirm(t.dispatch_warning))return;
     setSaving(true);setErr("");
-    const w=Number(totalWeight),c=Number(totalCost);
-    // 1. Update flight
+    const w=autoWeight,c=Number(totalCost);
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{total_weight_kg:w,total_cost_usd:c,international_tracking:tracking,international_carrier:carrier,payment_method:pmtMethod,status:"despachado",dispatched_at:new Date().toISOString()}});
     // 2. Distribute cost by weight + update each operation
     for(const fo of flightOps){
@@ -465,11 +469,31 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
         </div>;})}
       </div>
     </div>
-    {flight.status==="preparando"&&<div style={{background:"rgba(96,165,250,0.06)",border:"1.5px solid rgba(96,165,250,0.25)",borderRadius:14,padding:"1.5rem"}}>
-      <h3 style={{fontSize:15,fontWeight:700,color:IC,margin:"0 0 14px"}}>{t.dispatch_form}</h3>
+    {invoiceItems.length>0&&<Card title={t.invoice}>
+      <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr",gap:8,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.08)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
+          <span>Descripción</span><span>HS Code</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Unit. USD</span><span style={{textAlign:"right"}}>Total</span>
+        </div>
+        {invoiceItems.map(it=><div key={it.id} style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr 1fr",gap:8,padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:12,color:"rgba(255,255,255,0.85)"}}>
+          <span>{it.description}</span>
+          <span style={{fontFamily:"monospace"}}>{it.hs_code||"—"}</span>
+          <span style={{textAlign:"right"}}>{Number(it.quantity||0)}</span>
+          <span style={{textAlign:"right"}}>USD {Number(it.unit_price_declared_usd||0).toFixed(2)}</span>
+          <span style={{textAlign:"right",fontWeight:700}}>USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toFixed(2)}</span>
+        </div>)}
+        <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 4px",marginTop:4,borderTop:"1px solid rgba(96,165,250,0.3)"}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>TOTAL</span>
+          <span style={{fontSize:14,fontWeight:700,color:IC}}>USD {invoiceItems.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_declared_usd||0),0).toFixed(2)}</span>
+        </div>
+      </div>
+    </Card>}
+    {flight.status==="preparando"&&<Card title={t.dispatch_form}>
       {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
+      <div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:8,padding:"10px 14px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{t.total_weight} (calculado desde los bultos)</span>
+        <span style={{fontSize:16,fontWeight:700,color:IC}}>{autoWeight.toFixed(2)} kg</span>
+      </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
-        <Inp label={t.total_weight} type="number" value={totalWeight} onChange={setTotalWeight} req placeholder="50"/>
         <Inp label={t.total_cost} type="number" value={totalCost} onChange={setTotalCost} req placeholder="500"/>
         <Inp label={t.intl_tracking} value={tracking} onChange={setTracking} req placeholder="1Z999AA10123456784"/>
         <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.courier}</label>
@@ -477,7 +501,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
             {["DHL","FedEx","UPS"].map(c=><option key={c} value={c} style={{background:"#0a1428"}}>{c}</option>)}
           </select>
         </div>
-        <div style={{marginBottom:14,gridColumn:"span 2"}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.payment_method_label}</label>
+        <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.payment_method_label}</label>
           <select value={pmtMethod} onChange={e=>setPmtMethod(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
             <option value="cuenta_corriente" style={{background:"#0a1428"}}>{t.method_cc}</option>
             <option value="efectivo" style={{background:"#0a1428"}}>{t.method_cash}</option>
@@ -485,8 +509,8 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
           </select>
         </div>
       </div>
-      <Btn onClick={dispatch} disabled={saving||!totalWeight||!totalCost||!tracking}>{saving?t.saving:t.confirm_dispatch}</Btn>
-    </div>}
+      <Btn onClick={dispatch} disabled={saving||!totalCost||!tracking||autoWeight<=0}>{saving?t.saving:t.confirm_dispatch}</Btn>
+    </Card>}
     {flight.status!=="preparando"&&<div style={{padding:"14px 18px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:10}}>
       <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase"}}>Datos del despacho</p>
       <div style={{display:"flex",gap:24,flexWrap:"wrap",fontSize:12,color:"rgba(255,255,255,0.6)"}}>

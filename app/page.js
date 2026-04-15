@@ -65,7 +65,7 @@ function OperationsList({ops,onSelect,client}){
 }
 function OperationDetail({op,token,onBack}){
   const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);
-  const canDocument=op.status==="en_preparacion";
+  const canDocument=op.status==="en_preparacion"||op.status==="en_deposito_origen";
   const addDocItem=()=>setDocItems(p=>[...p,{description:"",quantity:"1",unit_price_usd:""}]);
   const rmDocItem=(i)=>setDocItems(p=>p.filter((_,j)=>j!==i));
   const chDocItem=(i,f,v)=>setDocItems(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));

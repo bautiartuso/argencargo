@@ -1046,7 +1046,8 @@ function FinancePanel({token}){
       <div style={{display:"flex",gap:8}}><Btn onClick={addEntry}>Guardar</Btn><Btn variant="secondary" onClick={()=>setShowAdd(null)}>Cancelar</Btn></div>
     </Card>}
     {tab!=="cc"&&tab!=="dollar"&&(()=>{const deudaTC=entries.filter(e=>e.payment_method==="tarjeta_credito"&&!e.is_paid).reduce((s,e)=>s+Number(e.amount||0),0);return deudaTC>0&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:12,padding:"14px 20px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><p style={{fontSize:12,fontWeight:700,color:"#fb923c",margin:0}}>Deuda en tarjeta de crédito</p><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Gastos con tarjeta pendientes de pago</p></div><p style={{fontSize:20,fontWeight:700,color:"#fb923c",margin:0}}>{usd(deudaTC)}</p></div>;})()}
-    <div style={{display:"flex",gap:8,marginBottom:16}}>{[{k:"all",l:"Todos"},{k:"ingreso",l:"Ingresos"},{k:"gasto",l:"Gastos"},{k:"cc",l:"Cuenta Corriente"},{k:"dollar",l:"Dollarización"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
+    <div style={{display:"flex",gap:8,marginBottom:16}}>{[{k:"all",l:"Todos"},{k:"ingreso",l:"Ingresos"},{k:"gasto",l:"Gastos"},{k:"dollar",l:"Dollarización"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
+    <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",fontStyle:"italic",marginBottom:12}}>💡 Las cuentas corrientes de los agentes se gestionan ahora desde el tab AGENTES → CC Agentes.</p>
     {tab!=="cc"&&tab!=="dollar"&&(lo?<p style={{color:"rgba(255,255,255,0.3)"}}>Cargando...</p>:<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
@@ -1139,6 +1140,111 @@ function FinancePanel({token}){
   </div>;
 }
 
+function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceItems,depositPkgs,onReload,onFlash,onBack,usd}){
+  const a=signups.find(s=>s.auth_user_id===flight.agent_id);
+  const opsUnique=Array.from(new Map([...depositOps,...allOps].filter(o=>flightOps.some(fo=>fo.operation_id===o.id)).map(o=>[o.id,o])).values());
+  const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
+  const updateFlight=async(body)=>{await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body});onReload();};
+  const [items,setItems]=useState(invoiceItems);
+  useEffect(()=>{setItems(invoiceItems);},[invoiceItems]);
+  const chItem=(i,f,v)=>setItems(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
+  const saveItem=async(it)=>{await dq("flight_invoice_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{description:it.description,quantity:Number(it.quantity||0),unit_price_declared_usd:Number(it.unit_price_declared_usd||0),hs_code:it.hs_code||"",notes:it.notes||""}});onFlash("Item guardado");};
+  const addItem=async()=>{const opId=opsUnique[0]?.id;if(!opId)return;const r=await dq("flight_invoice_items",{method:"POST",token,body:{flight_id:flight.id,operation_id:opId,description:"",quantity:1,unit_price_declared_usd:0,hs_code:"",sort_order:items.length+1}});const created=Array.isArray(r)?r[0]:r;if(created?.id)setItems(p=>[...p,created]);onReload();};
+  const delItem=async(id)=>{await dq("flight_invoice_items",{method:"DELETE",token,filters:`?id=eq.${id}`});setItems(p=>p.filter(x=>x.id!==id));onReload();};
+  const markReceived=async()=>{
+    if(!confirm(`¿Marcar ${flight.flight_code} como recibido en Bs As? Las ops cambiarán a 'arribo_argentina'.`))return;
+    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{status:"recibido",received_at:new Date().toISOString()}});
+    for(const fo of flightOps){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"arribo_argentina"}});}
+    onReload();onFlash("Vuelo recibido");onBack();
+  };
+  const totalDeclaredUSD=items.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_declared_usd||0),0);
+  const canDispatch=flight.status==="preparando"&&items.length>0&&items.every(it=>it.hs_code&&it.description&&Number(it.unit_price_declared_usd)>0)&&flight.destination_address;
+  const printInvoice=()=>{
+    const w=window.open("","_blank");if(!w)return;
+    const itemsByOp={};items.forEach(it=>{if(!itemsByOp[it.operation_id])itemsByOp[it.operation_id]=[];itemsByOp[it.operation_id].push(it);});
+    const rows=items.map(it=>`<tr><td>${it.description}</td><td>${it.hs_code||"-"}</td><td style="text-align:right">${Number(it.quantity||0).toLocaleString("en-US")}</td><td style="text-align:right">USD ${Number(it.unit_price_declared_usd||0).toFixed(2)}</td><td style="text-align:right"><strong>USD ${(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toFixed(2)}</strong></td></tr>`).join("");
+    const html=`<!doctype html><html><head><meta charset="utf-8"><title>${flight.flight_code}</title><style>
+      body{font-family:Arial,sans-serif;max-width:800px;margin:30px auto;padding:0 20px;color:#222;}
+      h1{text-align:center;margin:0 0 4px;font-size:22px}
+      .sub{text-align:center;color:#666;margin:0 0 20px;font-size:13px}
+      .info{display:flex;justify-content:space-between;gap:40px;margin:16px 0 24px;padding:14px 18px;background:#f5f5f5;border-radius:6px;font-size:13px}
+      table{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}
+      th,td{padding:10px 12px;border-bottom:1px solid #ddd;text-align:left}
+      th{background:#eee;font-size:11px;text-transform:uppercase}
+      tfoot td{font-weight:700;background:#f9f9f9;border-top:2px solid #333}
+      .foot{margin-top:40px;font-size:11px;color:#666;text-align:center}
+    </style></head><body>
+      <h1>COMMERCIAL INVOICE — ${flight.flight_code}</h1>
+      <p class="sub">Argencargo · ${flight.dispatched_at?new Date(flight.dispatched_at).toLocaleDateString("en-US"):new Date().toLocaleDateString("en-US")}</p>
+      <div class="info">
+        <div><strong>From:</strong> Agent in China<br/><strong>To:</strong> ${flight.destination_address||"—"}</div>
+        <div><strong>Carrier:</strong> ${flight.international_carrier||"—"}<br/><strong>Tracking:</strong> ${flight.international_tracking||"—"}</div>
+      </div>
+      <table>
+        <thead><tr><th>Description</th><th>HS Code</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="4" style="text-align:right">TOTAL DECLARED VALUE</td><td style="text-align:right">USD ${totalDeclaredUSD.toFixed(2)}</td></tr></tfoot>
+      </table>
+      <p class="foot">This invoice was auto-generated by Argencargo's system</p>
+    </body></html>`;
+    w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),400);
+  };
+  return <div>
+    <button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:14,padding:0}}>← VOLVER A VUELOS</button>
+    <Card title={`${flight.flight_code} — ${a?(a.first_name+" "+(a.last_name||"")):""}`}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+        <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:stColors[flight.status],background:`${stColors[flight.status]}20`,border:`1px solid ${stColors[flight.status]}40`,textTransform:"uppercase"}}>{flight.status}</span>
+        <span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{flightOps.length} operaciones</span>
+      </div>
+      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"12px 0 8px",textTransform:"uppercase"}}>Operaciones en este vuelo</p>
+      <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px",marginBottom:16}}>
+        {opsUnique.map(o=>{const fo=flightOps.find(x=>x.operation_id===o.id);const w=depositPkgs.filter(p=>p.operation_id===o.id).reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);return <div key={o.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <span style={{fontSize:13,color:"#fff"}}><strong style={{fontFamily:"monospace"}}>{o.operation_code}</strong> — {o.clients?o.clients.first_name:"—"} — {o.description||"—"}</span>
+          <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{w?`${w.toFixed(2)} kg`:""}{fo?.cost_share_usd?` · ${usd(fo.cost_share_usd)}`:""}</span>
+        </div>;})}
+      </div>
+      <Inp label="Dirección de envío (Bs As)" value={flight.destination_address||""} onChange={v=>updateFlight({destination_address:v})} placeholder="Av. Callao 1137, CABA"/>
+    </Card>
+    <Card title="Factura de exportación (HS code + valor declarado)" actions={<div style={{display:"flex",gap:8}}><Btn small variant="secondary" onClick={printInvoice} disabled={items.length===0}>📄 Ver / Imprimir</Btn></div>}>
+      {items.length===0?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"1rem 0",margin:0}}>No hay items. Los items se clonan de los productos que carga el cliente.</p>:
+      <div>
+        {items.map((it,i)=>{const op=opsUnique.find(o=>o.id===it.operation_id);return <div key={it.id} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 12px",marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <span style={{fontSize:11,fontWeight:700,color:IC,fontFamily:"monospace"}}>{op?op.operation_code:""} · Item {i+1}</span>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={()=>saveItem(it)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(34,197,94,0.25)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer",fontWeight:600}}>Guardar</button>
+              <button onClick={()=>delItem(it.id)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>X</button>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr",gap:"0 10px"}}>
+            <Inp label="Descripción" value={it.description} onChange={v=>chItem(i,"description",v)} small/>
+            <Inp label="HS Code" value={it.hs_code} onChange={v=>chItem(i,"hs_code",v)} placeholder="8517.62" small/>
+            <Inp label="Cantidad" type="number" value={it.quantity} onChange={v=>chItem(i,"quantity",v)} small/>
+            <Inp label="Precio unit. USD (declarado)" type="number" value={it.unit_price_declared_usd} onChange={v=>chItem(i,"unit_price_declared_usd",v)} step="0.01" small/>
+          </div>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",textAlign:"right"}}>Subtotal: USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toFixed(2)}</p>
+        </div>;})}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:8,marginTop:6}}>
+          <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL DECLARADO</span>
+          <span style={{fontSize:16,fontWeight:700,color:IC}}>USD {totalDeclaredUSD.toFixed(2)}</span>
+        </div>
+        <div style={{display:"flex",justifyContent:"center",marginTop:10}}><button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button></div>
+      </div>}
+    </Card>
+    {flight.status==="despachado"&&<Card title="Datos del despacho (cargados por agente)">
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,fontSize:12}}>
+        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 4px"}}>CARRIER</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.international_carrier||"—"}</p></div>
+        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 4px"}}>TRACKING</p><p style={{fontSize:14,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.international_tracking||"—"}</p></div>
+        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 4px"}}>PESO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.total_weight_kg?`${flight.total_weight_kg} kg`:"—"}</p></div>
+        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 4px"}}>COSTO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{usd(flight.total_cost_usd||0)}</p></div>
+        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 4px"}}>PAGO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.payment_method||"—"}</p></div>
+        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 4px"}}>DESPACHADO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{formatDate(flight.dispatched_at)}</p></div>
+      </div>
+      <div style={{marginTop:14}}><Btn small onClick={markReceived}>✓ Marcar como recibido en Bs As</Btn></div>
+    </Card>}
+  </div>;
+}
+
 function AnticipoForm({token,agentId,onSaved}){
   const [date,setDate]=useState(new Date().toISOString().slice(0,10));
   const [amount,setAmount]=useState("");
@@ -1165,6 +1271,7 @@ function AgentsPanel({token}){
   const [depositPkgs,setDepositPkgs]=useState([]);
   const [flights,setFlights]=useState([]);
   const [flightOps,setFlightOps]=useState([]);
+  const [invoiceItems,setInvoiceItems]=useState([]);
   const [accMovements,setAccMovements]=useState([]);
   const [selectedOps,setSelectedOps]=useState([]);
   const [selFlight,setSelFlight]=useState(null);
@@ -1172,7 +1279,7 @@ function AgentsPanel({token}){
   const [lo,setLo]=useState(true);
   const [msg,setMsg]=useState("");
   const load=async()=>{setLo(true);
-    const [r,u,o,depOps,depPkgs,fl,flOps,accM]=await Promise.all([
+    const [r,u,o,depOps,depPkgs,fl,flOps,fii,accM]=await Promise.all([
       dq("agent_signups",{token,filters:"?select=*&order=created_at.desc"}),
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
       dq("operations",{token,filters:"?select=id,operation_code,client_id,clients(client_code,first_name,last_name)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&consolidation_confirmed=eq.false&order=created_at.desc"}),
@@ -1180,11 +1287,12 @@ function AgentsPanel({token}){
       dq("operation_packages",{token,filters:"?select=*&order=package_number.asc"}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
       dq("flight_operations",{token,filters:"?select=*"}),
+      dq("flight_invoice_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"})
     ]);
     setSignups(Array.isArray(r)?r:[]);setUnassigned(Array.isArray(u)?u:[]);setAllOps(Array.isArray(o)?o:[]);
     setDepositOps(Array.isArray(depOps)?depOps:[]);setDepositPkgs(Array.isArray(depPkgs)?depPkgs:[]);
-    setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(flOps)?flOps:[]);setAccMovements(Array.isArray(accM)?accM:[]);
+    setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(flOps)?flOps:[]);setInvoiceItems(Array.isArray(fii)?fii:[]);setAccMovements(Array.isArray(accM)?accM:[]);
     const ids=(Array.isArray(r)?r:[]).map(s=>s.auth_user_id).filter(Boolean);
     if(ids.length>0){const pr=await dq("profiles",{token,filters:`?id=in.(${ids.join(",")})&select=id,role`});const m={};(Array.isArray(pr)?pr:[]).forEach(p=>{m[p.id]=p;});setProfiles(m);}
     setLo(false);};
@@ -1204,18 +1312,21 @@ function AgentsPanel({token}){
     if(agentIds.length>1){alert("Solo podés agrupar ops del MISMO agente. Las que seleccionaste son de varios agentes distintos.");return;}
     const agentId=agentIds[0];
     if(!agentId){alert("Las ops seleccionadas no tienen agente asignado");return;}
-    // Próximo flight_code
     const lastFl=flights[0];
     const lastNum=lastFl?parseInt(lastFl.flight_code.replace(/\D/g,""),10)||0:0;
     const newCode=`FL-${String(lastNum+1).padStart(4,"0")}`;
     const r=await dq("flights",{method:"POST",token,body:{flight_code:newCode,agent_id:agentId,status:"preparando"}});
     const created=Array.isArray(r)?r[0]:r;
     if(!created?.id){alert("Error creando vuelo");return;}
-    // Crear flight_operations
     for(const op of ops){const w=opWeight(op.id);
       await dq("flight_operations",{method:"POST",token,body:{flight_id:created.id,operation_id:op.id,weight_kg:w}});
+      // Clonar los operation_items del cliente como items de factura (base editable)
+      const items=await dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});
+      let sort=0;for(const it of (Array.isArray(items)?items:[])){sort++;
+        await dq("flight_invoice_items",{method:"POST",token,body:{flight_id:created.id,operation_id:op.id,source_item_id:it.id,description:it.description||"",quantity:Number(it.quantity||1),unit_price_declared_usd:Number(it.unit_price_usd||0),hs_code:it.ncm_code||"",sort_order:sort}});
+      }
     }
-    setSelectedOps([]);load();flash(`Vuelo ${newCode} creado`);setTab("flights");setSelFlight(created.id);
+    setSelectedOps([]);load();flash(`Vuelo ${newCode} creado con factura base. Editá HS code y valores declarados.`);setTab("flights");setSelFlight(created.id);
   };
   const assignToOp=async(pkg,opId)=>{
     if(!opId)return;
@@ -1317,57 +1428,7 @@ function AgentsPanel({token}){
       </div>}
     </div>}
 
-    {tab==="flights"&&selFlight&&flight&&(()=>{
-      const a=signups.find(s=>s.auth_user_id===flight.agent_id);
-      const ops=depositOps.concat(allOps).filter(o=>flightOpsForSel.some(fo=>fo.operation_id===o.id));
-      const opsUnique=Array.from(new Map(ops.map(o=>[o.id,o])).values());
-      const updateFlight=async(body)=>{await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body});load();flash("Vuelo actualizado");};
-      const markReceived=async()=>{
-        if(!confirm(`¿Marcar ${flight.flight_code} como recibido en Bs As? Las ops cambiarán a 'arribo_argentina'.`))return;
-        await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{status:"recibido",received_at:new Date().toISOString()}});
-        for(const fo of flightOpsForSel){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"arribo_argentina"}});}
-        load();flash("Vuelo recibido");setSelFlight(null);
-      };
-      const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
-      return <div>
-        <button onClick={()=>setSelFlight(null)} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:14,padding:0}}>← VOLVER A VUELOS</button>
-        <Card title={`${flight.flight_code} — ${a?(a.first_name+" "+(a.last_name||"")):""}`}>
-          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
-            <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:stColors[flight.status],background:`${stColors[flight.status]}20`,border:`1px solid ${stColors[flight.status]}40`,textTransform:"uppercase"}}>{flight.status}</span>
-            <span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{flightOpsForSel.length} operaciones</span>
-          </div>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"12px 0 8px",textTransform:"uppercase"}}>Operaciones en este vuelo</p>
-          <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px",marginBottom:16}}>
-            {opsUnique.map(o=>{const fo=flightOpsForSel.find(x=>x.operation_id===o.id);return <div key={o.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-              <span style={{fontSize:13,color:"#fff"}}><strong style={{fontFamily:"monospace"}}>{o.operation_code}</strong> — {o.clients?o.clients.first_name:"—"} — {o.description||"—"}</span>
-              <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{fo?.weight_kg?`${Number(fo.weight_kg).toFixed(2)} kg`:""}{fo?.cost_share_usd?` · ${usd(fo.cost_share_usd)}`:""}</span>
-            </div>;})}
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
-            <Inp label="Dirección de envío (Bs As)" value={flight.destination_address||""} onChange={v=>updateFlight({destination_address:v})} placeholder="Av. Callao 1137, CABA"/>
-            <div><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Factura de exportación (PDF)</label>
-              {flight.invoice_url?<div style={{padding:"10px 12px",background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:8}}>
-                <a href={`${SB_URL}/storage/v1/object/public/invoices/${flight.invoice_url}`} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:"#22c55e",fontWeight:600,textDecoration:"none"}}>📄 Ver factura</a>
-                <button onClick={()=>updateFlight({invoice_url:null,invoice_uploaded_at:null})} style={{fontSize:10,marginLeft:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>Quitar</button>
-              </div>:<input type="file" accept="application/pdf,image/*" onChange={async(e)=>{const f=e.target.files[0];if(!f)return;const path=`${flight.id}.${f.name.split(".").pop()}`;
-                const r=await fetch(`${SB_URL}/storage/v1/object/invoices/${path}`,{method:"POST",headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY,"Content-Type":f.type},body:f});
-                if(r.ok)updateFlight({invoice_url:path,invoice_uploaded_at:new Date().toISOString()});else alert("Error subiendo archivo");
-              }} style={{width:"100%",padding:"8px",fontSize:12,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.7)"}}/>}
-            </div>
-          </div>
-          {flight.status==="despachado"&&<div style={{marginTop:14,padding:"12px 14px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:10}}>
-            <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase"}}>Datos del despacho (cargados por agente)</p>
-            <div style={{display:"flex",gap:24,flexWrap:"wrap",fontSize:12}}>
-              <span><strong style={{color:"#fff"}}>Carrier:</strong> {flight.international_carrier||"—"}</span>
-              <span><strong style={{color:"#fff"}}>Tracking:</strong> {flight.international_tracking||"—"}</span>
-              <span><strong style={{color:"#fff"}}>Pago:</strong> {flight.payment_method||"—"}</span>
-              <span><strong style={{color:"#fff"}}>Despachado:</strong> {formatDate(flight.dispatched_at)}</span>
-            </div>
-            <div style={{marginTop:10}}><Btn small onClick={markReceived}>✓ Marcar como recibido en Bs As</Btn></div>
-          </div>}
-        </Card>
-      </div>;
-    })()}
+    {tab==="flights"&&selFlight&&flight&&<FlightEditor token={token} flight={flight} signups={signups} flightOps={flightOpsForSel} depositOps={depositOps} allOps={allOps} invoiceItems={invoiceItems.filter(i=>i.flight_id===flight.id)} depositPkgs={depositPkgs} onReload={load} onFlash={flash} onBack={()=>setSelFlight(null)} usd={usd}/>}
 
     {tab==="accounts"&&<div>
       {approvedAgents.length===0?<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"3rem 0"}}>No hay agentes aprobados</p>:
