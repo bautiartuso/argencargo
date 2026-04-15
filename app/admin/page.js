@@ -345,14 +345,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         // Auto finance entries
         if(field==="client_paid"&&value===true){
           const pmt=payments.find(p=>p.id===pmtId);
-          if(pmt?.client_paid)return; // ya está marcado, evitar duplicar
+          if(pmt?.client_paid)return;
           await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pmtId}`,body:{client_paid:true,client_paid_date:new Date().toISOString().slice(0,10)}});
-          // Check duplicate before creating finance entry
-          const existing=await dq("finance_entries",{token,filters:`?operation_id=eq.${op.id}&description=eq.Anticipo pago ${op.operation_code}&auto_generated=eq.true&amount=eq.${Number(pmt.client_amount_usd)}&select=id`});
-          if(!Array.isArray(existing)||existing.length===0){
-            await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"ingreso",description:`Anticipo pago ${op.operation_code}`,amount:Number(pmt.client_amount_usd),currency:"USD",payment_method:pmt.client_payment_method||"transferencia",is_paid:true,auto_generated:true,operation_id:op.id}});
-          }
-          // Update total_anticipos
           const newTotal=payments.filter(p=>p.client_paid||(p.id===pmtId)).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{total_anticipos:newTotal}});
           setOp(p=>({...p,total_anticipos:newTotal}));
@@ -361,18 +355,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const pmt=payments.find(p=>p.id===pmtId);
           if(pmt?.giro_status==="confirmado")return;
           await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pmtId}`,body:{giro_status:"confirmado",giro_date:new Date().toISOString().slice(0,10)}});
-          const giroAmt=Number(pmt.giro_amount_usd||0)+Number(pmt.cost_comision_giro||0);
-          const existing=await dq("finance_entries",{token,filters:`?operation_id=eq.${op.id}&description=eq.Giro exterior ${op.operation_code}&auto_generated=eq.true&amount=eq.${giroAmt}&select=id`});
-          if(!Array.isArray(existing)||existing.length===0){
-            await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Giro exterior ${op.operation_code}`,amount:giroAmt,currency:"USD",payment_method:"transferencia",is_paid:true,auto_generated:true,operation_id:op.id}});
-          }
         }
         const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);flash("Actualizado");
       };
       const delPmt=async(pmtId)=>{
-        // Delete associated finance entries (anticipo + giro)
-        await dq("finance_entries",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}&auto_generated=eq.true&description=like.Anticipo pago*`});
-        await dq("finance_entries",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}&auto_generated=eq.true&description=like.Giro exterior*`});
         await dq("payment_management",{method:"DELETE",token,filters:`?id=eq.${pmtId}`});
         // Recalculate total_anticipos
         const remaining=payments.filter(x=>x.id!==pmtId&&x.client_paid);
@@ -453,20 +439,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const margen=ingresoTotal>0?((ganancia/ingresoTotal)*100):0;
       const rw=(l,v,bold,color)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:10}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:bold?16:13,fontWeight:bold?700:600,color:color||"#fff"}}>USD {v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
       return <>
-      <Card title="Cobro" actions={<Btn onClick={async()=>{await saveOp();
-        // Auto-create finance_entry when marking as collected
-        if(op.is_collected){
-          const existing=await dq("finance_entries",{token,filters:`?operation_id=eq.${op.id}&description=eq.Cobro ${op.operation_code}&auto_generated=eq.true&select=id`});
-          const amtRaw=Number(op.collected_amount||0)>0?Number(op.collected_amount):Number(op.budget_total||0);
-          const isArs=(op.collection_currency||"USD")==="ARS";
-          const rate=Number(op.collection_exchange_rate||0);
-          if(isArs&&!rate){alert("El cobro es en ARS: tenés que cargar el tipo de cambio antes de guardar");return;}
-          const amtUsd=isArs?(amtRaw/rate):amtRaw;
-          if(amtUsd>0&&(!Array.isArray(existing)||existing.length===0)){
-            await dq("finance_entries",{method:"POST",token,body:{date:op.collection_date||new Date().toISOString().slice(0,10),type:"ingreso",description:`Cobro ${op.operation_code}${isArs?` (ARS ${amtRaw.toLocaleString("es-AR")} @ ${rate})`:""}`,amount:amtUsd,currency:"USD",payment_method:op.collection_method||"transferencia",is_paid:true,auto_generated:true,operation_id:op.id,...(isArs?{amount_ars:amtRaw,exchange_rate:rate}:{})}});
-            flash("Ingreso registrado en finanzas");
-          }
-        }
+      <Card title="Cobro" actions={<Btn onClick={async()=>{
+        if(op.is_collected&&(op.collection_currency||"USD")==="ARS"&&!Number(op.collection_exchange_rate||0)){alert("El cobro es en ARS: tenés que cargar el tipo de cambio antes de guardar");return;}
+        await saveOp();
       }} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
           <Inp label={`Monto cobrado (${op.collection_currency||"USD"})`} type="number" value={op.collected_amount||op.budget_total} onChange={chOp("collected_amount")} step="0.01"/>
@@ -532,15 +507,6 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         }
         // Auto-create/update consolidated "Costos" entry in finanzas (USD costs)
         const totalCostosUSD=Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0);
-        if(totalCostosUSD>0){
-          const existCost=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&description=eq.Costos ${op.operation_code}&auto_generated=eq.true&select=id`});
-          const dateForCost=op.closed_at?op.closed_at.slice(0,10):new Date().toISOString().slice(0,10);
-          if(Array.isArray(existCost)&&existCost.length>0){
-            await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existCost[0].id}`,body:{amount:totalCostosUSD,date:dateForCost}});
-          } else {
-            await dq("finance_entries",{method:"POST",token,body:{date:dateForCost,type:"gasto",description:`Costos ${op.operation_code}`,amount:totalCostosUSD,currency:"USD",payment_method:"transferencia",is_paid:true,auto_generated:true,operation_id:id}});
-          }
-        }
         flash("Costos guardados");setSaving(false);
       }} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
         <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 8px",textTransform:"uppercase"}}>Flete</p>
@@ -998,107 +964,114 @@ function AdminSettings({token,session}){
   </div>;
 }
 
+const FIXED_CATS=[{k:"marketing",l:"Marketing (Meta, Google, etc.)"},{k:"software",l:"Software (Claude, Vercel, etc.)"},{k:"salarios",l:"Salarios"},{k:"oficina",l:"Oficina"},{k:"otros",l:"Otros (requiere detalle)"}];
+const CAT_LBL={marketing:"Marketing",software:"Software",salarios:"Salarios",oficina:"Oficina",otros:"Otros"};
+const CAT_COLOR={marketing:"#fb923c",software:"#a78bfa",salarios:"#22c55e",oficina:"#60a5fa",otros:"#94a3b8"};
 function FinancePanel({token}){
-  const [entries,setEntries]=useState([]);const [cats,setCats]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("all");const [showAdd,setShowAdd]=useState(null);const [msg,setMsg]=useState("");
-  const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),description:"",category_id:"",type:"ingreso",amount:"",notes:"",payment_method:"efectivo",payment_due_date:"",operation_id:""});
-  const [allOps,setAllOps]=useState([]);
-  const [ccMvs,setCcMvs]=useState([]);const [ccForm,setCcForm]=useState({date:new Date().toISOString().slice(0,10),amount:"",description:""});const [showCcForm,setShowCcForm]=useState(false);
+  const [entries,setEntries]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("fixed");const [showAdd,setShowAdd]=useState(false);const [msg,setMsg]=useState("");
+  const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",is_recurring:false,recurrence_day:1,payment_method:"transferencia"});
+  const [allOps,setAllOps]=useState([]);const [allPmts,setAllPmts]=useState([]);
   const [dollarPending,setDollarPending]=useState([]);const [dollarRates,setDollarRates]=useState({});
-  const load=async()=>{const [e,c,o,cc,dp]=await Promise.all([dq("finance_entries",{token,filters:"?select=*,finance_categories(name)&order=date.desc,created_at.desc"}),dq("finance_categories",{token,filters:"?select=*&order=type.asc,sort_order.asc"}),dq("operations",{token,filters:"?select=id,operation_code,description,budget_total&order=created_at.desc"}),dq("supplier_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&currency=eq.ARS&exchange_rate=is.null&auto_generated=eq.true&order=card_closing_date.asc"})]);setEntries(Array.isArray(e)?e:[]);setCats(Array.isArray(c)?c:[]);setAllOps(Array.isArray(o)?o:[]);setCcMvs(Array.isArray(cc)?cc:[]);setDollarPending(Array.isArray(dp)?dp:[]);setLo(false);};
+  const load=async()=>{const [e,o,pm,dp]=await Promise.all([
+    dq("finance_entries",{token,filters:"?select=*&auto_generated=is.false&order=date.desc,created_at.desc"}),
+    dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,closed_at,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(first_name,last_name,client_code)&order=created_at.desc"}),
+    dq("payment_management",{token,filters:"?select=*,operations(operation_code)"}),
+    dq("finance_entries",{token,filters:"?select=*&currency=eq.ARS&exchange_rate=is.null&auto_generated=eq.true&order=card_closing_date.asc"})
+  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
-  const addEntry=async()=>{if(!newEntry.description||!newEntry.amount||!newEntry.category_id)return;
-    const body={...newEntry,amount:Number(newEntry.amount),is_paid:newEntry.payment_method!=="tarjeta_credito"};
-    if(!body.payment_due_date)delete body.payment_due_date;if(!body.operation_id)delete body.operation_id;
+  const addEntry=async()=>{
+    if(!newEntry.amount||!newEntry.category){flash("Faltan datos");return;}
+    if(newEntry.category==="otros"&&!newEntry.detail){flash("Categoría 'Otros' requiere detalle");return;}
+    const body={date:newEntry.date,type:"gasto",description:CAT_LBL[newEntry.category]+(newEntry.detail?` — ${newEntry.detail}`:""),detail:newEntry.detail||null,category:newEntry.category,amount:Number(newEntry.amount),currency:"USD",payment_method:newEntry.payment_method,is_paid:true,is_recurring:!!newEntry.is_recurring,recurrence_day:newEntry.is_recurring?Number(newEntry.recurrence_day):null,auto_generated:false};
     const r=await dq("finance_entries",{method:"POST",token,body});
-    if(r?.id||Array.isArray(r)){load();setShowAdd(null);setNewEntry({date:new Date().toISOString().slice(0,10),description:"",category_id:"",type:"ingreso",amount:"",notes:"",payment_method:"efectivo",payment_due_date:"",operation_id:""});flash("Movimiento agregado");}};
-  const delEntry=async(id)=>{await dq("finance_entries",{method:"DELETE",token,filters:`?id=eq.${id}`});setEntries(p=>p.filter(e=>e.id!==id));flash("Eliminado");};
-  const filtered=tab==="all"?entries:entries.filter(e=>e.type===tab);
-  const totalIng=entries.filter(e=>e.type==="ingreso").reduce((s,e)=>s+Number(e.amount||0),0);
-  const totalGas=entries.filter(e=>e.type==="gasto").reduce((s,e)=>s+Number(e.amount||0),0);
-  const usd=v=>`USD ${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    if(r?.id||Array.isArray(r)){load();setShowAdd(false);setNewEntry({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",is_recurring:false,recurrence_day:1,payment_method:"transferencia"});flash("Costo fijo agregado");}
+  };
+  const delEntry=async(id)=>{if(!confirm("¿Eliminar este movimiento?"))return;await dq("finance_entries",{method:"DELETE",token,filters:`?id=eq.${id}`});setEntries(p=>p.filter(e=>e.id!==id));flash("Eliminado");};
+  const usd=v=>`USD ${Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  // Totales costos fijos
+  const totalFijos=entries.reduce((s,e)=>s+Number(e.amount||0),0);
+  const fijosByCategory=entries.reduce((m,e)=>{const k=e.category||"otros";m[k]=(m[k]||0)+Number(e.amount||0);return m;},{});
+  // Libro diario unificado: ops cobradas + pmts client_paid (ingresos), costos op + giros confirmados (gastos), entries manuales (gastos fijos)
+  const ledger=[];
+  allOps.forEach(o=>{
+    if(o.is_collected){const amt=Number(o.collected_amount||o.budget_total||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const usdAmt=isArs&&rate?amt/rate:amt;if(usdAmt>0)ledger.push({date:o.collection_date||o.closed_at?.slice(0,10)||"—",type:"ingreso",origen:"op",code:o.operation_code,desc:`Cobro ${o.operation_code} — ${o.clients?o.clients.last_name:""}`,amount:usdAmt,detail:isArs?`ARS ${amt.toLocaleString("es-AR")} @ ${rate}`:""});}
+    const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
+    if(cost>0)ledger.push({date:o.closed_at?.slice(0,10)||"—",type:"gasto",origen:"op",code:o.operation_code,desc:`Costos ${o.operation_code}`,amount:cost,detail:""});
+  });
+  allPmts.forEach(p=>{
+    const code=p.operations?.operation_code||"";
+    if(p.client_paid)ledger.push({date:p.client_paid_date||"—",type:"ingreso",origen:"pmt",code,desc:`Pago cliente ${code}`,amount:Number(p.client_amount_usd||0),detail:p.description||""});
+    if(p.giro_status==="confirmado"){const g=Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0);if(g>0)ledger.push({date:p.giro_date||"—",type:"gasto",origen:"pmt",code,desc:`Giro exterior ${code}`,amount:g,detail:p.description||""});}
+  });
+  entries.forEach(e=>{ledger.push({date:e.date,type:e.type,origen:"manual",code:"",desc:e.description,amount:Number(e.amount||0),detail:e.detail||"",cat:e.category,recurring:e.is_recurring,id:e.id});});
+  ledger.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  const ledgerIngresos=ledger.filter(l=>l.type==="ingreso").reduce((s,l)=>s+l.amount,0);
+  const ledgerGastosOp=ledger.filter(l=>l.type==="gasto"&&l.origen!=="manual").reduce((s,l)=>s+l.amount,0);
+  const ledgerGastosFijos=ledger.filter(l=>l.type==="gasto"&&l.origen==="manual").reduce((s,l)=>s+l.amount,0);
+  const ganancia=ledgerIngresos-ledgerGastosOp-ledgerGastosFijos;
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
       <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Finanzas</h2>
-      <div style={{display:"flex",gap:8}}><Btn onClick={()=>{setShowAdd("ingreso");setNewEntry(p=>({...p,type:"ingreso"}));}} small>+ Ingreso</Btn><Btn onClick={()=>{setShowAdd("gasto");setNewEntry(p=>({...p,type:"gasto"}));}} small variant="danger">+ Gasto</Btn></div>
+      {tab==="fixed"&&<Btn onClick={()=>setShowAdd(true)} small>+ Nuevo costo fijo</Btn>}
     </div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:20}}>
-      <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px"}}>INGRESOS</p><p style={{fontSize:22,fontWeight:700,color:"#22c55e",margin:0}}>{usd(totalIng)}</p></div>
-      <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px"}}>GASTOS</p><p style={{fontSize:22,fontWeight:700,color:"#ff6b6b",margin:0}}>{usd(totalGas)}</p></div>
-      <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px"}}>GANANCIA</p><p style={{fontSize:22,fontWeight:700,color:totalIng-totalGas>0?"#22c55e":"#ff6b6b",margin:0}}>{usd(totalIng-totalGas)}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"4px 0 0"}}>Margen: {totalIng>0?((totalIng-totalGas)/totalIng*100).toFixed(1):"0"}%</p></div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:20}}>
+      <div style={{background:"rgba(34,197,94,0.04)",border:"1px solid rgba(34,197,94,0.12)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px"}}>INGRESOS</p><p style={{fontSize:20,fontWeight:700,color:"#22c55e",margin:0}}>{usd(ledgerIngresos)}</p></div>
+      <div style={{background:"rgba(255,80,80,0.04)",border:"1px solid rgba(255,80,80,0.12)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px"}}>COSTOS OPS</p><p style={{fontSize:20,fontWeight:700,color:"#ff6b6b",margin:0}}>{usd(ledgerGastosOp)}</p></div>
+      <div style={{background:"rgba(251,146,60,0.04)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px"}}>COSTOS FIJOS</p><p style={{fontSize:20,fontWeight:700,color:"#fb923c",margin:0}}>{usd(ledgerGastosFijos)}</p></div>
+      <div style={{background:ganancia>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)",border:`1px solid ${ganancia>=0?"rgba(34,197,94,0.18)":"rgba(255,80,80,0.18)"}`,borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px"}}>GANANCIA NETA</p><p style={{fontSize:20,fontWeight:700,color:ganancia>=0?"#22c55e":"#ff6b6b",margin:0}}>{usd(ganancia)}</p></div>
     </div>
-    {showAdd&&<Card title={showAdd==="ingreso"?"Nuevo ingreso":"Nuevo gasto"}>
+    <div style={{display:"flex",gap:8,marginBottom:16}}>{[{k:"fixed",l:"Costos Fijos"},{k:"ledger",l:"Libro Diario"},{k:"dollar",l:"Dollarización"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
+    {showAdd&&tab==="fixed"&&<Card title="Nuevo costo fijo">
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
         <Inp label="Fecha" type="date" value={newEntry.date} onChange={v=>setNewEntry(p=>({...p,date:v}))}/>
-        <Inp label="Descripción" value={newEntry.description} onChange={v=>setNewEntry(p=>({...p,description:v}))} placeholder="Ej: FRANP / SEIKO"/>
-        <Sel label="Categoría" value={newEntry.category_id} onChange={v=>setNewEntry(p=>({...p,category_id:v}))} options={cats.filter(c=>c.type===showAdd).map(c=>({value:c.id,label:c.name}))} ph="Seleccionar"/>
+        <Sel label="Categoría" value={newEntry.category} onChange={v=>setNewEntry(p=>({...p,category:v}))} options={FIXED_CATS.map(c=>({value:c.k,label:c.l}))}/>
+        <Inp label="Monto USD" type="number" value={newEntry.amount} onChange={v=>setNewEntry(p=>({...p,amount:v}))} step="0.01" placeholder="0.00"/>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
-        <Inp label="Monto (USD)" type="number" value={newEntry.amount} onChange={v=>setNewEntry(p=>({...p,amount:v}))} step="0.01" placeholder="0.00"/>
-        <Sel label="Método de pago" value={newEntry.payment_method} onChange={v=>setNewEntry(p=>({...p,payment_method:v}))} options={[{value:"efectivo",label:"Efectivo"},{value:"transferencia",label:"Transferencia"},{value:"tarjeta_credito",label:"Tarjeta Crédito"},{value:"tarjeta_debito",label:"Tarjeta Débito"}]}/>
-        {newEntry.payment_method==="tarjeta_credito"&&<Inp label="Fecha pago real" type="date" value={newEntry.payment_due_date} onChange={v=>setNewEntry(p=>({...p,payment_due_date:v}))}/>}
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:"0 12px"}}>
+        <Inp label={`Detalle ${newEntry.category==="otros"?"(obligatorio)":"(opcional)"}`} value={newEntry.detail} onChange={v=>setNewEntry(p=>({...p,detail:v}))} placeholder="Ej: Vercel Pro · Suscripción Claude · Sueldo Marzo"/>
+        <Sel label="Método" value={newEntry.payment_method} onChange={v=>setNewEntry(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"tarjeta_credito",label:"Tarjeta Crédito"},{value:"tarjeta_debito",label:"Tarjeta Débito"},{value:"efectivo",label:"Efectivo"}]}/>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
-        {showAdd==="ingreso"&&<Sel label="Operación (opcional)" value={newEntry.operation_id} onChange={v=>setNewEntry(p=>({...p,operation_id:v||null}))} options={allOps.map(o=>({value:o.id,label:`${o.operation_code} — ${o.description||"Sin desc"}`}))} ph="Sin vincular"/>}
-        <Inp label="Notas" value={newEntry.notes} onChange={v=>setNewEntry(p=>({...p,notes:v}))} placeholder="Opcional"/>
+      <div style={{display:"flex",gap:16,alignItems:"center",margin:"4px 0 12px"}}>
+        <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}><input type="checkbox" checked={newEntry.is_recurring} onChange={e=>setNewEntry(p=>({...p,is_recurring:e.target.checked}))}/><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Es recurrente mensual</span></label>
+        {newEntry.is_recurring&&<div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Día del mes:</span><input type="number" min="1" max="28" value={newEntry.recurrence_day} onChange={e=>setNewEntry(p=>({...p,recurrence_day:e.target.value}))} style={{width:60,padding:"6px 10px",fontSize:13,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff"}}/></div>}
       </div>
-      <div style={{display:"flex",gap:8}}><Btn onClick={addEntry}>Guardar</Btn><Btn variant="secondary" onClick={()=>setShowAdd(null)}>Cancelar</Btn></div>
+      <div style={{display:"flex",gap:8}}><Btn onClick={addEntry}>Guardar</Btn><Btn variant="secondary" onClick={()=>setShowAdd(false)}>Cancelar</Btn></div>
     </Card>}
-    {tab!=="cc"&&tab!=="dollar"&&(()=>{const deudaTC=entries.filter(e=>e.payment_method==="tarjeta_credito"&&!e.is_paid).reduce((s,e)=>s+Number(e.amount||0),0);return deudaTC>0&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:12,padding:"14px 20px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><p style={{fontSize:12,fontWeight:700,color:"#fb923c",margin:0}}>Deuda en tarjeta de crédito</p><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Gastos con tarjeta pendientes de pago</p></div><p style={{fontSize:20,fontWeight:700,color:"#fb923c",margin:0}}>{usd(deudaTC)}</p></div>;})()}
-    <div style={{display:"flex",gap:8,marginBottom:16}}>{[{k:"all",l:"Todos"},{k:"ingreso",l:"Ingresos"},{k:"gasto",l:"Gastos"},{k:"dollar",l:"Dollarización"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
-    <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",fontStyle:"italic",marginBottom:12}}>💡 Las cuentas corrientes de los agentes se gestionan ahora desde el tab AGENTES → CC Agentes.</p>
-    {tab!=="cc"&&tab!=="dollar"&&(lo?<p style={{color:"rgba(255,255,255,0.3)"}}>Cargando...</p>:<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-          {["Fecha","Descripción","Categoría","Monto","Pago","Notas",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
-        </tr></thead>
-        <tbody>{filtered.map(e=><tr key={e.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-          <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{formatDate(e.date)}</td>
-          <td style={{padding:"10px 12px",color:"#fff"}}>{e.description}</td>
-          <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)"}}>{e.finance_categories?.name||"—"}</td>
-          <td style={{padding:"10px 12px",fontWeight:700,color:e.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{e.type==="gasto"?"-":""}{usd(Number(e.amount||0))}</td>
-          <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:e.payment_method==="tarjeta_credito"?"rgba(251,146,60,0.15)":"rgba(255,255,255,0.05)",color:e.payment_method==="tarjeta_credito"?"#fb923c":"rgba(255,255,255,0.4)"}}>{e.payment_method==="tarjeta_credito"?"TC":e.payment_method==="tarjeta_debito"?"TD":e.payment_method==="transferencia"?"TRF":"EF"}</span>{e.payment_method==="tarjeta_credito"&&!e.is_paid&&<span style={{fontSize:9,color:"#fb923c",marginLeft:4}}>⏳</span>}</td>
-          <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.3)",fontSize:11}}>{e.notes||""}{e.operation_id&&<span style={{fontSize:9,color:IC,marginLeft:4}}>📦</span>}</td>
-          <td style={{padding:"10px 12px"}}><button onClick={()=>delEntry(e.id)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>X</button></td>
-        </tr>)}</tbody>
-      </table>
-      {filtered.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:"2rem 0"}}>No hay movimientos</p>}
-    </div>)}
-    {tab==="cc"&&(()=>{
-      const bal=ccMvs.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):-Number(m.amount_usd)),0);
-      const addAnticipo=async()=>{if(!ccForm.amount)return;await dq("supplier_account_movements",{method:"POST",token,body:{type:"anticipo",amount_usd:Number(ccForm.amount),description:ccForm.description||"Anticipo",date:ccForm.date}});setCcForm({date:new Date().toISOString().slice(0,10),amount:"",description:""});setShowCcForm(false);load();flash("Anticipo cargado");};
-      const delMv=async(id)=>{await dq("supplier_account_movements",{method:"DELETE",token,filters:`?id=eq.${id}`});load();flash("Movimiento eliminado");};
-      return <>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
-        <div style={{background:"rgba(34,197,94,0.06)",borderRadius:12,padding:"20px",border:"1px solid rgba(34,197,94,0.15)",textAlign:"center"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 6px"}}>SALDO DISPONIBLE</p><p style={{fontSize:28,fontWeight:700,color:bal>0?"#22c55e":"#ff6b6b",margin:0}}>{usd(bal)}</p></div>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}><Btn onClick={()=>setShowCcForm(!showCcForm)}>+ Cargar Anticipo</Btn></div>
+    {tab==="fixed"&&(lo?<p style={{color:"rgba(255,255,255,0.3)"}}>Cargando...</p>:<>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:16}}>
+        {FIXED_CATS.map(c=><div key={c.k} style={{background:"rgba(255,255,255,0.03)",border:`1px solid ${CAT_COLOR[c.k]}33`,borderRadius:10,padding:"10px 14px"}}><p style={{fontSize:10,fontWeight:700,color:CAT_COLOR[c.k],margin:"0 0 4px"}}>{c.l.split(" ")[0].toUpperCase()}</p><p style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>{usd(fijosByCategory[c.k]||0)}</p></div>)}
       </div>
-      {showCcForm&&<Card title="Nuevo anticipo">
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
-          <Inp label="Fecha" type="date" value={ccForm.date} onChange={v=>setCcForm(p=>({...p,date:v}))}/>
-          <Inp label="Monto USD" type="number" value={ccForm.amount} onChange={v=>setCcForm(p=>({...p,amount:v}))} step="0.01" placeholder="5000"/>
-          <Inp label="Descripción" value={ccForm.description} onChange={v=>setCcForm(p=>({...p,description:v}))} placeholder="Ej: Transferencia junio"/>
-        </div>
-        <div style={{display:"flex",gap:8}}><Btn onClick={addAnticipo}>Guardar</Btn><Btn variant="secondary" onClick={()=>setShowCcForm(false)}>Cancelar</Btn></div>
-      </Card>}
       <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-            {["Fecha","Tipo","Monto","Descripción","Operación",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
-          </tr></thead>
-          <tbody>{ccMvs.map(m=>{const op=allOps.find(o=>o.id===m.operation_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-            <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{formatDate(m.date)}</td>
-            <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:m.type==="anticipo"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:m.type==="anticipo"?"#22c55e":"#ff6b6b"}}>{m.type==="anticipo"?"ANTICIPO":"DEDUCCIÓN"}</span></td>
-            <td style={{padding:"10px 12px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":"#ff6b6b"}}>{m.type==="anticipo"?"+":"-"}{usd(Number(m.amount_usd))}</td>
-            <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)"}}>{m.description||"—"}</td>
-            <td style={{padding:"10px 12px",color:IC,fontSize:12,fontFamily:"monospace"}}>{op?.operation_code||"—"}</td>
-            <td style={{padding:"10px 12px"}}><button onClick={()=>delMv(m.id)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>X</button></td>
-          </tr>})}</tbody>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{["Fecha","Categoría","Detalle","Monto","Recurrencia","Pago",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+          <tbody>{entries.map(e=><tr key={e.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{formatDate(e.date)}</td>
+            <td style={{padding:"10px 12px"}}><span style={{fontSize:11,padding:"2px 8px",borderRadius:4,fontWeight:700,background:`${CAT_COLOR[e.category||"otros"]}22`,color:CAT_COLOR[e.category||"otros"]}}>{CAT_LBL[e.category||"otros"]}</span></td>
+            <td style={{padding:"10px 12px",color:"#fff"}}>{e.detail||"—"}</td>
+            <td style={{padding:"10px 12px",fontWeight:700,color:"#ff6b6b"}}>-{usd(Number(e.amount||0))}</td>
+            <td style={{padding:"10px 12px",fontSize:11,color:e.is_recurring?"#22c55e":"rgba(255,255,255,0.3)"}}>{e.is_recurring?`↻ día ${e.recurrence_day}`:"—"}</td>
+            <td style={{padding:"10px 12px",fontSize:10,color:"rgba(255,255,255,0.4)"}}>{e.payment_method==="tarjeta_credito"?"TC":e.payment_method==="tarjeta_debito"?"TD":e.payment_method==="transferencia"?"TRF":"EF"}</td>
+            <td style={{padding:"10px 12px"}}><button onClick={()=>delEntry(e.id)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>X</button></td>
+          </tr>)}</tbody>
         </table>
-        {ccMvs.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:"2rem 0"}}>No hay movimientos</p>}
-      </div></>;
-    })()}
+        {entries.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:"2rem 0"}}>Sin costos fijos. Agregá Meta ads, Vercel, Claude, salarios, etc.</p>}
+      </div></>)}
+    {tab==="ledger"&&(lo?<p style={{color:"rgba(255,255,255,0.3)"}}>Cargando...</p>:<div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{["Fecha","Tipo","Origen","Descripción","Detalle","Monto"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+        <tbody>{ledger.map((l,i)=><tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{l.date==="—"?"—":formatDate(l.date)}</td>
+          <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,fontWeight:700,background:l.type==="ingreso"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:l.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{l.type==="ingreso"?"INGRESO":"GASTO"}</span></td>
+          <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.5)"}}>{l.origen==="op"?"OP":l.origen==="pmt"?"PMT":"FIJO"}</span></td>
+          <td style={{padding:"10px 12px",color:"#fff"}}>{l.desc}</td>
+          <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{l.detail||(l.cat?CAT_LBL[l.cat]:"")}</td>
+          <td style={{padding:"10px 12px",fontWeight:700,color:l.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{l.type==="gasto"?"-":""}{usd(l.amount)}</td>
+        </tr>)}</tbody>
+      </table>
+      {ledger.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.25)",padding:"2rem 0"}}>No hay movimientos</p>}
+    </div>)}
     {tab==="dollar"&&(()=>{
       // Group pending ARS entries by card_closing_date
       const groups={};dollarPending.forEach(e=>{const k=e.card_closing_date||"sin_fecha";if(!groups[k])groups[k]=[];groups[k].push(e);});
@@ -1616,7 +1589,11 @@ function FinanceDashboard({token}){
   const calcGan=(o)=>{const baseIng=Number(o.budget_total||0);const baseCost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtIng=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtCost=pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);const ing=baseIng+pmtIng;const cost=baseCost+pmtCost;return{ing,cost,gan:ing-cost};};
 
   const totalIng=periodOps.reduce((s,o)=>s+calcGan(o).ing,0);
-  const totalCost=periodOps.reduce((s,o)=>s+calcGan(o).cost,0);
+  const totalCostOp=periodOps.reduce((s,o)=>s+calcGan(o).cost,0);
+  // Costos fijos del período (manuales)
+  const fixedCostsManual=finEntries.filter(e=>e.auto_generated===false&&e.type==="gasto");
+  const totalCostFijos=filterByPeriod(fixedCostsManual,"date").reduce((s,e)=>s+Number(e.amount||0),0);
+  const totalCost=totalCostOp+totalCostFijos;
   const totalGan=totalIng-totalCost;
   const margen=totalIng>0?((totalGan/totalIng)*100):0;
 
@@ -1677,7 +1654,9 @@ function FinanceDashboard({token}){
       // Costos: todos los costos de ops + giros YA enviados (confirmado)
       const totCostosOps=ops.reduce((s,o)=>s+Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0),0);
       const totCostosPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.giro_status==="confirmado").reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0);
-      const totCostosTotales=totCostosOps+totCostosPmts;
+      // Costos fijos manuales (Meta ads, Vercel, Claude, salarios, etc.) — históricos en USD
+      const totCostosFijos=finEntries.filter(e=>e.auto_generated===false&&e.type==="gasto"&&e.currency!=="ARS").reduce((s,e)=>s+Number(e.amount||0),0);
+      const totCostosTotales=totCostosOps+totCostosPmts+totCostosFijos;
       // Colgados: lo que DEBE el cliente (client_amount) − anticipos. Eso es plata real pendiente de cobrar.
       const girosColgadosDetail=[];
       ops.forEach(o=>{const pmts=pmtsByOp[o.id]||[];const colgados=pmts.filter(p=>p.giro_status==="confirmado"&&!p.client_paid);if(colgados.length===0)return;const debe=colgados.reduce((a,p)=>a+Number(p.client_amount_usd||0),0);const ant=Number(o.total_anticipos||0);const real=Math.max(0,debe-ant);if(real>0)girosColgadosDetail.push({code:o.operation_code,client:o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—",debe,anticipo:ant,real});});
@@ -1693,7 +1672,7 @@ function FinanceDashboard({token}){
         <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.1),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(255,80,80,0.1),rgba(255,80,80,0.03))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,borderRadius:14,padding:"20px 24px"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Cash disponible</p>
           <p style={{fontSize:32,fontWeight:700,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>{usd(cashDisponible)}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"0 0 4px"}}>Cobrado ({usd(totCobrado)}) - Costos ({usd(totCostosTotales)})</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"0 0 4px"}}>Cobrado ({usd(totCobrado)}) - Costos ops ({usd(totCostosOps+totCostosPmts)}) - Fijos ({usd(totCostosFijos)})</p>
           {margenActivas!==0&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:4}}>↳ {usd(margenActivas)} margen ops activas (aún no ganancia)</p>}
           {girosColgados>0&&<p style={{fontSize:10,color:"#fb923c",margin:"2px 0 0",cursor:"help"}} title={girosColgadosDetail.map(d=>`${d.code} ${d.client}: debe ${usd(d.debe)}${d.anticipo>0?` − anticipo ${usd(d.anticipo)}`:""} = ${usd(d.real)} pendiente`).join("\n")}>⚠ {usd(girosColgados)} pendiente de cobrar al cliente ({girosColgadosDetail.length})</p>}
           {girosPendientes>0&&<p style={{fontSize:10,color:"#60a5fa",margin:"2px 0 0"}}>⏳ {usd(girosPendientes)} cobrados, giro pendiente envío</p>}
