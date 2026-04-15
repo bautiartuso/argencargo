@@ -1880,8 +1880,48 @@ function FinanceDashboard({token}){
 
 function QuotesList({token}){
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");const [selQuote,setSelQuote]=useState(null);const [clientsMap,setClientsMap]=useState({});
+  const [editProds,setEditProds]=useState([]);const [editTotalCost,setEditTotalCost]=useState("");const [dirty,setDirty]=useState(false);const [saving,setSaving]=useState(false);const [savedAt,setSavedAt]=useState(null);
   useEffect(()=>{(async()=>{const [q,cl]=await Promise.all([dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("clients",{token,filters:"?select=id,first_name,last_name,whatsapp,client_code"})]);setQuotes(Array.isArray(q)?q:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setLo(false);})();},[token]);
+  useEffect(()=>{if(!selQuote){setEditProds([]);setEditTotalCost("");setDirty(false);setSavedAt(null);return;}const p=typeof selQuote.products==="string"?JSON.parse(selQuote.products):selQuote.products||[];setEditProds(JSON.parse(JSON.stringify(Array.isArray(p)?p:[])));setEditTotalCost(String(selQuote.total_cost||""));setDirty(false);setSavedAt(null);},[selQuote?.id]);
+  const chProd=(i,f,v)=>{setEditProds(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));setDirty(true);};
+  const chNcm=(i,f,v)=>{setEditProds(p=>p.map((x,j)=>j===i?{...x,ncm:{...(x.ncm||{}),[f]:v,ncm_code:x.ncm?.ncm_code||"MANUAL"}}:x));setDirty(true);};
+  const saveQuoteEdit=async()=>{if(!selQuote)return;setSaving(true);const newFob=editProds.reduce((s,p)=>s+Number(p.unit_price||0)*Number(p.quantity||1),0);const body={products:editProds,total_fob:newFob,total_cost:Number(editTotalCost)||selQuote.total_cost};await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${selQuote.id}`,body});setQuotes(p=>p.map(q=>q.id===selQuote.id?{...q,...body}:q));setSelQuote(p=>({...p,...body}));setDirty(false);setSavedAt(new Date().toISOString());setSaving(false);};
   const updateStatus=async(id,status)=>{await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{status}});setQuotes(p=>p.map(q=>q.id===id?{...q,status}:q));};
+  const downloadPdf=(q)=>{
+    const prods=editProds.length?editProds:(typeof q.products==="string"?JSON.parse(q.products):q.products||[]);
+    const w=window.open("","_blank");if(!w)return;
+    const totFob=prods.reduce((s,p)=>s+Number(p.unit_price||0)*Number(p.quantity||1),0);
+    const rows=prods.map(p=>{const fob=Number(p.unit_price||0)*Number(p.quantity||1);const nc=p.ncm||{};return `<tr><td>${p.description||p.type||""}</td><td class="c">${p.quantity||1}</td><td class="r">USD ${Number(p.unit_price||0).toFixed(2)}</td><td class="r">USD ${fob.toFixed(2)}</td><td class="c mono">${nc.ncm_code||"—"}</td><td class="c">${nc.import_duty_rate||0}%</td><td class="c">${nc.statistics_rate||0}%</td><td class="c">${nc.iva_rate||21}%</td></tr>`;}).join("");
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Cotización ${q.client_code||""}</title><style>
+      *{box-sizing:border-box}body{font-family:'Helvetica Neue',Arial,sans-serif;padding:32px;color:#111;max-width:900px;margin:0 auto}
+      h1{font-size:22px;margin:0 0 4px;color:#1B4F8A}.sub{color:#666;font-size:12px;margin-bottom:24px}
+      .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;padding:14px;background:#f5f7fa;border-radius:8px}
+      .grid div{font-size:11px}.grid b{font-size:13px;color:#111;display:block;margin-top:2px}
+      table{width:100%;border-collapse:collapse;margin-top:14px;font-size:11px}
+      th,td{padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:left}
+      th{background:#1B4F8A;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:0.05em}
+      td.c{text-align:center}td.r{text-align:right}td.mono{font-family:monospace}
+      tr:nth-child(even) td{background:#fafbfc}
+      .totals{margin-top:18px;padding:14px;background:#1B4F8A;color:#fff;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
+      .totals .lbl{font-size:11px;text-transform:uppercase;letter-spacing:0.05em;opacity:0.8}
+      .totals .big{font-size:20px;font-weight:700}
+      .foot{margin-top:28px;padding-top:14px;border-top:1px solid #e5e7eb;font-size:10px;color:#666}
+    </style></head><body>
+      <h1>Cotización Argencargo</h1>
+      <div class="sub">Emitida ${new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})} · Ref ${q.id?.slice(0,8)||""}</div>
+      <div class="grid">
+        <div>CLIENTE<b>${q.client_name||""}</b><span style="font-family:monospace;color:#1B4F8A">${q.client_code||""}</span></div>
+        <div>ORIGEN<b>${q.origin||""}</b></div>
+        <div>CANAL<b>${q.channel_name||""}</b></div>
+        <div>ENTREGA<b>${q.delivery||"—"}</b></div>
+      </div>
+      <h3 style="margin:18px 0 6px;font-size:13px;color:#1B4F8A">Productos y clasificación arancelaria</h3>
+      <table><thead><tr><th>Descripción</th><th>Cant</th><th>Unit.</th><th>FOB</th><th>NCM</th><th>Derechos</th><th>TE</th><th>IVA</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${totFob.toFixed(2)}</div></div><div style="text-align:right"><div class="lbl">Costo total estimado (DDP)</div><div class="big">USD ${Number(q.total_cost||0).toFixed(2)}</div></div></div>
+      <div class="foot">Los valores de NCM, derechos de importación, tasa de estadística e IVA son los aplicables según la normativa vigente al momento de emitir esta cotización. Los costos pueden variar según volumen final, tipo de cambio y gastos documentales. Argencargo — Integral Freight Forwarding.</div>
+      <script>setTimeout(()=>window.print(),300)</script>
+    </body></html>`);w.document.close();
+  };
   const ST={pending:{l:"Pendiente",c:"#fbbf24"},contacted:{l:"Contactado",c:"#60a5fa"},converted:{l:"Convertida",c:"#22c55e"},rejected:{l:"Rechazada",c:"#f87171"}};
   const filtered=fStatus?quotes.filter(q=>q.status===fStatus):quotes;
   const formatDate=(d)=>new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
@@ -1927,33 +1967,44 @@ function QuotesList({token}){
           {q.total_weight>0&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>PESO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{Number(q.total_weight).toFixed(2)} kg</p></div>}
           {q.total_cbm>0&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>CBM</p><p style={{fontSize:14,color:"#fff",margin:0}}>{Number(q.total_cbm).toFixed(4)} m³</p></div>}
         </div>
-        {Array.isArray(prods)&&prods.length>0&&<div style={{marginBottom:16}}><h4 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>PRODUCTOS</h4>
-          {prods.map((p,i)=>{const fobItem=Number(p.unit_price||0)*Number(p.quantity||1);const nc=p.ncm||{};return <div key={i} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"12px 14px",marginBottom:8}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:nc.ncm_code?8:0,flexWrap:"wrap",gap:8}}>
+        {editProds.length>0&&<div style={{marginBottom:16}}><h4 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>PRODUCTOS <span style={{fontSize:10,fontWeight:500,color:"rgba(255,255,255,0.4)",textTransform:"none"}}>— editá NCM y tasas para ajustar la cotización</span></h4>
+          {editProds.map((p,i)=>{const fobItem=Number(p.unit_price||0)*Number(p.quantity||1);const nc=p.ncm||{};const inpStyle={padding:"6px 8px",fontSize:11,border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",width:"100%",boxSizing:"border-box",fontFamily:"inherit"};return <div key={i} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
               <div><p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>{p.description||p.type}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>Cantidad: {p.quantity} · Unitario: USD {Number(p.unit_price||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
               <p style={{fontSize:14,fontWeight:700,color:IC,margin:0}}>FOB: USD {fobItem.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
             </div>
-            {nc.ncm_code&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:8,padding:"8px 12px",display:"grid",gridTemplateColumns:"auto 1fr auto auto auto",gap:12,alignItems:"center",fontSize:11}}>
-              <span style={{fontFamily:"monospace",fontWeight:700,color:IC}}>NCM {nc.ncm_code}</span>
-              <span style={{color:"rgba(255,255,255,0.5)"}}>{nc.ncm_description||""}</span>
-              <span style={{color:"rgba(255,255,255,0.5)"}}>Derechos <strong style={{color:"#fff"}}>{nc.import_duty_rate||0}%</strong></span>
-              <span style={{color:"rgba(255,255,255,0.5)"}}>TE <strong style={{color:"#fff"}}>{nc.statistics_rate||0}%</strong></span>
-              <span style={{color:"rgba(255,255,255,0.5)"}}>IVA <strong style={{color:"#fff"}}>{nc.iva_rate||21}%</strong></span>
-            </div>}
-            {!nc.ncm_code&&<p style={{fontSize:11,color:"rgba(251,191,36,0.7)",margin:0}}>⚠ Sin clasificación NCM</p>}
+            <div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:8,padding:"10px 12px",display:"grid",gridTemplateColumns:"1.2fr 2fr 1fr 1fr 1fr",gap:8,alignItems:"end",fontSize:11}}>
+              <div><label style={{fontSize:10,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>NCM</label><input value={nc.ncm_code||""} onChange={e=>chNcm(i,"ncm_code",e.target.value)} style={{...inpStyle,fontFamily:"monospace",color:IC,fontWeight:700}} placeholder="8471.30.00"/></div>
+              <div><label style={{fontSize:10,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Descripción NCM</label><input value={nc.ncm_description||""} onChange={e=>chNcm(i,"ncm_description",e.target.value)} style={inpStyle} placeholder="Máquinas automáticas..."/></div>
+              <div><label style={{fontSize:10,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Derechos %</label><input type="number" value={nc.import_duty_rate??""} onChange={e=>chNcm(i,"import_duty_rate",Number(e.target.value)||0)} style={inpStyle} step="0.1"/></div>
+              <div><label style={{fontSize:10,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>TE %</label><input type="number" value={nc.statistics_rate??""} onChange={e=>chNcm(i,"statistics_rate",Number(e.target.value)||0)} style={inpStyle} step="0.1"/></div>
+              <div><label style={{fontSize:10,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>IVA %</label><input type="number" value={nc.iva_rate??""} onChange={e=>chNcm(i,"iva_rate",Number(e.target.value)||0)} style={inpStyle} step="0.1"/></div>
+            </div>
           </div>;})}
+          <div style={{marginTop:10,display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8}}>
+            <label style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)"}}>COSTO TOTAL (DDP) USD</label>
+            <input type="number" value={editTotalCost} onChange={e=>{setEditTotalCost(e.target.value);setDirty(true);}} style={{flex:1,padding:"8px 12px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",fontWeight:700}} step="0.01"/>
+            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic"}}>Ajustá el total si cambiaron las tasas</p>
+          </div>
         </div>}
         {Array.isArray(pkgs)&&pkgs.length>0&&<div><h4 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>BULTOS</h4>
           {pkgs.map((pk,i)=><div key={i} style={{display:"flex",gap:16,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:12,color:"rgba(255,255,255,0.5)"}}>
             <span>Bulto {i+1}</span><span>Cant: {pk.qty||1}</span>{pk.length&&<span>{pk.length}x{pk.width}x{pk.height} cm</span>}<span>Peso: {pk.weight} kg</span>
           </div>)}
         </div>}
-        {(()=>{const cl=q.client_id?clientsMap[q.client_id]:null;const wa=cl?.whatsapp;const prodDesc=Array.isArray(prods)?prods.map(p=>p.description||p.type).join(", "):"";
-          const waMsg=encodeURIComponent(`Hola ${q.client_name}! Vi que cotizaste una importación de *${prodDesc}* por *${q.channel_name}* desde *${q.origin}* el ${formatDate(q.created_at)}.\n\n¿Pudiste avanzar con la operación? ¿Necesitás más información?\n\nQuedo a disposición!`);
-          return <div style={{display:"flex",gap:10,marginTop:20,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
-            {wa&&<a href={`https://wa.me/${wa.replace(/[^0-9]/g,"")}?text=${waMsg}`} target="_blank" rel="noopener noreferrer" style={{flex:1,display:"block",padding:"12px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textAlign:"center",textDecoration:"none"}}>Consultar por WhatsApp</a>}
-            {!wa&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin WhatsApp registrado</p>}
-            <select value={q.status} onChange={e=>{updateStatus(q.id,e.target.value);setSelQuote({...q,status:e.target.value});}} style={{padding:"10px 14px",fontSize:12,fontWeight:600,border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>{Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038"}}>{v.l}</option>)}</select>
+        {(()=>{const cl=q.client_id?clientsMap[q.client_id]:null;const wa=cl?.whatsapp;const prodDesc=Array.isArray(editProds)?editProds.map(p=>p.description||p.type).join(", "):"";
+          const waConsulta=encodeURIComponent(`Hola ${q.client_name}! Vi que cotizaste una importación de *${prodDesc}* por *${q.channel_name}* desde *${q.origin}* el ${formatDate(q.created_at)}.\n\n¿Pudiste avanzar con la operación? ¿Necesitás más información?\n\nQuedo a disposición!`);
+          const waUpdate=encodeURIComponent(`Hola ${q.client_name}! Revisamos y ajustamos tu cotización de *${prodDesc}* por *${q.channel_name}* con la clasificación arancelaria precisa.\n\n📄 *Costo total actualizado: USD ${Number(q.total_cost||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}*\n\nEntrá a tu portal para ver el detalle por producto (NCM + derechos + tasa estadística + IVA), o si preferís te paso el PDF.\n\nQuedo a disposición para avanzar!`);
+          return <div style={{marginTop:20,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+            {savedAt&&!dirty&&<p style={{fontSize:11,color:"#22c55e",margin:"0 0 10px",fontWeight:600}}>✓ Guardado. Ahora podés avisar al cliente.</p>}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+              <button onClick={saveQuoteEdit} disabled={!dirty||saving} style={{padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:10,border:"none",cursor:dirty?"pointer":"not-allowed",background:dirty?`linear-gradient(135deg,${B.accent},${B.primary})`:"rgba(255,255,255,0.06)",color:dirty?"#fff":"rgba(255,255,255,0.3)"}}>{saving?"Guardando...":dirty?"💾 Guardar cambios":"Sin cambios"}</button>
+              <button onClick={()=>downloadPdf(q)} style={{padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:10,border:"1.5px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:IC,cursor:"pointer"}}>📄 Descargar PDF</button>
+              {wa&&<a href={`https://wa.me/${wa.replace(/[^0-9]/g,"")}?text=${waUpdate}`} target="_blank" rel="noopener noreferrer" style={{padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none"}}>Avisar cotización actualizada</a>}
+              {wa&&<a href={`https://wa.me/${wa.replace(/[^0-9]/g,"")}?text=${waConsulta}`} target="_blank" rel="noopener noreferrer" style={{padding:"10px 16px",fontSize:12,fontWeight:600,borderRadius:10,border:"1px solid rgba(37,211,102,0.3)",background:"rgba(37,211,102,0.08)",color:"#25D366",textDecoration:"none"}}>Consultar (seguimiento)</a>}
+              {!wa&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin WhatsApp en el cliente</p>}
+              <select value={q.status} onChange={e=>{updateStatus(q.id,e.target.value);setSelQuote({...q,status:e.target.value});}} style={{padding:"10px 14px",fontSize:12,fontWeight:600,border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",marginLeft:"auto"}}>{Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038"}}>{v.l}</option>)}</select>
+            </div>
           </div>;})()}
       </div>
     </div>;})()}
