@@ -50,7 +50,17 @@ export async function POST(req) {
       status_code: e.eventType || null
     }));
 
-    return Response.json({ events, status: track.latestStatusDetail?.description || "ok", trackingNumber });
+    // ETA: prioridad 1) ESTIMATED_DELIVERY en dateAndTimes, 2) estimatedDeliveryTimeWindow, 3) standardTransitTimeWindow
+    const dt = track.dateAndTimes || [];
+    const estDelivery = dt.find(x => x.type === "ESTIMATED_DELIVERY")?.dateTime;
+    const eta = estDelivery
+      || track.estimatedDeliveryTimeWindow?.window?.ends
+      || track.estimatedDeliveryTimeWindow?.window?.begins
+      || track.standardTransitTimeWindow?.window?.ends
+      || null;
+    const actualDelivery = dt.find(x => x.type === "ACTUAL_DELIVERY")?.dateTime || null;
+
+    return Response.json({ events, status: track.latestStatusDetail?.description || "ok", trackingNumber, eta, actualDelivery });
   } catch (e) {
     return Response.json({ error: String(e.message || e) }, { status: 500 });
   }

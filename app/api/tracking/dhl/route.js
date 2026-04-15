@@ -30,5 +30,6 @@ export async function POST(req) {
     status_code: e.statusCode || null
   }));
 
-  return Response.json({ events, status: shipment.status?.status || shipment.status?.statusCode || "ok", trackingNumber });
+  const eta = shipment.estimatedTimeOfDelivery || shipment.estimatedDeliveryTime || null;
+  return Response.json({ events, status: shipment.status?.status || shipment.status?.statusCode || "ok", trackingNumber, eta });
 }

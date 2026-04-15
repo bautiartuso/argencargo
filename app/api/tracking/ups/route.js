@@ -53,7 +53,9 @@ export async function POST(req) {
       };
     });
 
-    return Response.json({ events, status: pkg.currentStatus?.description || "ok", trackingNumber });
+    const ed = pkg.deliveryDate?.find?.(d => d.type === "RDD")?.date || pkg.deliveryDate?.[0]?.date;
+    const eta = ed && ed.length === 8 ? `${ed.slice(0,4)}-${ed.slice(4,6)}-${ed.slice(6,8)}` : null;
+    return Response.json({ events, status: pkg.currentStatus?.description || "ok", trackingNumber, eta });
   } catch (e) {
     return Response.json({ error: String(e.message || e) }, { status: 500 });
   }

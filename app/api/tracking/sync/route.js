@@ -42,17 +42,31 @@ async function syncOne(origin, op) {
   }
 
   let inserted = 0;
+  const errors = [];
   for (const ev of d.events || []) {
-    const { ok } = await upsertEvent(normalizeEvent({
+    const { ok, error } = await upsertEvent(normalizeEvent({
       operation_id: op.id,
       source: route,
       carrier: op.international_carrier,
       ...ev
     }));
     if (ok) inserted++;
+    else if (error && errors.length < 3) errors.push(error);
   }
-  await updateSyncStatus(op.id, route, inserted, null);
-  return { op: op.operation_code, inserted, carrier: route };
+
+  // ETA / fecha entrega real → operations.eta (y status si ya llegó al courier)
+  const patch = {};
+  if (d.eta) patch.eta = d.eta;
+  if (Object.keys(patch).length) {
+    await fetch(`${SB_URL}/rest/v1/operations?id=eq.${op.id}`, {
+      method: "PATCH",
+      headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify(patch)
+    });
+  }
+
+  await updateSyncStatus(op.id, route, inserted, errors[0] || null);
+  return { op: op.operation_code, inserted, carrier: route, eta: d.eta || null, errors: errors.length ? errors : undefined };
 }
 
 async function runSync(req) {
