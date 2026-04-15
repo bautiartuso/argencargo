@@ -717,7 +717,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
       if(existingOp){opId=existingOp.id;}
       else {
         // Usar función SECURITY DEFINER para obtener próximo código (agente no puede ver todas las ops por RLS)
-        const rpc=await sfJson("/rest/v1/rpc/next_operation_code",{method:"POST",body:"{}",headers:{Authorization:`Bearer ${token}`}});
+        const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
         const newCode=typeof rpc==="string"?rpc:null;
         if(!newCode){setErr(t.err_generic);setSaving(false);return;}
         const r=await dq("operations",{method:"POST",token,body:{operation_code:newCode,client_id:clientId,channel:"aereo_blanco",status:"en_deposito_origen",origin:"China",created_by_agent_id:agentId}});

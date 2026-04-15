@@ -1367,7 +1367,7 @@ function AgentsPanel({token}){
       dq("agent_signups",{token,filters:"?select=*&order=created_at.desc"}),
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
       dq("operations",{token,filters:"?select=id,operation_code,client_id,clients(client_code,first_name,last_name)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&consolidation_confirmed=eq.false&order=created_at.desc"}),
-      dq("operations",{token,filters:"?select=id,operation_code,description,client_id,created_by_agent_id,status,consolidation_confirmed,clients(client_code,first_name,last_name)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
+      dq("operations",{token,filters:"?select=id,operation_code,description,client_id,created_by_agent_id,status,consolidation_confirmed,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
       dq("operation_packages",{token,filters:"?select=*&order=package_number.asc"}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
       dq("flight_operations",{token,filters:"?select=*"}),
@@ -1470,7 +1470,7 @@ function AgentsPanel({token}){
           <div style={{background:"rgba(255,255,255,0.05)",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
               <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                {["✓","Op","Cliente","Mercadería","Bultos","Peso","Estado","Consolidación"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+                {["✓","Op","Cliente","Mercadería","Bultos","Peso","Estado","Consolidación","WA"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
               </tr></thead>
               <tbody>{grp.ops.map(o=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const pkgsCount=opPackages(o.id).length;const canSelect=o.consolidation_confirmed&&!inFlight;return <tr key={o.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:0.5}}>
                 <td style={{padding:"10px 12px"}}>{canSelect?<input type="checkbox" checked={selectedOps.includes(o.id)} onChange={()=>toggleSelOp(o.id)}/>:""}</td>
@@ -1485,6 +1485,19 @@ function AgentsPanel({token}){
                   o.consolidation_confirmed?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>✓ LISTO</span>:
                   <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24"}}>⏳ ESPERANDO</span>}
                 </td>
+                <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{(()=>{
+                  const clientWa=o.clients?.whatsapp;const clientName=o.clients?.first_name||"";
+                  if(o.deposit_notified){return <span title={`Notificado ${formatDate(o.deposit_notified_at)}`} style={{fontSize:14,cursor:"default"}}>✅</span>;}
+                  const msg=`Hola ${clientName}! 👋\n\nTe informamos que tu paquete ya se encuentra en nuestro depósito en China.\n\n📦 Operación: ${o.operation_code}\n📋 Por favor ingresá al portal para completar la información de tu envío y confirmar el despacho.\n\n🔗 www.argencargo.com.ar\n\nGracias,\nArgencargo`;
+                  const waUrl=clientWa?`https://api.whatsapp.com/send?phone=${encodeURIComponent(clientWa)}&text=${encodeURIComponent(msg)}`:"";
+                  return <span style={{display:"inline-flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:14}}>❌</span>
+                    <button disabled={!clientWa} title={clientWa?`Enviar WA a ${clientWa}`:"Sin número de WhatsApp"} onClick={async(e)=>{e.stopPropagation();window.open(waUrl,"_blank");await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{deposit_notified:true,deposit_notified_at:new Date().toISOString()}});load();}} style={{padding:"3px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:clientWa?"pointer":"not-allowed",opacity:clientWa?1:0.4,background:"#25D366",color:"#fff",display:"inline-flex",alignItems:"center",gap:4}}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.611.611l4.458-1.495A11.952 11.952 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.336 0-4.512-.767-6.262-2.063l-.437-.341-2.938.985.985-2.938-.341-.437A9.955 9.955 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z"/></svg>
+                      WA
+                    </button>
+                  </span>;
+                })()}</td>
               </tr>;})}</tbody>
             </table>
           </div>
