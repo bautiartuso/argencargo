@@ -55,8 +55,12 @@ async function syncOne(origin, op) {
   }
 
   // ETA / fecha entrega real → operations.eta (y status si ya llegó al courier)
+  // operations.eta es tipo DATE, así que truncamos el timestamp a YYYY-MM-DD.
   const patch = {};
-  if (d.eta) patch.eta = d.eta;
+  if (d.eta) {
+    const m = String(d.eta).match(/^(\d{4}-\d{2}-\d{2})/);
+    if (m) patch.eta = m[1];
+  }
   if (Object.keys(patch).length) {
     await fetch(`${SB_URL}/rest/v1/operations?id=eq.${op.id}`, {
       method: "PATCH",

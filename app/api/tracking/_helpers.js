@@ -69,10 +69,13 @@ function stripCourierRefs(text) {
   if (!text) return null;
   // Saca cualquier mención explícita de DHL, FedEx, UPS, "facility", AWB numbers, etc.
   return String(text)
+    // Frases compuestas primero (ej "FedEx Office", "FedEx location", "DHL Express"):
+    .replace(/\b(FedEx|FEDEX|Fed Ex|DHL|UPS)\s+(Office|Location|Station|Facility|Hub|Express|Ground|Home Delivery|Smartpost)\b/gi, "centro")
+    .replace(/\b(On\s+)?(FedEx|FEDEX|Fed Ex|DHL|UPS)\s+vehicle\b/gi, "en vehículo de reparto")
+    // Marca suelta
     .replace(/\b(DHL|FedEx|FEDEX|Fed Ex|UPS|United Parcel Service)\b/gi, "")
     .replace(/\bfacility\b/gi, "centro")
     .replace(/\bhub\b/gi, "centro")
-    .replace(/\bDHL Express\b/gi, "")
     .replace(/\s+/g, " ")
     .trim() || null;
 }
