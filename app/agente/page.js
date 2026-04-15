@@ -88,11 +88,15 @@ const I18N={
     tab_account:"Mi cuenta",
     flight:"Vuelo",
     flight_status_preparando:"Preparando",
+    flight_status_listo:"Listo para enviar",
     flight_status_despachado:"Despachado",
     flight_status_recibido:"Recibido",
     no_flights:"Aún no tenés vuelos asignados",
     invoice:"Factura de exportación",
     no_invoice_yet:"El admin todavía no subió la factura",
+    ready_to_ship:"🚀 LISTO PARA ENVIAR — completá los datos",
+    waiting_invoice:"⏳ Esperando factura de Argencargo",
+    weight_from_packages:"Peso total (calculado desde los bultos)",
     download_invoice:"Descargar factura",
     destination:"Dirección de destino",
     no_destination_yet:"El admin todavía no cargó la dirección",
@@ -182,11 +186,15 @@ const I18N={
     tab_account:"我的账户",
     flight:"航班",
     flight_status_preparando:"准备中",
+    flight_status_listo:"可以发送",
     flight_status_despachado:"已发送",
     flight_status_recibido:"已接收",
     no_flights:"您还没有指定的航班",
     invoice:"出口发票",
     no_invoice_yet:"管理员尚未上传发票",
+    ready_to_ship:"🚀 可以发送 — 请填写信息",
+    waiting_invoice:"⏳ 等待Argencargo的发票",
+    weight_from_packages:"总重量（根据包裹计算）",
     download_invoice:"下载发票",
     destination:"目的地地址",
     no_destination_yet:"管理员尚未填写地址",
@@ -380,8 +388,8 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const depositPkgsAll=packages.filter(p=>!flightOpIds.has(p.operation_id));
   const depositPkgs=depositPkgsAll.filter(p=>!depositSearch||[p.operations?.operation_code,p.operations?.clients?.client_code,p.national_tracking].some(v=>(v||"").toLowerCase().includes(depositSearch.toLowerCase())));
   const depositTotalKg=depositPkgsAll.reduce((s,p)=>s+Number(p.gross_weight_kg||0),0).toFixed(2);
-  const activeFlights=flights.filter(f=>f.status!=="recibido");
-  const historyFlights=flights.filter(f=>f.status==="recibido");
+  const activeFlights=flights.filter(f=>f.status==="preparando");
+  const historyFlights=flights.filter(f=>f.status==="despachado"||f.status==="recibido");
 
   // Stats
   const statFlightsCompleted=historyFlights.length;
@@ -394,12 +402,12 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     const cardBg=isReady?"rgba(34,197,94,0.08)":isWaiting?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.05)";
     const cardBorder=isReady?"1.5px solid rgba(34,197,94,0.35)":isWaiting?"1.5px solid rgba(251,191,36,0.25)":"1px solid rgba(255,255,255,0.1)";
     return <div onClick={()=>setSelFlight(f.id)} style={{cursor:"pointer",background:cardBg,border:cardBorder,borderRadius:14,padding:"1rem 1.25rem"}}>
-    {isReady&&<p style={{fontSize:13,fontWeight:700,color:"#22c55e",margin:"0 0 8px"}}>🚀 LISTO PARA ENVIAR — completá los datos</p>}
-    {isWaiting&&<p style={{fontSize:13,fontWeight:700,color:"#fbbf24",margin:"0 0 8px"}}>⏳ Esperando factura de Argencargo</p>}
+    {isReady&&<p style={{fontSize:13,fontWeight:700,color:"#22c55e",margin:"0 0 8px"}}>{t.ready_to_ship}</p>}
+    {isWaiting&&<p style={{fontSize:13,fontWeight:700,color:"#fbbf24",margin:"0 0 8px"}}>{t.waiting_invoice}</p>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:8}}>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
         <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{f.flight_code}</span>
-        <span style={{fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,color:stColors[f.status],background:`${stColors[f.status]}20`,border:`1px solid ${stColors[f.status]}40`,textTransform:"uppercase"}}>{t["flight_status_"+f.status]}</span>
+        <span style={{fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,color:isReady?"#22c55e":stColors[f.status],background:isReady?"rgba(34,197,94,0.2)":`${stColors[f.status]}20`,border:`1px solid ${isReady?"rgba(34,197,94,0.4)":stColors[f.status]+"40"}`,textTransform:"uppercase"}}>{isReady?t.flight_status_listo:t["flight_status_"+f.status]}</span>
         <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{ops.length} ops</span>
       </div>
       <span style={{color:IC,fontSize:12,fontWeight:600}}>{t.flight} →</span>
@@ -592,7 +600,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
     {flight.status==="preparando"&&flight.invoice_presented_at&&<Card title={t.dispatch_form}>
       {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
       <div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:8,padding:"10px 14px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{t.total_weight} (calculado desde los bultos)</span>
+        <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{t.weight_from_packages}</span>
         <span style={{fontSize:16,fontWeight:700,color:IC}}>{autoWeight.toFixed(2)} kg</span>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
