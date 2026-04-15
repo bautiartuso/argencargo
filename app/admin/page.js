@@ -1358,12 +1358,13 @@ function AgentsPanel({token}){
   const [invoiceItems,setInvoiceItems]=useState([]);
   const [accMovements,setAccMovements]=useState([]);
   const [selectedOps,setSelectedOps]=useState([]);
+  const [opsWithDocs,setOpsWithDocs]=useState(new Set());
   const [selFlight,setSelFlight]=useState(null);
   const [showAnticipoForm,setShowAnticipoForm]=useState(null);
   const [lo,setLo]=useState(true);
   const [msg,setMsg]=useState("");
   const load=async()=>{setLo(true);
-    const [r,u,o,depOps,depPkgs,fl,flOps,fii,accM]=await Promise.all([
+    const [r,u,o,depOps,depPkgs,fl,flOps,fii,accM,depItems]=await Promise.all([
       dq("agent_signups",{token,filters:"?select=*&order=created_at.desc"}),
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
       dq("operations",{token,filters:"?select=id,operation_code,client_id,clients(client_code,first_name,last_name)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&consolidation_confirmed=eq.false&order=created_at.desc"}),
@@ -1372,11 +1373,15 @@ function AgentsPanel({token}){
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
       dq("flight_operations",{token,filters:"?select=*"}),
       dq("flight_invoice_items",{token,filters:"?select=*&order=sort_order.asc"}),
-      dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"})
+      dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
+      dq("operation_items",{token,filters:"?select=operation_id"})
     ]);
     setSignups(Array.isArray(r)?r:[]);setUnassigned(Array.isArray(u)?u:[]);setAllOps(Array.isArray(o)?o:[]);
     setDepositOps(Array.isArray(depOps)?depOps:[]);setDepositPkgs(Array.isArray(depPkgs)?depPkgs:[]);
     setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(flOps)?flOps:[]);setInvoiceItems(Array.isArray(fii)?fii:[]);setAccMovements(Array.isArray(accM)?accM:[]);
+    // Set de ops que tienen al menos un item (documentación completa)
+    const idsWithItems=new Set((Array.isArray(depItems)?depItems:[]).map(i=>i.operation_id));
+    setOpsWithDocs(idsWithItems);
     const ids=(Array.isArray(r)?r:[]).map(s=>s.auth_user_id).filter(Boolean);
     if(ids.length>0){const pr=await dq("profiles",{token,filters:`?id=in.(${ids.join(",")})&select=id,role`});const m={};(Array.isArray(pr)?pr:[]).forEach(p=>{m[p.id]=p;});setProfiles(m);}
     setLo(false);};
@@ -1384,7 +1389,7 @@ function AgentsPanel({token}){
   // Helpers
   const approvedAgents=signups.filter(s=>s.status==="approved");
   const opsInFlightIds=new Set(flightOps.map(fo=>fo.operation_id));
-  const availableForFlight=depositOps.filter(o=>o.consolidation_confirmed&&!opsInFlightIds.has(o.id));
+  const availableForFlight=depositOps.filter(o=>o.consolidation_confirmed&&!opsInFlightIds.has(o.id)&&opsWithDocs.has(o.id));
   const opPackages=(opId)=>depositPkgs.filter(p=>p.operation_id===opId);
   const opWeight=(opId)=>opPackages(opId).reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);
   const agentBalance=(agentId)=>accMovements.filter(m=>m.agent_id===agentId).reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):-Number(m.amount_usd)),0);
@@ -1472,7 +1477,7 @@ function AgentsPanel({token}){
               <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 {["✓","Op","Cliente","Mercadería","Bultos","Peso","Estado","Consolidación","WA"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
               </tr></thead>
-              <tbody>{grp.ops.map(o=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const pkgsCount=opPackages(o.id).length;const canSelect=o.consolidation_confirmed&&!inFlight;return <tr key={o.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:0.5}}>
+              <tbody>{grp.ops.map(o=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const pkgsCount=opPackages(o.id).length;const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;return <tr key={o.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:inFlight?0.5:0.7}}>
                 <td style={{padding:"10px 12px"}}>{canSelect?<input type="checkbox" checked={selectedOps.includes(o.id)} onChange={()=>toggleSelOp(o.id)}/>:""}</td>
                 <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12}}>{o.operation_code}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)"}}>{o.clients?`${o.clients.client_code} - ${o.clients.first_name}`:"—"}</td>
@@ -1482,7 +1487,8 @@ function AgentsPanel({token}){
                 <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)"}}>{SM[o.status]?.l||o.status}</span></td>
                 <td style={{padding:"10px 12px"}}>
                   {inFlight?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(96,165,250,0.15)",color:IC}}>EN VUELO</span>:
-                  o.consolidation_confirmed?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>✓ LISTO</span>:
+                  o.consolidation_confirmed&&opsWithDocs.has(o.id)?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>✓ LISTO</span>:
+                  o.consolidation_confirmed&&!opsWithDocs.has(o.id)?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(249,115,22,0.15)",color:"#f97316"}}>📋 DOCS PENDIENTES</span>:
                   <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24"}}>⏳ ESPERANDO</span>}
                 </td>
                 <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{(()=>{
