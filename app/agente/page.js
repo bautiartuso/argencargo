@@ -54,11 +54,19 @@ const I18N={
     client:"Cliente",
     date:"Fecha",
     err_generic:"Error, intentá de nuevo",
-    err_client:"Ingresá un código de cliente válido",
+    err_client:"Seleccioná un cliente",
     err_tracking:"Ingresá un tracking",
     success:"Paquete registrado correctamente",
     hello:"Hola",
-    active_in:"Activo en"
+    active_in:"Activo en",
+    select_client:"Seleccioná un cliente",
+    search_client:"Buscar por código o nombre...",
+    unregistered_client:"Cliente no registrado",
+    unregistered_info:"El paquete quedará sin asignar. Argencargo lo asignará después.",
+    bultos:"Bultos",
+    add_bulto:"+ Agregar otro bulto",
+    bulto_n:"Bulto",
+    remove:"Quitar"
   },
   zh:{
     login_title:"代理门户",
@@ -99,11 +107,19 @@ const I18N={
     client:"客户",
     date:"日期",
     err_generic:"错误，请重试",
-    err_client:"输入有效的客户代码",
+    err_client:"选择客户",
     err_tracking:"输入物流单号",
     success:"包裹注册成功",
     hello:"你好",
-    active_in:"活跃于"
+    active_in:"活跃于",
+    select_client:"选择客户",
+    search_client:"按代码或姓名搜索...",
+    unregistered_client:"未注册的客户",
+    unregistered_info:"包裹将保持未分配状态。Argencargo稍后将分配它。",
+    bultos:"包裹",
+    add_bulto:"+ 添加另一个包裹",
+    bulto_n:"包裹",
+    remove:"删除"
   }
 };
 
@@ -291,62 +307,67 @@ function SimpleShell({children,lang,setLang,t,onLogout}){
 }
 
 function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
-  const [code,setCode]=useState("");
-  const [client,setClient]=useState(null);
-  const [checking,setChecking]=useState(false);
+  const [allClients,setAllClients]=useState([]);
+  const [clientSearch,setClientSearch]=useState("");
+  const [clientId,setClientId]=useState("");// "" = no seleccionado, "unregistered" = no registrado, uuid = cliente
+  const [showDrop,setShowDrop]=useState(false);
   const [existingOp,setExistingOp]=useState(null);
   const [tracking,setTracking]=useState("");
-  const [weight,setWeight]=useState("");
-  const [length,setLength]=useState("");
-  const [width,setWidth]=useState("");
-  const [height,setHeight]=useState("");
+  const [bultos,setBultos]=useState([{weight:"",length:"",width:"",height:""}]);
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
 
-  // Buscar cliente cuando cambia el código (debounce simple)
-  useEffect(()=>{if(!code||code.length<2){setClient(null);setExistingOp(null);return;}const tid=setTimeout(async()=>{
-    setChecking(true);
-    const cl=await dq("clients",{token,filters:`?client_code=eq.${code.toUpperCase()}&select=id,first_name,client_code&limit=1`});
-    const c=Array.isArray(cl)&&cl[0]?cl[0]:null;
-    setClient(c);
-    if(c){
-      // Buscar op abierta de este cliente (Aéreo A, en warehouse o preparación)
-      const ops=await dq("operations",{token,filters:`?client_id=eq.${c.id}&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&consolidation_confirmed=eq.false&select=id,operation_code,status&order=created_at.desc&limit=1`});
-      setExistingOp(Array.isArray(ops)&&ops[0]?ops[0]:null);
-    } else setExistingOp(null);
-    setChecking(false);
-  },400);return()=>clearTimeout(tid);},[code,token]);
+  // Cargar todos los clientes
+  useEffect(()=>{(async()=>{const cl=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=client_code.asc"});setAllClients(Array.isArray(cl)?cl:[]);})();},[token]);
+
+  const selectedClient=allClients.find(c=>c.id===clientId);
+
+  // Filtro de búsqueda
+  const filtered=clientSearch.trim()?allClients.filter(c=>{const s=clientSearch.toLowerCase();return c.client_code?.toLowerCase().includes(s)||c.first_name?.toLowerCase().includes(s)||c.last_name?.toLowerCase().includes(s);}).slice(0,50):allClients.slice(0,50);
+
+  // Buscar op abierta cuando se selecciona cliente
+  useEffect(()=>{if(!clientId||clientId==="unregistered"){setExistingOp(null);return;}(async()=>{
+    const ops=await dq("operations",{token,filters:`?client_id=eq.${clientId}&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&consolidation_confirmed=eq.false&select=id,operation_code,status&order=created_at.desc&limit=1`});
+    setExistingOp(Array.isArray(ops)&&ops[0]?ops[0]:null);
+  })();},[clientId,token]);
+
+  const addBulto=()=>setBultos(p=>[...p,{weight:"",length:"",width:"",height:""}]);
+  const rmBulto=(i)=>setBultos(p=>p.filter((_,j)=>j!==i));
+  const chBulto=(i,f,v)=>setBultos(p=>p.map((b,j)=>j===i?{...b,[f]:v}:b));
 
   const save=async()=>{
-    if(!client){setErr(t.err_client);return;}
+    if(!clientId){setErr(t.err_client);return;}
     if(!tracking?.trim()){setErr(t.err_tracking);return;}
     setErr("");setSaving(true);
     try {
+      const validBultos=bultos.filter(b=>b.weight||b.length||b.width||b.height||true); // todos cuentan, opcional
+      if(clientId==="unregistered"){
+        // Insertar en unassigned_packages, una entry por bulto
+        for(let i=0;i<validBultos.length;i++){const b=validBultos[i];const body={national_tracking:tracking.trim(),package_number:i+1,quantity:1,registered_by_agent_id:agentId};
+          if(b.weight)body.gross_weight_kg=Number(b.weight);if(b.length)body.length_cm=Number(b.length);if(b.width)body.width_cm=Number(b.width);if(b.height)body.height_cm=Number(b.height);
+          await dq("unassigned_packages",{method:"POST",token,body});
+        }
+        onSaved();return;
+      }
+      // Cliente registrado
       let opId;
-      if(existingOp){
-        opId=existingOp.id;
-      } else {
-        // Crear nueva op - code autogenerado por trigger o nosotros
-        // Buscar último código
+      if(existingOp){opId=existingOp.id;}
+      else {
         const lastOps=await dq("operations",{token,filters:"?select=operation_code&order=operation_code.desc&limit=1"});
         const lastCode=Array.isArray(lastOps)&&lastOps[0]?lastOps[0].operation_code:"AC-0000";
         const n=parseInt(lastCode.replace(/\D/g,""),10)||0;
         const newCode=`AC-${String(n+1).padStart(4,"0")}`;
-        const r=await dq("operations",{method:"POST",token,body:{operation_code:newCode,client_id:client.id,channel:"aereo_blanco",status:"en_deposito_origen",origin:"China",created_by_agent_id:agentId}});
+        const r=await dq("operations",{method:"POST",token,body:{operation_code:newCode,client_id:clientId,channel:"aereo_blanco",status:"en_deposito_origen",origin:"China",created_by_agent_id:agentId}});
         const created=Array.isArray(r)?r[0]:r;
         if(!created?.id){setErr(t.err_generic);setSaving(false);return;}
         opId=created.id;
       }
-      // Buscar siguiente package_number
       const pkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${opId}&select=package_number&order=package_number.desc&limit=1`});
       const lastNum=Array.isArray(pkgs)&&pkgs[0]?Number(pkgs[0].package_number)||0:0;
-      const num=lastNum+1;
-      const body={operation_id:opId,package_number:num,quantity:1,national_tracking:tracking.trim()};
-      if(weight)body.gross_weight_kg=Number(weight);
-      if(length)body.length_cm=Number(length);
-      if(width)body.width_cm=Number(width);
-      if(height)body.height_cm=Number(height);
-      await dq("operation_packages",{method:"POST",token,body});
+      for(let i=0;i<validBultos.length;i++){const b=validBultos[i];const body={operation_id:opId,package_number:lastNum+i+1,quantity:1,national_tracking:tracking.trim()};
+        if(b.weight)body.gross_weight_kg=Number(b.weight);if(b.length)body.length_cm=Number(b.length);if(b.width)body.width_cm=Number(b.width);if(b.height)body.height_cm=Number(b.height);
+        await dq("operation_packages",{method:"POST",token,body});
+      }
       onSaved();
     } catch(e){console.error(e);setErr(t.err_generic);}
     setSaving(false);
@@ -355,30 +376,56 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
   return <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1.5px solid rgba(96,165,250,0.25)",padding:"1.5rem"}}>
     <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 18px"}}>{t.new_package}</h3>
     {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
-    <Inp label={t.client_code} value={code} onChange={v=>setCode(v.toUpperCase())} placeholder={t.client_code_ph} req/>
-    {checking&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"-8px 0 10px"}}>...</p>}
-    {client&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:10,marginBottom:14}}>
-      <p style={{fontSize:13,color:"#22c55e",margin:0,fontWeight:600}}>✓ {t.client_found}: {client.first_name}</p>
+
+    <div style={{marginBottom:14,position:"relative"}}>
+      <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.select_client}<span style={{color:"#ff6b6b"}}> *</span></label>
+      <button type="button" onClick={()=>setShowDrop(!showDrop)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:selectedClient||clientId==="unregistered"?"#fff":"rgba(255,255,255,0.4)",outline:"none",textAlign:"left",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span>{clientId==="unregistered"?`📦 ${t.unregistered_client}`:selectedClient?`${selectedClient.client_code} - ${selectedClient.first_name||""} ${selectedClient.last_name||""}`:t.select_client}</span>
+        <span>{showDrop?"▲":"▼"}</span>
+      </button>
+      {showDrop&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#0a1428",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:10,maxHeight:300,overflow:"auto",zIndex:10,boxShadow:"0 10px 30px rgba(0,0,0,0.5)"}}>
+        <div style={{padding:8,borderBottom:"1px solid rgba(255,255,255,0.06)"}}><input value={clientSearch} onChange={e=>setClientSearch(e.target.value)} placeholder={t.search_client} autoFocus style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
+        <button type="button" onClick={()=>{setClientId("unregistered");setShowDrop(false);setClientSearch("");}} style={{display:"block",width:"100%",padding:"10px 14px",fontSize:13,fontWeight:600,border:"none",background:clientId==="unregistered"?"rgba(96,165,250,0.15)":"transparent",color:"#fbbf24",cursor:"pointer",textAlign:"left",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>📦 {t.unregistered_client}</button>
+        {filtered.map(c=><button key={c.id} type="button" onClick={()=>{setClientId(c.id);setShowDrop(false);setClientSearch("");}} style={{display:"block",width:"100%",padding:"10px 14px",fontSize:13,border:"none",background:clientId===c.id?"rgba(96,165,250,0.15)":"transparent",color:"#fff",cursor:"pointer",textAlign:"left"}}>
+          <span style={{fontFamily:"monospace",fontWeight:700,color:IC}}>{c.client_code}</span>
+          <span style={{color:"rgba(255,255,255,0.5)",marginLeft:8}}>{c.first_name||""} {c.last_name||""}</span>
+        </button>)}
+        {filtered.length===0&&<p style={{padding:"10px 14px",fontSize:12,color:"rgba(255,255,255,0.3)",margin:0}}>{t.client_not_found}</p>}
+      </div>}
+    </div>
+
+    {clientId==="unregistered"&&<div style={{padding:"10px 14px",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:10,marginBottom:14}}>
+      <p style={{fontSize:12,color:"#fbbf24",margin:0,fontWeight:600}}>⚠ {t.unregistered_info}</p>
     </div>}
-    {code.length>=2&&!checking&&!client&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.08)",border:"1px solid rgba(255,80,80,0.2)",borderRadius:10,marginBottom:14}}>
-      <p style={{fontSize:13,color:"#ff6b6b",margin:0}}>✕ {t.client_not_found}</p>
-    </div>}
-    {client&&existingOp&&<div style={{padding:"10px 14px",background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:10,marginBottom:14}}>
+    {selectedClient&&existingOp&&<div style={{padding:"10px 14px",background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:10,marginBottom:14}}>
       <p style={{fontSize:12,color:IC,margin:0,fontWeight:600}}>ℹ {t.consolidation_info} <strong>{existingOp.operation_code}</strong></p>
     </div>}
-    {client&&!existingOp&&<div style={{padding:"10px 14px",background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:10,marginBottom:14}}>
+    {selectedClient&&!existingOp&&<div style={{padding:"10px 14px",background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:10,marginBottom:14}}>
       <p style={{fontSize:12,color:IC,margin:0,fontWeight:600}}>ℹ {t.new_op_info}</p>
     </div>}
+
     <Inp label={t.tracking} value={tracking} onChange={setTracking} placeholder={t.tracking_ph} req/>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 12px"}}>
-      <Inp label={t.weight} type="number" value={weight} onChange={setWeight} placeholder="12.5"/>
-      <Inp label={t.length} type="number" value={length} onChange={setLength} placeholder="45"/>
-      <Inp label={t.width} type="number" value={width} onChange={setWidth} placeholder="30"/>
-      <Inp label={t.height} type="number" value={height} onChange={setHeight} placeholder="25"/>
+
+    <div style={{marginTop:8,marginBottom:14}}>
+      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 10px",textTransform:"uppercase"}}>{t.bultos} ({bultos.length})</p>
+      {bultos.map((b,i)=><div key={i} style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:"12px 14px",marginBottom:10,border:"1px solid rgba(255,255,255,0.05)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <span style={{fontSize:11,fontWeight:700,color:IC}}>{t.bulto_n} {i+1}</span>
+          {bultos.length>1&&<button type="button" onClick={()=>rmBulto(i)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>{t.remove}</button>}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 10px"}}>
+          <Inp label={t.weight} type="number" value={b.weight} onChange={v=>chBulto(i,"weight",v)} placeholder="12.5"/>
+          <Inp label={t.length} type="number" value={b.length} onChange={v=>chBulto(i,"length",v)} placeholder="45"/>
+          <Inp label={t.width} type="number" value={b.width} onChange={v=>chBulto(i,"width",v)} placeholder="30"/>
+          <Inp label={t.height} type="number" value={b.height} onChange={v=>chBulto(i,"height",v)} placeholder="25"/>
+        </div>
+      </div>)}
+      <button type="button" onClick={addBulto} style={{width:"100%",padding:"10px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer"}}>{t.add_bulto}</button>
     </div>
+
     <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:12,marginTop:10}}>
       <Btn variant="secondary" onClick={onCancel}>{t.cancel}</Btn>
-      <Btn onClick={save} disabled={saving||!client||!tracking}>{saving?t.saving:t.save}</Btn>
+      <Btn onClick={save} disabled={saving||!clientId||!tracking}>{saving?t.saving:t.save}</Btn>
     </div>
   </div>;
 }

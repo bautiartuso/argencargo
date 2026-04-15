@@ -1140,15 +1140,39 @@ function FinancePanel({token}){
 }
 
 function AgentsPanel({token}){
+  const [tab,setTab]=useState("signups");
   const [signups,setSignups]=useState([]);
   const [profiles,setProfiles]=useState({});
+  const [unassigned,setUnassigned]=useState([]);
+  const [allOps,setAllOps]=useState([]);
   const [lo,setLo]=useState(true);
   const [msg,setMsg]=useState("");
-  const load=async()=>{setLo(true);const r=await dq("agent_signups",{token,filters:"?select=*&order=created_at.desc"});setSignups(Array.isArray(r)?r:[]);
+  const load=async()=>{setLo(true);
+    const [r,u,o]=await Promise.all([
+      dq("agent_signups",{token,filters:"?select=*&order=created_at.desc"}),
+      dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
+      dq("operations",{token,filters:"?select=id,operation_code,client_id,clients(client_code,first_name,last_name)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&consolidation_confirmed=eq.false&order=created_at.desc"})
+    ]);
+    setSignups(Array.isArray(r)?r:[]);setUnassigned(Array.isArray(u)?u:[]);setAllOps(Array.isArray(o)?o:[]);
     const ids=(Array.isArray(r)?r:[]).map(s=>s.auth_user_id).filter(Boolean);
     if(ids.length>0){const pr=await dq("profiles",{token,filters:`?id=in.(${ids.join(",")})&select=id,role`});const m={};(Array.isArray(pr)?pr:[]).forEach(p=>{m[p.id]=p;});setProfiles(m);}
     setLo(false);};
   useEffect(()=>{load();},[token]);
+  const assignToOp=async(pkg,opId)=>{
+    if(!opId)return;
+    // Fetch op to get next package_number
+    const opPkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${opId}&select=package_number&order=package_number.desc&limit=1`});
+    const lastNum=Array.isArray(opPkgs)&&opPkgs[0]?Number(opPkgs[0].package_number)||0:0;
+    const body={operation_id:opId,package_number:lastNum+1,quantity:pkg.quantity||1,national_tracking:pkg.national_tracking};
+    if(pkg.gross_weight_kg)body.gross_weight_kg=pkg.gross_weight_kg;
+    if(pkg.length_cm)body.length_cm=pkg.length_cm;
+    if(pkg.width_cm)body.width_cm=pkg.width_cm;
+    if(pkg.height_cm)body.height_cm=pkg.height_cm;
+    await dq("operation_packages",{method:"POST",token,body});
+    await dq("unassigned_packages",{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{assigned_to_op_id:opId,assigned_at:new Date().toISOString()}});
+    load();flash("Asignado a operación");
+  };
+  const delUnassigned=async(id)=>{if(!confirm("¿Eliminar este paquete huérfano?"))return;await dq("unassigned_packages",{method:"DELETE",token,filters:`?id=eq.${id}`});load();flash("Eliminado");};
   const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const approve=async(s)=>{
     // Update profile role to agente
@@ -1162,10 +1186,35 @@ function AgentsPanel({token}){
   const ST={pending:{l:"Pendiente",c:"#fbbf24"},approved:{l:"Aprobado",c:"#22c55e"},rejected:{l:"Rechazado",c:"#ff6b6b"}};
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-      <div><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Agentes</h2><p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Aprobar solicitudes de registro y ver agentes activos</p></div>
+      <div><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Agentes</h2><p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Aprobar solicitudes y gestionar paquetes huérfanos</p></div>
     </div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
-    {lo?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem"}}>Cargando...</p>:signups.length===0?<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"3rem 0"}}>No hay solicitudes de agentes</p>:
+    <div style={{display:"flex",gap:8,marginBottom:16}}>
+      {[{k:"signups",l:"Solicitudes y agentes"},{k:"orphans",l:`Paquetes huérfanos (${unassigned.length})`}].map(tb=><button key={tb.k} onClick={()=>setTab(tb.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===tb.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===tb.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===tb.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{tb.l}</button>)}
+    </div>
+    {tab==="orphans"&&<>
+      {unassigned.length===0?<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes huérfanos</p>:
+      <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+            {["Tracking","Bulto","Peso","Dimensiones","Recibido","Asignar a operación",""].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
+          </tr></thead>
+          <tbody>{unassigned.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{padding:"12px 14px",fontFamily:"monospace",fontSize:12,color:"#fff"}}>{p.national_tracking}</td>
+            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>#{p.package_number}</td>
+            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—"}</td>
+            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",fontSize:11}}>{p.length_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}`:"—"}</td>
+            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{formatDate(p.created_at)}</td>
+            <td style={{padding:"12px 14px"}}><select onChange={e=>assignToOp(p,e.target.value)} value="" style={{padding:"6px 10px",fontSize:11,border:"1px solid rgba(96,165,250,0.3)",borderRadius:6,background:"rgba(96,165,250,0.08)",color:"#fff",outline:"none",maxWidth:240}}>
+              <option value="" style={{background:"#0a1428"}}>— seleccionar —</option>
+              {allOps.map(o=><option key={o.id} value={o.id} style={{background:"#0a1428"}}>{o.operation_code} - {o.clients?.client_code} ({o.clients?.first_name})</option>)}
+            </select></td>
+            <td style={{padding:"12px 14px"}}><button onClick={()=>delUnassigned(p.id)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>X</button></td>
+          </tr>)}</tbody>
+        </table>
+      </div>}
+    </>}
+    {tab==="signups"&&(lo?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem"}}>Cargando...</p>:signups.length===0?<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"3rem 0"}}>No hay solicitudes de agentes</p>:
     <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
@@ -1188,7 +1237,7 @@ function AgentsPanel({token}){
           </td>
         </tr>;})}</tbody>
       </table>
-    </div>}
+    </div>)}
   </div>;
 }
 
