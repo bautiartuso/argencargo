@@ -964,9 +964,9 @@ function AdminSettings({token,session}){
   </div>;
 }
 
-const FIXED_CATS=[{k:"marketing",l:"Marketing (Meta, Google, etc.)"},{k:"software",l:"Software (Claude, Vercel, etc.)"},{k:"salarios",l:"Salarios"},{k:"oficina",l:"Oficina"},{k:"otros",l:"Otros (requiere detalle)"}];
-const CAT_LBL={marketing:"Marketing",software:"Software",salarios:"Salarios",oficina:"Oficina",otros:"Otros"};
-const CAT_COLOR={marketing:"#fb923c",software:"#a78bfa",salarios:"#22c55e",oficina:"#60a5fa",otros:"#94a3b8"};
+const FIXED_CATS=[{k:"marketing",l:"Marketing (Meta, Google, etc.)"},{k:"software",l:"Software (Claude, Vercel, etc.)"},{k:"salarios",l:"Salarios"},{k:"oficina",l:"Oficina"},{k:"comisiones",l:"Comisiones (PayPal, spread cambio)"},{k:"otros",l:"Otros (requiere detalle)"}];
+const CAT_LBL={marketing:"Marketing",software:"Software",salarios:"Salarios",oficina:"Oficina",comisiones:"Comisiones",otros:"Otros"};
+const CAT_COLOR={marketing:"#fb923c",software:"#a78bfa",salarios:"#22c55e",oficina:"#60a5fa",comisiones:"#fbbf24",otros:"#94a3b8"};
 function FinancePanel({token}){
   const [entries,setEntries]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("fixed");const [showAdd,setShowAdd]=useState(false);const [msg,setMsg]=useState("");
   const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",payment_method:"transferencia"});
@@ -1214,16 +1214,29 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
 function AnticipoForm({token,agentId,onSaved}){
   const [date,setDate]=useState(new Date().toISOString().slice(0,10));
   const [amount,setAmount]=useState("");
+  const [received,setReceived]=useState("");
   const [desc,setDesc]=useState("");
   const [saving,setSaving]=useState(false);
-  const save=async()=>{if(!amount)return;setSaving(true);await dq("agent_account_movements",{method:"POST",token,body:{agent_id:agentId,date,type:"anticipo",amount_usd:Number(amount),description:desc||"Anticipo"}});setSaving(false);onSaved();};
+  const paid=Number(amount||0);const recv=Number(received||paid);const comision=Math.max(0,paid-recv);
+  const save=async()=>{
+    if(!amount)return;setSaving(true);
+    const body={agent_id:agentId,date,type:"anticipo",amount_usd:paid,amount_received_usd:received?recv:null,description:desc||"Anticipo"};
+    await dq("agent_account_movements",{method:"POST",token,body});
+    // Si hay diferencia → auto-crear gasto categoría comisiones
+    if(comision>0){
+      await dq("finance_entries",{method:"POST",token,body:{date,type:"gasto",category:"comisiones",detail:`Comisión transferencia anticipo agente${desc?` (${desc})`:""}`,description:`Comisiones — Comisión transferencia anticipo agente${desc?` (${desc})`:""}`,amount:comision,currency:"USD",payment_method:"transferencia",is_paid:true,auto_generated:false}});
+    }
+    setSaving(false);onSaved();
+  };
   return <div style={{background:"rgba(34,197,94,0.04)",border:"1px solid rgba(34,197,94,0.15)",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr 1fr",gap:10,alignItems:"end"}}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 2fr 1fr",gap:10,alignItems:"end"}}>
       <Inp label="Fecha" type="date" value={date} onChange={setDate}/>
-      <Inp label="Monto USD" type="number" value={amount} onChange={setAmount} step="0.01"/>
+      <Inp label="Monto que pagué (USD)" type="number" value={amount} onChange={setAmount} step="0.01"/>
+      <Inp label="Monto que recibió (USD)" type="number" value={received} onChange={setReceived} step="0.01" placeholder={amount||"= pagado"}/>
       <Inp label="Descripción" value={desc} onChange={setDesc} placeholder="Ej: Pago vuelo FL-0003"/>
       <Btn small onClick={save} disabled={saving||!amount}>{saving?"...":"Guardar"}</Btn>
     </div>
+    {comision>0&&<p style={{fontSize:11,color:"#fbbf24",margin:"8px 0 0"}}>↳ Se generará gasto Comisiones por USD {comision.toFixed(2)}</p>}
   </div>;
 }
 
@@ -1566,8 +1579,8 @@ function ShipmentsTracking({token,onSelectOp}){
 }
 
 function FinanceDashboard({token}){
-  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
-  useEffect(()=>{(async()=>{const [o,c,q,fe,pm]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
+  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
+  useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
 
   const now=new Date();const thisMonth=now.getMonth();const thisYear=now.getFullYear();
   const today=now.toISOString().slice(0,10);const weekAgo=new Date(now-7*86400000).toISOString().slice(0,10);
@@ -1647,9 +1660,11 @@ function FinanceDashboard({token}){
       // Costos: todos los costos de ops + giros YA enviados (confirmado)
       const totCostosOps=ops.reduce((s,o)=>s+Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0),0);
       const totCostosPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.giro_status==="confirmado").reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0);
+      // Anticipos a agentes (cash real que sale)
+      const totAnticiposAgentes=agentMvs.filter(m=>m.type==="anticipo").reduce((s,m)=>s+Number(m.amount_usd||0),0);
       // Costos fijos manuales (Meta ads, Vercel, Claude, salarios, etc.) — históricos en USD
       const totCostosFijos=finEntries.filter(e=>e.auto_generated===false&&e.type==="gasto"&&e.currency!=="ARS").reduce((s,e)=>s+Number(e.amount||0),0);
-      const totCostosTotales=totCostosOps+totCostosPmts+totCostosFijos;
+      const totCostosTotales=totCostosOps+totCostosPmts+totCostosFijos+totAnticiposAgentes;
       // Colgados: lo que DEBE el cliente (client_amount) − anticipos. Eso es plata real pendiente de cobrar.
       const girosColgadosDetail=[];
       ops.forEach(o=>{const pmts=pmtsByOp[o.id]||[];const colgados=pmts.filter(p=>p.giro_status==="confirmado"&&!p.client_paid);if(colgados.length===0)return;const debe=colgados.reduce((a,p)=>a+Number(p.client_amount_usd||0),0);const ant=Number(o.total_anticipos||0);const real=Math.max(0,debe-ant);if(real>0)girosColgadosDetail.push({code:o.operation_code,client:o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—",debe,anticipo:ant,real});});
@@ -1665,7 +1680,7 @@ function FinanceDashboard({token}){
         <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.1),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(255,80,80,0.1),rgba(255,80,80,0.03))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,borderRadius:14,padding:"20px 24px"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"0 0 6px",textTransform:"uppercase"}}>Cash disponible</p>
           <p style={{fontSize:32,fontWeight:700,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>{usd(cashDisponible)}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"0 0 4px"}}>Cobrado ({usd(totCobrado)}) - Costos ops ({usd(totCostosOps+totCostosPmts)}) - Gastos ({usd(totCostosFijos)})</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"0 0 4px"}}>Cobrado ({usd(totCobrado)}) - Costos ops ({usd(totCostosOps+totCostosPmts)}) - Gastos ({usd(totCostosFijos)}) - Anticipos ({usd(totAnticiposAgentes)})</p>
           {margenActivas!==0&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:4}}>↳ {usd(margenActivas)} margen ops activas (aún no ganancia)</p>}
           {girosColgados>0&&<p style={{fontSize:10,color:"#fb923c",margin:"2px 0 0",cursor:"help"}} title={girosColgadosDetail.map(d=>`${d.code} ${d.client}: debe ${usd(d.debe)}${d.anticipo>0?` − anticipo ${usd(d.anticipo)}`:""} = ${usd(d.real)} pendiente`).join("\n")}>⚠ {usd(girosColgados)} pendiente de cobrar al cliente ({girosColgadosDetail.length})</p>}
           {girosPendientes>0&&<p style={{fontSize:10,color:"#60a5fa",margin:"2px 0 0"}}>⏳ {usd(girosPendientes)} cobrados, giro pendiente envío</p>}
@@ -1763,6 +1778,39 @@ function FinanceDashboard({token}){
         {Object.keys(byOrigin).length===0&&<p style={{color:"rgba(255,255,255,0.25)"}}>Sin datos</p>}
       </Card>
     </div>
+
+    {(()=>{
+      // Gastos del negocio agrupados por categoría (manuales) + ingresos por canal
+      const gastosByCat={};fixedCostsManual.forEach(e=>{const k=e.category||"otros";gastosByCat[k]=(gastosByCat[k]||0)+Number(e.amount||0);});
+      const totGastosCat=Object.values(gastosByCat).reduce((s,v)=>s+v,0);
+      const ingresosByChan={};periodOps.forEach(o=>{const ch=o.channel||"unknown";ingresosByChan[ch]=(ingresosByChan[ch]||0)+calcGan(o).ing;});
+      const totIngChan=Object.values(ingresosByChan).reduce((s,v)=>s+v,0);
+      return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
+        <Card title="Gastos del negocio por categoría">
+          {totGastosCat>0?<>
+            <div style={{height:12,borderRadius:6,overflow:"hidden",display:"flex",marginBottom:16}}>
+              {Object.entries(gastosByCat).map(([k,v])=><div key={k} style={{width:`${(v/totGastosCat)*100}%`,background:CAT_COLOR[k]||"#888",height:"100%"}}/>)}
+            </div>
+            {Object.entries(gastosByCat).sort((a,b)=>b[1]-a[1]).map(([k,v])=><div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:3,background:CAT_COLOR[k]||"#888"}}/><span style={{fontSize:12,color:"rgba(255,255,255,0.6)"}}>{CAT_LBL[k]||k}</span></div>
+              <div><span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{usd(v)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.3)",marginLeft:8}}>{((v/totGastosCat)*100).toFixed(1)}%</span></div>
+            </div>)}
+            <p style={{fontSize:10,color:"rgba(255,255,255,0.3)",margin:"10px 0 0",fontStyle:"italic"}}>Total acumulado · cargá en Finanzas → Gastos del Negocio</p>
+          </>:<p style={{color:"rgba(255,255,255,0.25)"}}>Sin gastos cargados — agregá Meta ads, Vercel, Claude, salarios, etc. en Finanzas</p>}
+        </Card>
+        <Card title="Ingresos por canal (período)">
+          {totIngChan>0?<>
+            <div style={{height:12,borderRadius:6,overflow:"hidden",display:"flex",marginBottom:16}}>
+              {Object.entries(ingresosByChan).map(([k,v])=><div key={k} style={{width:`${(v/totIngChan)*100}%`,background:k==="aereo_blanco"?"#22c55e":k==="aereo_negro"?"#60a5fa":k==="maritimo_blanco"?"#a78bfa":"#fb923c",height:"100%"}}/>)}
+            </div>
+            {Object.entries(ingresosByChan).sort((a,b)=>b[1]-a[1]).map(([k,v])=><div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:3,background:k==="aereo_blanco"?"#22c55e":k==="aereo_negro"?"#60a5fa":k==="maritimo_blanco"?"#a78bfa":"#fb923c"}}/><span style={{fontSize:12,color:"rgba(255,255,255,0.6)"}}>{CM[k]||k}</span></div>
+              <div><span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{usd(v)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.3)",marginLeft:8}}>{((v/totIngChan)*100).toFixed(1)}%</span></div>
+            </div>)}
+          </>:<p style={{color:"rgba(255,255,255,0.25)"}}>Sin ops cerradas en el período</p>}
+        </Card>
+      </div>;
+    })()}
   </div>;
 }
 
