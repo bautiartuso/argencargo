@@ -6,9 +6,23 @@ const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 const LOGO=`${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
 const IC="#60a5fa";
 const BG="linear-gradient(160deg,#030810 0%,#071428 40%,#091b34 70%,#040e1c 100%)";
-const sf=async(p,o={})=>{const r=await fetch(`${SB_URL}${p}`,{...o,headers:{apikey:SB_KEY,"Content-Type":"application/json",...(o.headers||{})}});return r.json();};
-const ac=async(e,b)=>sf(`/auth/v1/${e}`,{method:"POST",body:JSON.stringify(b)});
-const dq=async(t,{method="GET",body,token,filters=""})=>sf(`/rest/v1/${t}${filters}`,{method,body:body?JSON.stringify(body):undefined,headers:{Authorization:`Bearer ${token}`,...(method==="POST"?{Prefer:"return=representation"}:{})}});
+const sf=async(p,o={})=>{const r=await fetch(`${SB_URL}${p}`,{...o,headers:{apikey:SB_KEY,"Content-Type":"application/json",...(o.headers||{})}});return {status:r.status,body:await r.json().catch(()=>null)};};
+const sfJson=async(p,o={})=>{const r=await sf(p,o);return r.body;};
+const ac=async(e,b)=>sfJson(`/auth/v1/${e}`,{method:"POST",body:JSON.stringify(b)});
+// Token refresh: intenta renovar con refresh_token si la request falla 401
+const refreshToken=async()=>{
+  const s=loadSession();if(!s?.refresh_token)return null;
+  const r=await ac("token?grant_type=refresh_token",{refresh_token:s.refresh_token});
+  if(r?.access_token){const ns={access_token:r.access_token,refresh_token:r.refresh_token||s.refresh_token,user:r.user||s.user};saveSession(ns);return ns.access_token;}
+  clearSession();if(typeof window!=="undefined")window.location.reload();return null;
+};
+const dq=async(t,{method="GET",body,token,filters=""})=>{
+  const doReq=(tk)=>sf(`/rest/v1/${t}${filters}`,{method,body:body?JSON.stringify(body):undefined,headers:{Authorization:`Bearer ${tk}`,...(method==="POST"?{Prefer:"return=representation"}:{})}});
+  let r=await doReq(token);
+  // Si JWT expirado (401) → refresh y retry
+  if(r.status===401){const newToken=await refreshToken();if(newToken){r=await doReq(newToken);}}
+  return r.body;
+};
 const saveSession=(d)=>{try{localStorage.setItem("ac_agent_s",JSON.stringify(d));}catch(e){}};
 const loadSession=()=>{try{const d=localStorage.getItem("ac_agent_s");return d?JSON.parse(d):null;}catch(e){return null;}};
 const clearSession=()=>{try{localStorage.removeItem("ac_agent_s");}catch(e){}};
@@ -214,7 +228,7 @@ function AuthScreen({onLogin,lang,setLang,t}){
   };
   const login=async()=>{if(!email||!pass){setErr(t.err_generic);return;}setLo(true);setErr("");
     const r=await ac("token?grant_type=password",{email,password:pass});
-    if(r.access_token){const sess={access_token:r.access_token,user:r.user};saveSession(sess);onLogin(sess);}
+    if(r.access_token){const sess={access_token:r.access_token,refresh_token:r.refresh_token,user:r.user};saveSession(sess);onLogin(sess);}
     else setErr(r.error_description||r.msg||r.message||t.err_generic);
     setLo(false);};
   const signup=async()=>{if(!email||!pass||!fName){setErr(t.err_generic);return;}setLo(true);setErr("");
@@ -227,7 +241,7 @@ function AuthScreen({onLogin,lang,setLang,t}){
       const l=await ac("token?grant_type=password",{email,password:pass});
       if(l.access_token){
         await ensureSignup(l.access_token,l.user.id);
-        const sess={access_token:l.access_token,user:l.user};saveSession(sess);onLogin(sess);
+        const sess={access_token:l.access_token,refresh_token:l.refresh_token,user:l.user};saveSession(sess);onLogin(sess);
       } else {
         setErr("Ya existe una cuenta con ese email. Probá iniciar sesión o usar otro email.");
       }
@@ -241,7 +255,7 @@ function AuthScreen({onLogin,lang,setLang,t}){
       const l=await ac("token?grant_type=password",{email,password:pass});
       if(l.access_token){
         if(!token)await ensureSignup(l.access_token,l.user.id);
-        const sess={access_token:l.access_token,user:l.user};saveSession(sess);onLogin(sess);
+        const sess={access_token:l.access_token,refresh_token:l.refresh_token,user:l.user};saveSession(sess);onLogin(sess);
       } else {
         // Email confirmation activado en Supabase
         setErr("Cuenta creada. Confirmá el email para poder ingresar (revisá tu casilla).");
