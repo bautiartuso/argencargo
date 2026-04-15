@@ -501,7 +501,11 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
         </div>
       </div>
     </Card>}
-    {flight.status==="preparando"&&<Card title={t.dispatch_form}>
+    {flight.status==="preparando"&&!flight.invoice_presented_at&&<div style={{padding:"14px 18px",background:"rgba(251,191,36,0.08)",border:"1.5px solid rgba(251,191,36,0.25)",borderRadius:10,marginBottom:14}}>
+      <p style={{fontSize:13,fontWeight:700,color:"#fbbf24",margin:0}}>⏳ Esperando factura de Argencargo</p>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>Cuando el admin presente la factura de exportación, vas a poder despachar este vuelo.</p>
+    </div>}
+    {flight.status==="preparando"&&flight.invoice_presented_at&&<Card title={t.dispatch_form}>
       {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
       <div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:8,padding:"10px 14px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{t.total_weight} (calculado desde los bultos)</span>
