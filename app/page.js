@@ -112,11 +112,30 @@ function OperationDetail({op,token,onBack}){
         <button style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",cursor:"default"}}>⏳ Tengo más paquetes por llegar</button>
       </div>
     </div>}
-    {canDocument&&!loading&&<div style={{background:"linear-gradient(135deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04))",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+    {!loading&&items.length>0&&<div style={{background:"linear-gradient(135deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04))",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+      <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>📋 Productos declarados</h3>
+      <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.08)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
+          <span>Descripción</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Precio unit.</span><span style={{textAlign:"right"}}>Subtotal</span>
+        </div>
+        {items.map(it=><div key={it.id} style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:13,color:"rgba(255,255,255,0.85)"}}>
+          <span>{it.description}</span>
+          <span style={{textAlign:"right"}}>{Number(it.quantity||0)}</span>
+          <span style={{textAlign:"right"}}>USD {Number(it.unit_price_usd||0).toFixed(2)}</span>
+          <span style={{textAlign:"right",fontWeight:700}}>USD {(Number(it.quantity||0)*Number(it.unit_price_usd||0)).toFixed(2)}</span>
+        </div>)}
+        <div style={{display:"flex",justifyContent:"space-between",padding:"10px 12px",borderTop:"1px solid rgba(96,165,250,0.3)"}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>TOTAL</span>
+          <span style={{fontSize:14,fontWeight:700,color:IC}}>USD {items.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_usd||0),0).toFixed(2)}</span>
+        </div>
+      </div>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>¿Necesitás modificar algo? Contactá a tu asesor de Argencargo.</p>
+    </div>}
+    {canDocument&&!loading&&items.length===0&&<div style={{background:"linear-gradient(135deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04))",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12,marginBottom:showDocPanel?16:0}}>
         <div>
           <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>📋 Completá la documentación de tu carga</h3>
-          <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:0}}>{items.length>0?`Tenés ${items.length} producto${items.length>1?"s":""} cargado${items.length>1?"s":""}. Podés agregar más:`:"Necesitamos los datos de la mercadería para avanzar con el envío"}</p>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:0}}>Necesitamos los datos de la mercadería para avanzar con el envío</p>
         </div>
         <button onClick={()=>{setShowDocPanel(!showDocPanel);if(!showDocPanel&&docItems.length===0)setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);}} style={{padding:"10px 20px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>{showDocPanel?"Cerrar":"+ Agregar productos"}</button>
       </div>

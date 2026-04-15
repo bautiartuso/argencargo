@@ -388,7 +388,14 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const statTotalKg=flights.filter(f=>f.total_weight_kg).reduce((s,f)=>s+Number(f.total_weight_kg||0),0);
   const statTotalUsd=flights.filter(f=>f.total_cost_usd).reduce((s,f)=>s+Number(f.total_cost_usd||0),0);
 
-  const FlightCard=({f})=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <div onClick={()=>setSelFlight(f.id)} style={{cursor:"pointer",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:"1rem 1.25rem"}}>
+  const FlightCard=({f})=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);
+    const isReady=f.status==="preparando"&&f.invoice_presented_at;
+    const isWaiting=f.status==="preparando"&&!f.invoice_presented_at;
+    const cardBg=isReady?"rgba(34,197,94,0.08)":isWaiting?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.05)";
+    const cardBorder=isReady?"1.5px solid rgba(34,197,94,0.35)":isWaiting?"1.5px solid rgba(251,191,36,0.25)":"1px solid rgba(255,255,255,0.1)";
+    return <div onClick={()=>setSelFlight(f.id)} style={{cursor:"pointer",background:cardBg,border:cardBorder,borderRadius:14,padding:"1rem 1.25rem"}}>
+    {isReady&&<p style={{fontSize:13,fontWeight:700,color:"#22c55e",margin:"0 0 8px"}}>🚀 LISTO PARA ENVIAR — completá los datos</p>}
+    {isWaiting&&<p style={{fontSize:13,fontWeight:700,color:"#fbbf24",margin:"0 0 8px"}}>⏳ Esperando factura de Argencargo</p>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:8}}>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
         <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{f.flight_code}</span>
@@ -397,7 +404,8 @@ function Dashboard({session,onLogout,lang,setLang,t}){
       </div>
       <span style={{color:IC,fontSize:12,fontWeight:600}}>{t.flight} →</span>
     </div>
-    {f.invoice_presented_at?<p style={{fontSize:11,color:"#22c55e",margin:0}}>📄 {t.invoice} ✓</p>:<p style={{fontSize:11,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>}
+    {!isReady&&!isWaiting&&f.invoice_presented_at?<p style={{fontSize:11,color:"#22c55e",margin:0}}>📄 {t.invoice} ✓</p>:null}
+    {!isReady&&!isWaiting&&!f.invoice_presented_at?<p style={{fontSize:11,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>:null}
     {f.destination_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>📍 {f.destination_address}</p>}
   </div>;};
 
