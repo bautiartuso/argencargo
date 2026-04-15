@@ -95,6 +95,14 @@ function OperationDetail({op,token,onBack}){
         ].map((x,i)=><div key={i}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{x.l}</span><p style={{fontSize:13,fontWeight:600,color:x.a?IC:"#fff",margin:"2px 0 0"}}>{x.v}</p></div>)}
       </div>;})()}
     </div>
+    {!loading&&op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&!op.consolidation_confirmed&&<div style={{background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+      <h3 style={{fontSize:15,fontWeight:700,color:"#fbbf24",margin:"0 0 6px"}}>📦 ¿Tu carga está completa?</h3>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Tu paquete llegó al warehouse en China. Si esperás más paquetes para consolidar en este envío, esperá a que lleguen. Si no, marcá "Listo" para que avancemos con la documentación y el envío.</p>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        <button onClick={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString()}});loadAll();}} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>✅ Listo, no espero más paquetes</button>
+        <button style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",cursor:"default"}}>📦 Esperar más paquetes</button>
+      </div>
+    </div>}
     {canDocument&&!loading&&<div style={{background:"linear-gradient(135deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04))",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12,marginBottom:showDocPanel?16:0}}>
         <div>

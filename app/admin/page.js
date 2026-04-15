@@ -36,13 +36,25 @@ function AdminLogin({onLogin}){
 }
 
 function OperationsList({token,onSelect,onNew}){
-  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fStatuses,setFStatuses]=useState([]);const [fChannel,setFChannel]=useState("");const [sortCol,setSortCol]=useState("created_at");const [sortDir,setSortDir]=useState("desc");const [showStatusDrop,setShowStatusDrop]=useState(false);
+  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fStatuses,setFStatuses]=useState([]);const [fChannel,setFChannel]=useState("");const [sortCol,setSortCol]=useState("smart");const [sortDir,setSortDir]=useState("asc");const [showStatusDrop,setShowStatusDrop]=useState(false);
+  // Peso por estado: mayor valor = más cerca de entrega (aparece arriba)
+  const STATUS_WEIGHT={lista_retiro:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,entregada:1,operacion_cerrada:0,cancelada:0};
   useEffect(()=>{(async()=>{const [o,pm]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro"})]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
   const toggleStatus=(s)=>setFStatuses(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
   const getOrigin=(op)=>op.origin||"China";
   const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannel&&o.channel!==fChannel)return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
   const calcGan=(o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtGan=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);return ing-cost+pmtGan;};
-  const sorted=[...filtered].sort((a,b)=>{let va=a[sortCol],vb=b[sortCol];if(sortCol==="client"){va=a.clients?`${a.clients.first_name} ${a.clients.last_name}`:"";vb=b.clients?`${b.clients.first_name} ${b.clients.last_name}`:"";}if(sortCol==="origin"){va=getOrigin(a);vb=getOrigin(b);}if(sortCol==="ganancia"){va=calcGan(a);vb=calcGan(b);}if(va==null)va="";if(vb==null)vb="";if(typeof va==="string")va=va.toLowerCase();if(typeof vb==="string")vb=vb.toLowerCase();if(va<vb)return sortDir==="asc"?-1:1;if(va>vb)return sortDir==="asc"?1:-1;return 0;});
+  const sorted=[...filtered].sort((a,b)=>{
+    if(sortCol==="smart"){
+      // Orden: más cercano a entrega primero (status_weight desc), luego ETA asc, luego created_at desc
+      const wa=STATUS_WEIGHT[a.status]??-1,wb=STATUS_WEIGHT[b.status]??-1;
+      if(wa!==wb)return wb-wa;
+      const ea=a.eta?String(a.eta).slice(0,10):"9999-12-31";const eb=b.eta?String(b.eta).slice(0,10):"9999-12-31";
+      if(ea!==eb)return ea.localeCompare(eb);
+      return (b.created_at||"").localeCompare(a.created_at||"");
+    }
+    let va=a[sortCol],vb=b[sortCol];if(sortCol==="client"){va=a.clients?`${a.clients.first_name} ${a.clients.last_name}`:"";vb=b.clients?`${b.clients.first_name} ${b.clients.last_name}`:"";}if(sortCol==="origin"){va=getOrigin(a);vb=getOrigin(b);}if(sortCol==="ganancia"){va=calcGan(a);vb=calcGan(b);}if(va==null)va="";if(vb==null)vb="";if(typeof va==="string")va=va.toLowerCase();if(typeof vb==="string")vb=vb.toLowerCase();if(va<vb)return sortDir==="asc"?-1:1;if(va>vb)return sortDir==="asc"?1:-1;return 0;
+  });
   const toggleSort=(col)=>{if(sortCol===col){setSortDir(d=>d==="asc"?"desc":"asc");}else{setSortCol(col);setSortDir("asc");}};
   const SH=({label,col})=><th onClick={()=>toggleSort(col)} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:sortCol===col?IC:"rgba(255,255,255,0.3)",textTransform:"uppercase",cursor:"pointer",userSelect:"none"}}>{label} {sortCol===col?(sortDir==="asc"?"▲":"▼"):""}</th>;
   return <div>
@@ -53,6 +65,7 @@ function OperationsList({token,onSelect,onNew}){
         {showStatusDrop&&<div style={{position:"absolute",top:"100%",left:0,marginTop:4,background:"#0a1428",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:8,zIndex:10,minWidth:200}}>{STATUSES.map(s=><label key={s} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",borderRadius:4}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><input type="checkbox" checked={fStatuses.includes(s)} onChange={()=>toggleStatus(s)}/><span style={{fontSize:12,color:SM[s].c,fontWeight:600}}>{SM[s].l}</span></label>)}<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:4}}><button onClick={()=>{setFStatuses([]);setShowStatusDrop(false);}} style={{fontSize:11,color:IC,background:"none",border:"none",cursor:"pointer",padding:"4px 8px"}}>Limpiar filtros</button></div></div>}
       </div>
       <select value={fChannel} onChange={e=>setFChannel(e.target.value)} style={{padding:"10px 14px",fontSize:12,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}><option value="" style={{background:"#0a1428"}}>Todos los canales</option>{CHANNELS.map(c=><option key={c} value={c} style={{background:"#0a1428"}}>{CM[c]}</option>)}</select>
+      {sortCol!=="smart"&&<button onClick={()=>{setSortCol("smart");setSortDir("asc");}} style={{padding:"10px 14px",fontSize:11,fontWeight:600,border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:8,background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>↻ Restaurar orden</button>}
     </div>
     {lo?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:(()=>{
     const active=sorted.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
@@ -162,6 +175,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
         <Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>
         {op.channel?.includes("aereo")&&<div style={{padding:"10px 14px",background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:8,marginBottom:8}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.has_battery||false} onChange={e=>chOp("has_battery")(e.target.checked)}/><span style={{fontSize:13,color:op.has_battery?"#fb923c":"rgba(255,255,255,0.5)",fontWeight:op.has_battery?600:400}}>🔋 La carga tiene baterías {op.has_battery?"(+$2/kg en flete aéreo A)":""}</span></label></div>}
+        {op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&<div style={{padding:"12px 16px",background:op.consolidation_confirmed?"rgba(34,197,94,0.06)":"rgba(251,191,36,0.08)",border:`1px solid ${op.consolidation_confirmed?"rgba(34,197,94,0.2)":"rgba(251,191,36,0.25)"}`,borderRadius:10,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <div><p style={{fontSize:12,fontWeight:700,color:op.consolidation_confirmed?"#22c55e":"#fbbf24",margin:"0 0 2px"}}>{op.consolidation_confirmed?"✓ Consolidación confirmada":"⏳ Esperando confirmación de consolidación"}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{op.consolidation_confirmed?"El cliente confirmó que la carga está completa":"El cliente o vos deben confirmar que la carga está lista para enviar"}</p></div>
+          {!op.consolidation_confirmed&&<Btn small onClick={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString()}});setOp(p=>({...p,consolidation_confirmed:true}));flash("Consolidación confirmada");}}>Marcar lista para enviar</Btn>}
+        </div>}
       </Card>
       <Card title="Resumen">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16}}>
@@ -1122,6 +1139,59 @@ function FinancePanel({token}){
   </div>;
 }
 
+function AgentsPanel({token}){
+  const [signups,setSignups]=useState([]);
+  const [profiles,setProfiles]=useState({});
+  const [lo,setLo]=useState(true);
+  const [msg,setMsg]=useState("");
+  const load=async()=>{setLo(true);const r=await dq("agent_signups",{token,filters:"?select=*&order=created_at.desc"});setSignups(Array.isArray(r)?r:[]);
+    const ids=(Array.isArray(r)?r:[]).map(s=>s.auth_user_id).filter(Boolean);
+    if(ids.length>0){const pr=await dq("profiles",{token,filters:`?id=in.(${ids.join(",")})&select=id,role`});const m={};(Array.isArray(pr)?pr:[]).forEach(p=>{m[p.id]=p;});setProfiles(m);}
+    setLo(false);};
+  useEffect(()=>{load();},[token]);
+  const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
+  const approve=async(s)=>{
+    // Update profile role to agente
+    const prof=profiles[s.auth_user_id];
+    if(prof){await dq("profiles",{method:"PATCH",token,filters:`?id=eq.${s.auth_user_id}`,body:{role:"agente"}});}
+    else {await dq("profiles",{method:"POST",token,body:{id:s.auth_user_id,role:"agente"}});}
+    await dq("agent_signups",{method:"PATCH",token,filters:`?id=eq.${s.id}`,body:{status:"approved",approved_at:new Date().toISOString()}});
+    load();flash("Agente aprobado");
+  };
+  const reject=async(s)=>{if(!confirm(`¿Rechazar a ${s.email}?`))return;await dq("agent_signups",{method:"PATCH",token,filters:`?id=eq.${s.id}`,body:{status:"rejected"}});load();flash("Agente rechazado");};
+  const ST={pending:{l:"Pendiente",c:"#fbbf24"},approved:{l:"Aprobado",c:"#22c55e"},rejected:{l:"Rechazado",c:"#ff6b6b"}};
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+      <div><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Agentes</h2><p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Aprobar solicitudes de registro y ver agentes activos</p></div>
+    </div>
+    {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
+    {lo?<p style={{color:"rgba(255,255,255,0.3)",textAlign:"center",padding:"2rem"}}>Cargando...</p>:signups.length===0?<p style={{color:"rgba(255,255,255,0.25)",textAlign:"center",padding:"3rem 0"}}>No hay solicitudes de agentes</p>:
+    <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+          {["Nombre","Email","País","Idioma","Estado","Registrado","Acciones"].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
+        </tr></thead>
+        <tbody>{signups.map(s=>{const st=ST[s.status]||{l:s.status,c:"#999"};return <tr key={s.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <td style={{padding:"12px 14px",color:"#fff"}}>{s.first_name||"—"} {s.last_name||""}</td>
+          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)",fontSize:12}}>{s.email}</td>
+          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{s.country==="China"?"🇨🇳":"🇺🇸"} {s.country}</td>
+          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{s.language==="zh"?"中文":"ES"}</td>
+          <td style={{padding:"12px 14px"}}><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>{st.l}</span></td>
+          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{formatDate(s.created_at)}</td>
+          <td style={{padding:"12px 14px"}}>
+            {s.status==="pending"&&<div style={{display:"flex",gap:6}}>
+              <button onClick={()=>approve(s)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(34,197,94,0.25)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>✓ Aprobar</button>
+              <button onClick={()=>reject(s)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>✕ Rechazar</button>
+            </div>}
+            {s.status==="approved"&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>Activo</span>}
+            {s.status==="rejected"&&<button onClick={()=>approve(s)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(34,197,94,0.25)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>Reactivar</button>}
+          </td>
+        </tr>;})}</tbody>
+      </table>
+    </div>}
+  </div>;
+}
+
 function ShipmentsTracking({token,onSelectOp}){
   const [ops,setOps]=useState([]);const [pkgs,setPkgs]=useState([]);const [items,setItems]=useState([]);const [lo,setLo]=useState(true);const [fChannel,setFChannel]=useState("");const [search,setSearch]=useState("");const [sortCol,setSortCol]=useState("op");const [sortDir,setSortDir]=useState("desc");
   const toggleSort=(col)=>{if(sortCol===col){setSortDir(d=>d==="asc"?"desc":"asc");}else{setSortCol(col);setSortDir("asc");}};
@@ -1478,7 +1548,7 @@ function AdminDashboard({session,onLogout}){
   const [page,setPage]=useState("operations");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);
   const token=session.token;
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
-  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"shipments",label:"SEGUIMIENTOS",p:["M16 3h5v5","M21 3l-7 7","M8 21H3v-5","M3 21l7-7","M21 16v5h-5","M21 21l-7-7","M3 8V3h5","M3 3l7 7"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"finance",label:"FINANZAS",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
+  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"shipments",label:"SEGUIMIENTOS",p:["M16 3h5v5","M21 3l-7 7","M8 21H3v-5","M3 21l7-7","M21 16v5h-5","M21 21l-7-7","M3 8V3h5","M3 3l7 7"]},{key:"agents",label:"AGENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"finance",label:"FINANZAS",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
   return <div style={{height:"100vh",display:"flex",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden"}}>
     <div style={{width:220,flexShrink:0,background:"rgba(0,0,0,0.3)",borderRight:"1px solid rgba(255,255,255,0.05)",display:"flex",flexDirection:"column",height:"100vh",position:"sticky",top:0}}>
       <div style={{padding:"20px 16px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><img src={LOGO} alt="AC" style={{width:"100%",height:"auto",maxHeight:50,objectFit:"contain"}}/></div>
@@ -1494,6 +1564,7 @@ function AdminDashboard({session,onLogout}){
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
       {page==="dashboard"&&<FinanceDashboard token={token}/>}
       {page==="shipments"&&<ShipmentsTracking token={token} onSelectOp={op=>{setPage("operations");setSelOp(op);}}/>}
+      {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
