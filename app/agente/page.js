@@ -5,7 +5,7 @@ const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 const LOGO=`${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
 const IC="#60a5fa";
-const BG="linear-gradient(160deg,#030810 0%,#071428 40%,#091b34 70%,#040e1c 100%)";
+const BG="linear-gradient(160deg,#0f1b30 0%,#162441 50%,#0f1b30 100%)";
 const sf=async(p,o={})=>{const r=await fetch(`${SB_URL}${p}`,{...o,headers:{apikey:SB_KEY,"Content-Type":"application/json",...(o.headers||{})}});return {status:r.status,body:await r.json().catch(()=>null)};};
 const sfJson=async(p,o={})=>{const r=await sf(p,o);return r.body;};
 const ac=async(e,b)=>sfJson(`/auth/v1/${e}`,{method:"POST",body:JSON.stringify(b)});
@@ -197,8 +197,8 @@ const I18N={
 
 function Inp({label,type="text",value,onChange,placeholder,req}){return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label><input type={type} value={value||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}} onFocus={e=>{e.target.style.borderColor=IC;}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";}}/></div>;}
 
-function Btn({children,onClick,disabled,variant="primary",type="button"}){const bg=variant==="secondary"?"rgba(255,255,255,0.06)":`linear-gradient(135deg,${B_ACCENT},${B_PRIMARY})`;return <button type={type} onClick={onClick} disabled={disabled} style={{width:"100%",padding:"13px",fontSize:14,fontWeight:700,border:variant==="secondary"?"1.5px solid rgba(255,255,255,0.12)":"none",borderRadius:10,cursor:disabled?"not-allowed":"pointer",background:disabled?"rgba(255,255,255,0.06)":bg,color:disabled?"rgba(255,255,255,0.3)":"#fff",opacity:disabled?0.6:1}}>{children}</button>;}
-function Card({title,children}){return <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.25rem 1.5rem",marginBottom:14}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{title}</h3>{children}</div>;}
+function Btn({children,onClick,disabled,variant="primary",type="button"}){const bg=variant==="secondary"?"rgba(255,255,255,0.06)":`linear-gradient(135deg,${B_ACCENT},${B_PRIMARY})`;return <button type={type} onClick={onClick} disabled={disabled} style={{width:"100%",padding:"13px",fontSize:14,fontWeight:700,border:variant==="secondary"?"1.5px solid rgba(255,255,255,0.12)":"none",borderRadius:10,cursor:disabled?"not-allowed":"pointer",background:disabled?"rgba(255,255,255,0.06)":bg,color:disabled?"rgba(255,255,255,0.4)":"#fff",opacity:disabled?0.6:1}}>{children}</button>;}
+function Card({title,children}){return <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.25rem 1.5rem",marginBottom:14}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{title}</h3>{children}</div>;}
 
 const B_PRIMARY="#1B4F8A",B_ACCENT="#4A90D9";
 
@@ -358,17 +358,17 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     </div>
     {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.1)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:10,fontSize:13,color:"#22c55e",marginBottom:16}}>{flashMsg}</div>}
     <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-      {[{k:"packages",l:`${t.tab_packages} (${packages.length})`},{k:"flights",l:`${t.tab_flights} (${flights.length})`},{k:"account",l:`${t.tab_account} · ${usdF(balance)}`}].map(tb=><button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===tb.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===tb.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.03)",color:tab===tb.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{tb.l}</button>)}
+      {[{k:"packages",l:`${t.tab_packages} (${packages.length})`},{k:"flights",l:`${t.tab_flights} (${flights.length})`},{k:"account",l:`${t.tab_account} · ${usdF(balance)}`}].map(tb=><button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===tb.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===tb.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:tab===tb.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{tb.l}</button>)}
     </div>
 
     {tab==="packages"&&<>
       {showForm&&<NewPackageForm token={token} lang={lang} t={t} agentId={userId} onCancel={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);reloadPackages();flash(t.success);}}/>}
-      <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden",marginTop:16}}>
+      <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden",marginTop:16}}>
         <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.recent_pkgs} ({packages.length})</h3></div>
-        {packages.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.3)",margin:0}}>{t.no_pkgs}</p>:
+        {packages.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",margin:0}}>{t.no_pkgs}</p>:
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-            {[t.op,t.client,t.tracking,t.weight,t.date].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}
+            {[t.op,t.client,t.tracking,t.weight,t.date].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
           </tr></thead>
           <tbody>{packages.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{p.operations?.operation_code||"—"}</td>
@@ -382,8 +382,8 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     </>}
 
     {tab==="flights"&&!selFlight&&<>
-      {flights.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.3)",padding:"3rem 0"}}>{t.no_flights}</p>:
-      <div style={{display:"grid",gap:12}}>{flights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <div key={f.id} onClick={()=>setSelFlight(f.id)} style={{cursor:"pointer",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"1rem 1.25rem"}}>
+      {flights.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>{t.no_flights}</p>:
+      <div style={{display:"grid",gap:12}}>{flights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <div key={f.id} onClick={()=>setSelFlight(f.id)} style={{cursor:"pointer",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:"1rem 1.25rem"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:8}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{f.flight_code}</span>
@@ -406,10 +406,10 @@ function Dashboard({session,onLogout,lang,setLang,t}){
           <p style={{fontSize:32,fontWeight:700,color:balance>=0?"#22c55e":"#ff6b6b",margin:0}}>{usdF(balance)}</p>
         </div>
       </div>
-      <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",overflow:"hidden"}}>
-        {account.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.3)",margin:0}}>{t.no_movements}</p>:
+      <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden"}}>
+        {account.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",margin:0}}>{t.no_movements}</p>:
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{[t.date,"Tipo","Monto","Descripción",t.flight].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{[t.date,"Tipo","Monto","Descripción",t.flight].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
           <tbody>{account.map(m=>{const fl=flights.find(f=>f.id===m.flight_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{new Date(m.date).toLocaleDateString("es-AR")}</td>
             <td style={{padding:"10px 14px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:m.type==="anticipo"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:m.type==="anticipo"?"#22c55e":"#ff6b6b",textTransform:"uppercase"}}>{m.type==="anticipo"?t.movement_anticipo:t.movement_deduccion}</span></td>
@@ -460,22 +460,22 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
   };
   return <div>
     <button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:14,padding:0}}>← {t.tab_flights}</button>
-    <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1px solid rgba(255,255,255,0.07)",padding:"1.5rem",marginBottom:16}}>
+    <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.5rem",marginBottom:16}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
         <h3 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.flight_code}</h3>
         <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:stColors[flight.status],background:`${stColors[flight.status]}20`,border:`1px solid ${stColors[flight.status]}40`,textTransform:"uppercase"}}>{t["flight_status_"+flight.status]}</span>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:14}}>
         <div>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 4px",textTransform:"uppercase"}}>{t.invoice}</p>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px",textTransform:"uppercase"}}>{t.invoice}</p>
           {flight.invoice_url?<a href={`${SB_URL}/storage/v1/object/authenticated/invoices/${flight.invoice_url}`} target="_blank" rel="noopener noreferrer" onClick={async(e)=>{e.preventDefault();const r=await fetch(`${SB_URL}/storage/v1/object/authenticated/invoices/${flight.invoice_url}`,{headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY}});if(r.ok){const blob=await r.blob();const url=URL.createObjectURL(blob);window.open(url,"_blank");}else alert("Error");}} style={{fontSize:13,color:"#22c55e",fontWeight:600,textDecoration:"none"}}>📄 {t.download_invoice}</a>:<p style={{fontSize:13,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>}
         </div>
         <div>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"0 0 4px",textTransform:"uppercase"}}>{t.destination}</p>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px",textTransform:"uppercase"}}>{t.destination}</p>
           <p style={{fontSize:13,color:flight.destination_address?"#fff":"#fbbf24",margin:0}}>{flight.destination_address||t.no_destination_yet}</p>
         </div>
       </div>
-      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",margin:"12px 0 8px",textTransform:"uppercase"}}>{t.operations_in_flight} ({flightOps.length})</p>
+      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"12px 0 8px",textTransform:"uppercase"}}>{t.operations_in_flight} ({flightOps.length})</p>
       <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px"}}>
         {flightOps.map(fo=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);const w=opPkgs.reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);return <div key={fo.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
           <span style={{fontSize:12,color:"#fff"}}>{opPkgs[0]?.operations?.operation_code||"OP"} — {opPkgs[0]?.operations?.clients?.client_code||""}</span>
@@ -516,14 +516,14 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
         <Inp label={t.intl_tracking} value={tracking} onChange={setTracking} req placeholder="1Z999AA10123456784"/>
         <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.courier}</label>
           <select value={carrier} onChange={e=>setCarrier(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
-            {["DHL","FedEx","UPS"].map(c=><option key={c} value={c} style={{background:"#0a1428"}}>{c}</option>)}
+            {["DHL","FedEx","UPS"].map(c=><option key={c} value={c} style={{background:"#142038"}}>{c}</option>)}
           </select>
         </div>
         <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.payment_method_label}</label>
           <select value={pmtMethod} onChange={e=>setPmtMethod(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
-            <option value="cuenta_corriente" style={{background:"#0a1428"}}>{t.method_cc}</option>
-            <option value="efectivo" style={{background:"#0a1428"}}>{t.method_cash}</option>
-            <option value="transferencia" style={{background:"#0a1428"}}>{t.method_transfer}</option>
+            <option value="cuenta_corriente" style={{background:"#142038"}}>{t.method_cc}</option>
+            <option value="efectivo" style={{background:"#142038"}}>{t.method_cash}</option>
+            <option value="transferencia" style={{background:"#142038"}}>{t.method_transfer}</option>
           </select>
         </div>
       </div>
@@ -543,7 +543,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
 
 function SimpleShell({children,lang,setLang,t,onLogout}){
   return <div style={{minHeight:"100vh",background:BG,fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif"}}>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 24px",background:"rgba(0,0,0,0.25)",borderBottom:"1px solid rgba(255,255,255,0.05)",flexWrap:"wrap",gap:12}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 24px",background:"rgba(0,0,0,0.25)",borderBottom:"1px solid rgba(255,255,255,0.08)",flexWrap:"wrap",gap:12}}>
       <img src={LOGO} alt="AC" style={{height:36,objectFit:"contain"}}/>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <LangToggle lang={lang} setLang={setLang}/>
@@ -621,7 +621,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
     setSaving(false);
   };
 
-  return <div style={{background:"rgba(255,255,255,0.03)",borderRadius:14,border:"1.5px solid rgba(96,165,250,0.25)",padding:"1.5rem"}}>
+  return <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1.5px solid rgba(96,165,250,0.25)",padding:"1.5rem"}}>
     <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 18px"}}>{t.new_package}</h3>
     {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
 
@@ -631,14 +631,14 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
         <span>{clientId==="unregistered"?`📦 ${t.unregistered_client}`:selectedClient?`${selectedClient.client_code} - ${selectedClient.first_name||""} ${selectedClient.last_name||""}`:t.select_client}</span>
         <span>{showDrop?"▲":"▼"}</span>
       </button>
-      {showDrop&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#0a1428",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:10,maxHeight:300,overflow:"auto",zIndex:10,boxShadow:"0 10px 30px rgba(0,0,0,0.5)"}}>
+      {showDrop&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#142038",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:10,maxHeight:300,overflow:"auto",zIndex:10,boxShadow:"0 10px 30px rgba(0,0,0,0.5)"}}>
         <div style={{padding:8,borderBottom:"1px solid rgba(255,255,255,0.06)"}}><input value={clientSearch} onChange={e=>setClientSearch(e.target.value)} placeholder={t.search_client} autoFocus style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
         <button type="button" onClick={()=>{setClientId("unregistered");setShowDrop(false);setClientSearch("");}} style={{display:"block",width:"100%",padding:"10px 14px",fontSize:13,fontWeight:600,border:"none",background:clientId==="unregistered"?"rgba(96,165,250,0.15)":"transparent",color:"#fbbf24",cursor:"pointer",textAlign:"left",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>📦 {t.unregistered_client}</button>
         {filtered.map(c=><button key={c.id} type="button" onClick={()=>{setClientId(c.id);setShowDrop(false);setClientSearch("");}} style={{display:"block",width:"100%",padding:"10px 14px",fontSize:13,border:"none",background:clientId===c.id?"rgba(96,165,250,0.15)":"transparent",color:"#fff",cursor:"pointer",textAlign:"left"}}>
           <span style={{fontFamily:"monospace",fontWeight:700,color:IC}}>{c.client_code}</span>
           <span style={{color:"rgba(255,255,255,0.5)",marginLeft:8}}>{c.first_name||""} {c.last_name||""}</span>
         </button>)}
-        {filtered.length===0&&<p style={{padding:"10px 14px",fontSize:12,color:"rgba(255,255,255,0.3)",margin:0}}>{t.client_not_found}</p>}
+        {filtered.length===0&&<p style={{padding:"10px 14px",fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>{t.client_not_found}</p>}
       </div>}
     </div>
 
@@ -656,7 +656,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
 
     <div style={{marginTop:8,marginBottom:14}}>
       <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 10px",textTransform:"uppercase"}}>{t.bultos} ({bultos.length})</p>
-      {bultos.map((b,i)=><div key={i} style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:"12px 14px",marginBottom:10,border:"1px solid rgba(255,255,255,0.05)"}}>
+      {bultos.map((b,i)=><div key={i} style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:"12px 14px",marginBottom:10,border:"1px solid rgba(255,255,255,0.08)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <span style={{fontSize:11,fontWeight:700,color:IC}}>{t.bulto_n} {i+1}</span>
           {bultos.length>1&&<button type="button" onClick={()=>rmBulto(i)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>{t.remove}</button>}
