@@ -303,13 +303,24 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       {pkgs.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>No hay bultos.</p>}
     </Card>}
 
-    {tab==="tracking"&&<><Card title="Carrier & Tracking" actions={<Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
+    {tab==="tracking"&&<><Card title="Carrier & Tracking" actions={<div style={{display:"flex",gap:8}}>
+        <Btn small variant="secondary" onClick={async()=>{
+          if(!op.international_tracking||!op.international_carrier){alert("Cargá carrier y tracking primero");return;}
+          const r=await fetch(`/api/tracking/sync?operation_id=${op.id}`,{headers:{Authorization:`Bearer ${token}`}});const d=await r.json();
+          if(d.error){alert("Error: "+d.error);return;}
+          const first=d.results?.[0];if(first?.error)alert("Error carrier: "+first.error);
+          else if(first?.inserted!==undefined)flash(`✓ ${first.inserted} eventos sincronizados vía ${first.carrier}`);
+          else if(first?.skipped)alert(first.skipped);
+          await reloadEvents();
+        }}>↻ Sincronizar tracking</Btn>
+        <Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>
+      </div>}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
         <Inp label="Carrier Internacional" value={op.international_carrier} onChange={chOp("international_carrier")} placeholder="Ej: DHL, FedEx, UPS"/>
         <Inp label="Tracking Internacional" value={op.international_tracking} onChange={chOp("international_tracking")} placeholder="Número de seguimiento"/>
         <Inp label="ETA" type="date" value={formatDateInput(op.eta)} onChange={chOp("eta")}/>
       </div>
-      <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"4px 0 0"}}>Integración con APIs de tracking (DHL/FedEx/UPS) próximamente</p>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"4px 0 0"}}>Las actualizaciones de DHL/FedEx/UPS se sincronizan automáticamente cada 6h (cron). Podés forzar ahora con el botón ↻.</p>
     </Card>
     <Card title="Eventos de seguimiento" actions={<Btn onClick={addEvt} small>+ Agregar evento</Btn>}>
       {events.map((ev,i)=><div key={ev.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
