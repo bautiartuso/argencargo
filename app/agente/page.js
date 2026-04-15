@@ -539,7 +539,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
       const opW=opPkgs.reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);
       const share=w>0?(opW/w)*c:0;
       await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{weight_kg:opW,cost_share_usd:share}});
-      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"en_transito",international_tracking:tracking,international_carrier:carrier,cost_flete:share}});
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"en_transito",international_tracking:tracking,international_carrier:carrier,cost_flete:share,cost_flete_method:pmtMethod==="cuenta_corriente"?"cuenta_corriente":pmtMethod==="transferencia"?"transferencia":"contado"}});
     }
     // 3. If CC, register movement
     if(pmtMethod==="cuenta_corriente"){
