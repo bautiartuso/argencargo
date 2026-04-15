@@ -597,10 +597,10 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
       let opId;
       if(existingOp){opId=existingOp.id;}
       else {
-        const lastOps=await dq("operations",{token,filters:"?select=operation_code&order=operation_code.desc&limit=1"});
-        const lastCode=Array.isArray(lastOps)&&lastOps[0]?lastOps[0].operation_code:"AC-0000";
-        const n=parseInt(lastCode.replace(/\D/g,""),10)||0;
-        const newCode=`AC-${String(n+1).padStart(4,"0")}`;
+        // Usar función SECURITY DEFINER para obtener próximo código (agente no puede ver todas las ops por RLS)
+        const rpc=await sfJson("/rest/v1/rpc/next_operation_code",{method:"POST",body:"{}",headers:{Authorization:`Bearer ${token}`}});
+        const newCode=typeof rpc==="string"?rpc:null;
+        if(!newCode){setErr(t.err_generic);setSaving(false);return;}
         const r=await dq("operations",{method:"POST",token,body:{operation_code:newCode,client_id:clientId,channel:"aereo_blanco",status:"en_deposito_origen",origin:"China",created_by_agent_id:agentId}});
         const created=Array.isArray(r)?r[0]:r;
         if(!created?.id){setErr(t.err_generic);setSaving(false);return;}
