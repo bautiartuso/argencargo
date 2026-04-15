@@ -239,6 +239,8 @@ function AuthScreen({onLogin,lang,setLang,t}){
     const existing=await dq("agent_signups",{token,filters:`?auth_user_id=eq.${userId}&select=id&limit=1`});
     if(Array.isArray(existing)&&existing.length>0)return;
     await dq("agent_signups",{method:"POST",token,body:{auth_user_id:userId,email,first_name:fName||"",last_name:lName||"",language:lang,status:"pending"}});
+    // Notification #7: notify admin about new agent signup
+    try{const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;if(adminId){await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:"Nueva solicitud de agente",body:`${fName||""} ${lName||""}`.trim(),link:null}});}}catch(e){console.error("notif error",e);}
   };
   const login=async()=>{if(!email||!pass){setErr(t.err_generic);return;}setLo(true);setErr("");
     const r=await ac("token?grant_type=password",{email,password:pass});
@@ -341,7 +343,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   if(loading)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:BG,color:"rgba(255,255,255,0.4)"}}>...</div>;
 
   if(!signup||signup.status==="pending"){
-    return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout}>
+    return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token}>
       <div style={{maxWidth:600,margin:"3rem auto",background:"rgba(251,191,36,0.08)",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:16,padding:"2rem",textAlign:"center"}}>
         <p style={{fontSize:48,margin:"0 0 12px"}}>⏳</p>
         <h2 style={{fontSize:20,fontWeight:700,color:"#fbbf24",margin:"0 0 10px"}}>{t.pending_title}</h2>
@@ -351,7 +353,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   }
 
   if(signup.status==="rejected"){
-    return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout}>
+    return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token}>
       <div style={{maxWidth:600,margin:"3rem auto",background:"rgba(255,80,80,0.08)",border:"1.5px solid rgba(255,80,80,0.3)",borderRadius:16,padding:"2rem",textAlign:"center"}}>
         <p style={{fontSize:48,margin:"0 0 12px"}}>✕</p>
         <h2 style={{fontSize:20,fontWeight:700,color:"#ff6b6b",margin:"0 0 10px"}}>Rejected</h2>
@@ -386,7 +388,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     {f.destination_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>📍 {f.destination_address}</p>}
   </div>;};
 
-  return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout}>
+  return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token}>
     <div style={{marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
       <div>
         <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{t.hello}, {signup.first_name||signup.email}</h2>
@@ -513,6 +515,8 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
     if(pmtMethod==="cuenta_corriente"){
       await dq("agent_account_movements",{method:"POST",token,body:{agent_id:flight.agent_id,type:"deduccion",amount_usd:c,description:`Costo vuelo ${flight.flight_code}`,flight_id:flight.id,date:new Date().toISOString().slice(0,10)}});
     }
+    // Notification #4: notify admin about flight dispatched
+    try{const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;if(adminId){await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:`Vuelo ${flight.flight_code} despachado`,body:`${carrier} - ${tracking}`,link:null}});}}catch(e){console.error("notif error",e);}
     setSaving(false);
     onDispatched();
   };
@@ -599,11 +603,43 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
   </div>;
 }
 
-function SimpleShell({children,lang,setLang,t,onLogout}){
+function NotifBell({token}){
+  const [open,setOpen]=useState(false);
+  const [notifs,setNotifs]=useState([]);
+  const [unread,setUnread]=useState(0);
+  const load=async()=>{
+    const r=await dq("notifications",{token,filters:"?select=*&order=created_at.desc&limit=20"});
+    const arr=Array.isArray(r)?r:[];setNotifs(arr);setUnread(arr.filter(n=>!n.read).length);
+  };
+  useEffect(()=>{load();const iv=setInterval(load,60000);return()=>clearInterval(iv);},[token]);
+  const markRead=async(id)=>{await dq("notifications",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{read:true}});load();};
+  const markAllRead=async()=>{const ids=notifs.filter(n=>!n.read).map(n=>n.id);for(const id of ids)await dq("notifications",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{read:true}});load();};
+  return <div style={{position:"relative"}}>
+    <button onClick={()=>setOpen(!open)} style={{background:"none",border:"none",cursor:"pointer",padding:6,position:"relative"}}>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      {unread>0&&<span style={{position:"absolute",top:2,right:2,background:"#ff4444",color:"#fff",fontSize:9,fontWeight:700,borderRadius:10,minWidth:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>{unread}</span>}
+    </button>
+    {open&&<div style={{position:"absolute",right:0,top:"100%",width:340,maxHeight:400,overflow:"auto",background:"#142038",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:12,boxShadow:"0 10px 40px rgba(0,0,0,0.5)",zIndex:100}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+        <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>Notificaciones</span>
+        {unread>0&&<button onClick={markAllRead} style={{fontSize:10,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600}}>Marcar todas leídas</button>}
+      </div>
+      {notifs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",fontSize:12,margin:0}}>Sin notificaciones</p>:
+      notifs.map(n=><div key={n.id} onClick={()=>{markRead(n.id);setOpen(false);if(n.link)window.location.search=n.link;}} style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:n.link?"pointer":"default",background:n.read?"transparent":"rgba(96,165,250,0.06)"}}>
+        <p style={{fontSize:12,fontWeight:n.read?400:700,color:n.read?"rgba(255,255,255,0.5)":"#fff",margin:"0 0 2px"}}>{n.title}</p>
+        {n.body&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{n.body}</p>}
+        <p style={{fontSize:10,color:"rgba(255,255,255,0.3)",margin:0}}>{new Date(n.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</p>
+      </div>)}
+    </div>}
+  </div>;
+}
+
+function SimpleShell({children,lang,setLang,t,onLogout,token}){
   return <div style={{minHeight:"100vh",background:BG,fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 24px",background:"rgba(0,0,0,0.25)",borderBottom:"1px solid rgba(255,255,255,0.08)",flexWrap:"wrap",gap:12}}>
       <img src={LOGO} alt="AC" style={{height:36,objectFit:"contain"}}/>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
+        {token&&<NotifBell token={token}/>}
         <LangToggle lang={lang} setLang={setLang}/>
         <button onClick={onLogout} style={{padding:"7px 14px",fontSize:12,background:"rgba(255,255,255,0.06)",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:600}}>{t.logout}</button>
       </div>

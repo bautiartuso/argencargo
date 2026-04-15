@@ -69,6 +69,27 @@ async function syncOne(origin, op) {
     });
   }
 
+  // Notification #5: notify client about new tracking events
+  if (inserted > 0) {
+    try {
+      const opRes = await fetch(`${SB_URL}/rest/v1/operations?id=eq.${op.id}&select=client_id`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+      const opData = await opRes.json();
+      const clientId = Array.isArray(opData) && opData[0] ? opData[0].client_id : null;
+      if (clientId) {
+        const clRes = await fetch(`${SB_URL}/rest/v1/clients?id=eq.${clientId}&select=auth_user_id`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+        const clData = await clRes.json();
+        const authUid = Array.isArray(clData) && clData[0] ? clData[0].auth_user_id : null;
+        if (authUid) {
+          await fetch(`${SB_URL}/rest/v1/notifications`, {
+            method: "POST",
+            headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+            body: JSON.stringify({ user_id: authUid, portal: "cliente", title: "Actualización de tracking", body: `Operación ${op.operation_code}: ${inserted} nuevos eventos`, link: `?op=${op.operation_code}` })
+          });
+        }
+      }
+    } catch (e) { console.error("notif error", e); }
+  }
+
   await updateSyncStatus(op.id, route, inserted, errors[0] || null);
   return { op: op.operation_code, inserted, carrier: route, eta: d.eta || null, errors: errors.length ? errors : undefined };
 }
