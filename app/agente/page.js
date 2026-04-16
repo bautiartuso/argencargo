@@ -744,6 +744,14 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
           if(b.weight)body.gross_weight_kg=Number(b.weight);if(b.length)body.length_cm=Number(b.length);if(b.width)body.width_cm=Number(b.width);if(b.height)body.height_cm=Number(b.height);
           await dq("unassigned_packages",{method:"POST",token,body});
         }
+        // Notificar al admin: paquete huérfano recibido
+        try{
+          const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
+          const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
+          if(adminId){
+            await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:`📦 Paquete huérfano recibido`,body:`Sin cliente asignado · Tracking: ${tracking.trim()} · ${validBultos.length} bulto${validBultos.length>1?"s":""}`,link:null}});
+          }
+        }catch(e){console.error("notif error",e);}
         onSaved();return;
       }
       // Cliente registrado
@@ -765,6 +773,16 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
         if(b.weight)body.gross_weight_kg=Number(b.weight);if(b.length)body.length_cm=Number(b.length);if(b.width)body.width_cm=Number(b.width);if(b.height)body.height_cm=Number(b.height);
         await dq("operation_packages",{method:"POST",token,body});
       }
+      // Notificar al admin: paquete recibido en depósito
+      try{
+        const sel=allClients.find(c=>c.id===clientId);
+        const clName=sel?`${sel.client_code} - ${(sel.first_name||"").trim()}`:"cliente";
+        const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
+        const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
+        if(adminId){
+          await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:`📦 Paquete recibido en depósito`,body:`${clName} · Tracking: ${tracking.trim()} · ${validBultos.length} bulto${validBultos.length>1?"s":""}`,link:null}});
+        }
+      }catch(e){console.error("notif error",e);}
       onSaved();
     } catch(e){console.error(e);setErr(t.err_generic);}
     setSaving(false);
