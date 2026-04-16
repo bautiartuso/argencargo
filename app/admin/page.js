@@ -1939,12 +1939,10 @@ function FinanceDashboard({token}){
         </div>
         <div style={{background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:14,padding:"20px 24px",display:"flex",flexDirection:"column"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase"}}>Deuda tarjeta de crédito</p>
-          <div style={{display:"flex",flexDirection:"column",justifyContent:"center",flex:1}}>
-            {deudaTCUsd>0&&<p style={{fontSize:32,fontWeight:700,color:"#fb923c",margin:"0 0 2px"}}>USD {deudaTCUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
-            {deudaTCArs>0&&<p style={{fontSize:deudaTCUsd>0?20:32,fontWeight:700,color:"#fb923c",margin:"0 0 2px"}}>ARS {deudaTCArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
-            {deudaTCArs===0&&deudaTCUsd===0&&<p style={{fontSize:32,fontWeight:700,color:"rgba(255,255,255,0.2)",margin:"0 0 4px"}}>Sin deuda</p>}
-          </div>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>{deudaTCArs>0||deudaTCUsd>0?"Pendiente de débito":"Todo al día ✓"}</p>
+          {deudaTCUsd>0&&<p style={{fontSize:28,fontWeight:700,color:"#fb923c",margin:"0 0 2px",lineHeight:1.15}}>USD {deudaTCUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+          {deudaTCArs>0&&<p style={{fontSize:28,fontWeight:700,color:"#fb923c",margin:"0 0 4px",lineHeight:1.15}}>ARS {deudaTCArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+          {deudaTCArs===0&&deudaTCUsd===0&&<p style={{fontSize:32,fontWeight:700,color:"rgba(255,255,255,0.2)",margin:"0 0 4px"}}>Sin deuda</p>}
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"auto 0 0"}}>{deudaTCArs>0||deudaTCUsd>0?"Pendiente de débito":"Todo al día ✓"}</p>
         </div>
         <div style={{background:"rgba(255,80,80,0.04)",border:"1px solid rgba(255,80,80,0.12)",borderRadius:14,padding:"20px 24px",display:"flex",flexDirection:"column"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase"}}>Costos totales acumulados</p>
