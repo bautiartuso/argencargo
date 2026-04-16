@@ -2180,6 +2180,183 @@ function FinanceDashboard({token}){
   </div>;
 }
 
+function AdminTasks({token}){
+  const [tasks,setTasks]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [newTitle,setNewTitle]=useState("");
+  const [newPriority,setNewPriority]=useState("normal");
+  const [newDueDate,setNewDueDate]=useState("");
+  const [showCompleted,setShowCompleted]=useState(false);
+  const [editingId,setEditingId]=useState(null);
+  const [editText,setEditText]=useState("");
+
+  const load=async()=>{
+    const r=await dq("admin_tasks",{token,filters:"?select=*&order=done.asc,created_at.desc"});
+    setTasks(Array.isArray(r)?r:[]);
+    setLo(false);
+  };
+  useEffect(()=>{load();},[token]);
+
+  const addTask=async()=>{
+    const t=newTitle.trim();
+    if(!t)return;
+    const body={title:t,priority:newPriority};
+    if(newDueDate)body.due_date=newDueDate;
+    await dq("admin_tasks",{method:"POST",token,body});
+    setNewTitle("");setNewDueDate("");setNewPriority("normal");
+    load();
+  };
+
+  const toggleDone=async(task)=>{
+    const done=!task.done;
+    await dq("admin_tasks",{method:"PATCH",token,filters:`?id=eq.${task.id}`,body:{done,done_at:done?new Date().toISOString():null}});
+    setTasks(tasks.map(t=>t.id===task.id?{...t,done,done_at:done?new Date().toISOString():null}:t));
+  };
+
+  const deleteTask=async(id)=>{
+    if(!confirm("¿Eliminar esta tarea?"))return;
+    await dq("admin_tasks",{method:"DELETE",token,filters:`?id=eq.${id}`});
+    setTasks(tasks.filter(t=>t.id!==id));
+  };
+
+  const saveEdit=async(id)=>{
+    const t=editText.trim();
+    if(!t){setEditingId(null);return;}
+    await dq("admin_tasks",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{title:t}});
+    setTasks(tasks.map(x=>x.id===id?{...x,title:t}:x));
+    setEditingId(null);
+  };
+
+  const pending=tasks.filter(t=>!t.done);
+  const completed=tasks.filter(t=>t.done);
+
+  const PRIO_COLOR={alta:"#ef4444",normal:"#60a5fa",baja:"#94a3b8"};
+  const PRIO_LBL={alta:"Alta",normal:"Normal",baja:"Baja"};
+
+  const formatDue=(d)=>{
+    if(!d)return null;
+    const s=String(d).slice(0,10);
+    const [y,m,day]=s.split("-");
+    const date=new Date(Number(y),Number(m)-1,Number(day));
+    const today=new Date();today.setHours(0,0,0,0);
+    const diff=Math.round((date-today)/86400000);
+    if(diff<0)return {text:`Vencida (${Math.abs(diff)}d)`,color:"#ef4444"};
+    if(diff===0)return {text:"Hoy",color:"#fb923c"};
+    if(diff===1)return {text:"Mañana",color:"#fb923c"};
+    if(diff<=7)return {text:`En ${diff}d`,color:"#fbbf24"};
+    return {text:date.toLocaleDateString("es-AR",{day:"2-digit",month:"short"}),color:"rgba(255,255,255,0.4)"};
+  };
+
+  if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
+      <div>
+        <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Tareas pendientes</h2>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{pending.length} pendiente{pending.length!==1?"s":""}{completed.length>0&&` · ${completed.length} completada${completed.length!==1?"s":""}`}</p>
+      </div>
+    </div>
+
+    {/* Form para agregar nueva tarea */}
+    <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"16px",marginBottom:20}}>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
+        <div style={{flex:"2 1 300px",minWidth:200}}>
+          <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",display:"block",marginBottom:4}}>Nueva tarea</label>
+          <input
+            type="text"
+            value={newTitle}
+            onChange={e=>setNewTitle(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&addTask()}
+            placeholder="¿Qué tenés que hacer?"
+            style={{width:"100%",padding:"10px 12px",fontSize:14,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:"#fff",outline:"none",boxSizing:"border-box"}}
+          />
+        </div>
+        <div style={{flex:"0 0 auto",minWidth:110}}>
+          <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",display:"block",marginBottom:4}}>Prioridad</label>
+          <select value={newPriority} onChange={e=>setNewPriority(e.target.value)} style={{width:"100%",padding:"10px 12px",fontSize:13,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:"#fff",outline:"none",boxSizing:"border-box",cursor:"pointer"}}>
+            <option value="baja">Baja</option>
+            <option value="normal">Normal</option>
+            <option value="alta">Alta</option>
+          </select>
+        </div>
+        <div style={{flex:"0 0 auto",minWidth:130}}>
+          <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",display:"block",marginBottom:4}}>Vencimiento</label>
+          <input
+            type="date"
+            value={newDueDate}
+            onChange={e=>setNewDueDate(e.target.value)}
+            style={{width:"100%",padding:"10px 12px",fontSize:13,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:"#fff",outline:"none",boxSizing:"border-box"}}
+          />
+        </div>
+        <button
+          onClick={addTask}
+          disabled={!newTitle.trim()}
+          style={{padding:"10px 20px",fontSize:13,fontWeight:700,background:newTitle.trim()?IC:"rgba(255,255,255,0.1)",color:"#fff",border:"none",borderRadius:8,cursor:newTitle.trim()?"pointer":"not-allowed",opacity:newTitle.trim()?1:0.5}}
+        >
+          + Agregar
+        </button>
+      </div>
+    </div>
+
+    {/* Lista de pendientes */}
+    {pending.length===0&&completed.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:"rgba(255,255,255,0.35)"}}>
+      <div style={{fontSize:40,marginBottom:8}}>✓</div>
+      <p style={{margin:0,fontSize:14}}>No tenés tareas pendientes — todo al día</p>
+    </div>}
+
+    {pending.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:24}}>
+      {pending.sort((a,b)=>{
+        const pr={alta:0,normal:1,baja:2};
+        if(pr[a.priority]!==pr[b.priority])return pr[a.priority]-pr[b.priority];
+        if(a.due_date&&b.due_date)return a.due_date.localeCompare(b.due_date);
+        if(a.due_date)return -1;
+        if(b.due_date)return 1;
+        return b.created_at.localeCompare(a.created_at);
+      }).map(t=>{
+        const due=formatDue(t.due_date);
+        return <div key={t.id} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${t.priority==="alta"?"rgba(239,68,68,0.3)":"rgba(255,255,255,0.08)"}`,borderLeft:`4px solid ${PRIO_COLOR[t.priority]}`,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>toggleDone(t)} style={{width:22,height:22,minWidth:22,borderRadius:6,border:"2px solid rgba(255,255,255,0.3)",background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0}} title="Marcar como completada" />
+          <div style={{flex:1,minWidth:0}}>
+            {editingId===t.id?<input
+              type="text"
+              value={editText}
+              onChange={e=>setEditText(e.target.value)}
+              onKeyDown={e=>{if(e.key==="Enter")saveEdit(t.id);if(e.key==="Escape")setEditingId(null);}}
+              onBlur={()=>saveEdit(t.id)}
+              autoFocus
+              style={{width:"100%",padding:"4px 8px",fontSize:14,background:"rgba(0,0,0,0.4)",border:`1px solid ${IC}`,borderRadius:6,color:"#fff",outline:"none",boxSizing:"border-box"}}
+            />:<p onClick={()=>{setEditingId(t.id);setEditText(t.title);}} style={{margin:0,fontSize:14,color:"#fff",cursor:"text",lineHeight:1.4}}>{t.title}</p>}
+            <div style={{display:"flex",gap:8,marginTop:4,alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{fontSize:10,fontWeight:700,color:PRIO_COLOR[t.priority],textTransform:"uppercase",letterSpacing:"0.04em"}}>{PRIO_LBL[t.priority]}</span>
+              {due&&<span style={{fontSize:11,color:due.color,fontWeight:600}}>📅 {due.text}</span>}
+              <span style={{fontSize:10,color:"rgba(255,255,255,0.3)"}}>Creada {new Date(t.created_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</span>
+            </div>
+          </div>
+          <button onClick={()=>deleteTask(t.id)} style={{padding:"6px 10px",fontSize:12,background:"transparent",border:"1px solid rgba(255,80,80,0.25)",borderRadius:6,color:"rgba(255,100,100,0.7)",cursor:"pointer"}} title="Eliminar">✕</button>
+        </div>;
+      })}
+    </div>}
+
+    {/* Sección completadas (colapsable) */}
+    {completed.length>0&&<div>
+      <button onClick={()=>setShowCompleted(!showCompleted)} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontSize:12,fontWeight:700,padding:"8px 0",display:"flex",alignItems:"center",gap:6}}>
+        <span style={{transform:showCompleted?"rotate(90deg)":"rotate(0)",transition:"transform 0.15s",display:"inline-block"}}>▶</span>
+        {showCompleted?"Ocultar":"Ver"} completadas ({completed.length})
+      </button>
+      {showCompleted&&<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8,opacity:0.5}}>
+        {completed.slice(0,50).map(t=><div key={t.id} style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,padding:"10px 14px",display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>toggleDone(t)} style={{width:22,height:22,minWidth:22,borderRadius:6,border:`2px solid ${IC}`,background:IC,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:12,padding:0}} title="Marcar como pendiente">✓</button>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{margin:0,fontSize:13,color:"rgba(255,255,255,0.5)",textDecoration:"line-through"}}>{t.title}</p>
+            {t.done_at&&<span style={{fontSize:10,color:"rgba(255,255,255,0.35)"}}>Completada {new Date(t.done_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span>}
+          </div>
+          <button onClick={()=>deleteTask(t.id)} style={{padding:"4px 8px",fontSize:11,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>✕</button>
+        </div>)}
+      </div>}
+    </div>}
+  </div>;
+}
+
 function QuotesList({token}){
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");const [selQuote,setSelQuote]=useState(null);const [clientsMap,setClientsMap]=useState({});
   const [editProds,setEditProds]=useState([]);const [editTotalCost,setEditTotalCost]=useState("");const [dirty,setDirty]=useState(false);const [saving,setSaving]=useState(false);const [savedAt,setSavedAt]=useState(null);
@@ -2317,12 +2494,14 @@ function AdminDashboard({session,onLogout}){
   const [page,setPage]=useState("operations");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);
   const token=session.token;
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
-  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"shipments",label:"SEGUIMIENTOS",p:["M16 3h5v5","M21 3l-7 7","M8 21H3v-5","M3 21l7-7","M21 16v5h-5","M21 21l-7-7","M3 8V3h5","M3 3l7 7"]},{key:"agents",label:"AGENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"finance",label:"FINANZAS",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
+  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"shipments",label:"SEGUIMIENTOS",p:["M16 3h5v5","M21 3l-7 7","M8 21H3v-5","M3 21l7-7","M21 16v5h-5","M21 21l-7-7","M3 8V3h5","M3 3l7 7"]},{key:"agents",label:"AGENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},{key:"tasks",label:"TAREAS",p:["M9 11l3 3 8-8","M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"finance",label:"FINANZAS",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
+  const [pendingTasks,setPendingTasks]=useState(0);
+  useEffect(()=>{let mounted=true;const load=async()=>{const r=await dq("admin_tasks",{token,filters:"?select=id&done=eq.false"});if(mounted&&Array.isArray(r))setPendingTasks(r.length);};load();const iv=setInterval(load,30000);return()=>{mounted=false;clearInterval(iv);};},[token,page]);
   return <div style={{height:"100vh",display:"flex",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden"}}>
     <div style={{width:220,flexShrink:0,background:"rgba(0,0,0,0.3)",borderRight:"1px solid rgba(255,255,255,0.08)",display:"flex",flexDirection:"column",height:"100vh",position:"sticky",top:0}}>
       <div style={{padding:"20px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}><img src={LOGO} alt="AC" style={{width:"100%",height:"auto",maxHeight:50,objectFit:"contain"}}/></div>
       <div style={{padding:"12px 16px 4px"}}><span style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.2)",textTransform:"uppercase",letterSpacing:"0.1em"}}>Administración</span></div>
-      <nav style={{flex:1,padding:"4px 8px"}}>{nav.map(item=><button key={item.key} onClick={()=>{setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 14px",marginBottom:2,borderRadius:10,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,letterSpacing:"0.04em",background:page===item.key?"rgba(74,144,217,0.15)":"transparent",color:page===item.key?"#fff":"rgba(255,255,255,0.4)",borderLeft:page===item.key?`3px solid ${B.accent}`:"3px solid transparent"}}><svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={page===item.key?IC:"rgba(255,255,255,0.4)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{item.p.map((d,i)=><path key={i} d={d}/>)}</svg>{item.label}</button>)}</nav>
+      <nav style={{flex:1,padding:"4px 8px"}}>{nav.map(item=><button key={item.key} onClick={()=>{setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 14px",marginBottom:2,borderRadius:10,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,letterSpacing:"0.04em",background:page===item.key?"rgba(74,144,217,0.15)":"transparent",color:page===item.key?"#fff":"rgba(255,255,255,0.4)",borderLeft:page===item.key?`3px solid ${B.accent}`:"3px solid transparent"}}><svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={page===item.key?IC:"rgba(255,255,255,0.4)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left"}}>{item.label}</span>{item.key==="tasks"&&pendingTasks>0&&<span style={{background:"#fb923c",color:"#fff",fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:8,minWidth:16,textAlign:"center",letterSpacing:0}}>{pendingTasks}</span>}</button>)}</nav>
       <div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.08)"}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:36,height:36,borderRadius:"50%",background:"rgba(74,144,217,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:13,color:IC}}>AD</div><div style={{flex:1,minWidth:0}}><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>Admin</p><p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>{session.user.email}</p></div></div><button onClick={onLogout} style={{width:"100%",padding:"8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.45)",cursor:"pointer",fontWeight:600}}>Cerrar sesión</button></div>
     </div>
     <div style={{flex:1,overflow:"auto"}}>
@@ -2333,6 +2512,7 @@ function AdminDashboard({session,onLogout}){
       {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
+      {page==="tasks"&&<AdminTasks token={token}/>}
       {page==="dashboard"&&<><DashboardKPIs token={token}/><FinanceDashboard token={token}/></>}
       {page==="shipments"&&<ShipmentsTracking token={token} onSelectOp={op=>{setPage("operations");setSelOp(op);}}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
