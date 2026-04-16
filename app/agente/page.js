@@ -347,6 +347,15 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   };
 
   useEffect(()=>{(async()=>{
+    // Si el usuario es admin, bypass del signup
+    const prof=await dq("profiles",{token,filters:`?id=eq.${userId}&select=role&limit=1`});
+    const role=Array.isArray(prof)&&prof[0]?prof[0].role:null;
+    if(role==="admin"){
+      setSignup({status:"approved",first_name:"Admin",email:session.user?.email,country:"Argentina"});
+      await reloadAll();
+      setLoading(false);
+      return;
+    }
     const sgn=await dq("agent_signups",{token,filters:`?auth_user_id=eq.${userId}&select=*&limit=1`});
     const s=Array.isArray(sgn)&&sgn[0]?sgn[0]:null;
     setSignup(s);
