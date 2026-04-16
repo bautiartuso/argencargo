@@ -1927,24 +1927,30 @@ function FinanceDashboard({token}){
       const deudaTCUsd=deudaTCUsdFinance+deudaTCUsdPmts;
       const cashDisponible=totCobrado-totCostosTotales;
       return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:24}}>
-        <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.1),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(255,80,80,0.1),rgba(255,80,80,0.03))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,borderRadius:14,padding:"20px 24px"}}>
+        <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.1),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(255,80,80,0.1),rgba(255,80,80,0.03))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,borderRadius:14,padding:"20px 24px",display:"flex",flexDirection:"column"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase"}}>Cash disponible</p>
           <p style={{fontSize:32,fontWeight:700,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>{usd(cashDisponible)}</p>
           <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Cobrado ({usd(totCobrado)}) - Costos ops ({usd(totCostosOps+totCostosPmts)}) - Gastos ({usd(totCostosFijos)}) - Anticipos ({usd(totAnticiposAgentes)})</p>
-          {margenActivas!==0&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:4}}>↳ {usd(margenActivas)} margen ops activas (aún no ganancia)</p>}
-          {girosColgados>0&&<p style={{fontSize:10,color:"#fb923c",margin:"2px 0 0",cursor:"help"}} title={girosColgadosDetail.map(d=>`${d.code} ${d.client}: debe ${usd(d.debe)}${d.anticipo>0?` − anticipo ${usd(d.anticipo)}`:""} = ${usd(d.real)} pendiente`).join("\n")}>⚠ {usd(girosColgados)} pendiente de cobrar al cliente ({girosColgadosDetail.length})</p>}
-          {girosPendientes>0&&<p style={{fontSize:10,color:"#60a5fa",margin:"2px 0 0"}}>⏳ {usd(girosPendientes)} cobrados, giro pendiente envío</p>}
+          <div style={{marginTop:"auto"}}>
+            {margenActivas!==0&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:4}}>↳ {usd(margenActivas)} margen ops activas (aún no ganancia)</p>}
+            {girosColgados>0&&<p style={{fontSize:10,color:"#fb923c",margin:"2px 0 0",cursor:"help"}} title={girosColgadosDetail.map(d=>`${d.code} ${d.client}: debe ${usd(d.debe)}${d.anticipo>0?` − anticipo ${usd(d.anticipo)}`:""} = ${usd(d.real)} pendiente`).join("\n")}>⚠ {usd(girosColgados)} pendiente de cobrar al cliente ({girosColgadosDetail.length})</p>}
+            {girosPendientes>0&&<p style={{fontSize:10,color:"#60a5fa",margin:"2px 0 0"}}>⏳ {usd(girosPendientes)} cobrados, giro pendiente envío</p>}
+          </div>
         </div>
-        <div style={{background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:14,padding:"20px 24px"}}>
+        <div style={{background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:14,padding:"20px 24px",display:"flex",flexDirection:"column"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase"}}>Deuda tarjeta de crédito</p>
-          {deudaTCUsd>0&&<p style={{fontSize:22,fontWeight:700,color:"#fb923c",margin:"0 0 2px"}}>USD {deudaTCUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
-          {deudaTCArs>0&&<p style={{fontSize:deudaTCUsd>0?16:22,fontWeight:700,color:"#fb923c",margin:"0 0 2px"}}>ARS {deudaTCArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
-          {deudaTCArs===0&&deudaTCUsd===0&&<p style={{fontSize:22,fontWeight:700,color:"rgba(255,255,255,0.2)",margin:"0 0 4px"}}>Sin deuda</p>}
+          <div style={{display:"flex",flexDirection:"column",justifyContent:"center",flex:1}}>
+            {deudaTCUsd>0&&<p style={{fontSize:32,fontWeight:700,color:"#fb923c",margin:"0 0 2px"}}>USD {deudaTCUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+            {deudaTCArs>0&&<p style={{fontSize:deudaTCUsd>0?20:32,fontWeight:700,color:"#fb923c",margin:"0 0 2px"}}>ARS {deudaTCArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+            {deudaTCArs===0&&deudaTCUsd===0&&<p style={{fontSize:32,fontWeight:700,color:"rgba(255,255,255,0.2)",margin:"0 0 4px"}}>Sin deuda</p>}
+          </div>
           <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>{deudaTCArs>0||deudaTCUsd>0?"Pendiente de débito":"Todo al día ✓"}</p>
         </div>
-        <div style={{background:"rgba(255,80,80,0.04)",border:"1px solid rgba(255,80,80,0.12)",borderRadius:14,padding:"20px 24px"}}>
+        <div style={{background:"rgba(255,80,80,0.04)",border:"1px solid rgba(255,80,80,0.12)",borderRadius:14,padding:"20px 24px",display:"flex",flexDirection:"column"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase"}}>Costos totales acumulados</p>
-          <p style={{fontSize:28,fontWeight:700,color:"#ff6b6b",margin:"0 0 4px"}}>{usd(totCostosTotales)}</p>
+          <div style={{display:"flex",flexDirection:"column",justifyContent:"center",flex:1}}>
+            <p style={{fontSize:32,fontWeight:700,color:"#ff6b6b",margin:"0 0 4px"}}>{usd(totCostosTotales)}</p>
+          </div>
           <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>Operación + Gestión de pagos</p>
         </div>
       </div>;
