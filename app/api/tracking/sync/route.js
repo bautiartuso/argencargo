@@ -3,6 +3,14 @@
 // Protegido con CRON_SECRET para evitar abuso.
 
 import { SB_URL, SB_SERVICE, upsertEvent, updateSyncStatus, normalizeEvent } from "../_helpers";
+import {
+  getFedexTracking, fedexConfigured,
+  getDhlTracking, dhlConfigured,
+  getUpsTracking, upsConfigured
+} from "../../../../lib/tracking/carriers";
+
+// Permitir hasta 60 segundos de ejecución (por defecto Hobby es 10s).
+export const maxDuration = 60;
 
 const ACTIVE_STATUSES = ["en_transito", "arribo_argentina", "en_aduana", "lista_retiro"];
 
@@ -26,16 +34,29 @@ function carrierRoute(carrier) {
   return null;
 }
 
-async function syncOne(origin, op) {
+function isCarrierConfigured(route) {
+  if (route === "fedex") return fedexConfigured();
+  if (route === "dhl") return dhlConfigured();
+  if (route === "ups") return upsConfigured();
+  return false;
+}
+
+async function callCarrier(route, trackingNumber) {
+  if (route === "fedex") return getFedexTracking(trackingNumber);
+  if (route === "dhl") return getDhlTracking(trackingNumber);
+  if (route === "ups") return getUpsTracking(trackingNumber);
+  return { error: `carrier desconocido: ${route}` };
+}
+
+async function syncOne(op) {
   const route = carrierRoute(op.international_carrier);
   if (!route) return { op: op.operation_code, skipped: "carrier desconocido" };
+  if (!isCarrierConfigured(route)) {
+    await updateSyncStatus(op.id, route, 0, `${route.toUpperCase()} API no configurada`);
+    return { op: op.operation_code, skipped: `${route} no configurada` };
+  }
 
-  const r = await fetch(`${origin}/api/tracking/${route}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ trackingNumber: op.international_tracking })
-  });
-  const d = await r.json();
+  const d = await callCarrier(route, op.international_tracking);
   if (d.error) {
     await updateSyncStatus(op.id, route, 0, d.error);
     return { op: op.operation_code, error: d.error };
@@ -115,10 +136,7 @@ async function syncOne(origin, op) {
 }
 
 async function runSync(req) {
-  const url = new URL(req.url);
-  const origin = `${url.protocol}//${url.host}`;
-
-  const auth = req.headers.get("authorization") || url.searchParams.get("secret") || "";
+  const auth = req.headers.get("authorization") || new URL(req.url).searchParams.get("secret") || "";
   const expected = process.env.CRON_SECRET || "";
   let authorized = !expected || auth === `Bearer ${expected}` || auth === expected;
   if (!authorized && auth.startsWith("Bearer ")) {
@@ -135,15 +153,14 @@ async function runSync(req) {
   if (!authorized) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ error: "SUPABASE_SERVICE_ROLE no configurado" }, { status: 500 });
 
-  const operationId = url.searchParams.get("operation_id");
+  const operationId = new URL(req.url).searchParams.get("operation_id");
   const ops = await fetchActiveOps(operationId);
   if (!Array.isArray(ops)) return Response.json({ error: "failed to fetch ops", detail: ops }, { status: 500 });
 
-  const results = [];
-  for (const op of ops) {
-    try { results.push(await syncOne(origin, op)); }
-    catch (e) { results.push({ op: op.operation_code, error: String(e.message || e) }); }
-  }
+  // Procesar ops en paralelo con Promise.allSettled (mucho más rápido que secuencial)
+  const settled = await Promise.allSettled(ops.map(op => syncOne(op)));
+  const results = settled.map((s, i) => s.status === "fulfilled" ? s.value : { op: ops[i].operation_code, error: String(s.reason?.message || s.reason) });
+
   return Response.json({ synced: results.length, results });
 }
 
