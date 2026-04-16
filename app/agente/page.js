@@ -338,7 +338,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
   const reloadAll=async()=>{
     const [pk,fl,fo,acc]=await Promise.all([
-      dq("operation_packages",{token,filters:"?select=*,operations!inner(operation_code,client_id,clients(client_code,first_name))&order=created_at.desc&limit=20"}),
+      dq("operation_packages",{token,filters:"?select=*,operations!inner(operation_code,client_id,channel,clients(client_code,first_name))&operations.channel=eq.aereo_blanco&order=created_at.desc&limit=100"}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
       dq("flight_operations",{token,filters:"?select=*"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"})
@@ -347,8 +347,11 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   };
 
   useEffect(()=>{(async()=>{
-    // Si el usuario es admin, bypass del signup
-    const prof=await dq("profiles",{token,filters:`?id=eq.${userId}&select=role&limit=1`});
+    // Chequeo role + signup en paralelo para evitar flash de "pending"
+    const [prof,sgn]=await Promise.all([
+      dq("profiles",{token,filters:`?id=eq.${userId}&select=role&limit=1`}),
+      dq("agent_signups",{token,filters:`?auth_user_id=eq.${userId}&select=*&limit=1`})
+    ]);
     const role=Array.isArray(prof)&&prof[0]?prof[0].role:null;
     if(role==="admin"){
       setSignup({status:"approved",first_name:"Admin",email:session.user?.email,country:"Argentina"});
@@ -356,7 +359,6 @@ function Dashboard({session,onLogout,lang,setLang,t}){
       setLoading(false);
       return;
     }
-    const sgn=await dq("agent_signups",{token,filters:`?auth_user_id=eq.${userId}&select=*&limit=1`});
     const s=Array.isArray(sgn)&&sgn[0]?sgn[0]:null;
     setSignup(s);
     if(s?.status==="approved")await reloadAll();
@@ -669,7 +671,7 @@ function NotifBell({token}){
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       {unread>0&&<span style={{position:"absolute",top:2,right:2,background:"#ff4444",color:"#fff",fontSize:9,fontWeight:700,borderRadius:10,minWidth:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>{unread}</span>}
     </button>
-    {open&&<div style={{position:"absolute",right:0,top:"100%",width:340,maxHeight:400,overflow:"auto",background:"#142038",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:12,boxShadow:"0 10px 40px rgba(0,0,0,0.5)",zIndex:100}}>
+    {open&&<div style={{position:"fixed",right:16,top:70,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflow:"auto",background:"#142038",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:12,boxShadow:"0 10px 40px rgba(0,0,0,0.5)",zIndex:1000}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
         <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>Notificaciones</span>
         {unread>0&&<button onClick={markAllRead} style={{fontSize:10,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600}}>Marcar todas leídas</button>}
