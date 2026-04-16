@@ -541,9 +541,13 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
       await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{weight_kg:opW,cost_share_usd:share}});
       await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"en_transito",international_tracking:tracking,international_carrier:carrier,cost_flete:share,cost_flete_method:pmtMethod==="cuenta_corriente"?"cuenta_corriente":pmtMethod==="transferencia"?"transferencia":"contado"}});
     }
-    // 3. If CC, register movement
+    // 3. Registrar pago según método
     if(pmtMethod==="cuenta_corriente"){
+      // CC: descontar del saldo del agente (anticipo ya dado)
       await dq("agent_account_movements",{method:"POST",token,body:{agent_id:flight.agent_id,type:"deduccion",amount_usd:c,description:`Costo vuelo ${flight.flight_code}`,flight_id:flight.id,date:new Date().toISOString().slice(0,10)}});
+    } else {
+      // Contado/transferencia: es un gasto real → registrar en finanzas
+      try{await dq("finance_entries",{method:"POST",token,body:{category_id:"427a9ecc-b2d2-4008-a54b-8901e427e0a1",type:"gasto",amount_usd:c,description:`Flete vuelo ${flight.flight_code} (${pmtMethod})`,date:new Date().toISOString().slice(0,10)}});}catch(e){console.error("finance entry error",e);}
     }
     // Notification #4: notify admin about flight dispatched
     try{const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;if(adminId){await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:`Vuelo ${flight.flight_code} despachado`,body:`${carrier} - ${tracking}`,link:null}});}}catch(e){console.error("notif error",e);}
