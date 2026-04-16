@@ -53,7 +53,22 @@ function OperationsList({token,onSelect,onNew}){
   const toggleStatus=(s)=>setFStatuses(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
   const getOrigin=(op)=>op.origin||"China";
   const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannel&&o.channel!==fChannel)return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
-  const calcGan=(o)=>{const ing=Number(o.budget_total||0);const costProd=o.service_type==="gestion_integral"?Number(o.cost_producto_usd||0):0;const cost=Number(o.cost_flete||0)+costProd+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtGan=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);return ing-cost+pmtGan;};
+  const calcGan=(o)=>{
+    // Ingreso: si está cobrada, usar collected_amount (real); sino budget_total (presupuesto)
+    let ing;
+    if(o.is_collected){
+      const raw=Number(o.collected_amount||o.budget_total||0);
+      const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
+      ing=isArs&&rate>0?raw/rate:raw;
+    } else {
+      ing=Number(o.budget_total||0);
+    }
+    const costProd=o.service_type==="gestion_integral"?Number(o.cost_producto_usd||0):0;
+    const cost=Number(o.cost_flete||0)+costProd+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
+    const pmts=pmtsByOp[o.id]||[];
+    const pmtGan=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);
+    return ing-cost+pmtGan;
+  };
   const sorted=[...filtered].sort((a,b)=>{
     if(sortCol==="smart"){
       // Orden: más cercano a entrega primero (status_weight desc), luego ETA asc, luego created_at desc
@@ -94,7 +109,13 @@ function OperationsList({token,onSelect,onNew}){
           <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}><span style={{fontSize:11,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{CM[op.channel]||op.channel}</span></td>
           <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`,whiteSpace:"nowrap",display:"inline-block"}}>● {st.l}</span></td>
           {showGanancia?<td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>{formatDate(op.closed_at)}</td>:<td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>{formatDate(op.eta)}</td>}
-          {showGanancia&&<td style={{padding:"12px 14px",fontWeight:700,color:gan>0?"#22c55e":"#ff6b6b",whiteSpace:"nowrap"}}>{ing>0?`USD ${gan.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"}</td>}
+          {showGanancia&&<td style={{padding:"12px 14px",fontWeight:700,color:gan>0?"#22c55e":gan<0?"#ff6b6b":"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>{(()=>{
+            const realIng=op.is_collected?Number(op.collected_amount||op.budget_total||0):Number(op.budget_total||0);
+            const hasData=realIng>0||Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)>0;
+            if(!hasData)return "—";
+            const sign=gan<0?"-":"";
+            return `${sign}USD ${Math.abs(gan).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+          })()}</td>}
           <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}><span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></td>
         </tr>})}</tbody>
       </table>
@@ -2057,7 +2078,25 @@ function FinanceDashboard({token}){
   const activeOps=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
   const periodOps=filterByPeriod(closedOps,"closed_at");
 
-  const calcGan=(o)=>{const baseIng=Number(o.budget_total||0);const costProducto=o.service_type==="gestion_integral"?Number(o.cost_producto_usd||0):0;const baseCost=Number(o.cost_flete||0)+costProducto+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtIng=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtCost=pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);const ing=baseIng+pmtIng;const cost=baseCost+pmtCost;return{ing,cost,gan:ing-cost};};
+  const calcGan=(o)=>{
+    // Ingreso: si está cobrada, usar collected_amount (real); sino budget_total (presupuesto)
+    let baseIng;
+    if(o.is_collected){
+      const raw=Number(o.collected_amount||o.budget_total||0);
+      const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
+      baseIng=isArs&&rate>0?raw/rate:raw;
+    } else {
+      baseIng=Number(o.budget_total||0);
+    }
+    const costProducto=o.service_type==="gestion_integral"?Number(o.cost_producto_usd||0):0;
+    const baseCost=Number(o.cost_flete||0)+costProducto+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
+    const pmts=pmtsByOp[o.id]||[];
+    const pmtIng=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
+    const pmtCost=pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);
+    const ing=baseIng+pmtIng;
+    const cost=baseCost+pmtCost;
+    return{ing,cost,gan:ing-cost};
+  };
 
   const totalIng=periodOps.reduce((s,o)=>s+calcGan(o).ing,0);
   const totalCostOp=periodOps.reduce((s,o)=>s+calcGan(o).cost,0);
