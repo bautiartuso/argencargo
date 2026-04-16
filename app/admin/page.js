@@ -132,10 +132,12 @@ function NewOperation({token,clients,onBack,onCreated}){
 
 function OperationEditor({op:initOp,token,onBack,onDelete}){
   const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});const [lrRate,setLrRate]=useState("");const [cbuInfo,setCbuInfo]=useState("");const [expNotif,setExpNotif]=useState(null);
+  const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:""});
   const loadCCBalance=async()=>{const mvs=await dq("supplier_account_movements",{token,filters:"?select=type,amount_usd"});if(Array.isArray(mvs)){const bal=mvs.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):(-Number(m.amount_usd))),0);setCcBalance(bal);}};
   const load=async()=>{setLo(true);const [it,pk,ev,tf,cc]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
     if(op.client_id){const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*`});setOpClient(Array.isArray(cl)?cl[0]:null);const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);}
     const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
+    const sp=await dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setSupplierPayments(Array.isArray(sp)?sp:[]);
     await loadCCBalance();setLo(false);};
   useEffect(()=>{load();let last=Date.now();const onFocus=()=>{if(document.visibilityState==="visible"&&Date.now()-last>5000){last=Date.now();load();}};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[op.id]);
   const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
@@ -548,20 +550,92 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         const totalCostosUSD=Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0);
         flash("Costos guardados");setSaving(false);
       }} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
-        {op.service_type==="gestion_integral"&&<div style={{marginBottom:16,background:"rgba(168,85,247,0.06)",border:"1px solid rgba(168,85,247,0.2)",borderRadius:10,padding:"12px 14px"}}>
-          <p style={{fontSize:11,fontWeight:700,color:"#c084fc",margin:"0 0 10px",textTransform:"uppercase"}}>Costo del producto (al proveedor)</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
-            <Inp label="Costo producto (USD)" type="number" value={op.cost_producto_usd} onChange={chOp("cost_producto_usd")} step="0.01"/>
-            <Sel label="Método de pago" value={op.cost_producto_method||"transferencia"} onChange={chOp("cost_producto_method")} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Contado"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"}]}/>
-            <div style={{display:"flex",alignItems:"flex-end",paddingBottom:6}}>
-              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:"rgba(255,255,255,0.7)",cursor:"pointer"}}>
-                <input type="checkbox" checked={!!op.cost_producto_paid} onChange={e=>{chOp("cost_producto_paid")(e.target.checked);if(e.target.checked&&!op.cost_producto_paid_at)chOp("cost_producto_paid_at")(new Date().toISOString());}} style={{cursor:"pointer"}}/>
-                Ya pagado al proveedor
-              </label>
+        {op.service_type==="gestion_integral"&&(()=>{
+          const totalProducto=supplierPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+          const totalPagado=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+          const totalPendiente=totalProducto-totalPagado;
+          const addSupPayment=async()=>{
+            const amt=Number(newSupPmt.amount_usd);
+            if(!amt||amt<=0||!newSupPmt.payment_date)return;
+            const body={operation_id:op.id,payment_date:newSupPmt.payment_date,amount_usd:amt,payment_method:newSupPmt.payment_method,is_paid:newSupPmt.is_paid,notes:newSupPmt.notes||null,paid_at:newSupPmt.is_paid?new Date(newSupPmt.payment_date+"T12:00:00Z").toISOString():null};
+            await dq("operation_supplier_payments",{method:"POST",token,body});
+            // Sync cost_producto_usd and paid_at en la op
+            const newTotal=totalProducto+amt;
+            const allPayments=[...supplierPayments,{...body,amount_usd:amt}];
+            const allPaid=allPayments.every(p=>p.is_paid);
+            const lastPaidDate=allPayments.filter(p=>p.is_paid).map(p=>p.paid_at||p.payment_date).sort().pop();
+            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{cost_producto_usd:newTotal,cost_producto_paid:allPaid,cost_producto_paid_at:lastPaidDate||null,cost_producto_method:newSupPmt.payment_method}});
+            setOp(p=>({...p,cost_producto_usd:newTotal,cost_producto_paid:allPaid,cost_producto_paid_at:lastPaidDate||null,cost_producto_method:newSupPmt.payment_method}));
+            setNewSupPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:""});
+            load();
+            flash("Pago registrado");
+          };
+          const deleteSupPayment=async(id)=>{
+            if(!confirm("¿Eliminar este pago al proveedor?"))return;
+            await dq("operation_supplier_payments",{method:"DELETE",token,filters:`?id=eq.${id}`});
+            const remaining=supplierPayments.filter(p=>p.id!==id);
+            const newTotal=remaining.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+            const allPaid=remaining.length>0&&remaining.every(p=>p.is_paid);
+            const lastPaidDate=remaining.filter(p=>p.is_paid).map(p=>p.paid_at||p.payment_date).sort().pop();
+            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{cost_producto_usd:newTotal,cost_producto_paid:allPaid,cost_producto_paid_at:lastPaidDate||null}});
+            setOp(p=>({...p,cost_producto_usd:newTotal,cost_producto_paid:allPaid,cost_producto_paid_at:lastPaidDate||null}));
+            load();
+          };
+          const toggleSupPaid=async(p)=>{
+            const newPaid=!p.is_paid;
+            await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${p.id}`,body:{is_paid:newPaid,paid_at:newPaid?new Date().toISOString():null}});
+            load();
+          };
+          return <div style={{marginBottom:16,background:"rgba(168,85,247,0.06)",border:"1px solid rgba(168,85,247,0.2)",borderRadius:10,padding:"14px 16px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+              <p style={{fontSize:11,fontWeight:700,color:"#c084fc",margin:0,textTransform:"uppercase"}}>Costo del producto — Pagos al proveedor (Gestión Integral)</p>
+              <div style={{display:"flex",gap:16,fontSize:11,color:"rgba(255,255,255,0.7)"}}>
+                <span><b style={{color:"#fff"}}>Total:</b> USD {totalProducto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                <span><b style={{color:"#22c55e"}}>Pagado:</b> USD {totalPagado.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                {totalPendiente>0&&<span><b style={{color:"#fb923c"}}>Pendiente:</b> USD {totalPendiente.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+              </div>
             </div>
-          </div>
-          <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"8px 0 0",fontStyle:"italic"}}>Es lo que Argencargo paga al proveedor del producto. Se descuenta del resultado de la operación.</p>
-        </div>}
+            {supplierPayments.length>0&&<div style={{background:"rgba(0,0,0,0.2)",borderRadius:8,padding:"4px 0",marginBottom:10}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+                    <th style={{textAlign:"left",padding:"8px 12px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>Fecha</th>
+                    <th style={{textAlign:"right",padding:"8px 12px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>Monto</th>
+                    <th style={{textAlign:"left",padding:"8px 12px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>Método</th>
+                    <th style={{textAlign:"left",padding:"8px 12px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>Estado</th>
+                    <th style={{textAlign:"left",padding:"8px 12px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>Notas</th>
+                    <th style={{padding:"8px 12px"}}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {supplierPayments.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                    <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}</td>
+                    <td style={{padding:"8px 12px",textAlign:"right",color:"#c084fc",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {Number(p.amount_usd).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                    <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.6)",textTransform:"capitalize"}}>{p.payment_method.replace("_"," ")}</td>
+                    <td style={{padding:"8px 12px"}}>{p.is_paid?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>✓ Pagado</span>:<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,146,60,0.15)",color:"#fb923c"}}>Pendiente</span>}</td>
+                    <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)",fontSize:11}}>{p.notes||""}</td>
+                    <td style={{padding:"8px 12px",textAlign:"right",whiteSpace:"nowrap"}}>
+                      {!p.is_paid&&<button onClick={()=>toggleSupPaid(p)} style={{padding:"4px 8px",fontSize:10,fontWeight:700,background:"rgba(34,197,94,0.15)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:4,color:"#22c55e",cursor:"pointer",marginRight:4}}>Marcar pagado</button>}
+                      <button onClick={()=>deleteSupPayment(p.id)} style={{padding:"4px 8px",fontSize:11,background:"transparent",border:"1px solid rgba(255,80,80,0.25)",borderRadius:4,color:"rgba(255,100,100,0.7)",cursor:"pointer"}}>✕</button>
+                    </td>
+                  </tr>)}
+                </tbody>
+              </table>
+            </div>}
+            <div style={{display:"grid",gridTemplateColumns:"auto 1fr 1fr 2fr auto",gap:10,alignItems:"end"}}>
+              <Inp label="Fecha" type="date" value={newSupPmt.payment_date} onChange={v=>setNewSupPmt(p=>({...p,payment_date:v}))}/>
+              <Inp label="Monto USD" type="number" value={newSupPmt.amount_usd} onChange={v=>setNewSupPmt(p=>({...p,amount_usd:v}))} step="0.01" placeholder="0.00"/>
+              <Sel label="Método" value={newSupPmt.payment_method} onChange={v=>setNewSupPmt(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Contado"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"}]}/>
+              <Inp label="Notas (opcional)" value={newSupPmt.notes} onChange={v=>setNewSupPmt(p=>({...p,notes:v}))} placeholder="Ej: 30% adelanto"/>
+              <Btn onClick={addSupPayment} disabled={!newSupPmt.amount_usd||Number(newSupPmt.amount_usd)<=0} small>+ Agregar pago</Btn>
+            </div>
+            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:"rgba(255,255,255,0.6)",cursor:"pointer",marginTop:10}}>
+              <input type="checkbox" checked={newSupPmt.is_paid} onChange={e=>setNewSupPmt(p=>({...p,is_paid:e.target.checked}))}/>
+              Ya está pagado (si es tarjeta de crédito no debitada aún, desmarcá)
+            </label>
+            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"8px 0 0",fontStyle:"italic"}}>Cada pago parcial aparece en el libro diario con su fecha. El total se sincroniza automáticamente con el costo producto de la operación.</p>
+          </div>;
+        })()}
         <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Flete</p>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px",marginBottom:16}}>
           <Inp label="Costo flete (USD)" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>
@@ -1026,14 +1100,16 @@ function FinancePanel({token}){
   const [allOps,setAllOps]=useState([]);const [allPmts,setAllPmts]=useState([]);
   const [dollarPending,setDollarPending]=useState([]);const [dollarRates,setDollarRates]=useState({});
   const [agentMvs,setAgentMvs]=useState([]);const [agentSignups,setAgentSignups]=useState([]);
-  const load=async()=>{const [e,o,pm,dp,am,ag]=await Promise.all([
+  const [supplierPmts,setSupplierPmts]=useState([]);
+  const load=async()=>{const [e,o,pm,dp,am,ag,sp]=await Promise.all([
     dq("finance_entries",{token,filters:"?select=*&auto_generated=is.false&order=date.desc,created_at.desc"}),
     dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,closed_at,cost_flete,cost_flete_method,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,service_type,cost_producto_usd,cost_producto_method,cost_producto_paid,cost_producto_paid_at,clients(first_name,last_name,client_code)&order=created_at.desc"}),
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)"}),
     dq("finance_entries",{token,filters:"?select=*&currency=eq.ARS&exchange_rate=is.null&auto_generated=eq.true&order=card_closing_date.asc"}),
     dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),
-    dq("agent_signups",{token,filters:"?select=auth_user_id,first_name,last_name"})
-  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setLo(false);};
+    dq("agent_signups",{token,filters:"?select=auth_user_id,first_name,last_name"}),
+    dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"})
+  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const addEntry=async()=>{
@@ -1057,11 +1133,13 @@ function FinancePanel({token}){
     const fleteForLedger=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);
     const cost=fleteForLedger+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
     if(cost>0)ledger.push({date:o.closed_at?.slice(0,10)||"—",type:"gasto",origen:"op",code:o.operation_code,desc:`Costos ${o.operation_code} — ${o.clients?.client_code||""}`,amount:cost,detail:fleteMethod==="cuenta_corriente"&&Number(o.cost_flete||0)>0?`(flete CC ${usd(Number(o.cost_flete))} ya cubierto por anticipo)`:""});
-    // Gestión Integral: costo del producto al proveedor tiene su propia fecha (paid_at), independiente del cierre
-    if(o.service_type==="gestion_integral"&&o.cost_producto_paid&&Number(o.cost_producto_usd)>0){
-      const prodDate=o.cost_producto_paid_at?String(o.cost_producto_paid_at).slice(0,10):(o.closed_at?.slice(0,10)||"—");
-      ledger.push({date:prodDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Producto ${o.operation_code} — ${o.clients?.client_code||""}`,amount:Number(o.cost_producto_usd),detail:"Pago al proveedor (Gestión Integral)"});
-    }
+  });
+  // Gestión Integral: cada pago parcial al proveedor aparece en su fecha (no en closed_at)
+  supplierPmts.filter(p=>p.is_paid).forEach(p=>{
+    const op=allOps.find(o=>o.id===p.operation_id);
+    const code=op?.operation_code||"";
+    const cc=op?.clients?.client_code||"";
+    ledger.push({date:p.payment_date,type:"gasto",origen:"supplier_pmt",code,desc:`Pago producto ${code} — ${cc}`,amount:Number(p.amount_usd||0),detail:p.notes||"Pago al proveedor (Gestión Integral)"});
   });
   allPmts.forEach(p=>{
     const code=p.operations?.operation_code||"";
@@ -1848,8 +1926,8 @@ function DashboardKPIs({token}){
 }
 
 function FinanceDashboard({token}){
-  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
-  useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status,giro_payment_method,giro_tarjeta_paid"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
+  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
+  useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status,giro_payment_method,giro_tarjeta_paid"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
 
   const now=new Date();const thisMonth=now.getMonth();const thisYear=now.getFullYear();
   const today=now.toISOString().slice(0,10);const weekAgo=new Date(now-7*86400000).toISOString().slice(0,10);
@@ -1928,14 +2006,15 @@ function FinanceDashboard({token}){
       const totCobrado=totCobradoOps+totCobradoPmts;
       // Costos: todos los costos de ops + giros YA enviados (confirmado)
       // Costos op para cash flow: excluir cost_flete cuando method=cuenta_corriente (ya se contó en el anticipo al agente)
-      // Costo producto (gestión integral) solo si ya se pagó
-      const totCostosOps=ops.reduce((s,o)=>{const fleteMethod=o.cost_flete_method||"cuenta_corriente";const fleteCash=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);const prodCash=(o.service_type==="gestion_integral"&&o.cost_producto_paid)?Number(o.cost_producto_usd||0):0;return s+fleteCash+prodCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);},0);
+      const totCostosOps=ops.reduce((s,o)=>{const fleteMethod=o.cost_flete_method||"cuenta_corriente";const fleteCash=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);return s+fleteCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);},0);
+      // Pagos al proveedor (Gestión Integral): suma de pagos efectivamente hechos (is_paid=true)
+      const totSupplierPmts=supplierPmts.filter(p=>p.is_paid).reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const totCostosPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.giro_status==="confirmado"&&!(p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid)).reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0);
       // Anticipos a agentes (cash real que sale)
       const totAnticiposAgentes=agentMvs.filter(m=>m.type==="anticipo").reduce((s,m)=>s+Number(m.amount_usd||0),0);
       // Costos fijos manuales (Meta ads, Vercel, Claude, salarios, etc.) — históricos en USD
       const totCostosFijos=finEntries.filter(e=>e.auto_generated===false&&e.type==="gasto"&&e.currency!=="ARS").reduce((s,e)=>s+Number(e.amount||0),0);
-      const totCostosTotales=totCostosOps+totCostosPmts+totCostosFijos+totAnticiposAgentes;
+      const totCostosTotales=totCostosOps+totCostosPmts+totCostosFijos+totAnticiposAgentes+totSupplierPmts;
       // Colgados: lo que DEBE el cliente (client_amount) − anticipos. Eso es plata real pendiente de cobrar.
       const girosColgadosDetail=[];
       ops.forEach(o=>{const pmts=pmtsByOp[o.id]||[];const colgados=pmts.filter(p=>p.giro_status==="confirmado"&&!p.client_paid);if(colgados.length===0)return;const debe=colgados.reduce((a,p)=>a+Number(p.client_amount_usd||0),0);const ant=Number(o.total_anticipos||0);const real=Math.max(0,debe-ant);if(real>0)girosColgadosDetail.push({code:o.operation_code,client:o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—",debe,anticipo:ant,real});});
@@ -2127,10 +2206,10 @@ function FinanceDashboard({token}){
         const cashOutOps=opsClosedInMonth.reduce((s,o)=>{
           const fleteMethod=o.cost_flete_method||"cuenta_corriente";
           const fleteCash=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);
-          // Costo producto: solo si es gestión integral Y ya se pagó
-          const prodCash=(o.service_type==="gestion_integral"&&o.cost_producto_paid)?Number(o.cost_producto_usd||0):0;
-          return s+fleteCash+prodCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
+          return s+fleteCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
         },0);
+        // Gestión Integral: cada pago al proveedor aparece en el mes de payment_date (no closed_at)
+        const cashOutSupplierPmts=supplierPmts.filter(p=>p.is_paid&&inMonth(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
         // Gastos con tarjeta: solo salen de cash cuando is_paid=true (la tarjeta se debitó)
         const cashOutFijos=fixedCostsManual.filter(e=>e.is_paid&&inMonth(e.date)).reduce((s,e)=>s+Number(e.amount||0),0);
         // Giros: salen de cash cuando se confirman y no están pendientes de tarjeta
@@ -2141,7 +2220,7 @@ function FinanceDashboard({token}){
           return inMonth(giroFecha);
         }).reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);
         const cashOutAnticipos=agentMvs.filter(mv=>mv.type==="anticipo"&&inMonth(mv.date)).reduce((s,mv)=>s+Number(mv.amount_usd||0),0);
-        const cashOut=cashOutOps+cashOutFijos+cashOutGiros+cashOutAnticipos;
+        const cashOut=cashOutOps+cashOutFijos+cashOutGiros+cashOutAnticipos+cashOutSupplierPmts;
         const cashNeto=cashIn-cashOut;
 
         rows.push({label:`${MN2[m]} ${y}`,m,y,devIng,devCost:devCostOp+devCostFijos,devGan,cashIn,cashOut,cashNeto,opsCount:opsClosedInMonth.length});
