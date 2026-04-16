@@ -338,7 +338,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
   const reloadAll=async()=>{
     const [pk,fl,fo,acc]=await Promise.all([
-      dq("operation_packages",{token,filters:"?select=*,operations!inner(operation_code,client_id,channel,clients(client_code,first_name))&operations.channel=eq.aereo_blanco&order=created_at.desc&limit=100"}),
+      dq("operation_packages",{token,filters:"?select=*,operations!inner(operation_code,client_id,channel,created_by_agent_id,clients(client_code,first_name))&operations.channel=eq.aereo_blanco&operations.created_by_agent_id=not.is.null&order=created_at.desc&limit=100"}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
       dq("flight_operations",{token,filters:"?select=*"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"})
@@ -456,7 +456,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
         {depositPkgs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",margin:0}}>{t.no_pkgs}</p>:
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-            {[t.op,t.client,t.tracking,t.weight,t.date].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+            {[t.op,t.client,t.tracking,t.weight,t.date,""].map((h,i)=><th key={i} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
           </tr></thead>
           <tbody>{depositPkgs.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{p.operations?.operation_code||"—"}</td>
@@ -464,6 +464,9 @@ function Dashboard({session,onLogout,lang,setLang,t}){
             <td style={{padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{p.national_tracking||"—"}</td>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.5)"}}>{p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—"}</td>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{new Date(p.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</td>
+            <td style={{padding:"10px 14px",textAlign:"right"}}>
+              <button onClick={async()=>{if(!confirm(`¿Eliminar el paquete de la operación ${p.operations?.operation_code}?`))return;await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});reloadAll();flash("Paquete eliminado");}} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>Eliminar</button>
+            </td>
           </tr>)}</tbody>
         </table>}
       </div>
