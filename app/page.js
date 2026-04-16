@@ -134,7 +134,7 @@ export default function Landing(){
           {n:"01",title:"Nos contactás y cotizamos",desc:"Nos decís qué querés traer. Te armamos una cotización con todos los costos desglosados. Sin compromiso."},
           {n:"02",title:"Tu proveedor envía al depósito",desc:"Le pasás la dirección de nuestro depósito en China (o USA). Cuando la mercadería llega, te confirmamos."},
           {n:"03",title:"Nos encargamos de todo el envío",desc:"Transporte internacional, documentación, seguimiento y gestión de aduana. Vos te enfocás en tu negocio."},
-          {n:"04",title:"Tu mercadería está lista",desc:"Te avisamos cuando podés retirarla. Seguiste todo el proceso desde tu portal, sin incertidumbre."},
+          {n:"04",title:"Tu mercadería está lista",desc:"Te avisamos cuando llegó. Retirás en nuestra oficina o te la enviamos a domicilio. Vos elegís."},
         ].map(s=><div key={s.n} style={{display:"flex",gap:20,marginBottom:36,alignItems:"flex-start"}}>
           <div style={{flexShrink:0,width:44,height:44,borderRadius:10,background:`linear-gradient(135deg,${AC},${NAVY})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800}}>{s.n}</div>
           <div>
@@ -184,7 +184,7 @@ export default function Landing(){
           {q:"¿Puedo importar desde Estados Unidos?",a:"Sí. Operamos envíos desde China y USA, por vía aérea y marítima."},
           {q:"¿Cómo sigo el estado de mi carga?",a:"Tenés un portal online con tracking real. Ves dónde está tu mercadería en todo momento."},
           {q:"¿Puedo traer cualquier producto?",a:"Casi todo. Hay restricciones para alimentos, medicamentos y materiales peligrosos. Consultanos y te confirmamos."},
-          {q:"¿Hacen entregas a domicilio?",a:"Por el momento, la mercadería se retira en nuestra oficina de Buenos Aires. Te avisamos apenas está lista."},
+          {q:"¿Hacen entregas a domicilio?",a:"Sí. Podés retirar en nuestra oficina de Buenos Aires o coordinar envío a domicilio si lo necesitás."},
         ].map((f,i)=><div key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
           <button onClick={()=>setFaq(faq===i?null:i)} style={{width:"100%",padding:"16px 0",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",color:"#fff",fontSize:15,fontWeight:600,textAlign:"left"}}>
             {f.q}<span style={{fontSize:18,color:"rgba(255,255,255,0.3)",flexShrink:0,marginLeft:12}}>{faq===i?"−":"+"}</span>
