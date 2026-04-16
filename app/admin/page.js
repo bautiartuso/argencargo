@@ -133,11 +133,13 @@ function NewOperation({token,clients,onBack,onCreated}){
 function OperationEditor({op:initOp,token,onBack,onDelete}){
   const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});const [lrRate,setLrRate]=useState("");const [cbuInfo,setCbuInfo]=useState("");const [expNotif,setExpNotif]=useState(null);
   const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:""});
+  const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const loadCCBalance=async()=>{const mvs=await dq("supplier_account_movements",{token,filters:"?select=type,amount_usd"});if(Array.isArray(mvs)){const bal=mvs.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):(-Number(m.amount_usd))),0);setCcBalance(bal);}};
   const load=async()=>{setLo(true);const [it,pk,ev,tf,cc]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
     if(op.client_id){const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*`});setOpClient(Array.isArray(cl)?cl[0]:null);const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);}
     const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
     const sp=await dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setSupplierPayments(Array.isArray(sp)?sp:[]);
+    const cp=await dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setClientPayments(Array.isArray(cp)?cp:[]);
     await loadCCBalance();setLo(false);};
   useEffect(()=>{load();let last=Date.now();const onFocus=()=>{if(document.visibilityState==="visible"&&Date.now()-last>5000){last=Date.now();load();}};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[op.id]);
   const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
@@ -480,6 +482,109 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const margen=ingresoTotal>0?((ganancia/ingresoTotal)*100):0;
       const rw=(l,v,bold,color)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:10}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:bold?16:13,fontWeight:bold?700:600,color:color||"#fff"}}>USD {v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
       return <>
+      {(()=>{
+        const totalCli=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+        const budgetTot=Number(op.budget_total||0);
+        const saldoCli=budgetTot-totalCli;
+        const pctCobrado=budgetTot>0?Math.min(100,(totalCli/budgetTot)*100):0;
+        const addCliPayment=async()=>{
+          const amtUsd=Number(newCliPmt.amount_usd);
+          const amtArs=Number(newCliPmt.amount_ars);
+          const rate=Number(newCliPmt.exchange_rate);
+          // Si moneda=ARS: se requiere rate para convertir a USD
+          let finalAmtUsd=amtUsd;
+          if(newCliPmt.currency==="ARS"){
+            if(!amtArs||amtArs<=0||!rate||rate<=0){alert("Para pagos en ARS necesitás el monto ARS y el tipo de cambio");return;}
+            finalAmtUsd=amtArs/rate;
+          } else {
+            if(!amtUsd||amtUsd<=0){alert("Ingresá el monto USD");return;}
+          }
+          if(!newCliPmt.payment_date)return;
+          const body={operation_id:op.id,payment_date:newCliPmt.payment_date,amount_usd:finalAmtUsd,currency:newCliPmt.currency,payment_method:newCliPmt.payment_method,notes:newCliPmt.notes||null};
+          if(newCliPmt.currency==="ARS"){body.amount_ars=amtArs;body.exchange_rate=rate;}
+          await dq("operation_client_payments",{method:"POST",token,body});
+          // Sync total_anticipos y si se completa, marcar is_collected
+          const newTotal=totalCli+finalAmtUsd;
+          const opUpdate={total_anticipos:newTotal};
+          if(newTotal>=budgetTot&&budgetTot>0){
+            opUpdate.is_collected=true;
+            opUpdate.collected_amount=newTotal;
+            opUpdate.collection_date=newCliPmt.payment_date;
+            opUpdate.collection_method=newCliPmt.payment_method;
+            opUpdate.collection_currency=newCliPmt.currency;
+            if(newCliPmt.currency==="ARS")opUpdate.collection_exchange_rate=rate;
+          }
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
+          setOp(p=>({...p,...opUpdate}));
+          setNewCliPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
+          load();
+          flash(newTotal>=budgetTot?"Pago registrado — op cobrada ✓":"Anticipo registrado");
+        };
+        const deleteCliPayment=async(id)=>{
+          if(!confirm("¿Eliminar este pago del cliente?"))return;
+          await dq("operation_client_payments",{method:"DELETE",token,filters:`?id=eq.${id}`});
+          const remaining=clientPayments.filter(p=>p.id!==id);
+          const newTotal=remaining.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+          const opUpdate={total_anticipos:newTotal};
+          if(newTotal<budgetTot)opUpdate.is_collected=false;
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
+          setOp(p=>({...p,...opUpdate}));
+          load();
+        };
+        return <Card title="Anticipos / Pagos del cliente">
+          <div style={{display:"flex",gap:16,marginBottom:12,flexWrap:"wrap",alignItems:"center",justifyContent:"space-between"}}>
+            <div style={{display:"flex",gap:20,fontSize:12,color:"rgba(255,255,255,0.7)"}}>
+              <span><b style={{color:"rgba(255,255,255,0.5)"}}>Presupuesto:</b> USD {budgetTot.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+              <span><b style={{color:"#22c55e"}}>Cobrado:</b> USD {totalCli.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+              {saldoCli>0.01&&<span><b style={{color:"#fb923c"}}>Saldo:</b> USD {saldoCli.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+              {saldoCli<=0.01&&totalCli>0&&<span style={{color:"#22c55e",fontWeight:700}}>✓ Op cobrada</span>}
+            </div>
+          </div>
+          {budgetTot>0&&<div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden",marginBottom:14}}>
+            <div style={{width:`${pctCobrado}%`,height:"100%",background:pctCobrado>=100?"#22c55e":pctCobrado>=50?"#60a5fa":"#fb923c",transition:"width 0.3s"}}/>
+          </div>}
+          {clientPayments.length>0&&<div style={{background:"rgba(0,0,0,0.2)",borderRadius:8,marginBottom:12}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead>
+                <tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+                  <th style={{textAlign:"left",padding:"8px 12px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>Fecha</th>
+                  <th style={{textAlign:"right",padding:"8px 12px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>Monto</th>
+                  <th style={{textAlign:"left",padding:"8px 12px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>Método</th>
+                  <th style={{textAlign:"left",padding:"8px 12px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>Notas</th>
+                  <th style={{padding:"8px 12px"}}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {clientPayments.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                  <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}</td>
+                  <td style={{padding:"8px 12px",textAlign:"right",color:"#22c55e",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {Number(p.amount_usd).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}{p.currency==="ARS"&&<span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.4)",fontWeight:400}}>ARS {Number(p.amount_ars).toLocaleString("es-AR")} @ {p.exchange_rate}</span>}</td>
+                  <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.6)",textTransform:"capitalize"}}>{p.payment_method}</td>
+                  <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)",fontSize:11}}>{p.notes||""}</td>
+                  <td style={{padding:"8px 12px",textAlign:"right"}}><button onClick={()=>deleteCliPayment(p.id)} style={{padding:"4px 8px",fontSize:11,background:"transparent",border:"1px solid rgba(255,80,80,0.25)",borderRadius:4,color:"rgba(255,100,100,0.7)",cursor:"pointer"}}>✕</button></td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>}
+          <div style={{background:"rgba(34,197,94,0.04)",border:"1px solid rgba(34,197,94,0.15)",borderRadius:10,padding:"12px 14px"}}>
+            <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:"0 0 10px",textTransform:"uppercase"}}>Nuevo pago del cliente</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 10px",marginBottom:8}}>
+              <Inp label="Fecha" type="date" value={newCliPmt.payment_date} onChange={v=>setNewCliPmt(p=>({...p,payment_date:v}))}/>
+              <Sel label="Moneda" value={newCliPmt.currency} onChange={v=>setNewCliPmt(p=>({...p,currency:v}))} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]}/>
+              <Sel label="Método" value={newCliPmt.payment_method} onChange={v=>setNewCliPmt(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Efectivo"},{value:"cripto",label:"Cripto"},{value:"otro",label:"Otro"}]}/>
+              <Inp label="Notas (opcional)" value={newCliPmt.notes} onChange={v=>setNewCliPmt(p=>({...p,notes:v}))} placeholder="Ej: 30% inicio"/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:newCliPmt.currency==="ARS"?"1fr 1fr 1fr auto":"1fr auto",gap:"0 10px",alignItems:"end"}}>
+              {newCliPmt.currency==="USD"?<Inp label="Monto USD" type="number" value={newCliPmt.amount_usd} onChange={v=>setNewCliPmt(p=>({...p,amount_usd:v}))} step="0.01" placeholder="0.00"/>:<>
+                <Inp label="Monto ARS" type="number" value={newCliPmt.amount_ars} onChange={v=>setNewCliPmt(p=>({...p,amount_ars:v}))} step="0.01" placeholder="0"/>
+                <Inp label="Tipo de cambio ARS/USD" type="number" value={newCliPmt.exchange_rate} onChange={v=>setNewCliPmt(p=>({...p,exchange_rate:v}))} step="0.01" placeholder="Ej: 1410"/>
+                <div style={{paddingBottom:6}}><p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>EQUIVALENTE USD</p><p style={{fontSize:14,fontWeight:700,color:"#22c55e",margin:0}}>{Number(newCliPmt.amount_ars||0)>0&&Number(newCliPmt.exchange_rate||0)>0?`USD ${(Number(newCliPmt.amount_ars)/Number(newCliPmt.exchange_rate)).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"}</p></div>
+              </>}
+              <Btn onClick={addCliPayment} small>+ Agregar</Btn>
+            </div>
+          </div>
+          <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>Cada anticipo aparece en el libro diario como ingreso en su fecha. Cuando la suma de pagos alcanza el presupuesto total, la op se marca automáticamente como cobrada.</p>
+        </Card>;
+      })()}
       <Card title="Cobro" actions={<Btn onClick={async()=>{
         if(op.is_collected&&(op.collection_currency||"USD")==="ARS"&&!Number(op.collection_exchange_rate||0)){alert("El cobro es en ARS: tenés que cargar el tipo de cambio antes de guardar");return;}
         await saveOp();
@@ -1101,15 +1206,17 @@ function FinancePanel({token}){
   const [dollarPending,setDollarPending]=useState([]);const [dollarRates,setDollarRates]=useState({});
   const [agentMvs,setAgentMvs]=useState([]);const [agentSignups,setAgentSignups]=useState([]);
   const [supplierPmts,setSupplierPmts]=useState([]);
-  const load=async()=>{const [e,o,pm,dp,am,ag,sp]=await Promise.all([
+  const [clientPmts,setClientPmts]=useState([]);
+  const load=async()=>{const [e,o,pm,dp,am,ag,sp,cp]=await Promise.all([
     dq("finance_entries",{token,filters:"?select=*&auto_generated=is.false&order=date.desc,created_at.desc"}),
     dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,closed_at,cost_flete,cost_flete_method,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,service_type,cost_producto_usd,cost_producto_method,cost_producto_paid,cost_producto_paid_at,clients(first_name,last_name,client_code)&order=created_at.desc"}),
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)"}),
     dq("finance_entries",{token,filters:"?select=*&currency=eq.ARS&exchange_rate=is.null&auto_generated=eq.true&order=card_closing_date.asc"}),
     dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),
     dq("agent_signups",{token,filters:"?select=auth_user_id,first_name,last_name"}),
-    dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"})
-  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setLo(false);};
+    dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),
+    dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"})
+  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const addEntry=async()=>{
@@ -1126,8 +1233,11 @@ function FinancePanel({token}){
   const fijosByCategory=entries.reduce((m,e)=>{const k=e.category||"otros";m[k]=(m[k]||0)+Number(e.amount||0);return m;},{});
   // Libro diario unificado: ops cobradas + pmts client_paid (ingresos), costos op + giros confirmados (gastos), entries manuales (gastos fijos)
   const ledger=[];
+  // IDs de ops que tienen pagos parciales del cliente (para NO duplicar con is_collected legacy)
+  const opsWithClientPmts=new Set(clientPmts.map(p=>p.operation_id));
   allOps.forEach(o=>{
-    if(o.is_collected){const amt=Number(o.collected_amount||o.budget_total||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const usdAmt=isArs&&rate?amt/rate:amt;if(usdAmt>0)ledger.push({date:o.collection_date||o.closed_at?.slice(0,10)||"—",type:"ingreso",origen:"op",code:o.operation_code,desc:`Cobro ${o.operation_code} — ${o.clients?.client_code||""}`,amount:usdAmt,detail:isArs?`ARS ${amt.toLocaleString("es-AR")} @ ${rate}`:""});}
+    // Si la op tiene pagos parciales, los agregamos más abajo (evita duplicar)
+    if(o.is_collected&&!opsWithClientPmts.has(o.id)){const amt=Number(o.collected_amount||o.budget_total||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const usdAmt=isArs&&rate?amt/rate:amt;if(usdAmt>0)ledger.push({date:o.collection_date||o.closed_at?.slice(0,10)||"—",type:"ingreso",origen:"op",code:o.operation_code,desc:`Cobro ${o.operation_code} — ${o.clients?.client_code||""}`,amount:usdAmt,detail:isArs?`ARS ${amt.toLocaleString("es-AR")} @ ${rate}`:""});}
     // Cost_flete via cuenta_corriente: NO se incluye en libro diario (la salida de cash ya está en el anticipo al agente)
     const fleteMethod=o.cost_flete_method||"cuenta_corriente";
     const fleteForLedger=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);
@@ -1140,6 +1250,14 @@ function FinancePanel({token}){
     const code=op?.operation_code||"";
     const cc=op?.clients?.client_code||"";
     ledger.push({date:p.payment_date,type:"gasto",origen:"supplier_pmt",code,desc:`Pago producto ${code} — ${cc}`,amount:Number(p.amount_usd||0),detail:p.notes||"Pago al proveedor (Gestión Integral)"});
+  });
+  // Pagos parciales del cliente (anticipos) → cada uno es un ingreso en su fecha
+  clientPmts.forEach(p=>{
+    const op=allOps.find(o=>o.id===p.operation_id);
+    const code=op?.operation_code||"";
+    const cc=op?.clients?.client_code||"";
+    const arsDetail=p.currency==="ARS"&&p.amount_ars?`ARS ${Number(p.amount_ars).toLocaleString("es-AR")} @ ${p.exchange_rate}`:"";
+    ledger.push({date:p.payment_date,type:"ingreso",origen:"client_pmt",code,desc:`Anticipo ${code} — ${cc}`,amount:Number(p.amount_usd||0),detail:p.notes?`${p.notes}${arsDetail?` · ${arsDetail}`:""}`:arsDetail});
   });
   allPmts.forEach(p=>{
     const code=p.operations?.operation_code||"";
@@ -1926,8 +2044,8 @@ function DashboardKPIs({token}){
 }
 
 function FinanceDashboard({token}){
-  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
-  useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status,giro_payment_method,giro_tarjeta_paid"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
+  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [clientPmts,setClientPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
+  useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status,giro_payment_method,giro_tarjeta_paid"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
 
   const now=new Date();const thisMonth=now.getMonth();const thisYear=now.getFullYear();
   const today=now.toISOString().slice(0,10);const weekAgo=new Date(now-7*86400000).toISOString().slice(0,10);
@@ -2000,10 +2118,12 @@ function FinanceDashboard({token}){
 
     {(()=>{
       // Cash flow REAL: solo plata que ya entró/salió
-      // Ingresos: budget de ops cobradas + pmts donde cliente ya pagó
-      const totCobradoOps=ops.filter(o=>o.is_collected).reduce((s,o)=>s+Number(o.budget_total||0),0);
+      // Ingresos: pagos parciales del cliente + ops cobradas SIN pagos parciales (legacy) + pmts donde cliente ya pagó
+      const opsWithClientPmts=new Set(clientPmts.map(p=>p.operation_id));
+      const totCobradoOps=ops.filter(o=>o.is_collected&&!opsWithClientPmts.has(o.id)).reduce((s,o)=>s+Number(o.budget_total||0),0);
+      const totCobradoClientPmts=clientPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const totCobradoPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.client_paid).reduce((a,p)=>a+Number(p.client_amount_usd||0),0);},0);
-      const totCobrado=totCobradoOps+totCobradoPmts;
+      const totCobrado=totCobradoOps+totCobradoClientPmts+totCobradoPmts;
       // Costos: todos los costos de ops + giros YA enviados (confirmado)
       // Costos op para cash flow: excluir cost_flete cuando method=cuenta_corriente (ya se contó en el anticipo al agente)
       const totCostosOps=ops.reduce((s,o)=>{const fleteMethod=o.cost_flete_method||"cuenta_corriente";const fleteCash=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);return s+fleteCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);},0);
@@ -2194,14 +2314,16 @@ function FinanceDashboard({token}){
         const devGan=devIng-devCostOp-devCostFijos;
 
         // === CAJA (Cash Flow) ===
-        // Cash in: ops cobradas en el mes + pmts client_paid en el mes
-        const cashInOps=ops.filter(o=>o.is_collected&&inMonth(o.collection_date)).reduce((s,o)=>{
+        // Cash in: pagos parciales del cliente (operation_client_payments) + ops cobradas SIN pagos parciales (legacy) + pmts client_paid
+        const opsWithClientPmts=new Set(clientPmts.map(p=>p.operation_id));
+        const cashInOpsLegacy=ops.filter(o=>o.is_collected&&inMonth(o.collection_date)&&!opsWithClientPmts.has(o.id)).reduce((s,o)=>{
           const amt=Number(o.collected_amount||o.budget_total||0);
           const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
           return s+(isArs&&rate?amt/rate:amt);
         },0);
+        const cashInClientPmts=clientPmts.filter(p=>inMonth(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
         const cashInPmts=Object.values(pmtsByOp).flat().filter(p=>p.client_paid&&inMonth(p.client_paid_date)).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
-        const cashIn=cashInOps+cashInPmts;
+        const cashIn=cashInOpsLegacy+cashInClientPmts+cashInPmts;
         // Cash out: costos ops pagados (no CC, ya que CC es anticipo) en closed_at del mes + gastos is_paid + giros debitados + anticipos
         const cashOutOps=opsClosedInMonth.reduce((s,o)=>{
           const fleteMethod=o.cost_flete_method||"cuenta_corriente";
