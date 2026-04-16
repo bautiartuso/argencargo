@@ -1044,9 +1044,16 @@ function FinancePanel({token}){
     const op=allOps.find(o=>o.id===p.operation_id);
     const cc=op?.clients?.client_code||"";
     if(p.client_paid)ledger.push({date:p.client_paid_date||"—",type:"ingreso",origen:"pmt",code,desc:`Pago ${code} — ${cc}`,amount:Number(p.client_amount_usd||0),detail:p.description||""});
-    if(p.giro_status==="confirmado"){const g=Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0);if(g>0)ledger.push({date:p.giro_date||"—",type:"gasto",origen:"pmt",code,desc:`Giro exterior ${code} — ${cc}`,amount:g,detail:p.description||""});}
+    // Gastos con tarjeta: solo aparecen en libro diario cuando la tarjeta fue debitada
+    const tarjetaPendiente=p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid;
+    if(p.giro_status==="confirmado"&&!tarjetaPendiente){const g=Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0);if(g>0)ledger.push({date:(p.giro_tarjeta_paid_at?p.giro_tarjeta_paid_at.slice(0,10):p.giro_date)||"—",type:"gasto",origen:"pmt",code,desc:`Giro exterior ${code} — ${cc}`,amount:g,detail:p.description||""});}
   });
-  entries.forEach(e=>{ledger.push({date:e.date,type:e.type,origen:"manual",code:"",desc:e.description,amount:Number(e.amount||0),detail:e.detail||"",cat:e.category,recurring:e.is_recurring,id:e.id});});
+  entries.forEach(e=>{
+    // Gastos con tarjeta: solo aparecen cuando is_paid=true
+    const tarjetaPendiente=e.payment_method==="tarjeta_credito"&&!e.is_paid;
+    if(tarjetaPendiente)return;
+    ledger.push({date:e.date,type:e.type,origen:"manual",code:"",desc:e.description,amount:Number(e.amount||0),detail:e.detail||"",cat:e.category,recurring:e.is_recurring,id:e.id});
+  });
   agentMvs.filter(m=>m.type==="anticipo").forEach(m=>{const ag=agentSignups.find(a=>a.auth_user_id===m.agent_id);const agName=ag?`${ag.first_name} ${ag.last_name}`:"agente";const recv=Number(m.amount_received_usd||m.amount_usd);ledger.push({date:m.date,type:"gasto",origen:"agente",code:"",desc:`Anticipo a ${agName}`,amount:Number(m.amount_usd||0),detail:m.amount_received_usd&&recv!==Number(m.amount_usd)?`Recibió ${usd(recv)}, comisión ${usd(Number(m.amount_usd)-recv)}`:(m.description||"")});});
   ledger.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   const ledgerIngresos=ledger.filter(l=>l.type==="ingreso").reduce((s,l)=>s+l.amount,0);
@@ -1794,43 +1801,31 @@ function DashboardKPIs({token}){
   })();},[token]);
   if(lo)return <p style={{color:"rgba(255,255,255,0.5)",padding:20}}>Cargando dashboard...</p>;
   if(!data)return null;
-  const kpis=[
-    {label:"Ops Activas",value:data.activeOps,color:"#60a5fa"},
-    {label:"En Tránsito",value:data.transitOps,color:"#a78bfa"},
-    {label:"Vuelos en Curso",value:data.activeFlights,color:"#fbbf24"},
-    {label:"Ingresos Mes",value:`$${data.ingresosMes.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}`,color:"#22c55e"}
-  ];
-  const alerts=[
-    {label:"Deuda Tarjeta USD",desc:`${data.cardUsdCount} pago${data.cardUsdCount!==1?"s":""} pendiente${data.cardUsdCount!==1?"s":""} de débito`,value:`USD ${data.deudaTarjetaUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`,color:data.deudaTarjetaUsd>0?"#fbbf24":"#22c55e"},
-    {label:"Deuda Tarjeta ARS",desc:`${data.cardArsCount} gasto${data.cardArsCount!==1?"s":""} pendiente${data.cardArsCount!==1?"s":""} de débito`,value:`ARS ${data.deudaTarjetaArs.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}`,color:data.deudaTarjetaArs>0?"#fbbf24":"#22c55e"},
+  const opsAlerts=[
     {label:"Ops Estancadas",desc:"Sin cambios hace +5 días",value:data.staleOps.length,color:data.staleOps.length>0?"#ef4444":"#22c55e",items:data.staleOps.slice(0,10).map(x=>x.op_code||x.id)},
     {label:"ETA Pasada",desc:"En tránsito con ETA vencida",value:data.etaPassed,color:data.etaPassed>0?"#ef4444":"#22c55e"},
     {label:"Paquetes Huérfanos",desc:"Sin operación asignada",value:data.orphanPkgs,color:data.orphanPkgs>0?"#f59e0b":"#22c55e"},
     {label:"Agentes Pendientes",desc:"Solicitudes por aprobar",value:data.pendingAgents,color:data.pendingAgents>0?"#f59e0b":"#22c55e"}
   ];
+  const hasOpsAlerts=opsAlerts.some(a=>a.value>0);
   return <div style={{marginBottom:28}}>
-    <h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:"0 0 16px"}}>KPIs</h2>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:24}}>
-      {kpis.map((k,i)=><div key={i} style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:`1px solid rgba(255,255,255,0.1)`,padding:"20px 18px",borderLeft:`4px solid ${k.color}`}}>
-        <div style={{fontSize:28,fontWeight:800,color:"#fff",marginBottom:4}}>{k.value}</div>
-        <div style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{k.label}</div>
-      </div>)}
-    </div>
-    <h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:"0 0 16px"}}>Alertas</h2>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14}}>
-      {alerts.map((a,i)=><div key={i} style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:`1px solid ${a.color}33`,padding:"18px 16px",borderLeft:`4px solid ${a.color}`}}>
-        <div style={{fontSize:24,fontWeight:800,color:a.color,marginBottom:2}}>{a.value}</div>
-        <div style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:2}}>{a.label}</div>
-        <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{a.desc}</div>
-        {a.items&&a.items.length>0&&<div style={{marginTop:8,fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.6}}>{a.items.map((c,j)=><span key={j} style={{display:"inline-block",background:"rgba(255,255,255,0.08)",borderRadius:4,padding:"2px 6px",marginRight:4,marginBottom:4}}>{c}</span>)}</div>}
-      </div>)}
-    </div>
+    {hasOpsAlerts&&<>
+      <h2 style={{fontSize:16,fontWeight:700,color:"rgba(255,255,255,0.7)",margin:"20px 0 12px"}}>Alertas operativas</h2>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,marginBottom:24}}>
+        {opsAlerts.filter(a=>a.value>0).map((a,i)=><div key={i} style={{background:"rgba(255,255,255,0.04)",borderRadius:12,border:`1px solid ${a.color}33`,padding:"14px 16px",borderLeft:`3px solid ${a.color}`}}>
+          <div style={{fontSize:20,fontWeight:800,color:a.color,marginBottom:2}}>{a.value}</div>
+          <div style={{fontSize:12,fontWeight:700,color:"#fff",marginBottom:2}}>{a.label}</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{a.desc}</div>
+          {a.items&&a.items.length>0&&<div style={{marginTop:6,fontSize:10,color:"rgba(255,255,255,0.5)",lineHeight:1.5}}>{a.items.map((c,j)=><span key={j} style={{display:"inline-block",background:"rgba(255,255,255,0.08)",borderRadius:4,padding:"2px 6px",marginRight:4,marginBottom:4}}>{c}</span>)}</div>}
+        </div>)}
+      </div>
+    </>}
   </div>;
 }
 
 function FinanceDashboard({token}){
   const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
-  useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
+  useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status,giro_payment_method,giro_tarjeta_paid"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
 
   const now=new Date();const thisMonth=now.getMonth();const thisYear=now.getFullYear();
   const today=now.toISOString().slice(0,10);const weekAgo=new Date(now-7*86400000).toISOString().slice(0,10);
@@ -1910,7 +1905,7 @@ function FinanceDashboard({token}){
       // Costos: todos los costos de ops + giros YA enviados (confirmado)
       // Costos op para cash flow: excluir cost_flete cuando method=cuenta_corriente (ya se contó en el anticipo al agente)
       const totCostosOps=ops.reduce((s,o)=>{const fleteMethod=o.cost_flete_method||"cuenta_corriente";const fleteCash=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);return s+fleteCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);},0);
-      const totCostosPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.giro_status==="confirmado").reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0);
+      const totCostosPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.giro_status==="confirmado"&&!(p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid)).reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0);
       // Anticipos a agentes (cash real que sale)
       const totAnticiposAgentes=agentMvs.filter(m=>m.type==="anticipo").reduce((s,m)=>s+Number(m.amount_usd||0),0);
       // Costos fijos manuales (Meta ads, Vercel, Claude, salarios, etc.) — históricos en USD
@@ -1926,6 +1921,10 @@ function FinanceDashboard({token}){
       const margenActivas=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada").reduce((s,o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtGan=pmts.reduce((a,p)=>a+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);return s+(ing-cost)+pmtGan;},0);
       // Deuda TC pendiente en ARS (de finance_entries)
       const deudaTCArs=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="ARS").reduce((s,e)=>s+Number(e.amount_ars||0),0);
+      // Deuda tarjeta USD: finance_entries USD con tarjeta no pagada + payment_management con tarjeta pendiente
+      const deudaTCUsdFinance=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="USD"&&e.payment_method==="tarjeta_credito").reduce((s,e)=>s+Number(e.amount||0),0);
+      const deudaTCUsdPmts=Object.values(pmtsByOp).flat().filter(p=>p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid).reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
+      const deudaTCUsd=deudaTCUsdFinance+deudaTCUsdPmts;
       const cashDisponible=totCobrado-totCostosTotales;
       return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:24}}>
         <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.1),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(255,80,80,0.1),rgba(255,80,80,0.03))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,borderRadius:14,padding:"20px 24px"}}>
@@ -1938,8 +1937,10 @@ function FinanceDashboard({token}){
         </div>
         <div style={{background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:14,padding:"20px 24px"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase"}}>Deuda tarjeta de crédito</p>
-          <p style={{fontSize:28,fontWeight:700,color:deudaTCArs>0?"#fb923c":"rgba(255,255,255,0.2)",margin:"0 0 4px"}}>{deudaTCArs>0?`ARS ${deudaTCArs.toLocaleString("es-AR",{minimumFractionDigits:2})}`:"Sin deuda"}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{deudaTCArs>0?"Pendiente de dollarización":"Todo al día ✓"}</p>
+          {deudaTCUsd>0&&<p style={{fontSize:22,fontWeight:700,color:"#fb923c",margin:"0 0 2px"}}>USD {deudaTCUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+          {deudaTCArs>0&&<p style={{fontSize:deudaTCUsd>0?16:22,fontWeight:700,color:"#fb923c",margin:"0 0 2px"}}>ARS {deudaTCArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+          {deudaTCArs===0&&deudaTCUsd===0&&<p style={{fontSize:22,fontWeight:700,color:"rgba(255,255,255,0.2)",margin:"0 0 4px"}}>Sin deuda</p>}
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>{deudaTCArs>0||deudaTCUsd>0?"Pendiente de débito":"Todo al día ✓"}</p>
         </div>
         <div style={{background:"rgba(255,80,80,0.04)",border:"1px solid rgba(255,80,80,0.12)",borderRadius:14,padding:"20px 24px"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase"}}>Costos totales acumulados</p>
