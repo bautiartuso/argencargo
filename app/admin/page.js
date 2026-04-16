@@ -1055,10 +1055,13 @@ function FinancePanel({token}){
     // Cost_flete via cuenta_corriente: NO se incluye en libro diario (la salida de cash ya está en el anticipo al agente)
     const fleteMethod=o.cost_flete_method||"cuenta_corriente";
     const fleteForLedger=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);
-    // Costo producto solo si es gestión integral Y ya está pagado (o método efectivo/transfer)
-    const productoForLedger=(o.service_type==="gestion_integral"&&o.cost_producto_paid&&(o.cost_producto_method!=="tarjeta_credito"||o.cost_producto_paid))?Number(o.cost_producto_usd||0):0;
-    const cost=fleteForLedger+productoForLedger+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
+    const cost=fleteForLedger+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
     if(cost>0)ledger.push({date:o.closed_at?.slice(0,10)||"—",type:"gasto",origen:"op",code:o.operation_code,desc:`Costos ${o.operation_code} — ${o.clients?.client_code||""}`,amount:cost,detail:fleteMethod==="cuenta_corriente"&&Number(o.cost_flete||0)>0?`(flete CC ${usd(Number(o.cost_flete))} ya cubierto por anticipo)`:""});
+    // Gestión Integral: costo del producto al proveedor tiene su propia fecha (paid_at), independiente del cierre
+    if(o.service_type==="gestion_integral"&&o.cost_producto_paid&&Number(o.cost_producto_usd)>0){
+      const prodDate=o.cost_producto_paid_at?String(o.cost_producto_paid_at).slice(0,10):(o.closed_at?.slice(0,10)||"—");
+      ledger.push({date:prodDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Producto ${o.operation_code} — ${o.clients?.client_code||""}`,amount:Number(o.cost_producto_usd),detail:"Pago al proveedor (Gestión Integral)"});
+    }
   });
   allPmts.forEach(p=>{
     const code=p.operations?.operation_code||"";
