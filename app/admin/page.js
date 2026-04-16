@@ -2067,6 +2067,116 @@ function FinanceDashboard({token}){
         </Card>
       </div>;
     })()}
+
+    {(()=>{
+      // Tabla mensual: P&L Devengado vs Flujo de Caja (últimos 12 meses)
+      const MN2=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+      const rows=[];
+      for(let i=11;i>=0;i--){
+        const d=new Date(thisYear,thisMonth-i,1);
+        const m=d.getMonth();const y=d.getFullYear();
+        const monthStart=`${y}-${String(m+1).padStart(2,"0")}-01`;
+        const nextMonth=new Date(y,m+1,1);
+        const monthEnd=`${nextMonth.getFullYear()}-${String(nextMonth.getMonth()+1).padStart(2,"0")}-01`;
+        const inMonth=(ds)=>{if(!ds)return false;const s=String(ds).slice(0,10);return s>=monthStart&&s<monthEnd;};
+
+        // === DEVENGADO (P&L) ===
+        // Ingresos: ops cerradas en el mes + sus pmts (client_amount)
+        const opsClosedInMonth=closedOps.filter(o=>inMonth(o.closed_at));
+        const devIng=opsClosedInMonth.reduce((s,o)=>s+calcGan(o).ing,0);
+        const devCostOp=opsClosedInMonth.reduce((s,o)=>s+calcGan(o).cost,0);
+        // Gastos fijos: por fecha del gasto (incluye tarjeta pendiente)
+        const devCostFijos=fixedCostsManual.filter(e=>inMonth(e.date)).reduce((s,e)=>s+Number(e.amount||0),0);
+        const devGan=devIng-devCostOp-devCostFijos;
+
+        // === CAJA (Cash Flow) ===
+        // Cash in: ops cobradas en el mes + pmts client_paid en el mes
+        const cashInOps=ops.filter(o=>o.is_collected&&inMonth(o.collection_date)).reduce((s,o)=>{
+          const amt=Number(o.collected_amount||o.budget_total||0);
+          const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
+          return s+(isArs&&rate?amt/rate:amt);
+        },0);
+        const cashInPmts=Object.values(pmtsByOp).flat().filter(p=>p.client_paid&&inMonth(p.client_paid_date)).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
+        const cashIn=cashInOps+cashInPmts;
+        // Cash out: costos ops pagados (no CC, ya que CC es anticipo) en closed_at del mes + gastos is_paid + giros debitados + anticipos
+        const cashOutOps=opsClosedInMonth.reduce((s,o)=>{
+          const fleteMethod=o.cost_flete_method||"cuenta_corriente";
+          const fleteCash=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);
+          return s+fleteCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
+        },0);
+        // Gastos con tarjeta: solo salen de cash cuando is_paid=true (la tarjeta se debitó)
+        const cashOutFijos=fixedCostsManual.filter(e=>e.is_paid&&inMonth(e.date)).reduce((s,e)=>s+Number(e.amount||0),0);
+        // Giros: salen de cash cuando se confirman y no están pendientes de tarjeta
+        const cashOutGiros=Object.values(pmtsByOp).flat().filter(p=>{
+          const tarjetaPendiente=p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid;
+          if(p.giro_status!=="confirmado"||tarjetaPendiente)return false;
+          const giroFecha=p.giro_tarjeta_paid_at?p.giro_tarjeta_paid_at.slice(0,10):p.giro_date;
+          return inMonth(giroFecha);
+        }).reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);
+        const cashOutAnticipos=agentMvs.filter(mv=>mv.type==="anticipo"&&inMonth(mv.date)).reduce((s,mv)=>s+Number(mv.amount_usd||0),0);
+        const cashOut=cashOutOps+cashOutFijos+cashOutGiros+cashOutAnticipos;
+        const cashNeto=cashIn-cashOut;
+
+        rows.push({label:`${MN2[m]} ${y}`,m,y,devIng,devCost:devCostOp+devCostFijos,devGan,cashIn,cashOut,cashNeto,opsCount:opsClosedInMonth.length});
+      }
+      // Acumulado
+      const tot=rows.reduce((a,r)=>({devIng:a.devIng+r.devIng,devCost:a.devCost+r.devCost,devGan:a.devGan+r.devGan,cashIn:a.cashIn+r.cashIn,cashOut:a.cashOut+r.cashOut,cashNeto:a.cashNeto+r.cashNeto}),{devIng:0,devCost:0,devGan:0,cashIn:0,cashOut:0,cashNeto:0});
+
+      return <Card title="Resultados por mes — Devengado vs Caja">
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"0 0 14px",lineHeight:1.5}}>
+          <b style={{color:"#60a5fa"}}>Devengado (P&L)</b>: imputa ingresos y costos en el mes en que se generó la operación o el gasto (no importa cuándo se cobra o paga). Esto refleja la <b>ganancia real del mes</b>. Gastos con tarjeta de crédito se cuentan en la <b>fecha del gasto</b>, aunque se paguen después.<br/>
+          <b style={{color:"#22c55e"}}>Caja (Cash Flow)</b>: solo cuenta la plata que efectivamente entró o salió en el mes. Los gastos con tarjeta pendientes aparecen en el mes del débito.
+        </p>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
+                <th rowSpan={2} style={{textAlign:"left",padding:"8px 10px",color:"rgba(255,255,255,0.5)",fontWeight:600,fontSize:10,textTransform:"uppercase",verticalAlign:"bottom"}}>Mes</th>
+                <th rowSpan={2} style={{textAlign:"center",padding:"8px 10px",color:"rgba(255,255,255,0.5)",fontWeight:600,fontSize:10,textTransform:"uppercase",verticalAlign:"bottom"}}>Ops cerradas</th>
+                <th colSpan={3} style={{textAlign:"center",padding:"4px 10px",color:"#60a5fa",fontWeight:700,fontSize:10,textTransform:"uppercase",borderBottom:"1px solid rgba(96,165,250,0.2)"}}>Devengado (P&L)</th>
+                <th colSpan={3} style={{textAlign:"center",padding:"4px 10px",color:"#22c55e",fontWeight:700,fontSize:10,textTransform:"uppercase",borderBottom:"1px solid rgba(34,197,94,0.2)"}}>Caja (Flujo)</th>
+              </tr>
+              <tr style={{borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
+                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(96,165,250,0.7)",fontWeight:600,fontSize:10}}>Ingresos</th>
+                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(96,165,250,0.7)",fontWeight:600,fontSize:10}}>Costos</th>
+                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(96,165,250,0.7)",fontWeight:600,fontSize:10}}>Ganancia</th>
+                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10}}>Entró</th>
+                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10}}>Salió</th>
+                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10}}>Neto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r=>{
+                const isEmpty=r.devIng===0&&r.cashIn===0&&r.cashOut===0&&r.devCost===0;
+                return <tr key={r.label} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",opacity:isEmpty?0.3:1}}>
+                  <td style={{padding:"8px 10px",fontWeight:600,color:"#fff"}}>{r.label}</td>
+                  <td style={{padding:"8px 10px",textAlign:"center",color:"rgba(255,255,255,0.5)"}}>{r.opsCount||"—"}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{r.devIng>0?usd(r.devIng):"—"}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{r.devCost>0?usd(r.devCost):"—"}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums",color:r.devGan>0?"#22c55e":r.devGan<0?"#ff6b6b":"rgba(255,255,255,0.4)"}}>{r.devGan!==0?usd(r.devGan):"—"}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{r.cashIn>0?usd(r.cashIn):"—"}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{r.cashOut>0?usd(r.cashOut):"—"}</td>
+                  <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums",color:r.cashNeto>0?"#22c55e":r.cashNeto<0?"#ff6b6b":"rgba(255,255,255,0.4)"}}>{r.cashNeto!==0?usd(r.cashNeto):"—"}</td>
+                </tr>;
+              })}
+              <tr style={{borderTop:"1.5px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.03)"}}>
+                <td style={{padding:"10px",fontWeight:700,color:"#fff",textTransform:"uppercase",fontSize:11}}>Total 12m</td>
+                <td style={{padding:"10px"}}></td>
+                <td style={{padding:"10px",textAlign:"right",fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(tot.devIng)}</td>
+                <td style={{padding:"10px",textAlign:"right",fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(tot.devCost)}</td>
+                <td style={{padding:"10px",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums",color:tot.devGan>0?"#22c55e":"#ff6b6b"}}>{usd(tot.devGan)}</td>
+                <td style={{padding:"10px",textAlign:"right",fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(tot.cashIn)}</td>
+                <td style={{padding:"10px",textAlign:"right",fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(tot.cashOut)}</td>
+                <td style={{padding:"10px",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums",color:tot.cashNeto>0?"#22c55e":"#ff6b6b"}}>{usd(tot.cashNeto)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:"12px 0 0",lineHeight:1.5,fontStyle:"italic"}}>
+          💡 Si el <b style={{color:"#60a5fa"}}>Devengado</b> es positivo pero el <b style={{color:"#22c55e"}}>Caja</b> es negativo, significa que la ganancia del mes está "atrapada" en cuentas por cobrar o tarjetas pendientes de débito — es ganancia real pero todavía no tenés la plata en la mano.
+        </p>
+      </Card>;
+    })()}
   </div>;
 }
 
