@@ -360,10 +360,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const totalGirado=payments.filter(p=>p.giro_status==="confirmado").reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
       const totalGanPagos=payments.reduce((s,p)=>s+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);
       const savePmt=async()=>{if(!newPmt.client_amount_usd)return;setSaving(true);
-        const body={...newPmt,client_amount_usd:Number(newPmt.client_amount_usd),giro_amount_usd:Number(newPmt.giro_amount_usd||0),cost_comision_giro:Number(newPmt.cost_comision_giro||0),operation_id:op.id,client_id:op.client_id};
+        const body={...newPmt,client_amount_usd:Number(newPmt.client_amount_usd),giro_amount_usd:Number(newPmt.giro_amount_usd||0),cost_comision_giro:Number(newPmt.cost_comision_giro||0),operation_id:op.id,client_id:op.client_id,giro_payment_method:newPmt.giro_payment_method||"efectivo",giro_tarjeta_due_date:newPmt.giro_payment_method==="tarjeta_credito"?(newPmt.giro_tarjeta_due_date||null):null};
         await dq("payment_management",{method:"POST",token,body});
         const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
-        setShowNewPmt(false);setNewPmt({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});flash("Pago creado");setSaving(false);};
+        setShowNewPmt(false);setNewPmt({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente",giro_payment_method:"efectivo",giro_tarjeta_due_date:""});flash("Pago creado");setSaving(false);};
       const updatePmt=async(pmtId,field,value)=>{
         await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pmtId}`,body:{[field]:value}});
         // Auto finance entries
@@ -407,7 +407,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                 <span style={{fontSize:13,fontWeight:700,color:IC}}>Pago {i+1}</span>
                 {pm.description&&<span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>— {pm.description}</span>}
               </div>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                {pm.giro_payment_method==="tarjeta_credito"&&<span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,color:pm.giro_tarjeta_paid?"#22c55e":"#fbbf24",background:pm.giro_tarjeta_paid?"rgba(34,197,94,0.15)":"rgba(251,191,36,0.15)",border:`1px solid ${pm.giro_tarjeta_paid?"rgba(34,197,94,0.3)":"rgba(251,191,36,0.3)"}`}} title={pm.giro_tarjeta_due_date?`Débito: ${formatDate(pm.giro_tarjeta_due_date)}`:""}>💳 {pm.giro_tarjeta_paid?"Debitada":"Tarjeta pendiente"}</span>}
                 <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:gs.c,background:`${gs.c}15`,border:`1px solid ${gs.c}33`}}>Giro: {gs.l}</span>
                 <button onClick={()=>delPmt(pm.id)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>X</button>
               </div>
@@ -418,9 +419,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               <div><p style={{color:"rgba(255,255,255,0.4)",margin:"0 0 2px",fontSize:10,fontWeight:700}}>COMISIÓN GIRO</p><p style={{color:"#ff6b6b",fontWeight:600,margin:0}}>{usdF(pm.cost_comision_giro||0)}</p></div>
               <div><p style={{color:"rgba(255,255,255,0.4)",margin:"0 0 2px",fontSize:10,fontWeight:700}}>GANANCIA</p><p style={{color:gan>=0?"#22c55e":"#ff6b6b",fontWeight:700,margin:0}}>{usdF(gan)}</p></div>
             </div>
-            <div style={{display:"flex",gap:16,marginTop:10,alignItems:"center"}}>
+            <div style={{display:"flex",gap:16,marginTop:10,alignItems:"center",flexWrap:"wrap"}}>
               <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={pm.client_paid||false} onChange={e=>{if(e.target.checked&&!pm.client_paid)updatePmt(pm.id,"client_paid",true);}}/><span style={{fontSize:12,color:pm.client_paid?"#22c55e":"rgba(255,255,255,0.4)",fontWeight:pm.client_paid?600:400}}>{pm.client_paid?`Pagado ${formatDate(pm.client_paid_date)}`:"Cliente no pagó"}</span></label>
               {pm.giro_status!=="confirmado"&&<Sel label="" value={pm.giro_status} onChange={v=>updatePmt(pm.id,"giro_status",v)} options={[{value:"pendiente",label:"Pendiente"},{value:"enviado",label:"Enviado"},{value:"confirmado",label:"Confirmado"}]}/>}
+              {pm.giro_payment_method==="tarjeta_credito"&&!pm.giro_tarjeta_paid&&<button onClick={async()=>{if(!confirm("¿Marcar la tarjeta como ya debitada? Esto restará del cash real."))return;await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});reload();}} style={{fontSize:11,padding:"5px 10px",borderRadius:6,border:"1px solid rgba(251,191,36,0.3)",background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer",fontWeight:600}}>💳 Marcar como debitada</button>}
             </div>
           </div>;})}
         {payments.length===0&&!showNewPmt&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>No hay gestiones de pago.</p>}
@@ -435,6 +437,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <Inp label="Descripción" value={newPmt.description} onChange={v=>setNewPmt(p=>({...p,description:v}))} placeholder="Ej: Pago proveedor Alibaba"/>
           <Sel label="Método de pago del cliente" value={newPmt.client_payment_method} onChange={v=>setNewPmt(p=>({...p,client_payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Efectivo"},{value:"cripto",label:"Cripto"}]}/>
         </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
+          <Sel label="Cómo pagaste el giro" value={newPmt.giro_payment_method||"efectivo"} onChange={v=>setNewPmt(p=>({...p,giro_payment_method:v}))} options={[{value:"efectivo",label:"Efectivo"},{value:"transferencia",label:"Transferencia"},{value:"tarjeta_credito",label:"💳 Tarjeta de crédito"}]}/>
+          {newPmt.giro_payment_method==="tarjeta_credito"&&<Inp label="Fecha de débito estimada" type="date" value={newPmt.giro_tarjeta_due_date||""} onChange={v=>setNewPmt(p=>({...p,giro_tarjeta_due_date:v}))}/>}
+        </div>
+        {newPmt.giro_payment_method==="tarjeta_credito"&&Number(newPmt.giro_amount_usd||0)>0&&<div style={{background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8,padding:"10px 14px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontSize:12,color:"#fbbf24",fontWeight:600}}>💳 Se debitará de tu tarjeta</span>
+          <span style={{fontSize:14,fontWeight:700,color:"#fbbf24"}}>{usdF(newPmt.giro_amount_usd||0)}</span>
+        </div>}
         {Number(newPmt.client_amount_usd||0)>0&&Number(newPmt.giro_amount_usd||0)>0&&<div style={{background:"rgba(34,197,94,0.06)",borderRadius:8,padding:12,marginBottom:12,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Ganancia estimada</span><span style={{fontSize:14,fontWeight:700,color:"#22c55e"}}>{usdF(Number(newPmt.client_amount_usd)-Number(newPmt.giro_amount_usd)-Number(newPmt.cost_comision_giro||0))}</span></div>}
         <div style={{display:"flex",gap:8}}><Btn onClick={savePmt} disabled={saving}>{saving?"Guardando...":"Guardar"}</Btn><Btn variant="secondary" onClick={()=>setShowNewPmt(false)}>Cancelar</Btn></div>
       </Card>}
@@ -1752,11 +1762,13 @@ function DashboardKPIs({token}){
   useEffect(()=>{(async()=>{
     const now=new Date();const y=now.getFullYear();const m=String(now.getMonth()+1).padStart(2,"0");
     const monthStart=`${y}-${m}-01`;
-    const [ops,flights,unPkgs,signups]=await Promise.all([
+    const [ops,flights,unPkgs,signups,cardUsd,cardArs]=await Promise.all([
       dq("operations",{token,filters:"?select=id,op_code,status,budget_total,eta,updated_at,created_at"}),
       dq("flights",{token,filters:"?select=id,status"}),
       dq("unassigned_packages",{token,filters:"?select=id&assigned_to_op_id=is.null"}),
-      dq("agent_signups",{token,filters:"?select=id&status=eq.pending"})
+      dq("agent_signups",{token,filters:"?select=id&status=eq.pending"}),
+      dq("payment_management",{token,filters:"?select=giro_amount_usd,giro_tarjeta_due_date&giro_payment_method=eq.tarjeta_credito&giro_tarjeta_paid=eq.false"}),
+      dq("finance_entries",{token,filters:"?select=amount,amount_ars,currency,payment_due_date&payment_method=eq.tarjeta&is_paid=eq.false"})
     ]);
     const o=Array.isArray(ops)?ops:[];const fl=Array.isArray(flights)?flights:[];
     const finalStates=["entregada","operacion_cerrada","cancelada"];
@@ -1770,7 +1782,14 @@ function DashboardKPIs({token}){
     const todayStr=now.toISOString().slice(0,10);
     const transitStates=["en_transito","en_aduana","preparando_envio"];
     const etaPassed=o.filter(x=>x.eta&&x.eta<todayStr&&transitStates.includes(x.status));
-    setData({activeOps:activeOps.length,transitOps:transitOps.length,activeFlights:activeFlights.length,ingresosMes,staleOps,etaPassed:etaPassed.length,orphanPkgs:(Array.isArray(unPkgs)?unPkgs:[]).length,pendingAgents:(Array.isArray(signups)?signups:[]).length});
+    // Deuda tarjeta USD (gestión de pagos pendiente de débito)
+    const cardUsdArr=Array.isArray(cardUsd)?cardUsd:[];
+    const deudaTarjetaUsd=cardUsdArr.reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
+    // Deuda tarjeta ARS + USD (gastos en finance_entries)
+    const cardArsArr=Array.isArray(cardArs)?cardArs:[];
+    const deudaTarjetaArsExtra=cardArsArr.filter(e=>e.currency!=="USD").reduce((s,e)=>s+Number(e.amount_ars||e.amount||0),0);
+    const deudaTarjetaUsdExtra=cardArsArr.filter(e=>e.currency==="USD").reduce((s,e)=>s+Number(e.amount||0),0);
+    setData({activeOps:activeOps.length,transitOps:transitOps.length,activeFlights:activeFlights.length,ingresosMes,staleOps,etaPassed:etaPassed.length,orphanPkgs:(Array.isArray(unPkgs)?unPkgs:[]).length,pendingAgents:(Array.isArray(signups)?signups:[]).length,deudaTarjetaUsd:deudaTarjetaUsd+deudaTarjetaUsdExtra,deudaTarjetaArs:deudaTarjetaArsExtra,cardUsdCount:cardUsdArr.length+cardArsArr.filter(e=>e.currency==="USD").length,cardArsCount:cardArsArr.filter(e=>e.currency!=="USD").length});
     setLo(false);
   })();},[token]);
   if(lo)return <p style={{color:"rgba(255,255,255,0.5)",padding:20}}>Cargando dashboard...</p>;
@@ -1782,6 +1801,8 @@ function DashboardKPIs({token}){
     {label:"Ingresos Mes",value:`$${data.ingresosMes.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}`,color:"#22c55e"}
   ];
   const alerts=[
+    {label:"Deuda Tarjeta USD",desc:`${data.cardUsdCount} pago${data.cardUsdCount!==1?"s":""} pendiente${data.cardUsdCount!==1?"s":""} de débito`,value:`USD ${data.deudaTarjetaUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`,color:data.deudaTarjetaUsd>0?"#fbbf24":"#22c55e"},
+    {label:"Deuda Tarjeta ARS",desc:`${data.cardArsCount} gasto${data.cardArsCount!==1?"s":""} pendiente${data.cardArsCount!==1?"s":""} de débito`,value:`ARS ${data.deudaTarjetaArs.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}`,color:data.deudaTarjetaArs>0?"#fbbf24":"#22c55e"},
     {label:"Ops Estancadas",desc:"Sin cambios hace +5 días",value:data.staleOps.length,color:data.staleOps.length>0?"#ef4444":"#22c55e",items:data.staleOps.slice(0,10).map(x=>x.op_code||x.id)},
     {label:"ETA Pasada",desc:"En tránsito con ETA vencida",value:data.etaPassed,color:data.etaPassed>0?"#ef4444":"#22c55e"},
     {label:"Paquetes Huérfanos",desc:"Sin operación asignada",value:data.orphanPkgs,color:data.orphanPkgs>0?"#f59e0b":"#22c55e"},
