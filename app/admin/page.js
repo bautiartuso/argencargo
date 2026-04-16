@@ -9,10 +9,44 @@ const DARK_BG="linear-gradient(160deg,#0f1b30 0%,#162441 50%,#0f1b30 100%)";
 const IC="#60a5fa";
 const sf=async(p,o={})=>{const r=await fetch(`${SB_URL}${p}`,{...o,headers:{apikey:SB_KEY,"Content-Type":"application/json",...(o.headers||{})}});const txt=await r.text();try{return JSON.parse(txt);}catch{return null;}};
 const ac=async(e,b)=>sf(`/auth/v1/${e}`,{method:"POST",body:JSON.stringify(b)});
-const dq=async(t,{method="GET",body,token,filters="",headers:h={}})=>sf(`/rest/v1/${t}${filters}`,{method,body:body?JSON.stringify(body):undefined,headers:{Authorization:`Bearer ${token}`,...(method==="POST"?{Prefer:"return=representation"}:method==="DELETE"?{Prefer:"return=minimal"}:method==="PATCH"?{Prefer:"return=representation"}:{}),...h}});
 const saveSession=(d)=>{try{localStorage.setItem("ac_admin",JSON.stringify(d));}catch(e){}};
 const loadSession=()=>{try{const d=localStorage.getItem("ac_admin");return d?JSON.parse(d):null;}catch(e){return null;}};
 const clearSession=()=>{try{localStorage.removeItem("ac_admin");}catch(e){}};
+// JWT exp (ms). 0 si falla.
+const jwtExp=(t)=>{try{return JSON.parse(atob(t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))).exp*1000;}catch{return 0;}};
+// Refresh token (una llamada compartida entre requests concurrentes)
+let _refreshingPromise=null;
+const refreshToken=async()=>{
+  if(_refreshingPromise)return _refreshingPromise;
+  _refreshingPromise=(async()=>{
+    const s=loadSession();if(!s?.refresh_token)return null;
+    const r=await ac("token?grant_type=refresh_token",{refresh_token:s.refresh_token});
+    if(r?.access_token){const ns={...s,token:r.access_token,refresh_token:r.refresh_token||s.refresh_token,user:r.user||s.user};saveSession(ns);return ns.token;}
+    clearSession();if(typeof window!=="undefined")window.location.reload();return null;
+  })();
+  try{return await _refreshingPromise;}finally{_refreshingPromise=null;}
+};
+// Si el token que recibe dq está por vencer (<60s) o ya venció, renuévalo proactivamente (o tomá el fresco de localStorage si otro request ya lo renovó).
+const ensureFreshToken=async(token)=>{
+  const exp=jwtExp(token);
+  if(exp&&Date.now()>exp-60000){
+    const s=loadSession();
+    if(s?.token&&jwtExp(s.token)>Date.now()+60000)return s.token;
+    const nt=await refreshToken();if(nt)return nt;
+  }
+  return token;
+};
+const dq=async(t,{method="GET",body,token,filters="",headers:h={}})=>{
+  const fresh=await ensureFreshToken(token);
+  const doReq=async(tk)=>{
+    const r=await fetch(`${SB_URL}/rest/v1/${t}${filters}`,{method,body:body?JSON.stringify(body):undefined,headers:{apikey:SB_KEY,"Content-Type":"application/json",Authorization:`Bearer ${tk}`,...(method==="POST"?{Prefer:"return=representation"}:method==="DELETE"?{Prefer:"return=minimal"}:method==="PATCH"?{Prefer:"return=representation"}:{}),...h}});
+    const txt=await r.text();let parsed=null;try{parsed=JSON.parse(txt);}catch{}
+    return {status:r.status,body:parsed};
+  };
+  let r=await doReq(fresh);
+  if(r.status===401){const nt=await refreshToken();if(nt){r=await doReq(nt);}}
+  return r.body;
+};
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},lista_retiro:{l:"LIBERACIÓN",c:"#34d399"},entregada:{l:"ENTREGA FINAL",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
 const CM={aereo_blanco:"Aéreo A",aereo_negro:"Aéreo B",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B"};
 const STATUSES=Object.keys(SM);
@@ -41,7 +75,7 @@ function NotifBell({token}){
 
 function AdminLogin({onLogin}){
   const [email,setEmail]=useState("");const [pw,setPw]=useState("");const [err,setErr]=useState("");const [lo,setLo]=useState(false);
-  const doLogin=async()=>{setLo(true);setErr("");try{const r=await ac("token?grant_type=password",{email,password:pw});if(r.error){setErr(r.error_description||"Credenciales inválidas");setLo(false);return;}const p=await dq("profiles",{token:r.access_token,filters:`?id=eq.${r.user.id}&select=*`});const prof=Array.isArray(p)?p[0]:null;if(!prof||prof.role!=="admin"){setErr("Acceso denegado. Solo administradores.");setLo(false);return;}const ss={token:r.access_token,user:r.user,profile:prof};saveSession(ss);onLogin(ss);}catch{setErr("Error de conexión.");}setLo(false);};
+  const doLogin=async()=>{setLo(true);setErr("");try{const r=await ac("token?grant_type=password",{email,password:pw});if(r.error){setErr(r.error_description||"Credenciales inválidas");setLo(false);return;}const p=await dq("profiles",{token:r.access_token,filters:`?id=eq.${r.user.id}&select=*`});const prof=Array.isArray(p)?p[0]:null;if(!prof||prof.role!=="admin"){setErr("Acceso denegado. Solo administradores.");setLo(false);return;}const ss={token:r.access_token,refresh_token:r.refresh_token,user:r.user,profile:prof};saveSession(ss);onLogin(ss);}catch{setErr("Error de conexión.");}setLo(false);};
   return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG,fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif"}}><div style={{maxWidth:400,width:"100%",padding:"0 1rem"}}><div style={{textAlign:"center",marginBottom:28}}><img src={LOGO} alt="AC" style={{width:200,height:"auto",filter:"drop-shadow(0 0 20px rgba(74,144,217,0.4))"}}/><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"10px 0 0"}}>Panel de Administración</p></div><div style={{background:"rgba(8,18,35,0.85)",backdropFilter:"blur(24px)",borderRadius:20,padding:"2rem 1.75rem",border:"1px solid rgba(255,255,255,0.06)"}}><Inp label="Email" type="email" value={email} onChange={setEmail} placeholder="admin@argencargo.com"/><Inp label="Contraseña" type="password" value={pw} onChange={setPw} placeholder="••••••••"/>{err&&<p style={{fontSize:12,color:"#ff6b6b",margin:"0 0 12px",padding:"8px 12px",background:"rgba(255,80,80,0.1)",borderRadius:8}}>{err}</p>}<Btn onClick={doLogin} disabled={lo}>{lo?"Ingresando...":"Ingresar →"}</Btn></div></div></div>;
 }
 
@@ -437,7 +471,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                 {pm.description&&<span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>— {pm.description}</span>}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                {pm.giro_payment_method==="tarjeta_credito"&&<span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,color:pm.giro_tarjeta_paid?"#22c55e":"#fbbf24",background:pm.giro_tarjeta_paid?"rgba(34,197,94,0.15)":"rgba(251,191,36,0.15)",border:`1px solid ${pm.giro_tarjeta_paid?"rgba(34,197,94,0.3)":"rgba(251,191,36,0.3)"}`}} title={pm.giro_tarjeta_due_date?`Débito: ${formatDate(pm.giro_tarjeta_due_date)}`:""}>💳 {pm.giro_tarjeta_paid?"Debitada":"Tarjeta pendiente"}</span>}
+                {pm.giro_payment_method==="tarjeta_credito"&&(pm.giro_tarjeta_paid?
+                  <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,color:"#22c55e",background:"rgba(34,197,94,0.15)",border:"1px solid rgba(34,197,94,0.3)"}} title={pm.giro_tarjeta_paid_at?`Debitada: ${formatDate(pm.giro_tarjeta_paid_at)}`:""}>💳 Debitada</span>:
+                  <button onClick={async()=>{if(!confirm("¿Marcar la tarjeta como ya debitada? Esto restará del cash real."))return;await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});reload();}} style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,color:"#fbbf24",background:"rgba(251,191,36,0.15)",border:"1px solid rgba(251,191,36,0.3)",cursor:"pointer"}} title={pm.giro_tarjeta_due_date?`Débito estimado: ${formatDate(pm.giro_tarjeta_due_date)} · Click para marcar como debitada`:"Click para marcar como debitada"}>💳 Tarjeta pendiente — marcar debitada</button>
+                )}
                 <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:gs.c,background:`${gs.c}15`,border:`1px solid ${gs.c}33`}}>Giro: {gs.l}</span>
                 <button onClick={()=>delPmt(pm.id)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>X</button>
               </div>
@@ -451,7 +488,6 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <div style={{display:"flex",gap:16,marginTop:10,alignItems:"center",flexWrap:"wrap"}}>
               <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={pm.client_paid||false} onChange={e=>{if(e.target.checked&&!pm.client_paid)updatePmt(pm.id,"client_paid",true);}}/><span style={{fontSize:12,color:pm.client_paid?"#22c55e":"rgba(255,255,255,0.4)",fontWeight:pm.client_paid?600:400}}>{pm.client_paid?`Pagado ${formatDate(pm.client_paid_date)}`:"Cliente no pagó"}</span></label>
               {pm.giro_status!=="confirmado"&&<Sel label="" value={pm.giro_status} onChange={v=>updatePmt(pm.id,"giro_status",v)} options={[{value:"pendiente",label:"Pendiente"},{value:"enviado",label:"Enviado"},{value:"confirmado",label:"Confirmado"}]}/>}
-              {pm.giro_payment_method==="tarjeta_credito"&&!pm.giro_tarjeta_paid&&<button onClick={async()=>{if(!confirm("¿Marcar la tarjeta como ya debitada? Esto restará del cash real."))return;await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});reload();}} style={{fontSize:11,padding:"5px 10px",borderRadius:6,border:"1px solid rgba(251,191,36,0.3)",background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer",fontWeight:600}}>💳 Marcar como debitada</button>}
             </div>
           </div>;})}
         {payments.length===0&&!showNewPmt&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>No hay gestiones de pago.</p>}
@@ -993,14 +1029,16 @@ function TariffsManager({token}){
 
 function Calculator({token,clients}){
   const [step,setStep]=useState(0);const [origin,setOrigin]=useState("");const [selClient,setSelClient]=useState("");
-  const [products,setProducts]=useState([{type:"general",description:"",unit_price:"",quantity:"1"}]);
+  const [products,setProducts]=useState([{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false}]);
   const [pkgs,setPkgs]=useState([{qty:"1",length:"",width:"",height:"",weight:""}]);const [noDims,setNoDims]=useState(false);const [delivery,setDelivery]=useState("oficina");
   const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [results,setResults]=useState(null);
-  const [ncm,setNcm]=useState(null);const [ncmLoading,setNcmLoading]=useState(false);const [ncmManual,setNcmManual]=useState(false);const [hasBattery,setHasBattery]=useState(false);const [config,setConfig]=useState({});
+  const [hasBattery,setHasBattery]=useState(false);const [hasBrand,setHasBrand]=useState(false);const [expandedCh,setExpandedCh]=useState(null);const [config,setConfig]=useState({});
+  const client=selClient?clients.find(c=>c.id===selClient):null;
+  const ncm=products.find(p=>p.ncm?.ncm_code)?.ncm||null;
   useEffect(()=>{(async()=>{const [t,c]=await Promise.all([dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"})]);setTariffs(Array.isArray(t)?t:[]);const cfg={};(Array.isArray(c)?c:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);})();},[token]);
   useEffect(()=>{if(!selClient){setOverrides([]);return;}(async()=>{const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${selClient}&select=*`});setOverrides(Array.isArray(ov)?ov:[]);})();},[selClient,token]);
 
-  const addProduct=()=>setProducts(p=>[...p,{type:"general",description:"",unit_price:"",quantity:"1"}]);
+  const addProduct=()=>setProducts(p=>[...p,{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false}]);
   const rmProduct=i=>setProducts(p=>p.filter((_,j)=>j!==i));
   const chProd=(i,f,v)=>setProducts(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
   const addPkg=()=>setPkgs(p=>[...p,{qty:"1",length:"",width:"",height:"",weight:""}]);
@@ -1015,8 +1053,12 @@ function Calculator({token,clients}){
   const getFleteRate=(svcKey,amount)=>{const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate");for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return{rate:getEffRate(r),cost:Number(r.cost||0)};}return rates.length?{rate:getEffRate(rates[rates.length-1]),cost:Number(rates[rates.length-1].cost||0)}:{rate:0,cost:0};};
   const getSurcharge=(svcKey,totalVal,amount)=>{const surcharges=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty)-Number(a.min_qty));if(amount<=0)return{pct:0,amt:0};const vpu=totalVal/amount;for(const s of surcharges){if(vpu>=Number(s.min_qty))return{pct:Number(s.rate),amt:totalVal*(Number(s.rate)/100)};}return{pct:0,amt:0};};
 
-  const detectNCM=async()=>{const desc=products.map(p=>p.description||p.type).join(", ");if(!desc.trim())return;setNcmLoading(true);try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:desc})});const d=await r.json();if(d.fallback||d.error){setNcmManual(true);setNcm({ncm_code:"",import_duty_rate:"",statistics_rate:"3",iva_rate:"21"});}else{setNcm(d);setNcmManual(false);}}catch{setNcmManual(true);setNcm({ncm_code:"",import_duty_rate:"",statistics_rate:"3",iva_rate:"21"});}setNcmLoading(false);};
-  const setManualNCM=(f,v)=>setNcm(p=>({...p,[f]:v}));
+  const classifyProduct=async(idx)=>{const p=products[idx];if(!p.description?.trim())return;
+    setProducts(pr=>pr.map((x,j)=>j===idx?{...x,ncmLoading:true,ncmError:false}:x));
+    try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:p.description})});const d=await r.json();
+      if(d.fallback||d.error){setProducts(pr=>pr.map((x,j)=>j===idx?{...x,ncmLoading:false,ncmError:true,ncm:null}:x));}
+      else{setProducts(pr=>pr.map((x,j)=>j===idx?{...x,ncmLoading:false,ncmError:false,ncm:d}:x));}
+    }catch{setProducts(pr=>pr.map((x,j)=>j===idx?{...x,ncmLoading:false,ncmError:true,ncm:null}:x));}};
 
   const calculate=()=>{
     const{totWeight,totCBM}=calcTotals();const channels=[];
@@ -1034,40 +1076,47 @@ function Calculator({token,clients}){
       // Peso facturable per-bulto (same as client)
       let fact=0;pkgs.forEach(pk=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0),gw=Number(pk.weight||0);fact+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});
 
-      // Per-item tax helper (same as client)
+      // Per-item tax helper (returns breakdown)
       const calcItemTax=(p,certFl,isMar,totalCif)=>{const itemFob=Number(p.unit_price||0)*Number(p.quantity||1);const pct=totalFob>0?itemFob/totalFob:1;
         const iCert=certFl*pct;const iSeg=(itemFob+iCert)*0.01;const iCif=itemFob+iCert+iSeg;
         const dr=Number(p.ncm?.import_duty_rate||0)/100;const te_r=Number(p.ncm?.statistics_rate||0)/100;const ivaR=Number(p.ncm?.iva_rate||21)/100;
         const die=iCif*dr;const te=iCif*te_r;const bi=iCif+die+te;const iva=bi*ivaR;let tot=die+te+iva;
-        if(isMar){const ia=bi*0.20;const ig=bi*0.06;const ib=bi*0.05;tot+=ia+ig+ib;}
-        else{const tasa=getDesembolso(totalCif)*pct;tot+=tasa+tasa*0.21;}
-        return tot;};
+        const br={desc:p.description||"Producto",fob:itemFob,cif:iCif,seguro:iSeg,derechos:die,tasa_e:te,iva,drPct:p.ncm?.import_duty_rate||0,tePct:p.ncm?.statistics_rate||0,ivaPct:p.ncm?.iva_rate||21,ivaAdic:0,iigg:0,iibb:0,desembolso:0,ivaDesemb:0};
+        if(isMar){const ia=bi*0.20;const ig=bi*0.06;const ib=bi*0.05;tot+=ia+ig+ib;br.ivaAdic=ia;br.iigg=ig;br.iibb=ib;}
+        else{const tasa=getDesembolso(totalCif)*pct;tot+=tasa+tasa*0.21;br.desembolso=tasa;br.ivaDesemb=tasa*0.21;}
+        br.totalImp=tot;
+        return br;};
+      const sumItems=(items,k)=>items.reduce((s,it)=>s+(it[k]||0),0);
 
-      // Aéreo Courier Comercial (A)
-      if(fact>0){const{rate,cost}=getFleteRate("aereo_a_china",fact);const flete=fact*rate;const fCost=fact*cost;
+      // Aéreo Courier Comercial (A) — omitido si hay marca
+      if(!hasBrand&&fact>0){const{rate,cost}=getFleteRate("aereo_a_china",fact);const flete=fact*rate;const fCost=fact*cost;
         const certFlFict=fact*certAerFict;const segFict=(totalFob+certFlFict)*0.01;const cifFict=totalFob+certFlFict+segFict;
         const certFlReal=totWeight*certAerReal;const segReal=(totalFob+certFlReal)*0.01;const cifReal=totalFob+certFlReal+segReal;
         const validProds=products.filter(p=>Number(p.unit_price)>0);
-        const impFict=validProds.reduce((s,p)=>s+calcItemTax(p,certFlFict,false,cifFict),0);
-        const impReal=validProds.reduce((s,p)=>s+calcItemTax(p,certFlReal,false,cifReal),0);
+        const itemsFict=validProds.map(p=>calcItemTax(p,certFlFict,false,cifFict));
+        const itemsReal=validProds.map(p=>calcItemTax(p,certFlReal,false,cifReal));
+        const impFict=sumItems(itemsFict,"totalImp");const impReal=sumItems(itemsReal,"totalImp");
         const battExtra=hasBattery?fact*2:0;const gananciaImp=impFict-impReal;
         channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días",isBlanco:true,
           flete,fCost,seguro:segFict,battExtra,totalImp:impFict,totalSvc:flete+segFict+battExtra,total:impFict+flete+segFict+battExtra,
-          cifReal,cifFict,impReal,impFict,gananciaImp,unit:`${fact.toFixed(1)} kg`});}
+          derechos:sumItems(itemsFict,"derechos"),tasa_e:sumItems(itemsFict,"tasa_e"),iva:sumItems(itemsFict,"iva"),gastoDoc:sumItems(itemsFict,"desembolso"),ivaDesemb:sumItems(itemsFict,"ivaDesemb"),
+          items:itemsFict,cifReal,cifFict,impReal,impFict,gananciaImp,unit:`${fact.toFixed(1)} kg`});}
       // Aéreo Integral AC (B)
       if(totWeight>0){const{rate,cost}=getFleteRate("aereo_b_china",totWeight);const flete=totWeight*rate;const fCost=totWeight*cost;const sur=getSurcharge("aereo_b_china",totalFob,totWeight);
         channels.push({key:"aereo_b_china",name:"Aéreo Integral AC",info:"10-15 días",isBlanco:false,flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totWeight.toFixed(1)} kg`});}
-      // Marítimo Carga LCL/FCL (A)
-      if(!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_a_china",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;
+      // Marítimo Carga LCL/FCL (A) — omitido si hay marca
+      if(!hasBrand&&!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_a_china",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;
         const certFlFict=totCBM*certMarFict;const segFict=(totalFob+certFlFict)*0.01;const cifFict=totalFob+certFlFict+segFict;
         const certFlReal=totCBM*certMarReal;const segReal=(totalFob+certFlReal)*0.01;const cifReal=totalFob+certFlReal+segReal;
         const validProds=products.filter(p=>Number(p.unit_price)>0);
-        const impFict=validProds.reduce((s,p)=>s+calcItemTax(p,certFlFict,true,cifFict),0);
-        const impReal=validProds.reduce((s,p)=>s+calcItemTax(p,certFlReal,true,cifReal),0);
+        const itemsFict=validProds.map(p=>calcItemTax(p,certFlFict,true,cifFict));
+        const itemsReal=validProds.map(p=>calcItemTax(p,certFlReal,true,cifReal));
+        const impFict=sumItems(itemsFict,"totalImp");const impReal=sumItems(itemsReal,"totalImp");
         const gananciaImp=impFict-impReal;
         channels.push({key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"",isBlanco:true,isMar:true,
           flete,fCost,seguro:segFict,totalImp:impFict,totalSvc:flete+segFict,total:impFict+flete+segFict,
-          cifReal,cifFict,impReal:taxReal.totalImp,impFict:taxFict.totalImp,gananciaImp,
+          derechos:sumItems(itemsFict,"derechos"),tasa_e:sumItems(itemsFict,"tasa_e"),iva:sumItems(itemsFict,"iva"),ivaAdic:sumItems(itemsFict,"ivaAdic"),iigg:sumItems(itemsFict,"iigg"),iibb:sumItems(itemsFict,"iibb"),
+          items:itemsFict,cifReal,cifFict,impReal,impFict,gananciaImp,
           unit:`${totCBM.toFixed(4)} CBM`});}
       // Marítimo Integral AC (B)
       if(!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_b",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
@@ -1120,7 +1169,7 @@ function Calculator({token,clients}){
     </Card>}
 
     {step===4&&results&&<div>
-      <div style={{display:"flex",gap:12,marginBottom:16}}><button onClick={()=>setStep(3)} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← Volver</button><span style={{color:"rgba(255,255,255,0.1)"}}>|</span><button onClick={()=>{setStep(0);setResults(null);setOrigin("");setProducts([{type:"general",description:"",unit_price:"",quantity:"1"}]);setPkgs([{qty:"1",length:"",width:"",height:"",weight:""}]);setNoDims(false);setDelivery("oficina");setNcm(null);setNcmManual(false);setHasBattery(false);}} style={{fontSize:13,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>Nueva cotización</button></div>
+      <div style={{display:"flex",gap:12,marginBottom:16}}><button onClick={()=>setStep(3)} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← Volver</button><span style={{color:"rgba(255,255,255,0.1)"}}>|</span><button onClick={()=>{setStep(0);setResults(null);setOrigin("");setProducts([{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false}]);setPkgs([{qty:"1",length:"",width:"",height:"",weight:""}]);setNoDims(false);setDelivery("oficina");setHasBattery(false);setHasBrand(false);}} style={{fontSize:13,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>Nueva cotización</button></div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>{results.channels.map(ch=>{const delivCost=delivery==="caba"?20:0;const clientTotal=ch.total+delivCost;const gananciaFlete=ch.flete-(ch.fCost||0);const gananciaImp=ch.gananciaImp||0;const gananciaTotal=gananciaFlete+gananciaImp;return <div key={ch.key} style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.5rem"}}>
         <p style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{ch.name}</p>
         {ch.info&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",padding:"3px 10px",background:"rgba(255,255,255,0.05)",borderRadius:4}}>{ch.info}</span>}
@@ -1151,20 +1200,31 @@ function Calculator({token,clients}){
       </div>})}</div>
     </div>}
 
-    {/* CHINA FLOW */}
-    {step===1&&origin==="China"&&<Card title="PRODUCTOS">
+    {/* CHINA FLOW - Step 1: brand + battery cards + per-product NCM */}
+    {step===1&&origin==="China"&&<Card>
+      <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 12px"}}>¿Los productos tienen marca?</h3>
+      <div style={{display:"flex",gap:12,marginBottom:12}}>{[{k:true,icon:"®",l:"Sí, con marca",sub:"Productos branded / licencia"},{k:false,icon:"✓",l:"Sin marca",sub:"Productos genéricos"}].map(o=><div key={String(o.k)} onClick={()=>setHasBrand(o.k)} style={{flex:1,padding:"20px",textAlign:"center",borderRadius:12,border:`1.5px solid ${hasBrand===o.k?IC:"rgba(255,255,255,0.08)"}`,background:hasBrand===o.k?"rgba(96,165,250,0.1)":"rgba(255,255,255,0.05)",cursor:"pointer"}}><p style={{fontSize:24,margin:"0 0 8px"}}>{o.icon}</p><p style={{fontSize:14,fontWeight:700,color:hasBrand===o.k?IC:"rgba(255,255,255,0.6)",margin:"0 0 4px"}}>{o.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{o.sub}</p></div>)}</div>
+      {hasBrand&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10,padding:"12px 16px",marginBottom:20}}><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Las importaciones con marca se despachan solo por canal <strong style={{color:IC}}>Integral AC</strong> (courier). No es necesario clasificar NCM.</p></div>}
+
+      <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 12px"}}>¿Tu producto contiene batería interna?</h3>
+      <div style={{display:"flex",gap:12,marginBottom:12}}>{[{k:true,icon:"⚡",l:"Sí, tiene batería",sub:"Recargable / Litio"},{k:false,icon:"✓",l:"No tiene batería",sub:"Producto estándar"}].map(o=><div key={String(o.k)} onClick={()=>setHasBattery(o.k)} style={{flex:1,padding:"20px",textAlign:"center",borderRadius:12,border:`1.5px solid ${hasBattery===o.k?IC:"rgba(255,255,255,0.08)"}`,background:hasBattery===o.k?"rgba(96,165,250,0.1)":"rgba(255,255,255,0.05)",cursor:"pointer"}}><p style={{fontSize:24,margin:"0 0 8px"}}>{o.icon}</p><p style={{fontSize:14,fontWeight:700,color:hasBattery===o.k?IC:"rgba(255,255,255,0.6)",margin:"0 0 4px"}}>{o.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{o.sub}</p></div>)}</div>
+      {hasBattery&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10,padding:"12px 16px",marginBottom:20}}><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Productos con batería interna (auriculares bluetooth, power banks, smartwatch) son mercadería peligrosa y se despachan desde <strong style={{color:IC}}>Hong Kong</strong>. Recargo de <strong style={{color:IC}}>$2/kg</strong>.</p></div>}
+
+      <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"20px 0 16px"}}>PRODUCTOS</h3>
       {products.map((p,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:IC}}>Producto {i+1}</span>{products.length>1&&<Btn onClick={()=>rmProduct(i)} small variant="danger">Eliminar</Btn>}</div>
-        <Inp label="Descripción" value={p.description} onChange={v=>chProd(i,"description",v)} placeholder="Ej: Fundas de silicona, auriculares bluetooth..."/>
+        <div style={{marginBottom:14}}><label style={{display:"block",fontSize:13,fontWeight:700,color:"#fff",marginBottom:5}}>Descripción de la mercadería</label><div style={{display:"flex",gap:8}}><input value={p.description||""} onChange={e=>chProd(i,"description",e.target.value)} placeholder="Sé específico. Ej: Auriculares inalámbricos bluetooth" style={{flex:1,padding:"11px 14px",fontSize:14,border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.1)",color:"#fff",outline:"none"}}/>{!hasBrand&&<button onClick={()=>classifyProduct(i)} disabled={p.ncmLoading||!p.description?.trim()} style={{padding:"11px 16px",fontSize:12,fontWeight:600,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff",whiteSpace:"nowrap",opacity:p.ncmLoading?0.6:1}}>{p.ncmLoading?"Clasificando...":"Clasificar"}</button>}</div></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}><Inp label="Precio unit. (USD)" type="number" value={p.unit_price} onChange={v=>chProd(i,"unit_price",v)} placeholder="3.50"/><Inp label="Cantidad" type="number" value={p.quantity} onChange={v=>chProd(i,"quantity",v)} placeholder="1"/></div>
+        {!hasBrand&&p.ncm?.ncm_code&&<div style={{background:"rgba(96,165,250,0.06)",borderRadius:10,padding:"12px 16px",marginBottom:8,border:"1px solid rgba(96,165,250,0.12)"}}><div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}><span style={{fontFamily:"monospace",fontWeight:700,color:IC,padding:"4px 10px",background:"rgba(96,165,250,0.15)",borderRadius:6,fontSize:12}}>{p.ncm.ncm_code}</span><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{p.ncm.ncm_description}</span><button onClick={()=>chProd(i,"ncm",null)} style={{fontSize:11,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",marginLeft:"auto"}}>Reclasificar</button></div><div style={{display:"flex",gap:16,marginTop:6}}><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>DIE: <strong style={{color:"#fff"}}>{p.ncm.import_duty_rate}%</strong></span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>TE: <strong style={{color:"#fff"}}>{p.ncm.statistics_rate}%</strong></span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>IVA: <strong style={{color:"#fff"}}>{p.ncm.iva_rate}%</strong></span></div></div>}
+        {!hasBrand&&p.ncmError&&<div style={{background:"rgba(255,80,80,0.08)",borderRadius:10,padding:"12px 16px",marginBottom:8,border:"1px solid rgba(255,80,80,0.15)"}}><p style={{fontSize:13,color:"#ff6b6b",margin:"0 0 6px",fontWeight:600}}>No se pudo detectar el NCM. Cargá manualmente:</p><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 8px"}}><Inp label="NCM" value={p.ncm?.ncm_code||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_description:p.description}),ncm_code:v,import_duty_rate:p.ncm?.import_duty_rate||35,statistics_rate:p.ncm?.statistics_rate||3,iva_rate:p.ncm?.iva_rate||21})} placeholder="3926.90.90"/><Inp label="DIE %" type="number" value={p.ncm?.import_duty_rate||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_code:"MANUAL",ncm_description:p.description}),import_duty_rate:Number(v)||35,statistics_rate:p.ncm?.statistics_rate||3,iva_rate:p.ncm?.iva_rate||21})}/><Inp label="TE %" type="number" value={p.ncm?.statistics_rate||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,iva_rate:21}),statistics_rate:Number(v)||3})}/><Inp label="IVA %" type="number" value={p.ncm?.iva_rate||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,statistics_rate:3}),iva_rate:Number(v)||21})}/></div></div>}
+        {!hasBrand&&!p.ncm&&!p.ncmError&&!p.ncmLoading&&p.description?.trim()&&<div style={{marginBottom:8}}><button onClick={()=>chProd(i,"ncm",{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,statistics_rate:3,iva_rate:21})} style={{fontSize:11,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",padding:0}}>Usar valores estimados (35% derechos) →</button></div>}
       </div>)}
       <button onClick={addProduct} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar producto</button>
-      <div style={{marginTop:16}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={hasBattery} onChange={e=>setHasBattery(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>Producto con baterías (+$2/kg)</span></label></div>
-      {!ncm&&<div style={{marginTop:16}}><Btn onClick={detectNCM} disabled={ncmLoading||!products.some(p=>p.description?.trim())}>{ncmLoading?"Clasificando...":"Clasificar NCM"}</Btn></div>}
-      {ncmManual&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:10,padding:14,marginTop:16,border:"1px solid rgba(255,255,255,0.06)"}}><p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:"0 0 10px"}}>Ingresá NCM manualmente:</p><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 12px"}}><Inp label="NCM" value={ncm?.ncm_code||""} onChange={v=>setManualNCM("ncm_code",v)} placeholder="3926.90.90"/><Inp label="Derechos %" type="number" value={ncm?.import_duty_rate||""} onChange={v=>setManualNCM("import_duty_rate",v)}/><Inp label="T. Estad. %" type="number" value={ncm?.statistics_rate||""} onChange={v=>setManualNCM("statistics_rate",v)}/><Inp label="IVA %" type="number" value={ncm?.iva_rate||""} onChange={v=>setManualNCM("iva_rate",v)}/></div></div>}
-      {ncm&&ncm.ncm_code&&!ncmManual&&<div style={{background:"rgba(96,165,250,0.08)",borderRadius:10,padding:14,marginTop:16,border:"1px solid rgba(96,165,250,0.15)"}}><div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontFamily:"monospace",fontWeight:700,color:IC,padding:"4px 10px",background:"rgba(96,165,250,0.15)",borderRadius:6}}>{ncm.ncm_code}</span><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>{ncm.ncm_description}</span><button onClick={()=>{setNcm(null);setNcmManual(false);}} style={{fontSize:11,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",marginLeft:"auto"}}>Reclasificar</button></div><div style={{display:"flex",gap:16,marginTop:8}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Derechos: <strong style={{color:"#fff"}}>{ncm.import_duty_rate}%</strong></span><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>TE: <strong style={{color:"#fff"}}>{ncm.statistics_rate}%</strong></span><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>IVA: <strong style={{color:"#fff"}}>{ncm.iva_rate}%</strong></span></div></div>}
       {totalFob>0&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:12,marginTop:16,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Valor total</span><span style={{fontSize:16,fontWeight:700,color:IC}}>{usd(totalFob)}</span></div>}
-      <div style={{display:"flex",gap:12,marginTop:16}}><Btn variant="secondary" onClick={()=>{setStep(0);setOrigin("");setNcm(null);setNcmManual(false);}}>← Origen</Btn><Btn onClick={()=>setStep(2)} disabled={!products.some(p=>Number(p.unit_price)>0)||(!ncm?.ncm_code&&!ncmManual)}>Siguiente →</Btn></div>
+      {(()=>{const hasPriced=products.some(p=>Number(p.unit_price)>0);const pendingClass=!hasBrand&&products.some(p=>Number(p.unit_price)>0&&!p.ncm);const blocked=!hasPriced||pendingClass;return <>
+        {pendingClass&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:10,padding:"10px 14px",marginTop:14}}><p style={{fontSize:12,color:"#fb923c",margin:0,fontWeight:500}}>⚠️ Tenés que clasificar cada producto antes de avanzar.</p></div>}
+        <div style={{display:"flex",gap:12,marginTop:16}}><Btn variant="secondary" onClick={()=>{setStep(0);setOrigin("");}}>← Origen</Btn><Btn onClick={()=>setStep(2)} disabled={blocked}>Siguiente →</Btn></div>
+      </>;})()}
     </Card>}
     {step===2&&origin==="China"&&<Card title="PACKING LIST">
       {pkgs.map((pk,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>

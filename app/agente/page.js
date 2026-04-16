@@ -9,16 +9,33 @@ const BG="linear-gradient(160deg,#0f1b30 0%,#162441 50%,#0f1b30 100%)";
 const sf=async(p,o={})=>{const r=await fetch(`${SB_URL}${p}`,{...o,headers:{apikey:SB_KEY,"Content-Type":"application/json",...(o.headers||{})}});return {status:r.status,body:await r.json().catch(()=>null)};};
 const sfJson=async(p,o={})=>{const r=await sf(p,o);return r.body;};
 const ac=async(e,b)=>sfJson(`/auth/v1/${e}`,{method:"POST",body:JSON.stringify(b)});
-// Token refresh: intenta renovar con refresh_token si la request falla 401
+// JWT exp (ms). 0 si falla.
+const jwtExp=(t)=>{try{return JSON.parse(atob(t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/"))).exp*1000;}catch{return 0;}};
+// Token refresh: intenta renovar con refresh_token si la request falla 401 (o proactivamente si vence pronto).
+let _refreshingPromise=null;
 const refreshToken=async()=>{
-  const s=loadSession();if(!s?.refresh_token)return null;
-  const r=await ac("token?grant_type=refresh_token",{refresh_token:s.refresh_token});
-  if(r?.access_token){const ns={access_token:r.access_token,refresh_token:r.refresh_token||s.refresh_token,user:r.user||s.user};saveSession(ns);return ns.access_token;}
-  clearSession();if(typeof window!=="undefined")window.location.reload();return null;
+  if(_refreshingPromise)return _refreshingPromise;
+  _refreshingPromise=(async()=>{
+    const s=loadSession();if(!s?.refresh_token)return null;
+    const r=await ac("token?grant_type=refresh_token",{refresh_token:s.refresh_token});
+    if(r?.access_token){const ns={access_token:r.access_token,refresh_token:r.refresh_token||s.refresh_token,user:r.user||s.user};saveSession(ns);return ns.access_token;}
+    clearSession();if(typeof window!=="undefined")window.location.reload();return null;
+  })();
+  try{return await _refreshingPromise;}finally{_refreshingPromise=null;}
+};
+const ensureFreshToken=async(token)=>{
+  const exp=jwtExp(token);
+  if(exp&&Date.now()>exp-60000){
+    const s=loadSession();
+    if(s?.access_token&&jwtExp(s.access_token)>Date.now()+60000)return s.access_token;
+    const nt=await refreshToken();if(nt)return nt;
+  }
+  return token;
 };
 const dq=async(t,{method="GET",body,token,filters=""})=>{
+  const fresh=await ensureFreshToken(token);
   const doReq=(tk)=>sf(`/rest/v1/${t}${filters}`,{method,body:body?JSON.stringify(body):undefined,headers:{Authorization:`Bearer ${tk}`,...(method==="POST"?{Prefer:"return=representation"}:{})}});
-  let r=await doReq(token);
+  let r=await doReq(fresh);
   // Si JWT expirado (401) → refresh y retry
   if(r.status===401){const newToken=await refreshToken();if(newToken){r=await doReq(newToken);}}
   return r.body;
