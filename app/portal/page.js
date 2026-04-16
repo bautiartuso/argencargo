@@ -33,7 +33,7 @@ function AuthPage({children}){return <div style={{minHeight:"100vh",display:"fle
 function SI({k,a,cur,isA,sz=22,alert}){let key=k;if(k==="en_transito")key=isA?"en_transito_aereo":"en_transito_maritimo";const ps=SP[key]||[];const co=alert?"#fbbf24":cur?IC:a?"rgba(96,165,250,0.6)":"rgba(255,255,255,0.15)";return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={co} strokeWidth={alert?2:1.5} strokeLinecap="round" strokeLinejoin="round">{ps.map((d,i)=><path key={i} d={d}/>)}</svg>;}
 function NI({p,a,sz=18}){return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={a?IC:"rgba(255,255,255,0.4)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{p.map((d,i)=><path key={i} d={d}/>)}</svg>;}
 function OpProgress({status,isAereo,onActionClick}){const si=S2S[status]??0;const isDoc=status==="en_preparacion";return <div className="op-progress" style={{display:"flex",alignItems:"center",padding:"16px 0"}}>{OS.map((s,i)=>{const a=i<=si;const cur=i===si;const isAlert=cur&&s.k==="documentacion"&&isDoc;const handleClick=isAlert&&onActionClick?(e)=>{e.stopPropagation();onActionClick();}:null;return <div key={s.k} style={{display:"flex",alignItems:"center",flex:1}}><div onClick={handleClick} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,width:"100%",cursor:handleClick?"pointer":"default"}}><div style={{width:42,height:42,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",background:isAlert?"rgba(251,191,36,0.25)":cur?"rgba(74,144,217,0.2)":a?"rgba(74,144,217,0.08)":"rgba(255,255,255,0.05)",border:`1.5px solid ${isAlert?"#fbbf24":cur?IC:a?"rgba(74,144,217,0.25)":"rgba(255,255,255,0.06)"}`,boxShadow:isAlert?"0 0 16px rgba(251,191,36,0.5)":cur?"0 0 12px rgba(96,165,250,0.2)":"none",animation:isAlert?"pulse 1.5s ease-in-out infinite":"none"}}><SI k={s.k} a={a} cur={cur} isA={isAereo} alert={isAlert}/></div><span style={{fontSize:9,color:isAlert?"#fbbf24":cur?IC:a?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.18)",textAlign:"center",lineHeight:1.2,fontWeight:isAlert||cur?700:400,whiteSpace:"pre-line",minHeight:20}}>{isAlert?"COMPLETAR":s.l}</span></div>{i<OS.length-1&&<div style={{width:24,height:2,background:i<si?IC:"rgba(255,255,255,0.06)",flexShrink:0,marginTop:-20}}/>}</div>})}</div>;}
-function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByOp={}}){
+function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByOp={},cliPmtsByOp={}}){
   const act=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
   const past=ops.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada");
   const name=client?`${client.first_name} ${client.last_name}`:"";
@@ -51,7 +51,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     <div className="op-info" style={{display:"flex",gap:24,alignItems:"center",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginTop:4,flexWrap:"wrap"}}>
       <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>Origen</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"2px 0 0"}}>{op.origin||"China"}</p></div>
       <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>Canal</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"2px 0 0"}}>{CM[op.channel]||"—"}</p></div>
-      <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>Total a abonar</span><p style={{fontSize:13,fontWeight:700,color:IC,margin:"2px 0 0"}}>{(()=>{const bt=Number(op.budget_total||0);if(bt<=0)return"Pendiente";const pmtTot=Number(pmtsByOp[op.id]||0);const ant=Number(op.total_anticipos||0);const saldo=bt+Math.max(0,pmtTot-ant);return `USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;})()}</p></div>
+      <div><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>Total a abonar</span><p style={{fontSize:13,fontWeight:700,color:IC,margin:"2px 0 0"}}>{(()=>{const bt=Number(op.budget_total||0);if(bt<=0)return"Pendiente";const pmtTot=Number(pmtsByOp[op.id]||0);const ant=Number(op.total_anticipos||0);const cliPaid=Number(cliPmtsByOp[op.id]||0);const saldo=Math.max(0,bt-cliPaid+Math.max(0,pmtTot-ant));return `USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;})()}</p></div>
     </div>
     {op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&!op.consolidation_confirmed&&<div style={{marginTop:14,background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <span style={{fontSize:12,fontWeight:600,color:"#fbbf24"}}>📦 Tu paquete ya llegó a nuestro depósito. ¿Vas a enviar más paquetes o es el único?</span>
@@ -72,7 +72,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
   </div>;
 }
 function OperationDetail({op,token,onBack}){
-  const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);
+  const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);
   const [localConfirmed,setLocalConfirmed]=useState(false);
   const canDocument=op.status==="en_preparacion"||op.status==="en_deposito_origen"||localConfirmed;
   const addDocItem=()=>setDocItems(p=>[...p,{description:"",quantity:"1",unit_price_usd:""}]);
@@ -83,7 +83,7 @@ function OperationDetail({op,token,onBack}){
     setShowDocPanel(false);setDocItems([]);await loadAll();setSavingDocs(false);
   };
   const toggleSection=(s)=>setOpenSections(p=>({...p,[s]:!p[s]}));
-  const loadAll=async()=>{const [it,ev,pk,pm]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`})]);setItems(Array.isArray(it)?it:[]);setEvents(Array.isArray(ev)?ev:[]);setPkgs(Array.isArray(pk)?pk:[]);setPmts(Array.isArray(pm)?pm:[]);setLoading(false);};
+  const loadAll=async()=>{const [it,ev,pk,pm,cp]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`})]);setItems(Array.isArray(it)?it:[]);setEvents(Array.isArray(ev)?ev:[]);setPkgs(Array.isArray(pk)?pk:[]);setPmts(Array.isArray(pm)?pm:[]);setCliPmts(Array.isArray(cp)?cp:[]);setLoading(false);};
   useEffect(()=>{loadAll();let last=Date.now();const onFocus=()=>{if(document.visibilityState==="visible"&&Date.now()-last>5000){last=Date.now();loadAll();}};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[op.id,token]);
   const st=SM[op.status]||{l:op.status,c:"#999"};const isA=op.channel?.includes("aereo");
   return <div>
@@ -100,7 +100,7 @@ function OperationDetail({op,token,onBack}){
       return <div className="op-info" style={{display:"flex",gap:28,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:14,marginTop:4,flexWrap:"wrap"}}>
         {[{l:"Bultos",v:pkgs.length>0?pkgs.reduce((s,p)=>s+Number(p.quantity||1),0):op.total_quantity||"—"},{l:"Origen",v:op.origin||"China"},{l:"Canal",v:CM[op.channel]||"—"},
           ...(isA?[{l:"Peso Bruto",v:totGW?`${totGW.toFixed(1)} kg`:"—"},{l:"Peso Facturable",v:pf?`${pf.toFixed(1)} kg`:"—",a:true}]:[{l:"CBM",v:totCBM?`${totCBM.toFixed(4)} m³`:"—",a:true}]),
-          {l:"Total a abonar",v:(()=>{const bt=Number(op.budget_total||0);if(bt<=0)return"Pendiente";const pmtTotal=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtAnt=Number(op.total_anticipos||0);const saldo=bt+Math.max(0,pmtTotal-pmtAnt);return `USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;})(),a:true}
+          {l:"Total a abonar",v:(()=>{const bt=Number(op.budget_total||0);if(bt<=0)return"Pendiente";const pmtTotal=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtAnt=Number(op.total_anticipos||0);const cliPaid=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);const saldo=Math.max(0,bt-cliPaid+Math.max(0,pmtTotal-pmtAnt));return `USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;})(),a:true}
         ].map((x,i)=><div key={i}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{x.l}</span><p style={{fontSize:13,fontWeight:600,color:x.a?IC:"#fff",margin:"2px 0 0"}}>{x.v}</p></div>)}
       </div>;})()}
     </div>
@@ -177,7 +177,41 @@ function OperationDetail({op,token,onBack}){
         {!isB&&bSeg>0&&bRow("Seguro de carga",bSeg)}
         {shipCost>0&&bRow("Envío a Domicilio",shipCost)}
         {pmtTotal>0&&bRow(`Gestión de pagos${pmtAnticipado>0?` (cobrado USD ${pmtAnticipado.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})} de USD ${pmtTotal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}`,pmtPendiente,false,false,pmtPendiente>0?"#fb923c":"#22c55e")}
-        {bRow(pmtAnticipado>0?"Saldo a abonar":"A abonar a Argencargo",totalAbonar,true,true)}
+        {(()=>{
+          const totalCli=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+          const saldoReal=Math.max(0,totalAbonar-totalCli);
+          const pct=totalAbonar>0?Math.min(100,(totalCli/totalAbonar)*100):0;
+          if(cliPmts.length===0)return bRow(pmtAnticipado>0?"Saldo a abonar":"A abonar a Argencargo",totalAbonar,true,true);
+          return <>
+            {bRow("Total a abonar",totalAbonar,false,false,"rgba(255,255,255,0.6)")}
+            {bRow("Pagado",totalCli,false,false,"#22c55e")}
+            {bRow(saldoReal>0.01?"Saldo a abonar":"Pagado en su totalidad",saldoReal,true,true,saldoReal<=0.01?"#22c55e":undefined)}
+            <div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden",margin:"10px 0 14px"}}>
+              <div style={{width:`${pct}%`,height:"100%",background:pct>=100?"#22c55e":pct>=50?"#60a5fa":"#fb923c",transition:"width 0.3s"}}/>
+            </div>
+            <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.04em"}}>Detalle de pagos realizados</p>
+            <div style={{background:"rgba(0,0,0,0.2)",borderRadius:8,overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+                    <th style={{textAlign:"left",padding:"8px 12px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase"}}>Fecha</th>
+                    <th style={{textAlign:"right",padding:"8px 12px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase"}}>Monto</th>
+                    <th style={{textAlign:"left",padding:"8px 12px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase"}}>Método</th>
+                    <th style={{textAlign:"left",padding:"8px 12px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase"}}>Detalle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cliPmts.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                    <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.8)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}</td>
+                    <td style={{padding:"8px 12px",textAlign:"right",color:"#22c55e",fontWeight:700,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>USD {Number(p.amount_usd).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}{p.currency==="ARS"&&<span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.4)",fontWeight:400}}>ARS {Number(p.amount_ars).toLocaleString("es-AR")} @ {p.exchange_rate}</span>}</td>
+                    <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.6)",textTransform:"capitalize",whiteSpace:"nowrap"}}>{p.payment_method}</td>
+                    <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)",fontSize:11}}>{p.notes||"—"}</td>
+                  </tr>)}
+                </tbody>
+              </table>
+            </div>
+          </>;
+        })()}
       </div>:openSections.budget?<p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:0}}>Presupuesto pendiente de confirmación</p>:null}
     </div>;})()}
     {!loading&&items.length>0&&<div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.25rem 1.5rem",marginBottom:16}}>
@@ -780,15 +814,15 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
   </div>;
 }
 function Dashboard({profile,client,user,token,onLogout}){
-  const [page,setPage]=useState("imports");const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);
-  const loadOps=async()=>{setLo(true);const [r,it,pm]=await Promise.all([dq("operations",{token,filters:"?select=*&order=created_at.desc"}),dq("operation_items",{token,filters:"?select=operation_id"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd"})]);const list=Array.isArray(r)?r:[];setOps(list);const m={};(Array.isArray(it)?it:[]).forEach(x=>{m[x.operation_id]=(m[x.operation_id]||0)+1;});setItemsByOp(m);const pmap={};(Array.isArray(pm)?pm:[]).forEach(p=>{pmap[p.operation_id]=(pmap[p.operation_id]||0)+Number(p.client_amount_usd||0);});setPmtsByOp(pmap);setLo(false);
+  const [page,setPage]=useState("imports");const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);
+  const loadOps=async()=>{setLo(true);const [r,it,pm,cp]=await Promise.all([dq("operations",{token,filters:"?select=*&order=created_at.desc"}),dq("operation_items",{token,filters:"?select=operation_id"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd"})]);const list=Array.isArray(r)?r:[];setOps(list);const m={};(Array.isArray(it)?it:[]).forEach(x=>{m[x.operation_id]=(m[x.operation_id]||0)+1;});setItemsByOp(m);const pmap={};(Array.isArray(pm)?pm:[]).forEach(p=>{pmap[p.operation_id]=(pmap[p.operation_id]||0)+Number(p.client_amount_usd||0);});setPmtsByOp(pmap);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setLo(false);
     // Deep-link: ?op=AC-XXXX → auto-open that operation
     if(typeof window!=="undefined"){const params=new URLSearchParams(window.location.search);const opCode=params.get("op");if(opCode){const found=list.find(o=>o.operation_code===opCode);if(found){setSelOp(found);setPage("imports");window.history.replaceState({},"",window.location.pathname);}}}
   };
   useEffect(()=>{if(page==="imports")loadOps();},[page]);
   useEffect(()=>{let last=Date.now();const onFocus=()=>{if(document.visibilityState==="visible"&&page==="imports"&&!selOp&&Date.now()-last>5000){last=Date.now();loadOps();}};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[page,selOp]);
   return <DashShell page={page} setPage={p=>{setPage(p);setSelOp(null);}} role="cliente" client={client} user={user} onLogout={onLogout} token={token}>
-    {page==="imports"&&!selOp&&<>{lo?<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>Cargando...</p>:<OperationsList ops={ops} onSelect={setSelOp} client={client} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp}/>}</>}
+    {page==="imports"&&!selOp&&<>{lo?<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>Cargando...</p>:<OperationsList ops={ops} onSelect={setSelOp} client={client} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp}/>}</>}
     {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} onBack={()=>setSelOp(null)}/>}
     {page==="profile"&&<ProfilePage client={client}/>}
     {page==="rates"&&<RatesPage token={token} client={client}/>}
