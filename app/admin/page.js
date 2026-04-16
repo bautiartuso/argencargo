@@ -53,7 +53,7 @@ function OperationsList({token,onSelect,onNew}){
   const toggleStatus=(s)=>setFStatuses(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
   const getOrigin=(op)=>op.origin||"China";
   const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannel&&o.channel!==fChannel)return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
-  const calcGan=(o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtGan=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);return ing-cost+pmtGan;};
+  const calcGan=(o)=>{const ing=Number(o.budget_total||0);const costProd=o.service_type==="gestion_integral"?Number(o.cost_producto_usd||0):0;const cost=Number(o.cost_flete||0)+costProd+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtGan=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);return ing-cost+pmtGan;};
   const sorted=[...filtered].sort((a,b)=>{
     if(sortCol==="smart"){
       // Orden: más cercano a entrega primero (status_weight desc), luego ETA asc, luego created_at desc
@@ -88,7 +88,7 @@ function OperationsList({token,onSelect,onNew}){
         </tr></thead>
         <tbody>{rows.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const ing=Number(op.budget_total||0);const gan=calcGan(op);
         return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>onSelect(op)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-          <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff",whiteSpace:"nowrap"}}>{op.operation_code}</td>
+          <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff",whiteSpace:"nowrap"}}>{op.operation_code}{op.service_type==="gestion_integral"&&<span title="Gestión Integral" style={{marginLeft:6,fontSize:9,fontWeight:800,padding:"2px 5px",borderRadius:4,background:"rgba(168,85,247,0.15)",color:"#c084fc",border:"1px solid rgba(168,85,247,0.35)"}}>GI</span>}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}>{cn}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{op.description||"—"}</td>
           <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}><span style={{fontSize:11,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{CM[op.channel]||op.channel}</span></td>
@@ -107,19 +107,23 @@ function OperationsList({token,onSelect,onNew}){
 }
 
 function NewOperation({token,clients,onBack,onCreated}){
-  const [form,setForm]=useState({client_id:"",channel:"aereo_blanco",origin:"China"});const [lo,setLo]=useState(false);const [err,setErr]=useState("");
+  const [form,setForm]=useState({client_id:"",channel:"aereo_blanco",origin:"China",service_type:"courier"});const [lo,setLo]=useState(false);const [err,setErr]=useState("");
   const ch=f=>v=>setForm(p=>({...p,[f]:v}));
   const create=async()=>{if(!form.client_id){setErr("Seleccioná un cliente");return;}setLo(true);setErr("");
     const existing=await dq("operations",{token,filters:"?select=operation_code&order=operation_code.asc"});const used=new Set((Array.isArray(existing)?existing:[]).map(e=>parseInt(e.operation_code.replace("AC-",""))));let num=1;while(used.has(num))num++;const code=`AC-${String(num).padStart(4,"0")}`;
-    const r=await dq("operations",{method:"POST",token,body:{operation_code:code,client_id:form.client_id,channel:form.channel,origin:form.origin,status:"pendiente",created_by:null}});
+    const r=await dq("operations",{method:"POST",token,body:{operation_code:code,client_id:form.client_id,channel:form.channel,origin:form.origin,service_type:form.service_type,status:"pendiente",created_by:null}});
     if(r?.error||r?.message){setErr(r.error||r.message);setLo(false);return;}setLo(false);onCreated(Array.isArray(r)?r[0]:r);};
   return <div>
     <button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:20,padding:0}}>← VOLVER</button>
     <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 20px"}}>Nueva Operación</h2>
     <Card>
       <Sel label="Cliente" value={form.client_id} onChange={ch("client_id")} options={clients.map(c=>({value:c.id,label:`${c.client_code} — ${c.first_name} ${c.last_name}`}))} ph="Seleccionar cliente"/>
+      <Sel label="Tipo de servicio" value={form.service_type} onChange={ch("service_type")} options={[{value:"courier",label:"Courier — cliente compra, nosotros despachamos"},{value:"gestion_integral",label:"Gestión Integral — nosotros compramos y vendemos puesto en Argentina"}]}/>
       <Sel label="Origen" value={form.origin} onChange={v=>{ch("origin")(v);if(v==="USA"&&(form.channel==="aereo_blanco"||form.channel==="maritimo_blanco"))ch("channel")("aereo_negro");}} options={[{value:"China",label:"China"},{value:"USA",label:"USA"}]}/>
       <Sel label="Canal" value={form.channel} onChange={ch("channel")} options={form.origin==="USA"?[{value:"aereo_negro",label:"Aéreo B"},{value:"maritimo_negro",label:"Marítimo B"}]:CHANNELS.map(c=>({value:c,label:CM[c]}))}/>
+      {form.service_type==="gestion_integral"&&<div style={{background:"rgba(168,85,247,0.08)",border:"1px solid rgba(168,85,247,0.2)",borderRadius:8,padding:"10px 12px",margin:"8px 0 12px",fontSize:12,color:"rgba(255,255,255,0.7)"}}>
+        <b style={{color:"#c084fc"}}>Gestión Integral:</b> al cliente le cotizás un precio final puesto en Argentina (<code>budget_total</code>). Vos pagás al proveedor (<code>cost_producto_usd</code>) y asumís flete + impuestos. Ganancia = precio cliente − todos los costos. Lo configurás en el detalle de la op.
+      </div>}
       {err&&<p style={{fontSize:12,color:"#ff6b6b",margin:"0 0 12px"}}>{err}</p>}
       <div style={{display:"flex",gap:12,marginTop:8}}><Btn onClick={create} disabled={lo}>{lo?"Creando...":"Crear operación"}</Btn><Btn variant="secondary" onClick={onBack}>Cancelar</Btn></div>
     </Card>
@@ -174,7 +178,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← VOLVER</button>
-        <span style={{fontSize:16,fontWeight:700,color:"#fff",fontFamily:"monospace",padding:"4px 10px",background:"rgba(255,255,255,0.08)",borderRadius:6}}>{op.operation_code}</span>
+        <span style={{fontSize:16,fontWeight:700,color:"#fff",fontFamily:"monospace",padding:"4px 10px",background:"rgba(255,255,255,0.08)",borderRadius:6}}>{op.operation_code}</span>{op.service_type==="gestion_integral"&&<span title="Gestión Integral" style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:5,background:"rgba(168,85,247,0.15)",color:"#c084fc",border:"1px solid rgba(168,85,247,0.35)",letterSpacing:"0.04em"}}>GESTIÓN INTEGRAL</span>}
         {msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}
       </div>
       <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
@@ -453,7 +457,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
 
     {tab==="finance"&&(()=>{
       const costFlete=Number(op.cost_flete||0);const costImp=Number(op.cost_impuestos_reales||0);const costDoc=Number(op.cost_gasto_documental||0);const costSeg=Number(op.cost_seguro||0);const costLocal=Number(op.cost_flete_local||0);const costOtros=Number(op.cost_otros||0);
-      const totalCostos=costFlete+costImp+costDoc+costSeg+costLocal+costOtros;
+      const costProducto=op.service_type==="gestion_integral"?Number(op.cost_producto_usd||0):0;
+      const totalCostos=costFlete+costImp+costDoc+costSeg+costLocal+costOtros+costProducto;
       const presupuesto=Number(op.budget_total||0);
       // Si el cobro es en ARS, convertir a USD usando el exchange rate
       const cobroRaw=Number(op.collected_amount||0);
@@ -490,7 +495,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {payments.length>0&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.12)",borderRadius:10,padding:"12px 16px",marginBottom:12}}><p style={{fontSize:12,fontWeight:600,color:IC,margin:"0 0 2px"}}>Esta operación tiene gestión de pagos (servicio aparte)</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>El cobro de esta operación es independiente. Ver detalles en tab "Pagos".</p></div>}
         <div style={{marginBottom:8}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.is_collected||false} onChange={e=>chOp("is_collected")(e.target.checked)}/><span style={{fontSize:13,color:op.is_collected?"#22c55e":"rgba(255,255,255,0.5)",fontWeight:op.is_collected?600:400}}>{op.is_collected?"Operación cobrada ✓":"Marcar como cobrada"}</span></label></div>
       </Card>
-      <Card title="Costos reales" actions={<Btn onClick={async()=>{setSaving(true);
+      <Card title={op.service_type==="gestion_integral"?"Costos reales (Gestión Integral)":"Costos reales"} actions={<Btn onClick={async()=>{setSaving(true);
         // Save flete
         const fleteMethod=op.cost_flete_method||"cuenta_corriente";
         const fleteAmt=Number(op.cost_flete||0);
@@ -543,6 +548,20 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         const totalCostosUSD=Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0);
         flash("Costos guardados");setSaving(false);
       }} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
+        {op.service_type==="gestion_integral"&&<div style={{marginBottom:16,background:"rgba(168,85,247,0.06)",border:"1px solid rgba(168,85,247,0.2)",borderRadius:10,padding:"12px 14px"}}>
+          <p style={{fontSize:11,fontWeight:700,color:"#c084fc",margin:"0 0 10px",textTransform:"uppercase"}}>Costo del producto (al proveedor)</p>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
+            <Inp label="Costo producto (USD)" type="number" value={op.cost_producto_usd} onChange={chOp("cost_producto_usd")} step="0.01"/>
+            <Sel label="Método de pago" value={op.cost_producto_method||"transferencia"} onChange={chOp("cost_producto_method")} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Contado"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"}]}/>
+            <div style={{display:"flex",alignItems:"flex-end",paddingBottom:6}}>
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:"rgba(255,255,255,0.7)",cursor:"pointer"}}>
+                <input type="checkbox" checked={!!op.cost_producto_paid} onChange={e=>{chOp("cost_producto_paid")(e.target.checked);if(e.target.checked&&!op.cost_producto_paid_at)chOp("cost_producto_paid_at")(new Date().toISOString());}} style={{cursor:"pointer"}}/>
+                Ya pagado al proveedor
+              </label>
+            </div>
+          </div>
+          <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"8px 0 0",fontStyle:"italic"}}>Es lo que Argencargo paga al proveedor del producto. Se descuenta del resultado de la operación.</p>
+        </div>}
         <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Flete</p>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px",marginBottom:16}}>
           <Inp label="Costo flete (USD)" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>
@@ -585,7 +604,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
         {rw("Cobro bruto",cobro)}{comision>0&&rw(`Comisión transferencia (${feePct}%)`,-comision,false,"#ff6b6b")}{rw("Cobro neto",ingresoNeto)}
         <div style={{height:8}}/>
-        {rw("Costo flete",costFlete)}{rw("Impuestos reales",costImp)}{rw("Gasto documental",costDoc)}{costSeg>0&&rw("Seguro",costSeg)}{costLocal>0&&rw("Flete local",costLocal)}{costOtros>0&&rw("Otros",costOtros)}{rw("TOTAL COSTOS",totalCostos,true,"#ff6b6b")}
+        {costProducto>0&&rw("Costo producto",costProducto,false,"#c084fc")}{rw("Costo flete",costFlete)}{rw("Impuestos reales",costImp)}{rw("Gasto documental",costDoc)}{costSeg>0&&rw("Seguro",costSeg)}{costLocal>0&&rw("Flete local",costLocal)}{costOtros>0&&rw("Otros",costOtros)}{rw("TOTAL COSTOS",totalCostos,true,"#ff6b6b")}
         {payments.length>0&&<><div style={{height:8}}/>
           <div style={{borderTop:"1px solid rgba(96,165,250,0.2)",paddingTop:10,marginTop:4}}><p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 6px",textTransform:"uppercase"}}>Gestión de Pagos</p></div>
           {rw("Cobrado al cliente",pmtRevenue)}
@@ -1009,7 +1028,7 @@ function FinancePanel({token}){
   const [agentMvs,setAgentMvs]=useState([]);const [agentSignups,setAgentSignups]=useState([]);
   const load=async()=>{const [e,o,pm,dp,am,ag]=await Promise.all([
     dq("finance_entries",{token,filters:"?select=*&auto_generated=is.false&order=date.desc,created_at.desc"}),
-    dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,closed_at,cost_flete,cost_flete_method,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(first_name,last_name,client_code)&order=created_at.desc"}),
+    dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,closed_at,cost_flete,cost_flete_method,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,service_type,cost_producto_usd,cost_producto_method,cost_producto_paid,cost_producto_paid_at,clients(first_name,last_name,client_code)&order=created_at.desc"}),
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)"}),
     dq("finance_entries",{token,filters:"?select=*&currency=eq.ARS&exchange_rate=is.null&auto_generated=eq.true&order=card_closing_date.asc"}),
     dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),
@@ -1036,7 +1055,9 @@ function FinancePanel({token}){
     // Cost_flete via cuenta_corriente: NO se incluye en libro diario (la salida de cash ya está en el anticipo al agente)
     const fleteMethod=o.cost_flete_method||"cuenta_corriente";
     const fleteForLedger=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);
-    const cost=fleteForLedger+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
+    // Costo producto solo si es gestión integral Y ya está pagado (o método efectivo/transfer)
+    const productoForLedger=(o.service_type==="gestion_integral"&&o.cost_producto_paid&&(o.cost_producto_method!=="tarjeta_credito"||o.cost_producto_paid))?Number(o.cost_producto_usd||0):0;
+    const cost=fleteForLedger+productoForLedger+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
     if(cost>0)ledger.push({date:o.closed_at?.slice(0,10)||"—",type:"gasto",origen:"op",code:o.operation_code,desc:`Costos ${o.operation_code} — ${o.clients?.client_code||""}`,amount:cost,detail:fleteMethod==="cuenta_corriente"&&Number(o.cost_flete||0)>0?`(flete CC ${usd(Number(o.cost_flete))} ya cubierto por anticipo)`:""});
   });
   allPmts.forEach(p=>{
@@ -1837,7 +1858,7 @@ function FinanceDashboard({token}){
   const activeOps=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
   const periodOps=filterByPeriod(closedOps,"closed_at");
 
-  const calcGan=(o)=>{const baseIng=Number(o.budget_total||0);const baseCost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtIng=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtCost=pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);const ing=baseIng+pmtIng;const cost=baseCost+pmtCost;return{ing,cost,gan:ing-cost};};
+  const calcGan=(o)=>{const baseIng=Number(o.budget_total||0);const costProducto=o.service_type==="gestion_integral"?Number(o.cost_producto_usd||0):0;const baseCost=Number(o.cost_flete||0)+costProducto+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtIng=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtCost=pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);const ing=baseIng+pmtIng;const cost=baseCost+pmtCost;return{ing,cost,gan:ing-cost};};
 
   const totalIng=periodOps.reduce((s,o)=>s+calcGan(o).ing,0);
   const totalCostOp=periodOps.reduce((s,o)=>s+calcGan(o).cost,0);
@@ -1904,7 +1925,8 @@ function FinanceDashboard({token}){
       const totCobrado=totCobradoOps+totCobradoPmts;
       // Costos: todos los costos de ops + giros YA enviados (confirmado)
       // Costos op para cash flow: excluir cost_flete cuando method=cuenta_corriente (ya se contó en el anticipo al agente)
-      const totCostosOps=ops.reduce((s,o)=>{const fleteMethod=o.cost_flete_method||"cuenta_corriente";const fleteCash=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);return s+fleteCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);},0);
+      // Costo producto (gestión integral) solo si ya se pagó
+      const totCostosOps=ops.reduce((s,o)=>{const fleteMethod=o.cost_flete_method||"cuenta_corriente";const fleteCash=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);const prodCash=(o.service_type==="gestion_integral"&&o.cost_producto_paid)?Number(o.cost_producto_usd||0):0;return s+fleteCash+prodCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);},0);
       const totCostosPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.giro_status==="confirmado"&&!(p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid)).reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0);
       // Anticipos a agentes (cash real que sale)
       const totAnticiposAgentes=agentMvs.filter(m=>m.type==="anticipo").reduce((s,m)=>s+Number(m.amount_usd||0),0);
@@ -1918,7 +1940,7 @@ function FinanceDashboard({token}){
       // Clientes pagaron pero giro no enviado
       const girosPendientes=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.client_paid&&p.giro_status!=="confirmado").reduce((a,p)=>a+Number(p.giro_amount_usd||0),0);},0);
       // Margen operaciones activas (TODAS las no cerradas/canceladas): ingreso (budget+pmts cobrados) - costos
-      const margenActivas=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada").reduce((s,o)=>{const ing=Number(o.budget_total||0);const cost=Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtGan=pmts.reduce((a,p)=>a+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);return s+(ing-cost)+pmtGan;},0);
+      const margenActivas=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada").reduce((s,o)=>{const ing=Number(o.budget_total||0);const costProd=o.service_type==="gestion_integral"?Number(o.cost_producto_usd||0):0;const cost=Number(o.cost_flete||0)+costProd+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtGan=pmts.reduce((a,p)=>a+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);return s+(ing-cost)+pmtGan;},0);
       // Deuda TC pendiente en ARS (de finance_entries)
       const deudaTCArs=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="ARS").reduce((s,e)=>s+Number(e.amount_ars||0),0);
       // Deuda tarjeta USD: finance_entries USD con tarjeta no pagada + payment_management con tarjeta pendiente
@@ -2102,7 +2124,9 @@ function FinanceDashboard({token}){
         const cashOutOps=opsClosedInMonth.reduce((s,o)=>{
           const fleteMethod=o.cost_flete_method||"cuenta_corriente";
           const fleteCash=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);
-          return s+fleteCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
+          // Costo producto: solo si es gestión integral Y ya se pagó
+          const prodCash=(o.service_type==="gestion_integral"&&o.cost_producto_paid)?Number(o.cost_producto_usd||0):0;
+          return s+fleteCash+prodCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
         },0);
         // Gastos con tarjeta: solo salen de cash cuando is_paid=true (la tarjeta se debitó)
         const cashOutFijos=fixedCostsManual.filter(e=>e.is_paid&&inMonth(e.date)).reduce((s,e)=>s+Number(e.amount||0),0);
