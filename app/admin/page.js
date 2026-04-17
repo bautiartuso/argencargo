@@ -2291,7 +2291,8 @@ function FinanceDashboard({token}){
       // Anticipos a agentes (cash real que sale)
       const totAnticiposAgentes=agentMvs.filter(m=>m.type==="anticipo").reduce((s,m)=>s+Number(m.amount_usd||0),0);
       // Costos fijos manuales (Meta ads, Vercel, Claude, salarios, etc.) — históricos en USD
-      const totCostosFijos=finEntries.filter(e=>e.auto_generated===false&&e.type==="gasto"&&e.currency!=="ARS").reduce((s,e)=>s+Number(e.amount||0),0);
+      // EXCLUYE gastos pagados con tarjeta de crédito todavía no debitados (la plata sigue en el bolsillo, es deuda)
+      const totCostosFijos=finEntries.filter(e=>e.auto_generated===false&&e.type==="gasto"&&e.currency!=="ARS"&&!(e.payment_method==="tarjeta_credito"&&!e.is_paid)).reduce((s,e)=>s+Number(e.amount||0),0);
       const totCostosTotales=totCostosOps+totCostosPmts+totCostosFijos+totAnticiposAgentes+totSupplierPmts;
       // Colgados: lo que DEBE el cliente (client_amount) − anticipos. Eso es plata real pendiente de cobrar.
       const girosColgadosDetail=[];
@@ -2315,6 +2316,7 @@ function FinanceDashboard({token}){
           <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Cobrado ({usd(totCobrado)}) - Costos ops ({usd(totCostosOps+totCostosPmts)}) - Gastos ({usd(totCostosFijos)}) - Anticipos ({usd(totAnticiposAgentes)})</p>
           <div style={{marginTop:"auto"}}>
             {margenActivas!==0&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:4}}>↳ {usd(margenActivas)} margen ops activas (aún no ganancia)</p>}
+            {deudaTCUsd>0&&<p style={{fontSize:10,color:"#a78bfa",margin:"2px 0 0"}}>💳 {usd(deudaTCUsd)} deuda TC pendiente (no descontada — sigue en el bolsillo hasta el débito)</p>}
             {girosColgados>0&&<p style={{fontSize:10,color:"#fb923c",margin:"2px 0 0",cursor:"help"}} title={girosColgadosDetail.map(d=>`${d.code} ${d.client}: debe ${usd(d.debe)}${d.anticipo>0?` − anticipo ${usd(d.anticipo)}`:""} = ${usd(d.real)} pendiente`).join("\n")}>⚠ {usd(girosColgados)} pendiente de cobrar al cliente ({girosColgadosDetail.length})</p>}
             {girosPendientes>0&&<p style={{fontSize:10,color:"#60a5fa",margin:"2px 0 0"}}>⏳ {usd(girosPendientes)} cobrados, giro pendiente envío</p>}
           </div>
