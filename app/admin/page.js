@@ -1333,7 +1333,7 @@ const CAT_LBL={marketing:"Marketing",software:"Software",salarios:"Salarios",ofi
 const CAT_COLOR={marketing:"#fb923c",software:"#a78bfa",salarios:"#22c55e",oficina:"#60a5fa",comisiones:"#fbbf24",otros:"#94a3b8"};
 function FinancePanel({token}){
   const [entries,setEntries]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("fixed");const [showAdd,setShowAdd]=useState(false);const [msg,setMsg]=useState("");
-  const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",payment_method:"transferencia"});
+  const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",payment_method:"transferencia",card_closing_date:""});
   const [allOps,setAllOps]=useState([]);const [allPmts,setAllPmts]=useState([]);
   const [dollarPending,setDollarPending]=useState([]);const [dollarRates,setDollarRates]=useState({});
   const [agentMvs,setAgentMvs]=useState([]);const [agentSignups,setAgentSignups]=useState([]);
@@ -1354,9 +1354,11 @@ function FinancePanel({token}){
   const addEntry=async()=>{
     if(!newEntry.amount||!newEntry.category){flash("Faltan datos");return;}
     if(newEntry.category==="otros"&&!newEntry.detail){flash("Categoría 'Otros' requiere detalle");return;}
-    const body={date:newEntry.date,type:"gasto",description:CAT_LBL[newEntry.category]+(newEntry.detail?` — ${newEntry.detail}`:""),detail:newEntry.detail||null,category:newEntry.category,amount:Number(newEntry.amount),currency:"USD",payment_method:newEntry.payment_method,is_paid:true,auto_generated:false};
+    const isTC=newEntry.payment_method==="tarjeta_credito";
+    if(isTC&&!newEntry.card_closing_date){flash("Falta fecha de cierre de tarjeta");return;}
+    const body={date:newEntry.date,type:"gasto",description:CAT_LBL[newEntry.category]+(newEntry.detail?` — ${newEntry.detail}`:""),detail:newEntry.detail||null,category:newEntry.category,amount:Number(newEntry.amount),currency:"USD",payment_method:newEntry.payment_method,is_paid:!isTC,card_closing_date:isTC?newEntry.card_closing_date:null,auto_generated:false};
     const r=await dq("finance_entries",{method:"POST",token,body});
-    if(r?.id||Array.isArray(r)){load();setShowAdd(false);setNewEntry({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",payment_method:"transferencia"});flash("Gasto agregado");}
+    if(r?.id||Array.isArray(r)){load();setShowAdd(false);setNewEntry({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",payment_method:"transferencia",card_closing_date:""});flash("Gasto agregado");}
   };
   const delEntry=async(id)=>{if(!confirm("¿Eliminar este movimiento?"))return;await dq("finance_entries",{method:"DELETE",token,filters:`?id=eq.${id}`});setEntries(p=>p.filter(e=>e.id!==id));flash("Eliminado");};
   const usd=v=>`USD ${Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
@@ -1433,6 +1435,12 @@ function FinancePanel({token}){
         <Sel label="Método" value={newEntry.payment_method} onChange={v=>setNewEntry(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"tarjeta_credito",label:"Tarjeta Crédito"},{value:"tarjeta_debito",label:"Tarjeta Débito"},{value:"efectivo",label:"Efectivo"}]}/>
       </div>
       <Inp label={`Detalle ${newEntry.category==="otros"?"(obligatorio)":"(opcional)"}`} value={newEntry.detail} onChange={v=>setNewEntry(p=>({...p,detail:v}))} placeholder="Ej: Meta ads campaña abril · Vercel Pro · Sueldo Marzo"/>
+      {newEntry.payment_method==="tarjeta_credito"&&<>
+        <Inp label="Fecha de cierre / débito de tarjeta" type="date" value={newEntry.card_closing_date} onChange={v=>setNewEntry(p=>({...p,card_closing_date:v}))}/>
+        <div style={{background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8,padding:"10px 14px",marginBottom:12}}>
+          <p style={{fontSize:12,color:"#fbbf24",margin:0,fontWeight:500}}>💳 Este gasto queda pendiente de débito y suma a la <strong>Deuda Tarjeta</strong> del dashboard hasta que se debite el día de cierre.</p>
+        </div>
+      </>}
       <div style={{display:"flex",gap:8,marginTop:8}}><Btn onClick={addEntry}>Guardar</Btn><Btn variant="secondary" onClick={()=>setShowAdd(false)}>Cancelar</Btn></div>
     </Card>}
     {tab==="fixed"&&(lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:<>
@@ -2127,7 +2135,7 @@ function DashboardKPIs({token}){
       dq("unassigned_packages",{token,filters:"?select=id&assigned_to_op_id=is.null"}),
       dq("agent_signups",{token,filters:"?select=id&status=eq.pending"}),
       dq("payment_management",{token,filters:"?select=giro_amount_usd,giro_tarjeta_due_date&giro_payment_method=eq.tarjeta_credito&giro_tarjeta_paid=eq.false"}),
-      dq("finance_entries",{token,filters:"?select=amount,amount_ars,currency,payment_due_date&payment_method=eq.tarjeta&is_paid=eq.false"})
+      dq("finance_entries",{token,filters:"?select=amount,amount_ars,currency,card_closing_date&payment_method=eq.tarjeta_credito&is_paid=eq.false"})
     ]);
     const o=Array.isArray(ops)?ops:[];const fl=Array.isArray(flights)?flights:[];
     const finalStates=["entregada","operacion_cerrada","cancelada"];
