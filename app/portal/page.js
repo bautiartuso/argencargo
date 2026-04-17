@@ -279,7 +279,6 @@ function OperationDetail({op,token,onBack}){
           {dd("Peso Bruto",pk.gw?`${pk.gw} kg`:"—")}
           {dd("Peso Vol.",pk.vw?`${pk.vw.toFixed(2)} kg`:"—")}
           {dd("CBM",pk.cbm?`${pk.cbm.toFixed(4)} m³`:"—")}
-          {pk.national_tracking&&pk.national_tracking!=="—"?<div style={{textAlign:"center"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px",textTransform:"uppercase"}}>Tracking</p><a href={`https://parcelsapp.com/en/tracking/${pk.national_tracking}`} target="_blank" rel="noopener noreferrer" style={{fontSize:13,fontWeight:600,color:"#60a5fa",textDecoration:"underline",fontFamily:"monospace"}}>{pk.national_tracking}</a></div>:dd("Tracking","—")}
         </div>
         {pk.l&&pk.w&&pk.h&&pk.vw>pk.gw&&<p style={{fontSize:11,fontWeight:600,color:"#f59e0b",margin:"8px 0 0",lineHeight:1.4,background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:6,padding:"6px 10px"}}>⚠️ El peso volumétrico ({pk.vw.toFixed(1)} kg) supera al peso bruto ({pk.gw.toFixed(1)} kg). Se facturará por peso volumétrico.</p>}
       </div>)}
