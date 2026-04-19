@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { calcOpBudget } from "../../lib/calc";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -48,27 +49,7 @@ const dq=async(t,{method="GET",body,token,filters="",headers:h={}})=>{
   return r.body;
 };
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},lista_retiro:{l:"LIBERACIÓN",c:"#34d399"},entregada:{l:"ENTREGA FINAL",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
-// Calcula el presupuesto de una operación a partir de sus items, bultos, tarifas y config.
-// Pura — mismo resultado que la IIFE inline de OperationEditor.Presupuesto.
-function calcOpBudget(op,items,pkgs,tariffs,config,clientOverrides,client){
-  const totalFob=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
-  let pf=0,totCBM=0,totGW=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});
-  const isBlanco=op.channel?.includes("blanco");const isAereo=op.channel?.includes("aereo");const isMaritimo=op.channel?.includes("maritimo");const isUSA=op.origin==="USA";const isRI=client?.tax_condition==="responsable_inscripto";
-  const svcKey=op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="aereo_negro"?(isUSA?"aereo_b_usa":"aereo_b_china"):op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b";
-  const fleteAmt=isAereo?(op.channel==="aereo_negro"?Math.max(pf,1):pf):(op.channel==="maritimo_blanco"?Math.max(totCBM,1):totCBM);
-  const getRate=(sk,amt)=>{const rates=tariffs.filter(t=>t.service_key===sk);for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amt>=min&&amt<max){const ov=(clientOverrides||[]).find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):Number(r.rate);}}return rates.length?Number(rates[rates.length-1].rate):0;};
-  const fleteRate=getRate(svcKey,fleteAmt);let flete=fleteAmt*fleteRate;
-  if(op.channel==="aereo_blanco"&&op.has_battery)flete+=fleteAmt*2;
-  const certFlRate=isAereo?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
-  const certFlAmt=isAereo?(isRI?totGW*certFlRate:pf*certFlRate):totCBM*certFlRate;
-  const seguro=(totalFob+certFlAmt)*0.01;const cif=totalFob+certFlAmt+seguro;
-  const getDesembolso=(c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;};
-  let totalTax=0;
-  if(isBlanco)items.forEach(it=>{const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const pct=totalFob>0?itemFob/totalFob:1;const iCert=certFlAmt*pct;const iSeg=(itemFob+iCert)*0.01;const iCif=itemFob+iCert+iSeg;const dr=Number(it.import_duty_rate||0)/100;const te=Number(it.statistics_rate||0)/100;const ivaR=Number(it.iva_rate||21)/100;const die=iCif*dr;const tasa=iCif*te;const bi=iCif+die+tasa;const iva=bi*ivaR;let t=die+tasa+iva;if(isMaritimo){const ivaAdicR=Number(it.iva_additional_rate||20)/100;const iiggR=Number(it.iigg_rate||6)/100;const iibbR=Number(it.iibb_rate||5)/100;t+=bi*ivaAdicR+bi*iiggR+bi*iibbR;}else{const desemb=getDesembolso(cif)*pct;t+=desemb+desemb*0.21;}totalTax+=t;});
-  const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
-  const totalAbonar=isBlanco?(totalTax+flete+seguro+shipCost):(flete+shipCost);
-  return{totalTax,flete,seguro,totalAbonar,shipCost};
-}
+// calcOpBudget se importa desde lib/calc.js (extraído para testing)
 const CM={aereo_blanco:"Aéreo A",aereo_negro:"Aéreo B",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B"};
 const STATUSES=Object.keys(SM);
 const CHANNELS=Object.keys(CM);
@@ -2483,6 +2464,67 @@ function FinanceDashboard({token}){
       </Card>
     </div>
 
+    {/* Cohorts de clientes + Tiempos promedio por ruta */}
+    {(()=>{
+      // ——— Cohorts: agrupa clientes por el mes de su primera op cerrada. Mide retención. ———
+      const clientOps={};closedOps.forEach(o=>{const cid=o.client_id;if(!cid)return;if(!clientOps[cid])clientOps[cid]={name:o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—",ops:[]};clientOps[cid].ops.push(o);});
+      const cohorts={};Object.values(clientOps).forEach(c=>{
+        const sorted=c.ops.slice().sort((a,b)=>(a.closed_at||"").localeCompare(b.closed_at||""));
+        const firstMonth=sorted[0].closed_at?String(sorted[0].closed_at).slice(0,7):null;
+        if(!firstMonth)return;
+        if(!cohorts[firstMonth])cohorts[firstMonth]={firstMonth,nuevos:0,repitieron:0,totalOps:0,totalIng:0};
+        cohorts[firstMonth].nuevos++;
+        cohorts[firstMonth].totalOps+=c.ops.length;
+        cohorts[firstMonth].totalIng+=c.ops.reduce((s,o)=>s+calcGan(o).ing,0);
+        if(c.ops.length>1)cohorts[firstMonth].repitieron++;
+      });
+      const cohortRows=Object.values(cohorts).sort((a,b)=>b.firstMonth.localeCompare(a.firstMonth)).slice(0,8);
+
+      // ——— Tiempos promedio por ruta (origin + channel) ———
+      const routeStats={};closedOps.forEach(o=>{
+        if(!o.dispatched_at||!o.delivered_at)return;
+        const route=`${o.origin||"?"} · ${CM[o.channel]||o.channel}`;
+        const totalDays=(new Date(o.delivered_at)-new Date(o.dispatched_at))/86400000;
+        if(totalDays<0||totalDays>120)return; // outliers
+        if(!routeStats[route])routeStats[route]={count:0,totalDays:0,days:[]};
+        routeStats[route].count++;
+        routeStats[route].totalDays+=totalDays;
+        routeStats[route].days.push(totalDays);
+      });
+      const rutas=Object.entries(routeStats).map(([r,d])=>({ruta:r,count:d.count,avg:d.totalDays/d.count,min:Math.min(...d.days),max:Math.max(...d.days)})).sort((a,b)=>a.avg-b.avg);
+
+      return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
+        <Card title="Cohorts — clientes nuevos por mes">
+          {cohortRows.length>0?<>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,paddingBottom:8,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:8}}>
+              {["MES","NUEVOS","REPITIERON","OPS/CLIENTE"].map(h=><p key={h} style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0}}>{h}</p>)}
+            </div>
+            {cohortRows.map(c=>{const retPct=c.nuevos>0?(c.repitieron/c.nuevos)*100:0;const opsPerClient=c.nuevos>0?c.totalOps/c.nuevos:0;return <div key={c.firstMonth} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:12}}>
+              <span style={{color:"#fff",fontWeight:600}}>{c.firstMonth}</span>
+              <span style={{color:"#fff"}}>{c.nuevos}</span>
+              <span style={{color:retPct>=50?"#22c55e":retPct>=25?"#fbbf24":"rgba(255,255,255,0.5)"}}>{c.repitieron} ({retPct.toFixed(0)}%)</span>
+              <span style={{color:"rgba(255,255,255,0.7)"}}>{opsPerClient.toFixed(1)}</span>
+            </div>;})}
+            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>Clientes agrupados por el mes de su 1ra op cerrada. "Repitieron" = tienen más de una op.</p>
+          </>:<p style={{color:"rgba(255,255,255,0.45)"}}>Sin datos de ops cerradas</p>}
+        </Card>
+        <Card title="Tiempos promedio por ruta">
+          {rutas.length>0?<>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",gap:10,paddingBottom:8,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:8}}>
+              {["RUTA","OPS","PROM","RANGO"].map(h=><p key={h} style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0}}>{h}</p>)}
+            </div>
+            {rutas.map(r=><div key={r.ruta} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",gap:10,padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:12}}>
+              <span style={{color:"#fff",fontWeight:600}}>{r.ruta}</span>
+              <span style={{color:"rgba(255,255,255,0.7)"}}>{r.count}</span>
+              <span style={{color:IC,fontWeight:700}}>{r.avg.toFixed(0)}d</span>
+              <span style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>{r.min.toFixed(0)}-{r.max.toFixed(0)}d</span>
+            </div>)}
+            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>Días desde despacho a entrega final. Outliers (&gt;120d o negativos) excluidos.</p>
+          </>:<p style={{color:"rgba(255,255,255,0.45)"}}>Faltan datos — ops necesitan dispatched_at + delivered_at</p>}
+        </Card>
+      </div>;
+    })()}
+
     {(()=>{
       // Gastos del negocio agrupados por categoría (manuales) + ingresos por canal
       const gastosByCat={};fixedCostsManual.forEach(e=>{const k=e.category||"otros";gastosByCat[k]=(gastosByCat[k]||0)+Number(e.amount||0);});
@@ -2874,8 +2916,16 @@ function QuotesList({token}){
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{q.channel_name}<br/><span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{prodDesc?.substring(0,40)}</span></td>
           <td style={{padding:"12px 14px",color:"#fff",fontWeight:600}}>USD {Number(q.total_fob||0).toLocaleString("en-US")}</td>
           <td style={{padding:"12px 14px",color:IC,fontWeight:700}}>USD {Number(q.total_cost||0).toLocaleString("en-US")}</td>
-          <td style={{padding:"12px 14px"}}><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>{st.l}</span></td>
-          <td style={{padding:"12px 14px"}} onClick={e=>e.stopPropagation()}><select value={q.status} onChange={e=>updateStatus(q.id,e.target.value)} style={{padding:"4px 8px",fontSize:11,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>{Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038"}}>{v.l}</option>)}</select></td>
+          <td style={{padding:"12px 14px"}}>
+            {(()=>{const ageH=(Date.now()-new Date(q.created_at))/3600000;const abandoned=q.status==="pending"&&ageH>=48;return <><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>{st.l}</span>{abandoned&&<span title={`Pendiente hace ${Math.floor(ageH/24)}d ${Math.floor(ageH%24)}h`} style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,color:"#f97316",background:"rgba(249,115,22,0.1)",border:"1px solid rgba(249,115,22,0.3)",marginLeft:6}}>⚠ Abandonada</span>}</>;})()}
+          </td>
+          <td style={{padding:"12px 14px"}} onClick={e=>e.stopPropagation()}>
+            {(()=>{const cl=q.client_id?clientsMap[q.client_id]:null;const wa=cl?.whatsapp?.replace(/[^0-9]/g,"");const ageH=(Date.now()-new Date(q.created_at))/3600000;const abandoned=q.status==="pending"&&ageH>=48;const prodSummary=Array.isArray(prods)?prods.map(p=>p.description||p.type).join(", "):"";const msg=encodeURIComponent(`Hola ${q.client_name}! Hace unos días cotizaste *${prodSummary}* por *${q.channel_name}* (USD ${Number(q.total_cost||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}).\n\n¿Pudiste revisarla? Si querés avanzar esta semana te agilizo el proceso. Cualquier duda me escribís.`);
+            return <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              {abandoned&&wa&&<a href={`https://wa.me/${wa}?text=${msg}`} target="_blank" rel="noopener noreferrer" style={{padding:"4px 8px",fontSize:10,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",whiteSpace:"nowrap"}}>📱 Recordar</a>}
+              <select value={q.status} onChange={e=>updateStatus(q.id,e.target.value)} style={{padding:"4px 8px",fontSize:11,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>{Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038"}}>{v.l}</option>)}</select>
+            </div>;})()}
+          </td>
         </tr>;})}</tbody>
       </table>
     </div>}
