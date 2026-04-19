@@ -83,14 +83,19 @@ async function syncOne(op) {
     if (m) patch.eta = m[1];
   }
 
-  // Auto-status: si algún evento indica arribo al país destino Y op está en_transito → arribo_argentina
+  // Auto-status: si algún evento indica arribo AL PAÍS DESTINO (Argentina) Y op está en_transito → arribo_argentina
+  // IMPORTANTE: los códigos RC/IA/CC se disparan en CUALQUIER escala (Shanghai, Memphis, Dubai, etc),
+  // así que exigimos que la ubicación también mencione Argentina para evitar falsos positivos.
   if (op.status === "en_transito" && inserted > 0) {
     const arrivalCodes = new Set(["RC", "IA", "customs-clearance", "CC"]);
     const arrivalKeywords = ["arrived", "arrival", "arribo", "customs", "aduana", "clearance", "import"];
+    const argKeywords = ["argentin", "buenos aires", "ezeiza", ", ar ", "(ar)", " ar,", "aep"];
     const hasArrival = (d.events || []).some(ev => {
-      if (ev.status_code && arrivalCodes.has(ev.status_code)) return true;
       const txt = `${ev.title||""} ${ev.description||""} ${ev.location||""}`.toLowerCase();
-      return arrivalKeywords.some(kw => txt.includes(kw)) && (txt.includes("argentin") || txt.includes("buenos aires") || txt.includes("ezeiza"));
+      const inArg = argKeywords.some(kw => txt.includes(kw));
+      if (!inArg) return false;
+      if (ev.status_code && arrivalCodes.has(ev.status_code)) return true;
+      return arrivalKeywords.some(kw => txt.includes(kw));
     });
     if (hasArrival) patch.status = "arribo_argentina";
   }
