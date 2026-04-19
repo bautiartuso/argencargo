@@ -48,6 +48,27 @@ const dq=async(t,{method="GET",body,token,filters="",headers:h={}})=>{
   return r.body;
 };
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},lista_retiro:{l:"LIBERACIÓN",c:"#34d399"},entregada:{l:"ENTREGA FINAL",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
+// Calcula el presupuesto de una operación a partir de sus items, bultos, tarifas y config.
+// Pura — mismo resultado que la IIFE inline de OperationEditor.Presupuesto.
+function calcOpBudget(op,items,pkgs,tariffs,config,clientOverrides,client){
+  const totalFob=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
+  let pf=0,totCBM=0,totGW=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});
+  const isBlanco=op.channel?.includes("blanco");const isAereo=op.channel?.includes("aereo");const isMaritimo=op.channel?.includes("maritimo");const isUSA=op.origin==="USA";const isRI=client?.tax_condition==="responsable_inscripto";
+  const svcKey=op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="aereo_negro"?(isUSA?"aereo_b_usa":"aereo_b_china"):op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b";
+  const fleteAmt=isAereo?(op.channel==="aereo_negro"?Math.max(pf,1):pf):(op.channel==="maritimo_blanco"?Math.max(totCBM,1):totCBM);
+  const getRate=(sk,amt)=>{const rates=tariffs.filter(t=>t.service_key===sk);for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amt>=min&&amt<max){const ov=(clientOverrides||[]).find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):Number(r.rate);}}return rates.length?Number(rates[rates.length-1].rate):0;};
+  const fleteRate=getRate(svcKey,fleteAmt);let flete=fleteAmt*fleteRate;
+  if(op.channel==="aereo_blanco"&&op.has_battery)flete+=fleteAmt*2;
+  const certFlRate=isAereo?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
+  const certFlAmt=isAereo?(isRI?totGW*certFlRate:pf*certFlRate):totCBM*certFlRate;
+  const seguro=(totalFob+certFlAmt)*0.01;const cif=totalFob+certFlAmt+seguro;
+  const getDesembolso=(c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;};
+  let totalTax=0;
+  if(isBlanco)items.forEach(it=>{const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const pct=totalFob>0?itemFob/totalFob:1;const iCert=certFlAmt*pct;const iSeg=(itemFob+iCert)*0.01;const iCif=itemFob+iCert+iSeg;const dr=Number(it.import_duty_rate||0)/100;const te=Number(it.statistics_rate||0)/100;const ivaR=Number(it.iva_rate||21)/100;const die=iCif*dr;const tasa=iCif*te;const bi=iCif+die+tasa;const iva=bi*ivaR;let t=die+tasa+iva;if(isMaritimo){const ivaAdicR=Number(it.iva_additional_rate||20)/100;const iiggR=Number(it.iigg_rate||6)/100;const iibbR=Number(it.iibb_rate||5)/100;t+=bi*ivaAdicR+bi*iiggR+bi*iibbR;}else{const desemb=getDesembolso(cif)*pct;t+=desemb+desemb*0.21;}totalTax+=t;});
+  const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
+  const totalAbonar=isBlanco?(totalTax+flete+seguro+shipCost):(flete+shipCost);
+  return{totalTax,flete,seguro,totalAbonar,shipCost};
+}
 const CM={aereo_blanco:"Aéreo A",aereo_negro:"Aéreo B",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B"};
 const STATUSES=Object.keys(SM);
 const CHANNELS=Object.keys(CM);
@@ -117,7 +138,37 @@ function OperationsList({token,onSelect,onNew}){
   const toggleSort=(col)=>{if(sortCol===col){setSortDir(d=>d==="asc"?"desc":"asc");}else{setSortCol(col);setSortDir("asc");}};
   const SH=({label,col})=><th onClick={()=>toggleSort(col)} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:sortCol===col?IC:"rgba(255,255,255,0.4)",textTransform:"uppercase",cursor:"pointer",userSelect:"none"}}>{label} {sortCol===col?(sortDir==="asc"?"▲":"▼"):""}</th>;
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Operaciones</h2><Btn onClick={onNew}>+ Nueva operación</Btn></div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:10,flexWrap:"wrap"}}>
+      <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Operaciones</h2>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <Btn variant="secondary" small onClick={async()=>{
+          if(!confirm("¿Sincronizar el presupuesto de todas las operaciones activas?\n\nSe recalculará y guardará el total en base a sus productos, bultos, tarifas y config.\n\nNO se tocan operaciones cerradas ni canceladas."))return;
+          const[tf,cc]=await Promise.all([dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"})]);
+          const tariffs=Array.isArray(tf)?tf:[];const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});
+          const activas=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
+          let updated=0,skipped=0,errors=0;
+          for(const o of activas){
+            try{
+              const[it,pk,ov,cl]=await Promise.all([
+                dq("operation_items",{token,filters:`?operation_id=eq.${o.id}&select=*`}),
+                dq("operation_packages",{token,filters:`?operation_id=eq.${o.id}&select=*`}),
+                o.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${o.client_id}&select=*`}):Promise.resolve([]),
+                o.client_id?dq("clients",{token,filters:`?id=eq.${o.client_id}&select=tax_condition`}):Promise.resolve([])
+              ]);
+              const items=Array.isArray(it)?it:[];const pkgs=Array.isArray(pk)?pk:[];
+              if(items.length===0){skipped++;continue;}
+              const client=Array.isArray(cl)?cl[0]:null;const overrides=Array.isArray(ov)?ov:[];
+              const{totalTax,flete,seguro,totalAbonar}=calcOpBudget(o,items,pkgs,tariffs,cfg,overrides,client);
+              await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}});
+              updated++;
+            }catch(e){console.error(`sync ${o.operation_code}`,e);errors++;}
+          }
+          alert(`Sincronización completa.\n\n✓ Actualizadas: ${updated}\n⊘ Sin productos (omitidas): ${skipped}${errors>0?`\n✗ Errores: ${errors}`:""}`);
+          const[o2]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"})]);setOps(Array.isArray(o2)?o2:[]);
+        }}>🔄 Sincronizar presupuestos</Btn>
+        <Btn onClick={onNew}>+ Nueva operación</Btn>
+      </div>
+    </div>
     <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
       <div style={{flex:1,minWidth:200}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por código, cliente o descripción..." style={{width:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
       <div style={{position:"relative"}}><button onClick={()=>setShowStatusDrop(p=>!p)} style={{padding:"10px 14px",fontSize:12,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{fStatuses.length>0?`${fStatuses.length} estados`:"Todos los estados"} ▼</button>
@@ -211,17 +262,30 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     if(rest.status!==initOp.status&&op.client_id){try{const cls=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=auth_user_id`});const uid=Array.isArray(cls)&&cls[0]?cls[0].auth_user_id:null;if(uid){await dq("notifications",{method:"POST",token,body:{user_id:uid,portal:"cliente",title:`Estado actualizado: ${SM[rest.status]?.l||rest.status}`,body:`Operación ${op.operation_code}`,link:`?op=${op.operation_code}`}});}}catch(e){console.error("notif error",e);}}
     setOp(p=>({...p,closed_at:rest.closed_at}));flash("Operación guardada");setSaving(false);};
 
-  const saveItem=async(it)=>{const{id,...rest}=it;delete rest.created_at;await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Producto guardado");};
-  const addItem=async()=>{await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:"Nuevo producto",quantity:1,unit_price_usd:0}});await reloadItems();flash("Producto agregado");};
-  const delItem=async(id)=>{await dq("operation_items",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadItems();flash("Producto eliminado");};
+  // Auto-sync: refresca items+bultos de DB y recalcula+guarda presupuesto silenciosamente.
+  // Se llama después de cualquier CRUD de items/bultos. Saltea ops cerradas/canceladas.
+  const autoSyncBudget=async()=>{
+    if(op.status==="operacion_cerrada"||op.status==="cancelada")return;
+    try{
+      const[fit,fpk]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*`})]);
+      const its=Array.isArray(fit)?fit:[];const pks=Array.isArray(fpk)?fpk:[];
+      if(its.length===0)return; // Sin items = presupuesto manual, no tocar
+      const{totalTax,flete,seguro,totalAbonar}=calcOpBudget(op,its,pks,tariffs,config,clientOverrides,opClient);
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}});
+      setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}));
+    }catch(e){console.error("autoSync budget",e);}
+  };
+  const saveItem=async(it)=>{const{id,...rest}=it;delete rest.created_at;await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Producto guardado");autoSyncBudget();};
+  const addItem=async()=>{await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:"Nuevo producto",quantity:1,unit_price_usd:0}});await reloadItems();flash("Producto agregado");autoSyncBudget();};
+  const delItem=async(id)=>{await dq("operation_items",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadItems();flash("Producto eliminado");autoSyncBudget();};
 
   const reloadPkgs=async()=>{const pk=await dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`});setPkgs(Array.isArray(pk)?pk:[]);};
   const reloadItems=async()=>{const it=await dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setItems(Array.isArray(it)?it:[]);};
   const reloadEvents=async()=>{const ev=await dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`});setEvents(Array.isArray(ev)?ev:[]);};
 
-  const savePkg=async(pk)=>{const{id,...rest}=pk;delete rest.created_at;await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Bulto guardado");};
-  const addPkg=async()=>{const num=pkgs.length+1;await dq("operation_packages",{method:"POST",token,body:{operation_id:op.id,package_number:num,quantity:1}});await reloadPkgs();flash("Bulto agregado");};
-  const delPkg=async(id)=>{await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadPkgs();flash("Bulto eliminado");};
+  const savePkg=async(pk)=>{const{id,...rest}=pk;delete rest.created_at;await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Bulto guardado");autoSyncBudget();};
+  const addPkg=async()=>{const num=pkgs.length+1;await dq("operation_packages",{method:"POST",token,body:{operation_id:op.id,package_number:num,quantity:1}});await reloadPkgs();flash("Bulto agregado");autoSyncBudget();};
+  const delPkg=async(id)=>{await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadPkgs();flash("Bulto eliminado");autoSyncBudget();};
 
   const saveEvt=async(ev)=>{const{id,...rest}=ev;delete rest.created_at;await dq("tracking_events",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Evento guardado");};
   const addEvt=async()=>{await dq("tracking_events",{method:"POST",token,body:{operation_id:op.id,title:"Nuevo evento",occurred_at:new Date().toISOString(),is_visible_to_client:true,created_by:null}});await reloadEvents();flash("Evento agregado");};
