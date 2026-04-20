@@ -604,9 +604,20 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
       </div>
       <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"12px 0 8px",textTransform:"uppercase"}}>{t.operations_in_flight} ({flightOps.length})</p>
       <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px"}}>
-        {flightOps.map(fo=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);const w=opPkgs.reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);return <div key={fo.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-          <span style={{fontSize:12,color:"#fff"}}>{opPkgs[0]?.operations?.operation_code||"OP"} — {opPkgs[0]?.operations?.clients?.client_code||""}</span>
-          <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{w.toFixed(2)} kg{fo.cost_share_usd?` · ${usdF(fo.cost_share_usd)}`:""}</span>
+        {flightOps.map(fo=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);const w=opPkgs.reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);const opCode=opPkgs[0]?.operations?.operation_code||"OP";const clientCode=opPkgs[0]?.operations?.clients?.client_code||"";return <div key={fo.id} style={{padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:opPkgs.length>0?8:0}}>
+            <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{opCode} — {clientCode}</span>
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{w.toFixed(2)} kg{fo.cost_share_usd?` · ${usdF(fo.cost_share_usd)}`:""}</span>
+          </div>
+          {opPkgs.length>0&&<div style={{paddingLeft:12,borderLeft:"2px solid rgba(96,165,250,0.2)",marginLeft:4}}>
+            {opPkgs.map((p,i)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0);const l=Number(p.length_cm||0),wd=Number(p.width_cm||0),h=Number(p.height_cm||0);const hasDims=l&&wd&&h;const nt=p.national_tracking||"";return <div key={p.id||i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11,color:"rgba(255,255,255,0.7)",gap:10,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span style={{minWidth:22,color:IC,fontWeight:700}}>#{p.package_number||i+1}</span>
+                {nt&&<span style={{fontFamily:"monospace",background:"rgba(96,165,250,0.1)",padding:"2px 7px",borderRadius:4,color:IC,fontSize:10,border:"1px solid rgba(96,165,250,0.2)"}}>{nt}</span>}
+              </div>
+              <span style={{color:"rgba(255,255,255,0.55)",textAlign:"right"}}>{q>1?`${q}× `:""}{hasDims?`${l}×${wd}×${h} cm`:"— cm"}{gw>0?` · ${gw.toFixed(2)} kg`:""}</span>
+            </div>;})}
+          </div>}
         </div>;})}
       </div>
     </div>
