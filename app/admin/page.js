@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { calcOpBudget } from "../../lib/calc";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -1573,11 +1573,23 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   })();},[flightOps.length,token]);
   const opsUnique=flightOpsData.length>0?flightOpsData:Array.from(new Map([...depositOps,...allOps].filter(o=>flightOps.some(fo=>fo.operation_id===o.id)).map(o=>[o.id,o])).values());
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
+  // updateFlight: versión completa (con reload). Usar sólo cuando cambia algo estructural (status, ops, etc.)
   const updateFlight=async(body)=>{await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body});onReload();};
+  // updateFlightSilent: sin reload (para inputs debounced — evita que se pisen caracteres mientras tipeás)
+  const updateFlightSilent=async(body)=>{await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body});};
+  // Estado LOCAL de los campos del destinatario. onChange actualiza acá (instantáneo, sin red).
+  // Un useEffect debounced guarda al DB 800ms después de la última tecla.
+  const [dest,setDest]=useState({dest_name:flight.dest_name||"",dest_tax_id:flight.dest_tax_id||"",dest_address:flight.dest_address||"",dest_postal_code:flight.dest_postal_code||"",dest_phone:flight.dest_phone||"",dest_email:flight.dest_email||""});
+  // Sync desde flight cuando cambia externamente (ej. applyAddr) — NO pisa si el usuario está tipeando
+  const typingRef=useRef(0);
+  useEffect(()=>{if(Date.now()-typingRef.current<1500)return;setDest({dest_name:flight.dest_name||"",dest_tax_id:flight.dest_tax_id||"",dest_address:flight.dest_address||"",dest_postal_code:flight.dest_postal_code||"",dest_phone:flight.dest_phone||"",dest_email:flight.dest_email||""});},[flight.dest_name,flight.dest_tax_id,flight.dest_address,flight.dest_postal_code,flight.dest_phone,flight.dest_email]);
+  // Debounced save: dispara 800ms después de la última tecla
+  useEffect(()=>{const diff={};Object.keys(dest).forEach(k=>{if((flight[k]||"")!==dest[k])diff[k]=dest[k];});if(Object.keys(diff).length===0)return;if(diff.dest_address!==undefined)diff.destination_address=diff.dest_address;const t=setTimeout(()=>{updateFlightSilent(diff);},800);return()=>clearTimeout(t);},[dest.dest_name,dest.dest_tax_id,dest.dest_address,dest.dest_postal_code,dest.dest_phone,dest.dest_email]);
+  const chDest=(f,v)=>{typingRef.current=Date.now();setDest(p=>({...p,[f]:v}));};
   const [savedAddrs,setSavedAddrs]=useState([]);const [showNewAddr,setShowNewAddr]=useState(false);const [newAddr,setNewAddr]=useState({label:"",name:"",tax_id:"",address:"",postal_code:"",phone:"",email:""});
   const loadAddrs=async()=>{const r=await dq("shipping_addresses",{token,filters:"?select=*&order=is_default.desc,created_at.desc"});setSavedAddrs(Array.isArray(r)?r:[]);};
   useEffect(()=>{loadAddrs();},[]);
-  const applyAddr=(a)=>updateFlight({dest_name:a.name||"",dest_tax_id:a.tax_id||"",dest_address:a.address||"",dest_postal_code:a.postal_code||"",dest_phone:a.phone||"",dest_email:a.email||"",destination_address:[a.name,a.address,a.postal_code].filter(Boolean).join(", ")});
+  const applyAddr=(a)=>{const body={dest_name:a.name||"",dest_tax_id:a.tax_id||"",dest_address:a.address||"",dest_postal_code:a.postal_code||"",dest_phone:a.phone||"",dest_email:a.email||"",destination_address:[a.name,a.address,a.postal_code].filter(Boolean).join(", ")};setDest({dest_name:body.dest_name,dest_tax_id:body.dest_tax_id,dest_address:body.dest_address,dest_postal_code:body.dest_postal_code,dest_phone:body.dest_phone,dest_email:body.dest_email});updateFlight(body);};
   const saveNewAddr=async()=>{if(!newAddr.label||!newAddr.address){onFlash("Falta etiqueta o dirección");return;}await dq("shipping_addresses",{method:"POST",token,body:newAddr});setNewAddr({label:"",name:"",tax_id:"",address:"",postal_code:"",phone:"",email:""});setShowNewAddr(false);loadAddrs();onFlash("Dirección guardada");};
   const delAddr=async(id)=>{if(!confirm("¿Eliminar dirección?"))return;await dq("shipping_addresses",{method:"DELETE",token,filters:`?id=eq.${id}`});loadAddrs();};
   const [items,setItems]=useState(invoiceItems);
@@ -1680,14 +1692,14 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
-          <Inp label="Nombre" value={flight.dest_name||""} onChange={v=>updateFlight({dest_name:v})} placeholder="Razón social o nombre"/>
-          <Inp label="CUIT / Tax ID" value={flight.dest_tax_id||""} onChange={v=>updateFlight({dest_tax_id:v})} placeholder="20-12345678-9"/>
+          <Inp label="Nombre" value={dest.dest_name} onChange={v=>chDest("dest_name",v)} placeholder="Razón social o nombre"/>
+          <Inp label="CUIT / Tax ID" value={dest.dest_tax_id} onChange={v=>chDest("dest_tax_id",v)} placeholder="20-12345678-9"/>
         </div>
-        <Inp label="Dirección" value={flight.dest_address||""} onChange={v=>updateFlight({dest_address:v,destination_address:v})} placeholder="Av. Callao 1137, CABA"/>
+        <Inp label="Dirección" value={dest.dest_address} onChange={v=>chDest("dest_address",v)} placeholder="Av. Callao 1137, CABA"/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr",gap:"0 12px"}}>
-          <Inp label="Código Postal" value={flight.dest_postal_code||""} onChange={v=>updateFlight({dest_postal_code:v})} placeholder="C1024AAQ"/>
-          <Inp label="Teléfono" value={flight.dest_phone||""} onChange={v=>updateFlight({dest_phone:v})} placeholder="+54 11 ..."/>
-          <Inp label="Email" value={flight.dest_email||""} onChange={v=>updateFlight({dest_email:v})} placeholder="contacto@ejemplo.com"/>
+          <Inp label="Código Postal" value={dest.dest_postal_code} onChange={v=>chDest("dest_postal_code",v)} placeholder="C1024AAQ"/>
+          <Inp label="Teléfono" value={dest.dest_phone} onChange={v=>chDest("dest_phone",v)} placeholder="+54 11 ..."/>
+          <Inp label="Email" value={dest.dest_email} onChange={v=>chDest("dest_email",v)} placeholder="contacto@ejemplo.com"/>
         </div>
         {showNewAddr&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:8,padding:"12px 14px",marginTop:10}}>
           <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px"}}>NUEVA DIRECCIÓN PREDETERMINADA</p>
