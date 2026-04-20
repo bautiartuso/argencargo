@@ -1378,7 +1378,7 @@ const CAT_LBL={marketing:"Marketing",software:"Software",salarios:"Salarios",ofi
 const CAT_COLOR={marketing:"#fb923c",software:"#a78bfa",salarios:"#22c55e",oficina:"#60a5fa",comisiones:"#fbbf24",otros:"#94a3b8"};
 function FinancePanel({token}){
   const [entries,setEntries]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("fixed");const [showAdd,setShowAdd]=useState(false);const [msg,setMsg]=useState("");
-  const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",payment_method:"transferencia",card_closing_date:""});
+  const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:""});
   const [allOps,setAllOps]=useState([]);const [allPmts,setAllPmts]=useState([]);
   const [dollarPending,setDollarPending]=useState([]);const [dollarRates,setDollarRates]=useState({});
   const [agentMvs,setAgentMvs]=useState([]);const [agentSignups,setAgentSignups]=useState([]);
@@ -1397,13 +1397,33 @@ function FinancePanel({token}){
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const addEntry=async()=>{
-    if(!newEntry.amount||!newEntry.category){flash("Faltan datos");return;}
+    if(!newEntry.category){flash("Faltan datos");return;}
     if(newEntry.category==="otros"&&!newEntry.detail){flash("Categoría 'Otros' requiere detalle");return;}
     const isTC=newEntry.payment_method==="tarjeta_credito";
     if(isTC&&!newEntry.card_closing_date){flash("Falta fecha de cierre de tarjeta");return;}
-    const body={date:newEntry.date,type:"gasto",description:CAT_LBL[newEntry.category]+(newEntry.detail?` — ${newEntry.detail}`:""),detail:newEntry.detail||null,category:newEntry.category,amount:Number(newEntry.amount),currency:"USD",payment_method:newEntry.payment_method,is_paid:!isTC,card_closing_date:isTC?newEntry.card_closing_date:null,auto_generated:false};
+    const isARS=newEntry.currency==="ARS";
+    if(isARS&&!newEntry.amount_ars){flash("Falta monto ARS");return;}
+    if(!isARS&&!newEntry.amount){flash("Falta monto USD");return;}
+    // ARS + no TC → necesita tipo de cambio para dollarizar ya
+    if(isARS&&!isTC&&!newEntry.exchange_rate){flash("Falta tipo de cambio");return;}
+    let body={date:newEntry.date,type:"gasto",description:CAT_LBL[newEntry.category]+(newEntry.detail?` — ${newEntry.detail}`:""),detail:newEntry.detail||null,category:newEntry.category,payment_method:newEntry.payment_method,is_paid:!isTC,card_closing_date:isTC?newEntry.card_closing_date:null,auto_generated:false};
+    if(isARS){
+      const ars=Number(newEntry.amount_ars);
+      if(isTC){
+        // TC + ARS: pendiente de débito, se dollariza cuando se marca pagado
+        body={...body,amount:0,amount_ars:ars,currency:"ARS",exchange_rate:null};
+      } else {
+        // Efectivo/transferencia + ARS: dollarizar ya al TC provisto
+        const rate=Number(newEntry.exchange_rate);
+        const usd=Math.round((ars/rate)*100)/100;
+        body={...body,amount:usd,amount_ars:ars,exchange_rate:rate,currency:"USD",dollarized_at:new Date().toISOString()};
+      }
+    } else {
+      // USD puro
+      body={...body,amount:Number(newEntry.amount),currency:"USD"};
+    }
     const r=await dq("finance_entries",{method:"POST",token,body});
-    if(r?.id||Array.isArray(r)){load();setShowAdd(false);setNewEntry({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",payment_method:"transferencia",card_closing_date:""});flash("Gasto agregado");}
+    if(r?.id||Array.isArray(r)){load();setShowAdd(false);setNewEntry({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:""});flash("Gasto agregado");}
   };
   const delEntry=async(id)=>{if(!confirm("¿Eliminar este movimiento?"))return;await dq("finance_entries",{method:"DELETE",token,filters:`?id=eq.${id}`});setEntries(p=>p.filter(e=>e.id!==id));flash("Eliminado");};
   const usd=v=>`USD ${Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
@@ -1473,17 +1493,25 @@ function FinancePanel({token}){
     </div>
     <div style={{display:"flex",gap:8,marginBottom:16}}>{[{k:"fixed",l:"Gastos del Negocio"},{k:"ledger",l:"Libro Diario"},{k:"dollar",l:"Dollarización"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
     {showAdd&&tab==="fixed"&&<Card title="Nuevo gasto">
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 12px"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
         <Inp label="Fecha" type="date" value={newEntry.date} onChange={v=>setNewEntry(p=>({...p,date:v}))}/>
         <Sel label="Categoría" value={newEntry.category} onChange={v=>setNewEntry(p=>({...p,category:v}))} options={FIXED_CATS.map(c=>({value:c.k,label:c.l}))}/>
-        <Inp label="Monto USD" type="number" value={newEntry.amount} onChange={v=>setNewEntry(p=>({...p,amount:v}))} step="0.01" placeholder="0.00"/>
         <Sel label="Método" value={newEntry.payment_method} onChange={v=>setNewEntry(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"tarjeta_credito",label:"Tarjeta Crédito"},{value:"tarjeta_debito",label:"Tarjeta Débito"},{value:"efectivo",label:"Efectivo"}]}/>
       </div>
+      {/* Selector de moneda USD/ARS */}
+      <div style={{display:"flex",gap:8,marginBottom:12}}>{[{k:"USD",l:"USD"},{k:"ARS",l:"ARS ($)"}].map(c=><button key={c.k} onClick={()=>setNewEntry(p=>({...p,currency:c.k}))} style={{flex:1,padding:"10px",fontSize:12,fontWeight:700,borderRadius:8,border:newEntry.currency===c.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:newEntry.currency===c.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:newEntry.currency===c.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{c.l}</button>)}</div>
+      {newEntry.currency==="USD"
+        ?<Inp label="Monto USD" type="number" value={newEntry.amount} onChange={v=>setNewEntry(p=>({...p,amount:v}))} step="0.01" placeholder="0.00"/>
+        :<div style={{display:"grid",gridTemplateColumns:newEntry.payment_method==="tarjeta_credito"?"1fr":"1fr 1fr",gap:"0 12px"}}>
+          <Inp label="Monto ARS" type="number" value={newEntry.amount_ars} onChange={v=>setNewEntry(p=>({...p,amount_ars:v}))} step="0.01" placeholder="0.00"/>
+          {newEntry.payment_method!=="tarjeta_credito"&&<Inp label="Tipo de cambio ARS/USD" type="number" value={newEntry.exchange_rate} onChange={v=>setNewEntry(p=>({...p,exchange_rate:v}))} step="0.01" placeholder="Ej: 1410"/>}
+          {newEntry.currency==="ARS"&&newEntry.payment_method!=="tarjeta_credito"&&newEntry.amount_ars&&newEntry.exchange_rate&&<p style={{gridColumn:"1/-1",fontSize:11,color:IC,margin:"-6px 0 8px",fontWeight:600}}>= USD {(Number(newEntry.amount_ars)/Number(newEntry.exchange_rate)).toFixed(2)}</p>}
+        </div>}
       <Inp label={`Detalle ${newEntry.category==="otros"?"(obligatorio)":"(opcional)"}`} value={newEntry.detail} onChange={v=>setNewEntry(p=>({...p,detail:v}))} placeholder="Ej: Meta ads campaña abril · Vercel Pro · Sueldo Marzo"/>
       {newEntry.payment_method==="tarjeta_credito"&&<>
         <Inp label="Fecha de cierre / débito de tarjeta" type="date" value={newEntry.card_closing_date} onChange={v=>setNewEntry(p=>({...p,card_closing_date:v}))}/>
         <div style={{background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8,padding:"10px 14px",marginBottom:12}}>
-          <p style={{fontSize:12,color:"#fbbf24",margin:0,fontWeight:500}}>💳 Este gasto queda pendiente de débito y suma a la <strong>Deuda Tarjeta</strong> del dashboard hasta que se debite el día de cierre.</p>
+          <p style={{fontSize:12,color:"#fbbf24",margin:0,fontWeight:500}}>💳 Este gasto queda pendiente de débito y suma a la <strong>Deuda Tarjeta</strong> del dashboard hasta que se debite el día de cierre.{newEntry.currency==="ARS"?" Se dollariza al TC del día del débito (en la tab Dollarización).":""}</p>
         </div>
       </>}
       <div style={{display:"flex",gap:8,marginTop:8}}><Btn onClick={addEntry}>Guardar</Btn><Btn variant="secondary" onClick={()=>setShowAdd(false)}>Cancelar</Btn></div>
