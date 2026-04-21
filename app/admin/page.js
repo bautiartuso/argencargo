@@ -53,7 +53,7 @@ const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE
 const CM={aereo_blanco:"Aéreo A",aereo_negro:"Aéreo B",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B"};
 const STATUSES=Object.keys(SM);
 const CHANNELS=Object.keys(CM);
-const SERVICES=[{key:"aereo_a_china",label:"Aéreo A — China",unit:"kg",info:"7-10 días hábiles"},{key:"aereo_b_usa",label:"Aéreo B — USA",unit:"kg",info:"48-72 hs hábiles"},{key:"aereo_b_china",label:"Aéreo B — China",unit:"kg",info:"10-15 días hábiles"},{key:"maritimo_a_china",label:"Marítimo A — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo B — China/USA",unit:"cbm",info:""}];
+const SERVICES=[{key:"aereo_a_china",label:"Aéreo A — China",unit:"kg",info:"7-10 días hábiles"},{key:"aereo_b_usa",label:"Aéreo B — USA (carga general)",unit:"kg",info:"48-72 hs hábiles"},{key:"aereo_b_usa_celulares",label:"Aéreo B — USA (celulares)",unit:"kg",info:"Tarifa especial celulares"},{key:"aereo_b_china",label:"Aéreo B — China",unit:"kg",info:"10-15 días hábiles"},{key:"maritimo_a_china",label:"Marítimo A — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo B — China/USA",unit:"cbm",info:""}];
 const formatDate=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return new Date(y,m-1,day).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});};
 const formatDateInput=(d)=>{if(!d)return"";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/))return s;return new Date(d).toISOString().split("T")[0];};
 
@@ -357,13 +357,15 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         totalAbonar=Number(op.budget_total||0);
       } else {
       // Flete (uses client custom rate if available)
-      const isUSA=op.origin==="USA";const svcKey=op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="aereo_negro"?(isUSA?"aereo_b_usa":"aereo_b_china"):op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b";
+      const isUSA=op.origin==="USA";
+      // Si es aéreo B USA + celulares, usa service_key especial (configurable + overrideable por cliente)
+      const isPhonesBUsaInline=op.channel==="aereo_negro"&&isUSA&&op.has_phones;
+      const svcKey=isPhonesBUsaInline?"aereo_b_usa_celulares":(op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="aereo_negro"?(isUSA?"aereo_b_usa":"aereo_b_china"):op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b");
       // Canal B aéreo (negro): cobra por peso BRUTO (totGW). Canal A aéreo: peso facturable (pf). Marítimo: CBM.
       const fleteAmt=op.channel?.includes("aereo")?(op.channel==="aereo_negro"?Math.max(totGW,1):pf):(op.channel==="maritimo_blanco"?Math.max(totCBM,1):totCBM);
       const getRate=(sk,amt)=>{const rates=tariffs.filter(t=>t.service_key===sk);for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amt>=min&&amt<max){const ov=clientOverrides.find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):Number(r.rate);}}return rates.length?Number(rates[rates.length-1].rate):0;};
-      // Tarifa especial: aéreo B USA + celulares → $65/kg
-      const isPhonesBUsa=op.channel==="aereo_negro"&&isUSA&&op.has_phones;
-      const fleteRate=isPhonesBUsa?65:getRate(svcKey,fleteAmt);flete=fleteAmt*fleteRate;
+      // Tarifa: toma del service_key calculado arriba (incluye aereo_b_usa_celulares si aplica).
+      const fleteRate=getRate(svcKey,fleteAmt);flete=fleteAmt*fleteRate;
       // Recargo baterías solo en aéreo A (Courier Comercial) - $2 por kg
       if(op.channel==="aereo_blanco"&&op.has_battery)flete+=fleteAmt*2;
       // CIF: RI sees real, others see ficticio. Marítimo always ficticio.
