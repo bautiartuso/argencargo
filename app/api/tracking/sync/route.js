@@ -12,7 +12,24 @@ import {
 // Permitir hasta 60 segundos de ejecución (por defecto Hobby es 10s).
 export const maxDuration = 60;
 
-const ACTIVE_STATUSES = ["en_transito", "arribo_argentina", "en_aduana", "lista_retiro"];
+const ACTIVE_STATUSES = ["en_transito", "arribo_argentina", "en_aduana", "entregada"];
+
+// Internal secret for server-to-server calls to /api/notify.
+const CRON_SECRET = process.env.CRON_SECRET || "";
+const BASE_URL = process.env.PUBLIC_BASE_URL || "https://argencargo.com.ar";
+
+// Dispara /api/notify con bypass de CRON_SECRET (el endpoint lo acepta además del JWT admin).
+async function triggerMail(op_id, trigger) {
+  if (!CRON_SECRET) return { skipped: "no CRON_SECRET" };
+  try {
+    const r = await fetch(`${BASE_URL}/api/notify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${CRON_SECRET}` },
+      body: JSON.stringify({ op_id, trigger })
+    });
+    return await r.json();
+  } catch (e) { return { error: e.message }; }
+}
 
 async function fetchActiveOps(operationId) {
   let url;
@@ -83,12 +100,14 @@ async function syncOne(op) {
     if (m) patch.eta = m[1];
   }
 
-  // Auto-status: si algún evento indica arribo AL PAÍS DESTINO (Argentina) Y op está en_transito → arribo_argentina
-  // IMPORTANTE: los códigos RC/IA/CC se disparan en CUALQUIER escala (Shanghai, Memphis, Dubai, etc),
-  // así que exigimos que la ubicación también mencione Argentina para evitar falsos positivos.
+  // Auto-status #1: arribo AL PAÍS DESTINO (Argentina) Y op está en_transito → arribo_argentina
+  // Exigimos que la ubicación mencione Argentina para evitar falsos positivos en escalas.
+  // IMPORTANTE: el evento CC/customs-clearance se IGNORA para transición de status porque
+  // algunos couriers (DHL) lo tiran antes del arribo físico. La transición a en_aduana
+  // se hace con un timer de 4h post-arribo (más abajo).
   if (op.status === "en_transito" && inserted > 0) {
-    const arrivalCodes = new Set(["RC", "IA", "customs-clearance", "CC"]);
-    const arrivalKeywords = ["arrived", "arrival", "arribo", "customs", "aduana", "clearance", "import"];
+    const arrivalCodes = new Set(["RC", "IA"]);
+    const arrivalKeywords = ["arrived", "arrival", "arribo"];
     const argKeywords = ["argentin", "buenos aires", "ezeiza", ", ar ", "(ar)", " ar,", "aep"];
     const hasArrival = (d.events || []).some(ev => {
       const txt = `${ev.title||""} ${ev.description||""} ${ev.location||""}`.toLowerCase();
@@ -100,11 +119,27 @@ async function syncOne(op) {
     if (hasArrival) patch.status = "arribo_argentina";
   }
 
-  // Auto-status: si courier entregó (DL) Y op está en_transito o arribo → lista_retiro (recibido en oficina)
-  if (["en_transito", "arribo_argentina"].includes(op.status) && inserted > 0) {
+  // Auto-status #2: si hace 4h+ que la op está en arribo_argentina → en_aduana.
+  // Buscamos el evento de arribo más reciente en tracking_events y comparamos occurred_at.
+  if (op.status === "arribo_argentina") {
+    try {
+      const evRes = await fetch(
+        `${SB_URL}/rest/v1/tracking_events?operation_id=eq.${op.id}&status_code=in.(RC,IA)&select=occurred_at&order=occurred_at.desc&limit=1`,
+        { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } }
+      );
+      const evs = await evRes.json();
+      const arrivedAt = Array.isArray(evs) && evs[0] ? new Date(evs[0].occurred_at) : null;
+      if (arrivedAt && (Date.now() - arrivedAt.getTime()) >= 4 * 60 * 60 * 1000) {
+        patch.status = "en_aduana";
+      }
+    } catch (e) { /* noop */ }
+  }
+
+  // Auto-status #3: courier entregó (DL) → entregada (= lista para retirar en oficina).
+  if (["en_transito", "arribo_argentina", "en_aduana"].includes(op.status) && inserted > 0) {
     const deliveryCodes = new Set(["DL", "delivered", "OK"]);
     const hasDelivery = (d.events || []).some(ev => ev.status_code && deliveryCodes.has(ev.status_code));
-    if (hasDelivery) patch.status = "lista_retiro";
+    if (hasDelivery) patch.status = "entregada";
   }
 
   if (Object.keys(patch).length) {
@@ -113,6 +148,11 @@ async function syncOne(op) {
       headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "return=minimal" },
       body: JSON.stringify(patch)
     });
+    // Email automático cuando el sync cambia el status (la guarda sent_notifications
+    // en /api/notify previene duplicados con el admin).
+    if (patch.status === "arribo_argentina") {
+      await triggerMail(op.id, "arribo");
+    }
   }
 
   // Notification #5: notify client about new tracking events

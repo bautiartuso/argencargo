@@ -67,16 +67,16 @@ function renderShell({ subject, greeting, body, extraHtml, opCode, isPreview }) 
           ${extraHtml || ""}
         </td></tr>
         ${opCode ? `<tr><td style="padding:0 32px 24px"><p style="color:#666;font-size:13px;margin:0;padding-top:16px;border-top:1px solid #eee">Código de operación: <strong style="color:${NAVY};font-family:monospace">${opCode}</strong><br/>Cualquier consulta, respondé este email o escribinos por WhatsApp.</p></td></tr>` : ""}
-        <tr><td style="padding:28px 32px;background:#fff;border-top:1px solid #eef1f5">
+        <tr><td style="padding:28px 32px;background:${NAVY}">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
-              <td width="90" valign="middle" style="padding-right:16px">
-                <img src="${LOGO_COLOR}" alt="Argencargo" width="80" style="display:block;max-width:80px;height:auto"/>
+              <td width="110" valign="middle" style="padding-right:16px">
+                <img src="${LOGO_WHITE}" alt="Argencargo" width="100" style="display:block;max-width:100px;height:auto"/>
               </td>
-              <td valign="middle" style="font-size:12px;line-height:1.7;color:#333">
-                <div style="font-weight:800;color:${NAVY};letter-spacing:0.02em;margin-bottom:2px">ARGENCARGO</div>
-                <div><span style="color:#888">T.</span> +54 9 11 2508-8580</div>
-                <div><span style="color:#888">E-mail:</span> <a href="mailto:info@argencargo.com.ar" style="color:${AC};text-decoration:none">info@argencargo.com.ar</a></div>
+              <td valign="middle" style="font-size:12px;line-height:1.7;color:#cfd8e8">
+                <div style="font-weight:800;color:#fff;letter-spacing:0.02em;margin-bottom:2px">ARGENCARGO</div>
+                <div><span style="color:#8ea3c4">T.</span> +54 9 11 2508-8580</div>
+                <div><span style="color:#8ea3c4">E-mail:</span> <a href="mailto:info@argencargo.com.ar" style="color:#8fb8ff;text-decoration:none">info@argencargo.com.ar</a></div>
                 <div>Av Callao 1137 — Recoleta, CABA</div>
               </td>
             </tr>
