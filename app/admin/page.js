@@ -221,8 +221,7 @@ function NewOperation({token,clients,onBack,onCreated}){
 }
 
 function OperationEditor({op:initOp,token,onBack,onDelete}){
-  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});const [lrRate,setLrRate]=useState("");const [cbuInfo,setCbuInfo]=useState("");const [expNotif,setExpNotif]=useState(null);
-  const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:""});
+  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});  const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:""});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const loadCCBalance=async()=>{const mvs=await dq("supplier_account_movements",{token,filters:"?select=type,amount_usd"});if(Array.isArray(mvs)){const bal=mvs.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):(-Number(m.amount_usd))),0);setCcBalance(bal);}};
   const load=async()=>{setLo(true);const [it,pk,ev,tf,cc]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
@@ -308,8 +307,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {k:"packages",l:"Bultos"},
     ...(isCanalB?[]:[{k:"tracking",l:"Seguimiento"}]),
     {k:"payments",l:"Pagos"},
-    {k:"finance",l:"Finanzas"},
-    {k:"notifs",l:"Notificaciones"}
+    {k:"finance",l:"Finanzas"}
   ];
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
   const chItem=(idx,f,v)=>{setItems(p=>{const n=[...p];n[idx]={...n[idx],[f]:v};return n;});};
@@ -1004,63 +1002,6 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
       </Card>
       </>;})()}
-
-    {tab==="notifs"&&(()=>{
-      const cn=(opClient?.first_name||"Cliente").trim().split(/\s+/)[0];
-      const wa=opClient?.whatsapp?String(opClient.whatsapp).replace(/[^0-9]/g,""):"";
-      const email=opClient?.email||"";
-      const desc=op.description||items.map(it=>it.description).filter(Boolean).join(", ")||"tu carga";
-      const code=op.operation_code;
-      const origenTxt=op.origin==="USA"?"Estados Unidos":op.origin==="China"?"China":(op.origin||"origen");
-      const etaTxt=op.eta?(()=>{const s=String(op.eta).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,d]=s.split("-");return new Date(y,m-1,d).toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"});}return s;})():null;
-      // Tracking con peso facturable por bulto
-      const trackingsDetail=pkgs.filter(p=>p.national_tracking?.trim()).map(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;const pf=Math.max(b,v);return `- Bulto ${p.package_number}${pf>0?` (${pf.toFixed(2)} kg facturables)`:""}: ${p.national_tracking}`;}).join("\n");
-      const NOTIFS=[
-        {key:"warehouse",status:"en_deposito_origen",icon:"📦",title:"Llegada al Warehouse",subject:`${code} - Recibimos tu paquete en nuestro depósito`,msg:`Hola ${cn}!\n\nRecibimos tu mercadería en nuestro depósito en ${origenTxt}.${trackingsDetail?`\n\n*Tracking del paquete:*\n${trackingsDetail}`:""}\n\nPara avanzar con la operación, necesitamos que completes la documentación de la carga (mercadería, cantidad, valor declarado).\n\nIngresá acá:\nhttps://argencargo.com.ar/portal?op=${code}\n\nUna vez completado, te confirmamos el presupuesto final y avanzamos con el envío.\n\nCualquier duda escribime y desde ya muchas gracias!\nArgencargo`},
-        {key:"transito",status:"en_transito",icon:"✈️",title:"En Tránsito Internacional",subject:`${code} - Tu carga está en tránsito`,msg:`Hola ${cn}!\n\nBuenas noticias! Tu carga *${desc}* (${code}) ya está en tránsito internacional rumbo a Argentina.\n\n${etaTxt?`La fecha estimada de arribo es *${etaTxt}*.`:"Próximamente te confirmamos la fecha estimada de arribo."}\n\nSaludos!\nArgencargo`},
-        {key:"arribo",status:"arribo_argentina",icon:"🇦🇷",title:"Arribo a Argentina",subject:`${code} - Tu carga llegó a Argentina`,msg:`Hola ${cn}!\n\nTu carga *${desc}* (${code}) llegó a Argentina. Estamos procesando los despachos aduaneros, te avisamos en cuanto esté liberada.\n\nSaludos!\nArgencargo`},
-        {key:"retiro",status:"entregada",icon:"✅",title:"Lista para retirar",hasRate:true,subject:`${code} - Tu carga está lista`,msg:(()=>{const isEnvio=op.shipping_to_door;const bt=Number(op.budget_total||0);const shipC=isEnvio?Number(op.shipping_cost||0):0;const ant=Number(op.total_anticipos||0);const saldo=bt-ant;const rate=Number(lrRate||0);const saldoArs=saldo*rate;const pagoArsTxt=rate>0&&saldo>0?`\n\n*Si preferís abonar en pesos:*\nSaldo: ARS ${saldoArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}${cbuInfo?`\n\n*Datos para transferir:*\n${cbuInfo}`:""}`:"";const saldoTxt=saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}*${shipC>0?`\n(incluye USD ${shipC.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})} de envío)`:""}${ant>0?`\n(Total USD ${bt.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})} - Anticipos USD ${ant.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}${pagoArsTxt}`:bt>0&&ant>=bt?`\n\n*Operación abonada en su totalidad ✓*`:"";if(isEnvio){return `Buenas noticias ${cn}!\n\nTu carga *${desc}* (${code}) ya está liberada y en nuestra oficina preparándose para ser despachada.\n\nRecordá que el saldo debe abonarse previamente.${saldoTxt}\n\nUna vez confirmado el pago, coordinamos el envío.`;}return `Buenas noticias ${cn}!\n\nTu carga *${desc}* (${code}) ya está liberada y se encuentra en nuestra oficina.\n\n📍 Av. Callao 1137, Recoleta - CABA (M&M Propiedades)\n🕐 Lun a Vie de 9:00 a 19:00 hs${saldoTxt}\n\nTe esperamos!`;})()},
-        {key:"entregada",status:"operacion_cerrada",icon:"📬",title:"Entregada",subject:`${code} - Tu carga fue entregada`,msg:`${cn},\n\nConfirmamos la entrega exitosa de tu carga *${desc}* (${code}) !!\n\nEsperamos volver a trabajar juntos muy pronto y gracias por la confianza.\n\nCualquier consulta a disposición.\n\nARGENCARGO 🚀`}
-      ];
-      return <div>
-        {!opClient&&<div style={{padding:"14px 18px",background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:10,marginBottom:16}}><p style={{fontSize:13,color:"#fb923c",margin:0}}>⚠️ No hay cliente asignado a esta operación</p></div>}
-        {opClient&&!wa&&!email&&<div style={{padding:"14px 18px",background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:10,marginBottom:16}}><p style={{fontSize:13,color:"#fb923c",margin:0}}>⚠️ El cliente no tiene WhatsApp ni email cargados</p></div>}
-        {opClient&&<div style={{display:"flex",gap:16,marginBottom:16,padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.12)",borderRadius:10,fontSize:12,color:"rgba(255,255,255,0.6)",flexWrap:"wrap"}}>
-          <span><strong style={{color:"#fff"}}>Cliente:</strong> {cn}</span>
-          {wa&&<span><strong style={{color:"#fff"}}>WhatsApp:</strong> +{wa}</span>}
-          {email&&<span><strong style={{color:"#fff"}}>Email:</strong> {email}</span>}
-        </div>}
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>{NOTIFS.map(n=>{const isCurrent=op.status===n.status;const isExp=expNotif===n.key;const getMsg=()=>{const el=document.getElementById(`msg-${n.key}`);return el?el.value:n.msg;};return <div key={n.key} style={{background:isCurrent?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.05)",border:`1.5px solid ${isCurrent?"rgba(251,191,36,0.3)":"rgba(255,255,255,0.1)"}`,borderRadius:12,overflow:"hidden"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",flexWrap:"wrap"}}>
-            <button onClick={()=>setExpNotif(isExp?null:n.key)} style={{flex:1,minWidth:200,display:"flex",alignItems:"center",gap:10,background:"none",border:"none",cursor:"pointer",textAlign:"left",padding:0,color:"#fff"}}>
-              <span style={{fontSize:18}}>{n.icon}</span>
-              <span style={{fontSize:14,fontWeight:700,color:isCurrent?"#fbbf24":"#fff"}}>{n.title}</span>
-              {isCurrent&&<span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)"}}>Estado actual</span>}
-              <span style={{marginLeft:"auto",color:"rgba(255,255,255,0.4)",fontSize:12}}>{isExp?"▲":"▼"}</span>
-            </button>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {wa&&<a href="#" onClick={e=>{e.preventDefault();const m=getMsg().normalize("NFC");const u=new URL("https://api.whatsapp.com/send/");u.searchParams.set("phone",wa);u.searchParams.set("text",m);window.open(u.toString(),"_blank");}} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none"}}>📱 WhatsApp</a>}
-              {email&&<a href="#" onClick={e=>{e.preventDefault();window.location.href=`mailto:${email}?subject=${encodeURIComponent(n.subject)}&body=${encodeURIComponent(getMsg())}`;}} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#60a5fa,#3b82f6)",color:"#fff",textDecoration:"none"}}>📧 Email</a>}
-              <button onClick={()=>{navigator.clipboard.writeText(getMsg());flash("Mensaje copiado");}} style={{padding:"8px 12px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.7)",cursor:"pointer"}}>📋</button>
-            </div>
-          </div>
-          <div style={{padding:isExp?"0 16px 16px":"0",borderTop:isExp?"1px solid rgba(255,255,255,0.06)":"none",paddingTop:isExp?14:0,display:isExp?"block":"none"}}>
-            {n.hasRate&&<div style={{background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.15)",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
-              <p style={{fontSize:11,fontWeight:700,color:"#fbbf24",margin:"0 0 8px",textTransform:"uppercase"}}>Opcional: Pago en pesos</p>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:10}}>
-                <Inp label="Tipo de cambio ARS" type="number" value={lrRate} onChange={setLrRate} step="0.01" placeholder="Ej: 1410"/>
-                <Inp label="Datos de pago (CBU/Alias/Cuenta)" value={cbuInfo} onChange={setCbuInfo} placeholder="Ej: CBU 0000... Alias: MI.ALIAS"/>
-              </div>
-              <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"4px 0 0",fontStyle:"italic"}}>Si completás estos campos, el mensaje incluirá el saldo en pesos y los datos para transferir.</p>
-            </div>}
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px",textTransform:"uppercase"}}>Asunto (email)</p>
-            <p style={{fontSize:13,color:"#fff",margin:"0 0 10px",padding:"8px 12px",background:"rgba(255,255,255,0.04)",borderRadius:6,border:"1px solid rgba(255,255,255,0.06)"}}>{n.subject}</p>
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px",textTransform:"uppercase"}}>Mensaje (editable)</p>
-            <textarea key={`${n.key}-${n.hasRate?`${lrRate}-${cbuInfo}`:""}`} defaultValue={n.msg} id={`msg-${n.key}`} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit",minHeight:180,resize:"vertical",lineHeight:1.5}}/>
-          </div>
-        </div>;})}</div>
-      </div>;
-    })()}
 
     </>}
   </div>;
