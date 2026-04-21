@@ -2937,8 +2937,22 @@ function ComunicacionesPanel({token}){
     }catch(e){alert("Error: "+e.message);}
   };
 
+  const testEmail=async()=>{
+    const to=prompt("¿A qué email mandamos el test?","bautistaartuso@gmail.com");
+    if(!to)return;
+    try{
+      const r=await fetch("/api/notify/test",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({to})});
+      const resp=await r.json();
+      if(resp?.ok)flash(`✉️ Email de prueba enviado a ${to}`);
+      else alert(`Error: ${resp?.error||"desconocido"}\n\n${JSON.stringify(resp?.detail||{},null,2)}`);
+    }catch(e){alert("Error: "+e.message);}
+  };
+
   return <div>
-    <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px"}}>Comunicaciones</h2>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:10}}>
+      <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Comunicaciones</h2>
+      <button onClick={testEmail} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:IC,cursor:"pointer"}}>📧 Probar email</button>
+    </div>
     <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"0 0 20px"}}>Notificaciones manuales (WhatsApp) + historial de feedback de clientes.</p>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
 

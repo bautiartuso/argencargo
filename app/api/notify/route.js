@@ -14,7 +14,8 @@
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 const RESEND_KEY = process.env.RESEND_API_KEY;
-const RESEND_FROM = process.env.RESEND_FROM || "Argencargo <onboarding@resend.dev>";
+// Dominio argencargo.com.ar verificado en Resend → emails salen desde info@
+const RESEND_FROM = process.env.RESEND_FROM || "Argencargo <info@argencargo.com.ar>";
 const BASE_URL = process.env.PUBLIC_BASE_URL || "https://argencargo.com.ar";
 
 export const maxDuration = 30;
