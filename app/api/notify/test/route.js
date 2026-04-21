@@ -60,10 +60,10 @@ export async function POST(req) {
         <tr><td style="padding:28px 32px;background:#f5f7fa;border-top:1px solid #eef1f5">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
-              <td width="90" valign="top" style="padding-right:16px">
+              <td width="90" valign="middle" style="padding-right:16px">
                 <img src="${LOGO}" alt="Argencargo" width="80" style="display:block;max-width:80px;height:auto"/>
               </td>
-              <td valign="top" style="font-size:12px;line-height:1.7;color:#333">
+              <td valign="middle" style="font-size:12px;line-height:1.7;color:#333">
                 <div style="font-weight:800;color:${NAVY};letter-spacing:0.02em;margin-bottom:2px">ARGENCARGO</div>
                 <div><span style="color:#888">T.</span> +54 9 11 2508-8580</div>
                 <div><span style="color:#888">E-mail:</span> <a href="mailto:info@argencargo.com.ar" style="color:${AC};text-decoration:none">info@argencargo.com.ar</a></div>
