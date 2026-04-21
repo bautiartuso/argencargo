@@ -111,7 +111,8 @@ async function renderEmail(trigger, op, client) {
 // Shell HTML compartido entre /api/notify y /api/notify/test.
 // Header: logo centrado sobre fondo blanco. Footer: logo + datos de contacto.
 function renderEmailShell({ subject, greeting, body, extraHtml, opCode, NAVY = "#152D54", AC = "#3B7DD8" }) {
-  const LOGO = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png";
+  const LOGO_WHITE = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png";
+  const LOGO_COLOR = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png";
   const greetingHtml = greeting ? `<h2 style="color:${NAVY};font-size:20px;margin:0 0 16px;font-weight:700">${greeting}</h2>` : "";
   const opCodeHtml = opCode ? `<tr><td style="padding:24px 32px 0"><p style="color:#666;font-size:13px;margin:0;padding-top:16px;border-top:1px solid #eee">Código de operación: <strong style="color:${NAVY};font-family:monospace">${opCode}</strong><br/>Cualquier consulta, respondé este email o escribinos por WhatsApp.</p></td></tr>` : "";
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${subject || "Argencargo"}</title></head>
@@ -120,13 +121,9 @@ function renderEmailShell({ subject, greeting, body, extraHtml, opCode, NAVY = "
     <tr><td align="center">
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.04)">
 
-        <!-- HEADER: banner azul con logo en caja blanca -->
-        <tr><td align="center" style="background:linear-gradient(135deg,${NAVY},${AC});padding:36px 32px">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-            <tr><td align="center" style="background:#fff;border-radius:14px;padding:18px 32px;box-shadow:0 4px 12px rgba(0,0,0,0.15)">
-              <img src="${LOGO}" alt="Argencargo" width="180" style="display:block;max-width:180px;height:auto"/>
-            </td></tr>
-          </table>
+        <!-- HEADER: banner azul con logo BLANCO directo -->
+        <tr><td align="center" style="background:linear-gradient(135deg,${NAVY},${AC});padding:40px 32px">
+          <img src="${LOGO_WHITE}" alt="Argencargo" width="200" style="display:block;max-width:200px;height:auto;margin:0 auto"/>
         </td></tr>
 
         <!-- BODY: saludo + cuerpo + cta -->
@@ -139,12 +136,12 @@ function renderEmailShell({ subject, greeting, body, extraHtml, opCode, NAVY = "
         <!-- Código op + nota de respuesta -->
         ${opCodeHtml}
 
-        <!-- FOOTER: logo + datos de contacto -->
-        <tr><td style="padding:28px 32px;background:#f5f7fa;border-top:1px solid #eef1f5">
+        <!-- FOOTER: logo color + datos de contacto. Fondo blanco para camuflar el fondo del PNG. -->
+        <tr><td style="padding:28px 32px;background:#fff;border-top:1px solid #eef1f5">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
               <td width="90" valign="middle" style="padding-right:16px">
-                <img src="${LOGO}" alt="Argencargo" width="80" style="display:block;max-width:80px;height:auto"/>
+                <img src="${LOGO_COLOR}" alt="Argencargo" width="80" style="display:block;max-width:80px;height:auto"/>
               </td>
               <td valign="middle" style="font-size:12px;line-height:1.7;color:#333">
                 <div style="font-weight:800;color:${NAVY};letter-spacing:0.02em;margin-bottom:2px">ARGENCARGO</div>

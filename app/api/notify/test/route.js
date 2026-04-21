@@ -7,7 +7,8 @@ const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 const RESEND_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM = process.env.RESEND_FROM || "Argencargo <info@argencargo.com.ar>";
-const LOGO = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png";
+const LOGO_WHITE = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png";
+const LOGO_COLOR = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png";
 
 async function verifyAdmin(req) {
   const auth = req.headers.get("authorization") || "";
@@ -36,13 +37,9 @@ export async function POST(req) {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f5;padding:24px 0">
     <tr><td align="center">
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.04)">
-        <!-- HEADER: banner azul con logo en caja blanca -->
-        <tr><td align="center" style="background:linear-gradient(135deg,${NAVY},${AC});padding:36px 32px">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-            <tr><td align="center" style="background:#fff;border-radius:14px;padding:18px 32px;box-shadow:0 4px 12px rgba(0,0,0,0.15)">
-              <img src="${LOGO}" alt="Argencargo" width="180" style="display:block;max-width:180px;height:auto"/>
-            </td></tr>
-          </table>
+        <!-- HEADER: banner azul con logo blanco directo -->
+        <tr><td align="center" style="background:linear-gradient(135deg,${NAVY},${AC});padding:40px 32px">
+          <img src="${LOGO_WHITE}" alt="Argencargo" width="200" style="display:block;max-width:200px;height:auto;margin:0 auto"/>
         </td></tr>
         <!-- BODY -->
         <tr><td style="padding:28px 32px">
@@ -56,12 +53,12 @@ export async function POST(req) {
           </ul>
           <p style="font-size:12px;color:#999;margin:20px 0 0">Enviado: ${new Date().toLocaleString("es-AR")}</p>
         </td></tr>
-        <!-- FOOTER -->
-        <tr><td style="padding:28px 32px;background:#f5f7fa;border-top:1px solid #eef1f5">
+        <!-- FOOTER: logo color sobre fondo blanco (camufla el PNG) -->
+        <tr><td style="padding:28px 32px;background:#fff;border-top:1px solid #eef1f5">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
               <td width="90" valign="middle" style="padding-right:16px">
-                <img src="${LOGO}" alt="Argencargo" width="80" style="display:block;max-width:80px;height:auto"/>
+                <img src="${LOGO_COLOR}" alt="Argencargo" width="80" style="display:block;max-width:80px;height:auto"/>
               </td>
               <td valign="middle" style="font-size:12px;line-height:1.7;color:#333">
                 <div style="font-weight:800;color:${NAVY};letter-spacing:0.02em;margin-bottom:2px">ARGENCARGO</div>
