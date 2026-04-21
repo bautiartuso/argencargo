@@ -29,16 +29,27 @@ const config = {
 
 // ——— Tests ———
 
-test("canal B (negro) sólo cobra flete + envío, sin impuestos", () => {
+test("canal B (negro) sólo cobra flete por peso BRUTO, sin volumétrico", () => {
   const op = { channel: "aereo_negro", origin: "China", shipping_to_door: false };
   const items = [{ unit_price_usd: 10, quantity: 5 }];
+  // Peso bruto 5kg, volumétrico sería (40*30*25)/5000 = 6kg
+  // Canal B debe IGNORAR el volumétrico y cobrar sólo por bruto
   const pkgs = [{ quantity: 1, gross_weight_kg: 5, length_cm: 40, width_cm: 30, height_cm: 25 }];
   const r = calcOpBudget(op, items, pkgs, tariffs, config, [], null);
-  // Peso: max(5, (40*30*25)/5000 = 6) = 6 kg (volumétrico)
-  // Flete: max(6, 1) * $10 = $60
+  // Flete: max(5, 1) * $10 = $50 (NO $60 como sería con volumétrico)
   assert.equal(r.totalTax, 0);
-  assert.equal(r.flete, 60);
-  assert.equal(r.totalAbonar, 60);
+  assert.equal(r.flete, 50);
+  assert.equal(r.totalAbonar, 50);
+});
+
+test("canal B negro: bulto grande y liviano cobra SOLO por bruto (sin volumétrico)", () => {
+  const op = { channel: "aereo_negro", origin: "China" };
+  const items = [{ unit_price_usd: 10, quantity: 10 }];
+  // Volumétrico = (60*40*35)/5000 = 16.8 kg, bruto = 5kg
+  const pkgs = [{ quantity: 1, gross_weight_kg: 5, length_cm: 60, width_cm: 40, height_cm: 35 }];
+  const r = calcOpBudget(op, items, pkgs, tariffs, config, [], null);
+  // Canal B: sólo cobra por bruto → max(5, 1) * $10 = $50
+  assert.equal(r.flete, 50);
 });
 
 test("canal B con envío a domicilio suma shipping_cost", () => {
