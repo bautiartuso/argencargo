@@ -2884,6 +2884,17 @@ function ComunicacionesPanel({token}){
 
   const inpStyle={width:"100%",padding:"8px 10px",fontSize:13,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",boxSizing:"border-box"};
   const openTpl=(t)=>{setEditingTpl(t.id);setTplDraft({subject:t.subject||"",greeting:t.greeting||"",body:t.body||"",cta_text:t.cta_text||""});};
+  const sendPreview=async(tpl)=>{
+    const to=prompt("¿A qué email mandamos el preview?","bautiartuso21@gmail.com");
+    if(!to)return;
+    const trigger=tpl.key.replace("email_","");
+    try{
+      const r=await fetch("/api/notify/preview",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({to,trigger})});
+      const resp=await r.json();
+      if(resp?.ok)flash(`✉️ Preview de "${tpl.label}" enviado a ${to}`);
+      else alert(`Error: ${resp?.error||"desconocido"}\n${JSON.stringify(resp?.detail||{},null,2)}`);
+    }catch(e){alert("Error: "+e.message);}
+  };
   const cancelTpl=()=>{setEditingTpl(null);setTplDraft({});};
   const saveTpl=async()=>{
     if(!editingTpl)return;
@@ -3029,7 +3040,10 @@ function ComunicacionesPanel({token}){
                 <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:`${channelColor}22`,color:channelColor,textTransform:"uppercase",letterSpacing:"0.05em"}}>{channelIcon} {t.channel}</span>
                 <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>{t.label}</p>
               </div>
-              {!isEditing&&<button onClick={()=>openTpl(t)} style={{fontSize:11,fontWeight:700,padding:"5px 12px",borderRadius:6,border:"1.5px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:IC,cursor:"pointer"}}>✏️ Editar</button>}
+              {!isEditing&&<div style={{display:"flex",gap:6}}>
+                {t.channel==="email"&&<button onClick={()=>sendPreview(t)} style={{fontSize:11,fontWeight:700,padding:"5px 12px",borderRadius:6,border:"1.5px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>📧 Preview</button>}
+                <button onClick={()=>openTpl(t)} style={{fontSize:11,fontWeight:700,padding:"5px 12px",borderRadius:6,border:"1.5px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:IC,cursor:"pointer"}}>✏️ Editar</button>
+              </div>}
             </div>
             {isEditing&&<div style={{background:"rgba(0,0,0,0.2)",borderRadius:10,padding:"12px 14px",border:"1px solid rgba(96,165,250,0.2)"}}>
               {t.channel==="email"&&<div style={{marginBottom:10}}>
