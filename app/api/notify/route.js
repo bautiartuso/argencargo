@@ -111,7 +111,7 @@ async function renderEmail(trigger, op, client) {
 // Shell HTML compartido entre /api/notify y /api/notify/test.
 // Header: logo centrado sobre fondo blanco. Footer: logo + datos de contacto.
 function renderEmailShell({ subject, greeting, body, extraHtml, opCode, NAVY = "#152D54", AC = "#3B7DD8" }) {
-  const LOGO = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png";
+  const LOGO = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png";
   const greetingHtml = greeting ? `<h2 style="color:${NAVY};font-size:20px;margin:0 0 16px;font-weight:700">${greeting}</h2>` : "";
   const opCodeHtml = opCode ? `<tr><td style="padding:24px 32px 0"><p style="color:#666;font-size:13px;margin:0;padding-top:16px;border-top:1px solid #eee">Código de operación: <strong style="color:${NAVY};font-family:monospace">${opCode}</strong><br/>Cualquier consulta, respondé este email o escribinos por WhatsApp.</p></td></tr>` : "";
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${subject || "Argencargo"}</title></head>

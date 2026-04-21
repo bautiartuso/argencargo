@@ -8,7 +8,7 @@ const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 const RESEND_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM = process.env.RESEND_FROM || "Argencargo <info@argencargo.com.ar>";
 const BASE_URL = process.env.PUBLIC_BASE_URL || "https://argencargo.com.ar";
-const LOGO = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png";
+const LOGO = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png";
 
 async function verifyAdmin(req) {
   const auth = req.headers.get("authorization") || "";
