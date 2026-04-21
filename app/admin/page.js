@@ -248,7 +248,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     if(rest.status!==initOp.status){
       const triggerMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};
       const trigger=triggerMap[rest.status];
-      if(trigger){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${trigger} enviado al cliente`);else if(resp?.skipped)console.log("email skipped",resp);else console.error("email error",resp);}catch(e){console.error("email error",e);}}
+      if(trigger){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${trigger} enviado al cliente`);else if(resp?.skipped)flash(`⚠️ Email ${trigger} NO enviado: ${resp.skipped}`);else{console.error("email error",resp);flash(`❌ Email ${trigger} falló: ${resp?.error||"ver consola"}`);}}catch(e){console.error("email error",e);flash(`❌ Email ${trigger} falló: ${e.message}`);}}
     }
     setOp(p=>({...p,closed_at:rest.closed_at}));flash("Operación guardada");setSaving(false);
     // Auto-sync del presupuesto después de cualquier save (por si cambiaron flags que afectan el cálculo: has_phones, has_battery, channel, etc.)
@@ -486,6 +486,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           else if(first?.skipped)alert(first.skipped);
           await reloadEvents();
         }}>↻ Sincronizar tracking</Btn>
+        {(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];return <Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>;})()}
         <Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>
       </div>}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
