@@ -592,15 +592,26 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
         <h3 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.flight_code}</h3>
         {(()=>{const ready=flight.status==="preparando"&&flight.invoice_presented_at;const c=ready?"#22c55e":stColors[flight.status];return <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:c,background:`${c}20`,border:`1px solid ${c}40`,textTransform:"uppercase"}}>{ready?t.flight_status_listo:t["flight_status_"+flight.status]}</span>;})()}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:14}}>
-        <div>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px",textTransform:"uppercase"}}>{t.invoice}</p>
-          {flight.invoice_presented_at?<p style={{fontSize:13,color:"#22c55e",fontWeight:600,margin:0}}>✅ Factura presentada</p>:<p style={{fontSize:13,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>}
-        </div>
-        <div>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px",textTransform:"uppercase"}}>{t.destination}</p>
-          <p style={{fontSize:13,color:flight.destination_address?"#fff":"#fbbf24",margin:0}}>{flight.destination_address||t.no_destination_yet}</p>
-        </div>
+      <div style={{marginBottom:14}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>{t.invoice}</p>
+        {flight.invoice_presented_at?<p style={{fontSize:13,color:"#22c55e",fontWeight:600,margin:0}}>✅ Factura presentada</p>:<p style={{fontSize:13,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>}
+      </div>
+      {/* Datos de destino completos — lo que el agente necesita para despachar */}
+      <div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
+        <p style={{fontSize:10,fontWeight:700,color:IC,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.05em"}}>📦 {t.destination}</p>
+        {(()=>{const any=flight.dest_name||flight.dest_address||flight.destination_address||flight.dest_phone||flight.dest_email||flight.dest_tax_id||flight.dest_postal_code;if(!any)return <p style={{fontSize:13,color:"#fbbf24",margin:0}}>⏳ {t.no_destination_yet}</p>;
+        const row=(lbl,val,copyable)=>val?<div style={{display:"flex",gap:10,padding:"4px 0",fontSize:12,alignItems:"baseline"}}>
+          <span style={{minWidth:80,color:"rgba(255,255,255,0.4)",fontWeight:700,fontSize:10,textTransform:"uppercase"}}>{lbl}</span>
+          <span style={{color:"#fff",flex:1,wordBreak:"break-word",fontFamily:copyable?"monospace":"inherit"}}>{val}</span>
+        </div>:null;
+        return <>
+          {row("Nombre",flight.dest_name)}
+          {row("CUIT/DNI",flight.dest_tax_id,true)}
+          {row("Dirección",flight.dest_address||flight.destination_address)}
+          {row("Código Postal",flight.dest_postal_code,true)}
+          {row("Teléfono",flight.dest_phone,true)}
+          {row("Email",flight.dest_email,true)}
+        </>;})()}
       </div>
       <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"12px 0 8px",textTransform:"uppercase"}}>{t.operations_in_flight} ({flightOps.length})</p>
       <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px"}}>
