@@ -241,7 +241,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
     // Notification #6: notify client when operation status changes
     if(rest.status!==initOp.status&&op.client_id){try{const cls=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=auth_user_id`});const uid=Array.isArray(cls)&&cls[0]?cls[0].auth_user_id:null;if(uid){await dq("notifications",{method:"POST",token,body:{user_id:uid,portal:"cliente",title:`Estado actualizado: ${SM[rest.status]?.l||rest.status}`,body:`Operación ${op.operation_code}`,link:`?op=${op.operation_code}`}});}}catch(e){console.error("notif error",e);}}
-    setOp(p=>({...p,closed_at:rest.closed_at}));flash("Operación guardada");setSaving(false);};
+    setOp(p=>({...p,closed_at:rest.closed_at}));flash("Operación guardada");setSaving(false);
+    // Auto-sync del presupuesto después de cualquier save (por si cambiaron flags que afectan el cálculo: has_phones, has_battery, channel, etc.)
+    autoSyncBudget();
+  };
 
   // Auto-sync: refresca items+bultos de DB y recalcula+guarda presupuesto silenciosamente.
   // Se llama después de cualquier CRUD de items/bultos. Saltea ops cerradas/canceladas.
@@ -272,7 +275,17 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const addEvt=async()=>{await dq("tracking_events",{method:"POST",token,body:{operation_id:op.id,title:"Nuevo evento",occurred_at:new Date().toISOString(),is_visible_to_client:true,created_by:null}});await reloadEvents();flash("Evento agregado");};
   const delEvt=async(id)=>{await dq("tracking_events",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadEvents();flash("Evento eliminado");};
 
-  const tabs=[{k:"general",l:"General"},{k:"budget",l:"Presupuesto"},{k:"items",l:"Productos"},{k:"packages",l:"Bultos"},{k:"tracking",l:"Seguimiento"},{k:"payments",l:"Pagos"},{k:"finance",l:"Finanzas"},{k:"notifs",l:"Notificaciones"}];
+  const isCanalB=op.channel?.includes("negro");
+  const tabs=[
+    {k:"general",l:"General"},
+    {k:"budget",l:"Presupuesto"},
+    ...(isCanalB?[]:[{k:"items",l:"Productos"}]),
+    {k:"packages",l:"Bultos"},
+    ...(isCanalB?[]:[{k:"tracking",l:"Seguimiento"}]),
+    {k:"payments",l:"Pagos"},
+    {k:"finance",l:"Finanzas"},
+    {k:"notifs",l:"Notificaciones"}
+  ];
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
   const chItem=(idx,f,v)=>{setItems(p=>{const n=[...p];n[idx]={...n[idx],[f]:v};return n;});};
   const chPkg=(idx,f,v)=>{setPkgs(p=>{const n=[...p];n[idx]={...n[idx],[f]:v};return n;});};
@@ -294,9 +307,16 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       <Card title="Estado" actions={<Btn onClick={async()=>{let desc=op.description;if(!desc){const autoDesc=items.map(it=>it.description).filter(Boolean).join(", ");if(autoDesc){desc=autoDesc;setOp(p=>({...p,description:desc}));}}setSaving(true);const{id,clients,...rest}=({...op,description:desc});delete rest.created_at;delete rest.updated_at;if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Operación guardada");setSaving(false);}} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
         <Sel label="Estado de la carga" value={op.status} onChange={chOp("status")} options={STATUSES.map(s=>({value:s,label:SM[s].l}))}/>
         <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
+        <Inp label="ETA (fecha estimada de arribo)" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>
         <Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>
-        {op.channel==="aereo_blanco"&&<div style={{padding:"10px 14px",background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:8,marginBottom:8}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.has_battery||false} onChange={e=>chOp("has_battery")(e.target.checked)}/><span style={{fontSize:13,color:op.has_battery?"#fb923c":"rgba(255,255,255,0.5)",fontWeight:op.has_battery?600:400}}>🔋 La carga tiene baterías {op.has_battery?"(+$2/kg en flete)":""}</span></label></div>}
-        {op.channel==="aereo_negro"&&op.origin==="USA"&&<div style={{padding:"10px 14px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:8,marginBottom:8}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.has_phones||false} onChange={e=>chOp("has_phones")(e.target.checked)}/><span style={{fontSize:13,color:op.has_phones?IC:"rgba(255,255,255,0.5)",fontWeight:op.has_phones?600:400}}>📱 La carga es de celulares {op.has_phones?"(tarifa flete aéreo B USA: $65/kg)":""}</span></label></div>}
+        {op.channel==="aereo_blanco"&&<div style={{marginBottom:12}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>¿La carga contiene baterías internas?</p>
+          <div style={{display:"flex",gap:10}}>{[{k:true,icon:"⚡",l:"Sí, tiene baterías",sub:"Recargo $2/kg"},{k:false,icon:"✓",l:"No tiene baterías",sub:"Producto estándar"}].map(o=><div key={String(o.k)} onClick={()=>chOp("has_battery")(o.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:12,border:`1.5px solid ${(op.has_battery||false)===o.k?"#fb923c":"rgba(255,255,255,0.08)"}`,background:(op.has_battery||false)===o.k?"rgba(251,146,60,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer",transition:"all 0.15s"}}><p style={{fontSize:22,margin:"0 0 4px"}}>{o.icon}</p><p style={{fontSize:13,fontWeight:700,color:(op.has_battery||false)===o.k?"#fb923c":"rgba(255,255,255,0.55)",margin:"0 0 2px"}}>{o.l}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{o.sub}</p></div>)}</div>
+        </div>}
+        {op.channel==="aereo_negro"&&op.origin==="USA"&&<div style={{marginBottom:12}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>¿La carga es de celulares?</p>
+          <div style={{display:"flex",gap:10}}>{[{k:true,icon:"📱",l:"Sí, celulares",sub:"Tarifa $65/kg"},{k:false,icon:"📦",l:"Carga general",sub:"Tarifa estándar"}].map(o=><div key={String(o.k)} onClick={()=>chOp("has_phones")(o.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:12,border:`1.5px solid ${(op.has_phones||false)===o.k?IC:"rgba(255,255,255,0.08)"}`,background:(op.has_phones||false)===o.k?"rgba(96,165,250,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer",transition:"all 0.15s"}}><p style={{fontSize:22,margin:"0 0 4px"}}>{o.icon}</p><p style={{fontSize:13,fontWeight:700,color:(op.has_phones||false)===o.k?IC:"rgba(255,255,255,0.55)",margin:"0 0 2px"}}>{o.l}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{o.sub}</p></div>)}</div>
+        </div>}
         {op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&<div style={{padding:"12px 16px",background:op.consolidation_confirmed?"rgba(34,197,94,0.06)":"rgba(251,191,36,0.08)",border:`1px solid ${op.consolidation_confirmed?"rgba(34,197,94,0.2)":"rgba(251,191,36,0.25)"}`,borderRadius:10,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <div><p style={{fontSize:12,fontWeight:700,color:op.consolidation_confirmed?"#22c55e":"#fbbf24",margin:"0 0 2px"}}>{op.consolidation_confirmed?"✓ Consolidación confirmada":"⏳ Esperando confirmación de consolidación"}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{op.consolidation_confirmed?"El cliente confirmó que la carga está completa":"El cliente o vos deben confirmar que la carga está lista para enviar"}</p></div>
           {!op.consolidation_confirmed&&<Btn small onClick={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString()}});setOp(p=>({...p,consolidation_confirmed:true}));flash("Consolidación confirmada");}}>Marcar lista para enviar</Btn>}
