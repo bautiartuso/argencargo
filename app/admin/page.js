@@ -1515,9 +1515,12 @@ function FinancePanel({token}){
     const op=allOps.find(o=>o.id===p.operation_id);
     const cc=op?.clients?.client_code||"";
     if(p.client_paid)ledger.push({date:p.client_paid_date||"—",type:"ingreso",origen:"pmt",code,desc:`Pago ${code} — ${cc}`,amount:Number(p.client_paid_amount_usd??p.client_amount_usd??0),detail:p.description||""});
-    // Gastos con tarjeta: solo aparecen en libro diario cuando la tarjeta fue debitada
     const tarjetaPendiente=p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid;
-    if(p.giro_status==="confirmado"&&!tarjetaPendiente){const g=Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0);if(g>0)ledger.push({date:(p.giro_tarjeta_paid_at?p.giro_tarjeta_paid_at.slice(0,10):p.giro_date)||"—",type:"gasto",origen:"pmt",code,desc:`Giro exterior ${code} — ${cc}`,amount:g,detail:p.description||""});}
+    // Comisión de giro: SIEMPRE se cuenta como gasto de contado (no depende del método del giro).
+    // Representa el costo financiero que se paga al recibir la transferencia del cliente.
+    if(p.giro_status==="confirmado"&&Number(p.cost_comision_giro||0)>0){ledger.push({date:p.giro_date||p.client_paid_date||"—",type:"gasto",origen:"pmt",code,desc:`Comisión financiera ${code} — ${cc}`,amount:Number(p.cost_comision_giro),detail:"Costo por recibir la transferencia"});}
+    // Giro al exterior: sólo aparece cuando el giro se pagó realmente (o tarjeta debitada).
+    if(p.giro_status==="confirmado"&&!tarjetaPendiente&&Number(p.giro_amount_usd||0)>0){ledger.push({date:(p.giro_tarjeta_paid_at?p.giro_tarjeta_paid_at.slice(0,10):p.giro_date)||"—",type:"gasto",origen:"pmt",code,desc:`Giro exterior ${code} — ${cc}`,amount:Number(p.giro_amount_usd),detail:p.description||""});}
   });
   entries.forEach(e=>{
     // Gastos con tarjeta: solo aparecen cuando is_paid=true
@@ -1641,13 +1644,13 @@ function FinancePanel({token}){
     {/* TAB: Deuda Tarjeta de Crédito (USD) */}
     {tab==="tcdebt"&&(()=>{
       const usdTotEntries=cardDebt.usd.reduce((s,e)=>s+Number(e.amount||0),0);
-      const usdTotPmts=cardDebt.pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);
+      const usdTotPmts=cardDebt.pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
       const usdTot=usdTotEntries+usdTotPmts;
       const arsTot=cardDebt.ars.reduce((s,e)=>s+Number(e.amount_ars||0),0);
       // Agrupar por fecha de cierre mezclando entries USD + pmts (ambos van a pagarse en USD)
       const groups={};
       cardDebt.usd.forEach(e=>{const k=e.card_closing_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:Number(e.amount||0),dateLoad:e.date,op:e.operations?.operation_code});});
-      cardDebt.pmts.forEach(p=>{const k=p.giro_tarjeta_due_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};const com=Number(p.cost_comision_giro||0);groups[k].items.push({source:"pmt",id:p.id,desc:`Giro al exterior${p.operations?.operation_code?` — ${p.operations.operation_code}`:""}`,detail:(p.description||"")+(com>0?` · incluye comisión USD ${com.toFixed(2)}`:""),amt:Number(p.giro_amount_usd||0)+com,dateLoad:p.created_at?String(p.created_at).slice(0,10):null,op:p.operations?.operation_code});});
+      cardDebt.pmts.forEach(p=>{const k=p.giro_tarjeta_due_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"pmt",id:p.id,desc:`Giro al exterior${p.operations?.operation_code?` — ${p.operations.operation_code}`:""}`,detail:p.description||"",amt:Number(p.giro_amount_usd||0),dateLoad:p.created_at?String(p.created_at).slice(0,10):null,op:p.operations?.operation_code});});
       const sortedGroups=Object.values(groups).sort((a,b)=>{if(a.date==="sin_fecha")return 1;if(b.date==="sin_fecha")return -1;return a.date.localeCompare(b.date);});
       const todayStr=new Date().toISOString().slice(0,10);
       const markPaid=async(item)=>{
@@ -2345,7 +2348,7 @@ function DashboardKPIs({token}){
       dq("flights",{token,filters:"?select=id,status"}),
       dq("unassigned_packages",{token,filters:"?select=id&assigned_to_op_id=is.null"}),
       dq("agent_signups",{token,filters:"?select=id&status=eq.pending"}),
-      dq("payment_management",{token,filters:"?select=giro_amount_usd,cost_comision_giro,giro_tarjeta_due_date&giro_payment_method=eq.tarjeta_credito&giro_tarjeta_paid=eq.false"}),
+      dq("payment_management",{token,filters:"?select=giro_amount_usd,giro_tarjeta_due_date&giro_payment_method=eq.tarjeta_credito&giro_tarjeta_paid=eq.false"}),
       dq("finance_entries",{token,filters:"?select=amount,amount_ars,currency,card_closing_date&payment_method=eq.tarjeta_credito&is_paid=eq.false"})
     ]);
     const o=Array.isArray(ops)?ops:[];const fl=Array.isArray(flights)?flights:[];
@@ -2362,7 +2365,7 @@ function DashboardKPIs({token}){
     const etaPassed=o.filter(x=>x.eta&&x.eta<todayStr&&transitStates.includes(x.status));
     // Deuda tarjeta USD (gestión de pagos pendiente de débito)
     const cardUsdArr=Array.isArray(cardUsd)?cardUsd:[];
-    const deudaTarjetaUsd=cardUsdArr.reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);
+    const deudaTarjetaUsd=cardUsdArr.reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
     // Deuda tarjeta ARS + USD (gastos en finance_entries)
     const cardArsArr=Array.isArray(cardArs)?cardArs:[];
     const deudaTarjetaArsExtra=cardArsArr.filter(e=>e.currency!=="USD").reduce((s,e)=>s+Number(e.amount_ars||e.amount||0),0);
@@ -2498,7 +2501,10 @@ function FinanceDashboard({token}){
       const totCostosOps=ops.reduce((s,o)=>{const fleteMethod=o.cost_flete_method||"cuenta_corriente";const fleteCash=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);return s+fleteCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);},0);
       // Pagos al proveedor (Gestión Integral): suma de pagos efectivamente hechos (is_paid=true)
       const totSupplierPmts=supplierPmts.filter(p=>p.is_paid).reduce((s,p)=>s+Number(p.amount_usd||0),0);
-      const totCostosPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.giro_status==="confirmado"&&!(p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid)).reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0);
+      // Costos de gestión de pagos para cash flow:
+      //  - Comisión financiera: SIEMPRE se cuenta como contado (si giro confirmado), no espera débito TC
+      //  - Giro al exterior: sólo se cuenta cuando se pagó de verdad (no TC pendiente)
+      const totCostosPmts=ops.reduce((s,o)=>{const pmts=pmtsByOp[o.id]||[];return s+pmts.filter(p=>p.giro_status==="confirmado").reduce((a,p)=>{const com=Number(p.cost_comision_giro||0);const tarjetaPend=p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid;const giro=tarjetaPend?0:Number(p.giro_amount_usd||0);return a+com+giro;},0);},0);
       // Anticipos a agentes (cash real que sale)
       const totAnticiposAgentes=agentMvs.filter(m=>m.type==="anticipo").reduce((s,m)=>s+Number(m.amount_usd||0),0);
       // Costos fijos manuales (Meta ads, Vercel, Claude, salarios, etc.) — históricos en USD
@@ -2517,7 +2523,7 @@ function FinanceDashboard({token}){
       const deudaTCArs=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="ARS").reduce((s,e)=>s+Number(e.amount_ars||0),0);
       // Deuda tarjeta USD: finance_entries USD con tarjeta no pagada + payment_management con tarjeta pendiente
       const deudaTCUsdFinance=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="USD"&&e.payment_method==="tarjeta_credito").reduce((s,e)=>s+Number(e.amount||0),0);
-      const deudaTCUsdPmts=Object.values(pmtsByOp).flat().filter(p=>p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid).reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);
+      const deudaTCUsdPmts=Object.values(pmtsByOp).flat().filter(p=>p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid).reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
       const deudaTCUsd=deudaTCUsdFinance+deudaTCUsdPmts;
       const cashDisponible=totCobrado-totCostosTotales;
       return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:24}}>
