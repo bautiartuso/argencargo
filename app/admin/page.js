@@ -1641,13 +1641,13 @@ function FinancePanel({token}){
     {/* TAB: Deuda Tarjeta de Crédito (USD) */}
     {tab==="tcdebt"&&(()=>{
       const usdTotEntries=cardDebt.usd.reduce((s,e)=>s+Number(e.amount||0),0);
-      const usdTotPmts=cardDebt.pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
+      const usdTotPmts=cardDebt.pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);
       const usdTot=usdTotEntries+usdTotPmts;
       const arsTot=cardDebt.ars.reduce((s,e)=>s+Number(e.amount_ars||0),0);
       // Agrupar por fecha de cierre mezclando entries USD + pmts (ambos van a pagarse en USD)
       const groups={};
       cardDebt.usd.forEach(e=>{const k=e.card_closing_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:Number(e.amount||0),dateLoad:e.date,op:e.operations?.operation_code});});
-      cardDebt.pmts.forEach(p=>{const k=p.giro_tarjeta_due_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"pmt",id:p.id,desc:`Giro al exterior${p.operations?.operation_code?` — ${p.operations.operation_code}`:""}`,detail:p.description||"",amt:Number(p.giro_amount_usd||0),dateLoad:p.created_at?String(p.created_at).slice(0,10):null,op:p.operations?.operation_code});});
+      cardDebt.pmts.forEach(p=>{const k=p.giro_tarjeta_due_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};const com=Number(p.cost_comision_giro||0);groups[k].items.push({source:"pmt",id:p.id,desc:`Giro al exterior${p.operations?.operation_code?` — ${p.operations.operation_code}`:""}`,detail:(p.description||"")+(com>0?` · incluye comisión USD ${com.toFixed(2)}`:""),amt:Number(p.giro_amount_usd||0)+com,dateLoad:p.created_at?String(p.created_at).slice(0,10):null,op:p.operations?.operation_code});});
       const sortedGroups=Object.values(groups).sort((a,b)=>{if(a.date==="sin_fecha")return 1;if(b.date==="sin_fecha")return -1;return a.date.localeCompare(b.date);});
       const todayStr=new Date().toISOString().slice(0,10);
       const markPaid=async(item)=>{
@@ -2345,7 +2345,7 @@ function DashboardKPIs({token}){
       dq("flights",{token,filters:"?select=id,status"}),
       dq("unassigned_packages",{token,filters:"?select=id&assigned_to_op_id=is.null"}),
       dq("agent_signups",{token,filters:"?select=id&status=eq.pending"}),
-      dq("payment_management",{token,filters:"?select=giro_amount_usd,giro_tarjeta_due_date&giro_payment_method=eq.tarjeta_credito&giro_tarjeta_paid=eq.false"}),
+      dq("payment_management",{token,filters:"?select=giro_amount_usd,cost_comision_giro,giro_tarjeta_due_date&giro_payment_method=eq.tarjeta_credito&giro_tarjeta_paid=eq.false"}),
       dq("finance_entries",{token,filters:"?select=amount,amount_ars,currency,card_closing_date&payment_method=eq.tarjeta_credito&is_paid=eq.false"})
     ]);
     const o=Array.isArray(ops)?ops:[];const fl=Array.isArray(flights)?flights:[];
@@ -2362,7 +2362,7 @@ function DashboardKPIs({token}){
     const etaPassed=o.filter(x=>x.eta&&x.eta<todayStr&&transitStates.includes(x.status));
     // Deuda tarjeta USD (gestión de pagos pendiente de débito)
     const cardUsdArr=Array.isArray(cardUsd)?cardUsd:[];
-    const deudaTarjetaUsd=cardUsdArr.reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
+    const deudaTarjetaUsd=cardUsdArr.reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);
     // Deuda tarjeta ARS + USD (gastos en finance_entries)
     const cardArsArr=Array.isArray(cardArs)?cardArs:[];
     const deudaTarjetaArsExtra=cardArsArr.filter(e=>e.currency!=="USD").reduce((s,e)=>s+Number(e.amount_ars||e.amount||0),0);
@@ -2517,7 +2517,7 @@ function FinanceDashboard({token}){
       const deudaTCArs=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="ARS").reduce((s,e)=>s+Number(e.amount_ars||0),0);
       // Deuda tarjeta USD: finance_entries USD con tarjeta no pagada + payment_management con tarjeta pendiente
       const deudaTCUsdFinance=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="USD"&&e.payment_method==="tarjeta_credito").reduce((s,e)=>s+Number(e.amount||0),0);
-      const deudaTCUsdPmts=Object.values(pmtsByOp).flat().filter(p=>p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid).reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
+      const deudaTCUsdPmts=Object.values(pmtsByOp).flat().filter(p=>p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid).reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);
       const deudaTCUsd=deudaTCUsdFinance+deudaTCUsdPmts;
       const cashDisponible=totCobrado-totCostosTotales;
       return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:24}}>
