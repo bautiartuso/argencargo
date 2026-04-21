@@ -249,19 +249,31 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     autoSyncBudget();
   };
 
-  // Auto-sync: refresca items+bultos de DB y recalcula+guarda presupuesto silenciosamente.
+  // Auto-sync: refresca items+bultos+tarifas+overrides+cliente de DB y recalcula+guarda presupuesto silenciosamente.
   // Se llama después de cualquier CRUD de items/bultos. Saltea ops cerradas/canceladas.
   const autoSyncBudget=async()=>{
     if(op.status==="operacion_cerrada"||op.status==="cancelada")return;
     try{
-      const[fit,fpk]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*`})]);
+      // Refetch TODO fresco para evitar closures stale de tariffs/overrides (puede haber cambiado desde que se cargó la op).
+      const[fit,fpk,ft,fov,fcl,fop]=await Promise.all([
+        dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*`}),
+        dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*`}),
+        dq("tariffs",{token,filters:"?select=*&type=eq.rate"}),
+        op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([]),
+        op.client_id?dq("clients",{token,filters:`?id=eq.${op.client_id}&select=tax_condition`}):Promise.resolve([]),
+        dq("operations",{token,filters:`?id=eq.${op.id}&select=channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status`})
+      ]);
       const its=Array.isArray(fit)?fit:[];const pks=Array.isArray(fpk)?fpk:[];
-      const isBlanco=op.channel?.includes("blanco");
-      // Canal A (blanco): necesita items para calcular impuestos per-producto.
-      // Canal B (negro): no tiene items, se calcula sólo por peso/CBM. Requiere bultos con peso/medidas.
-      if(isBlanco&&its.length===0)return; // Canal A sin items = presupuesto manual cargado
-      if(!isBlanco&&pks.length===0)return; // Canal B sin bultos = nada que calcular
-      const{totalTax,flete,seguro,totalAbonar}=calcOpBudget(op,its,pks,tariffs,config,clientOverrides,opClient);
+      const tariffsFresh=Array.isArray(ft)?ft:[];
+      const overridesFresh=Array.isArray(fov)?fov:[];
+      const clientFresh=Array.isArray(fcl)?fcl[0]:null;
+      const opFresh=Array.isArray(fop)?fop[0]:null;
+      // Mergeamos la op fresca (campos que afectan cálculo) sobre el op local
+      const opForCalc={...op,...(opFresh||{})};
+      const isBlanco=opForCalc.channel?.includes("blanco");
+      if(isBlanco&&its.length===0)return;
+      if(!isBlanco&&pks.length===0)return;
+      const{totalTax,flete,seguro,totalAbonar}=calcOpBudget(opForCalc,its,pks,tariffsFresh,config,overridesFresh,clientFresh);
       await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}});
       setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}));
     }catch(e){console.error("autoSync budget",e);}
