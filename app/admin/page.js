@@ -2893,12 +2893,59 @@ function AdminTasks({token}){
 
 function QuotesList({token}){
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");const [selQuote,setSelQuote]=useState(null);const [clientsMap,setClientsMap]=useState({});
-  const [editProds,setEditProds]=useState([]);const [editTotalCost,setEditTotalCost]=useState("");const [dirty,setDirty]=useState(false);const [saving,setSaving]=useState(false);const [savedAt,setSavedAt]=useState(null);
-  useEffect(()=>{(async()=>{const [q,cl]=await Promise.all([dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("clients",{token,filters:"?select=id,first_name,last_name,whatsapp,client_code"})]);setQuotes(Array.isArray(q)?q:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setLo(false);})();},[token]);
-  useEffect(()=>{if(!selQuote){setEditProds([]);setEditTotalCost("");setDirty(false);setSavedAt(null);return;}const p=typeof selQuote.products==="string"?JSON.parse(selQuote.products):selQuote.products||[];setEditProds(JSON.parse(JSON.stringify(Array.isArray(p)?p:[])));setEditTotalCost(String(selQuote.total_cost||""));setDirty(false);setSavedAt(null);},[selQuote?.id]);
+  const [editProds,setEditProds]=useState([]);const [editPkgs,setEditPkgs]=useState([]);const [editTotalCost,setEditTotalCost]=useState("");const [dirty,setDirty]=useState(false);const [saving,setSaving]=useState(false);const [savedAt,setSavedAt]=useState(null);
+  const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [quoteOverrides,setQuoteOverrides]=useState([]);
+  useEffect(()=>{(async()=>{const [q,cl,tf,cc]=await Promise.all([
+    dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),
+    dq("clients",{token,filters:"?select=id,first_name,last_name,whatsapp,client_code,tax_condition"}),
+    dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),
+    dq("calc_config",{token,filters:"?select=*"})
+  ]);setQuotes(Array.isArray(q)?q:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);setLo(false);})();},[token]);
+  useEffect(()=>{
+    if(!selQuote){setEditProds([]);setEditPkgs([]);setEditTotalCost("");setDirty(false);setSavedAt(null);setQuoteOverrides([]);return;}
+    const p=typeof selQuote.products==="string"?JSON.parse(selQuote.products):selQuote.products||[];
+    const pk=typeof selQuote.packages==="string"?JSON.parse(selQuote.packages):selQuote.packages||[];
+    setEditProds(JSON.parse(JSON.stringify(Array.isArray(p)?p:[])));
+    setEditPkgs(JSON.parse(JSON.stringify(Array.isArray(pk)?pk:[])));
+    setEditTotalCost(String(selQuote.total_cost||""));
+    setDirty(false);setSavedAt(null);
+    if(selQuote.client_id)dq("client_tariff_overrides",{token,filters:`?client_id=eq.${selQuote.client_id}&select=*`}).then(ov=>setQuoteOverrides(Array.isArray(ov)?ov:[]));
+    else setQuoteOverrides([]);
+  },[selQuote?.id,token]);
   const chProd=(i,f,v)=>{setEditProds(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));setDirty(true);};
   const chNcm=(i,f,v)=>{setEditProds(p=>p.map((x,j)=>j===i?{...x,ncm:{...(x.ncm||{}),[f]:v,ncm_code:x.ncm?.ncm_code||"MANUAL"}}:x));setDirty(true);};
-  const saveQuoteEdit=async()=>{if(!selQuote)return;setSaving(true);const newFob=editProds.reduce((s,p)=>s+Number(p.unit_price||0)*Number(p.quantity||1),0);const body={products:editProds,total_fob:newFob,total_cost:Number(editTotalCost)||selQuote.total_cost};await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${selQuote.id}`,body});setQuotes(p=>p.map(q=>q.id===selQuote.id?{...q,...body}:q));setSelQuote(p=>({...p,...body}));setDirty(false);setSavedAt(new Date().toISOString());setSaving(false);};
+  const chPkg=(i,f,v)=>{setEditPkgs(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));setDirty(true);};
+  const addPkg=()=>{setEditPkgs(p=>[...p,{qty:"1",length:"",width:"",height:"",weight:""}]);setDirty(true);};
+  const rmPkg=(i)=>{setEditPkgs(p=>p.filter((_,j)=>j!==i));setDirty(true);};
+  // Breakdown computado desde editProds + editPkgs usando la misma lógica que el calculador
+  const CHANNEL_MAP={aereo_a_china:"aereo_blanco",aereo_b_china:"aereo_negro",aereo_b_usa:"aereo_negro",maritimo_a_china:"maritimo_blanco",maritimo_b:"maritimo_negro"};
+  const computeBreakdown=()=>{
+    if(!selQuote||tariffs.length===0)return null;
+    try{
+      const quoteClient=selQuote.client_id?clientsMap[selQuote.client_id]:null;
+      const opLike={channel:CHANNEL_MAP[selQuote.channel_key]||"aereo_negro",origin:selQuote.origin,shipping_to_door:selQuote.delivery&&selQuote.delivery!=="oficina",shipping_cost:0,has_battery:false};
+      const items=editProds.map(p=>({unit_price_usd:p.unit_price,quantity:p.quantity,import_duty_rate:p.ncm?.import_duty_rate||0,statistics_rate:p.ncm?.statistics_rate||0,iva_rate:p.ncm?.iva_rate||21,iva_additional_rate:20,iigg_rate:6,iibb_rate:5}));
+      const pks=editPkgs.map(p=>({quantity:Number(p.qty||1),gross_weight_kg:Number(p.weight||0),length_cm:Number(p.length||0),width_cm:Number(p.width||0),height_cm:Number(p.height||0)}));
+      // Shipping cost desde config + delivery
+      let shipC=0;
+      if(selQuote.delivery&&selQuote.delivery!=="oficina"){
+        const totW=pks.reduce((s,p)=>s+p.gross_weight_kg*p.quantity,0);
+        const ranges=[[25,config.envio_caba_0_25||20],[50,config.envio_caba_25_50||30],[100,config.envio_caba_50_100||50],[Infinity,config.envio_caba_100||75]];
+        for(const[max,amt] of ranges){if(totW<max){shipC=amt;break;}}
+        if(selQuote.delivery==="gba")shipC+=(config.envio_gba_extra||10);
+      }
+      opLike.shipping_cost=shipC;
+      const r=calcOpBudget(opLike,items,pks,tariffs,config,quoteOverrides,quoteClient);
+      return{...r,shipCost:shipC};
+    }catch(e){console.error("computeBreakdown",e);return null;}
+  };
+  const saveQuoteEdit=async()=>{if(!selQuote)return;setSaving(true);const newFob=editProds.reduce((s,p)=>s+Number(p.unit_price||0)*Number(p.quantity||1),0);
+    // Recalc totales derivados de bultos
+    let totW=0,totCBM=0;editPkgs.forEach(p=>{const q=Number(p.qty||1);const w=Number(p.weight||0);totW+=w*q;const l=Number(p.length||0),wd=Number(p.width||0),h=Number(p.height||0);if(l&&wd&&h)totCBM+=((l*wd*h)/1000000)*q;});
+    const br=computeBreakdown();
+    const body={products:editProds,packages:editPkgs,total_fob:newFob,total_cost:Number(editTotalCost)||selQuote.total_cost,total_weight:totW,total_cbm:totCBM,tax_breakdown:br?{totalTax:br.totalTax,flete:br.flete,seguro:br.seguro,shipCost:br.shipCost}:null};
+    await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${selQuote.id}`,body});setQuotes(p=>p.map(q=>q.id===selQuote.id?{...q,...body}:q));setSelQuote(p=>({...p,...body}));setDirty(false);setSavedAt(new Date().toISOString());setSaving(false);
+  };
   const updateStatus=async(id,status)=>{await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{status}});setQuotes(p=>p.map(q=>q.id===id?{...q,status}:q));};
   const downloadPdf=(q)=>{
     const prods=editProds.length?editProds:(typeof q.products==="string"?JSON.parse(q.products):q.products||[]);
@@ -3008,11 +3055,44 @@ function QuotesList({token}){
             <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic"}}>Ajustá el total si cambiaron las tasas</p>
           </div>
         </div>}
-        {Array.isArray(pkgs)&&pkgs.length>0&&<div><h4 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>BULTOS</h4>
-          {pkgs.map((pk,i)=><div key={i} style={{display:"flex",gap:16,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:12,color:"rgba(255,255,255,0.5)"}}>
-            <span>Bulto {i+1}</span><span>Cant: {pk.qty||1}</span>{pk.length&&<span>{pk.length}x{pk.width}x{pk.height} cm</span>}<span>Peso: {pk.weight} kg</span>
-          </div>)}
-        </div>}
+        {/* Bultos editables */}
+        <div style={{marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <h4 style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>BULTOS <span style={{fontSize:10,fontWeight:500,color:"rgba(255,255,255,0.4)"}}>— editá cantidad, dimensiones y peso</span></h4>
+            <button onClick={addPkg} style={{fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:6,border:"1px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer"}}>+ Bulto</button>
+          </div>
+          {editPkgs.length===0&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic",margin:"4px 0 0"}}>Sin bultos cargados</p>}
+          {editPkgs.map((pk,i)=>{const inpStyle={padding:"6px 8px",fontSize:11,border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",width:"100%",boxSizing:"border-box"};return <div key={i} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:"10px 12px",marginBottom:6}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{fontSize:12,fontWeight:700,color:IC}}>Bulto {i+1}</span>
+              <button onClick={()=>rmPkg(i)} style={{fontSize:10,padding:"2px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>Eliminar</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:8}}>
+              <div><label style={{fontSize:10,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Cant.</label><input type="number" value={pk.qty||""} onChange={e=>chPkg(i,"qty",e.target.value)} style={inpStyle} placeholder="1"/></div>
+              <div><label style={{fontSize:10,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Largo cm</label><input type="number" value={pk.length||""} onChange={e=>chPkg(i,"length",e.target.value)} style={inpStyle} placeholder="60"/></div>
+              <div><label style={{fontSize:10,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Ancho cm</label><input type="number" value={pk.width||""} onChange={e=>chPkg(i,"width",e.target.value)} style={inpStyle} placeholder="40"/></div>
+              <div><label style={{fontSize:10,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Alto cm</label><input type="number" value={pk.height||""} onChange={e=>chPkg(i,"height",e.target.value)} style={inpStyle} placeholder="35"/></div>
+              <div><label style={{fontSize:10,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Peso kg</label><input type="number" value={pk.weight||""} onChange={e=>chPkg(i,"weight",e.target.value)} style={inpStyle} placeholder="12"/></div>
+            </div>
+          </div>;})}
+        </div>
+        {/* Breakdown calculado en vivo — flete, impuestos, seguro, envío */}
+        {(()=>{const br=computeBreakdown();if(!br)return null;const isB=selQuote.channel_key==="aereo_b_china"||selQuote.channel_key==="aereo_b_usa"||selQuote.channel_key==="maritimo_b";const totalCalc=br.totalAbonar;const row=(l,v,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",fontSize:12}}><span style={{color:"rgba(255,255,255,0.55)"}}>{l}</span><span style={{fontWeight:600,color:accent?IC:"#fff"}}>USD {Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
+        return <div style={{marginBottom:16,padding:"14px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <h4 style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>🧮 DESGLOSE CALCULADO</h4>
+            <button onClick={()=>{setEditTotalCost(totalCalc.toFixed(2));setDirty(true);}} style={{fontSize:10,fontWeight:700,padding:"4px 10px",borderRadius:6,border:"none",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff",cursor:"pointer"}}>Usar este cálculo</button>
+          </div>
+          {!isB&&row("Total Impuestos",br.totalTax)}
+          {row(isB?"Servicio Integral ARGENCARGO":"Flete internacional",br.flete)}
+          {!isB&&row("Seguro de carga",br.seguro)}
+          {br.shipCost>0&&row("Envío a domicilio",br.shipCost)}
+          <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 2px",borderTop:"1px solid rgba(96,165,250,0.2)",marginTop:4}}>
+            <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>TOTAL CALCULADO</span>
+            <span style={{fontSize:15,fontWeight:700,color:IC}}>USD {totalCalc.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          </div>
+          <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"6px 0 0",fontStyle:"italic"}}>Se recalcula al editar productos, NCM o bultos. Tocá "Usar este cálculo" para aplicarlo al costo DDP de abajo.</p>
+        </div>;})()}
         {(()=>{const cl=q.client_id?clientsMap[q.client_id]:null;const wa=cl?.whatsapp;const prodDesc=Array.isArray(editProds)?editProds.map(p=>p.description||p.type).join(", "):"";
           const waConsulta=encodeURIComponent(`Hola ${q.client_name}! Vi que cotizaste una importación de *${prodDesc}* por *${q.channel_name}* desde *${q.origin}* el ${formatDate(q.created_at)}.\n\n¿Pudiste avanzar con la operación? ¿Necesitás más información?\n\nQuedo a disposición!`);
           const waUpdate=encodeURIComponent(`Hola ${q.client_name}! Revisamos y ajustamos tu cotización de *${prodDesc}* por *${q.channel_name}* con la clasificación arancelaria precisa.\n\n📄 *Costo total actualizado: USD ${Number(q.total_cost||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}*\n\nEntrá a tu portal para ver el detalle por producto (NCM + derechos + tasa estadística + IVA), o si preferís te paso el PDF.\n\nQuedo a disposición para avanzar!`);
