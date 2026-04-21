@@ -1381,10 +1381,11 @@ function FinancePanel({token}){
   const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:""});
   const [allOps,setAllOps]=useState([]);const [allPmts,setAllPmts]=useState([]);
   const [dollarPending,setDollarPending]=useState([]);const [dollarRates,setDollarRates]=useState({});
+  const [cardDebt,setCardDebt]=useState({usd:[],ars:[],pmts:[]});
   const [agentMvs,setAgentMvs]=useState([]);const [agentSignups,setAgentSignups]=useState([]);
   const [supplierPmts,setSupplierPmts]=useState([]);
   const [clientPmts,setClientPmts]=useState([]);
-  const load=async()=>{const [e,o,pm,dp,am,ag,sp,cp]=await Promise.all([
+  const load=async()=>{const [e,o,pm,dp,am,ag,sp,cp,cdUsd,cdArs,cdPmts]=await Promise.all([
     dq("finance_entries",{token,filters:"?select=*&auto_generated=is.false&order=date.desc,created_at.desc"}),
     dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,closed_at,cost_flete,cost_flete_method,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,service_type,cost_producto_usd,cost_producto_method,cost_producto_paid,cost_producto_paid_at,clients(first_name,last_name,client_code)&order=created_at.desc"}),
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)"}),
@@ -1392,8 +1393,14 @@ function FinancePanel({token}){
     dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),
     dq("agent_signups",{token,filters:"?select=auth_user_id,first_name,last_name"}),
     dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),
-    dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"})
-  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);setLo(false);};
+    dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"}),
+    // Deuda tarjeta USD: finance_entries USD pendientes
+    dq("finance_entries",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&currency=eq.USD&order=card_closing_date.asc"}),
+    // Deuda tarjeta ARS: finance_entries ARS pendientes (mostrar resumen, detalle en Dollarización)
+    dq("finance_entries",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&currency=eq.ARS&order=card_closing_date.asc"}),
+    // Giros al exterior con TC pendientes (payment_management)
+    dq("payment_management",{token,filters:"?select=*,operations(operation_code)&giro_payment_method=eq.tarjeta_credito&giro_tarjeta_paid=eq.false&order=giro_tarjeta_due_date.asc"})
+  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);setCardDebt({usd:Array.isArray(cdUsd)?cdUsd:[],ars:Array.isArray(cdArs)?cdArs:[],pmts:Array.isArray(cdPmts)?cdPmts:[]});setLo(false);};
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const addEntry=async()=>{
@@ -1491,7 +1498,7 @@ function FinancePanel({token}){
       <div style={{background:"rgba(251,146,60,0.04)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px"}}>GASTOS NEGOCIO</p><p style={{fontSize:20,fontWeight:700,color:"#fb923c",margin:0}}>{usd(ledgerGastosFijos)}</p></div>
       <div style={{background:ganancia>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)",border:`1px solid ${ganancia>=0?"rgba(34,197,94,0.18)":"rgba(255,80,80,0.18)"}`,borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px"}}>GANANCIA NETA</p><p style={{fontSize:20,fontWeight:700,color:ganancia>=0?"#22c55e":"#ff6b6b",margin:0}}>{usd(ganancia)}</p></div>
     </div>
-    <div style={{display:"flex",gap:8,marginBottom:16}}>{[{k:"fixed",l:"Gastos del Negocio"},{k:"ledger",l:"Libro Diario"},{k:"dollar",l:"Dollarización"}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
+    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>{[{k:"fixed",l:"Gastos del Negocio"},{k:"ledger",l:"Libro Diario"},{k:"dollar",l:"Dollarización"},{k:"tcdebt",l:(()=>{const c=cardDebt.usd.length+cardDebt.pmts.length;return c>0?`Deuda Tarjeta (${c})`:"Deuda Tarjeta";})()}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
     {showAdd&&tab==="fixed"&&<Card title="Nuevo gasto">
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
         <Inp label="Fecha" type="date" value={newEntry.date} onChange={v=>setNewEntry(p=>({...p,date:v}))}/>
@@ -1584,6 +1591,80 @@ function FinancePanel({token}){
           </div>
         </Card>;
       })}
+      </>;
+    })()}
+    {/* TAB: Deuda Tarjeta de Crédito (USD) */}
+    {tab==="tcdebt"&&(()=>{
+      const usdTotEntries=cardDebt.usd.reduce((s,e)=>s+Number(e.amount||0),0);
+      const usdTotPmts=cardDebt.pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
+      const usdTot=usdTotEntries+usdTotPmts;
+      const arsTot=cardDebt.ars.reduce((s,e)=>s+Number(e.amount_ars||0),0);
+      // Agrupar por fecha de cierre mezclando entries USD + pmts (ambos van a pagarse en USD)
+      const groups={};
+      cardDebt.usd.forEach(e=>{const k=e.card_closing_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:Number(e.amount||0),dateLoad:e.date,op:e.operations?.operation_code});});
+      cardDebt.pmts.forEach(p=>{const k=p.giro_tarjeta_due_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"pmt",id:p.id,desc:`Giro al exterior${p.operations?.operation_code?` — ${p.operations.operation_code}`:""}`,detail:p.description||"",amt:Number(p.giro_amount_usd||0),dateLoad:p.created_at?String(p.created_at).slice(0,10):null,op:p.operations?.operation_code});});
+      const sortedGroups=Object.values(groups).sort((a,b)=>{if(a.date==="sin_fecha")return 1;if(b.date==="sin_fecha")return -1;return a.date.localeCompare(b.date);});
+      const todayStr=new Date().toISOString().slice(0,10);
+      const markPaid=async(item)=>{
+        if(!confirm(`¿Marcar "${item.desc}" como debitada de la tarjeta? Esto la resta del cash real.`))return;
+        if(item.source==="finance"){await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true}});}
+        else{await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});}
+        load();flash("Marcada como debitada");
+      };
+      const markGroupPaid=async(g)=>{
+        if(!confirm(`¿Marcar las ${g.items.length} deudas de ${g.date==="sin_fecha"?"sin fecha":formatDate(g.date)} como debitadas? Total: USD ${g.items.reduce((s,i)=>s+i.amt,0).toFixed(2)}`))return;
+        for(const item of g.items){
+          if(item.source==="finance")await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true}});
+          else await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});
+        }
+        load();flash(`${g.items.length} deudas marcadas como debitadas`);
+      };
+      return <>
+        {/* Resumen arriba */}
+        <div style={{display:"grid",gridTemplateColumns:arsTot>0?"1fr 1fr":"1fr",gap:16,marginBottom:20}}>
+          <div style={{background:usdTot>0?"rgba(251,146,60,0.06)":"rgba(34,197,94,0.06)",border:`1px solid ${usdTot>0?"rgba(251,146,60,0.2)":"rgba(34,197,94,0.2)"}`,borderRadius:12,padding:"18px 22px"}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",letterSpacing:"0.05em"}}>💳 DEUDA TARJETA USD</p>
+            <p style={{fontSize:28,fontWeight:700,color:usdTot>0?"#fb923c":"#22c55e",margin:0}}>USD {usdTot.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>{cardDebt.usd.length} gasto{cardDebt.usd.length!==1?"s":""} del negocio{usdTotEntries>0?` (USD ${usdTotEntries.toFixed(2)})`:""} · {cardDebt.pmts.length} giro{cardDebt.pmts.length!==1?"s":""} al exterior{usdTotPmts>0?` (USD ${usdTotPmts.toFixed(2)})`:""}</p>
+          </div>
+          {arsTot>0&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:12,padding:"18px 22px"}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",letterSpacing:"0.05em"}}>💳 DEUDA TARJETA ARS (sin dollarizar)</p>
+            <p style={{fontSize:28,fontWeight:700,color:IC,margin:0}}>ARS {arsTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            <button onClick={()=>setTab("dollar")} style={{marginTop:10,fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:6,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:IC,cursor:"pointer"}}>Ir a Dollarización →</button>
+          </div>}
+        </div>
+        {/* Grupos por fecha de cierre */}
+        {sortedGroups.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.5)",padding:"3rem 0",fontSize:14}}>🎉 Sin deuda de tarjeta pendiente</p>}
+        {sortedGroups.map(g=>{
+          const gTotal=g.items.reduce((s,i)=>s+i.amt,0);
+          const overdue=g.date!=="sin_fecha"&&g.date<todayStr;
+          const soon=g.date!=="sin_fecha"&&!overdue&&(new Date(g.date)-new Date(todayStr))/86400000<=7;
+          const color=overdue?"#ff6b6b":soon?"#fbbf24":IC;
+          return <Card key={g.date} title={<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <span style={{color}}>{g.date==="sin_fecha"?"📅 Sin fecha de cierre":`📅 Cierre ${formatDate(g.date)}`}</span>
+            {overdue&&<span style={{fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,80,80,0.15)",color:"#ff6b6b",border:"1px solid rgba(255,80,80,0.3)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Vencido</span>}
+            {soon&&<span style={{fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Próximos 7d</span>}
+          </div>} actions={<Btn small variant="secondary" onClick={()=>markGroupPaid(g)}>✓ Marcar grupo debitado</Btn>}>
+            <div style={{marginBottom:10}}>
+              {g.items.map((it,i)=><div key={it.source+it.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<g.items.length-1?"1px solid rgba(255,255,255,0.04)":"none",flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:200}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:it.source==="pmt"?"rgba(168,85,247,0.15)":"rgba(96,165,250,0.15)",color:it.source==="pmt"?"#c084fc":IC,textTransform:"uppercase",letterSpacing:"0.05em"}}>{it.source==="pmt"?"Giro":"Gasto"}</span>
+                    <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>{it.desc}</p>
+                  </div>
+                  {it.detail&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{it.detail}</p>}
+                  {it.dateLoad&&<p style={{fontSize:10,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Cargado {formatDate(it.dateLoad)}</p>}
+                </div>
+                <span style={{fontSize:14,fontWeight:700,color:"#fff",minWidth:120,textAlign:"right"}}>USD {it.amt.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                <button onClick={()=>markPaid(it)} style={{fontSize:10,fontWeight:700,padding:"6px 12px",borderRadius:6,border:"none",background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>✓ Debitada</button>
+              </div>)}
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+              <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>Total del cierre</span>
+              <span style={{fontSize:17,fontWeight:700,color}}>USD {gTotal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+            </div>
+          </Card>;
+        })}
       </>;
     })()}
   </div>;
