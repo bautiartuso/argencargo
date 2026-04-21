@@ -102,29 +102,63 @@ async function renderEmail(trigger, op, client) {
       </div>`
     : (ctaText && ctaLink ? button(ctaLink, ctaText) : "");
 
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${subject}</title></head>
-<body style="margin:0;padding:0;background:#f5f7fa;font-family:'Segoe UI',system-ui,sans-serif;color:#1a1a1a">
-  <div style="max-width:600px;margin:0 auto;background:#fff">
-    <div style="background:linear-gradient(135deg,${NAVY},${AC});padding:32px 24px;text-align:center">
-      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800">Argencargo</h1>
-      <p style="color:rgba(255,255,255,0.85);margin:8px 0 0;font-size:13px">Tu operación de importación, resuelta</p>
-    </div>
-    <div style="padding:32px 28px">
-      ${greeting ? `<h2 style="color:${NAVY};font-size:20px;margin:0 0 12px">${greeting}</h2>` : ""}
-      ${mdToHtml(body)}
-      ${extraHtml}
-      <p style="color:#666;font-size:13px;margin:28px 0 0;padding-top:16px;border-top:1px solid #eee">
-        Código de operación: <strong style="color:${NAVY};font-family:monospace">${opCode}</strong><br/>
-        Cualquier consulta, respondé este email o escribinos por WhatsApp.
-      </p>
-    </div>
-    <div style="padding:16px 24px;background:#f5f7fa;text-align:center;color:#888;font-size:11px">
-      Argencargo · Av. Callao 1137, CABA · <a href="${BASE_URL}" style="color:${AC};text-decoration:none">argencargo.com.ar</a>
-    </div>
-  </div>
-</body></html>`;
-
+  const html = renderEmailShell({ subject, greeting, body, extraHtml, opCode, NAVY, AC });
   return { subject, html };
+}
+
+// Shell HTML compartido entre /api/notify y /api/notify/test.
+// Header: logo centrado sobre fondo blanco. Footer: logo + datos de contacto.
+function renderEmailShell({ subject, greeting, body, extraHtml, opCode, NAVY = "#152D54", AC = "#3B7DD8" }) {
+  const LOGO = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png";
+  const greetingHtml = greeting ? `<h2 style="color:${NAVY};font-size:20px;margin:0 0 16px;font-weight:700">${greeting}</h2>` : "";
+  const opCodeHtml = opCode ? `<tr><td style="padding:24px 32px 0"><p style="color:#666;font-size:13px;margin:0;padding-top:16px;border-top:1px solid #eee">Código de operación: <strong style="color:${NAVY};font-family:monospace">${opCode}</strong><br/>Cualquier consulta, respondé este email o escribinos por WhatsApp.</p></td></tr>` : "";
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${subject || "Argencargo"}</title></head>
+<body style="margin:0;padding:0;background:#eef1f5;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Arial,sans-serif;color:#1a1a1a">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f5;padding:24px 0">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.04)">
+
+        <!-- HEADER: banner azul con logo en caja blanca -->
+        <tr><td align="center" style="background:linear-gradient(135deg,${NAVY},${AC});padding:36px 32px">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <tr><td align="center" style="background:#fff;border-radius:14px;padding:18px 32px;box-shadow:0 4px 12px rgba(0,0,0,0.15)">
+              <img src="${LOGO}" alt="Argencargo" width="180" style="display:block;max-width:180px;height:auto"/>
+            </td></tr>
+          </table>
+        </td></tr>
+
+        <!-- BODY: saludo + cuerpo + cta -->
+        <tr><td style="padding:28px 32px">
+          ${greetingHtml}
+          ${body || ""}
+          ${extraHtml || ""}
+        </td></tr>
+
+        <!-- Código op + nota de respuesta -->
+        ${opCodeHtml}
+
+        <!-- FOOTER: logo + datos de contacto -->
+        <tr><td style="padding:28px 32px;background:#f5f7fa;border-top:1px solid #eef1f5">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td width="90" valign="top" style="padding-right:16px">
+                <img src="${LOGO}" alt="Argencargo" width="80" style="display:block;max-width:80px;height:auto"/>
+              </td>
+              <td valign="top" style="font-size:12px;line-height:1.7;color:#333">
+                <div style="font-weight:800;color:${NAVY};letter-spacing:0.02em;margin-bottom:2px">ARGENCARGO</div>
+                <div><span style="color:#888">T.</span> +54 9 11 2508-8580</div>
+                <div><span style="color:#888">E-mail:</span> <a href="mailto:info@argencargo.com.ar" style="color:${AC};text-decoration:none">info@argencargo.com.ar</a></div>
+                <div>Av Callao 1137 — Recoleta, CABA</div>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+
+      </table>
+      <p style="font-size:10px;color:#aaa;margin:12px 0 0;text-align:center">© ${new Date().getFullYear()} Argencargo · <a href="https://argencargo.com.ar" style="color:#888;text-decoration:none">argencargo.com.ar</a></p>
+    </td></tr>
+  </table>
+</body></html>`;
 }
 
 export async function POST(req) {

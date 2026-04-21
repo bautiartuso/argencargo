@@ -7,6 +7,7 @@ const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 const RESEND_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM = process.env.RESEND_FROM || "Argencargo <info@argencargo.com.ar>";
+const LOGO = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png";
 
 async function verifyAdmin(req) {
   const auth = req.headers.get("authorization") || "";
@@ -30,25 +31,52 @@ export async function POST(req) {
     if (!to) return Response.json({ error: "to requerido" }, { status: 400 });
 
     const NAVY = "#152D54"; const AC = "#3B7DD8";
-    const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f5f7fa;font-family:'Segoe UI',system-ui,sans-serif">
-      <div style="max-width:600px;margin:0 auto;background:#fff">
-        <div style="background:linear-gradient(135deg,${NAVY},${AC});padding:32px 24px;text-align:center">
-          <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800">Argencargo</h1>
-          <p style="color:rgba(255,255,255,0.85);margin:8px 0 0;font-size:13px">Test de notificaciones</p>
-        </div>
-        <div style="padding:32px 28px;color:#1a1a1a">
-          <h2 style="color:${NAVY};font-size:20px;margin:0 0 12px">✅ ¡Todo funciona!</h2>
-          <p style="font-size:15px;line-height:1.6;color:#444">Este es un email de prueba enviado desde <strong>info@argencargo.com.ar</strong> via Resend.</p>
-          <p style="font-size:15px;line-height:1.6;color:#444">Si estás viendo este mensaje, significa que:</p>
-          <ul style="font-size:14px;line-height:1.8;color:#444">
-            <li>✓ La API de Resend está conectada correctamente</li>
-            <li>✓ El dominio <strong>argencargo.com.ar</strong> está verificado (SPF/DKIM/DMARC)</li>
-            <li>✓ Los emails automáticos al cambiar estado de una op van a funcionar</li>
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Argencargo — Test</title></head>
+<body style="margin:0;padding:0;background:#eef1f5;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Arial,sans-serif;color:#1a1a1a">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f5;padding:24px 0">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.04)">
+        <!-- HEADER: banner azul con logo en caja blanca -->
+        <tr><td align="center" style="background:linear-gradient(135deg,${NAVY},${AC});padding:36px 32px">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <tr><td align="center" style="background:#fff;border-radius:14px;padding:18px 32px;box-shadow:0 4px 12px rgba(0,0,0,0.15)">
+              <img src="${LOGO}" alt="Argencargo" width="180" style="display:block;max-width:180px;height:auto"/>
+            </td></tr>
+          </table>
+        </td></tr>
+        <!-- BODY -->
+        <tr><td style="padding:28px 32px">
+          <h2 style="color:${NAVY};font-size:20px;margin:0 0 16px;font-weight:700">✅ ¡Todo funciona!</h2>
+          <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px">Este es un email de prueba enviado desde <strong>info@argencargo.com.ar</strong> via Resend.</p>
+          <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px">Si estás viendo este mensaje, significa que:</p>
+          <ul style="font-size:14px;line-height:1.8;color:#444;margin:0 0 12px;padding-left:20px">
+            <li>La API de Resend está conectada correctamente</li>
+            <li>El dominio <strong>argencargo.com.ar</strong> está verificado (SPF/DKIM/DMARC)</li>
+            <li>Los emails automáticos al cambiar estado de una op van a funcionar</li>
           </ul>
-          <p style="font-size:13px;color:#888;margin:24px 0 0;padding-top:16px;border-top:1px solid #eee">Enviado: ${new Date().toLocaleString("es-AR")}</p>
-        </div>
-      </div>
-    </body></html>`;
+          <p style="font-size:12px;color:#999;margin:20px 0 0">Enviado: ${new Date().toLocaleString("es-AR")}</p>
+        </td></tr>
+        <!-- FOOTER -->
+        <tr><td style="padding:28px 32px;background:#f5f7fa;border-top:1px solid #eef1f5">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td width="90" valign="top" style="padding-right:16px">
+                <img src="${LOGO}" alt="Argencargo" width="80" style="display:block;max-width:80px;height:auto"/>
+              </td>
+              <td valign="top" style="font-size:12px;line-height:1.7;color:#333">
+                <div style="font-weight:800;color:${NAVY};letter-spacing:0.02em;margin-bottom:2px">ARGENCARGO</div>
+                <div><span style="color:#888">T.</span> +54 9 11 2508-8580</div>
+                <div><span style="color:#888">E-mail:</span> <a href="mailto:info@argencargo.com.ar" style="color:${AC};text-decoration:none">info@argencargo.com.ar</a></div>
+                <div>Av Callao 1137 — Recoleta, CABA</div>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+      </table>
+      <p style="font-size:10px;color:#aaa;margin:12px 0 0;text-align:center">© ${new Date().getFullYear()} Argencargo · <a href="https://argencargo.com.ar" style="color:#888;text-decoration:none">argencargo.com.ar</a></p>
+    </td></tr>
+  </table>
+</body></html>`;
 
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
