@@ -4,7 +4,9 @@ import { useSearchParams } from "next/navigation";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
-const GOOGLE_REVIEW_URL = "https://g.page/r/argencargo/review"; // TODO: reemplazar con tu link real
+// Abre el perfil de Argencargo en Google (kgmid). El cliente toca 'Escribir una reseña' ahí.
+// TODO: cuando Google Business esté verificado, reemplazar con el link directo tipo https://g.page/r/XXX/review
+const GOOGLE_REVIEW_URL = "https://www.google.com/search?q=Argencargo&kgmid=/g/11z0lfp088";
 
 const NAVY = "#152D54"; const AC = "#3B7DD8"; const BG = "#0a1223";
 

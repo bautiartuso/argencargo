@@ -2860,21 +2860,41 @@ function ComunicacionesPanel({token}){
   const [loading,setLoading]=useState(true);
   const [ops,setOps]=useState([]);
   const [feedbacks,setFeedbacks]=useState([]);
+  const [templates,setTemplates]=useState([]);
+  const [editingTpl,setEditingTpl]=useState(null);
+  const [tplDraft,setTplDraft]=useState({});
+  const [savingTpl,setSavingTpl]=useState(false);
   const [msg,setMsg]=useState("");
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
   const load=async()=>{
     setLoading(true);
     const statuses=["en_deposito_origen","lista_retiro"];
     const inList=statuses.map(s=>`"${s}"`).join(",");
-    const [o,fb]=await Promise.all([
+    const [o,fb,tpl]=await Promise.all([
       dq("operations",{token,filters:`?select=*,clients(first_name,last_name,whatsapp,email,client_code)&status=in.(${inList})&order=updated_at.desc&limit=100`}),
-      dq("op_feedback",{token,filters:"?select=*,operations(operation_code,description,clients(first_name,last_name,client_code))&order=submitted_at.desc&limit=50"})
+      dq("op_feedback",{token,filters:"?select=*,operations(operation_code,description,clients(first_name,last_name,client_code))&order=submitted_at.desc&limit=50"}),
+      dq("message_templates",{token,filters:"?select=*&order=channel.asc,key.asc"})
     ]);
     setOps(Array.isArray(o)?o:[]);
     setFeedbacks(Array.isArray(fb)?fb:[]);
+    setTemplates(Array.isArray(tpl)?tpl:[]);
     setLoading(false);
   };
   useEffect(()=>{load();},[token]);
+
+  const inpStyle={width:"100%",padding:"8px 10px",fontSize:13,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",boxSizing:"border-box"};
+  const openTpl=(t)=>{setEditingTpl(t.id);setTplDraft({subject:t.subject||"",greeting:t.greeting||"",body:t.body||"",cta_text:t.cta_text||""});};
+  const cancelTpl=()=>{setEditingTpl(null);setTplDraft({});};
+  const saveTpl=async()=>{
+    if(!editingTpl)return;
+    setSavingTpl(true);
+    await dq("message_templates",{method:"PATCH",token,filters:`?id=eq.${editingTpl}`,body:{...tplDraft,updated_at:new Date().toISOString()}});
+    await load();
+    setEditingTpl(null);
+    setTplDraft({});
+    setSavingTpl(false);
+    flash("Plantilla actualizada");
+  };
 
   const markWaSent=async(opId,triggerKey)=>{
     const op=ops.find(x=>x.id===opId);
@@ -2884,21 +2904,25 @@ function ComunicacionesPanel({token}){
     setOps(p=>p.map(x=>x.id===opId?{...x,sent_notifications:newSent}:x));
   };
 
+  const interp=(text,data)=>{if(!text)return "";return String(text).replace(/\{\{(\w+)\}\}/g,(_,k)=>data[k]!=null?String(data[k]):"");};
+
   const buildWAMsg=(op,trigger)=>{
-    const cn=op.clients?op.clients.first_name:"";
-    const code=op.operation_code;
+    const firstName=op.clients?op.clients.first_name:"";
+    const opCode=op.operation_code;
     const desc=op.description||"tu mercadería";
-    if(trigger==="deposito"){
-      return `Hola ${cn}! Recibimos *${desc}* (${code}) en nuestro depósito de origen 📦\n\nPara avanzar con la documentación y el despacho necesitamos que completes los datos de la mercadería. Ingresá al portal:\n\nhttps://argencargo.com.ar/portal?op=${code}\n\nCuanto antes lo completes, antes despachamos. ¡Gracias!`;
-    }
-    if(trigger==="retiro"){
-      const bt=Number(op.budget_total||0);
-      const totAnt=Number(op.total_anticipos||0);
-      const saldo=bt-totAnt;
-      const saldoTxt=saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toFixed(2)}*`:"";
-      return `Buenas noticias ${cn}! Tu carga *${desc}* (${code}) ya está liberada y se encuentra en nuestra oficina ✅\n\n📍 Av. Callao 1137, Recoleta - CABA (M&M Propiedades)\n🕐 Lun a Vie de 9:00 a 19:00 hs${saldoTxt}\n\n¡Te esperamos!`;
-    }
-    return "";
+    const portalLink=`https://argencargo.com.ar/portal?op=${opCode}`;
+    const bt=Number(op.budget_total||0);
+    const totAnt=Number(op.total_anticipos||0);
+    const saldo=bt-totAnt;
+    const saldoTxt=saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toFixed(2)}*`:"";
+    const data={firstName,opCode,desc,portalLink,saldoTxt};
+    const key=`wa_${trigger}`;
+    const tpl=templates.find(t=>t.key===key);
+    if(tpl)return interp(tpl.body,data);
+    // Fallback si no se cargaron las plantillas todavía
+    return trigger==="deposito"
+      ? `Hola ${firstName}! Recibimos *${desc}* (${opCode}) en el depósito.\n\n${portalLink}`
+      : `Tu carga *${desc}* (${opCode}) está lista para retirar en Callao 1137.${saldoTxt}`;
   };
 
   const pending=ops.map(op=>{
@@ -2989,6 +3013,51 @@ function ComunicacionesPanel({token}){
         <span style={{color:"rgba(255,255,255,0.3)"}}>{new Date(p.alreadySent).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span>
       </div>)}
     </div>}
+
+    {/* Plantillas editables */}
+    <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.25rem 1.5rem",marginBottom:20}}>
+      <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>✏️ Plantillas de mensajes</h3>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 14px"}}>Edita los textos que se envían a los clientes. Variables disponibles: {"{{firstName}}, {{opCode}}, {{desc}}, {{portalLink}}, {{saldoTxt}} (solo WA retiro)"}</p>
+      {templates.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem"}}>Cargando plantillas...</p>:<div>
+        {templates.map(t=>{
+          const isEditing=editingTpl===t.id;
+          const channelIcon=t.channel==="email"?"✉️":"📱";
+          const channelColor=t.channel==="email"?"#60a5fa":"#25D366";
+          return <div key={t.id} style={{padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:isEditing?12:0,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:200}}>
+                <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:`${channelColor}22`,color:channelColor,textTransform:"uppercase",letterSpacing:"0.05em"}}>{channelIcon} {t.channel}</span>
+                <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>{t.label}</p>
+              </div>
+              {!isEditing&&<button onClick={()=>openTpl(t)} style={{fontSize:11,fontWeight:700,padding:"5px 12px",borderRadius:6,border:"1.5px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:IC,cursor:"pointer"}}>✏️ Editar</button>}
+            </div>
+            {isEditing&&<div style={{background:"rgba(0,0,0,0.2)",borderRadius:10,padding:"12px 14px",border:"1px solid rgba(96,165,250,0.2)"}}>
+              {t.channel==="email"&&<div style={{marginBottom:10}}>
+                <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase"}}>Asunto</p>
+                <input value={tplDraft.subject||""} onChange={e=>setTplDraft(p=>({...p,subject:e.target.value}))} style={inpStyle}/>
+              </div>}
+              {t.channel==="email"&&<div style={{marginBottom:10}}>
+                <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase"}}>Saludo (título H2)</p>
+                <input value={tplDraft.greeting||""} onChange={e=>setTplDraft(p=>({...p,greeting:e.target.value}))} style={inpStyle}/>
+              </div>}
+              <div style={{marginBottom:10}}>
+                <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase"}}>Cuerpo</p>
+                <textarea value={tplDraft.body||""} onChange={e=>setTplDraft(p=>({...p,body:e.target.value}))} rows={6} style={{...inpStyle,resize:"vertical",fontFamily:"inherit",lineHeight:1.5}}/>
+                {t.channel==="email"&&<p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:"4px 0 0"}}>Tip: usá **texto** para negrita y doble salto de línea para nuevo párrafo.</p>}
+              </div>
+              {t.channel==="email"&&t.key!=="email_cerrada"&&<div style={{marginBottom:10}}>
+                <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase"}}>Texto del botón CTA</p>
+                <input value={tplDraft.cta_text||""} onChange={e=>setTplDraft(p=>({...p,cta_text:e.target.value}))} style={inpStyle}/>
+              </div>}
+              <div style={{display:"flex",gap:8,marginTop:10}}>
+                <button onClick={saveTpl} disabled={savingTpl} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",cursor:savingTpl?"not-allowed":"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff",opacity:savingTpl?0.6:1}}>{savingTpl?"Guardando...":"💾 Guardar"}</button>
+                <button onClick={cancelTpl} style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>Cancelar</button>
+              </div>
+            </div>}
+          </div>;
+        })}
+      </div>}
+    </div>
 
     {/* Feedback del cliente */}
     <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.25rem 1.5rem"}}>

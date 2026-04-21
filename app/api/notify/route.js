@@ -45,18 +45,64 @@ async function verifyAdmin(req) {
   } catch { return false; }
 }
 
-// Plantillas de email HTML por trigger
-function renderEmail(trigger, op, client) {
+// Reemplaza {{vars}} en un texto con los valores de data.
+function interpolate(text, data) {
+  if (!text) return "";
+  return String(text).replace(/\{\{(\w+)\}\}/g, (_, k) => data[k] != null ? String(data[k]) : "");
+}
+
+// Convierte markdown simple (**bold**, \n párrafos) a HTML inline.
+function mdToHtml(text) {
+  if (!text) return "";
+  return String(text)
+    .split(/\n\n+/)
+    .map(p => `<p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px">${
+      p.replace(/\n/g, "<br/>").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    }</p>`)
+    .join("");
+}
+
+async function fetchTemplate(key) {
+  const r = await fetch(`${SB_URL}/rest/v1/message_templates?key=eq.${key}&select=*`, {
+    headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` },
+  });
+  const arr = await r.json();
+  return Array.isArray(arr) && arr[0] ? arr[0] : null;
+}
+
+// Plantillas de email HTML por trigger (leídas de DB)
+async function renderEmail(trigger, op, client) {
   const firstName = client?.first_name || "";
   const opCode = op.operation_code || "";
   const desc = op.description || "tu mercadería";
   const portalLink = `${BASE_URL}/portal?op=${opCode}`;
   const feedbackLink = `${BASE_URL}/feedback?op=${opCode}`;
-  const budgetTotal = Number(op.budget_total || 0);
-  const isEnvio = op.shipping_to_door;
+  const data = { firstName, opCode, desc, portalLink, feedbackLink };
   const NAVY = "#152D54"; const AC = "#3B7DD8";
 
-  const wrap = (title, bodyHtml, ctaHtml = "") => `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head>
+  const tpl = await fetchTemplate(`email_${trigger}`);
+  if (!tpl) return null;
+
+  const subject = interpolate(tpl.subject, data);
+  const greeting = interpolate(tpl.greeting, data);
+  const body = interpolate(tpl.body, data);
+  const ctaText = tpl.cta_text;
+
+  const ctaLink = trigger === "cerrada" ? null : (trigger === "arribo" ? portalLink : portalLink);
+
+  const button = (href, text, color = AC) =>
+    `<div style="text-align:center;margin:24px 0"><a href="${href}" style="display:inline-block;padding:14px 32px;background:${color};color:#fff;text-decoration:none;font-weight:700;border-radius:8px;font-size:15px">${text}</a></div>`;
+
+  // Para cerrada: renderizamos 5 estrellas clickables en vez de botón CTA.
+  const extraHtml = trigger === "cerrada"
+    ? `<div style="text-align:center;margin:24px 0;padding:20px;background:#f5f7fa;border-radius:12px">
+        <p style="font-size:13px;color:#666;margin:0 0 12px;font-weight:600">Tocá las estrellas según tu experiencia:</p>
+        <div>${[1,2,3,4,5].map(n => `<a href="${BASE_URL}/feedback?op=${opCode}&r=${n}" style="text-decoration:none;font-size:40px;color:#fbbf24;margin:0 4px;display:inline-block">★</a>`).join("")}</div>
+        <p style="font-size:11px;color:#999;margin:12px 0 0">1 = muy mala · 5 = excelente</p>
+      </div>`
+    : (ctaText && ctaLink ? button(ctaLink, ctaText) : "");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${subject}</title></head>
 <body style="margin:0;padding:0;background:#f5f7fa;font-family:'Segoe UI',system-ui,sans-serif;color:#1a1a1a">
   <div style="max-width:600px;margin:0 auto;background:#fff">
     <div style="background:linear-gradient(135deg,${NAVY},${AC});padding:32px 24px;text-align:center">
@@ -64,9 +110,9 @@ function renderEmail(trigger, op, client) {
       <p style="color:rgba(255,255,255,0.85);margin:8px 0 0;font-size:13px">Tu operación de importación, resuelta</p>
     </div>
     <div style="padding:32px 28px">
-      <h2 style="color:${NAVY};font-size:20px;margin:0 0 12px">${title}</h2>
-      ${bodyHtml}
-      ${ctaHtml}
+      ${greeting ? `<h2 style="color:${NAVY};font-size:20px;margin:0 0 12px">${greeting}</h2>` : ""}
+      ${mdToHtml(body)}
+      ${extraHtml}
       <p style="color:#666;font-size:13px;margin:28px 0 0;padding-top:16px;border-top:1px solid #eee">
         Código de operación: <strong style="color:${NAVY};font-family:monospace">${opCode}</strong><br/>
         Cualquier consulta, respondé este email o escribinos por WhatsApp.
@@ -78,55 +124,7 @@ function renderEmail(trigger, op, client) {
   </div>
 </body></html>`;
 
-  const button = (href, text, color = AC) =>
-    `<div style="text-align:center;margin:24px 0"><a href="${href}" style="display:inline-block;padding:14px 32px;background:${color};color:#fff;text-decoration:none;font-weight:700;border-radius:8px;font-size:15px">${text}</a></div>`;
-
-  if (trigger === "deposito") {
-    return {
-      subject: `${opCode} — Recibimos tu mercadería 📦`,
-      html: wrap(
-        `¡Hola ${firstName}! Tu mercadería llegó al depósito`,
-        `<p style="font-size:15px;line-height:1.6;color:#444">Confirmamos la recepción de tu carga en nuestro depósito de origen.</p>
-         <p style="font-size:15px;line-height:1.6;color:#444"><strong>Paso siguiente:</strong> necesitamos que completes los datos de la mercadería (descripción, cantidad, valor declarado) para preparar la documentación y avanzar con el envío.</p>
-         <p style="font-size:15px;line-height:1.6;color:#444">Ingresá al portal y cargá la info cuanto antes — así no se demora el despacho.</p>`,
-        button(portalLink, "Completar documentación →")
-      ),
-    };
-  }
-
-  if (trigger === "arribo") {
-    return {
-      subject: `${opCode} — Tu carga llegó a Argentina 🇦🇷`,
-      html: wrap(
-        `¡${firstName}, tu carga aterrizó!`,
-        `<p style="font-size:15px;line-height:1.6;color:#444">Buenas noticias: <strong>${desc}</strong> ya está en Argentina.</p>
-         <p style="font-size:15px;line-height:1.6;color:#444">Estamos gestionando los despachos aduaneros. Te avisamos apenas esté liberada y lista para que la retires o te la enviemos.</p>
-         <p style="font-size:15px;line-height:1.6;color:#444">Podés ver el progreso en tiempo real desde tu portal.</p>`,
-        button(portalLink, "Ver operación")
-      ),
-    };
-  }
-
-  if (trigger === "cerrada") {
-    // 5 estrellas clickables: cada estrella es un link con ?r=N al /feedback.
-    // El rating se registra con 1 solo click, sin formularios intermedios.
-    const starLink = (n) => `${BASE_URL}/feedback?op=${opCode}&r=${n}`;
-    const starsHtml = `<div style="text-align:center;margin:24px 0;padding:20px;background:#f5f7fa;border-radius:12px">
-        <p style="font-size:13px;color:#666;margin:0 0 12px;font-weight:600">Tocá las estrellas según tu experiencia:</p>
-        <div>
-          ${[1, 2, 3, 4, 5].map(n => `<a href="${starLink(n)}" style="text-decoration:none;font-size:40px;color:#fbbf24;margin:0 4px;display:inline-block">★</a>`).join("")}
-        </div>
-        <p style="font-size:11px;color:#999;margin:12px 0 0">1 = muy mala · 5 = excelente</p>
-      </div>`;
-    const bodyTxt = `<p style="font-size:15px;line-height:1.6;color:#444">Gracias por confiar en nosotros para tu importación de <strong>${desc}</strong>.</p>
-      <p style="font-size:15px;line-height:1.6;color:#444">Nos ayudaría mucho saber cómo fue tu experiencia. Un solo click 👇</p>`;
-    return {
-      subject: `${opCode} — ¿Cómo fue tu experiencia? ⭐`,
-      html: wrap(`¡Gracias ${firstName}!`, bodyTxt, starsHtml),
-    };
-  }
-
-  return null;
+  return { subject, html };
 }
 
 export async function POST(req) {
@@ -158,7 +156,7 @@ export async function POST(req) {
     }
 
     // Render + send
-    const tpl = renderEmail(trigger, op, client);
+    const tpl = await renderEmail(trigger, op, client);
     if (!tpl) return Response.json({ error: "template no encontrada" }, { status: 500 });
 
     const r = await fetch("https://api.resend.com/emails", {
