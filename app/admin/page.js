@@ -137,7 +137,10 @@ function OperationsList({token,onSelect,onNew}){
                 o.client_id?dq("clients",{token,filters:`?id=eq.${o.client_id}&select=tax_condition`}):Promise.resolve([])
               ]);
               const items=Array.isArray(it)?it:[];const pkgs=Array.isArray(pk)?pk:[];
-              if(items.length===0){skipped++;continue;}
+              const oBlanco=o.channel?.includes("blanco");
+              // Canal A necesita items; canal B necesita bultos con peso/CBM
+              if(oBlanco&&items.length===0){skipped++;continue;}
+              if(!oBlanco&&pkgs.length===0){skipped++;continue;}
               const client=Array.isArray(cl)?cl[0]:null;const overrides=Array.isArray(ov)?ov:[];
               const{totalTax,flete,seguro,totalAbonar}=calcOpBudget(o,items,pkgs,tariffs,cfg,overrides,client);
               await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}});
@@ -253,7 +256,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     try{
       const[fit,fpk]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*`})]);
       const its=Array.isArray(fit)?fit:[];const pks=Array.isArray(fpk)?fpk:[];
-      if(its.length===0)return; // Sin items = presupuesto manual, no tocar
+      const isBlanco=op.channel?.includes("blanco");
+      // Canal A (blanco): necesita items para calcular impuestos per-producto.
+      // Canal B (negro): no tiene items, se calcula sólo por peso/CBM. Requiere bultos con peso/medidas.
+      if(isBlanco&&its.length===0)return; // Canal A sin items = presupuesto manual cargado
+      if(!isBlanco&&pks.length===0)return; // Canal B sin bultos = nada que calcular
       const{totalTax,flete,seguro,totalAbonar}=calcOpBudget(op,its,pks,tariffs,config,clientOverrides,opClient);
       await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}});
       setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}));
