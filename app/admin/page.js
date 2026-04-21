@@ -244,6 +244,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
     // Notification #6: notify client when operation status changes
     if(rest.status!==initOp.status&&op.client_id){try{const cls=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=auth_user_id`});const uid=Array.isArray(cls)&&cls[0]?cls[0].auth_user_id:null;if(uid){await dq("notifications",{method:"POST",token,body:{user_id:uid,portal:"cliente",title:`Estado actualizado: ${SM[rest.status]?.l||rest.status}`,body:`Operación ${op.operation_code}`,link:`?op=${op.operation_code}`}});}}catch(e){console.error("notif error",e);}}
+    // Email automático según trigger (deposito / arribo / cerrada)
+    if(rest.status!==initOp.status){
+      const triggerMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};
+      const trigger=triggerMap[rest.status];
+      if(trigger){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${trigger} enviado al cliente`);else if(resp?.skipped)console.log("email skipped",resp);else console.error("email error",resp);}catch(e){console.error("email error",e);}}
+    }
     setOp(p=>({...p,closed_at:rest.closed_at}));flash("Operación guardada");setSaving(false);
     // Auto-sync del presupuesto después de cualquier save (por si cambiaron flags que afectan el cálculo: has_phones, has_battery, channel, etc.)
     autoSyncBudget();
@@ -328,6 +334,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
         <Inp label="ETA (fecha estimada de arribo)" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>
         <Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>
+        <div style={{padding:"10px 14px",background:op.skip_review_request?"rgba(251,146,60,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${op.skip_review_request?"rgba(251,146,60,0.25)":"rgba(255,255,255,0.06)"}`,borderRadius:8,marginTop:8}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.skip_review_request||false} onChange={e=>chOp("skip_review_request")(e.target.checked)}/><span style={{fontSize:13,color:op.skip_review_request?"#fb923c":"rgba(255,255,255,0.5)",fontWeight:op.skip_review_request?600:400}}>⛔ No pedir reseña al cerrar esta op</span></label>{op.skip_review_request&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0 24px"}}>Usar si la experiencia fue mala y no queremos incentivar una reseña pública.</p>}</div>
         {op.channel==="aereo_blanco"&&<div style={{marginBottom:12}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>¿La carga contiene baterías internas?</p>
           <div style={{display:"flex",gap:10}}>{[{k:true,icon:"⚡",l:"Sí, tiene baterías",sub:"Recargo $2/kg"},{k:false,icon:"✓",l:"No tiene baterías",sub:"Producto estándar"}].map(o=><div key={String(o.k)} onClick={()=>chOp("has_battery")(o.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:12,border:`1.5px solid ${(op.has_battery||false)===o.k?"#fb923c":"rgba(255,255,255,0.08)"}`,background:(op.has_battery||false)===o.k?"rgba(251,146,60,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer",transition:"all 0.15s"}}><p style={{fontSize:22,margin:"0 0 4px"}}>{o.icon}</p><p style={{fontSize:13,fontWeight:700,color:(op.has_battery||false)===o.k?"#fb923c":"rgba(255,255,255,0.55)",margin:"0 0 2px"}}>{o.l}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{o.sub}</p></div>)}</div>
@@ -2846,6 +2853,155 @@ function FinanceDashboard({token}){
   </div>;
 }
 
+// Centro de comunicaciones: muestra ops con estados que requieren WA al cliente
+// y no se han enviado todavía. 1 click por cliente = WA abierto con mensaje prellenado.
+// También muestra feedback recibido (ratings 1-5 de ops cerradas).
+function ComunicacionesPanel({token}){
+  const [loading,setLoading]=useState(true);
+  const [ops,setOps]=useState([]);
+  const [feedbacks,setFeedbacks]=useState([]);
+  const [msg,setMsg]=useState("");
+  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
+  const load=async()=>{
+    setLoading(true);
+    const statuses=["en_deposito_origen","lista_retiro"];
+    const inList=statuses.map(s=>`"${s}"`).join(",");
+    const [o,fb]=await Promise.all([
+      dq("operations",{token,filters:`?select=*,clients(first_name,last_name,whatsapp,email,client_code)&status=in.(${inList})&order=updated_at.desc&limit=100`}),
+      dq("op_feedback",{token,filters:"?select=*,operations(operation_code,description,clients(first_name,last_name,client_code))&order=submitted_at.desc&limit=50"})
+    ]);
+    setOps(Array.isArray(o)?o:[]);
+    setFeedbacks(Array.isArray(fb)?fb:[]);
+    setLoading(false);
+  };
+  useEffect(()=>{load();},[token]);
+
+  const markWaSent=async(opId,triggerKey)=>{
+    const op=ops.find(x=>x.id===opId);
+    if(!op)return;
+    const newSent={...(op.sent_notifications||{}),[triggerKey]:new Date().toISOString()};
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opId}`,body:{sent_notifications:newSent}});
+    setOps(p=>p.map(x=>x.id===opId?{...x,sent_notifications:newSent}:x));
+  };
+
+  const buildWAMsg=(op,trigger)=>{
+    const cn=op.clients?op.clients.first_name:"";
+    const code=op.operation_code;
+    const desc=op.description||"tu mercadería";
+    if(trigger==="deposito"){
+      return `Hola ${cn}! Recibimos *${desc}* (${code}) en nuestro depósito de origen 📦\n\nPara avanzar con la documentación y el despacho necesitamos que completes los datos de la mercadería. Ingresá al portal:\n\nhttps://argencargo.com.ar/portal?op=${code}\n\nCuanto antes lo completes, antes despachamos. ¡Gracias!`;
+    }
+    if(trigger==="retiro"){
+      const bt=Number(op.budget_total||0);
+      const totAnt=Number(op.total_anticipos||0);
+      const saldo=bt-totAnt;
+      const saldoTxt=saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toFixed(2)}*`:"";
+      return `Buenas noticias ${cn}! Tu carga *${desc}* (${code}) ya está liberada y se encuentra en nuestra oficina ✅\n\n📍 Av. Callao 1137, Recoleta - CABA (M&M Propiedades)\n🕐 Lun a Vie de 9:00 a 19:00 hs${saldoTxt}\n\n¡Te esperamos!`;
+    }
+    return "";
+  };
+
+  const pending=ops.map(op=>{
+    const trigger=op.status==="en_deposito_origen"?"deposito":op.status==="lista_retiro"?"retiro":null;
+    if(!trigger)return null;
+    const sentKey=`wa_${trigger}`;
+    const alreadySent=op.sent_notifications?.[sentKey];
+    const wa=op.clients?.whatsapp?.replace(/[^0-9]/g,"");
+    return{op,trigger,sentKey,alreadySent,wa};
+  }).filter(Boolean);
+
+  const pendientes=pending.filter(p=>!p.alreadySent);
+  const enviadas=pending.filter(p=>p.alreadySent).slice(0,10);
+
+  const openWA=(p)=>{
+    if(!p.wa){alert("El cliente no tiene WhatsApp cargado.");return;}
+    const msg=encodeURIComponent(buildWAMsg(p.op,p.trigger));
+    window.open(`https://wa.me/${p.wa}?text=${msg}`,"_blank");
+    markWaSent(p.op.id,p.sentKey);
+    flash(`WA abierto · ${p.op.operation_code}`);
+  };
+
+  const openAll=()=>{
+    if(pendientes.length===0)return;
+    if(!confirm(`Abrir ${pendientes.length} pestaña${pendientes.length!==1?"s":""} de WhatsApp con mensajes prellenados?`))return;
+    pendientes.forEach((p,i)=>{setTimeout(()=>openWA(p),i*250);});
+  };
+
+  const sendEmail=async(opId,trigger)=>{
+    try{
+      const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:opId,trigger,force:true})});
+      const resp=await r.json();
+      if(resp?.ok){flash("Email enviado ✓");load();}
+      else if(resp?.skipped)flash(`Saltado: ${resp.skipped}`);
+      else alert(`Error: ${resp?.error||"desconocido"}`);
+    }catch(e){alert("Error: "+e.message);}
+  };
+
+  return <div>
+    <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px"}}>Comunicaciones</h2>
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"0 0 20px"}}>Notificaciones manuales (WhatsApp) + historial de feedback de clientes.</p>
+    {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
+
+    {/* WAs pendientes */}
+    <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.25rem 1.5rem",marginBottom:20}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}}>
+        <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>📱 WhatsApp pendientes ({pendientes.length})</h3>
+        {pendientes.length>0&&<button onClick={openAll} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff"}}>Abrir TODOS ({pendientes.length})</button>}
+      </div>
+      {loading?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem"}}>Cargando...</p>:pendientes.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem"}}>✓ No hay WAs pendientes</p>:<div>
+        {pendientes.map(p=>{
+          const triggerLbl=p.trigger==="deposito"?"📦 Recepción depósito":"✅ Lista para retiro";
+          const triggerColor=p.trigger==="deposito"?"#fbbf24":"#22c55e";
+          return <div key={p.op.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:220}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3,flexWrap:"wrap"}}>
+                <span style={{fontFamily:"monospace",fontSize:12,fontWeight:700,color:IC,padding:"2px 8px",background:"rgba(96,165,250,0.1)",borderRadius:4}}>{p.op.operation_code}</span>
+                <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:`${triggerColor}20`,color:triggerColor,border:`1px solid ${triggerColor}40`,letterSpacing:"0.04em"}}>{triggerLbl}</span>
+              </div>
+              <p style={{fontSize:13,color:"#fff",margin:0}}>{p.op.clients?`${p.op.clients.first_name} ${p.op.clients.last_name}`:"—"} <span style={{color:"rgba(255,255,255,0.4)"}}>· {p.op.description||""}</span></p>
+              {!p.wa&&<p style={{fontSize:11,color:"#fb923c",margin:"2px 0 0"}}>⚠️ Cliente sin WhatsApp cargado</p>}
+            </div>
+            <button onClick={()=>openWA(p)} disabled={!p.wa} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",cursor:p.wa?"pointer":"not-allowed",background:p.wa?"linear-gradient(135deg,#25D366,#128C7E)":"rgba(255,255,255,0.06)",color:p.wa?"#fff":"rgba(255,255,255,0.3)",whiteSpace:"nowrap"}}>📱 Enviar WA</button>
+          </div>;
+        })}
+      </div>}
+    </div>
+
+    {/* Últimos WAs enviados */}
+    {enviadas.length>0&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1rem 1.25rem",marginBottom:20}}>
+      <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Últimos enviados</h3>
+      {enviadas.map(p=><div key={p.op.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:12,color:"rgba(255,255,255,0.5)"}}>
+        <span><span style={{fontFamily:"monospace",color:IC}}>{p.op.operation_code}</span> — {p.op.clients?`${p.op.clients.first_name} ${p.op.clients.last_name}`:"—"} · {p.trigger}</span>
+        <span style={{color:"rgba(255,255,255,0.3)"}}>{new Date(p.alreadySent).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span>
+      </div>)}
+    </div>}
+
+    {/* Feedback del cliente */}
+    <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.25rem 1.5rem"}}>
+      <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 14px"}}>⭐ Feedback de clientes ({feedbacks.length})</h3>
+      {feedbacks.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem"}}>Sin feedback todavía</p>:<div>
+        {feedbacks.map(f=>{
+          const ratingColor=f.rating>=4?"#22c55e":f.rating>=3?"#fbbf24":"#ff6b6b";
+          return <div key={f.id} style={{padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontFamily:"monospace",fontSize:11,fontWeight:700,color:IC,padding:"2px 8px",background:"rgba(96,165,250,0.1)",borderRadius:4}}>{f.operations?.operation_code||"—"}</span>
+                <span style={{fontSize:13,color:"#fff"}}>{f.operations?.clients?`${f.operations.clients.first_name} ${f.operations.clients.last_name}`:"—"}</span>
+                {f.clicked_google_review&&<span title="Dejó reseña en Google" style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>📍 Google ✓</span>}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                {[1,2,3,4,5].map(n=><span key={n} style={{fontSize:16,color:n<=f.rating?ratingColor:"rgba(255,255,255,0.12)"}}>★</span>)}
+                <span style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginLeft:6}}>{new Date(f.submitted_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</span>
+              </div>
+            </div>
+            {f.comment&&<p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:"4px 0 0 0",paddingLeft:8,borderLeft:`2px solid ${ratingColor}`,fontStyle:"italic"}}>"{f.comment}"</p>}
+          </div>;
+        })}
+      </div>}
+    </div>
+  </div>;
+}
+
 function AdminTasks({token}){
   const [tasks,setTasks]=useState([]);
   const [lo,setLo]=useState(true);
@@ -3248,7 +3404,7 @@ function AdminDashboard({session,onLogout}){
   const [page,setPage]=useState("operations");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);
   const token=session.token;
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
-  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"shipments",label:"SEGUIMIENTOS",p:["M16 3h5v5","M21 3l-7 7","M8 21H3v-5","M3 21l7-7","M21 16v5h-5","M21 21l-7-7","M3 8V3h5","M3 3l7 7"]},{key:"agents",label:"AGENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},{key:"tasks",label:"TAREAS",p:["M9 11l3 3 8-8","M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"finance",label:"FINANZAS",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
+  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"comms",label:"COMUNICACIONES",p:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},{key:"shipments",label:"SEGUIMIENTOS",p:["M16 3h5v5","M21 3l-7 7","M8 21H3v-5","M3 21l7-7","M21 16v5h-5","M21 21l-7-7","M3 8V3h5","M3 3l7 7"]},{key:"agents",label:"AGENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},{key:"tasks",label:"TAREAS",p:["M9 11l3 3 8-8","M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"finance",label:"FINANZAS",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
   const [pendingTasks,setPendingTasks]=useState(0);
   useEffect(()=>{let mounted=true;const load=async()=>{const r=await dq("admin_tasks",{token,filters:"?select=id&done=eq.false"});if(mounted&&Array.isArray(r))setPendingTasks(r.length);};load();const iv=setInterval(load,30000);return()=>{mounted=false;clearInterval(iv);};},[token,page]);
   return <div style={{height:"100vh",display:"flex",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,overflow:"hidden"}}>
@@ -3267,6 +3423,7 @@ function AdminDashboard({session,onLogout}){
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
       {page==="tasks"&&<AdminTasks token={token}/>}
+      {page==="comms"&&<ComunicacionesPanel token={token}/>}
       {page==="dashboard"&&<><DashboardKPIs token={token}/><FinanceDashboard token={token}/></>}
       {page==="shipments"&&<ShipmentsTracking token={token} onSelectOp={op=>{setPage("operations");setSelOp(op);}}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
