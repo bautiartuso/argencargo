@@ -3990,13 +3990,19 @@ function QuotesList({token}){
             <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Entrega</p><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0,textTransform:"capitalize"}}>{q.delivery||"oficina"}</p></div>
           </div>
         </div>
-        {editProds.length>0&&<div style={{marginBottom:16}}>
+        {editProds.length>0&&(()=>{
+          // Desaduanaje a nivel operación: se calcula sobre el CIF TOTAL (aprox = FOB total),
+          // se le agrega 21% de IVA, y se prorratea a cada producto según su share de FOB.
+          const isAereoA=selQuote.channel_key==="aereo_a_china";
+          const totalFobAll=editProds.reduce((s,p)=>s+Number(p.unit_price||0)*Number(p.quantity||1),0);
+          const desembBase=isAereoA?desembolsoForCif(totalFobAll):0;
+          const desembConIVA=desembBase*1.21;
+          return <div style={{marginBottom:16}}>
           <h4 style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Productos</h4>
           {editProds.map((p,i)=>{const fobItem=Number(p.unit_price||0)*Number(p.quantity||1);const nc=p.ncm||{};const inpStyle={padding:"7px 10px",fontSize:11.5,border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",width:"100%",boxSizing:"border-box",fontFamily:"inherit"};
-            // Desaduanaje solo aplica para aéreo A (courier comercial)
-            const isAereoA=selQuote.channel_key==="aereo_a_china";
-            const itemCifApprox=fobItem; // rough para preview; el cálculo exacto corre en calcOpBudget
-            const desemb=isAereoA?desembolsoForCif(itemCifApprox):null;
+            // Prorrateo del desaduanaje total (con IVA) según share de FOB del ítem
+            const share=totalFobAll>0?fobItem/totalFobAll:0;
+            const desemb=isAereoA?desembConIVA*share:null;
             return <div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"16px 18px",marginBottom:10}}>
             {/* Header: Descripción grande */}
             <p style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 10px",letterSpacing:"-0.01em"}}>{p.description||p.type||"Producto sin descripción"}</p>
@@ -4015,13 +4021,17 @@ function QuotesList({token}){
               <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>TE %</label><input type="number" value={nc.statistics_rate??""} onChange={e=>chNcm(i,"statistics_rate",Number(e.target.value)||0)} style={inpStyle} step="0.1"/></div>
               <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>IVA %</label><input type="number" value={nc.iva_rate??""} onChange={e=>chNcm(i,"iva_rate",Number(e.target.value)||0)} style={inpStyle} step="0.1"/></div>
             </div>
-            {/* Desaduanaje sólo en aéreo A */}
+            {/* Desaduanaje prorrateado (sólo aéreo A) */}
             {isAereoA&&<div style={{marginTop:8,padding:"8px 12px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}}>
-              <span style={{color:"rgba(255,255,255,0.6)"}}>Desaduanaje aéreo A (tabla desembolso según CIF)</span>
+              <span style={{color:"rgba(255,255,255,0.6)"}}>Desaduanaje (prorrateado · {(share*100).toFixed(1)}% del total)</span>
               <span style={{color:GOLD_LIGHT,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {desemb.toFixed(2)}</span>
             </div>}
           </div>;})}
-        </div>}
+          {isAereoA&&editProds.length>1&&<div style={{marginTop:6,padding:"8px 12px",background:"rgba(255,255,255,0.025)",border:"1px dashed rgba(184,149,106,0.25)",borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}}>
+            <span style={{color:"rgba(255,255,255,0.45)"}}>Desaduanaje total de la operación (USD {desembBase.toFixed(2)} + 21% IVA)</span>
+            <span style={{color:GOLD_LIGHT,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {desembConIVA.toFixed(2)}</span>
+          </div>}
+        </div>;})()}
         {/* Bultos editables + totales */}
         <div style={{marginBottom:16}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
