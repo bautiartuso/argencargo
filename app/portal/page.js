@@ -1126,7 +1126,7 @@ function ServicesPage({client}){
     </div>
   </div>;
 }
-function AccountPage({token,client}){
+function AccountPage({token,client,onRestartTutorial}){
   const [timeline,setTimeline]=useState([]);
   const [balance,setBalance]=useState(Number(client?.account_balance_usd||0));
   const [loading,setLoading]=useState(true);
@@ -1157,9 +1157,12 @@ function AccountPage({token,client}){
   const fmtDate=d=>{try{return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}catch{return d;}};
   const isCredit=balance>0;const isDebt=balance<0;
   return <div>
-    <div style={{marginBottom:24}}>
-      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Mi cuenta corriente</h2>
-      <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",lineHeight:1.5}}>Registro de saldos a favor, descuentos y aplicaciones en tus operaciones.</p>
+    <div style={{marginBottom:24,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+      <div>
+        <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Mi cuenta corriente</h2>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",lineHeight:1.5}}>Registro de saldos a favor, descuentos y aplicaciones en tus operaciones.</p>
+      </div>
+      {onRestartTutorial&&<button onClick={onRestartTutorial} style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:10,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",letterSpacing:"0.03em",display:"inline-flex",alignItems:"center",gap:6}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.15)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(184,149,106,0.08)";}}>🎓 Ver tutorial de nuevo</button>}
     </div>
     {/* Hero balance */}
     <div style={{padding:"26px 30px",background:isCredit?"linear-gradient(135deg, rgba(34,197,94,0.12) 0%, rgba(255,255,255,0.02) 100%)":isDebt?"linear-gradient(135deg, rgba(239,68,68,0.12) 0%, rgba(255,255,255,0.02) 100%)":"rgba(255,255,255,0.025)",border:`1px solid ${isCredit?"rgba(34,197,94,0.4)":isDebt?"rgba(239,68,68,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:16,marginBottom:22,boxShadow:isCredit?"0 0 28px rgba(34,197,94,0.15)":isDebt?"0 0 28px rgba(239,68,68,0.15)":"none",position:"relative",overflow:"hidden"}}>
@@ -1411,7 +1414,7 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
     <WhatsAppFab message={`Hola Argencargo! 👋 Soy ${client?.first_name||""} ${client?.last_name||""}${client?.client_code?` (${client.client_code})`:""}, tengo una consulta.`}/>
   </div>;
 }
-function Dashboard({profile,client,user,token,onLogout}){
+function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
   const [page,setPage]=useState("imports");const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);const [pendingVouchersCount,setPendingVouchersCount]=useState(0);
   const loadOps=async()=>{setLo(true);
     // Filtro explícito por client_id: normalmente RLS lo hace solo para clientes logueados,
@@ -1444,14 +1447,126 @@ function Dashboard({profile,client,user,token,onLogout}){
     {page==="quotes"&&<QuotesPage token={token} client={client}/>}
     {page==="points"&&<PointsPage token={token} client={client}/>}
     {page==="payments"&&<InternationalPaymentsPage client={client}/>}
-    {page==="account"&&<AccountPage token={token} client={client}/>}
+    {page==="account"&&<AccountPage token={token} client={client} onRestartTutorial={onRestartTutorial}/>}
     {!["imports","profile","rates","calculator","services","quotes","points","payments","account"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.4)"}}>Sección en desarrollo</p></div>}
   </DashShell>;
 }
+// ═══════════════════════════════════════════════════════════════
+// TUTORIAL ONBOARDING — se muestra la primera vez que entra un cliente
+// nuevo (clients.tutorial_completed=false). Al terminar/skip, marca
+// el flag en la DB para no volver a aparecer. Puede re-lanzarse desde
+// la página "Mi Cuenta" con el botón "Ver tutorial de nuevo".
+// ═══════════════════════════════════════════════════════════════
+function TutorialOverlay({client,token,onClose,onComplete}){
+  const [i,setI]=useState(0);
+  const [closing,setClosing]=useState(false);
+  const fn=client?.first_name||"";
+  const steps=[
+    {
+      icon:"👋",
+      title:`¡Hola ${fn}!`,
+      subtitle:"Bienvenido a Argencargo",
+      body:"Te muestro en 1 minuto cómo usar tu portal para importar de forma simple. Podés saltar este tour en cualquier momento.",
+      cta:"Empezar",
+      nav:null
+    },
+    {
+      icon:"🧮",
+      title:"Calculadora de importación",
+      subtitle:"Cotizá en segundos",
+      body:"Cargá tus productos, bultos y origen (China o USA). Te mostramos los 4 canales comparados — aéreo y marítimo, blanco y negro — para que elijas el que mejor te conviene.",
+      cta:"Siguiente",
+      nav:"calculator"
+    },
+    {
+      icon:"📦",
+      title:"Mis Importaciones",
+      subtitle:"Seguimiento en tiempo real",
+      body:"Acá vas a ver todas tus ops con tracker visual, ETA estimada, estado de pagos y gestiones pendientes. Recibís notificaciones cuando algo cambia.",
+      cta:"Siguiente",
+      nav:"imports"
+    },
+    {
+      icon:"💸",
+      title:"Pagos Internacionales",
+      subtitle:"SWIFT / WIRE a proveedores",
+      body:"Si necesitás pagar directo a tu proveedor en el exterior, gestionamos la transferencia internacional. Calculá el costo total y pedí el giro desde acá.",
+      cta:"Siguiente",
+      nav:"payments"
+    },
+    {
+      icon:"⭐",
+      title:"Mi Cuenta",
+      subtitle:"Nivel, puntos y saldo",
+      body:"Tus datos, tu nivel de cliente (Silver → Gold → Diamond), puntos acumulados y saldo a favor si tenés. Cada op que cerrás suma puntos y beneficios.",
+      cta:"Siguiente",
+      nav:"account"
+    },
+    {
+      icon:"✅",
+      title:"¡Listo!",
+      subtitle:"Cualquier duda, escribinos",
+      body:"Cualquier consulta, tocá el botón de WhatsApp que está siempre abajo a la derecha. Te respondemos rápido. ¡A importar!",
+      cta:"Finalizar",
+      nav:"imports"
+    }
+  ];
+  const cur=steps[i];
+  const last=i===steps.length-1;
+  const next=()=>{
+    if(last){finish();return;}
+    const nx=steps[i+1];
+    if(nx.nav&&typeof window!=="undefined")window.dispatchEvent(new CustomEvent("ac_nav",{detail:nx.nav}));
+    setI(i+1);
+  };
+  const finish=async()=>{
+    setClosing(true);
+    try{
+      if(client?.id&&token){
+        await fetch(`${SB_URL}/rest/v1/clients?id=eq.${client.id}`,{method:"PATCH",headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:`Bearer ${token}`,Prefer:"return=minimal"},body:JSON.stringify({tutorial_completed:true})});
+      }
+    }catch(e){console.error("tutorial save",e);}
+    onComplete?.();
+    onClose?.();
+  };
+  const skip=()=>finish();
+
+  return <div style={{position:"fixed",inset:0,zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center",padding:"20px",background:"rgba(10,22,40,0.78)",backdropFilter:"blur(8px)",animation:"acFadeIn 220ms ease-out"}}>
+    <style dangerouslySetInnerHTML={{__html:`
+      @keyframes acFadeIn{from{opacity:0}to{opacity:1}}
+      @keyframes acSlideIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+      .ac-tut-card{animation:acSlideIn 260ms cubic-bezier(0.34,1.56,0.64,1)}
+    `}}/>
+    <div className="ac-tut-card" key={i} style={{maxWidth:520,width:"100%",background:"linear-gradient(160deg, #152849 0%, #0F1E3D 100%)",border:"1px solid rgba(184,149,106,0.22)",borderRadius:20,padding:"36px 32px 28px",boxShadow:"0 30px 60px rgba(0,0,0,0.45), 0 0 80px rgba(184,149,106,0.08)",position:"relative"}}>
+      {/* Skip button top-right */}
+      <button onClick={skip} disabled={closing} style={{position:"absolute",top:14,right:14,background:"transparent",border:"none",color:"rgba(255,255,255,0.4)",fontSize:12,fontWeight:600,cursor:"pointer",padding:"6px 10px",borderRadius:6}} onMouseEnter={e=>{e.currentTarget.style.color="rgba(255,255,255,0.75)";}} onMouseLeave={e=>{e.currentTarget.style.color="rgba(255,255,255,0.4)";}}>Saltar tutorial ✕</button>
+      {/* Progress pills */}
+      <div style={{display:"flex",gap:6,marginBottom:22,marginTop:4}}>{steps.map((_,idx)=><div key={idx} style={{flex:1,height:4,borderRadius:2,background:idx<=i?GOLD_GRADIENT:"rgba(255,255,255,0.08)",transition:"background 220ms"}}/>)}</div>
+      {/* Icon */}
+      <div style={{width:72,height:72,borderRadius:20,background:"linear-gradient(135deg, rgba(184,149,106,0.18), rgba(232,208,152,0.06))",border:"1px solid rgba(184,149,106,0.28)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:36,marginBottom:18,boxShadow:"0 0 30px rgba(184,149,106,0.2)"}}>{cur.icon}</div>
+      {/* Subtitle */}
+      <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,textTransform:"uppercase",letterSpacing:"0.12em",margin:"0 0 6px"}}>{cur.subtitle}</p>
+      {/* Title */}
+      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.02em",lineHeight:1.15}}>{cur.title}</h2>
+      {/* Body */}
+      <p style={{fontSize:14,color:"rgba(255,255,255,0.7)",lineHeight:1.55,margin:"0 0 28px"}}>{cur.body}</p>
+      {/* Footer */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+        <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontWeight:600,letterSpacing:"0.05em"}}>{i+1} / {steps.length}</span>
+        <div style={{display:"flex",gap:8}}>
+          {i>0&&<button onClick={()=>setI(i-1)} disabled={closing} style={{padding:"11px 20px",fontSize:13,fontWeight:600,borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Atrás</button>}
+          <button onClick={next} disabled={closing} style={{padding:"11px 24px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.04em",boxShadow:GOLD_GLOW}}>{closing?"Guardando...":cur.cta} {!last&&"→"}</button>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
 export default function Page(){
   const [view,setView]=useState("login");const [step,setStep]=useState(0);const [form,setForm]=useState(INIT);const [errors,setErrors]=useState({});const [loading,setLoading]=useState(false);const [gErr,setGErr]=useState("");const [okMsg,setOkMsg]=useState("");
   const [session,setSession]=useState(null);const [client,setClient]=useState(null);const [profile,setProfile]=useState(null);const [restoring,setRestoring]=useState(true);
   const [adminPreview,setAdminPreview]=useState(false); // flag para mostrar banner "modo preview"
+  const [showTutorial,setShowTutorial]=useState(false);
   useEffect(()=>{const r=async()=>{
     // Admin preview mode: /portal?admin_preview=<client_id>
     // Usa la session del admin (ac_admin localStorage) para cargar el portal
@@ -1501,7 +1616,8 @@ export default function Page(){
       <span>MODO PREVIEW — viendo portal como <strong>{client?.first_name} {client?.last_name} ({client?.client_code})</strong></span>
       <button onClick={()=>{if(typeof window!=="undefined")window.close();}} style={{marginLeft:8,padding:"4px 12px",fontSize:11,fontWeight:700,background:"rgba(10,22,40,0.85)",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",letterSpacing:"0.04em"}}>Cerrar</button>
     </div>}
-    <div style={{paddingTop:adminPreview?38:0}}><Dashboard profile={profile} client={client} user={session.user} token={session.token} onLogout={logout}/></div>
+    <div style={{paddingTop:adminPreview?38:0}}><Dashboard profile={profile} client={client} user={session.user} token={session.token} onLogout={logout} onRestartTutorial={()=>setShowTutorial(true)}/></div>
+    {(showTutorial||(client&&!adminPreview&&!client.tutorial_completed))&&<TutorialOverlay client={client} token={session.token} onClose={()=>setShowTutorial(false)} onComplete={()=>setClient(c=>c?{...c,tutorial_completed:true}:c)}/>}
   </>;
   if(okMsg)return <><ToastStack/><AuthPage><div style={{textAlign:"center"}}><p style={{fontSize:15,color:"rgba(255,255,255,0.65)",margin:"0 0 24px"}}>{okMsg}</p><PBtn onClick={()=>{setOkMsg("");setView("login");setForm(INIT);setStep(0);}}>Ir a iniciar sesión</PBtn></div></AuthPage></>;
   const ST=["Datos personales","Dirección","Condición fiscal"];
