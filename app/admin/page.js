@@ -1023,7 +1023,7 @@ function ClientsList({token,onSelect}){
         </tr></thead>
         <tbody>{filtered.map(c=><tr key={c.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>onSelect(c)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
           <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:700,color:IC}}>{c.client_code}</td>
-          <td style={{padding:"12px 14px",color:"#fff",fontWeight:500}}>{c.first_name} {c.last_name}</td>
+          <td style={{padding:"12px 14px",color:"#fff",fontWeight:500}}>{c.first_name} {c.last_name}{c.loyalty_level==="plus"&&<span title="Importador Plus" style={{marginLeft:8,fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:4,background:"linear-gradient(135deg,#f59e0b,#fbbf24)",color:"#fff",letterSpacing:"0.05em"}}>PLUS</span>}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{c.email}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{c.whatsapp}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)"}}>{c.city}, {c.province}</td>
@@ -1046,7 +1046,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   const deleteClient=async()=>{if(!confirm(`¿Estás seguro de eliminar a ${cl.first_name} ${cl.last_name}? Esta acción no se puede deshacer.`))return;await dq("clients",{method:"DELETE",token,filters:`?id=eq.${cl.id}`});onDelete();};
   const tabs=[{k:"info",l:"Info"},{k:"ops",l:`Operaciones (${ops.length})`},{k:"tariffs",l:"Tarifas"}];
   return <div>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}><div style={{display:"flex",alignItems:"center",gap:12}}><button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← VOLVER</button><h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>{cl.first_name} {cl.last_name}</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div><Btn onClick={deleteClient} variant="danger" small>Eliminar cliente</Btn></div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}><div style={{display:"flex",alignItems:"center",gap:12}}><button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← VOLVER</button><h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>{cl.first_name} {cl.last_name}</h2>{cl.loyalty_level==="plus"&&<span title={cl.loyalty_achieved_at?`Plus desde ${new Date(cl.loyalty_achieved_at).toLocaleDateString("es-AR")}`:"Importador Plus"} style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:6,background:"linear-gradient(135deg,#f59e0b,#fbbf24)",color:"#fff",letterSpacing:"0.08em"}}>⭐ IMPORTADOR PLUS</span>}{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div><Btn onClick={deleteClient} variant="danger" small>Eliminar cliente</Btn></div>
     <div style={{display:"flex",gap:8,marginBottom:16}}>{tabs.map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
     {tab==="info"&&<Card title="Datos del Cliente" actions={<Btn onClick={saveClient} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
@@ -2355,6 +2355,73 @@ function DashboardKPIs({token}){
   </div>;
 }
 
+function OperationalAnalytics({token}){
+  const [data,setData]=useState(null);
+  useEffect(()=>{(async()=>{
+    const [ops,fbs,clients]=await Promise.all([
+      dq("operations",{token,filters:"?select=id,operation_code,status,channel,budget_total,created_at,closed_at,client_id,clients(first_name,last_name,client_code)&order=created_at.desc"}),
+      dq("op_feedback",{token,filters:"?select=operation_id,rating"}),
+      dq("clients",{token,filters:"?select=id,first_name,last_name,client_code,loyalty_level"})
+    ]);
+    const o=Array.isArray(ops)?ops:[];const fb=Array.isArray(fbs)?fbs:[];const cl=Array.isArray(clients)?clients:[];
+    const closed=o.filter(x=>x.status==="operacion_cerrada");
+    const active=o.filter(x=>!["operacion_cerrada","cancelada"].includes(x.status));
+    // Forecast: suma budget de activas (menos entregada, ya paga en teoría)
+    const forecast=active.reduce((s,x)=>s+Number(x.budget_total||0),0);
+    // Tasa de review
+    const fbSet=new Set(fb.map(f=>f.operation_id));
+    const reviewRate=closed.length>0?(closed.filter(c=>fbSet.has(c.id)).length/closed.length)*100:0;
+    const avgRating=fb.length>0?fb.reduce((s,f)=>s+Number(f.rating||0),0)/fb.length:0;
+    // Tiempo promedio: created → closed_at (días)
+    const durations=closed.filter(c=>c.created_at&&c.closed_at).map(c=>{
+      const ms=new Date(c.closed_at)-new Date(c.created_at);return ms/(1000*60*60*24);
+    });
+    const avgCycleDays=durations.length>0?durations.reduce((a,b)=>a+b,0)/durations.length:0;
+    // Top clientes por revenue (closed only, 90 días)
+    const since=new Date(Date.now()-90*86400000);
+    const recent=closed.filter(c=>c.closed_at&&new Date(c.closed_at)>=since);
+    const byCli={};
+    for(const c of recent){
+      const k=c.client_id;if(!k)continue;
+      if(!byCli[k])byCli[k]={name:`${c.clients?.first_name||""} ${c.clients?.last_name||""}`.trim()||c.clients?.client_code||"—",code:c.clients?.client_code||"",count:0,total:0};
+      byCli[k].count+=1;byCli[k].total+=Number(c.budget_total||0);
+    }
+    const topClients=Object.values(byCli).sort((a,b)=>b.total-a.total).slice(0,10);
+    // Distribución por canal (closed)
+    const byCh={};for(const c of closed){const k=c.channel||"—";byCh[k]=(byCh[k]||0)+1;}
+    const totalClosed=closed.length||1;
+    const chDist=Object.entries(byCh).map(([k,v])=>({ch:k,count:v,pct:(v/totalClosed)*100})).sort((a,b)=>b.count-a.count);
+    // Loyalty: cuántos clientes plus
+    const plusCount=cl.filter(x=>x.loyalty_level==="plus").length;
+    setData({closedCount:closed.length,activeCount:active.length,forecast,reviewRate,avgRating,avgCycleDays,topClients,chDist,plusCount,totalClients:cl.length});
+  })();},[token]);
+  if(!data)return null;
+  const NAVY="#152D54",AC="#3B7DD8";
+  const card={background:"rgba(255,255,255,0.04)",borderRadius:12,border:"1px solid rgba(255,255,255,0.08)",padding:"14px 16px"};
+  const chLbl={aereo_blanco:"Aéreo A (courier)",aereo_negro:"Aéreo B (AC)",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B (AC)"};
+  return <div style={{marginBottom:28}}>
+    <h2 style={{fontSize:16,fontWeight:700,color:"rgba(255,255,255,0.7)",margin:"20px 0 12px"}}>Analytics operacionales</h2>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12,marginBottom:14}}>
+      <div style={card}><div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase"}}>Forecast activas</div><div style={{fontSize:20,fontWeight:800,color:"#22c55e",marginTop:4}}>USD {data.forecast.toLocaleString("en-US",{maximumFractionDigits:0})}</div><div style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginTop:2}}>{data.activeCount} ops en curso</div></div>
+      <div style={card}><div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase"}}>Ciclo promedio</div><div style={{fontSize:20,fontWeight:800,color:"#fff",marginTop:4}}>{data.avgCycleDays.toFixed(1)} días</div><div style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginTop:2}}>creación → cierre</div></div>
+      <div style={card}><div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase"}}>Tasa de review</div><div style={{fontSize:20,fontWeight:800,color:"#fbbf24",marginTop:4}}>{data.reviewRate.toFixed(0)}%</div><div style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginTop:2}}>⭐ {data.avgRating.toFixed(1)} promedio</div></div>
+      <div style={card}><div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase"}}>Clientes Plus</div><div style={{fontSize:20,fontWeight:800,color:AC,marginTop:4}}>{data.plusCount}<span style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontWeight:500}}>/{data.totalClients}</span></div><div style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginTop:2}}>loyalty</div></div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12}}>
+      <div style={card}>
+        <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>Top clientes (últimos 90 días)</h3>
+        {data.topClients.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Sin datos</p>:
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>{data.topClients.map((c,i)=>{const max=data.topClients[0].total;const pct=max>0?(c.total/max)*100:0;return <div key={i} style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:10,color:"rgba(255,255,255,0.45)",width:18,fontWeight:700}}>#{i+1}</span><div style={{flex:1,minWidth:0}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:3}}><span style={{fontSize:12,color:"#fff",fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name} <span style={{color:"rgba(255,255,255,0.35)",fontFamily:"monospace",fontSize:10}}>({c.code})</span></span><span style={{fontSize:12,fontWeight:700,color:"#22c55e"}}>USD {c.total.toLocaleString("en-US",{maximumFractionDigits:0})}</span></div><div style={{height:4,background:"rgba(255,255,255,0.06)",borderRadius:2,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${NAVY},${AC})`,borderRadius:2}}/></div><div style={{fontSize:9,color:"rgba(255,255,255,0.4)",marginTop:2}}>{c.count} op{c.count!==1?"s":""}</div></div></div>;})}</div>}
+      </div>
+      <div style={card}>
+        <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>Distribución por canal</h3>
+        {data.chDist.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Sin ops cerradas</p>:
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>{data.chDist.map((c,i)=><div key={i}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:4}}><span style={{color:"rgba(255,255,255,0.7)"}}>{chLbl[c.ch]||c.ch}</span><span style={{color:"#fff",fontWeight:700}}>{c.count} · {c.pct.toFixed(0)}%</span></div><div style={{height:6,background:"rgba(255,255,255,0.06)",borderRadius:3,overflow:"hidden"}}><div style={{width:`${c.pct}%`,height:"100%",background:AC,borderRadius:3}}/></div></div>)}</div>}
+      </div>
+    </div>
+  </div>;
+}
+
 function FinanceDashboard({token}){
   const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [clientPmts,setClientPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
   useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status,giro_payment_method,giro_tarjeta_paid"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
@@ -3472,7 +3539,7 @@ function AdminDashboard({session,onLogout}){
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
       {page==="tasks"&&<AdminTasks token={token}/>}
       {page==="comms"&&<ComunicacionesPanel token={token}/>}
-      {page==="dashboard"&&<><DashboardKPIs token={token}/><FinanceDashboard token={token}/></>}
+      {page==="dashboard"&&<><DashboardKPIs token={token}/><OperationalAnalytics token={token}/><FinanceDashboard token={token}/></>}
       {page==="shipments"&&<ShipmentsTracking token={token} onSelectOp={op=>{setPage("operations");setSelOp(op);}}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
