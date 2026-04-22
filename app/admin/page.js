@@ -327,6 +327,19 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();
     if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
+    // Tier voucher: al pasar a "entregada" aplicamos auto el voucher pending (antes de que cobre el cliente)
+    let tierVoucherMsg="";
+    if(rest.status!==initOp.status&&rest.status==="entregada"&&!op.tier_discount_applied_usd){
+      try{
+        const vr=await dq("rpc/apply_tier_voucher_to_op",{method:"POST",token,body:{p_op_id:op.id}});
+        if(vr?.applied){
+          tierVoucherMsg=` · ★ Descuento ${String(vr.tier).toUpperCase()} aplicado: -USD ${Number(vr.discount_usd).toFixed(2)}`;
+          // Refrescamos op en UI
+          const fresh=await dq("operations",{token,filters:`?id=eq.${op.id}&select=*,clients(first_name,last_name,client_code)`});
+          if(Array.isArray(fresh)&&fresh[0])setOp(fresh[0]);
+        }
+      }catch(e){console.error("tier voucher error",e);}
+    }
     // Notification #6: notify client when operation status changes
     if(rest.status!==initOp.status&&op.client_id){try{const cls=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=auth_user_id`});const uid=Array.isArray(cls)&&cls[0]?cls[0].auth_user_id:null;if(uid){await dq("notifications",{method:"POST",token,body:{user_id:uid,portal:"cliente",title:`Estado actualizado: ${SM[rest.status]?.l||rest.status}`,body:`Operación ${op.operation_code}`,link:`?op=${op.operation_code}`}});}}catch(e){console.error("notif error",e);}}
     // Email automático según trigger (deposito / arribo / cerrada)
@@ -335,7 +348,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const trigger=triggerMap[rest.status];
       if(trigger){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${trigger} enviado al cliente`);else if(resp?.skipped)flash(`⚠️ Email ${trigger} NO enviado: ${resp.skipped}`);else{console.error("email error",resp);flash(`❌ Email ${trigger} falló: ${resp?.error||"ver consola"}`);}}catch(e){console.error("email error",e);flash(`❌ Email ${trigger} falló: ${e.message}`);}}
     }
-    setOp(p=>({...p,closed_at:rest.closed_at}));flash("Operación guardada");setSaving(false);
+    setOp(p=>({...p,closed_at:rest.closed_at}));flash("Operación guardada"+tierVoucherMsg);setSaving(false);
     // Auto-sync del presupuesto después de cualquier save (por si cambiaron flags que afectan el cálculo: has_phones, has_battery, channel, etc.)
     autoSyncBudget();
   };
