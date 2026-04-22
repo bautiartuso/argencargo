@@ -101,49 +101,20 @@ async function syncOne(op) {
     if (m) patch.eta = m[1];
   }
 
-  // Auto-status #1: arribo AL PAÍS DESTINO (Argentina) Y op está en_transito → arribo_argentina
-  // Exigimos que la ubicación mencione Argentina para evitar falsos positivos en escalas.
-  // IMPORTANTE: el evento CC/customs-clearance se IGNORA para transición de status porque
-  // algunos couriers (DHL) lo tiran antes del arribo físico. La transición a en_aduana
-  // se hace con un timer de 4h post-arribo (más abajo).
-  if (op.status === "en_transito" && inserted > 0) {
-    // FedEx usa "AR" (Arrived at facility). Como inArg filtra que el facility esté en AR,
-    // es seguro. RC/IA son los standard del TCR.
-    const arrivalCodes = new Set(["RC", "IA", "AR"]);
-    // Keywords cubren inglés Y español (FedEx responde en español según cuenta).
-    const arrivalKeywords = ["arrived", "arrival", "arribo", "llegó", "llego", "destino"];
-    const argKeywords = ["argentin", "buenos aires", "ezeiza", ", ar ", "(ar)", " ar,", ", ar", "aep"];
-    const hasArrival = (d.events || []).some(ev => {
-      const txt = `${ev.title||""} ${ev.description||""} ${ev.location||""}`.toLowerCase();
-      const inArg = argKeywords.some(kw => txt.includes(kw));
-      if (!inArg) return false;
-      if (ev.status_code && arrivalCodes.has(ev.status_code)) return true;
-      return arrivalKeywords.some(kw => txt.includes(kw));
-    });
-    if (hasArrival) patch.status = "arribo_argentina";
-  }
-
-  // Auto-status #2: si hace 4h+ que la op está en arribo_argentina → en_aduana.
-  // Buscamos el evento de arribo más reciente en tracking_events y comparamos occurred_at.
-  if (op.status === "arribo_argentina") {
+  // Las transiciones de status (en_transito → arribo_argentina → en_aduana → entregada)
+  // se manejan en DB vía la función SQL auto_update_op_statuses() que corre con pg_cron
+  // cada 15 min. Esa lógica se basa en la ubicación de los tracking_events (detecta
+  // "tocó Argentina") en vez de depender de status codes específicos del carrier.
+  // Acá sólo disparamos la función si insertamos eventos nuevos, para no esperar al cron.
+  let dbTransitionRan = false;
+  if (inserted > 0) {
     try {
-      const evRes = await fetch(
-        `${SB_URL}/rest/v1/tracking_events?operation_id=eq.${op.id}&status_code=in.(RC,IA)&select=occurred_at&order=occurred_at.desc&limit=1`,
-        { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } }
-      );
-      const evs = await evRes.json();
-      const arrivedAt = Array.isArray(evs) && evs[0] ? new Date(evs[0].occurred_at) : null;
-      if (arrivedAt && (Date.now() - arrivedAt.getTime()) >= 4 * 60 * 60 * 1000) {
-        patch.status = "en_aduana";
-      }
-    } catch (e) { /* noop */ }
-  }
-
-  // Auto-status #3: courier entregó (DL) → entregada (= lista para retirar en oficina).
-  if (["en_transito", "arribo_argentina", "en_aduana"].includes(op.status) && inserted > 0) {
-    const deliveryCodes = new Set(["DL", "delivered", "OK"]);
-    const hasDelivery = (d.events || []).some(ev => ev.status_code && deliveryCodes.has(ev.status_code));
-    if (hasDelivery) patch.status = "entregada";
+      await fetch(`${SB_URL}/rest/v1/rpc/auto_update_op_statuses`, {
+        method: "POST",
+        headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json" }
+      });
+      dbTransitionRan = true;
+    } catch (e) { /* noop - el cron lo hará en 15 min */ }
   }
 
   if (Object.keys(patch).length) {
@@ -152,11 +123,17 @@ async function syncOne(op) {
       headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "return=minimal" },
       body: JSON.stringify(patch)
     });
-    // Email automático cuando el sync cambia el status (la guarda sent_notifications
-    // en /api/notify previene duplicados con el admin).
-    if (patch.status === "arribo_argentina") {
-      await triggerMail(op.id, "arribo");
-    }
+  }
+
+  // Si la función DB cambió el status, disparar mail correspondiente (dedup por sent_notifications).
+  if (dbTransitionRan) {
+    try {
+      const rOp = await fetch(`${SB_URL}/rest/v1/operations?id=eq.${op.id}&select=status`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+      const curOp = (await rOp.json())?.[0];
+      if (curOp && curOp.status !== op.status && curOp.status === "arribo_argentina") {
+        await triggerMail(op.id, "arribo");
+      }
+    } catch {}
   }
 
   // Notification #5: notify client about new tracking events
