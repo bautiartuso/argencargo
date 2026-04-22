@@ -465,7 +465,59 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>EVENTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{events.length}</p></div>
         </div>
       </Card>
-      {(()=>{const statusEvents=(events||[]).filter(e=>e.source==="internal"&&e.status_code).sort((a,b)=>new Date(b.occurred_at)-new Date(a.occurred_at));if(statusEvents.length===0)return null;const fmtDt=d=>{try{return new Date(d).toLocaleString("es-AR",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});}catch{return d;}};const icons={pendiente:"🕓",en_deposito_origen:"📦",en_preparacion:"📋",en_transito:"✈️",arribo_argentina:"🇦🇷",en_aduana:"🛃",entregada:"✅",operacion_cerrada:"📬",cancelada:"❌"};return <Card title="Historial de estados"><div style={{display:"flex",flexDirection:"column",gap:6}}>{statusEvents.map(ev=><div key={ev.id} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 12px",background:"rgba(255,255,255,0.03)",borderRadius:8,borderLeft:`2px solid ${SM[ev.status_code]?.c||"#666"}`}}><span style={{fontSize:16,width:24,textAlign:"center"}}>{icons[ev.status_code]||"•"}</span><div style={{flex:1,minWidth:0}}><p style={{fontSize:12,fontWeight:700,color:SM[ev.status_code]?.c||"#fff",margin:0}}>{SM[ev.status_code]?.l||ev.status_code}</p><p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{fmtDt(ev.occurred_at)}</p></div></div>)}</div></Card>;})()}
+      {(()=>{
+        // Timeline enriquecido: status changes + emails enviados + eventos del courier
+        const fmtDt=d=>{try{return new Date(d).toLocaleString("es-AR",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});}catch{return d;}};
+        const items=[];
+        // 1. Cambios de status (tracking_events con source='internal')
+        (events||[]).filter(e=>e.source==="internal"&&e.status_code).forEach(ev=>{
+          const c=SM[ev.status_code]?.c||"#666";
+          items.push({t:"status",at:ev.occurred_at,color:c,title:SM[ev.status_code]?.l||ev.status_code,kind:"Cambio de estado"});
+        });
+        // 2. Emails enviados (operations.sent_notifications JSON)
+        const sn=op.sent_notifications||{};
+        const emailLabels={email_deposito:"Email depósito enviado",email_arribo:"Email arribo enviado",email_cerrada:"Email cierre enviado",email_reminder_consolidation:"Recordatorio consolidación",email_reminder_docs:"Recordatorio documentación"};
+        Object.entries(sn).forEach(([k,v])=>{
+          if(!v)return;
+          items.push({t:"email",at:v,color:"#22c55e",title:emailLabels[k]||k,kind:"Email"});
+        });
+        // 3. Eventos courier (tracking_events con source != internal)
+        (events||[]).filter(e=>e.source&&e.source!=="internal").slice(0,20).forEach(ev=>{
+          items.push({t:"tracking",at:ev.occurred_at,color:"#818cf8",title:ev.title||ev.description||ev.status_code||"Evento",kind:(ev.source||"courier").toUpperCase(),extra:ev.location});
+        });
+        // 4. Creación
+        if(op.created_at)items.push({t:"created",at:op.created_at,color:GOLD_LIGHT,title:"Operación creada",kind:"Inicio"});
+        // 5. Cobrada
+        if(op.is_collected&&op.collection_date)items.push({t:"collected",at:op.collection_date,color:"#22c55e",title:`Cobrada · USD ${Number(op.collected_amount||op.budget_total||0).toFixed(2)}`,kind:"Cobro"});
+        // 6. Descuento tier aplicado
+        if(op.tier_discount_applied_usd>0)items.push({t:"discount",at:op.closed_at||op.updated_at,color:"#E8D098",title:`Descuento ${String(op.tier_discount_applied||"").toUpperCase()} aplicado · -USD ${Number(op.tier_discount_applied_usd).toFixed(2)}`,kind:"Beneficio"});
+
+        items.sort((a,b)=>new Date(b.at)-new Date(a.at));
+        if(items.length===0)return null;
+
+        return <Card title="Historia">
+          <div style={{position:"relative",paddingLeft:14}}>
+            {/* Línea vertical */}
+            <div style={{position:"absolute",left:5,top:6,bottom:6,width:1,background:"linear-gradient(180deg, rgba(184,149,106,0.3) 0%, rgba(255,255,255,0.05) 100%)"}}/>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {items.map((ev,i)=><div key={`${ev.t}-${i}-${ev.at}`} style={{display:"flex",gap:12,position:"relative"}}>
+                {/* Dot */}
+                <div style={{position:"absolute",left:-14,top:6,width:11,height:11,borderRadius:"50%",background:"#0F1E3D",border:`2px solid ${ev.color}`,boxShadow:`0 0 8px ${ev.color}60`}}/>
+                <div style={{flex:1,minWidth:0,padding:"4px 0"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+                    <span style={{fontSize:12.5,fontWeight:600,color:"#fff",letterSpacing:"-0.005em"}}>{ev.title}</span>
+                    <span style={{fontSize:10,color:"rgba(255,255,255,0.4)",letterSpacing:"0.02em",whiteSpace:"nowrap"}}>{fmtDt(ev.at)}</span>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2}}>
+                    <span style={{fontSize:9.5,fontWeight:700,padding:"2px 7px",borderRadius:999,background:`${ev.color}18`,color:ev.color,border:`1px solid ${ev.color}35`,letterSpacing:"0.06em",textTransform:"uppercase"}}>{ev.kind}</span>
+                    {ev.extra&&<span style={{fontSize:10.5,color:"rgba(255,255,255,0.45)"}}>{ev.extra}</span>}
+                  </div>
+                </div>
+              </div>)}
+            </div>
+          </div>
+        </Card>;
+      })()}
     </>}
 
     {tab==="budget"&&(()=>{
