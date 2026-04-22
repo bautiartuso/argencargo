@@ -173,7 +173,10 @@ function OperationsList({token,onSelect,onNew}){
       const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
       const cash=isArs&&rate>0?raw/rate:raw;
       // Sumar crédito de CC aplicado y descuento intencional (contabilizado como ingreso "virtual")
-      ing=cash+Number(o.credit_applied_usd||0)+Number(o.discount_applied_usd||0);
+      // Capear cash al budget_total: si pagó de más, el excedente va a CC, no es ingreso de la op
+      const bt=Number(o.budget_total||0);
+      const cashForOp=bt>0?Math.min(cash,bt):cash;
+      ing=cashForOp+Number(o.credit_applied_usd||0)+Number(o.discount_applied_usd||0);
       // Fallback: si la op está cobrada pero no tiene collected_amount cargado, usar presupuesto
       if(ing<=0)ing=Number(o.budget_total||0);
     } else {
@@ -340,7 +343,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     if(rest.status!==initOp.status){
       const triggerMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};
       const trigger=triggerMap[rest.status];
-      if(trigger){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${trigger} enviado al cliente`);else if(resp?.skipped)flash(`⚠️ Email ${trigger} NO enviado: ${resp.skipped}`);else{console.error("email error",resp);flash(`❌ Email ${trigger} falló: ${resp?.error||"ver consola"}`);}}catch(e){console.error("email error",e);flash(`❌ Email ${trigger} falló: ${e.message}`);}}
+      if(trigger){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${trigger} enviado al cliente`);else if(resp?.skipped==="already_sent"){/* silencioso: el mail ya fue enviado antes */}else if(resp?.skipped)flash(`⚠️ Email ${trigger} NO enviado: ${resp.skipped}`);else{console.error("email error",resp);flash(`❌ Email ${trigger} falló: ${resp?.error||"ver consola"}`);}}catch(e){console.error("email error",e);flash(`❌ Email ${trigger} falló: ${e.message}`);}}
     }
     setOp(p=>({...p,closed_at:rest.closed_at}));flash("Operación guardada"+tierVoucherMsg);setSaving(false);
     // Auto-sync del presupuesto después de cualquier save (por si cambiaron flags que afectan el cálculo: has_phones, has_battery, channel, etc.)
@@ -428,7 +431,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:<>
 
     {tab==="general"&&<>
-      <Card title="Estado" actions={<div style={{display:"flex",gap:8}}>{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];return <Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>;})()}<Btn onClick={async()=>{let desc=op.description;if(!desc){const autoDesc=items.map(it=>it.description).filter(Boolean).join(", ");if(autoDesc){desc=autoDesc;setOp(p=>({...p,description:desc}));}}setSaving(true);const prevStatus=initOp.status;const{id,clients,...rest}=({...op,description:desc});delete rest.created_at;delete rest.updated_at;if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});if(rest.status!==prevStatus){const triggerMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};const trigger=triggerMap[rest.status];if(trigger){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${trigger} enviado al cliente`);else if(resp?.skipped)flash(`⚠️ Email ${trigger} NO enviado: ${resp.skipped}`);else{console.error("email error",resp);flash(`❌ Email ${trigger} falló: ${resp?.error||"ver consola"}`);}}catch(e){console.error("email error",e);flash(`❌ Email ${trigger} falló: ${e.message}`);}}}else{flash("Operación guardada");}setSaving(false);}} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
+      <Card title="Estado" actions={<div style={{display:"flex",gap:8}}>{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];return <Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>;})()}<Btn onClick={async()=>{let desc=op.description;if(!desc){const autoDesc=items.map(it=>it.description).filter(Boolean).join(", ");if(autoDesc){desc=autoDesc;setOp(p=>({...p,description:desc}));}}setSaving(true);const prevStatus=initOp.status;const{id,clients,...rest}=({...op,description:desc});delete rest.created_at;delete rest.updated_at;if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});if(rest.status!==prevStatus){const triggerMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};const trigger=triggerMap[rest.status];if(trigger){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${trigger} enviado al cliente`);else if(resp?.skipped==="already_sent"){/* silencioso: el mail ya fue enviado antes */}else if(resp?.skipped)flash(`⚠️ Email ${trigger} NO enviado: ${resp.skipped}`);else{console.error("email error",resp);flash(`❌ Email ${trigger} falló: ${resp?.error||"ver consola"}`);}}catch(e){console.error("email error",e);flash(`❌ Email ${trigger} falló: ${e.message}`);}}}else{flash("Operación guardada");}setSaving(false);}} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
         <Sel label="Estado de la carga" value={op.status} onChange={chOp("status")} options={STATUSES.map(s=>({value:s,label:SM[s].l}))}/>
         <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
         <Inp label="ETA (fecha estimada de arribo)" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>
@@ -996,7 +999,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           if(op.is_collected&&budgetTot>0){
             if(diff>0.01){
               if(confirm(`El cliente pagó USD ${diff.toFixed(2)} de más.\n\n¿Registrar el excedente como saldo a favor en la cuenta corriente?`)){
-                await saveOp();
+                // Capear collected_amount al budget: el excedente queda en CC, no infla la ganancia
+                setOp(p=>({...p,collected_amount:budgetTot}));
+                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{collected_amount:budgetTot,is_collected:true,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
                 await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`}});
                 flash(`Cobrada · saldo a favor +USD ${diff.toFixed(2)}`);
                 return;
@@ -2827,7 +2832,11 @@ function FinanceDashboard({token}){
     if(o.is_collected){
       const raw=Number(o.collected_amount||o.budget_total||0);
       const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
-      baseIng=isArs&&rate>0?raw/rate:raw;
+      const cash=isArs&&rate>0?raw/rate:raw;
+      // Cap cash al budget_total: el excedente fue a CC, no es ingreso de op
+      const bt=Number(o.budget_total||0);
+      const cashForOp=bt>0?Math.min(cash,bt):cash;
+      baseIng=cashForOp+Number(o.credit_applied_usd||0)+Number(o.discount_applied_usd||0);
     } else {
       baseIng=Number(o.budget_total||0);
     }
