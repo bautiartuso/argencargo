@@ -470,7 +470,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
       {!showForm&&<Btn onClick={()=>{setTab("deposit");setShowForm(true);}}>+ {t.register_pkg}</Btn>}
     </div>
     {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:10,fontSize:13,color:"#22c55e",marginBottom:16,animation:"ac_fade_in 200ms",fontWeight:600}}>✓ {flashMsg}</div>}
-    <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
+    <div className="ac-agente-tabs" style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
       {[
         {k:"deposit",l:t.tab_deposit,n:depositPkgsAll.length,extra:`${depositTotalKg} kg`},
         {k:"active_flights",l:t.tab_active_flights,n:activeFlights.length},
@@ -746,7 +746,22 @@ function NotifBell({token}){
 
 function SimpleShell({children,lang,setLang,t,onLogout,token}){
   return <div style={{minHeight:"100vh",background:BG,fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif"}}>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 28px",background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap",gap:12,position:"sticky",top:0,zIndex:10}}>
+    <style dangerouslySetInnerHTML={{__html:`
+      @media(max-width:768px){
+        .ac-agente-header{padding:14px 16px!important;gap:8px!important}
+        .ac-agente-header img{height:30px!important}
+        .ac-agente-header button{padding:6px 10px!important;font-size:11px!important}
+        .ac-agente-main{padding:20px 16px!important;max-width:100vw!important;box-sizing:border-box!important}
+        h2{font-size:20px!important}
+        h3{font-size:13px!important}
+        table{font-size:11.5px!important}
+        table td,table th{padding:9px 8px!important;white-space:nowrap!important}
+        .ac-agente-tabs{overflow-x:auto!important;-webkit-overflow-scrolling:touch;flex-wrap:nowrap!important;scrollbar-width:none}
+        .ac-agente-tabs::-webkit-scrollbar{display:none}
+        .ac-agente-tabs button{flex-shrink:0!important}
+      }
+    `}}/>
+    <div className="ac-agente-header" style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 28px",background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap",gap:12,position:"sticky",top:0,zIndex:10}}>
       <img src={LOGO} alt="AC" style={{height:36,objectFit:"contain",filter:"drop-shadow(0 2px 12px rgba(184,149,106,0.22))"}}/>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         {token&&<NotifBell token={token}/>}
@@ -754,7 +769,7 @@ function SimpleShell({children,lang,setLang,t,onLogout,token}){
         <button onClick={onLogout} style={{padding:"7px 14px",fontSize:11.5,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:600,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";e.currentTarget.style.color=GOLD_LIGHT;}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{t.logout}</button>
       </div>
     </div>
-    <div style={{maxWidth:1200,margin:"0 auto",padding:"32px 28px"}}>{children}</div>
+    <div className="ac-agente-main" style={{maxWidth:1200,margin:"0 auto",padding:"32px 28px"}}>{children}</div>
   </div>;
 }
 

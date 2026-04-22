@@ -153,7 +153,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
         const progressPct=nextTier?Math.min(100,Math.max(0,((lifetime-ti.min)/(nextTier.min-ti.min))*100)):100;
         const nextOp=act.filter(o=>o.eta&&o.status!=="entregada").sort((a,b)=>String(a.eta||"").localeCompare(String(b.eta||"")))[0];
         const isStandard=tier==="standard";
-        return <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr 1fr 1fr",gap:12}}>
+        return <div className="ac-hero-grid" style={{display:"grid",gridTemplateColumns:"1.3fr 1fr 1fr 1fr",gap:12}}>
           {/* Tier card (principal) */}
           <div style={{background:isStandard?"rgba(255,255,255,0.025)":`linear-gradient(135deg, ${ti.color}22 0%, rgba(255,255,255,0.02) 100%)`,border:`1px solid ${isStandard?"rgba(255,255,255,0.06)":ti.color+"55"}`,borderRadius:16,padding:"18px 22px",position:"relative",overflow:"hidden",boxShadow:isStandard?"none":ti.glow}}>
             {!isStandard&&<div style={{position:"absolute",top:-30,right:-30,width:150,height:150,background:`radial-gradient(circle, ${ti.color}30 0%, transparent 70%)`,pointerEvents:"none"}}/>}
@@ -1151,6 +1151,10 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
         .grid-4{grid-template-columns:1fr 1fr!important}
         .grid-5{grid-template-columns:1fr 1fr!important}
         .stats-grid{grid-template-columns:1fr 1fr!important}
+        .ac-hero-grid{grid-template-columns:1fr!important;gap:10px!important}
+        .ac-hero-grid>div{padding:14px 16px!important}
+        .ac-hero-grid>div:first-child{padding:16px 18px!important}
+        h3{font-size:12px!important}
         .op-progress{overflow-x:auto;-webkit-overflow-scrolling:touch}
         .op-info{flex-wrap:wrap!important;gap:12px!important}
         h2{font-size:18px!important}
