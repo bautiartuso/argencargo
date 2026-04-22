@@ -54,6 +54,9 @@ export const metadata = {
   alternates: {
     canonical: SITE_URL,
   },
+  verification: {
+    google: 'b64cfF5lMz8RE8zQ3T3hC_Ifh2fBcMPETvnbNA7J3jg',
+  },
 };
 
 // Viewport responsive (mobile-aware). En Next 14 App Router va separado de metadata.
