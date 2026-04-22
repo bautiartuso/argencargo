@@ -156,13 +156,20 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
         const progressPct=nextTier?Math.min(100,Math.max(0,((lifetime-ti.min)/(nextTier.min-ti.min))*100)):100;
         const nextOp=act.filter(o=>o.eta&&o.status!=="entregada").sort((a,b)=>String(a.eta||"").localeCompare(String(b.eta||"")))[0];
         const isStandard=tier==="standard";
-        return <div className="ac-hero-grid" style={{display:"grid",gridTemplateColumns:"1.3fr 1fr 1fr 1fr",gap:12}}>
+        return <div className="ac-hero-grid" style={{display:"grid",gridTemplateColumns:"1.3fr 1fr",gap:12}}>
           {/* Tier card (principal) */}
           <div style={{background:isStandard?"rgba(255,255,255,0.025)":`linear-gradient(135deg, ${ti.color}22 0%, rgba(255,255,255,0.02) 100%)`,border:`1px solid ${isStandard?"rgba(255,255,255,0.06)":ti.color+"55"}`,borderRadius:16,padding:"18px 22px",position:"relative",overflow:"hidden",boxShadow:isStandard?"none":ti.glow}}>
             {!isStandard&&<div style={{position:"absolute",top:-30,right:-30,width:150,height:150,background:`radial-gradient(circle, ${ti.color}30 0%, transparent 70%)`,pointerEvents:"none"}}/>}
             <div style={{position:"relative"}}>
-              <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.14em"}}>Tu categoría</p>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginTop:6}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.14em"}}>Tu categoría</p>
+                {/* Balance pts + vouchers como mini pills a la derecha */}
+                <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                  {pendingVouchers>0&&<span onClick={()=>typeof window!=="undefined"&&window.dispatchEvent(new CustomEvent("ac_nav",{detail:"points"}))} title={`${pendingVouchers} descuento${pendingVouchers>1?"s":""} por categoría pendiente${pendingVouchers>1?"s":""}`} style={{fontSize:9.5,fontWeight:700,padding:"3px 8px",borderRadius:999,background:"rgba(184,149,106,0.14)",color:GOLD_LIGHT,border:"1px solid rgba(184,149,106,0.35)",letterSpacing:"0.04em",cursor:"pointer",textTransform:"uppercase"}}>★ {pendingVouchers} dcto{pendingVouchers>1?"s":""}</span>}
+                  {balance>0&&<span onClick={()=>typeof window!=="undefined"&&window.dispatchEvent(new CustomEvent("ac_nav",{detail:"points"}))} title="Balance de puntos — click para ver catálogo" style={{fontSize:9.5,fontWeight:700,padding:"3px 8px",borderRadius:999,background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",border:"1px solid rgba(255,255,255,0.1)",letterSpacing:"0.04em",cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>{balance.toLocaleString("es-AR")} pts</span>}
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginTop:8}}>
                 <span style={{fontSize:26,lineHeight:1}}>{ti.icon}</span>
                 <div>
                   <p style={{fontSize:22,fontWeight:800,color:"#fff",margin:0,lineHeight:1,letterSpacing:"-0.02em"}}>{ti.label}</p>
@@ -185,18 +192,6 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
           <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"18px 22px"}}>
             <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.14em"}}>Próxima llegada</p>
             {nextOp?<><p style={{fontSize:22,fontWeight:800,color:"#fff",margin:"8px 0 3px",lineHeight:1,letterSpacing:"-0.02em"}}>{formatDate(nextOp.eta).split(" ").slice(0,2).join(" ")}</p><p style={{fontSize:11,color:GOLD_LIGHT,margin:0,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.04em"}}>{nextOp.operation_code}</p></>:<><p style={{fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"8px 0 3px",lineHeight:1}}>—</p><p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:0}}>Sin ETA pendiente</p></>}
-          </div>
-          {/* Vouchers */}
-          <div style={{background:pendingVouchers>0?"linear-gradient(135deg, rgba(184,149,106,0.1) 0%, rgba(255,255,255,0.02) 100%)":"rgba(255,255,255,0.025)",border:`1px solid ${pendingVouchers>0?"rgba(184,149,106,0.32)":"rgba(255,255,255,0.06)"}`,borderRadius:16,padding:"18px 22px",cursor:pendingVouchers>0?"pointer":"default",transition:"all 150ms"}} onClick={()=>pendingVouchers>0&&typeof window!=="undefined"&&window.dispatchEvent(new CustomEvent("ac_nav",{detail:"points"}))}>
-            <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.14em"}}>Descuentos disp.</p>
-            <p style={{fontSize:22,fontWeight:800,color:pendingVouchers>0?GOLD_LIGHT:"rgba(255,255,255,0.55)",margin:"8px 0 3px",lineHeight:1,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{pendingVouchers}</p>
-            <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:0}}>{pendingVouchers>0?"Se aplican auto":"Sin descuentos"}</p>
-          </div>
-          {/* Balance puntos */}
-          <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"18px 22px",cursor:"pointer",transition:"all 150ms"}} onClick={()=>typeof window!=="undefined"&&window.dispatchEvent(new CustomEvent("ac_nav",{detail:"points"}))} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.25)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";}}>
-            <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.14em"}}>Balance puntos</p>
-            <p style={{fontSize:22,fontWeight:800,color:"#fff",margin:"8px 0 3px",lineHeight:1,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{balance.toLocaleString("es-AR")}</p>
-            <p style={{fontSize:10.5,color:GOLD_LIGHT,margin:0,fontWeight:600}}>Ver catálogo →</p>
           </div>
         </div>;
       })()}
