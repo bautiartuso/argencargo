@@ -10,6 +10,14 @@ const DARK_BG="linear-gradient(160deg,#0F1E3D 0%,#152849 50%,#0F1E3D 100%)";
 // Dorado secundario (accent metálico)
 const GOLD="#B8956A", GOLD_LIGHT="#E8D098", GOLD_DEEP="#A68456";
 const IC=GOLD_LIGHT; // Accent color alias al oro claro (unificado)
+// Tier system
+const TIERS={
+  standard:{label:"Standard",min:0,next:100,color:"#94a3b8",light:"rgba(148,163,184,0.9)",gradient:"linear-gradient(135deg,#475569,#64748b,#475569)",glow:"0 0 14px rgba(100,116,139,0.2)",bonus:0,discount:0,icon:"○"},
+  silver:{label:"Silver",min:100,next:500,color:"#C0C0C0",light:"#E8E8E8",gradient:"linear-gradient(135deg,#8A8A8A,#E8E8E8,#8A8A8A)",glow:"0 0 14px rgba(192,192,192,0.28)",bonus:2,discount:10,icon:"🥈"},
+  gold:{label:"Gold",min:500,next:1000,color:"#B8956A",light:"#E8D098",gradient:"linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 100%)",glow:"0 0 18px rgba(184,149,106,0.25)",bonus:10,discount:25,icon:"🥇"},
+  diamond:{label:"Diamond",min:1000,next:null,color:"#B9F2FF",light:"#E0F7FF",gradient:"linear-gradient(135deg,#6BC5E0,#B9F2FF,#6BC5E0)",glow:"0 0 18px rgba(185,242,255,0.3)",bonus:15,discount:50,icon:"💠"},
+};
+const getTierInfo=(t)=>TIERS[t||"standard"]||TIERS.standard;
 const GOLD_GRADIENT="linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 100%)";
 const GOLD_GLOW="0 0 20px rgba(184,149,106,0.25)";
 const GOLD_GLOW_STRONG="0 0 28px rgba(184,149,106,0.4)";
@@ -1096,7 +1104,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
 
 function ClientsList({token,onSelect}){
   const [clients,setClients]=useState([]);const [lo,setLo]=useState(true);const [search,setSearch]=useState("");
-  useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=*&order=created_at.desc"});setClients(Array.isArray(c)?c:[]);setLo(false);})();},[token]);
+  useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,client_code,first_name,last_name,email,whatsapp,city,province,tier,lifetime_points_earned,points_balance&order=created_at.desc"});setClients(Array.isArray(c)?c:[]);setLo(false);})();},[token]);
   const filtered=clients.filter(c=>{if(!search)return true;const s=search.toLowerCase();return `${c.first_name} ${c.last_name}`.toLowerCase().includes(s)||c.client_code?.toLowerCase().includes(s)||c.email?.toLowerCase().includes(s);});
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:24,gap:12,flexWrap:"wrap"}}>
@@ -1111,7 +1119,7 @@ function ClientsList({token,onSelect}){
         </tr></thead>
         <tbody>{filtered.map(c=><tr key={c.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onClick={()=>onSelect(c)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
           <td style={{padding:"14px 16px",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:GOLD_LIGHT,fontSize:12.5,letterSpacing:"0.04em"}}>{c.client_code}</td>
-          <td style={{padding:"14px 16px",color:"#fff",fontWeight:500,fontSize:13}}>{c.first_name} {c.last_name}{c.loyalty_level==="plus"&&<span title="Importador Plus" style={{marginLeft:8,fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:999,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.1em",border:`1px solid ${GOLD_DEEP}`}}>★ PLUS</span>}</td>
+          <td style={{padding:"14px 16px",color:"#fff",fontWeight:500,fontSize:13}}>{c.first_name} {c.last_name}{c.tier&&c.tier!=="standard"&&(()=>{const ti=getTierInfo(c.tier);return <span title={`${ti.label} · ${c.lifetime_points_earned||0} pts ganados`} style={{marginLeft:10,fontSize:9,fontWeight:800,padding:"3px 9px",borderRadius:999,background:ti.gradient,color:"#0A1628",letterSpacing:"0.1em",border:`1px solid ${ti.color}`,display:"inline-flex",alignItems:"center",gap:4,textTransform:"uppercase"}}>{ti.icon} {ti.label}</span>;})()}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.6)",fontSize:12.5}}>{c.email}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.6)",fontSize:12.5}}>{c.whatsapp||<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",fontSize:12.5}}>{c.city}, {c.province}</td>
@@ -1137,8 +1145,8 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
       <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
         <button onClick={onBack} style={{fontSize:12,color:"rgba(255,255,255,0.55)",background:"transparent",border:"1px solid rgba(255,255,255,0.08)",cursor:"pointer",fontWeight:600,padding:"6px 12px",borderRadius:8,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.color=GOLD_LIGHT;e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";}} onMouseLeave={e=>{e.currentTarget.style.color="rgba(255,255,255,0.55)";e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";}}>← Volver</button>
         <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{cl.first_name} {cl.last_name}</h2>
-        {cl.loyalty_level==="plus"&&<span title={cl.loyalty_achieved_at?`Plus desde ${new Date(cl.loyalty_achieved_at).toLocaleDateString("es-AR")}`:"Importador Plus"} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.12em",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW}}>★ PLUS</span>}
-        {Number(cl.points_balance||0)>0&&<span title="Puntos Argencargo" style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,background:"rgba(184,149,106,0.12)",color:GOLD_LIGHT,border:"1px solid rgba(184,149,106,0.3)",letterSpacing:"0.08em",fontVariantNumeric:"tabular-nums"}}>★ {cl.points_balance} PTS</span>}
+        {cl.tier&&cl.tier!=="standard"&&(()=>{const ti=getTierInfo(cl.tier);return <span title={cl.tier_achieved_at?`${ti.label} desde ${new Date(cl.tier_achieved_at).toLocaleDateString("es-AR")} · ${cl.lifetime_points_earned||0} pts ganados`:ti.label} style={{fontSize:10,fontWeight:800,padding:"4px 12px",borderRadius:999,background:ti.gradient,color:"#0A1628",letterSpacing:"0.14em",border:`1px solid ${ti.color}`,boxShadow:ti.glow,display:"inline-flex",alignItems:"center",gap:5,textTransform:"uppercase"}}>{ti.icon} {ti.label}</span>;})()}
+        {Number(cl.points_balance||0)>0&&<span title={`Balance actual · ${cl.lifetime_points_earned||0} ganados en total`} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,background:"rgba(184,149,106,0.12)",color:GOLD_LIGHT,border:"1px solid rgba(184,149,106,0.3)",letterSpacing:"0.08em",fontVariantNumeric:"tabular-nums"}}>★ {cl.points_balance} PTS</span>}
         {msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600,animation:"ac_fade_in 200ms"}}>✓ {msg}</span>}
       </div>
       <Btn onClick={deleteClient} variant="danger" small>Eliminar cliente</Btn>

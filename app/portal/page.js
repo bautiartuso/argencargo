@@ -8,6 +8,14 @@ const B={primary:"#1B4F8A",accent:"#4A90D9"};
 const DARK_BG="linear-gradient(160deg,#0F1E3D 0%,#152849 50%,#0F1E3D 100%)";
 const GOLD="#B8956A", GOLD_LIGHT="#E8D098", GOLD_DEEP="#A68456";
 const IC=GOLD_LIGHT; // IC (accent) alias al oro claro
+// Tier system: Silver / Gold / Diamond
+const TIERS={
+  standard:{label:"Standard",min:0,next:100,color:"#94a3b8",light:"rgba(148,163,184,0.9)",gradient:"linear-gradient(135deg,#475569,#64748b,#475569)",glow:"0 0 18px rgba(100,116,139,0.2)",bonus:0,discount:0,icon:"○"},
+  silver:{label:"Silver",min:100,next:500,color:"#C0C0C0",light:"#E8E8E8",gradient:"linear-gradient(135deg,#8A8A8A,#E8E8E8,#8A8A8A)",glow:"0 0 18px rgba(192,192,192,0.28)",bonus:2,discount:10,icon:"🥈"},
+  gold:{label:"Gold",min:500,next:1000,color:GOLD,light:GOLD_LIGHT,gradient:GOLD_GRADIENT,glow:GOLD_GLOW,bonus:10,discount:25,icon:"🥇"},
+  diamond:{label:"Diamond",min:1000,next:null,color:"#B9F2FF",light:"#E0F7FF",gradient:"linear-gradient(135deg,#6BC5E0,#B9F2FF,#6BC5E0)",glow:"0 0 22px rgba(185,242,255,0.35)",bonus:15,discount:50,icon:"💠"},
+};
+const getTierInfo=(t)=>TIERS[t||"standard"]||TIERS.standard;
 const GOLD_GRADIENT="linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 100%)";
 const GOLD_GLOW="0 0 20px rgba(184,149,106,0.25)";
 const GOLD_GLOW_STRONG="0 0 28px rgba(184,149,106,0.4)";
@@ -111,6 +119,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
       {op.eta&&op.status!=="entregada"&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.55)",letterSpacing:"0.02em"}}>ETA · <span style={{color:"#fff",fontWeight:600}}>{formatDate(op.eta)}</span></span>}
     </div>
     <p style={{fontSize:16,fontWeight:600,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>{gd(op)}</p>
+    {op.tier_discount_applied_usd>0&&(()=>{const ti=getTierInfo(op.tier_discount_applied);return <div style={{marginTop:10,marginBottom:4,padding:"10px 14px",background:`linear-gradient(90deg, ${ti.color}22, transparent)`,border:`1px solid ${ti.color}55`,borderRadius:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:16}}>{ti.icon}</span><div style={{flex:1,minWidth:200}}><p style={{fontSize:11,fontWeight:700,color:ti.light,margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>Descuento {ti.label} aplicado</p><p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:"2px 0 0"}}>Se te aplicó automáticamente tu beneficio de tier</p></div><span style={{fontSize:14,fontWeight:800,color:ti.light,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>−USD {Number(op.tier_discount_applied_usd).toFixed(2)}</span></div>;})()}
     <OpProgress status={op.status} isAereo={isA} onActionClick={()=>onSelect(op)}/>
     <div className="op-info" style={{display:"flex",gap:32,alignItems:"center",borderTop:"1px solid rgba(255,255,255,0.028)",paddingTop:14,marginTop:8,flexWrap:"wrap"}}>
       <div><span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Origen</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"3px 0 0"}}>{op.origin||"China"}</p></div>
@@ -128,7 +137,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     </div>}
   </div>;};
   return <div>
-    <div style={{marginBottom:24,display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,flexWrap:"wrap"}}><div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Mis importaciones</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"4px 0 0"}}>Bienvenido, {name}</p></div>{client?.loyalty_level==="plus"&&<div title={client.loyalty_achieved_at?`Importador Plus desde ${new Date(client.loyalty_achieved_at).toLocaleDateString("es-AR")}`:"Importador Plus"} style={{padding:"8px 14px",borderRadius:10,background:GOLD_GRADIENT,color:"#0A1628",fontWeight:800,fontSize:11,letterSpacing:"0.12em",boxShadow:GOLD_GLOW,border:`1px solid ${GOLD_DEEP}`,display:"inline-flex",alignItems:"center",gap:6}}>★ IMPORTADOR PLUS</div>}</div>
+    <div style={{marginBottom:24,display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,flexWrap:"wrap"}}><div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Mis importaciones</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"4px 0 0"}}>Bienvenido, {name}</p></div>{(()=>{const tier=client?.tier;if(!tier||tier==="standard")return null;const ti=getTierInfo(tier);return <div title={client.tier_achieved_at?`${ti.label} desde ${new Date(client.tier_achieved_at).toLocaleDateString("es-AR")}`:ti.label} style={{padding:"8px 16px",borderRadius:999,background:ti.gradient,color:"#0A1628",fontWeight:800,fontSize:11,letterSpacing:"0.14em",boxShadow:ti.glow,border:`1px solid ${ti.color}`,display:"inline-flex",alignItems:"center",gap:8,textTransform:"uppercase"}}><span style={{fontSize:14}}>{ti.icon}</span>{ti.label}</div>;})()}</div>
     <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{stats.map((s,i)=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px",transition:"all 180ms",cursor:s.btn?"pointer":"default"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.25)";e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}><p style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.5)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{s.l}</p>{s.btn?<p style={{fontSize:13,fontWeight:600,color:GOLD_LIGHT,margin:0,display:"inline-flex",alignItems:"center",gap:4}}>Ver reporte <span style={{fontSize:14}}>→</span></p>:<p style={{fontSize:32,fontWeight:700,color:s.c,margin:0,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{s.v}</p>}</div>)}</div>
     {act.length>0&&act.map(renderOp)}
     {past.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"24px 0 12px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Finalizadas ({past.length})</h3>{past.map(renderOp)}</>}
@@ -872,22 +881,27 @@ function PointsPage({token,client}){
   const [catalog,setCatalog]=useState([]);
   const [txs,setTxs]=useState([]);
   const [pending,setPending]=useState([]);
+  const [tierVouchers,setTierVouchers]=useState([]);
   const [loading,setLoading]=useState(true);
   const [balance,setBalance]=useState(Number(client?.points_balance||0));
+  const [tier,setTier]=useState(client?.tier||"standard");
+  const [lifetime,setLifetime]=useState(Number(client?.lifetime_points_earned||0));
   const [msg,setMsg]=useState("");
   const [busy,setBusy]=useState(null);
   const load=async()=>{
     setLoading(true);
-    const [cat,tx,pd,cl]=await Promise.all([
+    const [cat,tx,pd,cl,tr]=await Promise.all([
       dq("rewards_catalog",{token,filters:"?active=eq.true&select=*&order=sort_order.asc"}),
       dq("points_transactions",{token,filters:`?client_id=eq.${client.id}&select=*&order=created_at.desc&limit=30`}),
       dq("client_reward_redemptions",{token,filters:`?client_id=eq.${client.id}&status=eq.pending&select=*&order=redeemed_at.desc`}),
-      dq("clients",{token,filters:`?id=eq.${client.id}&select=points_balance`})
+      dq("clients",{token,filters:`?id=eq.${client.id}&select=points_balance,tier,lifetime_points_earned`}),
+      dq("tier_rewards",{token,filters:`?client_id=eq.${client.id}&select=*&order=reached_at.desc`})
     ]);
     setCatalog(Array.isArray(cat)?cat:[]);
     setTxs(Array.isArray(tx)?tx:[]);
     setPending(Array.isArray(pd)?pd:[]);
-    if(Array.isArray(cl)&&cl[0])setBalance(Number(cl[0].points_balance||0));
+    setTierVouchers(Array.isArray(tr)?tr:[]);
+    if(Array.isArray(cl)&&cl[0]){setBalance(Number(cl[0].points_balance||0));setTier(cl[0].tier||"standard");setLifetime(Number(cl[0].lifetime_points_earned||0));}
     setLoading(false);
   };
   useEffect(()=>{load();},[client?.id]);
@@ -906,12 +920,54 @@ function PointsPage({token,client}){
   const expiringSoon=txs.filter(t=>t.type==="earn"&&t.expires_at&&new Date(t.expires_at)<new Date(Date.now()+30*86400000)&&new Date(t.expires_at)>new Date());
   const txLabel={earn:"Ganados",redeem:"Canje",expire:"Expiraron",refund:"Devolución",adjust:"Ajuste"};
   const txColor={earn:"#22c55e",redeem:"#60a5fa",expire:"#ef4444",refund:"#a78bfa",adjust:"#fbbf24"};
+  const ti=getTierInfo(tier);
+  const nextTier=ti.next?Object.values(TIERS).find(t=>t.min===ti.next):null;
+  const ptsToNext=nextTier?Math.max(0,nextTier.min-lifetime):0;
+  const progressPct=nextTier?Math.min(100,Math.max(0,((lifetime-ti.min)/(nextTier.min-ti.min))*100)):100;
+  const pendingVouchers=tierVouchers.filter(v=>v.status==="pending");
   return <div>
     <div style={{marginBottom:24}}>
       <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Mis puntos</h2>
       <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",lineHeight:1.5}}>Ganás puntos por cada kg aéreo y CBM marítimo que importes.</p>
     </div>
     {msg&&<p style={{fontSize:13,color:"#22c55e",fontWeight:600,marginBottom:16,padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:8,animation:"ac_fade_in 200ms"}}>{msg}</p>}
+
+    {/* Tier hero + progress */}
+    <div style={{background:`linear-gradient(135deg, ${ti.color}22 0%, rgba(255,255,255,0.02) 100%)`,border:`1px solid ${tier==="standard"?"rgba(255,255,255,0.08)":ti.color+"55"}`,borderRadius:18,padding:"24px 28px",marginBottom:18,position:"relative",overflow:"hidden",boxShadow:tier==="standard"?"none":ti.glow}}>
+      <div style={{position:"absolute",top:-50,right:-50,width:220,height:220,background:`radial-gradient(circle, ${ti.color}22 0%, transparent 70%)`,pointerEvents:"none"}}/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",position:"relative"}}>
+        <div>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.14em"}}>Tu categoría</p>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginTop:6}}>
+            <span style={{fontSize:34}}>{ti.icon}</span>
+            <div>
+              <p style={{fontSize:32,fontWeight:800,color:"#fff",margin:0,lineHeight:1,letterSpacing:"-0.02em",textShadow:tier!=="standard"?`0 0 20px ${ti.color}55`:"none"}}>{ti.label}</p>
+              {tier!=="standard"&&<p style={{fontSize:11,color:ti.light,margin:"4px 0 0",fontWeight:600,letterSpacing:"0.04em"}}>+{ti.bonus}% bonus en puntos</p>}
+            </div>
+          </div>
+        </div>
+        <div style={{textAlign:"right"}}>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>Ganados en total</p>
+          <p style={{fontSize:24,fontWeight:700,color:"#fff",margin:"4px 0 0",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>{lifetime.toLocaleString("es-AR")} <span style={{fontSize:12,color:ti.light,fontWeight:600}}>pts</span></p>
+        </div>
+      </div>
+      {nextTier&&<div style={{marginTop:18,position:"relative"}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.55)",fontWeight:500}}>En <strong style={{color:ti.light,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{ptsToNext}</strong> pts llegás a <strong style={{color:getTierInfo(Object.keys(TIERS).find(k=>TIERS[k].min===ti.next)).light,fontWeight:700}}>{nextTier.label}</strong> {Object.values(TIERS).find(t=>t.min===ti.next)?.icon}</span>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{Math.round(progressPct)}%</span>
+        </div>
+        <div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:999,overflow:"hidden",border:"1px solid rgba(255,255,255,0.04)"}}>
+          <div style={{width:`${progressPct}%`,height:"100%",background:ti.gradient,borderRadius:999,boxShadow:ti.glow,transition:"width 400ms ease-out"}}/>
+        </div>
+      </div>}
+      {!nextTier&&<p style={{marginTop:16,fontSize:12,color:ti.light,fontWeight:600,letterSpacing:"0.04em"}}>★ Alcanzaste el nivel máximo. ¡Gracias por importar con nosotros!</p>}
+    </div>
+
+    {/* Vouchers de tier pendientes */}
+    {pendingVouchers.length>0&&<div style={{marginBottom:24,padding:"16px 20px",background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.22)",borderRadius:14}}>
+      <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.1em"}}>★ Descuentos por categoría disponibles</p>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>{pendingVouchers.map(v=>{const vti=getTierInfo(v.tier);return <div key={v.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,padding:"10px 12px",background:"rgba(255,255,255,0.02)",borderRadius:10,border:`1px solid ${vti.color}40`}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:20}}>{vti.icon}</span><div><p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>Descuento {vti.label}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Se aplica automáticamente en tu próxima operación</p></div></div><span style={{fontSize:16,fontWeight:800,color:vti.light,fontVariantNumeric:"tabular-nums"}}>USD {Number(v.discount_usd).toFixed(0)}</span></div>;})}</div>
+    </div>}
 
     {/* Balance hero + secundarios */}
     <div style={{display:"grid",gridTemplateColumns:expiringSoon.length>0?"2fr 1fr 1fr":"2fr 1fr",gap:14,marginBottom:28}}>
