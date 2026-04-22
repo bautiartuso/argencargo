@@ -865,6 +865,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           }
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
           setOp(p=>({...p,...opUpdate}));
+          // Detectar overpayment → ofrecer registrarlo como saldo a favor en CC
+          const diff=newTotal-budgetTot;
+          if(budgetTot>0&&diff>0.01&&op.client_id){
+            if(confirm(`El cliente pagó USD ${diff.toFixed(2)} de más.\n\n¿Registrar el excedente como saldo a favor en la cuenta corriente del cliente?`)){
+              await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`}});
+              flash(`Saldo a favor registrado: +USD ${diff.toFixed(2)}`);
+            }
+          }
           setNewCliPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
           load();
           flash(newTotal>=budgetTot?"Pago registrado — op cobrada ✓":"Anticipo registrado");
@@ -880,14 +888,37 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           setOp(p=>({...p,...opUpdate}));
           load();
         };
+        const closeWithDiscount=async()=>{
+          if(saldoCli<=0.01)return;
+          if(!confirm(`Estás por cerrar esta op con un DESCUENTO de USD ${saldoCli.toFixed(2)}.\n\nEl cliente pagó USD ${totalCli.toFixed(2)} sobre un presupuesto de USD ${budgetTot.toFixed(2)}. La diferencia NO queda como deuda — queda como descuento intencional registrado en la op.\n\n¿Confirmás?`))return;
+          const opUpdate={is_collected:true,collected_amount:totalCli,collection_date:new Date().toISOString().slice(0,10),discount_applied_usd:saldoCli};
+          if(clientPayments.length>0){opUpdate.collection_method=clientPayments[clientPayments.length-1].payment_method;opUpdate.collection_currency=clientPayments[clientPayments.length-1].currency||"USD";}
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
+          setOp(p=>({...p,...opUpdate}));
+          flash(`Op cerrada con descuento de USD ${saldoCli.toFixed(2)}`);
+        };
+        const registerDebt=async()=>{
+          if(saldoCli<=0.01||!op.client_id)return;
+          if(!confirm(`El cliente quedó debiendo USD ${saldoCli.toFixed(2)}.\n\nVamos a registrarlo como deuda en su cuenta corriente (se podrá aplicar a próximas operaciones).\n\n¿Confirmás?`))return;
+          const opUpdate={is_collected:true,collected_amount:totalCli,collection_date:new Date().toISOString().slice(0,10)};
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
+          await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"debt",amount_usd:-saldoCli,description:`Deuda pendiente de ${op.operation_code}`}});
+          setOp(p=>({...p,...opUpdate}));
+          flash(`Deuda registrada: -USD ${saldoCli.toFixed(2)}`);
+        };
         return <Card title="Anticipos / Pagos del cliente">
           <div style={{display:"flex",gap:16,marginBottom:12,flexWrap:"wrap",alignItems:"center",justifyContent:"space-between"}}>
-            <div style={{display:"flex",gap:20,fontSize:12,color:"rgba(255,255,255,0.7)"}}>
+            <div style={{display:"flex",gap:20,fontSize:12,color:"rgba(255,255,255,0.7)",flexWrap:"wrap"}}>
               <span><b style={{color:"rgba(255,255,255,0.5)"}}>Presupuesto:</b> USD {budgetTot.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
               <span><b style={{color:"#22c55e"}}>Cobrado:</b> USD {totalCli.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
               {saldoCli>0.01&&<span><b style={{color:"#fb923c"}}>Saldo:</b> USD {saldoCli.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
               {saldoCli<=0.01&&totalCli>0&&<span style={{color:"#22c55e",fontWeight:700}}>✓ Op cobrada</span>}
+              {Number(op.discount_applied_usd||0)>0&&<span style={{color:GOLD_LIGHT,fontWeight:700}}>🎟 Descuento USD {Number(op.discount_applied_usd).toFixed(2)}</span>}
             </div>
+            {saldoCli>0.01&&totalCli>0&&!op.is_collected&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <Btn onClick={closeWithDiscount} variant="secondary" small>🎟 Cerrar con descuento</Btn>
+              <Btn onClick={registerDebt} variant="secondary" small>Cerrar y registrar deuda</Btn>
+            </div>}
           </div>
           {budgetTot>0&&<div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden",marginBottom:14}}>
             <div style={{width:`${pctCobrado}%`,height:"100%",background:pctCobrado>=100?"#22c55e":pctCobrado>=50?"#60a5fa":"#fb923c",transition:"width 0.3s"}}/>
@@ -1182,7 +1213,14 @@ function ClientsList({token,onSelect}){
 
 function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   const [cl,setCl]=useState(initClient);const [ops,setOps]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("info");const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [msg,setMsg]=useState("");const [saving,setSaving]=useState(false);
-  useEffect(()=>{(async()=>{const [o,t,ov]=await Promise.all([dq("operations",{token,filters:`?client_id=eq.${cl.id}&select=*&order=created_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=service_key.asc,sort_order.asc"}),dq("client_tariff_overrides",{token,filters:`?client_id=eq.${cl.id}&select=*`})]);setOps(Array.isArray(o)?o:[]);setTariffs(Array.isArray(t)?t:[]);setOverrides(Array.isArray(ov)?ov:[]);setLo(false);})();},[cl.id,token]);
+  // Cuenta corriente
+  const [accMovs,setAccMovs]=useState([]);
+  const [newMov,setNewMov]=useState({type:"adjustment",amount:"",description:""});
+  const [savingMov,setSavingMov]=useState(false);
+  const loadAccMovs=async()=>{const m=await dq("client_account_movements",{token,filters:`?client_id=eq.${cl.id}&select=*,operations(operation_code)&order=created_at.desc`});setAccMovs(Array.isArray(m)?m:[]);};
+  const addMov=async()=>{if(!newMov.amount)return;setSavingMov(true);const amt=Number(newMov.amount);const signed=newMov.type==="overpayment"||newMov.type==="adjustment"?Math.abs(amt):-Math.abs(amt);await dq("client_account_movements",{method:"POST",token,body:{client_id:cl.id,type:newMov.type,amount_usd:signed,description:newMov.description||null}});await loadAccMovs();const fresh=await dq("clients",{token,filters:`?id=eq.${cl.id}&select=account_balance_usd`});if(Array.isArray(fresh)&&fresh[0])setCl(p=>({...p,account_balance_usd:fresh[0].account_balance_usd}));setNewMov({type:"adjustment",amount:"",description:""});setSavingMov(false);flash("Movimiento registrado");};
+  const delMov=async(id)=>{if(!confirm("¿Eliminar este movimiento?"))return;await dq("client_account_movements",{method:"DELETE",token,filters:`?id=eq.${id}`});await loadAccMovs();const fresh=await dq("clients",{token,filters:`?id=eq.${cl.id}&select=account_balance_usd`});if(Array.isArray(fresh)&&fresh[0])setCl(p=>({...p,account_balance_usd:fresh[0].account_balance_usd}));flash("Movimiento eliminado");};
+  useEffect(()=>{(async()=>{const [o,t,ov]=await Promise.all([dq("operations",{token,filters:`?client_id=eq.${cl.id}&select=*&order=created_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=service_key.asc,sort_order.asc"}),dq("client_tariff_overrides",{token,filters:`?client_id=eq.${cl.id}&select=*`})]);setOps(Array.isArray(o)?o:[]);setTariffs(Array.isArray(t)?t:[]);setOverrides(Array.isArray(ov)?ov:[]);setLo(false);loadAccMovs();})();},[cl.id,token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const getOverride=(tid)=>overrides.find(o=>o.tariff_id===tid);
   // Recalcula y guarda presupuesto de todas las ops activas del cliente (las cerradas/canceladas se saltean).
@@ -1229,7 +1267,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
     setSaving(false);
   };
   const deleteClient=async()=>{if(!confirm(`¿Estás seguro de eliminar a ${cl.first_name} ${cl.last_name}? Esta acción no se puede deshacer.`))return;await dq("clients",{method:"DELETE",token,filters:`?id=eq.${cl.id}`});onDelete();};
-  const tabs=[{k:"info",l:"Info"},{k:"ops",l:`Operaciones (${ops.length})`},{k:"tariffs",l:"Tarifas"}];
+  const tabs=[{k:"info",l:"Info"},{k:"ops",l:`Operaciones (${ops.length})`},{k:"cc",l:`Cuenta corriente${Number(cl.account_balance_usd||0)!==0?" ·":""}`},{k:"tariffs",l:"Tarifas"}];
   return <div>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,gap:12,flexWrap:"wrap"}}>
       <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
@@ -1237,6 +1275,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
         <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{cl.first_name} {cl.last_name}</h2>
         {cl.tier&&cl.tier!=="standard"&&(()=>{const ti=getTierInfo(cl.tier);return <span title={cl.tier_achieved_at?`${ti.label} desde ${new Date(cl.tier_achieved_at).toLocaleDateString("es-AR")} · ${cl.lifetime_points_earned||0} pts ganados`:ti.label} style={{fontSize:10,fontWeight:800,padding:"4px 12px",borderRadius:999,background:ti.gradient,color:"#0A1628",letterSpacing:"0.14em",border:`1px solid ${ti.color}`,boxShadow:ti.glow,display:"inline-flex",alignItems:"center",gap:5,textTransform:"uppercase"}}>{ti.icon} {ti.label}</span>;})()}
         {Number(cl.points_balance||0)>0&&<span title={`Balance actual · ${cl.lifetime_points_earned||0} ganados en total`} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,background:"rgba(184,149,106,0.12)",color:GOLD_LIGHT,border:"1px solid rgba(184,149,106,0.3)",letterSpacing:"0.08em",fontVariantNumeric:"tabular-nums"}}>★ {cl.points_balance} PTS</span>}
+        {Number(cl.account_balance_usd||0)!==0&&(()=>{const bal=Number(cl.account_balance_usd||0);const isCredit=bal>0;return <span title={isCredit?"Saldo a favor en cuenta corriente":"Deuda en cuenta corriente"} onClick={()=>setTab("cc")} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,background:isCredit?"rgba(34,197,94,0.14)":"rgba(239,68,68,0.14)",color:isCredit?"#22c55e":"#ef4444",border:`1px solid ${isCredit?"rgba(34,197,94,0.35)":"rgba(239,68,68,0.35)"}`,letterSpacing:"0.06em",fontVariantNumeric:"tabular-nums",cursor:"pointer"}}>{isCredit?"+":""}USD {bal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>;})()}
         {msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600,animation:"ac_fade_in 200ms"}}>✓ {msg}</span>}
       </div>
       <Btn onClick={deleteClient} variant="danger" small>Eliminar cliente</Btn>
@@ -1260,6 +1299,40 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
       </div>
     </Card>}
     {tab==="ops"&&<Card title="Operaciones">{lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:ops.length>0?ops.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <div key={op.id} onClick={()=>onSelectOp(op)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 4px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms",borderRadius:6}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:"#fff",fontSize:12.5,letterSpacing:"0.04em"}}>{op.operation_code}</span><span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px ${st.c}`:"none"}}/>{st.l}</span></div><div style={{display:"flex",alignItems:"center",gap:14}}><span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{CM[op.channel]||op.channel}</span><span style={{color:GOLD_LIGHT,fontSize:12,fontWeight:600}}>→</span></div></div>;}):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin operaciones</p>}</Card>}
+    {tab==="cc"&&(()=>{const bal=Number(cl.account_balance_usd||0);const isCredit=bal>0;const isDebt=bal<0;const MOV_LABELS={overpayment:"Pago de más",applied:"Aplicado a op",adjustment:"Ajuste manual",refund:"Reintegro",debt:"Pago de menos"};const MOV_COLORS={overpayment:"#22c55e",applied:GOLD_LIGHT,adjustment:"#a78bfa",refund:"#60a5fa",debt:"#ef4444"};return <div>
+      {/* Hero balance */}
+      <div style={{padding:"24px 28px",background:isCredit?"linear-gradient(135deg, rgba(34,197,94,0.12) 0%, rgba(255,255,255,0.02) 100%)":isDebt?"linear-gradient(135deg, rgba(239,68,68,0.12) 0%, rgba(255,255,255,0.02) 100%)":"rgba(255,255,255,0.025)",border:`1px solid ${isCredit?"rgba(34,197,94,0.4)":isDebt?"rgba(239,68,68,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:14,marginBottom:18,boxShadow:isCredit?"0 0 24px rgba(34,197,94,0.15)":isDebt?"0 0 24px rgba(239,68,68,0.15)":"none"}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{isCredit?"★ Saldo a favor del cliente":isDebt?"⚠ Deuda del cliente":"Balance de cuenta"}</p>
+        <p style={{fontSize:36,fontWeight:800,color:isCredit?"#22c55e":isDebt?"#ef4444":"#fff",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{isCredit?"+":""}USD {bal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+        {isCredit&&<p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"6px 0 0"}}>Se puede aplicar a cualquier operación pendiente de cobro del cliente.</p>}
+        {isDebt&&<p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"6px 0 0"}}>El cliente debe este importe — podés aplicarlo a su próxima operación.</p>}
+      </div>
+      {/* Nuevo movimiento */}
+      <Card title="Registrar movimiento manual">
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr auto",gap:12,alignItems:"end"}}>
+          <Sel label="Tipo" value={newMov.type} onChange={v=>setNewMov(p=>({...p,type:v}))} options={[{value:"overpayment",label:"Pago de más (+)"},{value:"adjustment",label:"Ajuste a favor (+)"},{value:"applied",label:"Aplicado a op (−)"},{value:"refund",label:"Reintegro al cliente (−)"},{value:"debt",label:"Deuda del cliente (−)"}]}/>
+          <Inp label="Monto USD" type="number" value={newMov.amount} onChange={v=>setNewMov(p=>({...p,amount:v}))} step="0.01"/>
+          <Inp label="Descripción" value={newMov.description} onChange={v=>setNewMov(p=>({...p,description:v}))} placeholder="Ej: Excedente transferencia 15/04"/>
+          <Btn onClick={addMov} disabled={savingMov||!newMov.amount} small>{savingMov?"…":"Agregar"}</Btn>
+        </div>
+      </Card>
+      {/* Historial */}
+      <Card title={`Historial de movimientos (${accMovs.length})`}>
+        {accMovs.length===0?<p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic"}}>Sin movimientos registrados</p>:
+        <div style={{display:"flex",flexDirection:"column",gap:2}}>{accMovs.map(m=>{const amt=Number(m.amount_usd);const isPos=amt>0;const color=MOV_COLORS[m.type]||"#fff";const label=MOV_LABELS[m.type]||m.type;return <div key={m.id} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 8px",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:3,flexWrap:"wrap"}}>
+              <span style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:999,background:`${color}14`,color,border:`1px solid ${color}35`,letterSpacing:"0.06em",textTransform:"uppercase"}}>{label}</span>
+              {m.operations?.operation_code&&<span style={{fontSize:11,fontFamily:"'JetBrains Mono','SF Mono',monospace",color:GOLD_LIGHT,letterSpacing:"0.04em"}}>{m.operations.operation_code}</span>}
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{new Date(m.created_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}</span>
+            </div>
+            {m.description&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.7)",margin:0}}>{m.description}</p>}
+          </div>
+          <span style={{fontSize:15,fontWeight:800,color:isPos?"#22c55e":"#ef4444",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em",whiteSpace:"nowrap"}}>{isPos?"+":""}USD {Math.abs(amt).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          <button onClick={()=>delMov(m.id)} title="Eliminar" style={{padding:"4px 8px",fontSize:10,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>✕</button>
+        </div>;})}</div>}
+      </Card>
+    </div>;})()}
     {tab==="tariffs"&&<div>{SERVICES.map(svc=>{const svcRates=tariffs.filter(t=>t.service_key===svc.key);if(!svcRates.length)return null;return <Card key={svc.key} title={svc.label}><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"-8px 0 12px"}}>Dejá vacío para usar tarifa base. Poné un valor para aplicar tarifa promocional.</p>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}><th style={{padding:"8px 0",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>RANGO</th><th style={{padding:"8px 0",textAlign:"right",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>TARIFA BASE</th><th style={{padding:"8px 0",textAlign:"right",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>TARIFA CUSTOM</th></tr></thead>
       <tbody>{svcRates.map(t=>{const ov=getOverride(t.id);return <tr key={t.id} style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}><td style={{padding:"8px 0",color:"rgba(255,255,255,0.6)"}}>{t.label}</td><td style={{padding:"8px 0",textAlign:"right",color:ov?"rgba(255,255,255,0.4)":"#fff",fontWeight:600,textDecoration:ov?"line-through":"none"}}>${Number(t.rate).toLocaleString("en-US")}/{t.unit}</td><td style={{padding:"8px 0",textAlign:"right",display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6}}><input type="number" value={ov?.custom_rate??""} onChange={e=>setOverrideRate(t.id,e.target.value)} placeholder="—" step="0.01" style={{width:80,padding:"4px 8px",fontSize:13,textAlign:"right",border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:ov?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.04)",color:ov?IC:"rgba(255,255,255,0.4)",outline:"none"}}/>{ov&&<button onClick={()=>setOverrideRate(t.id,"")} style={{fontSize:10,padding:"4px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>X</button>}</td></tr>;})}</tbody></table></Card>;})}</div>}
