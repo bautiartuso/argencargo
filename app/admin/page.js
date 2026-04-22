@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { calcOpBudget } from "../../lib/calc";
+import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState } from "../../lib/ui";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -219,7 +220,7 @@ function OperationsList({token,onSelect,onNew}){
       <select value={fChannel} onChange={e=>setFChannel(e.target.value)} style={{padding:"10px 14px",fontSize:12,border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}><option value="" style={{background:"#142038"}}>Todos los canales</option>{CHANNELS.map(c=><option key={c} value={c} style={{background:"#142038"}}>{CM[c]}</option>)}</select>
       {sortCol!=="smart"&&<button onClick={()=>{setSortCol("smart");setSortDir("asc");}} style={{padding:"10px 14px",fontSize:11,fontWeight:600,border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:8,background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>↻ Restaurar orden</button>}
     </div>
-    {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:(()=>{
+    {lo?<SkeletonTable rows={10} cols={7}/>:(()=>{
     const active=sorted.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
     const closed=sorted.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada").sort((a,b)=>{const da=a.closed_at?String(a.closed_at).slice(0,10):"";const db=b.closed_at?String(b.closed_at).slice(0,10):"";return db.localeCompare(da);});
     const totalGanancia=closed.reduce((s,o)=>s+calcGan(o),0);
@@ -254,7 +255,7 @@ function OperationsList({token,onSelect,onNew}){
     const renderPagination=()=>{if(totalPagesClosed<=1)return null;const pages=[];const maxVisible=7;let start=Math.max(1,safePage-3);let end=Math.min(totalPagesClosed,start+maxVisible-1);if(end-start<maxVisible-1)start=Math.max(1,end-maxVisible+1);for(let i=start;i<=end;i++)pages.push(i);const btnStyle=(active,disabled)=>({minWidth:32,height:32,padding:"0 10px",fontSize:12,fontWeight:active?700:500,borderRadius:8,border:`1px solid ${active?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.08)"}`,background:active?"rgba(184,149,106,0.14)":"transparent",color:disabled?"rgba(255,255,255,0.2)":active?GOLD_LIGHT:"rgba(255,255,255,0.65)",cursor:disabled?"not-allowed":"pointer",transition:"all 150ms",display:"inline-flex",alignItems:"center",justifyContent:"center"});return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:16,gap:12,flexWrap:"wrap"}}><span style={{fontSize:11,color:"rgba(255,255,255,0.45)",letterSpacing:"0.03em"}}>Mostrando {(safePage-1)*CLOSED_PER_PAGE+1}–{Math.min(safePage*CLOSED_PER_PAGE,closed.length)} de {closed.length}</span><div style={{display:"flex",gap:4,alignItems:"center"}}><button disabled={safePage===1} onClick={()=>setPageClosed(safePage-1)} style={btnStyle(false,safePage===1)}>←</button>{start>1&&<><button onClick={()=>setPageClosed(1)} style={btnStyle(false)}>1</button>{start>2&&<span style={{color:"rgba(255,255,255,0.3)",padding:"0 4px"}}>…</span>}</>}{pages.map(p=><button key={p} onClick={()=>setPageClosed(p)} style={btnStyle(p===safePage)}>{p}</button>)}{end<totalPagesClosed&&<>{end<totalPagesClosed-1&&<span style={{color:"rgba(255,255,255,0.3)",padding:"0 4px"}}>…</span>}<button onClick={()=>setPageClosed(totalPagesClosed)} style={btnStyle(false)}>{totalPagesClosed}</button></>}<button disabled={safePage===totalPagesClosed} onClick={()=>setPageClosed(safePage+1)} style={btnStyle(false,safePage===totalPagesClosed)}>→</button></div></div>;};
     return <>{active.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones activas <span style={{color:GOLD_LIGHT,marginLeft:4}}>({active.length})</span></h3>{renderTable(active,false)}</>}
     {closed.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"32px 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones cerradas <span style={{color:"rgba(255,255,255,0.55)",marginLeft:4}}>({closed.length})</span> {totalGanancia!==0&&<span style={{fontSize:12,fontWeight:700,color:totalGanancia>0?"#22c55e":"#ff6b6b",marginLeft:12,letterSpacing:"0.04em"}}>Ganancia total: USD {totalGanancia.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}</h3>{renderTable(closedPaged,true)}{renderPagination()}</>}
-    {active.length===0&&closed.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>No se encontraron operaciones</p>}</>;})()}
+    {active.length===0&&closed.length===0&&<EmptyState icon="box" title={search||fStatuses.length>0||fChannel?"Sin resultados":"No hay operaciones"} description={search||fStatuses.length>0||fChannel?"Ninguna operación coincide con los filtros activos.":"Creá tu primera operación para comenzar."} cta={search||fStatuses.length>0||fChannel?null:"+ Nueva operación"} ctaOnClick={search||fStatuses.length>0||fChannel?null:onNew}/>}</>;})()}
   </div>;
 }
 
@@ -317,7 +318,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const cp=await dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setClientPayments(Array.isArray(cp)?cp:[]);
     await loadCCBalance();setLo(false);};
   useEffect(()=>{load();let last=Date.now();const onFocus=()=>{if(document.visibilityState==="visible"&&Date.now()-last>5000){last=Date.now();load();}};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[op.id]);
-  const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
+  const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const deleteOp=async()=>{if(!confirm(`¿Eliminar operación ${op.operation_code}? Se borrarán también sus productos, bultos y eventos.`))return;
     await Promise.all([dq("operation_items",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`}),dq("operation_packages",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`}),dq("tracking_events",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`})]);
     await dq("operations",{method:"DELETE",token,filters:`?id=eq.${op.id}`});onDelete();};
@@ -1124,7 +1125,7 @@ function ClientsList({token,onSelect}){
       <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Clientes</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"4px 0 0"}}>{filtered.length} {filtered.length===1?"cliente":"clientes"}</p></div>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nombre, código o email..." style={{width:360,maxWidth:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",transition:"all 180ms"}} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.08)";e.target.style.boxShadow="none";}}/>
     </div>
-    {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:
+    {lo?<SkeletonTable rows={8} cols={5}/>:
     <div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
@@ -1138,7 +1139,7 @@ function ClientsList({token,onSelect}){
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",fontSize:12.5}}>{c.city}, {c.province}</td>
         </tr>)}</tbody>
       </table>
-      {filtered.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>No se encontraron clientes</p>}
+      {filtered.length===0&&<EmptyState icon="users" title={search?"Sin resultados":"No hay clientes"} description={search?`Nada coincide con "${search}"`:"Aún no se registró ningún cliente en el sistema."}/>}
     </div>}
   </div>;
 }
@@ -1146,7 +1147,7 @@ function ClientsList({token,onSelect}){
 function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   const [cl,setCl]=useState(initClient);const [ops,setOps]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("info");const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [msg,setMsg]=useState("");const [saving,setSaving]=useState(false);
   useEffect(()=>{(async()=>{const [o,t,ov]=await Promise.all([dq("operations",{token,filters:`?client_id=eq.${cl.id}&select=*&order=created_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=service_key.asc,sort_order.asc"}),dq("client_tariff_overrides",{token,filters:`?client_id=eq.${cl.id}&select=*`})]);setOps(Array.isArray(o)?o:[]);setTariffs(Array.isArray(t)?t:[]);setOverrides(Array.isArray(ov)?ov:[]);setLo(false);})();},[cl.id,token]);
-  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
+  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const getOverride=(tid)=>overrides.find(o=>o.tariff_id===tid);
   const setOverrideRate=async(tid,rate)=>{const existing=getOverride(tid);if(rate===""||rate==null){if(existing){await dq("client_tariff_overrides",{method:"DELETE",token,filters:`?id=eq.${existing.id}`});setOverrides(p=>p.filter(o=>o.id!==existing.id));flash("Tarifa custom eliminada");}return;}if(existing){await dq("client_tariff_overrides",{method:"PATCH",token,filters:`?id=eq.${existing.id}`,body:{custom_rate:Number(rate)}});setOverrides(p=>p.map(o=>o.id===existing.id?{...o,custom_rate:Number(rate)}:o));} else{const r=await dq("client_tariff_overrides",{method:"POST",token,body:{client_id:cl.id,tariff_id:tid,custom_rate:Number(rate)}});if(Array.isArray(r))setOverrides(p=>[...p,...r]);else if(r?.id)setOverrides(p=>[...p,r]);}flash("Tarifa custom guardada");};
   const chCl=f=>v=>setCl(p=>({...p,[f]:v}));
@@ -1193,7 +1194,7 @@ function TariffsManager({token}){
   const [tariffs,setTariffs]=useState([]);const [lo,setLo]=useState(true);const [selSvc,setSelSvc]=useState(null);const [msg,setMsg]=useState("");const [viewMode,setViewMode]=useState("sell");
   const load=async()=>{const t=await dq("tariffs",{token,filters:"?select=*&order=service_key.asc,sort_order.asc"});setTariffs(Array.isArray(t)?t:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
-  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
+  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const svcTariffs=selSvc?tariffs.filter(t=>t.service_key===selSvc):[];
   const rates=svcTariffs.filter(t=>t.type==="rate");const specials=svcTariffs.filter(t=>t.type==="special");const surcharges=svcTariffs.filter(t=>t.type==="surcharge");
   const saveTariff=async(t)=>{const{id,created_at,...rest}=t;await dq("tariffs",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Guardado");};
@@ -1514,7 +1515,7 @@ function FinancePanel({token}){
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)&giro_payment_method=eq.tarjeta_credito&giro_tarjeta_paid=eq.false&order=giro_tarjeta_due_date.asc"})
   ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);setCardDebt({usd:Array.isArray(cdUsd)?cdUsd:[],ars:Array.isArray(cdArs)?cdArs:[],pmts:Array.isArray(cdPmts)?cdPmts:[]});setLo(false);};
   useEffect(()=>{load();},[token]);
-  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
+  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const addEntry=async()=>{
     if(!newEntry.category){flash("Faltan datos");return;}
     if(newEntry.category==="otros"&&!newEntry.detail){flash("Categoría 'Otros' requiere detalle");return;}
@@ -2131,7 +2132,7 @@ function AgentsPanel({token}){
     load();flash("Asignado a operación");
   };
   const delUnassigned=async(id)=>{if(!confirm("¿Eliminar este paquete huérfano?"))return;await dq("unassigned_packages",{method:"DELETE",token,filters:`?id=eq.${id}`});load();flash("Eliminado");};
-  const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
+  const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const approve=async(s)=>{
     // Update profile role to agente
     const prof=profiles[s.auth_user_id];
@@ -3000,7 +3001,7 @@ function ComunicacionesPanel({token}){
   const [tplDraft,setTplDraft]=useState({});
   const [savingTpl,setSavingTpl]=useState(false);
   const [msg,setMsg]=useState("");
-  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);};
+  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const load=async()=>{
     setLoading(true);
     const statuses=["en_deposito_origen","entregada"];
@@ -3673,6 +3674,6 @@ export default function AdminPage(){
   useEffect(()=>{const s=loadSession();if(s?.token&&s?.profile?.role==="admin"){setSession(s);}setRestoring(false);},[]);
   const logout=()=>{clearSession();setSession(null);};
   if(restoring)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG}}><p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p></div>;
-  if(!session)return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><AdminLogin onLogin={s=>{setSession(s);}}/></>;
-  return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><AdminDashboard session={session} onLogout={logout}/></>;
+  if(!session)return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><AdminLogin onLogin={s=>{setSession(s);}}/></>;
+  return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><AdminDashboard session={session} onLogout={logout}/></>;
 }

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { ToastStack, toast, SkeletonTable, EmptyState } from "../../lib/ui";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -272,8 +273,8 @@ export default function AgentePortal(){
   useEffect(()=>{const s=loadSession();if(s?.access_token){setSession(s);}setLoading(false);const savedLang=typeof window!=="undefined"?localStorage.getItem("ac_agent_lang"):null;if(savedLang==="zh"||savedLang==="es")setLang(savedLang);},[]);
   useEffect(()=>{try{localStorage.setItem("ac_agent_lang",lang);}catch(e){}},[lang]);
   if(loading)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:BG,color:"rgba(255,255,255,0.4)"}}>Cargando...</div>;
-  if(!session)return <AuthScreen onLogin={setSession} lang={lang} setLang={setLang} t={t}/>;
-  return <Dashboard session={session} onLogout={()=>{clearSession();setSession(null);}} lang={lang} setLang={setLang} t={t}/>;
+  if(!session)return <><ToastStack/><AuthScreen onLogin={setSession} lang={lang} setLang={setLang} t={t}/></>;
+  return <><ToastStack/><Dashboard session={session} onLogout={()=>{clearSession();setSession(null);}} lang={lang} setLang={setLang} t={t}/></>;
 }
 
 function AuthScreen({onLogin,lang,setLang,t}){
@@ -398,7 +399,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   })();},[token,userId]);
 
   const reloadPackages=reloadAll;
-  const flash=(m)=>{setFlashMsg(m);setTimeout(()=>setFlashMsg(""),3000);};
+  const flash=(m)=>{setFlashMsg(m);setTimeout(()=>setFlashMsg(""),3000);const v=/error|fail/i.test(m)?"error":"success";toast(m,v);};
   const balance=account.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):-Number(m.amount_usd)),0);
   const usdF=(v)=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
