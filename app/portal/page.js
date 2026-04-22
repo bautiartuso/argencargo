@@ -1130,22 +1130,25 @@ function AccountPage({token,client}){
   const [timeline,setTimeline]=useState([]);
   const [balance,setBalance]=useState(Number(client?.account_balance_usd||0));
   const [loading,setLoading]=useState(true);
-  const MOV_LABELS={overpayment:"Pago de más",applied:"Aplicado a op",adjustment:"Ajuste",refund:"Reintegro",debt:"Pago de menos",op_cobro:"Cobro de op",op_anticipo:"Anticipo de op"};
-  const MOV_COLORS={overpayment:"#22c55e",applied:GOLD_LIGHT,adjustment:"#a78bfa",refund:"#60a5fa",debt:"#ef4444",op_cobro:"#22c55e",op_anticipo:"#60a5fa"};
+  const MOV_LABELS={overpayment:"Pago de más",applied:"Aplicado a op",adjustment:"Ajuste",refund:"Reintegro",debt:"Pago de menos",op_cobro:"Cobro de op",op_anticipo:"Anticipo de op",gpi_cobro:"Gestión pagos internac."};
+  const MOV_COLORS={overpayment:"#22c55e",applied:GOLD_LIGHT,adjustment:"#a78bfa",refund:"#60a5fa",debt:"#ef4444",op_cobro:"#22c55e",op_anticipo:"#60a5fa",gpi_cobro:"#10b981"};
   useEffect(()=>{if(!client?.id){setLoading(false);return;}(async()=>{
-    const[m,cl,ops,pm]=await Promise.all([
+    const[m,cl,ops,pm,pg]=await Promise.all([
       dq("client_account_movements",{token,filters:`?client_id=eq.${client.id}&select=*,operations(operation_code)&order=created_at.desc`}),
       dq("clients",{token,filters:`?id=eq.${client.id}&select=account_balance_usd`}),
       dq("operations",{token,filters:`?client_id=eq.${client.id}&is_collected=eq.true&select=id,operation_code,collected_amount,collection_currency,collection_exchange_rate,collection_date,closed_at`}),
-      dq("operation_client_payments",{token,filters:`?select=*,operations!inner(operation_code,client_id)&operations.client_id=eq.${client.id}&order=payment_date.desc`})
+      dq("operation_client_payments",{token,filters:`?select=*,operations!inner(operation_code,client_id)&operations.client_id=eq.${client.id}&order=payment_date.desc`}),
+      dq("payment_management",{token,filters:`?select=*,operations!inner(operation_code,client_id)&operations.client_id=eq.${client.id}&client_paid=eq.true&order=client_paid_at.desc`})
     ]);
     const movs=Array.isArray(m)?m:[];
     const opsList=Array.isArray(ops)?ops:[];
     const pmts=Array.isArray(pm)?pm:[];
+    const gpi=Array.isArray(pg)?pg:[];
     const merged=[
       ...movs.map(x=>({id:"m_"+x.id,date:x.created_at,type:x.type,amount:Number(x.amount_usd),op_code:x.operations?.operation_code,description:x.description})),
       ...opsList.filter(o=>Number(o.collected_amount||0)>0).map(o=>{const raw=Number(o.collected_amount||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const usd=isArs&&rate>0?raw/rate:raw;return{id:"o_"+o.id,date:o.collection_date||o.closed_at,type:"op_cobro",amount:usd,op_code:o.operation_code,description:isArs?`Pago ARS ${raw.toLocaleString("es-AR")} @ ${rate}`:"Pago recibido"};}),
-      ...pmts.map(p=>({id:"p_"+p.id,date:p.payment_date,type:"op_anticipo",amount:Number(p.amount_usd||0),op_code:p.operations?.operation_code,description:p.notes||`Anticipo (${p.payment_method||"pago"})`}))
+      ...pmts.map(p=>({id:"p_"+p.id,date:p.payment_date,type:"op_anticipo",amount:Number(p.amount_usd||0),op_code:p.operations?.operation_code,description:p.notes||`Anticipo (${p.payment_method||"pago"})`})),
+      ...gpi.map(g=>{const amt=Number(g.client_paid_amount_usd??g.client_amount_usd??0);return{id:"g_"+g.id,date:g.client_paid_at||g.created_at,type:"gpi_cobro",amount:amt,op_code:g.operations?.operation_code,description:`Pago de gestión internacional${g.proveedor_name?` · ${g.proveedor_name}`:""}`};})
     ].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
     setTimeline(merged);
     if(Array.isArray(cl)&&cl[0])setBalance(Number(cl[0].account_balance_usd||0));
