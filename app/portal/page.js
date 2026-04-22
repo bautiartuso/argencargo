@@ -832,6 +832,100 @@ function QuotesPage({token,client}){
       </div>;})}</div>}
   </div>;
 }
+function PointsPage({token,client}){
+  const [catalog,setCatalog]=useState([]);
+  const [txs,setTxs]=useState([]);
+  const [pending,setPending]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [balance,setBalance]=useState(Number(client?.points_balance||0));
+  const [msg,setMsg]=useState("");
+  const [busy,setBusy]=useState(null);
+  const load=async()=>{
+    setLoading(true);
+    const [cat,tx,pd,cl]=await Promise.all([
+      dq("rewards_catalog",{token,filters:"?active=eq.true&select=*&order=sort_order.asc"}),
+      dq("points_transactions",{token,filters:`?client_id=eq.${client.id}&select=*&order=created_at.desc&limit=30`}),
+      dq("client_reward_redemptions",{token,filters:`?client_id=eq.${client.id}&status=eq.pending&select=*&order=redeemed_at.desc`}),
+      dq("clients",{token,filters:`?id=eq.${client.id}&select=points_balance`})
+    ]);
+    setCatalog(Array.isArray(cat)?cat:[]);
+    setTxs(Array.isArray(tx)?tx:[]);
+    setPending(Array.isArray(pd)?pd:[]);
+    if(Array.isArray(cl)&&cl[0])setBalance(Number(cl[0].points_balance||0));
+    setLoading(false);
+  };
+  useEffect(()=>{load();},[client?.id]);
+  const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),3500);};
+  const redeem=async(r)=>{
+    if(!confirm(`¿Canjear "${r.name}" por ${r.points_cost} puntos?\n\nBalance actual: ${balance} pts\nNuevo balance: ${balance-r.points_cost} pts\n\nEl canje queda pendiente hasta que Argencargo lo aplique a una de tus próximas operaciones.`))return;
+    setBusy(r.id);
+    const res=await dq("rpc/redeem_reward",{method:"POST",token,body:{p_reward_id:r.id,p_client_id:client.id}});
+    if(res?.ok){flash(`✓ Canjeaste "${r.name}". Te lo aplicamos en tu próxima operación.`);await load();}
+    else if(res?.error==="insufficient_points")flash("❌ No te alcanzan los puntos.");
+    else flash("❌ Error al canjear.");
+    setBusy(null);
+  };
+  const fmtDate=d=>{if(!d)return"—";try{return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}catch{return d;}};
+  const fmtDateTime=d=>{if(!d)return"—";try{return new Date(d).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});}catch{return d;}};
+  const expiringSoon=txs.filter(t=>t.type==="earn"&&t.expires_at&&new Date(t.expires_at)<new Date(Date.now()+30*86400000)&&new Date(t.expires_at)>new Date());
+  const txLabel={earn:"Ganados",redeem:"Canje",expire:"Expiraron",refund:"Devolución",adjust:"Ajuste"};
+  const txColor={earn:"#22c55e",redeem:"#60a5fa",expire:"#ef4444",refund:"#a78bfa",adjust:"#fbbf24"};
+  return <div>
+    <div style={{background:"rgba(255,255,255,0.04)",borderRadius:12,border:"1px solid rgba(255,255,255,0.1)",padding:"16px 20px",marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <div><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Mis puntos</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>Ganás puntos por cada kg aéreo y CBM marítimo que importes con nosotros.</p></div>
+    </div>
+    {msg&&<p style={{fontSize:13,color:"#22c55e",fontWeight:600,marginBottom:16,padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:8}}>{msg}</p>}
+
+    {/* Balance cards */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12,marginBottom:20}}>
+      <div style={{background:"linear-gradient(135deg,rgba(251,191,36,0.15),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:14,padding:"20px 22px"}}>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>Balance actual</p>
+        <p style={{fontSize:36,fontWeight:800,color:"#fbbf24",margin:"4px 0 0",lineHeight:1}}>{balance} <span style={{fontSize:14,fontWeight:600,color:"rgba(251,191,36,0.6)"}}>pts</span></p>
+      </div>
+      <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,padding:"20px 22px"}}>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>Canjes pendientes</p>
+        <p style={{fontSize:24,fontWeight:700,color:"#fff",margin:"4px 0 0"}}>{pending.length}</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{pending.length===0?"—":"se aplican en tu próxima op"}</p>
+      </div>
+      {expiringSoon.length>0&&<div style={{background:"rgba(239,68,68,0.08)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:14,padding:"20px 22px"}}>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(239,68,68,0.8)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>Expiran en 30 días</p>
+        <p style={{fontSize:24,fontWeight:700,color:"#ef4444",margin:"4px 0 0"}}>{expiringSoon.reduce((s,e)=>s+e.amount,0)} pts</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>Canjealos antes de que expiren</p>
+      </div>}
+    </div>
+
+    {/* Canjes pendientes */}
+    {pending.length>0&&<div style={{marginBottom:24}}>
+      <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Tus canjes pendientes</h3>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>{pending.map(p=><div key={p.id} style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <div><p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>{p.reward_name}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>Canjeaste {fmtDate(p.redeemed_at)} · {p.points_spent} pts · Expira {fmtDate(p.expires_at)}</p></div>
+        <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24"}}>PENDIENTE APLICAR</span>
+      </div>)}</div>
+    </div>}
+
+    {/* Catálogo */}
+    <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Catálogo de premios</h3>
+    {loading?<p style={{color:"rgba(255,255,255,0.4)",padding:"2rem 0",textAlign:"center"}}>Cargando...</p>:
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12,marginBottom:24}}>{catalog.map(r=>{
+      const canRedeem=balance>=r.points_cost;
+      return <div key={r.id} style={{background:"rgba(255,255,255,0.04)",border:`1.5px solid ${canRedeem?"rgba(96,165,250,0.25)":"rgba(255,255,255,0.06)"}`,borderRadius:14,padding:"18px 20px",display:"flex",flexDirection:"column",gap:10,opacity:canRedeem?1:0.55}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:28}}>{r.icon||"🎁"}</span><div><p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{r.name}</p><p style={{fontSize:11,color:IC,fontWeight:600,margin:"2px 0 0"}}>{r.points_cost} pts</p></div></div>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0,lineHeight:1.5,flex:1}}>{r.description}</p>
+        <button disabled={!canRedeem||busy===r.id} onClick={()=>redeem(r)} style={{padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",cursor:canRedeem?"pointer":"not-allowed",background:canRedeem?`linear-gradient(135deg,${B.accent},${B.primary})`:"rgba(255,255,255,0.06)",color:canRedeem?"#fff":"rgba(255,255,255,0.4)"}}>{busy===r.id?"Canjeando...":canRedeem?"Canjear":`Faltan ${r.points_cost-balance} pts`}</button>
+      </div>;})}</div>}
+
+    {/* Historial */}
+    <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"24px 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Historial</h3>
+    {txs.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Aún no tenés movimientos. Se acumulan al cerrar cada operación.</p>:
+    <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,overflow:"hidden"}}>{txs.map((t,i)=><div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:i<txs.length-1?"1px solid rgba(255,255,255,0.04)":"none",gap:12,flexWrap:"wrap"}}>
+      <div><p style={{fontSize:12,fontWeight:700,color:txColor[t.type]||"#fff",margin:0}}>{txLabel[t.type]||t.type}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{t.description||"—"}{t.expires_at&&t.type==="earn"?` · Expira ${fmtDate(t.expires_at)}`:""}</p></div>
+      <div style={{textAlign:"right"}}><p style={{fontSize:14,fontWeight:800,color:t.amount>0?"#22c55e":"#ef4444",margin:0}}>{t.amount>0?"+":""}{t.amount} pts</p><p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:"2px 0 0"}}>{fmtDateTime(t.created_at)}</p></div>
+    </div>)}</div>}
+
+    <p style={{fontSize:11,color:"rgba(255,255,255,0.35)",margin:"16px 0 0",textAlign:"center",fontStyle:"italic"}}>Ganás 1 pt por cada kg aéreo facturable · 50 pts por CBM marítimo · Expiran a 12 meses · 10 pts = USD 1 de descuento en flete</p>
+  </div>;
+}
+
 function ServicesPage({client}){
   const code=client?.client_code||"";const name=client?`${client.first_name}`:"";
   const services=[
@@ -955,7 +1049,8 @@ function Dashboard({profile,client,user,token,onLogout}){
     {page==="calculator"&&<CalculatorPage token={token} client={client}/>}
     {page==="services"&&<ServicesPage client={client}/>}
     {page==="quotes"&&<QuotesPage token={token} client={client}/>}
-    {!["imports","profile","rates","calculator","services","quotes"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.4)"}}>Sección en desarrollo</p></div>}
+    {page==="points"&&<PointsPage token={token} client={client}/>}
+    {!["imports","profile","rates","calculator","services","quotes","points"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.4)"}}>Sección en desarrollo</p></div>}
   </DashShell>;
 }
 export default function Page(){

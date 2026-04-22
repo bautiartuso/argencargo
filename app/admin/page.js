@@ -223,6 +223,30 @@ function NewOperation({token,clients,onBack,onCreated}){
 function OperationEditor({op:initOp,token,onBack,onDelete}){
   const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});  const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:""});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
+  const [pendingRedemptions,setPendingRedemptions]=useState([]);
+  const loadRedemptions=async()=>{if(!op.client_id)return;const r=await dq("client_reward_redemptions",{token,filters:`?client_id=eq.${op.client_id}&status=eq.pending&select=*&order=redeemed_at.asc`});setPendingRedemptions(Array.isArray(r)?r:[]);};
+  const applyRedemption=async(red)=>{
+    if(!confirm(`Aplicar "${red.reward_name}" a esta operación?\n\nSe va a descontar ${Number(red.value_usd||0).toFixed(2)} USD del flete y el canje quedará marcado como usado.`))return;
+    const r=await dq("rpc/apply_redemption_to_op",{method:"POST",token,body:{p_redemption_id:red.id,p_op_id:op.id}});
+    if(r?.ok){
+      // Restar del budget_flete (y del total) si aplica
+      if(red.reward_type==="flete_discount_usd"){
+        const newFlete=Math.max(0,Number(op.budget_flete||0)-Number(red.value_usd||0));
+        const newTotal=Math.max(0,Number(op.budget_total||0)-Number(red.value_usd||0));
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_flete:newFlete,budget_total:newTotal}});
+        setOp(p=>({...p,budget_flete:newFlete,budget_total:newTotal}));
+      }
+      flash(`✓ Canje aplicado: ${red.reward_name}`);
+      loadRedemptions();
+    } else flash(`❌ ${r?.error||"error"}`);
+  };
+  const cancelRedemption=async(red)=>{
+    if(!confirm(`¿Cancelar el canje "${red.reward_name}" y devolverle los ${red.points_spent} puntos al cliente?`))return;
+    const r=await dq("rpc/cancel_redemption",{method:"POST",token,body:{p_redemption_id:red.id}});
+    if(r?.ok){flash(`Canje cancelado — ${red.points_spent} pts devueltos al cliente`);loadRedemptions();}
+    else flash(`❌ ${r?.error||"error"}`);
+  };
+  useEffect(()=>{loadRedemptions();},[op.client_id]);
   const loadCCBalance=async()=>{const mvs=await dq("supplier_account_movements",{token,filters:"?select=type,amount_usd"});if(Array.isArray(mvs)){const bal=mvs.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):(-Number(m.amount_usd))),0);setCcBalance(bal);}};
   const load=async()=>{setLo(true);const [it,pk,ev,tf,cc]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
     if(op.client_id){const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*`});setOpClient(Array.isArray(cl)?cl[0]:null);const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);}
@@ -324,6 +348,13 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
     </div>
     <div style={{display:"flex",gap:8,marginBottom:16}}>{tabs.map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
+    {pendingRedemptions.length>0&&<div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:10}}>
+      <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>⭐ Canje de puntos pendiente{pendingRedemptions.length>1?"s":""}</p>
+      {pendingRedemptions.map(r=><div key={r.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"8px 0",borderTop:"1px solid rgba(251,191,36,0.15)",flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:200}}><p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>{r.reward_name}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Canjeado {new Date(r.redeemed_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})} · {r.points_spent} pts · {Number(r.value_usd).toFixed(2)} USD</p></div>
+        <div style={{display:"flex",gap:6}}><Btn small onClick={()=>applyRedemption(r)}>Aplicar a esta op</Btn><Btn small variant="danger" onClick={()=>cancelRedemption(r)}>Cancelar</Btn></div>
+      </div>)}
+    </div>}
     {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:<>
 
     {tab==="general"&&<>
@@ -1046,7 +1077,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   const deleteClient=async()=>{if(!confirm(`¿Estás seguro de eliminar a ${cl.first_name} ${cl.last_name}? Esta acción no se puede deshacer.`))return;await dq("clients",{method:"DELETE",token,filters:`?id=eq.${cl.id}`});onDelete();};
   const tabs=[{k:"info",l:"Info"},{k:"ops",l:`Operaciones (${ops.length})`},{k:"tariffs",l:"Tarifas"}];
   return <div>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}><div style={{display:"flex",alignItems:"center",gap:12}}><button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← VOLVER</button><h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>{cl.first_name} {cl.last_name}</h2>{cl.loyalty_level==="plus"&&<span title={cl.loyalty_achieved_at?`Plus desde ${new Date(cl.loyalty_achieved_at).toLocaleDateString("es-AR")}`:"Importador Plus"} style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:6,background:"linear-gradient(135deg,#f59e0b,#fbbf24)",color:"#fff",letterSpacing:"0.08em"}}>⭐ IMPORTADOR PLUS</span>}{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div><Btn onClick={deleteClient} variant="danger" small>Eliminar cliente</Btn></div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}><div style={{display:"flex",alignItems:"center",gap:12}}><button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← VOLVER</button><h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>{cl.first_name} {cl.last_name}</h2>{cl.loyalty_level==="plus"&&<span title={cl.loyalty_achieved_at?`Plus desde ${new Date(cl.loyalty_achieved_at).toLocaleDateString("es-AR")}`:"Importador Plus"} style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:6,background:"linear-gradient(135deg,#f59e0b,#fbbf24)",color:"#fff",letterSpacing:"0.08em"}}>⭐ IMPORTADOR PLUS</span>}{Number(cl.points_balance||0)>0&&<span title="Puntos Argencargo" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:6,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)",letterSpacing:"0.05em"}}>⭐ {cl.points_balance} PTS</span>}{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div><Btn onClick={deleteClient} variant="danger" small>Eliminar cliente</Btn></div>
     <div style={{display:"flex",gap:8,marginBottom:16}}>{tabs.map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
     {tab==="info"&&<Card title="Datos del Cliente" actions={<Btn onClick={saveClient} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
