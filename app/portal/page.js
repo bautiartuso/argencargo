@@ -7,6 +7,9 @@ const LOGO=`${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
 const B={primary:"#1B4F8A",accent:"#4A90D9"};
 const DARK_BG="linear-gradient(160deg,#0F1E3D 0%,#152849 50%,#0F1E3D 100%)";
 const GOLD="#B8956A", GOLD_LIGHT="#E8D098", GOLD_DEEP="#A68456";
+const GOLD_GRADIENT="linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 100%)";
+const GOLD_GLOW="0 0 20px rgba(184,149,106,0.25)";
+const GOLD_GLOW_STRONG="0 0 28px rgba(184,149,106,0.4)";
 const IC=GOLD_LIGHT; // IC (accent) alias al oro claro
 // Tier system: Silver / Gold / Diamond
 const TIERS={
@@ -16,9 +19,6 @@ const TIERS={
   diamond:{label:"Diamond",min:1000,next:null,color:"#B9F2FF",light:"#E0F7FF",gradient:"linear-gradient(135deg,#6BC5E0,#B9F2FF,#6BC5E0)",glow:"0 0 22px rgba(185,242,255,0.35)",bonus:15,discount:50,icon:"💠"},
 };
 const getTierInfo=(t)=>TIERS[t||"standard"]||TIERS.standard;
-const GOLD_GRADIENT="linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 100%)";
-const GOLD_GLOW="0 0 20px rgba(184,149,106,0.25)";
-const GOLD_GLOW_STRONG="0 0 28px rgba(184,149,106,0.4)";
 const AC_KEYFRAMES=`@keyframes ac_pulse_gold{0%{box-shadow:0 0 0 0 rgba(184,149,106,.55)}70%{box-shadow:0 0 0 10px rgba(184,149,106,0)}100%{box-shadow:0 0 0 0 rgba(184,149,106,0)}}@keyframes ac_shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}@keyframes ac_fade_in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}`;
 const sf=async(p,o={})=>{const r=await fetch(`${SB_URL}${p}`,{...o,headers:{apikey:SB_KEY,"Content-Type":"application/json",...(o.headers||{})}});return r.json();};
 const ac=async(e,b)=>sf(`/auth/v1/${e}`,{method:"POST",body:JSON.stringify(b)});
