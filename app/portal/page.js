@@ -236,12 +236,13 @@ function OperationDetail({op,token,onBack}){
   useEffect(()=>{loadAll();let last=Date.now();const onFocus=()=>{if(document.visibilityState==="visible"&&Date.now()-last>5000){last=Date.now();loadAll();}};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[op.id,token]);
   const st=SM[op.status]||{l:op.status,c:"#999"};const isA=op.channel?.includes("aereo");
   return <div>
-    <button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:20,padding:0}}>← VOLVER</button>
-    <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.5rem",marginBottom:16}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-        <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"monospace",padding:"5px 12px",background:"rgba(255,255,255,0.08)",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)"}}>{op.operation_code}</span>
-        <span style={{fontSize:12,fontWeight:700,padding:"5px 14px",borderRadius:6,color:st.c,border:`1px solid ${st.c}33`,background:`${st.c}15`}}>● {st.l}</span>
-        {op.eta&&op.status!=="entregada"&&<span style={{fontSize:12,fontWeight:600,padding:"5px 12px",borderRadius:6,color:"rgba(255,255,255,0.6)",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.06)"}}>ETA: {formatDate(op.eta)}</span>}
+    <button onClick={onBack} style={{fontSize:12,color:"rgba(255,255,255,0.55)",background:"transparent",border:"1px solid rgba(255,255,255,0.08)",cursor:"pointer",fontWeight:600,marginBottom:20,padding:"6px 12px",borderRadius:8,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.color=GOLD_LIGHT;e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";}} onMouseLeave={e=>{e.currentTarget.style.color="rgba(255,255,255,0.55)";e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";}}>← Volver</button>
+    <div style={{background:"rgba(255,255,255,0.025)",borderRadius:16,border:"1px solid rgba(255,255,255,0.06)",padding:"1.75rem 2rem",marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+        <span style={{fontSize:18,fontWeight:700,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{op.operation_code}</span>
+        <span style={{width:1,height:16,background:"rgba(255,255,255,0.12)"}}/>
+        {(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,border:`1px solid ${st.c}40`,background:`${st.c}14`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px ${st.c}`:"none"}}/>{st.l}</span>;})()}
+        {op.eta&&op.status!=="entregada"&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.55)",letterSpacing:"0.02em",marginLeft:"auto"}}>ETA · <span style={{color:"#fff",fontWeight:600}}>{formatDate(op.eta)}</span></span>}
       </div>
       <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 12px",textTransform:"uppercase"}}>{op.description}</h2>
       <OpProgress status={op.status} isAereo={isA}/>
@@ -442,7 +443,7 @@ function RatesPage({token,client}){
   const getRate=(t)=>{const ov=overrides.find(o=>o.tariff_id===t.id);return ov?{rate:ov.custom_rate,promo:true,base:t.rate}:{rate:t.rate,promo:false,base:t.rate};};
   const hideRanges=svc=>svc==="maritimo_b";
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
-  return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 24px",letterSpacing:"-0.02em"}}>TARIFAS</h2>
+  return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 24px",letterSpacing:"-0.02em"}}>Tarifas</h2>
     {SERVICES_C.map(svc=>{const rates=tariffs.filter(t=>t.service_key===svc.key&&t.type==="rate");const specials=tariffs.filter(t=>t.service_key===svc.key&&t.type==="special");if(!rates.length)return null;
     return <div key={svc.key} style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>{svc.label}</h3>{svc.info&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",padding:"4px 10px",background:"rgba(255,255,255,0.028)",borderRadius:6}}>{svc.info}</span>}</div>
@@ -579,7 +580,7 @@ function CalculatorPage({token,client}){
 
   const steps=origin==="USA"?[{n:1,l:"Productos"},{n:2,l:"Packing List"},{n:3,l:"Entrega"},{n:4,l:"Resultados"}]:[{n:1,l:"Productos"},{n:2,l:"Packing List"},{n:3,l:"Entrega"},{n:4,l:"Resultados"}];
 
-  return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 6px",letterSpacing:"-0.02em"}}>CALCULADORA DE IMPORTACIÓN</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"0 0 24px"}}>Calculá el costo total de tu importación</p>
+  return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 6px",letterSpacing:"-0.02em"}}>Calculadora de importación</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"0 0 24px"}}>Calculá el costo total de tu importación</p>
     {step>0&&<div className="calc-steps" style={{display:"flex",gap:8,marginBottom:20,alignItems:"center"}}><div className="calc-origin-flag" style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 12px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:8,marginRight:8,flexShrink:0}}><span style={{fontSize:14}}>{origin==="China"?"\ud83c\udde8\ud83c\uddf3":"\ud83c\uddfa\ud83c\uddf8"}</span><span style={{fontSize:12,fontWeight:600,color:IC}}>{origin}</span></div>{steps.map(s=><div key={s.n} style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}><div className="step-circle" style={{width:26,height:26,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,minWidth:26,background:step>=s.n?"rgba(184,149,106,0.2)":"rgba(255,255,255,0.028)",color:step>=s.n?IC:"rgba(255,255,255,0.2)",border:`1.5px solid ${step>=s.n?IC:"rgba(255,255,255,0.08)"}`}}>{s.n}</div><span className="step-label" style={{fontSize:12,fontWeight:600,color:step>=s.n?"#fff":"rgba(255,255,255,0.45)",whiteSpace:"nowrap"}}>{s.l}</span>{s.n<steps.length&&<span style={{color:"rgba(255,255,255,0.1)",margin:"0 4px"}}>—</span>}</div>)}</div>}
 
     {step===0&&<div className="origin-picker" style={{display:"flex",gap:24,justifyContent:"center",padding:"2rem 0"}}>{[{k:"China",flag:"\ud83c\udde8\ud83c\uddf3"},{k:"USA",flag:"\ud83c\uddfa\ud83c\uddf8"}].map(c=><div key={c.k} onClick={()=>{setOrigin(c.k);setStep(1);}} style={{width:200,padding:"2.5rem 1.5rem",background:"rgba(255,255,255,0.028)",border:"1.5px solid rgba(255,255,255,0.08)",borderRadius:16,cursor:"pointer",textAlign:"center"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=IC;e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.background="rgba(255,255,255,0.028)";}}><p style={{fontSize:52,margin:"0 0 16px"}}>{c.flag}</p><p style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{c.k}</p></div>)}</div>}
@@ -826,7 +827,7 @@ function QuotesPage({token,client}){
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"3rem 0"}}>Cargando...</p>;
   return <div>
     <div style={{marginBottom:24}}>
-      <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>Mis Cotizaciones ({quotes.length})</h2>
+      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 6px",letterSpacing:"-0.02em"}}>Mis cotizaciones <span style={{color:GOLD_LIGHT,fontWeight:600}}>({quotes.length})</span></h2>
       <p style={{fontSize:14,color:"rgba(255,255,255,0.4)",margin:0}}>Historial de cotizaciones realizadas</p>
     </div>
     {quotes.length===0?<div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px dashed rgba(255,255,255,0.1)",padding:"3rem 2rem",textAlign:"center"}}>
@@ -971,7 +972,7 @@ function ServicesPage({client}){
   const makeWA=(svc)=>encodeURIComponent(`Hola Bautista! Soy ${name} (${code}).\n\n${svc.cta}.\n\n¿Me podrías dar más información sobre el servicio de *${svc.title}*?\n\nGracias!`);
   return <div>
     <div style={{marginBottom:24}}>
-      <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>Nuestros Servicios</h2>
+      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 6px",letterSpacing:"-0.02em"}}>Nuestros servicios</h2>
       <p style={{fontSize:14,color:"rgba(255,255,255,0.4)",margin:0}}>Soluciones integrales para tu comercio exterior</p>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}} className="grid-2">
