@@ -6,8 +6,15 @@ const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 const LOGO=`${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
 const B={primary:"#1B4F8A",accent:"#4A90D9"};
-const DARK_BG="linear-gradient(160deg,#0f1b30 0%,#162441 50%,#0f1b30 100%)";
+const DARK_BG="linear-gradient(160deg,#0A1628 0%,#0F1F3A 50%,#0A1628 100%)";
 const IC="#60a5fa";
+// Dorado secundario (accent metálico)
+const GOLD="#B8956A", GOLD_LIGHT="#E8D098", GOLD_DEEP="#A68456";
+const GOLD_GRADIENT="linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 100%)";
+const GOLD_GLOW="0 0 20px rgba(184,149,106,0.25)";
+const GOLD_GLOW_STRONG="0 0 28px rgba(184,149,106,0.4)";
+// Keyframes globales (pulsing dots, shimmer)
+const AC_KEYFRAMES=`@keyframes ac_pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}@keyframes ac_pulse_gold{0%{box-shadow:0 0 0 0 rgba(184,149,106,.55)}70%{box-shadow:0 0 0 10px rgba(184,149,106,0)}100%{box-shadow:0 0 0 0 rgba(184,149,106,0)}}@keyframes ac_shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}@keyframes ac_fade_in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}`;
 const sf=async(p,o={})=>{const r=await fetch(`${SB_URL}${p}`,{...o,headers:{apikey:SB_KEY,"Content-Type":"application/json",...(o.headers||{})}});const txt=await r.text();try{return JSON.parse(txt);}catch{return null;}};
 const ac=async(e,b)=>sf(`/auth/v1/${e}`,{method:"POST",body:JSON.stringify(b)});
 const saveSession=(d)=>{try{localStorage.setItem("ac_admin",JSON.stringify(d));}catch(e){}};
@@ -57,13 +64,35 @@ const SERVICES=[{key:"aereo_a_china",label:"Aéreo A — China",unit:"kg",info:"
 const formatDate=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return new Date(y,m-1,day).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});};
 const formatDateInput=(d)=>{if(!d)return"";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/))return s;return new Date(d).toISOString().split("T")[0];};
 
-function Inp({label,type="text",value,onChange,placeholder,small,step}){const isNum=type==="number";return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</label><input type={isNum?"text":type} inputMode={isNum?"decimal":undefined} value={value||""} onChange={e=>{if(isNum){const v=e.target.value;if(v===""||/^-?\d*\.?\d*$/.test(v))onChange(v);}else onChange(e.target.value);}} placeholder={placeholder} style={{width:"100%",padding:small?"8px 10px":"10px 12px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}} onFocus={e=>{e.target.style.borderColor=IC;}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.1)";}}/></div>;}
+function Inp({label,type="text",value,onChange,placeholder,small,step}){const isNum=type==="number";return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label><input type={isNum?"text":type} inputMode={isNum?"decimal":undefined} value={value||""} onChange={e=>{if(isNum){const v=e.target.value;if(v===""||/^-?\d*\.?\d*$/.test(v))onChange(v);}else onChange(e.target.value);}} placeholder={placeholder} style={{width:"100%",padding:small?"8px 10px":"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",transition:"all 180ms"}} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow=`0 0 0 3px rgba(184,149,106,0.18)`;e.target.style.background="rgba(255,255,255,0.07)";}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";e.target.style.boxShadow="none";e.target.style.background="rgba(255,255,255,0.04)";}}/></div>;}
 
-function Sel({label,value,onChange,options,ph}){return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</label><select value={value||""} onChange={e=>onChange(e.target.value)} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:value?"#fff":"rgba(255,255,255,0.45)",outline:"none"}}>{ph&&<option value="" style={{background:"#142038"}}>{ph}</option>}{options.map(o=><option key={typeof o==="string"?o:o.value} value={typeof o==="string"?o:o.value} style={{background:"#142038",color:"#fff"}}>{typeof o==="string"?o:o.label}</option>)}</select></div>;}
+function Sel({label,value,onChange,options,ph}){return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label><select value={value||""} onChange={e=>onChange(e.target.value)} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow=`0 0 0 3px rgba(184,149,106,0.18)`;}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";e.target.style.boxShadow="none";}} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:value?"#fff":"rgba(255,255,255,0.45)",outline:"none",transition:"all 180ms",cursor:"pointer"}}>{ph&&<option value="" style={{background:"#0F1F3A"}}>{ph}</option>}{options.map(o=><option key={typeof o==="string"?o:o.value} value={typeof o==="string"?o:o.value} style={{background:"#0F1F3A",color:"#fff"}}>{typeof o==="string"?o:o.label}</option>)}</select></div>;}
 
-function Btn({children,onClick,disabled,variant="primary",small}){const styles={primary:{background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff",border:"none"},secondary:{background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)",border:"1.5px solid rgba(255,255,255,0.12)"},danger:{background:"rgba(255,80,80,0.12)",color:"#ff6b6b",border:"1px solid rgba(255,80,80,0.25)"}};const s=styles[variant]||styles.primary;return <button onClick={onClick} disabled={disabled} style={{padding:small?"6px 12px":"10px 18px",fontSize:small?11:13,fontWeight:600,borderRadius:8,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.5:1,...s}}>{children}</button>;}
+function Btn({children,onClick,disabled,variant="primary",small,title,fullWidth}){
+  const [hover,setHover]=useState(false);
+  const styles={
+    primary:{background:hover?"#fff":"rgba(255,255,255,0.95)",color:"#0A1628",border:"1px solid rgba(255,255,255,0.95)",boxShadow:hover?"0 6px 18px rgba(0,0,0,0.25)":"0 2px 6px rgba(0,0,0,0.15)"},
+    gold:{background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:hover?GOLD_GLOW_STRONG:GOLD_GLOW,backgroundSize:"200% 100%",backgroundPosition:hover?"100% 0":"0 0"},
+    secondary:{background:hover?"rgba(255,255,255,0.08)":"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.85)",border:`1px solid ${hover?"rgba(184,149,106,0.4)":"rgba(255,255,255,0.14)"}`},
+    ghost:{background:hover?"rgba(255,255,255,0.06)":"transparent",color:"rgba(255,255,255,0.75)",border:"1px solid transparent"},
+    danger:{background:hover?"rgba(255,80,80,0.2)":"rgba(255,80,80,0.12)",color:"#ff6b6b",border:"1px solid rgba(255,80,80,0.3)"},
+  };
+  const s=styles[variant]||styles.primary;
+  return <button title={title} onClick={onClick} disabled={disabled}
+    onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+    style={{padding:small?"6px 12px":"9px 18px",fontSize:small?11:13,fontWeight:600,borderRadius:10,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.5:1,transition:"all 180ms cubic-bezier(0.4,0,0.2,1)",letterSpacing:"0.01em",display:fullWidth?"flex":"inline-flex",width:fullWidth?"100%":undefined,alignItems:"center",justifyContent:"center",gap:6,transform:hover&&!disabled?"translateY(-1px)":"none",...s}}>{children}</button>;
+}
 
-function Card({children,title,actions}){return <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.25rem 1.5rem",marginBottom:16}}>{(title||actions)&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>{title&&<h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{title}</h3>}{actions&&<div style={{display:"flex",gap:8}}>{actions}</div>}</div>}{children}</div>;}
+function Card({children,title,actions,accent}){
+  return <div style={{background:"rgba(255,255,255,0.04)",backdropFilter:"blur(8px)",borderRadius:14,border:`1px solid ${accent?"rgba(184,149,106,0.35)":"rgba(255,255,255,0.08)"}`,padding:"1.25rem 1.5rem",marginBottom:16,boxShadow:accent?GOLD_GLOW:"0 2px 8px rgba(0,0,0,0.12)",transition:"border-color 180ms, box-shadow 180ms",position:"relative",overflow:"hidden"}}>
+    {accent&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT}}/>}
+    {(title||actions)&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:12}}>
+      {title&&<h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.95)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>{title}</h3>}
+      {actions&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{actions}</div>}
+    </div>}
+    {children}
+  </div>;
+}
 
 function NotifBell({token}){
   const [open,setOpen]=useState(false);const [notifs,setNotifs]=useState([]);const [unread,setUnread]=useState(0);
@@ -78,7 +107,26 @@ function NotifBell({token}){
 function AdminLogin({onLogin}){
   const [email,setEmail]=useState("");const [pw,setPw]=useState("");const [err,setErr]=useState("");const [lo,setLo]=useState(false);
   const doLogin=async()=>{setLo(true);setErr("");try{const r=await ac("token?grant_type=password",{email,password:pw});if(r.error){setErr(r.error_description||"Credenciales inválidas");setLo(false);return;}const p=await dq("profiles",{token:r.access_token,filters:`?id=eq.${r.user.id}&select=*`});const prof=Array.isArray(p)?p[0]:null;if(!prof||prof.role!=="admin"){setErr("Acceso denegado. Solo administradores.");setLo(false);return;}const ss={token:r.access_token,refresh_token:r.refresh_token,user:r.user,profile:prof};saveSession(ss);onLogin(ss);}catch{setErr("Error de conexión.");}setLo(false);};
-  return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG,fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif"}}><div style={{maxWidth:400,width:"100%",padding:"0 1rem"}}><div style={{textAlign:"center",marginBottom:28}}><img src={LOGO} alt="AC" style={{width:200,height:"auto",filter:"drop-shadow(0 0 20px rgba(74,144,217,0.4))"}}/><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"10px 0 0"}}>Panel de Administración</p></div><div style={{background:"rgba(8,18,35,0.85)",backdropFilter:"blur(24px)",borderRadius:20,padding:"2rem 1.75rem",border:"1px solid rgba(255,255,255,0.06)"}}><Inp label="Email" type="email" value={email} onChange={setEmail} placeholder="admin@argencargo.com"/><Inp label="Contraseña" type="password" value={pw} onChange={setPw} placeholder="••••••••"/>{err&&<p style={{fontSize:12,color:"#ff6b6b",margin:"0 0 12px",padding:"8px 12px",background:"rgba(255,80,80,0.1)",borderRadius:8}}>{err}</p>}<Btn onClick={doLogin} disabled={lo}>{lo?"Ingresando...":"Ingresar →"}</Btn></div></div></div>;
+  return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG,fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",position:"relative",overflow:"hidden"}}>
+    {/* Accent glows decorativos */}
+    <div style={{position:"absolute",top:"-20%",right:"-10%",width:480,height:480,background:"radial-gradient(circle, rgba(184,149,106,0.12) 0%, transparent 70%)",pointerEvents:"none"}}/>
+    <div style={{position:"absolute",bottom:"-20%",left:"-10%",width:520,height:520,background:"radial-gradient(circle, rgba(74,144,217,0.10) 0%, transparent 70%)",pointerEvents:"none"}}/>
+    <div style={{maxWidth:400,width:"100%",padding:"0 1rem",position:"relative",zIndex:1,animation:"ac_fade_in 400ms ease-out"}}>
+      <div style={{textAlign:"center",marginBottom:32}}>
+        <img src={LOGO} alt="AC" style={{width:210,height:"auto",filter:"drop-shadow(0 4px 24px rgba(184,149,106,0.28))"}}/>
+        <p style={{fontSize:11,color:GOLD_LIGHT,margin:"14px 0 0",letterSpacing:"0.3em",textTransform:"uppercase",fontWeight:600}}>Panel de Administración</p>
+      </div>
+      <div style={{background:"rgba(10,22,40,0.7)",backdropFilter:"blur(28px)",borderRadius:16,padding:"2rem 1.75rem",border:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 20px 50px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT,opacity:0.85}}/>
+        <Inp label="Email" type="email" value={email} onChange={setEmail} placeholder="admin@argencargo.com"/>
+        <Inp label="Contraseña" type="password" value={pw} onChange={setPw} placeholder="••••••••"/>
+        {err&&<p style={{fontSize:12,color:"#ff6b6b",margin:"0 0 12px",padding:"8px 12px",background:"rgba(255,80,80,0.1)",borderRadius:8,border:"1px solid rgba(255,80,80,0.2)"}}>{err}</p>}
+        <div style={{marginTop:6}}>
+          <Btn variant="gold" fullWidth onClick={doLogin} disabled={lo}>{lo?"Ingresando...":"Ingresar →"}</Btn>
+        </div>
+      </div>
+    </div>
+  </div>;
 }
 
 function OperationsList({token,onSelect,onNew}){
@@ -150,7 +198,7 @@ function OperationsList({token,onSelect,onNew}){
           alert(`Sincronización completa.\n\n✓ Actualizadas: ${updated}\n⊘ Sin productos (omitidas): ${skipped}${errors>0?`\n✗ Errores: ${errors}`:""}`);
           const[o2]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"})]);setOps(Array.isArray(o2)?o2:[]);
         }}>🔄 Sincronizar presupuestos</Btn>
-        <Btn onClick={onNew}>+ Nueva operación</Btn>
+        <Btn variant="gold" onClick={onNew}>+ Nueva operación</Btn>
       </div>
     </div>
     <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
@@ -176,7 +224,7 @@ function OperationsList({token,onSelect,onNew}){
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}>{cn}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{op.description||"—"}</td>
           <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}><span style={{fontSize:11,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{CM[op.channel]||op.channel}</span></td>
-          <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`,whiteSpace:"nowrap",display:"inline-block"}}>● {st.l}</span></td>
+          <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}>{(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px ${st.c}`:"none"}}/>{st.l}</span>;})()}</td>
           {showGanancia?<td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>{formatDate(op.closed_at)}</td>:<td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>{formatDate(op.eta)}</td>}
           {showGanancia&&<td style={{padding:"12px 14px",fontWeight:700,color:gan>0?"#22c55e":gan<0?"#ff6b6b":"rgba(255,255,255,0.4)",whiteSpace:"nowrap"}}>{(()=>{
             const realIng=op.is_collected?Number(op.collected_amount||op.budget_total||0):Number(op.budget_total||0);
@@ -3587,6 +3635,6 @@ export default function AdminPage(){
   useEffect(()=>{const s=loadSession();if(s?.token&&s?.profile?.role==="admin"){setSession(s);}setRestoring(false);},[]);
   const logout=()=>{clearSession();setSession(null);};
   if(restoring)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG}}><p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p></div>;
-  if(!session)return <AdminLogin onLogin={s=>{setSession(s);}}/>;
-  return <AdminDashboard session={session} onLogout={logout}/>;
+  if(!session)return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><AdminLogin onLogin={s=>{setSession(s);}}/></>;
+  return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><AdminDashboard session={session} onLogout={logout}/></>;
 }

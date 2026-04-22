@@ -5,7 +5,12 @@ const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 const LOGO=`${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
 const IC="#60a5fa";
-const BG="linear-gradient(160deg,#0f1b30 0%,#162441 50%,#0f1b30 100%)";
+const BG="linear-gradient(160deg,#0A1628 0%,#0F1F3A 50%,#0A1628 100%)";
+const GOLD="#B8956A", GOLD_LIGHT="#E8D098", GOLD_DEEP="#A68456";
+const GOLD_GRADIENT="linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 100%)";
+const GOLD_GLOW="0 0 20px rgba(184,149,106,0.25)";
+const GOLD_GLOW_STRONG="0 0 28px rgba(184,149,106,0.4)";
+const AC_KEYFRAMES=`@keyframes ac_fade_in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}`;
 const sf=async(p,o={})=>{const r=await fetch(`${SB_URL}${p}`,{...o,headers:{apikey:SB_KEY,"Content-Type":"application/json",...(o.headers||{})}});return {status:r.status,body:await r.json().catch(()=>null)};};
 const sfJson=async(p,o={})=>{const r=await sf(p,o);return r.body;};
 const ac=async(e,b)=>sfJson(`/auth/v1/${e}`,{method:"POST",body:JSON.stringify(b)});
@@ -244,14 +249,20 @@ const I18N={
   }
 };
 
-function Inp({label,type="text",value,onChange,placeholder,req}){return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label><input type={type} value={value||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}} onFocus={e=>{e.target.style.borderColor=IC;}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";}}/></div>;}
+function Inp({label,type="text",value,onChange,placeholder,req}){return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label><input type={type} value={value||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",transition:"all 180ms"}} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";e.target.style.background="rgba(255,255,255,0.07)";}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";e.target.style.boxShadow="none";e.target.style.background="rgba(255,255,255,0.04)";}}/></div>;}
 
-function Btn({children,onClick,disabled,variant="primary",type="button"}){const bg=variant==="secondary"?"rgba(255,255,255,0.06)":`linear-gradient(135deg,${B_ACCENT},${B_PRIMARY})`;return <button type={type} onClick={onClick} disabled={disabled} style={{width:"100%",padding:"13px",fontSize:14,fontWeight:700,border:variant==="secondary"?"1.5px solid rgba(255,255,255,0.12)":"none",borderRadius:10,cursor:disabled?"not-allowed":"pointer",background:disabled?"rgba(255,255,255,0.06)":bg,color:disabled?"rgba(255,255,255,0.4)":"#fff",opacity:disabled?0.6:1}}>{children}</button>;}
-function Card({title,children}){return <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.25rem 1.5rem",marginBottom:14}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{title}</h3>{children}</div>;}
+function Btn({children,onClick,disabled,variant="primary",type="button"}){
+  const [h,setH]=useState(false);
+  const isGold=variant==="primary"&&!disabled;
+  const isSec=variant==="secondary";
+  const bg=disabled?"rgba(255,255,255,0.06)":(isSec?(h?"rgba(255,255,255,0.08)":"rgba(255,255,255,0.04)"):(isGold?GOLD_GRADIENT:`linear-gradient(135deg,${B_ACCENT},${B_PRIMARY})`));
+  return <button type={type} onClick={onClick} disabled={disabled} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{width:"100%",padding:"13px",fontSize:14,fontWeight:700,border:isSec?`1px solid ${h?"rgba(184,149,106,0.4)":"rgba(255,255,255,0.14)"}`:(isGold?`1px solid ${GOLD_DEEP}`:"none"),borderRadius:10,cursor:disabled?"not-allowed":"pointer",background:bg,color:disabled?"rgba(255,255,255,0.4)":(isSec?"rgba(255,255,255,0.85)":(isGold?"#0A1628":"#fff")),opacity:disabled?0.6:1,letterSpacing:"0.02em",transition:"all 180ms cubic-bezier(0.4,0,0.2,1)",boxShadow:disabled?"none":(isGold?(h?GOLD_GLOW_STRONG:GOLD_GLOW):"none"),transform:h&&!disabled?"translateY(-1px)":"none",backgroundSize:isGold?"200% 100%":undefined,backgroundPosition:isGold?(h?"100% 0":"0 0"):undefined}}>{children}</button>;
+}
+function Card({title,children,accent}){return <div style={{background:"rgba(255,255,255,0.04)",backdropFilter:"blur(8px)",borderRadius:14,border:`1px solid ${accent?"rgba(184,149,106,0.35)":"rgba(255,255,255,0.08)"}`,padding:"1.25rem 1.5rem",marginBottom:14,boxShadow:accent?GOLD_GLOW:"0 2px 8px rgba(0,0,0,0.12)",position:"relative",overflow:"hidden"}}>{accent&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT}}/>}<h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.95)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{title}</h3>{children}</div>;}
 
 const B_PRIMARY="#1B4F8A",B_ACCENT="#4A90D9";
 
-function LangToggle({lang,setLang}){return <div style={{display:"inline-flex",gap:4,background:"rgba(255,255,255,0.06)",borderRadius:8,padding:3}}>{["es","zh"].map(l=><button key={l} onClick={()=>setLang(l)} style={{padding:"5px 12px",fontSize:12,fontWeight:700,border:"none",borderRadius:6,cursor:"pointer",background:lang===l?IC:"transparent",color:lang===l?"#fff":"rgba(255,255,255,0.5)"}}>{l==="es"?"🇦🇷 ES":"🇨🇳 中文"}</button>)}</div>;}
+function LangToggle({lang,setLang}){return <div style={{display:"inline-flex",gap:4,background:"rgba(255,255,255,0.04)",borderRadius:8,padding:3,border:"1px solid rgba(255,255,255,0.08)"}}>{["es","zh"].map(l=><button key={l} onClick={()=>setLang(l)} style={{padding:"5px 12px",fontSize:12,fontWeight:700,border:"none",borderRadius:6,cursor:"pointer",background:lang===l?GOLD_GRADIENT:"transparent",color:lang===l?"#0A1628":"rgba(255,255,255,0.55)",transition:"all 180ms",boxShadow:lang===l?GOLD_GLOW:"none"}}>{l==="es"?"🇦🇷 ES":"🇨🇳 中文"}</button>)}</div>;}
 
 export default function AgentePortal(){
   const [session,setSession]=useState(null);
@@ -315,13 +326,17 @@ function AuthScreen({onLogin,lang,setLang,t}){
       setErr(r.error_description||r.msg||r.message||t.err_generic);
     }
     setLo(false);};
-  return <div style={{minHeight:"100vh",background:BG,display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem 1rem",fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif"}}>
-    <div style={{maxWidth:420,width:"100%"}}>
+  return <div style={{minHeight:"100vh",background:BG,display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem 1rem",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",position:"relative",overflow:"hidden"}}>
+    <style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/>
+    <div style={{position:"absolute",top:"-15%",right:"-8%",width:500,height:500,background:"radial-gradient(circle, rgba(184,149,106,0.14) 0%, transparent 70%)",pointerEvents:"none"}}/>
+    <div style={{position:"absolute",bottom:"-15%",left:"-8%",width:540,height:540,background:"radial-gradient(circle, rgba(74,144,217,0.10) 0%, transparent 70%)",pointerEvents:"none"}}/>
+    <div style={{maxWidth:420,width:"100%",position:"relative",zIndex:1,animation:"ac_fade_in 400ms ease-out"}}>
       <div style={{textAlign:"center",marginBottom:24}}>
-        <img src={LOGO} alt="AC" style={{width:200,height:"auto"}}/>
+        <img src={LOGO} alt="AC" style={{width:210,height:"auto",filter:"drop-shadow(0 4px 24px rgba(184,149,106,0.28))"}}/>
       </div>
       <div style={{textAlign:"center",marginBottom:18}}><LangToggle lang={lang} setLang={setLang}/></div>
-      <div style={{background:"rgba(8,18,35,0.85)",backdropFilter:"blur(24px)",borderRadius:20,padding:"2rem 1.75rem",border:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}}>
+      <div style={{background:"rgba(10,22,40,0.72)",backdropFilter:"blur(28px)",borderRadius:16,padding:"2rem 1.75rem",border:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 20px 50px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT,opacity:0.85}}/>
         <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 6px",textAlign:"center"}}>{t.login_title}</h2>
         <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 22px",textAlign:"center"}}>{t.login_subtitle}</p>
         {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
