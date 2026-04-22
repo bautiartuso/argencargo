@@ -143,8 +143,20 @@ function OperationsList({token,onSelect,onNew}){
   // Peso por estado: mayor valor = más cerca de entrega (aparece arriba)
   const STATUS_WEIGHT={entregada:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
   useEffect(()=>{(async()=>{const [o,pm,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd"})]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setLo(false);})();},[token]);
-  // Saldo pendiente del cliente para operación activa
-  const calcSaldo=(o)=>{const bt=Number(o.budget_total||0);if(bt<=0)return null;const cliPaid=Number(cliPmtsByOp[o.id]||0);const ant=Number(o.total_anticipos||0);const saldo=Math.max(0,bt-cliPaid-ant);return saldo;};
+  // Saldo pendiente del cliente — misma fórmula que el portal del cliente.
+  // budget_total ya tiene los anticipos descontados (son parte del presupuesto original).
+  // cliPaid = lo que el cliente ya pagó efectivamente (operation_client_payments).
+  // pmtTot = gestión de pagos (payment_management) — si excede los anticipos, cliente debe la diferencia extra.
+  const calcSaldo=(o)=>{
+    const bt=Number(o.budget_total||0);
+    if(bt<=0)return null;
+    const cliPaid=Number(cliPmtsByOp[o.id]||0);
+    const ant=Number(o.total_anticipos||0);
+    const pmts=pmtsByOp[o.id]||[];
+    const pmtTot=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
+    const saldo=Math.max(0,(bt-cliPaid)+Math.max(0,pmtTot-ant));
+    return saldo;
+  };
   const toggleStatus=(s)=>setFStatuses(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
   const getOrigin=(op)=>op.origin||"China";
   const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannel&&o.channel!==fChannel)return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
@@ -222,12 +234,12 @@ function OperationsList({token,onSelect,onNew}){
     </div>
     {lo?<SkeletonTable rows={10} cols={7}/>:(()=>{
     const active=sorted.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
-    const closed=sorted.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada").sort((a,b)=>{const da=a.closed_at?String(a.closed_at).slice(0,10):"";const db=b.closed_at?String(b.closed_at).slice(0,10):"";return db.localeCompare(da);});
+    const closed=sorted.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada").sort((a,b)=>{const da=String(a.collection_date||a.closed_at||"").slice(0,10);const db=String(b.collection_date||b.closed_at||"").slice(0,10);return db.localeCompare(da);});
     const totalGanancia=closed.reduce((s,o)=>s+calcGan(o),0);
     const renderTable=(rows,showGanancia)=><div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-          <SH label="Código" col="operation_code"/><SH label="Cliente" col="client"/><SH label="Descripción" col="description"/><SH label="Canal" col="channel"/><SH label="Estado" col="status"/>{showGanancia?<SH label="Cerrada" col="closed_at"/>:<><SH label="ETA" col="eta"/><SH label="Saldo" col="saldo"/></>}{showGanancia&&<SH label="Ganancia" col="ganancia"/>}
+          <SH label="Código" col="operation_code"/><SH label="Cliente" col="client"/><SH label="Descripción" col="description"/><SH label="Canal" col="channel"/><SH label="Estado" col="status"/>{showGanancia?<SH label="Cobrada" col="collection_date"/>:<><SH label="ETA" col="eta"/><SH label="Saldo" col="saldo"/></>}{showGanancia&&<SH label="Ganancia" col="ganancia"/>}
         </tr></thead>
         <tbody>{rows.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const gan=calcGan(op);const saldo=showGanancia?null:calcSaldo(op);
         return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onClick={()=>onSelect(op)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
@@ -236,7 +248,7 @@ function OperationsList({token,onSelect,onNew}){
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12.5}}>{op.description||"—"}</td>
           <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}><span style={{fontSize:10.5,padding:"3px 9px",borderRadius:999,background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",border:"1px solid rgba(255,255,255,0.06)"}}>{CM[op.channel]||op.channel}</span></td>
           <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>{(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px ${st.c}`:"none"}}/>{st.l}</span>;})()}</td>
-          {showGanancia?<td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap",fontSize:12.5}}>{formatDate(op.closed_at)}</td>:<><td style={{padding:"14px 16px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontSize:12.5}}>{formatDate(op.eta)}</td><td style={{padding:"14px 16px",whiteSpace:"nowrap",fontSize:12.5,fontWeight:700,fontVariantNumeric:"tabular-nums",color:saldo===null?"rgba(255,255,255,0.35)":saldo===0?"#22c55e":GOLD_LIGHT}}>{saldo===null?<span style={{fontWeight:500}}>—</span>:saldo===0?"Cobrada":`USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</td></>}
+          {showGanancia?<td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap",fontSize:12.5}}>{formatDate(op.collection_date||op.closed_at)}</td>:<><td style={{padding:"14px 16px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontSize:12.5}}>{formatDate(op.eta)}</td><td style={{padding:"14px 16px",whiteSpace:"nowrap",fontSize:12.5,fontWeight:700,fontVariantNumeric:"tabular-nums",color:saldo===null?"rgba(255,255,255,0.35)":saldo===0?"#22c55e":GOLD_LIGHT}}>{saldo===null?<span style={{fontWeight:500}}>—</span>:saldo===0?"Cobrada":`USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</td></>}
           {showGanancia&&<td style={{padding:"14px 16px",fontWeight:700,color:gan>0?"#22c55e":gan<0?"#ff6b6b":"rgba(255,255,255,0.4)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{(()=>{
             const realIng=op.is_collected?Number(op.collected_amount||op.budget_total||0):Number(op.budget_total||0);
             const hasData=realIng>0||Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)>0;
