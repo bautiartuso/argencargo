@@ -1170,7 +1170,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
 
 function ClientsList({token,onSelect}){
   const [clients,setClients]=useState([]);const [lo,setLo]=useState(true);const [search,setSearch]=useState("");
-  useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,client_code,first_name,last_name,email,whatsapp,city,province,tier,lifetime_points_earned,points_balance&order=created_at.desc"});setClients(Array.isArray(c)?c:[]);setLo(false);})();},[token]);
+  useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=*&order=created_at.desc"});setClients(Array.isArray(c)?c:[]);setLo(false);})();},[token]);
   const filtered=clients.filter(c=>{if(!search)return true;const s=search.toLowerCase();return `${c.first_name} ${c.last_name}`.toLowerCase().includes(s)||c.client_code?.toLowerCase().includes(s)||c.email?.toLowerCase().includes(s);});
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:24,gap:12,flexWrap:"wrap"}}>
