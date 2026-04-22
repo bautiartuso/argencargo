@@ -928,10 +928,24 @@ function QuotesPage({token,client}){
             <span style={{color:"rgba(255,255,255,0.5)"}}>IVA <strong style={{color:"#fff"}}>{nc.iva_rate||21}%</strong></span>
           </div>}
         </div>;})}</div>:<p style={{fontSize:14,fontWeight:500,color:"#fff",margin:"0 0 10px",lineHeight:1.4}}>{prodDesc||"Sin descripción"}</p>}
+        {/* Selector de canales disponibles (si la cotización tiene alternativas guardadas) */}
+        {(()=>{const alts=q.channel_alternatives;if(!Array.isArray(alts)||alts.length<=1)return null;const selected=q.client_selected_channel||q.channel_key;return <div style={{marginBottom:14}}>
+          <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Elegí tu canal preferido</p>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10}}>
+            {alts.map(a=>{const active=selected===a.key;return <div key={a.key} onClick={async()=>{try{await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${q.id}`,body:{client_selected_channel:a.key}});setQuotes(p=>p.map(x=>x.id===q.id?{...x,client_selected_channel:a.key}:x));toast(`Elegiste ${a.name}`,"success");}catch(e){toast("Error al guardar","error");}}} style={{padding:"12px 14px",borderRadius:12,border:`1px solid ${active?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.08)"}`,background:active?"linear-gradient(135deg, rgba(184,149,106,0.12) 0%, rgba(255,255,255,0.02) 100%)":"rgba(255,255,255,0.025)",cursor:"pointer",transition:"all 150ms",position:"relative",overflow:"hidden",boxShadow:active?GOLD_GLOW:"none"}}>
+              {active&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT}}/>}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6,gap:6}}>
+                <div><p style={{fontSize:12,fontWeight:700,color:"#fff",margin:0}}>{a.name}</p><p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{a.info}</p></div>
+                {active&&<span style={{fontSize:8.5,fontWeight:800,padding:"2px 6px",borderRadius:999,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase"}}>Elegido</span>}
+              </div>
+              <p style={{fontSize:15,fontWeight:800,color:active?GOLD_LIGHT:"#fff",margin:"8px 0 0",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>USD {Number(a.totalAbonar||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            </div>;})}
+          </div>
+        </div>;})()}
         <div style={{display:"flex",gap:20,flexWrap:"wrap",paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",alignItems:"center"}}>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>VALOR FOB</p><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{usd(q.total_fob)}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{isAereo?"PESO":"CBM"}</p><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{isAereo?`${Number(q.total_weight).toFixed(2)} kg`:`${Number(q.total_cbm).toFixed(4)} m³`}</p></div>
-          <div style={{marginLeft:"auto"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>TOTAL ESTIMADO</p><p style={{fontSize:18,fontWeight:700,color:IC,margin:0}}>{usd(q.total_cost)}</p></div>
+          <div style={{marginLeft:"auto"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{q.client_selected_channel?"CANAL ELEGIDO":"TOTAL ESTIMADO"}</p><p style={{fontSize:18,fontWeight:700,color:IC,margin:0}}>{(()=>{if(q.client_selected_channel&&Array.isArray(q.channel_alternatives)){const a=q.channel_alternatives.find(x=>x.key===q.client_selected_channel);if(a)return usd(a.totalAbonar);}return usd(q.total_cost);})()}</p></div>
           <button onClick={()=>resendWA(q)} style={{padding:"10px 18px",fontSize:12,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff"}}>Enviar por WhatsApp →</button>
         </div>
       </div>;})}</div>}
