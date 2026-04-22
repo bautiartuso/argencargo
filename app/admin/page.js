@@ -2898,12 +2898,28 @@ function FinanceDashboard({token}){
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
       <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Dashboard Financiero</h2>
-      <div style={{display:"flex",gap:8,alignItems:"center"}}>{[{k:"month",l:"Mes"},{k:"year",l:"Año"},{k:"all",l:"Todo"}].map(p=><button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k==="month")setSelMonth(`${thisYear}-${String(thisMonth+1).padStart(2,"0")}`);}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:period===p.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:period===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:period===p.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{p.l}</button>)}
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>{[{k:"week",l:"Semana"},{k:"month",l:"Mes"},{k:"year",l:"Año"},{k:"all",l:"Total"}].map(p=><button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k==="month")setSelMonth(`${thisYear}-${String(thisMonth+1).padStart(2,"0")}`);}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:period===p.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:period===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:period===p.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{p.l}</button>)}
         {period==="month"&&<div style={{display:"flex",alignItems:"center",gap:6,marginLeft:8}}>
           <button onClick={()=>{const[y,m]=selMonth.split("-").map(Number);const d=new Date(y,m-2,1);setSelMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);}} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.028)",color:"#fff",cursor:"pointer"}}>←</button>
           <span style={{fontSize:13,fontWeight:700,color:"#fff",minWidth:100,textAlign:"center"}}>{(()=>{const MN=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];return `${MN[selM-1]} ${selY}`;})()}</span>
           <button onClick={()=>{const[y,m]=selMonth.split("-").map(Number);const d=new Date(y,m,1);setSelMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);}} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.028)",color:"#fff",cursor:"pointer"}}>→</button>
         </div>}
+      </div>
+    </div>
+
+    {/* ═══ FILA 1: KPIs del período (Ganancia/Ingresos/Costos/Margen) ═══ */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:20}}>
+      <div style={{background:totalGan>=0?"linear-gradient(135deg,rgba(34,197,94,0.12),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(255,80,80,0.12),rgba(255,80,80,0.03))",border:`1px solid ${totalGan>=0?"rgba(34,197,94,0.25)":"rgba(255,80,80,0.25)"}`,borderRadius:14,padding:"20px 22px"}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Ganancia neta</p>
+        <p style={{fontSize:30,fontWeight:700,color:totalGan>=0?"#22c55e":"#ff6b6b",margin:0,lineHeight:1.1}}>{usd(totalGan)}</p>
+        <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>Ingresos − Costos ({periodOps.length} ops cerradas)</p>
+      </div>
+      {stat("Ingresos",usd(totalIng),"#fff",true)}
+      {stat("Costos",usd(totalCost),"#ff6b6b",true)}
+      <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"16px 20px"}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>Margen</p>
+        <p style={{fontSize:28,fontWeight:700,color:margen>=20?"#22c55e":margen>=0?"#fbbf24":"#ff6b6b",margin:0}}>{margen.toFixed(1)}%</p>
+        <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>{margen>=20?"Saludable":margen>=0?"Ajustado":"En rojo"}</p>
       </div>
     </div>
 
@@ -2945,11 +2961,11 @@ function FinanceDashboard({token}){
       const deudaTCUsdPmts=Object.values(pmtsByOp).flat().filter(p=>p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid).reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
       const deudaTCUsd=deudaTCUsdFinance+deudaTCUsdPmts;
       const cashDisponible=totCobrado-totCostosTotales;
-      return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:24}}>
+      return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
         <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.1),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(255,80,80,0.1),rgba(255,80,80,0.03))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,borderRadius:14,padding:"20px 24px",display:"flex",flexDirection:"column"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase"}}>Cash disponible</p>
           <p style={{fontSize:32,fontWeight:700,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>{usd(cashDisponible)}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Cobrado ({usd(totCobrado)}) - Costos ops ({usd(totCostosOps+totCostosPmts)}) - Gastos ({usd(totCostosFijos)}) - Anticipos ({usd(totAnticiposAgentes)})</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Cobrado ({usd(totCobrado)}) − Costos ops ({usd(totCostosOps+totCostosPmts)}) − Gastos ({usd(totCostosFijos)}) − Anticipos ({usd(totAnticiposAgentes)})</p>
           <div style={{marginTop:"auto"}}>
             {margenActivas!==0&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:4}}>↳ {usd(margenActivas)} margen ops activas (aún no ganancia)</p>}
             {deudaTCUsd>0&&<p style={{fontSize:10,color:"#a78bfa",margin:"2px 0 0"}}>💳 {usd(deudaTCUsd)} deuda TC pendiente (no descontada — sigue en el bolsillo hasta el débito)</p>}
@@ -2964,23 +2980,53 @@ function FinanceDashboard({token}){
           {deudaTCArs===0&&deudaTCUsd===0&&<p style={{fontSize:32,fontWeight:700,color:"rgba(255,255,255,0.2)",margin:"0 0 4px"}}>Sin deuda</p>}
           <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"auto 0 0"}}>{deudaTCArs>0||deudaTCUsd>0?"Pendiente de débito":"Todo al día ✓"}</p>
         </div>
-        <div style={{background:"rgba(255,80,80,0.04)",border:"1px solid rgba(255,80,80,0.12)",borderRadius:14,padding:"20px 24px",display:"flex",flexDirection:"column"}}>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase"}}>Costos totales acumulados</p>
-          <div style={{display:"flex",flexDirection:"column",justifyContent:"center",flex:1}}>
-            <p style={{fontSize:32,fontWeight:700,color:"#ff6b6b",margin:"0 0 4px"}}>{usd(totCostosTotales)}</p>
-          </div>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>Operación + Gestión de pagos</p>
-        </div>
       </div>;
     })()}
 
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:24}}>
-      {stat("Ingresos totales",usd(totalIng),"#fff",true)}
-      {stat("Costos totales",usd(totalCost),"#ff6b6b",true)}
-      {stat("Ganancia neta",usd(totalGan),totalGan>0?"#22c55e":"#ff6b6b",true)}
-      {stat("Margen",`${margen.toFixed(1)}%`,margen>20?"#22c55e":"#fb923c",true)}
-    </div>
+    {/* ═══ FILA 3: Ranking de ingresos y costos (comparativa) ═══ */}
+    {(()=>{
+      // Top clientes por ingreso del período
+      const clientIng={};periodOps.forEach(o=>{const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—";if(!clientIng[cn])clientIng[cn]={ing:0,count:0};const g=calcGan(o);clientIng[cn].ing+=g.ing;clientIng[cn].count++;});
+      const topIng=Object.entries(clientIng).sort((a,b)=>b[1].ing-a[1].ing).slice(0,6);
+      const maxIng=topIng.length?Math.max(...topIng.map(([,d])=>d.ing),1):1;
+      // Ranking de costos: desglose por tipo del período (ops) + gastos fijos agrupados por categoría
+      const opCostBreak=[
+        {label:"Flete internacional",value:periodOps.reduce((s,o)=>s+Number(o.cost_flete||0),0),color:"#60a5fa",type:"op"},
+        {label:"Impuestos",value:periodOps.reduce((s,o)=>s+Number(o.cost_impuestos_reales||0),0),color:"#f97316",type:"op"},
+        {label:"Gasto documental",value:periodOps.reduce((s,o)=>s+Number(o.cost_gasto_documental||0),0),color:"#a78bfa",type:"op"},
+        {label:"Seguro",value:periodOps.reduce((s,o)=>s+Number(o.cost_seguro||0),0),color:"#fbbf24",type:"op"},
+        {label:"Flete local",value:periodOps.reduce((s,o)=>s+Number(o.cost_flete_local||0),0),color:"#34d399",type:"op"},
+        {label:"Otros (op)",value:periodOps.reduce((s,o)=>s+Number(o.cost_otros||0),0),color:"#fb7185",type:"op"},
+        {label:"Giros (pagos int.)",value:periodOps.reduce((s,o)=>{const pm=pmtsByOp[o.id]||[];return s+pm.reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0),color:"#c084fc",type:"op"}
+      ];
+      const fixedByCat={};filterByPeriod(fixedCostsManual,"date").forEach(e=>{const k=e.category||"otros";if(!fixedByCat[k])fixedByCat[k]=0;fixedByCat[k]+=Number(e.amount||0);});
+      const fixedBreak=Object.entries(fixedByCat).map(([k,v])=>({label:CAT_LBL[k]||k,value:v,color:CAT_COLOR[k]||"#888",type:"fijo"}));
+      const allCosts=[...opCostBreak,...fixedBreak].filter(c=>c.value>0).sort((a,b)=>b.value-a.value).slice(0,7);
+      const totAllCosts=allCosts.reduce((s,c)=>s+c.value,0);
+      const maxCost=allCosts.length?Math.max(...allCosts.map(c=>c.value),1):1;
+      return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
+        <Card title="💰 Top ingresos (clientes)">
+          {topIng.length>0?topIng.map(([name,d],i)=>{const pct=(d.ing/maxIng)*100;const shareTot=totalIng>0?(d.ing/totalIng)*100:0;return <div key={name} style={{marginBottom:11}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+              <div><span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{i+1}. {name}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:6}}>({d.count})</span></div>
+              <div><span style={{fontSize:12,fontWeight:700,color:"#22c55e"}}>{usd(d.ing)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:6}}>{shareTot.toFixed(0)}%</span></div>
+            </div>
+            {bar(pct,"#22c55e")}
+          </div>;}):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin ingresos en el período</p>}
+        </Card>
+        <Card title="📉 Top costos (categorías)">
+          {allCosts.length>0?allCosts.map((c,i)=>{const pct=(c.value/maxCost)*100;const shareTot=totAllCosts>0?(c.value/totAllCosts)*100:0;return <div key={c.label+i} style={{marginBottom:11}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+              <div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:8,height:8,borderRadius:2,background:c.color}}/><span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{i+1}. {c.label}</span><span style={{fontSize:9,color:"rgba(255,255,255,0.35)",padding:"1px 5px",borderRadius:3,border:"1px solid rgba(255,255,255,0.08)",marginLeft:4}}>{c.type==="op"?"op":"fijo"}</span></div>
+              <div><span style={{fontSize:12,fontWeight:700,color:"#ff6b6b"}}>{usd(c.value)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:6}}>{shareTot.toFixed(0)}%</span></div>
+            </div>
+            {bar(pct,c.color)}
+          </div>;}):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin costos en el período</p>}
+        </Card>
+      </div>;
+    })()}
 
+    {/* ═══ FILA 4: Contadores operativos ═══ */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:24}}>
       {stat("Operaciones activas",activeOps.length,IC)}
       {stat("Operaciones cerradas",closedOps.length,"#22c55e")}
