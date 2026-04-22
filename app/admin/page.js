@@ -193,34 +193,6 @@ function OperationsList({token,onSelect,onNew}){
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:10,flexWrap:"wrap"}}>
       <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Operaciones</h2>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <Btn variant="secondary" small onClick={async()=>{
-          if(!confirm("¿Sincronizar el presupuesto de todas las operaciones activas?\n\nSe recalculará y guardará el total en base a sus productos, bultos, tarifas y config.\n\nNO se tocan operaciones cerradas ni canceladas."))return;
-          const[tf,cc]=await Promise.all([dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"})]);
-          const tariffs=Array.isArray(tf)?tf:[];const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});
-          const activas=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
-          let updated=0,skipped=0,errors=0;
-          for(const o of activas){
-            try{
-              const[it,pk,ov,cl]=await Promise.all([
-                dq("operation_items",{token,filters:`?operation_id=eq.${o.id}&select=*`}),
-                dq("operation_packages",{token,filters:`?operation_id=eq.${o.id}&select=*`}),
-                o.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${o.client_id}&select=*`}):Promise.resolve([]),
-                o.client_id?dq("clients",{token,filters:`?id=eq.${o.client_id}&select=tax_condition`}):Promise.resolve([])
-              ]);
-              const items=Array.isArray(it)?it:[];const pkgs=Array.isArray(pk)?pk:[];
-              const oBlanco=o.channel?.includes("blanco");
-              // Canal A necesita items; canal B necesita bultos con peso/CBM
-              if(oBlanco&&items.length===0){skipped++;continue;}
-              if(!oBlanco&&pkgs.length===0){skipped++;continue;}
-              const client=Array.isArray(cl)?cl[0]:null;const overrides=Array.isArray(ov)?ov:[];
-              const{totalTax,flete,seguro,totalAbonar}=calcOpBudget(o,items,pkgs,tariffs,cfg,overrides,client);
-              await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}});
-              updated++;
-            }catch(e){console.error(`sync ${o.operation_code}`,e);errors++;}
-          }
-          alert(`Sincronización completa.\n\n✓ Actualizadas: ${updated}\n⊘ Sin productos (omitidas): ${skipped}${errors>0?`\n✗ Errores: ${errors}`:""}`);
-          const[o2]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"})]);setOps(Array.isArray(o2)?o2:[]);
-        }}>🔄 Sincronizar presupuestos</Btn>
         <Btn variant="gold" onClick={onNew}>+ Nueva operación</Btn>
       </div>
     </div>
@@ -1213,9 +1185,49 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   useEffect(()=>{(async()=>{const [o,t,ov]=await Promise.all([dq("operations",{token,filters:`?client_id=eq.${cl.id}&select=*&order=created_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=service_key.asc,sort_order.asc"}),dq("client_tariff_overrides",{token,filters:`?client_id=eq.${cl.id}&select=*`})]);setOps(Array.isArray(o)?o:[]);setTariffs(Array.isArray(t)?t:[]);setOverrides(Array.isArray(ov)?ov:[]);setLo(false);})();},[cl.id,token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const getOverride=(tid)=>overrides.find(o=>o.tariff_id===tid);
-  const setOverrideRate=async(tid,rate)=>{const existing=getOverride(tid);if(rate===""||rate==null){if(existing){await dq("client_tariff_overrides",{method:"DELETE",token,filters:`?id=eq.${existing.id}`});setOverrides(p=>p.filter(o=>o.id!==existing.id));flash("Tarifa custom eliminada");}return;}if(existing){await dq("client_tariff_overrides",{method:"PATCH",token,filters:`?id=eq.${existing.id}`,body:{custom_rate:Number(rate)}});setOverrides(p=>p.map(o=>o.id===existing.id?{...o,custom_rate:Number(rate)}:o));} else{const r=await dq("client_tariff_overrides",{method:"POST",token,body:{client_id:cl.id,tariff_id:tid,custom_rate:Number(rate)}});if(Array.isArray(r))setOverrides(p=>[...p,...r]);else if(r?.id)setOverrides(p=>[...p,r]);}flash("Tarifa custom guardada");};
+  // Recalcula y guarda presupuesto de todas las ops activas del cliente (las cerradas/canceladas se saltean).
+  // Se llama cuando cambia algo que afecta los presupuestos: tax_condition del cliente, tarifas custom, etc.
+  const syncClientOps=async()=>{
+    try{
+      const[tfRes,ccRes,opsRes,ovRes,clRes]=await Promise.all([
+        dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),
+        dq("calc_config",{token,filters:"?select=*"}),
+        dq("operations",{token,filters:`?client_id=eq.${cl.id}&status=not.in.(operacion_cerrada,cancelada)&select=*`}),
+        dq("client_tariff_overrides",{token,filters:`?client_id=eq.${cl.id}&select=*`}),
+        dq("clients",{token,filters:`?id=eq.${cl.id}&select=tax_condition`})
+      ]);
+      const tariffsFresh=Array.isArray(tfRes)?tfRes:[];
+      const cfg={};(Array.isArray(ccRes)?ccRes:[]).forEach(r=>{cfg[r.key]=Number(r.value);});
+      const activeOps=Array.isArray(opsRes)?opsRes:[];
+      const overridesFresh=Array.isArray(ovRes)?ovRes:[];
+      const clientFresh=Array.isArray(clRes)?clRes[0]:null;
+      for(const o of activeOps){
+        try{
+          const[it,pk]=await Promise.all([
+            dq("operation_items",{token,filters:`?operation_id=eq.${o.id}&select=*`}),
+            dq("operation_packages",{token,filters:`?operation_id=eq.${o.id}&select=*`})
+          ]);
+          const items=Array.isArray(it)?it:[];const pkgs=Array.isArray(pk)?pk:[];
+          const isBlanco=o.channel?.includes("blanco");
+          if(isBlanco&&items.length===0)continue;
+          if(!isBlanco&&pkgs.length===0)continue;
+          const{totalTax,flete,seguro,totalAbonar}=calcOpBudget(o,items,pkgs,tariffsFresh,cfg,overridesFresh,clientFresh);
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}});
+        }catch(e){console.error(`syncClientOps ${o.operation_code}`,e);}
+      }
+    }catch(e){console.error("syncClientOps",e);}
+  };
+  const setOverrideRate=async(tid,rate)=>{const existing=getOverride(tid);if(rate===""||rate==null){if(existing){await dq("client_tariff_overrides",{method:"DELETE",token,filters:`?id=eq.${existing.id}`});setOverrides(p=>p.filter(o=>o.id!==existing.id));flash("Tarifa custom eliminada");syncClientOps();}return;}if(existing){await dq("client_tariff_overrides",{method:"PATCH",token,filters:`?id=eq.${existing.id}`,body:{custom_rate:Number(rate)}});setOverrides(p=>p.map(o=>o.id===existing.id?{...o,custom_rate:Number(rate)}:o));} else{const r=await dq("client_tariff_overrides",{method:"POST",token,body:{client_id:cl.id,tariff_id:tid,custom_rate:Number(rate)}});if(Array.isArray(r))setOverrides(p=>[...p,...r]);else if(r?.id)setOverrides(p=>[...p,r]);}flash("Tarifa custom guardada · re-sincronizando ops…");syncClientOps();};
   const chCl=f=>v=>setCl(p=>({...p,[f]:v}));
-  const saveClient=async()=>{setSaving(true);const{id,created_at,updated_at,auth_user_id,...rest}=cl;await dq("clients",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Cliente guardado");setSaving(false);};
+  const saveClient=async()=>{
+    setSaving(true);
+    const{id,created_at,updated_at,auth_user_id,...rest}=cl;
+    const taxChanged=rest.tax_condition!==initClient.tax_condition;
+    await dq("clients",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
+    flash(taxChanged?"Cliente guardado · re-sincronizando ops…":"Cliente guardado");
+    if(taxChanged)syncClientOps();
+    setSaving(false);
+  };
   const deleteClient=async()=>{if(!confirm(`¿Estás seguro de eliminar a ${cl.first_name} ${cl.last_name}? Esta acción no se puede deshacer.`))return;await dq("clients",{method:"DELETE",token,filters:`?id=eq.${cl.id}`});onDelete();};
   const tabs=[{k:"info",l:"Info"},{k:"ops",l:`Operaciones (${ops.length})`},{k:"tariffs",l:"Tarifas"}];
   return <div>
