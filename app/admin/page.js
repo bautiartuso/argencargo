@@ -831,7 +831,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const margen=ingresoTotal>0?((ganancia/ingresoTotal)*100):0;
       const rw=(l,v,bold,color)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:10}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:bold?16:13,fontWeight:bold?700:600,color:color||"#fff"}}>USD {v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
       return <>
-      {(()=>{
+      {op.service_type==="gestion_integral"&&(()=>{
         const totalCli=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
         const budgetTot=Number(op.budget_total||0);
         const saldoCli=budgetTot-totalCli;
@@ -965,23 +965,83 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>Cada anticipo aparece en el libro diario como ingreso en su fecha. Cuando la suma de pagos alcanza el presupuesto total, la op se marca automáticamente como cobrada.</p>
         </Card>;
       })()}
-      <Card title="Cobro" actions={<Btn onClick={async()=>{
-        if(op.is_collected&&(op.collection_currency||"USD")==="ARS"&&!Number(op.collection_exchange_rate||0)){alert("El cobro es en ARS: tenés que cargar el tipo de cambio antes de guardar");return;}
-        await saveOp();
-      }} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
-          <Inp label={`Monto cobrado (${op.collection_currency||"USD"})`} type="number" value={op.collected_amount||op.budget_total} onChange={chOp("collected_amount")} step="0.01"/>
-          <Sel label="Método de cobro" value={op.collection_method||"transferencia"} onChange={chOp("collection_method")} options={[{value:"efectivo",label:"Efectivo"},{value:"transferencia",label:"Transferencia"},{value:"cripto",label:"Cripto"}]}/>
-          <Sel label="Moneda" value={op.collection_currency||"USD"} onChange={chOp("collection_currency")} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]}/>
+      {(()=>{
+        const budgetTot=Number(op.budget_total||0);
+        const cobroRaw=Number(op.collected_amount||0);
+        const isArsCol=op.collection_currency==="ARS";
+        const colRate=Number(op.collection_exchange_rate||0);
+        const cobroUsd=isArsCol&&colRate>0?cobroRaw/colRate:cobroRaw;
+        const diff=cobroUsd-budgetTot; // + = pagó de más, - = pagó de menos
+        const isDeferred=!!op.collection_deferred;
+        const saveCobro=async()=>{
+          if(op.is_collected&&isArsCol&&!colRate){alert("El cobro es en ARS: cargá el tipo de cambio primero");return;}
+          // Si marcó como cobrada, manejar diff
+          if(op.is_collected&&budgetTot>0&&!isDeferred){
+            if(diff>0.01){
+              // Pagó de más
+              if(confirm(`El cliente pagó USD ${diff.toFixed(2)} de más.\n\n¿Registrar el excedente como saldo a favor en la cuenta corriente?`)){
+                await saveOp();
+                await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`}});
+                flash(`Cobrada · saldo a favor +USD ${diff.toFixed(2)}`);
+                return;
+              }
+            } else if(diff<-0.01){
+              // Pagó de menos → preguntar: descuento o deuda
+              const choice=window.prompt(`El cliente pagó USD ${Math.abs(diff).toFixed(2)} MENOS que el presupuesto.\n\nEscribí una de estas 2 opciones:\n  d = fue un DESCUENTO intencional (no genera deuda)\n  c = queda como DEUDA en cuenta corriente\n\nSi cancelás, no se guardan cambios.`,"d");
+              if(choice===null)return;
+              if(choice==="d"||choice==="D"){
+                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{discount_applied_usd:Math.abs(diff)}});
+                setOp(p=>({...p,discount_applied_usd:Math.abs(diff)}));
+                await saveOp();
+                flash(`Cobrada con descuento de USD ${Math.abs(diff).toFixed(2)}`);
+                return;
+              } else if(choice==="c"||choice==="C"){
+                await saveOp();
+                await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"debt",amount_usd:diff,description:`Deuda pendiente de ${op.operation_code}`}});
+                flash(`Cobrada · deuda registrada -USD ${Math.abs(diff).toFixed(2)}`);
+                return;
+              } else {alert("Opción inválida. Escribí 'd' o 'c'");return;}
+            }
+          }
+          // Cobro diferido (pagan a fin de mes)
+          if(op.is_collected&&isDeferred&&budgetTot>0){
+            await saveOp();
+            await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"debt",amount_usd:-budgetTot,description:`Cobro diferido de ${op.operation_code}`}});
+            flash(`Op cerrada · cobro diferido USD ${budgetTot.toFixed(2)}`);
+            return;
+          }
+          await saveOp();
+        };
+        return <Card title="Cobro" actions={<Btn onClick={saveCobro} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
+        {/* Toggle cobro diferido */}
+        <div style={{marginBottom:12,padding:"10px 14px",background:isDeferred?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.028)",border:`1px solid ${isDeferred?"rgba(251,191,36,0.25)":"rgba(255,255,255,0.06)"}`,borderRadius:10}}>
+          <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
+            <input type="checkbox" checked={isDeferred} onChange={e=>chOp("collection_deferred")(e.target.checked)}/>
+            <span style={{fontSize:12.5,color:isDeferred?"#fbbf24":"rgba(255,255,255,0.65)",fontWeight:isDeferred?600:500}}>Cobro diferido — el cliente cierra y paga después (ej. fin de mes)</span>
+          </label>
+          {isDeferred&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"6px 0 0 28px"}}>Al guardar, la op se cierra y queda USD {budgetTot.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})} de deuda en la cuenta corriente del cliente.</p>}
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
-          {(op.collection_method==="transferencia")&&<Inp label="Comisión transferencia %" type="number" value={op.collection_fee_pct||""} onChange={chOp("collection_fee_pct")} step="0.1" placeholder="0"/>}
-          {op.collection_currency==="ARS"&&<Inp label="Tipo de cambio (ARS/USD)" type="number" value={op.collection_exchange_rate} onChange={chOp("collection_exchange_rate")} step="0.01" placeholder="Ej: 1200"/>}
-          <Inp label="Fecha de cobro" type="date" value={op.collection_date||""} onChange={chOp("collection_date")}/>
-        </div>
-        {payments.length>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.12)",borderRadius:10,padding:"12px 16px",marginBottom:12}}><p style={{fontSize:12,fontWeight:600,color:IC,margin:"0 0 2px"}}>Esta operación tiene gestión de pagos (servicio aparte)</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>El cobro de esta operación es independiente. Ver detalles en tab "Pagos".</p></div>}
+        {!isDeferred&&<>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
+            <Inp label={`Monto cobrado (${op.collection_currency||"USD"})`} type="number" value={op.collected_amount||op.budget_total} onChange={chOp("collected_amount")} step="0.01"/>
+            <Sel label="Método de cobro" value={op.collection_method||"transferencia"} onChange={chOp("collection_method")} options={[{value:"efectivo",label:"Efectivo"},{value:"transferencia",label:"Transferencia"},{value:"cripto",label:"Cripto"}]}/>
+            <Sel label="Moneda" value={op.collection_currency||"USD"} onChange={chOp("collection_currency")} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
+            {(op.collection_method==="transferencia")&&<Inp label="Comisión transferencia %" type="number" value={op.collection_fee_pct||""} onChange={chOp("collection_fee_pct")} step="0.1" placeholder="0"/>}
+            {op.collection_currency==="ARS"&&<Inp label="Tipo de cambio (ARS/USD)" type="number" value={op.collection_exchange_rate} onChange={chOp("collection_exchange_rate")} step="0.01" placeholder="Ej: 1200"/>}
+            <Inp label="Fecha de cobro" type="date" value={op.collection_date||""} onChange={chOp("collection_date")}/>
+          </div>
+          {/* Aviso de diff */}
+          {cobroRaw>0&&budgetTot>0&&(()=>{
+            if(Math.abs(diff)<0.01)return <div style={{padding:"9px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:8,fontSize:12,color:"#22c55e",marginBottom:8,fontWeight:500}}>✓ Monto coincide con el presupuesto</div>;
+            if(diff>0)return <div style={{padding:"9px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:8,fontSize:12,color:"#22c55e",marginBottom:8}}>Pagó <strong>USD {diff.toFixed(2)} de más</strong>. Al marcar como cobrada vas a poder registrarlo como saldo a favor en CC.</div>;
+            return <div style={{padding:"9px 14px",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.22)",borderRadius:8,fontSize:12,color:"#fbbf24",marginBottom:8}}>Pagó <strong>USD {Math.abs(diff).toFixed(2)} menos</strong> que el presupuesto. Al marcar como cobrada elegís: descuento intencional o deuda en CC.</div>;
+          })()}
+        </>}
+        {payments.length>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.12)",borderRadius:10,padding:"12px 16px",marginBottom:12}}><p style={{fontSize:12,fontWeight:600,color:IC,margin:"0 0 2px"}}>Esta operación tiene gestión de pagos internacionales (servicio aparte)</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>El cobro de esta operación es independiente. Ver detalles en tab "Pagos".</p></div>}
         <div style={{marginBottom:8}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.is_collected||false} onChange={e=>chOp("is_collected")(e.target.checked)}/><span style={{fontSize:13,color:op.is_collected?"#22c55e":"rgba(255,255,255,0.5)",fontWeight:op.is_collected?600:400}}>{op.is_collected?"Operación cobrada ✓":"Marcar como cobrada"}</span></label></div>
-      </Card>
+      </Card>;})()}
       <Card title={op.service_type==="gestion_integral"?"Costos reales (Gestión Integral)":"Costos reales"} actions={<Btn onClick={async()=>{setSaving(true);
         // Save flete
         const fleteMethod=op.cost_flete_method||"cuenta_corriente";
