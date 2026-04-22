@@ -6,10 +6,10 @@ const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 const LOGO=`${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
 const B={primary:"#1B4F8A",accent:"#4A90D9"};
-const DARK_BG="linear-gradient(160deg,#0A1628 0%,#0F1F3A 50%,#0A1628 100%)";
-const IC="#60a5fa";
+const DARK_BG="linear-gradient(160deg,#0F1E3D 0%,#152849 50%,#0F1E3D 100%)";
 // Dorado secundario (accent metálico)
 const GOLD="#B8956A", GOLD_LIGHT="#E8D098", GOLD_DEEP="#A68456";
+const IC=GOLD_LIGHT; // Accent color alias al oro claro (unificado)
 const GOLD_GRADIENT="linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 100%)";
 const GOLD_GLOW="0 0 20px rgba(184,149,106,0.25)";
 const GOLD_GLOW_STRONG="0 0 28px rgba(184,149,106,0.4)";
@@ -100,7 +100,7 @@ function NotifBell({token}){
   useEffect(()=>{load();const iv=setInterval(load,60000);return()=>clearInterval(iv);},[token]);
   const markRead=async(id)=>{await dq("notifications",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{read:true}});setNotifs(p=>p.map(n=>n.id===id?{...n,read:true}:n));setUnread(p=>Math.max(0,p-1));};
   return <div style={{position:"relative"}}><button onClick={()=>setOpen(p=>!p)} style={{background:"none",border:"none",cursor:"pointer",padding:4,position:"relative"}}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>{unread>0&&<span style={{position:"absolute",top:0,right:0,width:16,height:16,borderRadius:"50%",background:"#ef4444",color:"#fff",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>{unread}</span>}</button>
-  {open&&<><div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setOpen(false)}/><div style={{position:"fixed",right:16,top:60,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflowY:"auto",background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",zIndex:1000}}><div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:13,fontWeight:700,color:"#fff"}}>Notificaciones</span>{unread>0&&<span style={{fontSize:11,color:IC}}>{unread} nuevas</span>}</div>{notifs.length===0?<p style={{padding:"20px 16px",fontSize:13,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>Sin notificaciones</p>:notifs.map(n=><div key={n.id} onClick={()=>!n.read&&markRead(n.id)} style={{padding:"10px 16px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:n.read?"default":"pointer",background:n.read?"transparent":"rgba(96,165,250,0.06)"}}><p style={{fontSize:12,fontWeight:n.read?400:600,color:n.read?"rgba(255,255,255,0.5)":"#fff",margin:0}}>{n.title||"Notificación"}</p>{n.body&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{n.body}</p>}<p style={{fontSize:10,color:"rgba(255,255,255,0.25)",margin:"4px 0 0"}}>{formatDate(n.created_at)}</p></div>)}</div></>}
+  {open&&<><div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setOpen(false)}/><div style={{position:"fixed",right:16,top:60,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflowY:"auto",background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",zIndex:1000}}><div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:13,fontWeight:700,color:"#fff"}}>Notificaciones</span>{unread>0&&<span style={{fontSize:11,color:IC}}>{unread} nuevas</span>}</div>{notifs.length===0?<p style={{padding:"20px 16px",fontSize:13,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>Sin notificaciones</p>:notifs.map(n=><div key={n.id} onClick={()=>!n.read&&markRead(n.id)} style={{padding:"10px 16px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:n.read?"default":"pointer",background:n.read?"transparent":"rgba(184,149,106,0.06)"}}><p style={{fontSize:12,fontWeight:n.read?400:600,color:n.read?"rgba(255,255,255,0.5)":"#fff",margin:0}}>{n.title||"Notificación"}</p>{n.body&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{n.body}</p>}<p style={{fontSize:10,color:"rgba(255,255,255,0.25)",margin:"4px 0 0"}}>{formatDate(n.created_at)}</p></div>)}</div></>}
   </div>;
 }
 
@@ -110,13 +110,13 @@ function AdminLogin({onLogin}){
   return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG,fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",position:"relative",overflow:"hidden"}}>
     {/* Accent glows decorativos */}
     <div style={{position:"absolute",top:"-20%",right:"-10%",width:480,height:480,background:"radial-gradient(circle, rgba(184,149,106,0.12) 0%, transparent 70%)",pointerEvents:"none"}}/>
-    <div style={{position:"absolute",bottom:"-20%",left:"-10%",width:520,height:520,background:"radial-gradient(circle, rgba(74,144,217,0.10) 0%, transparent 70%)",pointerEvents:"none"}}/>
+    <div style={{position:"absolute",bottom:"-20%",left:"-10%",width:520,height:520,background:"radial-gradient(circle, rgba(184,149,106,0.10) 0%, transparent 70%)",pointerEvents:"none"}}/>
     <div style={{maxWidth:400,width:"100%",padding:"0 1rem",position:"relative",zIndex:1,animation:"ac_fade_in 400ms ease-out"}}>
       <div style={{textAlign:"center",marginBottom:32}}>
         <img src={LOGO} alt="AC" style={{width:210,height:"auto",filter:"drop-shadow(0 4px 24px rgba(184,149,106,0.28))"}}/>
         <p style={{fontSize:11,color:GOLD_LIGHT,margin:"14px 0 0",letterSpacing:"0.3em",textTransform:"uppercase",fontWeight:600}}>Panel de Administración</p>
       </div>
-      <div style={{background:"rgba(10,22,40,0.7)",backdropFilter:"blur(28px)",borderRadius:16,padding:"2rem 1.75rem",border:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 20px 50px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",position:"relative",overflow:"hidden"}}>
+      <div style={{background:"rgba(10,22,40,0.7)",backdropFilter:"blur(28px)",borderRadius:16,padding:"2rem 1.75rem",border:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 20px 50px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.028)",position:"relative",overflow:"hidden"}}>
         <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT,opacity:0.85}}/>
         <Inp label="Email" type="email" value={email} onChange={setEmail} placeholder="admin@argencargo.com"/>
         <Inp label="Contraseña" type="password" value={pw} onChange={setPw} placeholder="••••••••"/>
@@ -130,10 +130,12 @@ function AdminLogin({onLogin}){
 }
 
 function OperationsList({token,onSelect,onNew}){
-  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fStatuses,setFStatuses]=useState([]);const [fChannel,setFChannel]=useState("");const [sortCol,setSortCol]=useState("smart");const [sortDir,setSortDir]=useState("asc");const [showStatusDrop,setShowStatusDrop]=useState(false);
+  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fStatuses,setFStatuses]=useState([]);const [fChannel,setFChannel]=useState("");const [sortCol,setSortCol]=useState("smart");const [sortDir,setSortDir]=useState("asc");const [showStatusDrop,setShowStatusDrop]=useState(false);const [pageClosed,setPageClosed]=useState(1);const CLOSED_PER_PAGE=25;
   // Peso por estado: mayor valor = más cerca de entrega (aparece arriba)
   const STATUS_WEIGHT={entregada:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
-  useEffect(()=>{(async()=>{const [o,pm]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,cost_comision_giro"})]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
+  useEffect(()=>{(async()=>{const [o,pm,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd"})]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setLo(false);})();},[token]);
+  // Saldo pendiente del cliente para operación activa
+  const calcSaldo=(o)=>{const bt=Number(o.budget_total||0);if(bt<=0)return null;const cliPaid=Number(cliPmtsByOp[o.id]||0);const ant=Number(o.total_anticipos||0);const saldo=Math.max(0,bt-cliPaid-ant);return saldo;};
   const toggleStatus=(s)=>setFStatuses(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
   const getOrigin=(op)=>op.origin||"China";
   const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannel&&o.channel!==fChannel)return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
@@ -202,11 +204,11 @@ function OperationsList({token,onSelect,onNew}){
       </div>
     </div>
     <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
-      <div style={{flex:1,minWidth:200}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por código, cliente o descripción..." style={{width:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
-      <div style={{position:"relative"}}><button onClick={()=>setShowStatusDrop(p=>!p)} style={{padding:"10px 14px",fontSize:12,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{fStatuses.length>0?`${fStatuses.length} estados`:"Todos los estados"} ▼</button>
+      <div style={{flex:1,minWidth:200}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por código, cliente o descripción..." style={{width:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
+      <div style={{position:"relative"}}><button onClick={()=>setShowStatusDrop(p=>!p)} style={{padding:"10px 14px",fontSize:12,border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{fStatuses.length>0?`${fStatuses.length} estados`:"Todos los estados"} ▼</button>
         {showStatusDrop&&<div style={{position:"absolute",top:"100%",left:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:8,zIndex:10,minWidth:200}}>{STATUSES.map(s=><label key={s} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",borderRadius:4}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><input type="checkbox" checked={fStatuses.includes(s)} onChange={()=>toggleStatus(s)}/><span style={{fontSize:12,color:SM[s].c,fontWeight:600}}>{SM[s].l}</span></label>)}<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:4}}><button onClick={()=>{setFStatuses([]);setShowStatusDrop(false);}} style={{fontSize:11,color:IC,background:"none",border:"none",cursor:"pointer",padding:"4px 8px"}}>Limpiar filtros</button></div></div>}
       </div>
-      <select value={fChannel} onChange={e=>setFChannel(e.target.value)} style={{padding:"10px 14px",fontSize:12,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}><option value="" style={{background:"#142038"}}>Todos los canales</option>{CHANNELS.map(c=><option key={c} value={c} style={{background:"#142038"}}>{CM[c]}</option>)}</select>
+      <select value={fChannel} onChange={e=>setFChannel(e.target.value)} style={{padding:"10px 14px",fontSize:12,border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}><option value="" style={{background:"#142038"}}>Todos los canales</option>{CHANNELS.map(c=><option key={c} value={c} style={{background:"#142038"}}>{CM[c]}</option>)}</select>
       {sortCol!=="smart"&&<button onClick={()=>{setSortCol("smart");setSortDir("asc");}} style={{padding:"10px 14px",fontSize:11,fontWeight:600,border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:8,background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>↻ Restaurar orden</button>}
     </div>
     {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:(()=>{
@@ -216,16 +218,16 @@ function OperationsList({token,onSelect,onNew}){
     const renderTable=(rows,showGanancia)=><div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-          <SH label="Código" col="operation_code"/><SH label="Cliente" col="client"/><SH label="Descripción" col="description"/><SH label="Canal" col="channel"/><SH label="Estado" col="status"/>{showGanancia?<SH label="Cerrada" col="closed_at"/>:<SH label="ETA" col="eta"/>}{showGanancia&&<SH label="Ganancia" col="ganancia"/>}<th style={{padding:"12px 14px"}}></th>
+          <SH label="Código" col="operation_code"/><SH label="Cliente" col="client"/><SH label="Descripción" col="description"/><SH label="Canal" col="channel"/><SH label="Estado" col="status"/>{showGanancia?<SH label="Cerrada" col="closed_at"/>:<><SH label="ETA" col="eta"/><SH label="Saldo" col="saldo"/></>}{showGanancia&&<SH label="Ganancia" col="ganancia"/>}
         </tr></thead>
-        <tbody>{rows.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const ing=Number(op.budget_total||0);const gan=calcGan(op);
+        <tbody>{rows.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const gan=calcGan(op);const saldo=showGanancia?null:calcSaldo(op);
         return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onClick={()=>onSelect(op)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
           <td style={{padding:"14px 16px",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:"#fff",whiteSpace:"nowrap",fontSize:12.5,letterSpacing:"0.04em"}}>{op.operation_code}{op.service_type==="gestion_integral"&&<span title="Gestión Integral" style={{marginLeft:6,fontSize:9,fontWeight:800,padding:"2px 5px",borderRadius:4,background:"rgba(168,85,247,0.15)",color:"#c084fc",border:"1px solid rgba(168,85,247,0.35)"}}>GI</span>}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.78)",whiteSpace:"nowrap",fontSize:13}}>{cn}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12.5}}>{op.description||"—"}</td>
           <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}><span style={{fontSize:10.5,padding:"3px 9px",borderRadius:999,background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",border:"1px solid rgba(255,255,255,0.06)"}}>{CM[op.channel]||op.channel}</span></td>
           <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>{(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px ${st.c}`:"none"}}/>{st.l}</span>;})()}</td>
-          {showGanancia?<td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap",fontSize:12.5}}>{formatDate(op.closed_at)}</td>:<td style={{padding:"14px 16px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontSize:12.5}}>{formatDate(op.eta)}</td>}
+          {showGanancia?<td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap",fontSize:12.5}}>{formatDate(op.closed_at)}</td>:<><td style={{padding:"14px 16px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontSize:12.5}}>{formatDate(op.eta)}</td><td style={{padding:"14px 16px",whiteSpace:"nowrap",fontSize:12.5,fontWeight:700,fontVariantNumeric:"tabular-nums",color:saldo===null?"rgba(255,255,255,0.35)":saldo===0?"#22c55e":GOLD_LIGHT}}>{saldo===null?<span style={{fontWeight:500}}>—</span>:saldo===0?"Cobrada":`USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</td></>}
           {showGanancia&&<td style={{padding:"14px 16px",fontWeight:700,color:gan>0?"#22c55e":gan<0?"#ff6b6b":"rgba(255,255,255,0.4)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{(()=>{
             const realIng=op.is_collected?Number(op.collected_amount||op.budget_total||0):Number(op.budget_total||0);
             const hasData=realIng>0||Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)>0;
@@ -233,13 +235,17 @@ function OperationsList({token,onSelect,onNew}){
             const sign=gan<0?"-":"";
             return `${sign}USD ${Math.abs(gan).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
           })()}</td>}
-          <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}><span style={{color:GOLD_LIGHT,fontSize:12,fontWeight:600,letterSpacing:"0.02em"}}>Editar →</span></td>
         </tr>})}</tbody>
       </table>
       {rows.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>No hay operaciones</p>}
     </div>;
+    // Paginación cerradas
+    const totalPagesClosed=Math.max(1,Math.ceil(closed.length/CLOSED_PER_PAGE));
+    const safePage=Math.min(pageClosed,totalPagesClosed);
+    const closedPaged=closed.slice((safePage-1)*CLOSED_PER_PAGE,safePage*CLOSED_PER_PAGE);
+    const renderPagination=()=>{if(totalPagesClosed<=1)return null;const pages=[];const maxVisible=7;let start=Math.max(1,safePage-3);let end=Math.min(totalPagesClosed,start+maxVisible-1);if(end-start<maxVisible-1)start=Math.max(1,end-maxVisible+1);for(let i=start;i<=end;i++)pages.push(i);const btnStyle=(active,disabled)=>({minWidth:32,height:32,padding:"0 10px",fontSize:12,fontWeight:active?700:500,borderRadius:8,border:`1px solid ${active?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.08)"}`,background:active?"rgba(184,149,106,0.14)":"transparent",color:disabled?"rgba(255,255,255,0.2)":active?GOLD_LIGHT:"rgba(255,255,255,0.65)",cursor:disabled?"not-allowed":"pointer",transition:"all 150ms",display:"inline-flex",alignItems:"center",justifyContent:"center"});return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:16,gap:12,flexWrap:"wrap"}}><span style={{fontSize:11,color:"rgba(255,255,255,0.45)",letterSpacing:"0.03em"}}>Mostrando {(safePage-1)*CLOSED_PER_PAGE+1}–{Math.min(safePage*CLOSED_PER_PAGE,closed.length)} de {closed.length}</span><div style={{display:"flex",gap:4,alignItems:"center"}}><button disabled={safePage===1} onClick={()=>setPageClosed(safePage-1)} style={btnStyle(false,safePage===1)}>←</button>{start>1&&<><button onClick={()=>setPageClosed(1)} style={btnStyle(false)}>1</button>{start>2&&<span style={{color:"rgba(255,255,255,0.3)",padding:"0 4px"}}>…</span>}</>}{pages.map(p=><button key={p} onClick={()=>setPageClosed(p)} style={btnStyle(p===safePage)}>{p}</button>)}{end<totalPagesClosed&&<>{end<totalPagesClosed-1&&<span style={{color:"rgba(255,255,255,0.3)",padding:"0 4px"}}>…</span>}<button onClick={()=>setPageClosed(totalPagesClosed)} style={btnStyle(false)}>{totalPagesClosed}</button></>}<button disabled={safePage===totalPagesClosed} onClick={()=>setPageClosed(safePage+1)} style={btnStyle(false,safePage===totalPagesClosed)}>→</button></div></div>;};
     return <>{active.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones activas <span style={{color:GOLD_LIGHT,marginLeft:4}}>({active.length})</span></h3>{renderTable(active,false)}</>}
-    {closed.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"32px 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones cerradas <span style={{color:"rgba(255,255,255,0.55)",marginLeft:4}}>({closed.length})</span> {totalGanancia!==0&&<span style={{fontSize:12,fontWeight:700,color:totalGanancia>0?"#22c55e":"#ff6b6b",marginLeft:12,letterSpacing:"0.04em"}}>Ganancia total: USD {totalGanancia.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}</h3>{renderTable(closed,true)}</>}
+    {closed.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"32px 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones cerradas <span style={{color:"rgba(255,255,255,0.55)",marginLeft:4}}>({closed.length})</span> {totalGanancia!==0&&<span style={{fontSize:12,fontWeight:700,color:totalGanancia>0?"#22c55e":"#ff6b6b",marginLeft:12,letterSpacing:"0.04em"}}>Ganancia total: USD {totalGanancia.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}</h3>{renderTable(closedPaged,true)}{renderPagination()}</>}
     {active.length===0&&closed.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>No se encontraron operaciones</p>}</>;})()}
   </div>;
 }
@@ -395,7 +401,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </div>
       <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
     </div>
-    <div style={{display:"flex",gap:8,marginBottom:16}}>{tabs.map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
+    <div style={{display:"flex",gap:8,marginBottom:16}}>{tabs.map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
     {pendingRedemptions.length>0&&<div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:10}}>
       <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>⭐ Canje de puntos pendiente{pendingRedemptions.length>1?"s":""}</p>
       {pendingRedemptions.map(r=><div key={r.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"8px 0",borderTop:"1px solid rgba(251,191,36,0.15)",flexWrap:"wrap"}}>
@@ -418,7 +424,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>}
         {op.channel==="aereo_negro"&&op.origin==="USA"&&<div style={{marginBottom:12}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>¿La carga es de celulares?</p>
-          <div style={{display:"flex",gap:10}}>{[{k:true,icon:"📱",l:"Sí, celulares",sub:"Tarifa $65/kg"},{k:false,icon:"📦",l:"Carga general",sub:"Tarifa estándar"}].map(o=><div key={String(o.k)} onClick={()=>chOp("has_phones")(o.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:12,border:`1.5px solid ${(op.has_phones||false)===o.k?IC:"rgba(255,255,255,0.08)"}`,background:(op.has_phones||false)===o.k?"rgba(96,165,250,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer",transition:"all 0.15s"}}><p style={{fontSize:22,margin:"0 0 4px"}}>{o.icon}</p><p style={{fontSize:13,fontWeight:700,color:(op.has_phones||false)===o.k?IC:"rgba(255,255,255,0.55)",margin:"0 0 2px"}}>{o.l}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{o.sub}</p></div>)}</div>
+          <div style={{display:"flex",gap:10}}>{[{k:true,icon:"📱",l:"Sí, celulares",sub:"Tarifa $65/kg"},{k:false,icon:"📦",l:"Carga general",sub:"Tarifa estándar"}].map(o=><div key={String(o.k)} onClick={()=>chOp("has_phones")(o.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:12,border:`1.5px solid ${(op.has_phones||false)===o.k?IC:"rgba(255,255,255,0.08)"}`,background:(op.has_phones||false)===o.k?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer",transition:"all 0.15s"}}><p style={{fontSize:22,margin:"0 0 4px"}}>{o.icon}</p><p style={{fontSize:13,fontWeight:700,color:(op.has_phones||false)===o.k?IC:"rgba(255,255,255,0.55)",margin:"0 0 2px"}}>{o.l}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{o.sub}</p></div>)}</div>
         </div>}
         {op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&<div style={{padding:"12px 16px",background:op.consolidation_confirmed?"rgba(34,197,94,0.06)":"rgba(251,191,36,0.08)",border:`1px solid ${op.consolidation_confirmed?"rgba(34,197,94,0.2)":"rgba(251,191,36,0.25)"}`,borderRadius:10,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <div><p style={{fontSize:12,fontWeight:700,color:op.consolidation_confirmed?"#22c55e":"#fbbf24",margin:"0 0 2px"}}>{op.consolidation_confirmed?"✓ Consolidación confirmada":"⏳ Esperando confirmación de consolidación"}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{op.consolidation_confirmed?"El cliente confirmó que la carga está completa":"El cliente o vos deben confirmar que la carga está lista para enviar"}</p></div>
@@ -524,7 +530,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <Inp label="DIE %" type="number" value={it.import_duty_rate} onChange={v=>chItem(i,"import_duty_rate",v)} step="0.01" small/>
             <Inp label="TE %" type="number" value={it.statistics_rate} onChange={v=>chItem(i,"statistics_rate",v)} step="0.01" small/>
             <Inp label="IVA %" type="number" value={it.iva_rate} onChange={v=>chItem(i,"iva_rate",v)} step="0.01" small/>
-            {isAereo&&(()=>{const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const totalFob=items.reduce((s,x)=>s+Number(x.unit_price_usd||0)*Number(x.quantity||1),0);const pct=totalFob>0?itemFob/totalFob:1;let pf=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);pf+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});const certFl=pf*(config.cert_flete_aereo_ficticio||3.5);const cif=(totalFob+certFl)*1.01;const desemb=((c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;})(cif);const propDesemb=desemb*pct;const ivaD=propDesemb*0.21;return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>GASTO DOC. (auto)</label><div style={{padding:"8px 10px",fontSize:13,borderRadius:8,background:"rgba(96,165,250,0.08)",border:"1.5px solid rgba(96,165,250,0.2)",color:IC,fontWeight:600}}>USD {(propDesemb+ivaD).toFixed(2)}</div></div>;})()}
+            {isAereo&&(()=>{const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const totalFob=items.reduce((s,x)=>s+Number(x.unit_price_usd||0)*Number(x.quantity||1),0);const pct=totalFob>0?itemFob/totalFob:1;let pf=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);pf+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});const certFl=pf*(config.cert_flete_aereo_ficticio||3.5);const cif=(totalFob+certFl)*1.01;const desemb=((c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;})(cif);const propDesemb=desemb*pct;const ivaD=propDesemb*0.21;return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>GASTO DOC. (auto)</label><div style={{padding:"8px 10px",fontSize:13,borderRadius:8,background:"rgba(184,149,106,0.08)",border:"1.5px solid rgba(184,149,106,0.2)",color:IC,fontWeight:600}}>USD {(propDesemb+ivaD).toFixed(2)}</div></div>;})()}
             {isMaritimo&&<><Inp label="IVA Adic. %" type="number" value={it.iva_additional_rate} onChange={v=>chItem(i,"iva_additional_rate",v)} step="0.01" small/>
             <Inp label="IIGG %" type="number" value={it.iigg_rate} onChange={v=>chItem(i,"iigg_rate",v)} step="0.01" small/>
             <Inp label="IIBB %" type="number" value={it.iibb_rate} onChange={v=>chItem(i,"iibb_rate",v)} step="0.01" small/></>}
@@ -637,7 +643,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       <Card title="Gestión de Pagos" actions={<Btn onClick={()=>setShowNewPmt(true)} small>+ Nuevo pago</Btn>}>
         {payments.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:20}}>
           <div style={{background:"rgba(34,197,94,0.06)",borderRadius:10,padding:14,border:"1px solid rgba(34,197,94,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>ANTICIPADO</p><p style={{fontSize:18,fontWeight:700,color:"#22c55e",margin:0}}>{usdF(totalAnticipado)}</p></div>
-          <div style={{background:"rgba(96,165,250,0.06)",borderRadius:10,padding:14,border:"1px solid rgba(96,165,250,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>GIRADO</p><p style={{fontSize:18,fontWeight:700,color:IC,margin:0}}>{usdF(totalGirado)}</p></div>
+          <div style={{background:"rgba(184,149,106,0.06)",borderRadius:10,padding:14,border:"1px solid rgba(184,149,106,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>GIRADO</p><p style={{fontSize:18,fontWeight:700,color:IC,margin:0}}>{usdF(totalGirado)}</p></div>
           <div style={{background:totalGanPagos>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)",borderRadius:10,padding:14,border:`1px solid ${totalGanPagos>=0?"rgba(34,197,94,0.12)":"rgba(255,80,80,0.12)"}`,textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>GANANCIA PAGOS</p><p style={{fontSize:18,fontWeight:700,color:totalGanPagos>=0?"#22c55e":"#ff6b6b",margin:0}}>{usdF(totalGanPagos)}</p></div>
         </div>}
         {payments.map((pm,i)=>{
@@ -883,7 +889,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           {op.collection_currency==="ARS"&&<Inp label="Tipo de cambio (ARS/USD)" type="number" value={op.collection_exchange_rate} onChange={chOp("collection_exchange_rate")} step="0.01" placeholder="Ej: 1200"/>}
           <Inp label="Fecha de cobro" type="date" value={op.collection_date||""} onChange={chOp("collection_date")}/>
         </div>
-        {payments.length>0&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.12)",borderRadius:10,padding:"12px 16px",marginBottom:12}}><p style={{fontSize:12,fontWeight:600,color:IC,margin:"0 0 2px"}}>Esta operación tiene gestión de pagos (servicio aparte)</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>El cobro de esta operación es independiente. Ver detalles en tab "Pagos".</p></div>}
+        {payments.length>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.12)",borderRadius:10,padding:"12px 16px",marginBottom:12}}><p style={{fontSize:12,fontWeight:600,color:IC,margin:"0 0 2px"}}>Esta operación tiene gestión de pagos (servicio aparte)</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>El cobro de esta operación es independiente. Ver detalles en tab "Pagos".</p></div>}
         <div style={{marginBottom:8}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.is_collected||false} onChange={e=>chOp("is_collected")(e.target.checked)}/><span style={{fontSize:13,color:op.is_collected?"#22c55e":"rgba(255,255,255,0.5)",fontWeight:op.is_collected?600:400}}>{op.is_collected?"Operación cobrada ✓":"Marcar como cobrada"}</span></label></div>
       </Card>
       <Card title={op.service_type==="gestion_integral"?"Costos reales (Gestión Integral)":"Costos reales"} actions={<Btn onClick={async()=>{setSaving(true);
@@ -1061,7 +1067,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </Card>
       <Card title="Rentabilidad">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:16}}>
-          <div style={{background:"rgba(96,165,250,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(96,165,250,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>PRESUPUESTO</p><p style={{fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0}}>USD {presupuesto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+          <div style={{background:"rgba(184,149,106,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(184,149,106,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>PRESUPUESTO</p><p style={{fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0}}>USD {presupuesto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
           <div style={{background:"rgba(34,197,94,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(34,197,94,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>COBRO NETO</p><p style={{fontSize:18,fontWeight:700,color:"#22c55e",margin:0}}>USD {ingresoNeto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
           <div style={{background:"rgba(255,80,80,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(255,80,80,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>COSTOS</p><p style={{fontSize:18,fontWeight:700,color:"#ff6b6b",margin:0}}>USD {totalCostos.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
         </div>
@@ -1069,7 +1075,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         <div style={{height:8}}/>
         {costProducto>0&&rw("Costo producto",costProducto,false,"#c084fc")}{rw("Costo flete",costFlete)}{rw("Impuestos reales",costImp)}{rw("Gasto documental",costDoc)}{costSeg>0&&rw("Seguro",costSeg)}{costLocal>0&&rw("Flete local",costLocal)}{costOtros>0&&rw("Otros",costOtros)}{rw("TOTAL COSTOS",totalCostos,true,"#ff6b6b")}
         {payments.length>0&&<><div style={{height:8}}/>
-          <div style={{borderTop:"1px solid rgba(96,165,250,0.2)",paddingTop:10,marginTop:4}}><p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 6px",textTransform:"uppercase"}}>Gestión de Pagos</p></div>
+          <div style={{borderTop:"1px solid rgba(184,149,106,0.2)",paddingTop:10,marginTop:4}}><p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 6px",textTransform:"uppercase"}}>Gestión de Pagos</p></div>
           {rw("Cobrado al cliente",pmtRevenue)}
           {rw("Girado al exterior",-(payments.reduce((s,p)=>s+Number(p.giro_amount_usd||0),0)),false,"#ff6b6b")}
           {payments.reduce((s,p)=>s+Number(p.cost_comision_giro||0),0)>0&&rw("Comisión servicio giro",-(payments.reduce((s,p)=>s+Number(p.cost_comision_giro||0),0)),false,"#ff6b6b")}
@@ -1093,9 +1099,9 @@ function ClientsList({token,onSelect}){
   const filtered=clients.filter(c=>{if(!search)return true;const s=search.toLowerCase();return `${c.first_name} ${c.last_name}`.toLowerCase().includes(s)||c.client_code?.toLowerCase().includes(s)||c.email?.toLowerCase().includes(s);});
   return <div>
     <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 20px"}}>Clientes</h2>
-    <div style={{marginBottom:16}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nombre, código o email..." style={{width:"100%",maxWidth:400,padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
+    <div style={{marginBottom:16}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nombre, código o email..." style={{width:"100%",maxWidth:400,padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
     {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:
-    <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden"}}>
+    <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
           {["Código","Nombre","Email","WhatsApp","Ciudad",""].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
@@ -1126,7 +1132,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   const tabs=[{k:"info",l:"Info"},{k:"ops",l:`Operaciones (${ops.length})`},{k:"tariffs",l:"Tarifas"}];
   return <div>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}><div style={{display:"flex",alignItems:"center",gap:12}}><button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← VOLVER</button><h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>{cl.first_name} {cl.last_name}</h2>{cl.loyalty_level==="plus"&&<span title={cl.loyalty_achieved_at?`Plus desde ${new Date(cl.loyalty_achieved_at).toLocaleDateString("es-AR")}`:"Importador Plus"} style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:6,background:"linear-gradient(135deg,#f59e0b,#fbbf24)",color:"#fff",letterSpacing:"0.08em"}}>⭐ IMPORTADOR PLUS</span>}{Number(cl.points_balance||0)>0&&<span title="Puntos Argencargo" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:6,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)",letterSpacing:"0.05em"}}>⭐ {cl.points_balance} PTS</span>}{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div><Btn onClick={deleteClient} variant="danger" small>Eliminar cliente</Btn></div>
-    <div style={{display:"flex",gap:8,marginBottom:16}}>{tabs.map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
+    <div style={{display:"flex",gap:8,marginBottom:16}}>{tabs.map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
     {tab==="info"&&<Card title="Datos del Cliente" actions={<Btn onClick={saveClient} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
         <Inp label="Código" value={cl.client_code} onChange={chCl("client_code")}/>
@@ -1147,7 +1153,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
     {tab==="ops"&&<Card title="Operaciones">{lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:ops.length>0?ops.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};return <div key={op.id} onClick={()=>onSelectOp(op)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:13}}>{op.operation_code}</span><span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:4,color:st.c,background:`${st.c}15`}}>● {st.l}</span></div><div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{CM[op.channel]||op.channel}</span><span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></div></div>;}):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin operaciones</p>}</Card>}
     {tab==="tariffs"&&<div>{SERVICES.map(svc=>{const svcRates=tariffs.filter(t=>t.service_key===svc.key);if(!svcRates.length)return null;return <Card key={svc.key} title={svc.label}><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"-8px 0 12px"}}>Dejá vacío para usar tarifa base. Poné un valor para aplicar tarifa promocional.</p>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}><th style={{padding:"8px 0",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>RANGO</th><th style={{padding:"8px 0",textAlign:"right",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>TARIFA BASE</th><th style={{padding:"8px 0",textAlign:"right",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>TARIFA CUSTOM</th></tr></thead>
-      <tbody>{svcRates.map(t=>{const ov=getOverride(t.id);return <tr key={t.id} style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}><td style={{padding:"8px 0",color:"rgba(255,255,255,0.6)"}}>{t.label}</td><td style={{padding:"8px 0",textAlign:"right",color:ov?"rgba(255,255,255,0.4)":"#fff",fontWeight:600,textDecoration:ov?"line-through":"none"}}>${Number(t.rate).toLocaleString("en-US")}/{t.unit}</td><td style={{padding:"8px 0",textAlign:"right",display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6}}><input type="number" value={ov?.custom_rate??""} onChange={e=>setOverrideRate(t.id,e.target.value)} placeholder="—" step="0.01" style={{width:80,padding:"4px 8px",fontSize:13,textAlign:"right",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:ov?"rgba(96,165,250,0.1)":"rgba(255,255,255,0.04)",color:ov?IC:"rgba(255,255,255,0.4)",outline:"none"}}/>{ov&&<button onClick={()=>setOverrideRate(t.id,"")} style={{fontSize:10,padding:"4px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>X</button>}</td></tr>;})}</tbody></table></Card>;})}</div>}
+      <tbody>{svcRates.map(t=>{const ov=getOverride(t.id);return <tr key={t.id} style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}><td style={{padding:"8px 0",color:"rgba(255,255,255,0.6)"}}>{t.label}</td><td style={{padding:"8px 0",textAlign:"right",color:ov?"rgba(255,255,255,0.4)":"#fff",fontWeight:600,textDecoration:ov?"line-through":"none"}}>${Number(t.rate).toLocaleString("en-US")}/{t.unit}</td><td style={{padding:"8px 0",textAlign:"right",display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6}}><input type="number" value={ov?.custom_rate??""} onChange={e=>setOverrideRate(t.id,e.target.value)} placeholder="—" step="0.01" style={{width:80,padding:"4px 8px",fontSize:13,textAlign:"right",border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:ov?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.04)",color:ov?IC:"rgba(255,255,255,0.4)",outline:"none"}}/>{ov&&<button onClick={()=>setOverrideRate(t.id,"")} style={{fontSize:10,padding:"4px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>X</button>}</td></tr>;})}</tbody></table></Card>;})}</div>}
   </div>;
 }
 
@@ -1178,16 +1184,16 @@ function TariffsManager({token}){
   const getCert=(key)=>certConfig.find(c=>c.key===key);
 
   if(!selSvc)return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Tarifas</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div>
-    <div style={{display:"flex",gap:8,marginBottom:20}}>{[{k:"sell",l:"Precios de Venta"},{k:"cost",l:"Costos de Flete"}].map(m=><button key={m.k} onClick={()=>setViewMode(m.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:viewMode===m.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:viewMode===m.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:viewMode===m.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{m.l}</button>)}</div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Tarifas</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div>
+    <div style={{display:"flex",gap:8,marginBottom:20}}>{[{k:"sell",l:"Precios de Venta"},{k:"cost",l:"Costos de Flete"}].map(m=><button key={m.k} onClick={()=>setViewMode(m.k)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:viewMode===m.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:viewMode===m.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:viewMode===m.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{m.l}</button>)}</div>
     {certLoaded&&<Card title="Certificación de Flete (CIF)"><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"-8px 0 12px"}}>Valores para calcular el CIF. Real = lo declarado ante aduana. Ficticio = lo que ve el cliente.</p>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 12px"}}>{[
         {k:"cert_flete_aereo_real",l:"Aéreo REAL (USD/kg bruto)"},
         {k:"cert_flete_aereo_ficticio",l:"Aéreo FICTICIO (USD/kg fact.)"},
         {k:"cert_flete_maritimo_real",l:"Marítimo REAL (USD/CBM)"},
         {k:"cert_flete_maritimo_ficticio",l:"Marítimo FICTICIO (USD/CBM)"}
-      ].map(f=>{const c=getCert(f.k);return <div key={f.k} style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4}}>{f.l}</label><input type="number" value={c?.value||""} onChange={e=>{setCertConfig(p=>p.map(x=>x.key===f.k?{...x,value:e.target.value}:x));}} onBlur={e=>saveCertConfig(f.k,e.target.value)} step="0.1" style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>;})}</div></Card>}
-    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:SERVICES.map(svc=>{const svcRates=tariffs.filter(t=>t.service_key===svc.key&&t.type==="rate");if(!svcRates.length)return null;return <div key={svc.key} onClick={()=>setSelSvc(svc.key)} style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:"16px 20px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.05)";}}><div><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{svc.label}</p>{svc.info&&<p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{svc.info}</p>}</div><div style={{display:"flex",alignItems:"center",gap:12}}>{svcRates.map(r=><span key={r.id} style={{fontSize:11,color:isCost?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.5)"}}>{r.label}: ${isCost?Number(r.cost||0):Number(r.rate)}</span>)}<span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></div></div>;})}</div>;
+      ].map(f=>{const c=getCert(f.k);return <div key={f.k} style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4}}>{f.l}</label><input type="number" value={c?.value||""} onChange={e=>{setCertConfig(p=>p.map(x=>x.key===f.k?{...x,value:e.target.value}:x));}} onBlur={e=>saveCertConfig(f.k,e.target.value)} step="0.1" style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>;})}</div></Card>}
+    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:SERVICES.map(svc=>{const svcRates=tariffs.filter(t=>t.service_key===svc.key&&t.type==="rate");if(!svcRates.length)return null;return <div key={svc.key} onClick={()=>setSelSvc(svc.key)} style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"16px 20px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.028)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.028)";}}><div><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{svc.label}</p>{svc.info&&<p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{svc.info}</p>}</div><div style={{display:"flex",alignItems:"center",gap:12}}>{svcRates.map(r=><span key={r.id} style={{fontSize:11,color:isCost?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.5)"}}>{r.label}: ${isCost?Number(r.cost||0):Number(r.rate)}</span>)}<span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></div></div>;})}</div>;
   const svcInfo=SERVICES.find(s=>s.key===selSvc);
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{display:"flex",alignItems:"center",gap:12}}><button onClick={()=>setSelSvc(null)} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← VOLVER</button><h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>{svcInfo?.label} — {isCost?"Costos":"Precios de Venta"}</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div></div>
@@ -1305,16 +1311,16 @@ function Calculator({token,clients}){
     <Card><Sel label="Cliente (para tarifas custom)" value={selClient} onChange={setSelClient} options={clients.map(c=>({value:c.id,label:`${c.client_code} — ${c.first_name} ${c.last_name}`}))} ph="Sin cliente (tarifa base)"/>
     {selClient&&overrides.length>0&&<p style={{fontSize:11,color:IC,margin:"-8px 0 0",fontWeight:600}}>Usando {overrides.length} tarifa(s) custom</p>}</Card>
 
-    {step===0&&<div style={{display:"flex",gap:24,justifyContent:"center",padding:"2rem 0"}}>{[{k:"China",flag:"\ud83c\udde8\ud83c\uddf3"},{k:"USA",flag:"\ud83c\uddfa\ud83c\uddf8"}].map(c=><div key={c.k} onClick={()=>{setOrigin(c.k);setStep(1);}} style={{width:200,padding:"2.5rem 1.5rem",background:"rgba(255,255,255,0.05)",border:"1.5px solid rgba(255,255,255,0.08)",borderRadius:16,cursor:"pointer",textAlign:"center"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=IC;e.currentTarget.style.background="rgba(96,165,250,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.background="rgba(255,255,255,0.05)";}}><p style={{fontSize:52,margin:"0 0 16px"}}>{c.flag}</p><p style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>{c.k}</p></div>)}</div>}
+    {step===0&&<div style={{display:"flex",gap:24,justifyContent:"center",padding:"2rem 0"}}>{[{k:"China",flag:"\ud83c\udde8\ud83c\uddf3"},{k:"USA",flag:"\ud83c\uddfa\ud83c\uddf8"}].map(c=><div key={c.k} onClick={()=>{setOrigin(c.k);setStep(1);}} style={{width:200,padding:"2.5rem 1.5rem",background:"rgba(255,255,255,0.028)",border:"1.5px solid rgba(255,255,255,0.08)",borderRadius:16,cursor:"pointer",textAlign:"center"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=IC;e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.background="rgba(255,255,255,0.028)";}}><p style={{fontSize:52,margin:"0 0 16px"}}>{c.flag}</p><p style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{c.k}</p></div>)}</div>}
 
     {step===1&&origin==="USA"&&<Card title="PRODUCTOS">
       {products.map((p,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:IC}}>Producto {i+1}</span>{products.length>1&&<Btn onClick={()=>rmProduct(i)} small variant="danger">Eliminar</Btn>}</div>
-        <div style={{display:"flex",gap:12,marginBottom:12}}>{[{k:"general",l:"Carga General"},{k:"celulares",l:"Celulares"}].map(t=><div key={t.k} onClick={()=>chProd(i,"type",t.k)} style={{flex:1,padding:"12px",textAlign:"center",borderRadius:10,border:`1.5px solid ${p.type===t.k?IC:"rgba(255,255,255,0.08)"}`,background:p.type===t.k?"rgba(96,165,250,0.1)":"transparent",cursor:"pointer"}}><span style={{fontSize:13,fontWeight:600,color:p.type===t.k?IC:"rgba(255,255,255,0.4)"}}>{t.l}</span></div>)}</div>
+        <div style={{display:"flex",gap:12,marginBottom:12}}>{[{k:"general",l:"Carga General"},{k:"celulares",l:"Celulares"}].map(t=><div key={t.k} onClick={()=>chProd(i,"type",t.k)} style={{flex:1,padding:"12px",textAlign:"center",borderRadius:10,border:`1.5px solid ${p.type===t.k?IC:"rgba(255,255,255,0.08)"}`,background:p.type===t.k?"rgba(184,149,106,0.1)":"transparent",cursor:"pointer"}}><span style={{fontSize:13,fontWeight:600,color:p.type===t.k?IC:"rgba(255,255,255,0.4)"}}>{t.l}</span></div>)}</div>
         {p.type==="general"&&<Inp label="Descripción" value={p.description} onChange={v=>chProd(i,"description",v)} placeholder="Ej: Fundas de silicona"/>}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}><Inp label="Precio unit. (USD)" type="number" value={p.unit_price} onChange={v=>chProd(i,"unit_price",v)} placeholder="3.50"/><Inp label="Cantidad" type="number" value={p.quantity} onChange={v=>chProd(i,"quantity",v)} placeholder="1"/></div>
       </div>)}
-      <button onClick={addProduct} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar producto</button>
+      <button onClick={addProduct} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar producto</button>
       {totalFob>0&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:12,marginTop:16,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Valor total</span><span style={{fontSize:16,fontWeight:700,color:IC}}>{usd(totalFob)}</span></div>}
       <div style={{display:"flex",gap:12,marginTop:16}}><Btn variant="secondary" onClick={()=>{setStep(0);setOrigin("");}}>← Origen</Btn><Btn onClick={()=>setStep(2)} disabled={!products.some(p=>Number(p.unit_price)>0)}>Siguiente →</Btn></div>
     </Card>}
@@ -1328,21 +1334,21 @@ function Calculator({token,clients}){
           <Inp label="Peso kg" type="number" value={pk.weight} onChange={v=>chPkg(i,"weight",v)} placeholder="12"/>
         </div>
       </div>)}
-      <button onClick={addPkg} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar bulto</button>
+      <button onClick={addPkg} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar bulto</button>
       <div style={{marginTop:12}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={noDims} onChange={e=>setNoDims(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>Sin medidas (solo aéreo)</span></label></div>
       <div style={{display:"flex",gap:12,marginTop:16}}><Btn variant="secondary" onClick={()=>setStep(1)}>← Atrás</Btn><Btn onClick={()=>setStep(3)} disabled={!pkgs.some(p=>Number(p.weight)>0)}>Siguiente →</Btn></div>
     </Card>}
 
     {step===3&&origin==="USA"&&<Card title="ENTREGA EN DESTINO">
-      <div style={{display:"flex",gap:12,marginBottom:16}}>{[{k:"oficina",l:"Retiro por Oficina",sub:"Gratis"},{k:"caba",l:"Envío CABA",sub:"$20"},{k:"gba",l:"Envío a todo el país",sub:"A cotizar"}].map(d=><div key={d.k} onClick={()=>setDelivery(d.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:10,border:`1.5px solid ${delivery===d.k?IC:"rgba(255,255,255,0.08)"}`,background:delivery===d.k?"rgba(96,165,250,0.1)":"transparent",cursor:"pointer"}}><p style={{fontSize:14,fontWeight:700,color:delivery===d.k?IC:"rgba(255,255,255,0.5)",margin:"0 0 2px"}}>{d.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{d.sub}</p></div>)}</div>
+      <div style={{display:"flex",gap:12,marginBottom:16}}>{[{k:"oficina",l:"Retiro por Oficina",sub:"Gratis"},{k:"caba",l:"Envío CABA",sub:"$20"},{k:"gba",l:"Envío a todo el país",sub:"A cotizar"}].map(d=><div key={d.k} onClick={()=>setDelivery(d.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:10,border:`1.5px solid ${delivery===d.k?IC:"rgba(255,255,255,0.08)"}`,background:delivery===d.k?"rgba(184,149,106,0.1)":"transparent",cursor:"pointer"}}><p style={{fontSize:14,fontWeight:700,color:delivery===d.k?IC:"rgba(255,255,255,0.5)",margin:"0 0 2px"}}>{d.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{d.sub}</p></div>)}</div>
       <div style={{display:"flex",gap:12}}><Btn variant="secondary" onClick={()=>setStep(2)}>← Atrás</Btn><Btn onClick={calculate}>Calcular costos →</Btn></div>
     </Card>}
 
     {step===4&&results&&<div>
       <div style={{display:"flex",gap:12,marginBottom:16}}><button onClick={()=>setStep(3)} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← Volver</button><span style={{color:"rgba(255,255,255,0.1)"}}>|</span><button onClick={()=>{setStep(0);setResults(null);setOrigin("");setProducts([{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false}]);setPkgs([{qty:"1",length:"",width:"",height:"",weight:""}]);setNoDims(false);setDelivery("oficina");setHasBattery(false);setHasBrand(false);}} style={{fontSize:13,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>Nueva cotización</button></div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>{results.channels.map(ch=>{const delivCost=delivery==="caba"?20:0;const clientTotal=ch.total+delivCost;const gananciaFlete=ch.flete-(ch.fCost||0);const gananciaImp=ch.gananciaImp||0;const gananciaTotal=gananciaFlete+gananciaImp;return <div key={ch.key} style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.5rem"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>{results.channels.map(ch=>{const delivCost=delivery==="caba"?20:0;const clientTotal=ch.total+delivCost;const gananciaFlete=ch.flete-(ch.fCost||0);const gananciaImp=ch.gananciaImp||0;const gananciaTotal=gananciaFlete+gananciaImp;return <div key={ch.key} style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.5rem"}}>
         <p style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{ch.name}</p>
-        {ch.info&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",padding:"3px 10px",background:"rgba(255,255,255,0.05)",borderRadius:4}}>{ch.info}</span>}
+        {ch.info&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",padding:"3px 10px",background:"rgba(255,255,255,0.028)",borderRadius:4}}>{ch.info}</span>}
         <div style={{marginTop:14}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>COTIZACIÓN CLIENTE</p>
           {ch.isBlanco?<>
@@ -1373,23 +1379,23 @@ function Calculator({token,clients}){
     {/* CHINA FLOW - Step 1: brand + battery cards + per-product NCM */}
     {step===1&&origin==="China"&&<Card>
       <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 12px"}}>¿Los productos tienen marca?</h3>
-      <div style={{display:"flex",gap:12,marginBottom:12}}>{[{k:true,icon:"®",l:"Sí, con marca",sub:"Productos branded / licencia"},{k:false,icon:"✓",l:"Sin marca",sub:"Productos genéricos"}].map(o=><div key={String(o.k)} onClick={()=>setHasBrand(o.k)} style={{flex:1,padding:"20px",textAlign:"center",borderRadius:12,border:`1.5px solid ${hasBrand===o.k?IC:"rgba(255,255,255,0.08)"}`,background:hasBrand===o.k?"rgba(96,165,250,0.1)":"rgba(255,255,255,0.05)",cursor:"pointer"}}><p style={{fontSize:24,margin:"0 0 8px"}}>{o.icon}</p><p style={{fontSize:14,fontWeight:700,color:hasBrand===o.k?IC:"rgba(255,255,255,0.6)",margin:"0 0 4px"}}>{o.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{o.sub}</p></div>)}</div>
-      {hasBrand&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10,padding:"12px 16px",marginBottom:20}}><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Las importaciones con marca se despachan solo por canal <strong style={{color:IC}}>Integral AC</strong> (courier). No es necesario clasificar NCM.</p></div>}
+      <div style={{display:"flex",gap:12,marginBottom:12}}>{[{k:true,icon:"®",l:"Sí, con marca",sub:"Productos branded / licencia"},{k:false,icon:"✓",l:"Sin marca",sub:"Productos genéricos"}].map(o=><div key={String(o.k)} onClick={()=>setHasBrand(o.k)} style={{flex:1,padding:"20px",textAlign:"center",borderRadius:12,border:`1.5px solid ${hasBrand===o.k?IC:"rgba(255,255,255,0.08)"}`,background:hasBrand===o.k?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.028)",cursor:"pointer"}}><p style={{fontSize:24,margin:"0 0 8px"}}>{o.icon}</p><p style={{fontSize:14,fontWeight:700,color:hasBrand===o.k?IC:"rgba(255,255,255,0.6)",margin:"0 0 4px"}}>{o.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{o.sub}</p></div>)}</div>
+      {hasBrand&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:10,padding:"12px 16px",marginBottom:20}}><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Las importaciones con marca se despachan solo por canal <strong style={{color:IC}}>Integral AC</strong> (courier). No es necesario clasificar NCM.</p></div>}
 
       <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 12px"}}>¿Tu producto contiene batería interna?</h3>
-      <div style={{display:"flex",gap:12,marginBottom:12}}>{[{k:true,icon:"⚡",l:"Sí, tiene batería",sub:"Recargable / Litio"},{k:false,icon:"✓",l:"No tiene batería",sub:"Producto estándar"}].map(o=><div key={String(o.k)} onClick={()=>setHasBattery(o.k)} style={{flex:1,padding:"20px",textAlign:"center",borderRadius:12,border:`1.5px solid ${hasBattery===o.k?IC:"rgba(255,255,255,0.08)"}`,background:hasBattery===o.k?"rgba(96,165,250,0.1)":"rgba(255,255,255,0.05)",cursor:"pointer"}}><p style={{fontSize:24,margin:"0 0 8px"}}>{o.icon}</p><p style={{fontSize:14,fontWeight:700,color:hasBattery===o.k?IC:"rgba(255,255,255,0.6)",margin:"0 0 4px"}}>{o.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{o.sub}</p></div>)}</div>
-      {hasBattery&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10,padding:"12px 16px",marginBottom:20}}><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Productos con batería interna (auriculares bluetooth, power banks, smartwatch) son mercadería peligrosa y se despachan desde <strong style={{color:IC}}>Hong Kong</strong>. Recargo de <strong style={{color:IC}}>$2/kg</strong>.</p></div>}
+      <div style={{display:"flex",gap:12,marginBottom:12}}>{[{k:true,icon:"⚡",l:"Sí, tiene batería",sub:"Recargable / Litio"},{k:false,icon:"✓",l:"No tiene batería",sub:"Producto estándar"}].map(o=><div key={String(o.k)} onClick={()=>setHasBattery(o.k)} style={{flex:1,padding:"20px",textAlign:"center",borderRadius:12,border:`1.5px solid ${hasBattery===o.k?IC:"rgba(255,255,255,0.08)"}`,background:hasBattery===o.k?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.028)",cursor:"pointer"}}><p style={{fontSize:24,margin:"0 0 8px"}}>{o.icon}</p><p style={{fontSize:14,fontWeight:700,color:hasBattery===o.k?IC:"rgba(255,255,255,0.6)",margin:"0 0 4px"}}>{o.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{o.sub}</p></div>)}</div>
+      {hasBattery&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:10,padding:"12px 16px",marginBottom:20}}><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Productos con batería interna (auriculares bluetooth, power banks, smartwatch) son mercadería peligrosa y se despachan desde <strong style={{color:IC}}>Hong Kong</strong>. Recargo de <strong style={{color:IC}}>$2/kg</strong>.</p></div>}
 
       <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"20px 0 16px"}}>PRODUCTOS</h3>
       {products.map((p,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:IC}}>Producto {i+1}</span>{products.length>1&&<Btn onClick={()=>rmProduct(i)} small variant="danger">Eliminar</Btn>}</div>
         <div style={{marginBottom:14}}><label style={{display:"block",fontSize:13,fontWeight:700,color:"#fff",marginBottom:5}}>Descripción de la mercadería</label><div style={{display:"flex",gap:8}}><input value={p.description||""} onChange={e=>chProd(i,"description",e.target.value)} placeholder="Sé específico. Ej: Auriculares inalámbricos bluetooth" style={{flex:1,padding:"11px 14px",fontSize:14,border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.1)",color:"#fff",outline:"none"}}/>{!hasBrand&&<button onClick={()=>classifyProduct(i)} disabled={p.ncmLoading||!p.description?.trim()} style={{padding:"11px 16px",fontSize:12,fontWeight:600,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff",whiteSpace:"nowrap",opacity:p.ncmLoading?0.6:1}}>{p.ncmLoading?"Clasificando...":"Clasificar"}</button>}</div></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}><Inp label="Precio unit. (USD)" type="number" value={p.unit_price} onChange={v=>chProd(i,"unit_price",v)} placeholder="3.50"/><Inp label="Cantidad" type="number" value={p.quantity} onChange={v=>chProd(i,"quantity",v)} placeholder="1"/></div>
-        {!hasBrand&&p.ncm?.ncm_code&&<div style={{background:"rgba(96,165,250,0.06)",borderRadius:10,padding:"12px 16px",marginBottom:8,border:"1px solid rgba(96,165,250,0.12)"}}><div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}><span style={{fontFamily:"monospace",fontWeight:700,color:IC,padding:"4px 10px",background:"rgba(96,165,250,0.15)",borderRadius:6,fontSize:12}}>{p.ncm.ncm_code}</span><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{p.ncm.ncm_description}</span><button onClick={()=>chProd(i,"ncm",null)} style={{fontSize:11,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",marginLeft:"auto"}}>Reclasificar</button></div><div style={{display:"flex",gap:16,marginTop:6}}><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>DIE: <strong style={{color:"#fff"}}>{p.ncm.import_duty_rate}%</strong></span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>TE: <strong style={{color:"#fff"}}>{p.ncm.statistics_rate}%</strong></span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>IVA: <strong style={{color:"#fff"}}>{p.ncm.iva_rate}%</strong></span></div></div>}
+        {!hasBrand&&p.ncm?.ncm_code&&<div style={{background:"rgba(184,149,106,0.06)",borderRadius:10,padding:"12px 16px",marginBottom:8,border:"1px solid rgba(184,149,106,0.12)"}}><div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}><span style={{fontFamily:"monospace",fontWeight:700,color:IC,padding:"4px 10px",background:"rgba(184,149,106,0.15)",borderRadius:6,fontSize:12}}>{p.ncm.ncm_code}</span><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{p.ncm.ncm_description}</span><button onClick={()=>chProd(i,"ncm",null)} style={{fontSize:11,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",marginLeft:"auto"}}>Reclasificar</button></div><div style={{display:"flex",gap:16,marginTop:6}}><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>DIE: <strong style={{color:"#fff"}}>{p.ncm.import_duty_rate}%</strong></span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>TE: <strong style={{color:"#fff"}}>{p.ncm.statistics_rate}%</strong></span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>IVA: <strong style={{color:"#fff"}}>{p.ncm.iva_rate}%</strong></span></div></div>}
         {!hasBrand&&p.ncmError&&<div style={{background:"rgba(255,80,80,0.08)",borderRadius:10,padding:"12px 16px",marginBottom:8,border:"1px solid rgba(255,80,80,0.15)"}}><p style={{fontSize:13,color:"#ff6b6b",margin:"0 0 6px",fontWeight:600}}>No se pudo detectar el NCM. Cargá manualmente:</p><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 8px"}}><Inp label="NCM" value={p.ncm?.ncm_code||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_description:p.description}),ncm_code:v,import_duty_rate:p.ncm?.import_duty_rate||35,statistics_rate:p.ncm?.statistics_rate||3,iva_rate:p.ncm?.iva_rate||21})} placeholder="3926.90.90"/><Inp label="DIE %" type="number" value={p.ncm?.import_duty_rate||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_code:"MANUAL",ncm_description:p.description}),import_duty_rate:Number(v)||35,statistics_rate:p.ncm?.statistics_rate||3,iva_rate:p.ncm?.iva_rate||21})}/><Inp label="TE %" type="number" value={p.ncm?.statistics_rate||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,iva_rate:21}),statistics_rate:Number(v)||3})}/><Inp label="IVA %" type="number" value={p.ncm?.iva_rate||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,statistics_rate:3}),iva_rate:Number(v)||21})}/></div></div>}
         {!hasBrand&&!p.ncm&&!p.ncmError&&!p.ncmLoading&&p.description?.trim()&&<div style={{marginBottom:8}}><button onClick={()=>chProd(i,"ncm",{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,statistics_rate:3,iva_rate:21})} style={{fontSize:11,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",padding:0}}>Usar valores estimados (35% derechos) →</button></div>}
       </div>)}
-      <button onClick={addProduct} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar producto</button>
+      <button onClick={addProduct} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar producto</button>
       {totalFob>0&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:12,marginTop:16,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Valor total</span><span style={{fontSize:16,fontWeight:700,color:IC}}>{usd(totalFob)}</span></div>}
       {(()=>{const hasPriced=products.some(p=>Number(p.unit_price)>0);const pendingClass=!hasBrand&&products.some(p=>Number(p.unit_price)>0&&!p.ncm);const blocked=!hasPriced||pendingClass;return <>
         {pendingClass&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:10,padding:"10px 14px",marginTop:14}}><p style={{fontSize:12,color:"#fb923c",margin:0,fontWeight:500}}>⚠️ Tenés que clasificar cada producto antes de avanzar.</p></div>}
@@ -1405,12 +1411,12 @@ function Calculator({token,clients}){
           <Inp label="Peso kg" type="number" value={pk.weight} onChange={v=>chPkg(i,"weight",v)} placeholder="12"/>
         </div>
       </div>)}
-      <button onClick={addPkg} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar bulto</button>
+      <button onClick={addPkg} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar bulto</button>
       <div style={{marginTop:12}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={noDims} onChange={e=>setNoDims(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>Sin medidas (solo aéreo)</span></label></div>
       <div style={{display:"flex",gap:12,marginTop:16}}><Btn variant="secondary" onClick={()=>setStep(1)}>← Atrás</Btn><Btn onClick={()=>setStep(3)} disabled={!pkgs.some(p=>Number(p.weight)>0)}>Siguiente →</Btn></div>
     </Card>}
     {step===3&&origin==="China"&&<Card title="ENTREGA EN DESTINO">
-      <div style={{display:"flex",gap:12,marginBottom:16}}>{[{k:"oficina",l:"Retiro por Oficina",sub:"Gratis"},{k:"caba",l:"Envío CABA",sub:"$20"},{k:"gba",l:"Envío a todo el país",sub:"A cotizar"}].map(d=><div key={d.k} onClick={()=>setDelivery(d.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:10,border:`1.5px solid ${delivery===d.k?IC:"rgba(255,255,255,0.08)"}`,background:delivery===d.k?"rgba(96,165,250,0.1)":"transparent",cursor:"pointer"}}><p style={{fontSize:14,fontWeight:700,color:delivery===d.k?IC:"rgba(255,255,255,0.5)",margin:"0 0 2px"}}>{d.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{d.sub}</p></div>)}</div>
+      <div style={{display:"flex",gap:12,marginBottom:16}}>{[{k:"oficina",l:"Retiro por Oficina",sub:"Gratis"},{k:"caba",l:"Envío CABA",sub:"$20"},{k:"gba",l:"Envío a todo el país",sub:"A cotizar"}].map(d=><div key={d.k} onClick={()=>setDelivery(d.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:10,border:`1.5px solid ${delivery===d.k?IC:"rgba(255,255,255,0.08)"}`,background:delivery===d.k?"rgba(184,149,106,0.1)":"transparent",cursor:"pointer"}}><p style={{fontSize:14,fontWeight:700,color:delivery===d.k?IC:"rgba(255,255,255,0.5)",margin:"0 0 2px"}}>{d.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{d.sub}</p></div>)}</div>
       <div style={{display:"flex",gap:12}}><Btn variant="secondary" onClick={()=>setStep(2)}>← Atrás</Btn><Btn onClick={calculate}>Calcular costos →</Btn></div>
     </Card>}
   </div>;
@@ -1565,7 +1571,7 @@ function FinancePanel({token}){
   const ganancia=ledgerIngresos-ledgerGastosOp-ledgerGastosFijos;
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-      <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Finanzas</h2>
+      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Finanzas</h2>
       {tab==="fixed"&&<Btn onClick={()=>setShowAdd(true)} small>+ Nuevo gasto</Btn>}
     </div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
@@ -1575,7 +1581,7 @@ function FinancePanel({token}){
       <div style={{background:"rgba(251,146,60,0.04)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px"}}>GASTOS NEGOCIO</p><p style={{fontSize:20,fontWeight:700,color:"#fb923c",margin:0}}>{usd(ledgerGastosFijos)}</p></div>
       <div style={{background:ganancia>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)",border:`1px solid ${ganancia>=0?"rgba(34,197,94,0.18)":"rgba(255,80,80,0.18)"}`,borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px"}}>GANANCIA NETA</p><p style={{fontSize:20,fontWeight:700,color:ganancia>=0?"#22c55e":"#ff6b6b",margin:0}}>{usd(ganancia)}</p></div>
     </div>
-    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>{[{k:"fixed",l:"Gastos del Negocio"},{k:"ledger",l:"Libro Diario"},{k:"dollar",l:"Dollarización"},{k:"tcdebt",l:(()=>{const c=cardDebt.usd.length+cardDebt.pmts.length;return c>0?`Deuda Tarjeta (${c})`:"Deuda Tarjeta";})()}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
+    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>{[{k:"fixed",l:"Gastos del Negocio"},{k:"ledger",l:"Libro Diario"},{k:"dollar",l:"Dollarización"},{k:"tcdebt",l:(()=>{const c=cardDebt.usd.length+cardDebt.pmts.length;return c>0?`Deuda Tarjeta (${c})`:"Deuda Tarjeta";})()}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
     {showAdd&&tab==="fixed"&&<Card title="Nuevo gasto">
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
         <Inp label="Fecha" type="date" value={newEntry.date} onChange={v=>setNewEntry(p=>({...p,date:v}))}/>
@@ -1583,7 +1589,7 @@ function FinancePanel({token}){
         <Sel label="Método" value={newEntry.payment_method} onChange={v=>setNewEntry(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"tarjeta_credito",label:"Tarjeta Crédito"},{value:"tarjeta_debito",label:"Tarjeta Débito"},{value:"efectivo",label:"Efectivo"}]}/>
       </div>
       {/* Selector de moneda USD/ARS */}
-      <div style={{display:"flex",gap:8,marginBottom:12}}>{[{k:"USD",l:"USD"},{k:"ARS",l:"ARS ($)"}].map(c=><button key={c.k} onClick={()=>setNewEntry(p=>({...p,currency:c.k}))} style={{flex:1,padding:"10px",fontSize:12,fontWeight:700,borderRadius:8,border:newEntry.currency===c.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:newEntry.currency===c.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:newEntry.currency===c.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{c.l}</button>)}</div>
+      <div style={{display:"flex",gap:8,marginBottom:12}}>{[{k:"USD",l:"USD"},{k:"ARS",l:"ARS ($)"}].map(c=><button key={c.k} onClick={()=>setNewEntry(p=>({...p,currency:c.k}))} style={{flex:1,padding:"10px",fontSize:12,fontWeight:700,borderRadius:8,border:newEntry.currency===c.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:newEntry.currency===c.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:newEntry.currency===c.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{c.l}</button>)}</div>
       {newEntry.currency==="USD"
         ?<Inp label="Monto USD" type="number" value={newEntry.amount} onChange={v=>setNewEntry(p=>({...p,amount:v}))} step="0.01" placeholder="0.00"/>
         :<div style={{display:"grid",gridTemplateColumns:newEntry.payment_method==="tarjeta_credito"?"1fr":"1fr 1fr",gap:"0 12px"}}>
@@ -1602,9 +1608,9 @@ function FinancePanel({token}){
     </Card>}
     {tab==="fixed"&&(lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:<>
       <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:16}}>
-        {FIXED_CATS.map(c=><div key={c.k} style={{background:"rgba(255,255,255,0.05)",border:`1px solid ${CAT_COLOR[c.k]}33`,borderRadius:10,padding:"10px 14px"}}><p style={{fontSize:10,fontWeight:700,color:CAT_COLOR[c.k],margin:"0 0 4px"}}>{c.l.split(" ")[0].toUpperCase()}</p><p style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>{usd(fijosByCategory[c.k]||0)}</p></div>)}
+        {FIXED_CATS.map(c=><div key={c.k} style={{background:"rgba(255,255,255,0.028)",border:`1px solid ${CAT_COLOR[c.k]}33`,borderRadius:10,padding:"10px 14px"}}><p style={{fontSize:10,fontWeight:700,color:CAT_COLOR[c.k],margin:"0 0 4px"}}>{c.l.split(" ")[0].toUpperCase()}</p><p style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>{usd(fijosByCategory[c.k]||0)}</p></div>)}
       </div>
-      <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden"}}>
+      <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>{["Fecha","Categoría","Detalle","Monto","Pago",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
           <tbody>{entries.map(e=><tr key={e.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
@@ -1618,13 +1624,13 @@ function FinancePanel({token}){
         </table>
         {entries.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>Sin gastos cargados. Agregá Meta ads, Vercel, Claude, salarios, etc.</p>}
       </div></>)}
-    {tab==="ledger"&&(lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:<div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden"}}>
+    {tab==="ledger"&&(lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:<div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>{["Fecha","Tipo","Origen","Descripción","Detalle","Monto"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
         <tbody>{ledger.map((l,i)=><tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
           <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{l.date==="—"?"—":formatDate(l.date)}</td>
           <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,fontWeight:700,background:l.type==="ingreso"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:l.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{l.type==="ingreso"?"INGRESO":"GASTO"}</span></td>
-          <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.5)"}}>{l.origen==="op"?"Operación":l.origen==="pmt"?"Gestión de pagos":l.origen==="agente"?"Anticipo agente":"Gasto fijo"}</span></td>
+          <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.028)",color:"rgba(255,255,255,0.5)"}}>{l.origen==="op"?"Operación":l.origen==="pmt"?"Gestión de pagos":l.origen==="agente"?"Anticipo agente":"Gasto fijo"}</span></td>
           <td style={{padding:"10px 12px",color:"#fff"}}>{l.desc}</td>
           <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{l.detail||(l.cat?CAT_LBL[l.cat]:"")}</td>
           <td style={{padding:"10px 12px",fontWeight:700,color:l.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{l.type==="gasto"?"-":""}{usd(l.amount)}</td>
@@ -1704,10 +1710,10 @@ function FinancePanel({token}){
             <p style={{fontSize:28,fontWeight:700,color:usdTot>0?"#fb923c":"#22c55e",margin:0}}>USD {usdTot.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
             <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>{cardDebt.usd.length} gasto{cardDebt.usd.length!==1?"s":""} del negocio{usdTotEntries>0?` (USD ${usdTotEntries.toFixed(2)})`:""} · {cardDebt.pmts.length} giro{cardDebt.pmts.length!==1?"s":""} al exterior{usdTotPmts>0?` (USD ${usdTotPmts.toFixed(2)})`:""}</p>
           </div>
-          {arsTot>0&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:12,padding:"18px 22px"}}>
+          {arsTot>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:12,padding:"18px 22px"}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",letterSpacing:"0.05em"}}>💳 DEUDA TARJETA ARS (sin dollarizar)</p>
             <p style={{fontSize:28,fontWeight:700,color:IC,margin:0}}>ARS {arsTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-            <button onClick={()=>setTab("dollar")} style={{marginTop:10,fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:6,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:IC,cursor:"pointer"}}>Ir a Dollarización →</button>
+            <button onClick={()=>setTab("dollar")} style={{marginTop:10,fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>Ir a Dollarización →</button>
           </div>}
         </div>
         {/* Grupos por fecha de cierre */}
@@ -1726,7 +1732,7 @@ function FinancePanel({token}){
               {g.items.map((it,i)=><div key={it.source+it.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<g.items.length-1?"1px solid rgba(255,255,255,0.04)":"none",flexWrap:"wrap"}}>
                 <div style={{flex:1,minWidth:200}}>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                    <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:it.source==="pmt"?"rgba(168,85,247,0.15)":"rgba(96,165,250,0.15)",color:it.source==="pmt"?"#c084fc":IC,textTransform:"uppercase",letterSpacing:"0.05em"}}>{it.source==="pmt"?"Giro":"Gasto"}</span>
+                    <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:it.source==="pmt"?"rgba(168,85,247,0.15)":"rgba(184,149,106,0.15)",color:it.source==="pmt"?"#c084fc":IC,textTransform:"uppercase",letterSpacing:"0.05em"}}>{it.source==="pmt"?"Giro":"Gasto"}</span>
                     <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>{it.desc}</p>
                   </div>
                   {it.detail&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{it.detail}</p>}
@@ -1870,11 +1876,11 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase"}}>📍 Destinatario — dirección de envío</p>
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-            {savedAddrs.length>0&&<select onChange={e=>{const a=savedAddrs.find(x=>x.id===e.target.value);if(a)applyAddr(a);e.target.value="";}} style={{padding:"6px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>
+            {savedAddrs.length>0&&<select onChange={e=>{const a=savedAddrs.find(x=>x.id===e.target.value);if(a)applyAddr(a);e.target.value="";}} style={{padding:"6px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>
               <option value="" style={{background:"#142038"}}>Cargar dirección guardada…</option>
               {savedAddrs.map(a=><option key={a.id} value={a.id} style={{background:"#142038"}}>{a.label}{a.is_default?" ⭐":""}</option>)}
             </select>}
-            <button onClick={()=>setShowNewAddr(!showNewAddr)} style={{padding:"6px 10px",fontSize:11,fontWeight:600,border:"1px solid rgba(96,165,250,0.25)",borderRadius:6,background:"rgba(96,165,250,0.1)",color:IC,cursor:"pointer"}}>{showNewAddr?"✕":"+ Guardar como predeterminada"}</button>
+            <button onClick={()=>setShowNewAddr(!showNewAddr)} style={{padding:"6px 10px",fontSize:11,fontWeight:600,border:"1px solid rgba(184,149,106,0.25)",borderRadius:6,background:"rgba(184,149,106,0.1)",color:IC,cursor:"pointer"}}>{showNewAddr?"✕":"+ Guardar como predeterminada"}</button>
           </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
@@ -1887,7 +1893,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           <Inp label="Teléfono" value={dest.dest_phone} onChange={v=>chDest("dest_phone",v)} placeholder="+54 11 ..."/>
           <Inp label="Email" value={dest.dest_email} onChange={v=>chDest("dest_email",v)} placeholder="contacto@ejemplo.com"/>
         </div>
-        {showNewAddr&&<div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:8,padding:"12px 14px",marginTop:10}}>
+        {showNewAddr&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,padding:"12px 14px",marginTop:10}}>
           <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px"}}>NUEVA DIRECCIÓN PREDETERMINADA</p>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
             <Inp label="Etiqueta" value={newAddr.label} onChange={v=>setNewAddr(p=>({...p,label:v}))} placeholder="Ej: Depósito CABA"/>
@@ -1913,7 +1919,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"14px 0 8px",textTransform:"uppercase"}}>📋 Items — HS code + valor declarado</p>
       {items.length===0&&!flight.invoice_presented_at?<div>
         <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem 0",margin:0}}>No hay items todavía. Agregá manualmente o esperá a que el cliente complete la documentación.</p>
-        <div style={{display:"flex",justifyContent:"center",marginTop:10}}><button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button></div>
+        <div style={{display:"flex",justifyContent:"center",marginTop:10}}><button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button></div>
       </div>:flight.invoice_presented_at?<div>
         {items.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem 0",margin:0}}>No hay items.</p>:
         <div>
@@ -1927,14 +1933,14 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             <span style={{textAlign:"right"}}>USD {Number(it.unit_price_declared_usd||0).toFixed(2)}</span>
             <span style={{textAlign:"right",fontWeight:700}}>USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toFixed(2)}</span>
           </div>;})}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:8,marginTop:6}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,marginTop:6}}>
             <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL DECLARADO</span>
             <span style={{fontSize:16,fontWeight:700,color:IC}}>USD {totalDeclaredUSD.toFixed(2)}</span>
           </div>
         </div>}
       </div>:
       <div>
-        {items.map((it,i)=>{const op=opsUnique.find(o=>o.id===it.operation_id);return <div key={it.id} style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 12px",marginBottom:10}}>
+        {items.map((it,i)=>{const op=opsUnique.find(o=>o.id===it.operation_id);return <div key={it.id} style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:"10px 12px",marginBottom:10}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
             <span style={{fontSize:11,fontWeight:700,color:IC,fontFamily:"monospace"}}>{op?op.operation_code:""} · Item {i+1}</span>
             <div style={{display:"flex",gap:6}}>
@@ -1950,11 +1956,11 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           </div>
           <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",textAlign:"right"}}>Subtotal: USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toFixed(2)}</p>
         </div>;})}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:8,marginTop:6}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,marginTop:6}}>
           <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL DECLARADO</span>
           <span style={{fontSize:16,fontWeight:700,color:IC}}>USD {totalDeclaredUSD.toFixed(2)}</span>
         </div>
-        <div style={{display:"flex",justifyContent:"center",marginTop:10}}><button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button></div>
+        <div style={{display:"flex",justifyContent:"center",marginTop:10}}><button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button></div>
       </div>}
       {flight.status==="preparando"&&<div style={{marginTop:16,padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
         {flight.invoice_presented_at?<div><p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✓ Factura presentada {formatDate(flight.invoice_presented_at)}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>El agente ya puede despacharla</p></div>:<div><p style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",margin:0}}>⏳ La factura todavía no está presentada</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>El agente no puede despachar hasta que la presentes</p></div>}
@@ -2113,7 +2119,7 @@ function AgentsPanel({token}){
     </div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
     <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
-      {[{k:"deposito",l:`Depósito (${depositOps.length})`},{k:"flights",l:`Vuelos (${flights.length})`},{k:"accounts",l:`CC Agentes (${approvedAgents.length})`},{k:"signups",l:"Solicitudes"},{k:"orphans",l:`Huérfanos (${unassigned.length})`}].map(tb=><button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===tb.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===tb.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:tab===tb.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{tb.l}</button>)}
+      {[{k:"deposito",l:`Depósito (${depositOps.length})`},{k:"flights",l:`Vuelos (${flights.length})`},{k:"accounts",l:`CC Agentes (${approvedAgents.length})`},{k:"signups",l:"Solicitudes"},{k:"orphans",l:`Huérfanos (${unassigned.length})`}].map(tb=><button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===tb.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===tb.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:tab===tb.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{tb.l}</button>)}
     </div>
 
     {tab==="deposito"&&(()=>{
@@ -2121,7 +2127,7 @@ function AgentsPanel({token}){
       const byAgent={};depositOps.forEach(o=>{const k=o.created_by_agent_id||"sin_agente";if(!byAgent[k])byAgent[k]={ops:[],agentName:""};byAgent[k].ops.push(o);});
       Object.keys(byAgent).forEach(k=>{const a=approvedAgents.find(s=>s.auth_user_id===k);byAgent[k].agentName=a?(a.first_name+" "+(a.last_name||"")):"(sin agente)";});
       return <div>
-        {selectedOps.length>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.25)",borderRadius:10,marginBottom:14}}>
+        {selectedOps.length>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:10,marginBottom:14}}>
           <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>{selectedOps.length} operación(es) seleccionada(s)</p>
           <div style={{display:"flex",gap:8}}>
             <Btn variant="secondary" small onClick={()=>setSelectedOps([])}>Limpiar</Btn>
@@ -2131,7 +2137,7 @@ function AgentsPanel({token}){
         {Object.keys(byAgent).length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes en depósito</p>}
         {Object.entries(byAgent).map(([agentId,grp])=>{return <div key={agentId} style={{marginBottom:20}}>
           <h3 style={{fontSize:13,fontWeight:700,color:IC,margin:"0 0 10px",textTransform:"uppercase"}}>{grp.agentName} ({grp.ops.length} ops)</h3>
-          <div style={{background:"rgba(255,255,255,0.05)",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden"}}>
+          <div style={{background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
               <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 {["✓","Op","Cliente","Mercadería","Bultos","Peso","Estado","Consolidación","WA"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
@@ -2145,7 +2151,7 @@ function AgentsPanel({token}){
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)"}}>{w?`${w.toFixed(2)} kg`:"—"}</td>
                 <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)"}}>{SM[o.status]?.l||o.status}</span></td>
                 <td style={{padding:"10px 12px"}}>
-                  {inFlight?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(96,165,250,0.15)",color:IC}}>EN VUELO</span>:
+                  {inFlight?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC}}>EN VUELO</span>:
                   o.consolidation_confirmed&&opsWithDocs.has(o.id)?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>✓ LISTO</span>:
                   o.consolidation_confirmed&&!opsWithDocs.has(o.id)?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(249,115,22,0.15)",color:"#f97316"}}>📋 DOCS PENDIENTES</span>:
                   <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24"}}>⏳ ESPERANDO</span>}
@@ -2176,7 +2182,7 @@ function AgentsPanel({token}){
 
     {tab==="flights"&&!selFlight&&<div>
       {flights.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay vuelos creados todavía</p>:
-      <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden"}}>
+      <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
             {["Código","Agente","Estado","Ops","Peso","Costo","Tracking","Creado",""].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
@@ -2190,7 +2196,7 @@ function AgentsPanel({token}){
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_cost_usd?usd(f.total_cost_usd):"—"}</td>
             <td style={{padding:"12px 14px",fontFamily:"monospace",fontSize:11,color:"rgba(255,255,255,0.5)"}}>{f.international_tracking||"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{formatDate(f.created_at)}</td>
-            <td style={{padding:"12px 14px"}}><button onClick={()=>setSelFlight(f.id)} style={{color:IC,fontSize:11,fontWeight:600,background:"rgba(74,144,217,0.1)",border:"1px solid rgba(74,144,217,0.2)",borderRadius:6,padding:"5px 10px",cursor:"pointer"}}>Ver →</button></td>
+            <td style={{padding:"12px 14px"}}><button onClick={()=>setSelFlight(f.id)} style={{color:IC,fontSize:11,fontWeight:600,background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:6,padding:"5px 10px",cursor:"pointer"}}>Ver →</button></td>
           </tr>;})}</tbody>
         </table>
       </div>}
@@ -2220,7 +2226,7 @@ function AgentsPanel({token}){
     </div>}
     {tab==="orphans"&&<>
       {unassigned.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes huérfanos</p>:
-      <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden"}}>
+      <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
             {["Tracking","Bulto","Peso","Dimensiones","Recibido","Asignar a operación",""].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
@@ -2231,7 +2237,7 @@ function AgentsPanel({token}){
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",fontSize:11}}>{p.length_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}`:"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{formatDate(p.created_at)}</td>
-            <td style={{padding:"12px 14px"}}><select onChange={e=>assignToOp(p,e.target.value)} value="" style={{padding:"6px 10px",fontSize:11,border:"1px solid rgba(96,165,250,0.3)",borderRadius:6,background:"rgba(96,165,250,0.08)",color:"#fff",outline:"none",maxWidth:240}}>
+            <td style={{padding:"12px 14px"}}><select onChange={e=>assignToOp(p,e.target.value)} value="" style={{padding:"6px 10px",fontSize:11,border:"1px solid rgba(184,149,106,0.3)",borderRadius:6,background:"rgba(184,149,106,0.08)",color:"#fff",outline:"none",maxWidth:240}}>
               <option value="" style={{background:"#142038"}}>— seleccionar —</option>
               {allOps.map(o=><option key={o.id} value={o.id} style={{background:"#142038"}}>{o.operation_code} - {o.clients?.client_code} ({o.clients?.first_name})</option>)}
             </select></td>
@@ -2241,7 +2247,7 @@ function AgentsPanel({token}){
       </div>}
     </>}
     {tab==="signups"&&(lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem"}}>Cargando...</p>:signups.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay solicitudes de agentes</p>:
-    <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden"}}>
+    <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
           {["Nombre","Email","País","Idioma","Estado","Registrado","Acciones"].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
@@ -2335,15 +2341,15 @@ function ShipmentsTracking({token,onSelectOp}){
         <p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>{filtered.length} {filtered.length===1?"paquete":"paquetes"} en operaciones activas</p>
       </div>
       <div style={{display:"flex",gap:8}}>
-        <input type="text" placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)} style={{padding:"8px 12px",fontSize:12,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/>
-        <select value={fChannel} onChange={e=>setFChannel(e.target.value)} style={{padding:"8px 12px",fontSize:12,border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
+        <input type="text" placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)} style={{padding:"8px 12px",fontSize:12,border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/>
+        <select value={fChannel} onChange={e=>setFChannel(e.target.value)} style={{padding:"8px 12px",fontSize:12,border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
           <option value="" style={{background:"#142038"}}>Todos los canales</option>
           {CHANNELS.map(c=><option key={c} value={c} style={{background:"#142038"}}>{CM[c]}</option>)}
         </select>
       </div>
     </div>
     {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"3rem 0"}}>Cargando...</p>:filtered.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes en tránsito</p>:
-    <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden"}}>
+    <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
           {[{k:"op",l:"Op"},{k:"client",l:"Cliente"},{k:"desc",l:"Mercadería"},{k:"origin",l:"Origen"},{k:"channel",l:"Canal"},{k:"tracking",l:"Tracking"}].map((h,hi)=><th key={hi} onClick={()=>h.k&&toggleSort(h.k)} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:sortCol===h.k?IC:"rgba(255,255,255,0.4)",textTransform:"uppercase",cursor:h.k?"pointer":"default",userSelect:"none"}}>{h.l}{sortCol===h.k&&h.k&&<span style={{marginLeft:4}}>{sortDir==="asc"?"▲":"▼"}</span>}</th>)}
@@ -2576,18 +2582,18 @@ function FinanceDashboard({token}){
   const pendingQuotes=quotes.filter(q=>q.status==="pending").length;
 
   const usd=v=>`USD ${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-  const stat=(l,v,color,big)=><div style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>{l}</p><p style={{fontSize:big?28:20,fontWeight:700,color:color||"#fff",margin:0}}>{v}</p></div>;
+  const stat=(l,v,color,big)=><div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>{l}</p><p style={{fontSize:big?28:20,fontWeight:700,color:color||"#fff",margin:0}}>{v}</p></div>;
   const bar=(pct,color)=><div style={{flex:1,height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden"}}><div style={{width:`${Math.min(Math.max(pct,0),100)}%`,height:"100%",background:color,borderRadius:4,transition:"width 0.3s"}}/></div>;
 
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
-      <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Dashboard Financiero</h2>
-      <div style={{display:"flex",gap:8,alignItems:"center"}}>{[{k:"month",l:"Mes"},{k:"year",l:"Año"},{k:"all",l:"Todo"}].map(p=><button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k==="month")setSelMonth(`${thisYear}-${String(thisMonth+1).padStart(2,"0")}`);}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:period===p.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:period===p.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:period===p.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{p.l}</button>)}
+      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Dashboard Financiero</h2>
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>{[{k:"month",l:"Mes"},{k:"year",l:"Año"},{k:"all",l:"Todo"}].map(p=><button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k==="month")setSelMonth(`${thisYear}-${String(thisMonth+1).padStart(2,"0")}`);}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:period===p.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:period===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:period===p.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{p.l}</button>)}
         {period==="month"&&<div style={{display:"flex",alignItems:"center",gap:6,marginLeft:8}}>
-          <button onClick={()=>{const[y,m]=selMonth.split("-").map(Number);const d=new Date(y,m-2,1);setSelMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);}} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.05)",color:"#fff",cursor:"pointer"}}>←</button>
+          <button onClick={()=>{const[y,m]=selMonth.split("-").map(Number);const d=new Date(y,m-2,1);setSelMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);}} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.028)",color:"#fff",cursor:"pointer"}}>←</button>
           <span style={{fontSize:13,fontWeight:700,color:"#fff",minWidth:100,textAlign:"center"}}>{(()=>{const MN=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];return `${MN[selM-1]} ${selY}`;})()}</span>
-          <button onClick={()=>{const[y,m]=selMonth.split("-").map(Number);const d=new Date(y,m,1);setSelMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);}} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.05)",color:"#fff",cursor:"pointer"}}>→</button>
+          <button onClick={()=>{const[y,m]=selMonth.split("-").map(Number);const d=new Date(y,m,1);setSelMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);}} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.028)",color:"#fff",cursor:"pointer"}}>→</button>
         </div>}
       </div>
     </div>
@@ -2900,16 +2906,16 @@ function FinanceDashboard({token}){
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead>
-              <tr style={{borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
+              <tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 <th rowSpan={2} style={{textAlign:"left",padding:"8px 10px",color:"rgba(255,255,255,0.5)",fontWeight:600,fontSize:10,textTransform:"uppercase",verticalAlign:"bottom"}}>Mes</th>
                 <th rowSpan={2} style={{textAlign:"center",padding:"8px 10px",color:"rgba(255,255,255,0.5)",fontWeight:600,fontSize:10,textTransform:"uppercase",verticalAlign:"bottom"}}>Ops cerradas</th>
-                <th colSpan={3} style={{textAlign:"center",padding:"4px 10px",color:"#60a5fa",fontWeight:700,fontSize:10,textTransform:"uppercase",borderBottom:"1px solid rgba(96,165,250,0.2)"}}>Devengado (P&L)</th>
+                <th colSpan={3} style={{textAlign:"center",padding:"4px 10px",color:"#60a5fa",fontWeight:700,fontSize:10,textTransform:"uppercase",borderBottom:"1px solid rgba(184,149,106,0.2)"}}>Devengado (P&L)</th>
                 <th colSpan={3} style={{textAlign:"center",padding:"4px 10px",color:"#22c55e",fontWeight:700,fontSize:10,textTransform:"uppercase",borderBottom:"1px solid rgba(34,197,94,0.2)"}}>Caja (Flujo)</th>
               </tr>
-              <tr style={{borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
-                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(96,165,250,0.7)",fontWeight:600,fontSize:10}}>Ingresos</th>
-                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(96,165,250,0.7)",fontWeight:600,fontSize:10}}>Costos</th>
-                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(96,165,250,0.7)",fontWeight:600,fontSize:10}}>Ganancia</th>
+              <tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(184,149,106,0.7)",fontWeight:600,fontSize:10}}>Ingresos</th>
+                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(184,149,106,0.7)",fontWeight:600,fontSize:10}}>Costos</th>
+                <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(184,149,106,0.7)",fontWeight:600,fontSize:10}}>Ganancia</th>
                 <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10}}>Entró</th>
                 <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10}}>Salió</th>
                 <th style={{textAlign:"right",padding:"6px 10px",color:"rgba(34,197,94,0.7)",fontWeight:600,fontSize:10}}>Neto</th>
@@ -2979,7 +2985,7 @@ function ComunicacionesPanel({token}){
   };
   useEffect(()=>{load();},[token]);
 
-  const inpStyle={width:"100%",padding:"8px 10px",fontSize:13,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",boxSizing:"border-box"};
+  const inpStyle={width:"100%",padding:"8px 10px",fontSize:13,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",boxSizing:"border-box"};
   const openTpl=(t)=>{setEditingTpl(t.id);setTplDraft({subject:t.subject||"",greeting:t.greeting||"",body:t.body||"",cta_text:t.cta_text||""});};
   const sendPreview=async(tpl)=>{
     const to=prompt("¿A qué email mandamos el preview?","bautiartuso21@gmail.com");
@@ -3082,14 +3088,14 @@ function ComunicacionesPanel({token}){
 
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:10}}>
-      <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Comunicaciones</h2>
-      <button onClick={testEmail} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:IC,cursor:"pointer"}}>📧 Probar email</button>
+      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Comunicaciones</h2>
+      <button onClick={testEmail} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>📧 Probar email</button>
     </div>
     <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"0 0 20px"}}>Notificaciones manuales (WhatsApp) + historial de feedback de clientes.</p>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
 
     {/* WAs pendientes */}
-    <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.25rem 1.5rem",marginBottom:20}}>
+    <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem",marginBottom:20}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}}>
         <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>📱 WhatsApp pendientes ({pendientes.length})</h3>
         {pendientes.length>0&&<button onClick={openAll} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff"}}>Abrir TODOS ({pendientes.length})</button>}
@@ -3101,7 +3107,7 @@ function ComunicacionesPanel({token}){
           return <div key={p.op.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",flexWrap:"wrap"}}>
             <div style={{flex:1,minWidth:220}}>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3,flexWrap:"wrap"}}>
-                <span style={{fontFamily:"monospace",fontSize:12,fontWeight:700,color:IC,padding:"2px 8px",background:"rgba(96,165,250,0.1)",borderRadius:4}}>{p.op.operation_code}</span>
+                <span style={{fontFamily:"monospace",fontSize:12,fontWeight:700,color:IC,padding:"2px 8px",background:"rgba(184,149,106,0.1)",borderRadius:4}}>{p.op.operation_code}</span>
                 <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:`${triggerColor}20`,color:triggerColor,border:`1px solid ${triggerColor}40`,letterSpacing:"0.04em"}}>{triggerLbl}</span>
               </div>
               <p style={{fontSize:13,color:"#fff",margin:0}}>{p.op.clients?`${p.op.clients.first_name} ${p.op.clients.last_name}`:"—"} <span style={{color:"rgba(255,255,255,0.4)"}}>· {p.op.description||""}</span></p>
@@ -3123,7 +3129,7 @@ function ComunicacionesPanel({token}){
     </div>}
 
     {/* Plantillas editables */}
-    <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.25rem 1.5rem",marginBottom:20}}>
+    <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem",marginBottom:20}}>
       <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>✏️ Plantillas de mensajes</h3>
       <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 14px"}}>Edita los textos que se envían a los clientes. Variables disponibles: {"{{firstName}}, {{opCode}}, {{desc}}, {{portalLink}}, {{saldoTxt}} (solo WA retiro)"}</p>
       {templates.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem"}}>Cargando plantillas...</p>:<div>
@@ -3139,10 +3145,10 @@ function ComunicacionesPanel({token}){
               </div>
               {!isEditing&&<div style={{display:"flex",gap:6}}>
                 {t.channel==="email"&&<button onClick={()=>sendPreview(t)} style={{fontSize:11,fontWeight:700,padding:"5px 12px",borderRadius:6,border:"1.5px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>📧 Preview</button>}
-                <button onClick={()=>openTpl(t)} style={{fontSize:11,fontWeight:700,padding:"5px 12px",borderRadius:6,border:"1.5px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:IC,cursor:"pointer"}}>✏️ Editar</button>
+                <button onClick={()=>openTpl(t)} style={{fontSize:11,fontWeight:700,padding:"5px 12px",borderRadius:6,border:"1.5px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>✏️ Editar</button>
               </div>}
             </div>
-            {isEditing&&<div style={{background:"rgba(0,0,0,0.2)",borderRadius:10,padding:"12px 14px",border:"1px solid rgba(96,165,250,0.2)"}}>
+            {isEditing&&<div style={{background:"rgba(0,0,0,0.2)",borderRadius:10,padding:"12px 14px",border:"1px solid rgba(184,149,106,0.2)"}}>
               {t.channel==="email"&&<div style={{marginBottom:10}}>
                 <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase"}}>Asunto</p>
                 <input value={tplDraft.subject||""} onChange={e=>setTplDraft(p=>({...p,subject:e.target.value}))} style={inpStyle}/>
@@ -3171,7 +3177,7 @@ function ComunicacionesPanel({token}){
     </div>
 
     {/* Feedback del cliente */}
-    <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.25rem 1.5rem"}}>
+    <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem"}}>
       <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 14px"}}>⭐ Feedback de clientes ({feedbacks.length})</h3>
       {feedbacks.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem"}}>Sin feedback todavía</p>:<div>
         {feedbacks.map(f=>{
@@ -3179,7 +3185,7 @@ function ComunicacionesPanel({token}){
           return <div key={f.id} style={{padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:8}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontFamily:"monospace",fontSize:11,fontWeight:700,color:IC,padding:"2px 8px",background:"rgba(96,165,250,0.1)",borderRadius:4}}>{f.operations?.operation_code||"—"}</span>
+                <span style={{fontFamily:"monospace",fontSize:11,fontWeight:700,color:IC,padding:"2px 8px",background:"rgba(184,149,106,0.1)",borderRadius:4}}>{f.operations?.operation_code||"—"}</span>
                 <span style={{fontSize:13,color:"#fff"}}>{f.operations?.clients?`${f.operations.clients.first_name} ${f.operations.clients.last_name}`:"—"}</span>
                 {f.clicked_google_review&&<span title="Dejó reseña en Google" style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>📍 Google ✓</span>}
               </div>
@@ -3284,12 +3290,12 @@ function AdminTasks({token}){
             onChange={e=>setNewTitle(e.target.value)}
             onKeyDown={e=>e.key==="Enter"&&addTask()}
             placeholder="¿Qué tenés que hacer?"
-            style={{width:"100%",padding:"10px 12px",fontSize:14,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:"#fff",outline:"none",boxSizing:"border-box"}}
+            style={{width:"100%",padding:"10px 12px",fontSize:14,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,color:"#fff",outline:"none",boxSizing:"border-box"}}
           />
         </div>
         <div style={{flex:"0 0 auto",minWidth:110}}>
           <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",display:"block",marginBottom:4}}>Prioridad</label>
-          <select value={newPriority} onChange={e=>setNewPriority(e.target.value)} style={{width:"100%",padding:"10px 12px",fontSize:13,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:"#fff",outline:"none",boxSizing:"border-box",cursor:"pointer"}}>
+          <select value={newPriority} onChange={e=>setNewPriority(e.target.value)} style={{width:"100%",padding:"10px 12px",fontSize:13,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,color:"#fff",outline:"none",boxSizing:"border-box",cursor:"pointer"}}>
             <option value="baja">Baja</option>
             <option value="normal">Normal</option>
             <option value="alta">Alta</option>
@@ -3301,7 +3307,7 @@ function AdminTasks({token}){
             type="date"
             value={newDueDate}
             onChange={e=>setNewDueDate(e.target.value)}
-            style={{width:"100%",padding:"10px 12px",fontSize:13,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:"#fff",outline:"none",boxSizing:"border-box"}}
+            style={{width:"100%",padding:"10px 12px",fontSize:13,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,color:"#fff",outline:"none",boxSizing:"border-box"}}
           />
         </div>
         <button
@@ -3360,7 +3366,7 @@ function AdminTasks({token}){
         {showCompleted?"Ocultar":"Ver"} completadas ({completed.length})
       </button>
       {showCompleted&&<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8,opacity:0.5}}>
-        {completed.slice(0,50).map(t=><div key={t.id} style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,padding:"10px 14px",display:"flex",alignItems:"center",gap:12}}>
+        {completed.slice(0,50).map(t=><div key={t.id} style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.028)",borderRadius:8,padding:"10px 14px",display:"flex",alignItems:"center",gap:12}}>
           <button onClick={()=>toggleDone(t)} style={{width:22,height:22,minWidth:22,borderRadius:6,border:`2px solid ${IC}`,background:IC,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:12,padding:0}} title="Marcar como pendiente">✓</button>
           <div style={{flex:1,minWidth:0}}>
             <p style={{margin:0,fontSize:13,color:"rgba(255,255,255,0.5)",textDecoration:"line-through"}}>{t.title}</p>
@@ -3468,11 +3474,11 @@ function QuotesList({token}){
   const filtered=fStatus?quotes.filter(q=>q.status===fStatus):quotes;
   const formatDate=(d)=>new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Cotizaciones ({quotes.length})</h2>
-      <div style={{display:"flex",gap:8}}>{[{k:"",l:"Todas"},{k:"pending",l:"Pendientes"},{k:"contacted",l:"Contactados"},{k:"converted",l:"Convertidas"}].map(s=><button key={s.k} onClick={()=>setFStatus(s.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:fStatus===s.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:fStatus===s.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:fStatus===s.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{s.l}</button>)}</div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Cotizaciones ({quotes.length})</h2>
+      <div style={{display:"flex",gap:8}}>{[{k:"",l:"Todas"},{k:"pending",l:"Pendientes"},{k:"contacted",l:"Contactados"},{k:"converted",l:"Convertidas"}].map(s=><button key={s.k} onClick={()=>setFStatus(s.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:fStatus===s.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:fStatus===s.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:fStatus===s.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{s.l}</button>)}</div>
     </div>
     {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:filtered.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"2rem 0"}}>No hay cotizaciones</p>:
-    <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden"}}>
+    <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
           {["Fecha","Cliente","Origen","Canal","FOB","Costo","Estado","Acción"].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
@@ -3492,7 +3498,7 @@ function QuotesList({token}){
             {(()=>{const cl=q.client_id?clientsMap[q.client_id]:null;const wa=cl?.whatsapp?.replace(/[^0-9]/g,"");const ageH=(Date.now()-new Date(q.created_at))/3600000;const abandoned=q.status==="pending"&&ageH>=48;const prodSummary=Array.isArray(prods)?prods.map(p=>p.description||p.type).join(", "):"";const msg=encodeURIComponent(`Hola ${q.client_name}! Hace unos días cotizaste *${prodSummary}* por *${q.channel_name}* (USD ${Number(q.total_cost||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}).\n\n¿Pudiste revisarla? Si querés avanzar esta semana te agilizo el proceso. Cualquier duda me escribís.`);
             return <div style={{display:"flex",gap:6,alignItems:"center"}}>
               {abandoned&&wa&&<a href={`https://wa.me/${wa}?text=${msg}`} target="_blank" rel="noopener noreferrer" style={{padding:"4px 8px",fontSize:10,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",whiteSpace:"nowrap"}}>📱 Recordar</a>}
-              <select value={q.status} onChange={e=>updateStatus(q.id,e.target.value)} style={{padding:"4px 8px",fontSize:11,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>{Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038"}}>{v.l}</option>)}</select>
+              <select value={q.status} onChange={e=>updateStatus(q.id,e.target.value)} style={{padding:"4px 8px",fontSize:11,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>{Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038"}}>{v.l}</option>)}</select>
             </div>;})()}
           </td>
         </tr>;})}</tbody>
@@ -3502,7 +3508,7 @@ function QuotesList({token}){
     {selQuote&&(()=>{const q=selQuote;const prods=typeof q.products==="string"?JSON.parse(q.products):q.products||[];const pkgs=typeof q.packages==="string"?JSON.parse(q.packages):q.packages||[];const st=ST[q.status]||{l:q.status,c:"#999"};
     return <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setSelQuote(null)}>
       <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}/>
-      <div style={{position:"relative",maxWidth:700,width:"90%",maxHeight:"85vh",overflow:"auto",background:"#142038",borderRadius:20,border:"1px solid rgba(255,255,255,0.1)",padding:"2rem",boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
+      <div style={{position:"relative",maxWidth:700,width:"90%",maxHeight:"85vh",overflow:"auto",background:"#142038",borderRadius:20,border:"1px solid rgba(255,255,255,0.06)",padding:"2rem",boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
           <div><h3 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Cotización</h3><p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>{formatDate(q.created_at)}</p></div>
           <div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:6,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>{st.l}</span><button onClick={()=>setSelQuote(null)} style={{fontSize:20,background:"none",border:"none",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>✕</button></div>
@@ -3523,7 +3529,7 @@ function QuotesList({token}){
               <div><p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>{p.description||p.type}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>Cantidad: {p.quantity} · Unitario: USD {Number(p.unit_price||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
               <p style={{fontSize:14,fontWeight:700,color:IC,margin:0}}>FOB: USD {fobItem.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
             </div>
-            <div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:8,padding:"10px 12px",display:"grid",gridTemplateColumns:"1.2fr 2fr 1fr 1fr 1fr",gap:8,alignItems:"end",fontSize:11}}>
+            <div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:8,padding:"10px 12px",display:"grid",gridTemplateColumns:"1.2fr 2fr 1fr 1fr 1fr",gap:8,alignItems:"end",fontSize:11}}>
               <div><label style={{fontSize:10,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>NCM</label><input value={nc.ncm_code||""} onChange={e=>chNcm(i,"ncm_code",e.target.value)} style={{...inpStyle,fontFamily:"monospace",color:IC,fontWeight:700}} placeholder="8471.30.00"/></div>
               <div><label style={{fontSize:10,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Descripción NCM</label><input value={nc.ncm_description||""} onChange={e=>chNcm(i,"ncm_description",e.target.value)} style={inpStyle} placeholder="Máquinas automáticas..."/></div>
               <div><label style={{fontSize:10,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Derechos %</label><input type="number" value={nc.import_duty_rate??""} onChange={e=>chNcm(i,"import_duty_rate",Number(e.target.value)||0)} style={inpStyle} step="0.1"/></div>
@@ -3541,7 +3547,7 @@ function QuotesList({token}){
         <div style={{marginBottom:16}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <h4 style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>BULTOS <span style={{fontSize:10,fontWeight:500,color:"rgba(255,255,255,0.4)"}}>— editá cantidad, dimensiones y peso</span></h4>
-            <button onClick={addPkg} style={{fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:6,border:"1px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer"}}>+ Bulto</button>
+            <button onClick={addPkg} style={{fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:6,border:"1px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Bulto</button>
           </div>
           {editPkgs.length===0&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic",margin:"4px 0 0"}}>Sin bultos cargados</p>}
           {editPkgs.map((pk,i)=>{const inpStyle={padding:"6px 8px",fontSize:11,border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",width:"100%",boxSizing:"border-box"};return <div key={i} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:"10px 12px",marginBottom:6}}>
@@ -3560,7 +3566,7 @@ function QuotesList({token}){
         </div>
         {/* Breakdown calculado en vivo — flete, impuestos, seguro, envío */}
         {(()=>{const br=computeBreakdown();if(!br)return null;const isB=selQuote.channel_key==="aereo_b_china"||selQuote.channel_key==="aereo_b_usa"||selQuote.channel_key==="maritimo_b";const totalCalc=br.totalAbonar;const row=(l,v,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",fontSize:12}}><span style={{color:"rgba(255,255,255,0.55)"}}>{l}</span><span style={{fontWeight:600,color:accent?IC:"#fff"}}>USD {Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
-        return <div style={{marginBottom:16,padding:"14px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10}}>
+        return <div style={{marginBottom:16,padding:"14px 16px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:10}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
             <h4 style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>🧮 DESGLOSE CALCULADO</h4>
             <button onClick={()=>{setEditTotalCost(totalCalc.toFixed(2));setDirty(true);}} style={{fontSize:10,fontWeight:700,padding:"4px 10px",borderRadius:6,border:"none",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff",cursor:"pointer"}}>Usar este cálculo</button>
@@ -3569,7 +3575,7 @@ function QuotesList({token}){
           {row(isB?"Servicio Integral ARGENCARGO":"Flete internacional",br.flete)}
           {!isB&&row("Seguro de carga",br.seguro)}
           {br.shipCost>0&&row("Envío a domicilio",br.shipCost)}
-          <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 2px",borderTop:"1px solid rgba(96,165,250,0.2)",marginTop:4}}>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 2px",borderTop:"1px solid rgba(184,149,106,0.2)",marginTop:4}}>
             <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>TOTAL CALCULADO</span>
             <span style={{fontSize:15,fontWeight:700,color:IC}}>USD {totalCalc.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
           </div>
@@ -3582,11 +3588,11 @@ function QuotesList({token}){
             {savedAt&&!dirty&&<p style={{fontSize:11,color:"#22c55e",margin:"0 0 10px",fontWeight:600}}>✓ Guardado. Ahora podés avisar al cliente.</p>}
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
               <button onClick={saveQuoteEdit} disabled={!dirty||saving} style={{padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:10,border:"none",cursor:dirty?"pointer":"not-allowed",background:dirty?`linear-gradient(135deg,${B.accent},${B.primary})`:"rgba(255,255,255,0.06)",color:dirty?"#fff":"rgba(255,255,255,0.3)"}}>{saving?"Guardando...":dirty?"💾 Guardar cambios":"Sin cambios"}</button>
-              <button onClick={()=>downloadPdf(q)} style={{padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:10,border:"1.5px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:IC,cursor:"pointer"}}>📄 Descargar PDF</button>
+              <button onClick={()=>downloadPdf(q)} style={{padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:10,border:"1.5px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>📄 Descargar PDF</button>
               {wa&&<a href={`https://wa.me/${wa.replace(/[^0-9]/g,"")}?text=${waUpdate}`} target="_blank" rel="noopener noreferrer" style={{padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none"}}>Avisar cotización actualizada</a>}
               {wa&&<a href={`https://wa.me/${wa.replace(/[^0-9]/g,"")}?text=${waConsulta}`} target="_blank" rel="noopener noreferrer" style={{padding:"10px 16px",fontSize:12,fontWeight:600,borderRadius:10,border:"1px solid rgba(37,211,102,0.3)",background:"rgba(37,211,102,0.08)",color:"#25D366",textDecoration:"none"}}>Consultar (seguimiento)</a>}
               {!wa&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin WhatsApp en el cliente</p>}
-              <select value={q.status} onChange={e=>{updateStatus(q.id,e.target.value);setSelQuote({...q,status:e.target.value});}} style={{padding:"10px 14px",fontSize:12,fontWeight:600,border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",marginLeft:"auto"}}>{Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038"}}>{v.l}</option>)}</select>
+              <select value={q.status} onChange={e=>{updateStatus(q.id,e.target.value);setSelQuote({...q,status:e.target.value});}} style={{padding:"10px 14px",fontSize:12,fontWeight:600,border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",marginLeft:"auto"}}>{Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038"}}>{v.l}</option>)}</select>
             </div>
           </div>;})()}
       </div>
@@ -3610,7 +3616,7 @@ function AdminDashboard({session,onLogout}){
     </div>
     <div style={{flex:1,overflow:"auto"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",padding:"12px 32px 0",gap:12}}><NotifBell token={token}/></div>
-      <div style={{maxWidth:1100,margin:"0 auto",padding:"28px 32px"}}>
+      <div style={{maxWidth:1400,margin:"0 auto",padding:"28px 32px"}}>
       {page==="operations"&&!selOp&&!newOp&&<OperationsList token={token} onSelect={setSelOp} onNew={()=>setNewOp(true)}/>}
       {page==="operations"&&selOp&&<OperationEditor op={selOp} token={token} onBack={()=>setSelOp(null)} onDelete={()=>setSelOp(null)}/>}
       {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}

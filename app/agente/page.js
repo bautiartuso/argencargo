@@ -4,9 +4,9 @@ import { useState, useEffect } from "react";
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 const LOGO=`${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
-const IC="#60a5fa";
-const BG="linear-gradient(160deg,#0A1628 0%,#0F1F3A 50%,#0A1628 100%)";
+const BG="linear-gradient(160deg,#0F1E3D 0%,#152849 50%,#0F1E3D 100%)";
 const GOLD="#B8956A", GOLD_LIGHT="#E8D098", GOLD_DEEP="#A68456";
+const IC=GOLD_LIGHT; // Accent alias oro claro
 const GOLD_GRADIENT="linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 100%)";
 const GOLD_GLOW="0 0 20px rgba(184,149,106,0.25)";
 const GOLD_GLOW_STRONG="0 0 28px rgba(184,149,106,0.4)";
@@ -329,13 +329,13 @@ function AuthScreen({onLogin,lang,setLang,t}){
   return <div style={{minHeight:"100vh",background:BG,display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem 1rem",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",position:"relative",overflow:"hidden"}}>
     <style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/>
     <div style={{position:"absolute",top:"-15%",right:"-8%",width:500,height:500,background:"radial-gradient(circle, rgba(184,149,106,0.14) 0%, transparent 70%)",pointerEvents:"none"}}/>
-    <div style={{position:"absolute",bottom:"-15%",left:"-8%",width:540,height:540,background:"radial-gradient(circle, rgba(74,144,217,0.10) 0%, transparent 70%)",pointerEvents:"none"}}/>
+    <div style={{position:"absolute",bottom:"-15%",left:"-8%",width:540,height:540,background:"radial-gradient(circle, rgba(184,149,106,0.10) 0%, transparent 70%)",pointerEvents:"none"}}/>
     <div style={{maxWidth:420,width:"100%",position:"relative",zIndex:1,animation:"ac_fade_in 400ms ease-out"}}>
       <div style={{textAlign:"center",marginBottom:24}}>
         <img src={LOGO} alt="AC" style={{width:210,height:"auto",filter:"drop-shadow(0 4px 24px rgba(184,149,106,0.28))"}}/>
       </div>
       <div style={{textAlign:"center",marginBottom:18}}><LangToggle lang={lang} setLang={setLang}/></div>
-      <div style={{background:"rgba(10,22,40,0.72)",backdropFilter:"blur(28px)",borderRadius:16,padding:"2rem 1.75rem",border:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 20px 50px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",position:"relative",overflow:"hidden"}}>
+      <div style={{background:"rgba(10,22,40,0.72)",backdropFilter:"blur(28px)",borderRadius:16,padding:"2rem 1.75rem",border:"1px solid rgba(255,255,255,0.06)",boxShadow:"0 20px 50px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.028)",position:"relative",overflow:"hidden"}}>
         <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT,opacity:0.85}}/>
         <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 6px",textAlign:"center"}}>{t.login_title}</h2>
         <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 22px",textAlign:"center"}}>{t.login_subtitle}</p>
@@ -442,8 +442,8 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const FlightCard=({f})=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);
     const isReady=f.status==="preparando"&&f.invoice_presented_at;
     const isWaiting=f.status==="preparando"&&!f.invoice_presented_at;
-    const cardBg=isReady?"rgba(34,197,94,0.08)":isWaiting?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.05)";
-    const cardBorder=isReady?"1.5px solid rgba(34,197,94,0.35)":isWaiting?"1.5px solid rgba(251,191,36,0.25)":"1px solid rgba(255,255,255,0.1)";
+    const cardBg=isReady?"rgba(34,197,94,0.08)":isWaiting?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.028)";
+    const cardBorder=isReady?"1.5px solid rgba(34,197,94,0.35)":isWaiting?"1.5px solid rgba(251,191,36,0.25)":"1px solid rgba(255,255,255,0.06)";
     return <div onClick={()=>setSelFlight(f.id)} style={{cursor:"pointer",background:cardBg,border:cardBorder,borderRadius:14,padding:"1rem 1.25rem"}}>
     {isReady&&<p style={{fontSize:13,fontWeight:700,color:"#22c55e",margin:"0 0 8px"}}>{t.ready_to_ship}</p>}
     {isWaiting&&<p style={{fontSize:13,fontWeight:700,color:"#fbbf24",margin:"0 0 8px"}}>{t.waiting_invoice}</p>}
@@ -476,14 +476,14 @@ function Dashboard({session,onLogout,lang,setLang,t}){
         {k:"history",l:`${t.tab_history} (${historyFlights.length})`},
         {k:"stats",l:t.tab_stats},
         {k:"account",l:`${t.tab_account} · ${usdF(balance)}`}
-      ].map(tb=><button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===tb.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===tb.k?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.05)",color:tab===tb.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{tb.l}</button>)}
+      ].map(tb=><button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===tb.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===tb.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:tab===tb.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{tb.l}</button>)}
     </div>
 
     {/* TAB 1: Depósito — paquetes sin vuelo */}
     {tab==="deposit"&&<>
       {showForm&&<NewPackageForm token={token} lang={lang} t={t} agentId={userId} onCancel={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);reloadPackages();flash(t.success);}}/>}
       <input value={depositSearch} onChange={e=>setDepositSearch(e.target.value)} placeholder={t.search_deposit} style={{width:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",marginTop:16,marginBottom:0}}/>
-      <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden",marginTop:10}}>
+      <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden",marginTop:10}}>
         <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.tab_deposit} ({depositPkgs.length}) {"\u00b7"} {depositTotalKg} kg</h3></div>
         {depositPkgs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",margin:0}}>{t.no_pkgs}</p>:
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
@@ -527,7 +527,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
         {label:t.stats_flights_completed,value:statFlightsCompleted,icon:"✈️",color:"#22c55e"},
         {label:t.stats_total_kg,value:`${statTotalKg.toFixed(1)} kg`,icon:"⚖️",color:"#fbbf24"},
         {label:t.stats_total_usd,value:usdF(statTotalUsd),icon:"💵",color:"#34d399"}
-      ].map(s=><div key={s.label} style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"20px 24px"}}>
+      ].map(s=><div key={s.label} style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"20px 24px"}}>
         <p style={{fontSize:28,margin:"0 0 4px"}}>{s.icon}</p>
         <p style={{fontSize:28,fontWeight:700,color:s.color,margin:"0 0 6px"}}>{s.value}</p>
         <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textTransform:"uppercase"}}>{s.label}</p>
@@ -542,7 +542,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
           <p style={{fontSize:32,fontWeight:700,color:balance>=0?"#22c55e":"#ff6b6b",margin:0}}>{usdF(balance)}</p>
         </div>
       </div>
-      <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden"}}>
+      <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         {account.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",margin:0}}>{t.no_movements}</p>:
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{[t.date,t.cc_type,t.cc_amount,t.cc_description,t.flight].map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
@@ -602,7 +602,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
   };
   return <div>
     <button onClick={onBack} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,marginBottom:14,padding:0}}>← {t.tab_active_flights}</button>
-    <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1px solid rgba(255,255,255,0.1)",padding:"1.5rem",marginBottom:16}}>
+    <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.5rem",marginBottom:16}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
         <h3 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.flight_code}</h3>
         {(()=>{const ready=flight.status==="preparando"&&flight.invoice_presented_at;const c=ready?"#22c55e":stColors[flight.status];return <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:c,background:`${c}20`,border:`1px solid ${c}40`,textTransform:"uppercase"}}>{ready?t.flight_status_listo:t["flight_status_"+flight.status]}</span>;})()}
@@ -612,7 +612,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
         {flight.invoice_presented_at?<p style={{fontSize:13,color:"#22c55e",fontWeight:600,margin:0}}>✅ Factura presentada</p>:<p style={{fontSize:13,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>}
       </div>
       {/* Datos de destino completos — lo que el agente necesita para despachar */}
-      <div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
+      <div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.18)",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
         <p style={{fontSize:10,fontWeight:700,color:IC,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.05em"}}>📦 {t.destination}</p>
         {(()=>{const any=flight.dest_name||flight.dest_address||flight.destination_address||flight.dest_phone||flight.dest_email||flight.dest_tax_id||flight.dest_postal_code;if(!any)return <p style={{fontSize:13,color:"#fbbf24",margin:0}}>⏳ {t.no_destination_yet}</p>;
         const row=(lbl,val,copyable)=>val?<div style={{display:"flex",gap:10,padding:"4px 0",fontSize:12,alignItems:"baseline"}}>
@@ -635,11 +635,11 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
             <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{opCode} — {clientCode}</span>
             <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{w.toFixed(2)} kg{fo.cost_share_usd?` · ${usdF(fo.cost_share_usd)}`:""}</span>
           </div>
-          {opPkgs.length>0&&<div style={{paddingLeft:12,borderLeft:"2px solid rgba(96,165,250,0.2)",marginLeft:4}}>
+          {opPkgs.length>0&&<div style={{paddingLeft:12,borderLeft:"2px solid rgba(184,149,106,0.2)",marginLeft:4}}>
             {opPkgs.map((p,i)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0);const l=Number(p.length_cm||0),wd=Number(p.width_cm||0),h=Number(p.height_cm||0);const hasDims=l&&wd&&h;const nt=p.national_tracking||"";return <div key={p.id||i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11,color:"rgba(255,255,255,0.7)",gap:10,flexWrap:"wrap"}}>
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                 <span style={{minWidth:22,color:IC,fontWeight:700}}>#{p.package_number||i+1}</span>
-                {nt&&<span style={{fontFamily:"monospace",background:"rgba(96,165,250,0.1)",padding:"2px 7px",borderRadius:4,color:IC,fontSize:10,border:"1px solid rgba(96,165,250,0.2)"}}>{nt}</span>}
+                {nt&&<span style={{fontFamily:"monospace",background:"rgba(184,149,106,0.1)",padding:"2px 7px",borderRadius:4,color:IC,fontSize:10,border:"1px solid rgba(184,149,106,0.2)"}}>{nt}</span>}
               </div>
               <span style={{color:"rgba(255,255,255,0.55)",textAlign:"right"}}>{q>1?`${q}× `:""}{hasDims?`${l}×${wd}×${h} cm`:"— cm"}{gw>0?` · ${gw.toFixed(2)} kg`:""}</span>
             </div>;})}
@@ -659,7 +659,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
           <span style={{textAlign:"right"}}>USD {Number(it.unit_price_declared_usd||0).toFixed(2)}</span>
           <span style={{textAlign:"right",fontWeight:700}}>USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toFixed(2)}</span>
         </div>)}
-        <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 4px",marginTop:4,borderTop:"1px solid rgba(96,165,250,0.3)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 4px",marginTop:4,borderTop:"1px solid rgba(184,149,106,0.3)"}}>
           <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>TOTAL</span>
           <span style={{fontSize:14,fontWeight:700,color:IC}}>USD {invoiceItems.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_declared_usd||0),0).toFixed(2)}</span>
         </div>
@@ -671,7 +671,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
     </div>}
     {flight.status==="preparando"&&flight.invoice_presented_at&&<Card title={t.dispatch_form}>
       {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
-      <div style={{background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:8,padding:"10px 14px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:8,padding:"10px 14px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{t.weight_from_packages}</span>
         <span style={{fontSize:16,fontWeight:700,color:IC}}>{autoWeight.toFixed(2)} kg</span>
       </div>
@@ -700,7 +700,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
         </div>
       </div>}
     </Card>}
-    {flight.status!=="preparando"&&<div style={{padding:"14px 18px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:10}}>
+    {flight.status!=="preparando"&&<div style={{padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10}}>
       <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase"}}>Datos del despacho</p>
       <div style={{display:"flex",gap:24,flexWrap:"wrap",fontSize:12,color:"rgba(255,255,255,0.6)"}}>
         <span><strong style={{color:"#fff"}}>{t.total_weight}:</strong> {flight.total_weight_kg} kg</span>
@@ -728,13 +728,13 @@ function NotifBell({token}){
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       {unread>0&&<span style={{position:"absolute",top:2,right:2,background:"#ff4444",color:"#fff",fontSize:9,fontWeight:700,borderRadius:10,minWidth:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>{unread}</span>}
     </button>
-    {open&&<div style={{position:"fixed",right:16,top:70,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflow:"auto",background:"#142038",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:12,boxShadow:"0 10px 40px rgba(0,0,0,0.5)",zIndex:1000}}>
+    {open&&<div style={{position:"fixed",right:16,top:70,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflow:"auto",background:"#142038",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:12,boxShadow:"0 10px 40px rgba(0,0,0,0.5)",zIndex:1000}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
         <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>Notificaciones</span>
         {unread>0&&<button onClick={markAllRead} style={{fontSize:10,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600}}>Marcar todas leídas</button>}
       </div>
       {notifs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",fontSize:12,margin:0}}>Sin notificaciones</p>:
-      notifs.map(n=><div key={n.id} onClick={()=>{markRead(n.id);setOpen(false);if(n.link)window.location.search=n.link;}} style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:n.link?"pointer":"default",background:n.read?"transparent":"rgba(96,165,250,0.06)"}}>
+      notifs.map(n=><div key={n.id} onClick={()=>{markRead(n.id);setOpen(false);if(n.link)window.location.search=n.link;}} style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:n.link?"pointer":"default",background:n.read?"transparent":"rgba(184,149,106,0.06)"}}>
         <p style={{fontSize:12,fontWeight:n.read?400:700,color:n.read?"rgba(255,255,255,0.5)":"#fff",margin:"0 0 2px"}}>{n.title}</p>
         {n.body&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{n.body}</p>}
         <p style={{fontSize:10,color:"rgba(255,255,255,0.3)",margin:0}}>{new Date(n.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</p>
@@ -750,7 +750,7 @@ function SimpleShell({children,lang,setLang,t,onLogout,token}){
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         {token&&<NotifBell token={token}/>}
         <LangToggle lang={lang} setLang={setLang}/>
-        <button onClick={onLogout} style={{padding:"7px 14px",fontSize:12,background:"rgba(255,255,255,0.06)",border:"1.5px solid rgba(255,255,255,0.1)",borderRadius:8,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:600}}>{t.logout}</button>
+        <button onClick={onLogout} style={{padding:"7px 14px",fontSize:12,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:600}}>{t.logout}</button>
       </div>
     </div>
     <div style={{maxWidth:1100,margin:"0 auto",padding:"24px 24px"}}>{children}</div>
@@ -842,7 +842,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
     setSaving(false);
   };
 
-  return <div style={{background:"rgba(255,255,255,0.05)",borderRadius:14,border:"1.5px solid rgba(96,165,250,0.25)",padding:"1.5rem"}}>
+  return <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1.5px solid rgba(184,149,106,0.25)",padding:"1.5rem"}}>
     <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 18px"}}>{t.new_package}</h3>
     {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
 
@@ -852,10 +852,10 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
         <span>{clientId==="unregistered"?`📦 ${t.unregistered_client}`:selectedClient?`${selectedClient.client_code} - ${selectedClient.first_name||""} ${selectedClient.last_name||""}`:t.select_client}</span>
         <span>{showDrop?"▲":"▼"}</span>
       </button>
-      {showDrop&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#142038",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:10,maxHeight:300,overflow:"auto",zIndex:10,boxShadow:"0 10px 30px rgba(0,0,0,0.5)"}}>
-        <div style={{padding:8,borderBottom:"1px solid rgba(255,255,255,0.06)"}}><input value={clientSearch} onChange={e=>setClientSearch(e.target.value)} placeholder={t.search_client} autoFocus style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
-        <button type="button" onClick={()=>{setClientId("unregistered");setShowDrop(false);setClientSearch("");}} style={{display:"block",width:"100%",padding:"10px 14px",fontSize:13,fontWeight:600,border:"none",background:clientId==="unregistered"?"rgba(96,165,250,0.15)":"transparent",color:"#fbbf24",cursor:"pointer",textAlign:"left",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>📦 {t.unregistered_client}</button>
-        {filtered.map(c=><button key={c.id} type="button" onClick={()=>{setClientId(c.id);setShowDrop(false);setClientSearch("");}} style={{display:"block",width:"100%",padding:"10px 14px",fontSize:13,border:"none",background:clientId===c.id?"rgba(96,165,250,0.15)":"transparent",color:"#fff",cursor:"pointer",textAlign:"left"}}>
+      {showDrop&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#142038",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:10,maxHeight:300,overflow:"auto",zIndex:10,boxShadow:"0 10px 30px rgba(0,0,0,0.5)"}}>
+        <div style={{padding:8,borderBottom:"1px solid rgba(255,255,255,0.06)"}}><input value={clientSearch} onChange={e=>setClientSearch(e.target.value)} placeholder={t.search_client} autoFocus style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
+        <button type="button" onClick={()=>{setClientId("unregistered");setShowDrop(false);setClientSearch("");}} style={{display:"block",width:"100%",padding:"10px 14px",fontSize:13,fontWeight:600,border:"none",background:clientId==="unregistered"?"rgba(184,149,106,0.15)":"transparent",color:"#fbbf24",cursor:"pointer",textAlign:"left",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>📦 {t.unregistered_client}</button>
+        {filtered.map(c=><button key={c.id} type="button" onClick={()=>{setClientId(c.id);setShowDrop(false);setClientSearch("");}} style={{display:"block",width:"100%",padding:"10px 14px",fontSize:13,border:"none",background:clientId===c.id?"rgba(184,149,106,0.15)":"transparent",color:"#fff",cursor:"pointer",textAlign:"left"}}>
           <span style={{fontFamily:"monospace",fontWeight:700,color:IC}}>{c.client_code}</span>
           <span style={{color:"rgba(255,255,255,0.5)",marginLeft:8}}>{c.first_name||""} {c.last_name||""}</span>
         </button>)}
@@ -866,10 +866,10 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
     {clientId==="unregistered"&&<div style={{padding:"10px 14px",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:10,marginBottom:14}}>
       <p style={{fontSize:12,color:"#fbbf24",margin:0,fontWeight:600}}>⚠ {t.unregistered_info}</p>
     </div>}
-    {selectedClient&&existingOp&&<div style={{padding:"10px 14px",background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:10,marginBottom:14}}>
+    {selectedClient&&existingOp&&<div style={{padding:"10px 14px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,marginBottom:14}}>
       <p style={{fontSize:12,color:IC,margin:0,fontWeight:600}}>ℹ {t.consolidation_info} <strong>{existingOp.operation_code}</strong></p>
     </div>}
-    {selectedClient&&!existingOp&&<div style={{padding:"10px 14px",background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:10,marginBottom:14}}>
+    {selectedClient&&!existingOp&&<div style={{padding:"10px 14px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,marginBottom:14}}>
       <p style={{fontSize:12,color:IC,margin:0,fontWeight:600}}>ℹ {t.new_op_info}</p>
     </div>}
 
@@ -889,7 +889,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
           <Inp label={t.height} type="number" value={b.height} onChange={v=>chBulto(i,"height",v)} placeholder="25"/>
         </div>
       </div>)}
-      <button type="button" onClick={addBulto} style={{width:"100%",padding:"10px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.05)",color:IC,cursor:"pointer"}}>{t.add_bulto}</button>
+      <button type="button" onClick={addBulto} style={{width:"100%",padding:"10px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>{t.add_bulto}</button>
     </div>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:12,marginTop:10}}>
