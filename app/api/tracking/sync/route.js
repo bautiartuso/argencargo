@@ -106,9 +106,12 @@ async function syncOne(op) {
   // algunos couriers (DHL) lo tiran antes del arribo físico. La transición a en_aduana
   // se hace con un timer de 4h post-arribo (más abajo).
   if (op.status === "en_transito" && inserted > 0) {
-    const arrivalCodes = new Set(["RC", "IA"]);
-    const arrivalKeywords = ["arrived", "arrival", "arribo"];
-    const argKeywords = ["argentin", "buenos aires", "ezeiza", ", ar ", "(ar)", " ar,", "aep"];
+    // FedEx usa "AR" (Arrived at facility). Como inArg filtra que el facility esté en AR,
+    // es seguro. RC/IA son los standard del TCR.
+    const arrivalCodes = new Set(["RC", "IA", "AR"]);
+    // Keywords cubren inglés Y español (FedEx responde en español según cuenta).
+    const arrivalKeywords = ["arrived", "arrival", "arribo", "llegó", "llego", "destino"];
+    const argKeywords = ["argentin", "buenos aires", "ezeiza", ", ar ", "(ar)", " ar,", ", ar", "aep"];
     const hasArrival = (d.events || []).some(ev => {
       const txt = `${ev.title||""} ${ev.description||""} ${ev.location||""}`.toLowerCase();
       const inArg = argKeywords.some(kw => txt.includes(kw));
