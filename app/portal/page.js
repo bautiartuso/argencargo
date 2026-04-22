@@ -1413,7 +1413,19 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
 }
 function Dashboard({profile,client,user,token,onLogout}){
   const [page,setPage]=useState("imports");const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);const [pendingVouchersCount,setPendingVouchersCount]=useState(0);
-  const loadOps=async()=>{setLo(true);const [r,it,pm,cp,tv]=await Promise.all([dq("operations",{token,filters:"?select=*&order=created_at.desc"}),dq("operation_items",{token,filters:"?select=operation_id"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd"}),client?.id?dq("tier_rewards",{token,filters:`?client_id=eq.${client.id}&status=eq.pending&select=id`}):Promise.resolve([])]);const list=Array.isArray(r)?r:[];setOps(list);const m={};(Array.isArray(it)?it:[]).forEach(x=>{m[x.operation_id]=(m[x.operation_id]||0)+1;});setItemsByOp(m);const pmap={};(Array.isArray(pm)?pm:[]).forEach(p=>{pmap[p.operation_id]=(pmap[p.operation_id]||0)+Number(p.client_amount_usd||0);});setPmtsByOp(pmap);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setPendingVouchersCount(Array.isArray(tv)?tv.length:0);setLo(false);
+  const loadOps=async()=>{setLo(true);
+    // Filtro explícito por client_id: normalmente RLS lo hace solo para clientes logueados,
+    // pero en admin preview mode el token es de admin (ve TODO) y necesitamos filtrar acá.
+    const cId=client?.id;
+    if(!cId){setLo(false);return;}
+    const [r,it,pm,cp,tv]=await Promise.all([
+      dq("operations",{token,filters:`?client_id=eq.${cId}&select=*&order=created_at.desc`}),
+      dq("operation_items",{token,filters:`?select=operation_id,operations!inner(client_id)&operations.client_id=eq.${cId}`}),
+      dq("payment_management",{token,filters:`?select=operation_id,client_amount_usd,operations!inner(client_id)&operations.client_id=eq.${cId}`}),
+      dq("operation_client_payments",{token,filters:`?select=operation_id,amount_usd,operations!inner(client_id)&operations.client_id=eq.${cId}`}),
+      dq("tier_rewards",{token,filters:`?client_id=eq.${cId}&status=eq.pending&select=id`})
+    ]);
+    const list=Array.isArray(r)?r:[];setOps(list);const m={};(Array.isArray(it)?it:[]).forEach(x=>{m[x.operation_id]=(m[x.operation_id]||0)+1;});setItemsByOp(m);const pmap={};(Array.isArray(pm)?pm:[]).forEach(p=>{pmap[p.operation_id]=(pmap[p.operation_id]||0)+Number(p.client_amount_usd||0);});setPmtsByOp(pmap);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setPendingVouchersCount(Array.isArray(tv)?tv.length:0);setLo(false);
     // Deep-link: ?op=AC-XXXX → auto-open that operation
     if(typeof window!=="undefined"){const params=new URLSearchParams(window.location.search);const opCode=params.get("op");if(opCode){const found=list.find(o=>o.operation_code===opCode);if(found){setSelOp(found);setPage("imports");window.history.replaceState({},"",window.location.pathname);}}}
   };
