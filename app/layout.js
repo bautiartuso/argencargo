@@ -14,6 +14,13 @@ export const metadata = {
   },
 };
 
+// Viewport responsive (mobile-aware). En Next 14 App Router va separado de metadata.
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+};
+
 // Pixels de retargeting. Setear los IDs como env vars en Vercel:
 //   NEXT_PUBLIC_META_PIXEL_ID    → Meta/Facebook Pixel
 //   NEXT_PUBLIC_GOOGLE_ADS_ID    → Google Ads Conversion ID (formato AW-XXXXXXXXX)
