@@ -744,7 +744,7 @@ function NotifBell({token}){
 }
 
 function SimpleShell({children,lang,setLang,t,onLogout,token}){
-  return <div style={{minHeight:"100vh",background:BG,fontFamily:"'Segoe UI','Helvetica Neue',Arial,sans-serif"}}>
+  return <div style={{minHeight:"100vh",background:BG,fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 24px",background:"rgba(0,0,0,0.25)",borderBottom:"1px solid rgba(255,255,255,0.08)",flexWrap:"wrap",gap:12}}>
       <img src={LOGO} alt="AC" style={{height:36,objectFit:"contain"}}/>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
