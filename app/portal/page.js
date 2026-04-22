@@ -67,7 +67,7 @@ const OS=[{k:"proveedor",l:"Proveedor"},{k:"warehouse",l:"Warehouse\nArgencargo"
 const S2S={pendiente:0,en_deposito_origen:1,en_preparacion:2,en_transito:3,arribo_argentina:4,en_aduana:5,entregada:6,operacion_cerrada:7,cancelada:-1};
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},entregada:{l:"LISTA PARA RETIRAR",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
 const CM={aereo_blanco:"Aéreo Courier Comercial",aereo_negro:"Aéreo Integral AC",maritimo_blanco:"Marítimo Carga LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
-const CN=[{key:"imports",label:"IMPORTACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8","M10 9H8"]},{key:"services",label:"SERVICIOS",p:["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"]},{key:"payments",label:"PAGOS INTERNACIONALES",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"points",label:"PUNTOS",p:["M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"]},{key:"profile",label:"MI PERFIL",p:["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
+const CN=[{key:"imports",label:"IMPORTACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8","M10 9H8"]},{key:"payments",label:"PAGOS INTERNACIONALES",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"points",label:"PUNTOS",p:["M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"]},{key:"services",label:"SERVICIOS",p:["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"]},{key:"profile",label:"MI PERFIL",p:["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
 function WorldMap(){const d=[[120,80],[135,85],[150,78],[165,90],[180,85],[200,95],[215,88],[230,92],[250,100],[265,95],[280,105],[300,98],[320,110],[335,105],[350,115],[370,108],[390,120],[410,112],[430,125],[450,118],[470,130],[490,122],[510,135],[530,128],[550,140],[570,132],[590,145],[610,138],[630,150],[140,120],[160,130],[180,125],[200,140],[220,135],[240,145],[260,138],[280,150],[300,142],[320,155],[340,148],[360,158],[380,152],[400,162],[420,155],[440,165],[460,158],[480,170],[500,162],[520,175],[540,168],[560,180],[580,172],[600,185],[620,178]];const l=[[200,95,450,118],[300,98,520,135],[180,125,400,162],[280,150,500,208],[350,115,570,132]];return <svg width="100%" height="100%" viewBox="0 0 750 320" preserveAspectRatio="xMidYMid slice" style={{position:"absolute",inset:0,opacity:0.05,pointerEvents:"none"}}>{l.map((v,i)=><line key={i} x1={v[0]} y1={v[1]} x2={v[2]} y2={v[3]} stroke="#4A90D9" strokeWidth="0.5" opacity="0.4"/>)}{d.map((v,i)=><circle key={i} cx={v[0]} cy={v[1]} r={1.5} fill="#4A90D9" opacity="0.5"/>)}</svg>;}
 function Inp({label,type="text",value,onChange,placeholder,req,error}){return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label><input type={type} value={value||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:`1px solid ${error?"#ff6b6b":"rgba(255,255,255,0.12)"}`,borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",transition:"all 180ms"}} onFocus={e=>{if(!error){e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";e.target.style.background="rgba(255,255,255,0.09)";}}} onBlur={e=>{e.target.style.borderColor=error?"#ff6b6b":"rgba(255,255,255,0.12)";e.target.style.boxShadow="none";e.target.style.background="rgba(255,255,255,0.06)";}}/>{error&&<p style={{fontSize:11,color:"#ff6b6b",margin:"4px 0 0"}}>{error}</p>}</div>;}
 function Sel({label,value,onChange,options,req,ph}){return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label><select value={value} onChange={e=>onChange(e.target.value)} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";e.target.style.boxShadow="none";}} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:value?"#fff":"rgba(255,255,255,0.45)",outline:"none",transition:"all 180ms",cursor:"pointer"}}>{ph&&<option value="" style={{background:"#0F1F3A"}}>{ph}</option>}{options.map(o=><option key={typeof o==="string"?o:o.value} value={typeof o==="string"?o:o.value} style={{background:"#0F1F3A",color:"#fff"}}>{typeof o==="string"?o:o.label}</option>)}</select></div>;}
@@ -1124,7 +1124,7 @@ function InternationalPaymentsPage({client}){
   const [amountStr,setAmountStr]=useState("");
   const [method,setMethod]=useState("");      // "cash" | "transfer"
   const [showForm,setShowForm]=useState(false);
-  const [bank,setBank]=useState({beneficiary:"",bankName:"",account:"",swiftAba:"",bankAddress:"",reference:""});
+  const [bankInfo,setBankInfo]=useState("");
   const onAmount=v=>{if(v===""||/^\d*\.?\d*$/.test(v))setAmountStr(v);};
   const amount=Number(amountStr)||0;
   // Tarifas
@@ -1135,17 +1135,17 @@ function InternationalPaymentsPage({client}){
   const transferSurcharge=(amount+commission+fixedUsd)*pctTransfer;
   const total=amount+commission+fixedUsd+transferSurcharge;
   const canAdvance=origin&&amount>0&&method;
-  const resetAll=()=>{setOrigin("");setAmountStr("");setMethod("");setShowForm(false);setBank({beneficiary:"",bankName:"",account:"",swiftAba:"",bankAddress:"",reference:""});};
+  const resetAll=()=>{setOrigin("");setAmountStr("");setMethod("");setShowForm(false);setBankInfo("");};
 
-  const canSend=bank.beneficiary.trim()&&bank.bankName.trim()&&bank.account.trim()&&bank.swiftAba.trim();
+  const canSend=canAdvance; // Datos bancarios son opcionales — el cliente puede mandar la foto por WA
 
   const originLabel=origin==="usa"?"Estados Unidos 🇺🇸":origin==="china"?"China 🇨🇳":"";
   const methodLabel=method==="cash"?"Efectivo (sin recargo)":method==="transfer"?"Transferencia (+2,5%)":"";
-  const swiftLabel=origin==="usa"?"ABA / Routing":origin==="china"?"Código SWIFT":"SWIFT/ABA";
   const wireLabel=origin==="usa"?"Transferencia WIRE":origin==="china"?"Transferencia SWIFT":"";
 
   const buildWAMessage=()=>{
     const fmt=n=>n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const hasBankInfo=bankInfo.trim().length>0;
     const lines=[
       "Hola Argencargo 👋, quiero gestionar un *pago internacional*.",
       "",
@@ -1162,12 +1162,7 @@ function InternationalPaymentsPage({client}){
       `*TOTAL A ABONAR A ARGENCARGO: USD ${fmt(total)}*`,
       "",
       "*Datos del beneficiario:*",
-      `• Beneficiario: ${bank.beneficiary}`,
-      `• Banco: ${bank.bankName}`,
-      `• Nº de cuenta: ${bank.account}`,
-      `• ${swiftLabel}: ${bank.swiftAba}`,
-      ...(bank.bankAddress?[`• Dirección del banco: ${bank.bankAddress}`]:[]),
-      ...(bank.reference?[`• Referencia / concepto: ${bank.reference}`]:[]),
+      ...(hasBankInfo?[bankInfo.trim(),"","Te paso también la foto / captura original por acá 👇 para doble chequeo."]:["Te mando la foto / captura con los datos del proveedor por acá 👇"]),
       "",
       "Quedo a la espera de la confirmación para coordinar el pago. ¡Gracias!",
     ];
@@ -1248,23 +1243,15 @@ function InternationalPaymentsPage({client}){
     {/* CTA Avanzar */}
     {canAdvance&&!showForm&&<button onClick={()=>setShowForm(true)} style={{padding:"14px 28px",fontSize:14,fontWeight:700,borderRadius:12,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW,letterSpacing:"0.02em"}}>Avanzar →</button>}
 
-    {/* STEP 4: Datos bancarios */}
+    {/* STEP 4: Datos del proveedor (libre) */}
     {showForm&&<div style={{marginTop:20,padding:"24px 26px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16}}>
-      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.12em"}}>4 · Datos bancarios del proveedor</p>
-      <p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:"0 0 18px",lineHeight:1.5}}>Completá los datos del beneficiario. Después te abrimos un WhatsApp con todo precargado para enviarnos.</p>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
-        <Inp label="Beneficiario (nombre / razón social)" value={bank.beneficiary} onChange={v=>setBank(p=>({...p,beneficiary:v}))} req/>
-        <Inp label="Banco" value={bank.bankName} onChange={v=>setBank(p=>({...p,bankName:v}))} req/>
-        <Inp label="Nº de cuenta / IBAN" value={bank.account} onChange={v=>setBank(p=>({...p,account:v}))} req/>
-        <Inp label={swiftLabel} value={bank.swiftAba} onChange={v=>setBank(p=>({...p,swiftAba:v}))} req/>
-        <Inp label="Dirección del banco (opcional)" value={bank.bankAddress} onChange={v=>setBank(p=>({...p,bankAddress:v}))}/>
-        <Inp label="Referencia / concepto (opcional)" value={bank.reference} onChange={v=>setBank(p=>({...p,reference:v}))}/>
+      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.12em"}}>4 · Datos del proveedor</p>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>Pegá la info que tengas (email del proveedor, datos sueltos, lo que sea). Si preferís, dejalo vacío y nos mandás la foto o captura directamente por WhatsApp — te la vamos a pedir ahí.</p>
+      <textarea value={bankInfo} onChange={e=>setBankInfo(e.target.value)} placeholder={"Beneficiario:\nBanco:\nNº cuenta / IBAN:\nSWIFT / ABA:\nDirección del banco:\n\n(O pegá el email completo, como venga)"} rows={7} style={{width:"100%",padding:"14px 16px",fontSize:13.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",transition:"all 180ms",fontFamily:"inherit",lineHeight:1.55,resize:"vertical"}} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";e.target.style.background="rgba(255,255,255,0.07)";}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";e.target.style.boxShadow="none";e.target.style.background="rgba(255,255,255,0.04)";}}/>
+      <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap"}}>
+        <a href={`https://wa.me/${WA_PHONE}?text=${buildWAMessage()}`} target="_blank" rel="noopener noreferrer" style={{padding:"13px 24px",fontSize:14,fontWeight:700,borderRadius:10,cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:10,boxShadow:"0 4px 14px rgba(37,211,102,0.25)",letterSpacing:"0.02em"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>Enviar por WhatsApp</a>
+        <button onClick={resetAll} style={{padding:"13px 20px",fontSize:13,fontWeight:600,borderRadius:10,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.02em"}}>Empezar de nuevo</button>
       </div>
-      <div style={{display:"flex",gap:10,marginTop:12,flexWrap:"wrap"}}>
-        <a href={canSend?`https://wa.me/${WA_PHONE}?text=${buildWAMessage()}`:undefined} target="_blank" rel="noopener noreferrer" style={{padding:"12px 22px",fontSize:14,fontWeight:700,borderRadius:10,cursor:canSend?"pointer":"not-allowed",background:canSend?"linear-gradient(135deg,#25D366,#128C7E)":"rgba(255,255,255,0.06)",color:canSend?"#fff":"rgba(255,255,255,0.4)",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:8,boxShadow:canSend?"0 4px 14px rgba(37,211,102,0.25)":"none",opacity:canSend?1:0.6}} onClick={e=>{if(!canSend)e.preventDefault();}}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>Enviar por WhatsApp</a>
-        <button onClick={resetAll} style={{padding:"12px 20px",fontSize:13,fontWeight:600,borderRadius:10,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.02em"}}>Empezar de nuevo</button>
-      </div>
-      {!canSend&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"12px 0 0",fontStyle:"italic"}}>Completá beneficiario, banco, cuenta y {swiftLabel} para habilitar el envío.</p>}
     </div>}
   </div>;
 }
