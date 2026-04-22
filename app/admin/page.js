@@ -457,7 +457,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>PRODUCTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{items.length}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>BULTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{pkgs.length}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>VALOR FOB</p><p style={{fontSize:14,color:"#fff",margin:0}}>USD {items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0).toLocaleString("en-US")}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>PESO BRUTO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{pkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0),0).toFixed(1)} kg</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>PESO BRUTO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{pkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0).toFixed(1)} kg</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>CBM</p><p style={{fontSize:14,color:"#fff",margin:0}}>{pkgs.reduce((s,p)=>{const q=Number(p.quantity||1),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);return s+(l&&w&&h?((l*w*h)/1000000)*q:0);},0).toFixed(4)} m³</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>EVENTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{events.length}</p></div>
         </div>
       </Card>
