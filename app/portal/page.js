@@ -1127,17 +1127,27 @@ function ServicesPage({client}){
   </div>;
 }
 function AccountPage({token,client}){
-  const [movs,setMovs]=useState([]);
+  const [timeline,setTimeline]=useState([]);
   const [balance,setBalance]=useState(Number(client?.account_balance_usd||0));
   const [loading,setLoading]=useState(true);
-  const MOV_LABELS={overpayment:"Pago de más",applied:"Aplicado a op",adjustment:"Ajuste",refund:"Reintegro",debt:"Pago de menos"};
-  const MOV_COLORS={overpayment:"#22c55e",applied:GOLD_LIGHT,adjustment:"#a78bfa",refund:"#60a5fa",debt:"#ef4444"};
+  const MOV_LABELS={overpayment:"Pago de más",applied:"Aplicado a op",adjustment:"Ajuste",refund:"Reintegro",debt:"Pago de menos",op_cobro:"Cobro de op",op_anticipo:"Anticipo de op"};
+  const MOV_COLORS={overpayment:"#22c55e",applied:GOLD_LIGHT,adjustment:"#a78bfa",refund:"#60a5fa",debt:"#ef4444",op_cobro:"#22c55e",op_anticipo:"#60a5fa"};
   useEffect(()=>{if(!client?.id){setLoading(false);return;}(async()=>{
-    const[m,cl]=await Promise.all([
+    const[m,cl,ops,pm]=await Promise.all([
       dq("client_account_movements",{token,filters:`?client_id=eq.${client.id}&select=*,operations(operation_code)&order=created_at.desc`}),
-      dq("clients",{token,filters:`?id=eq.${client.id}&select=account_balance_usd`})
+      dq("clients",{token,filters:`?id=eq.${client.id}&select=account_balance_usd`}),
+      dq("operations",{token,filters:`?client_id=eq.${client.id}&is_collected=eq.true&select=id,operation_code,collected_amount,collection_currency,collection_exchange_rate,collection_date,closed_at`}),
+      dq("operation_client_payments",{token,filters:`?select=*,operations!inner(operation_code,client_id)&operations.client_id=eq.${client.id}&order=payment_date.desc`})
     ]);
-    setMovs(Array.isArray(m)?m:[]);
+    const movs=Array.isArray(m)?m:[];
+    const opsList=Array.isArray(ops)?ops:[];
+    const pmts=Array.isArray(pm)?pm:[];
+    const merged=[
+      ...movs.map(x=>({id:"m_"+x.id,date:x.created_at,type:x.type,amount:Number(x.amount_usd),op_code:x.operations?.operation_code,description:x.description})),
+      ...opsList.filter(o=>Number(o.collected_amount||0)>0).map(o=>{const raw=Number(o.collected_amount||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const usd=isArs&&rate>0?raw/rate:raw;return{id:"o_"+o.id,date:o.collection_date||o.closed_at,type:"op_cobro",amount:usd,op_code:o.operation_code,description:isArs?`Pago ARS ${raw.toLocaleString("es-AR")} @ ${rate}`:"Pago recibido"};}),
+      ...pmts.map(p=>({id:"p_"+p.id,date:p.payment_date,type:"op_anticipo",amount:Number(p.amount_usd||0),op_code:p.operations?.operation_code,description:p.notes||`Anticipo (${p.payment_method||"pago"})`}))
+    ].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
+    setTimeline(merged);
     if(Array.isArray(cl)&&cl[0])setBalance(Number(cl[0].account_balance_usd||0));
     setLoading(false);
   })();},[client?.id,token]);
@@ -1159,17 +1169,17 @@ function AccountPage({token,client}){
     </div>
     {/* Historial */}
     <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Historial de movimientos</h3>
-    {loading?<SkeletonTable rows={4} cols={3} hideHeader/>:movs.length===0?
-      <EmptyState icon="document" title="Sin movimientos todavía" description="Cuando haya saldos a favor, descuentos o ajustes en tu cuenta los vas a ver acá."/>
+    {loading?<SkeletonTable rows={4} cols={3} hideHeader/>:timeline.length===0?
+      <EmptyState icon="document" title="Sin movimientos todavía" description="Cuando haya pagos, saldos a favor, descuentos o ajustes en tu cuenta los vas a ver acá."/>
       :<div style={{display:"flex",flexDirection:"column",gap:2,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
-      {movs.map(m=>{const amt=Number(m.amount_usd);const isPos=amt>0;const color=MOV_COLORS[m.type]||"#fff";const label=MOV_LABELS[m.type]||m.type;return <div key={m.id} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+      {timeline.map(t=>{const amt=t.amount;const isPos=amt>0;const color=MOV_COLORS[t.type]||"#fff";const label=MOV_LABELS[t.type]||t.type;return <div key={t.id} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:3,flexWrap:"wrap"}}>
             <span style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:999,background:`${color}14`,color,border:`1px solid ${color}35`,letterSpacing:"0.06em",textTransform:"uppercase"}}>{label}</span>
-            {m.operations?.operation_code&&<span style={{fontSize:11,fontFamily:"'JetBrains Mono','SF Mono',monospace",color:GOLD_LIGHT,letterSpacing:"0.04em"}}>{m.operations.operation_code}</span>}
-            <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{fmtDate(m.created_at)}</span>
+            {t.op_code&&<span style={{fontSize:11,fontFamily:"'JetBrains Mono','SF Mono',monospace",color:GOLD_LIGHT,letterSpacing:"0.04em"}}>{t.op_code}</span>}
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{t.date?fmtDate(t.date):"—"}</span>
           </div>
-          {m.description&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.7)",margin:0}}>{m.description}</p>}
+          {t.description&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.7)",margin:0}}>{t.description}</p>}
         </div>
         <span style={{fontSize:16,fontWeight:800,color:isPos?"#22c55e":"#ef4444",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em",whiteSpace:"nowrap"}}>{isPos?"+":""}USD {Math.abs(amt).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
       </div>;})}
