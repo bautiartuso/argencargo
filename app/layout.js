@@ -2,7 +2,7 @@ import './globals.css';
 import Script from 'next/script';
 
 const SITE_URL = 'https://www.argencargo.com.ar';
-const OG_LOGO = 'https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png';
+const OG_LOGO = 'https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png';
 
 export const metadata = {
   metadataBase: new URL(SITE_URL),
@@ -90,8 +90,8 @@ export default function RootLayout({ children }) {
             name: 'Argencargo',
             legalName: 'Argencargo',
             url: 'https://www.argencargo.com.ar',
-            logo: 'https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png',
-            image: 'https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png',
+            logo: 'https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png',
+            image: 'https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png',
             description: 'Empresa argentina de importaciones desde China y USA. Courier aéreo, carga aérea consolidada y marítimo LCL/FCL con despacho de aduana y entrega puerta a puerta.',
             foundingDate: '2020',
             address: {
