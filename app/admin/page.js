@@ -2291,11 +2291,10 @@ function DashboardKPIs({token}){
   const [data,setData]=useState(null);const [lo,setLo]=useState(true);
   useEffect(()=>{(async()=>{
     const now=new Date();const y=now.getFullYear();const m=String(now.getMonth()+1).padStart(2,"0");
-    const monthStart=`${y}-${m}-01`;
     const [ops,flights,unPkgs,signups,cardUsd,cardArs]=await Promise.all([
-      dq("operations",{token,filters:"?select=id,op_code,status,budget_total,eta,updated_at,created_at"}),
+      dq("operations",{token,filters:"?select=id,operation_code,status,budget_total,total_anticipos,eta,updated_at,created_at,consolidation_confirmed"}),
       dq("flights",{token,filters:"?select=id,status"}),
-      dq("unassigned_packages",{token,filters:"?select=id&assigned_to_op_id=is.null"}),
+      dq("unassigned_packages",{token,filters:"?select=id,created_at&assigned_to_op_id=is.null"}),
       dq("agent_signups",{token,filters:"?select=id&status=eq.pending"}),
       dq("payment_management",{token,filters:"?select=giro_amount_usd,giro_tarjeta_due_date&giro_payment_method=eq.tarjeta_credito&giro_tarjeta_paid=eq.false"}),
       dq("finance_entries",{token,filters:"?select=amount,amount_ars,currency,card_closing_date&payment_method=eq.tarjeta_credito&is_paid=eq.false"})
@@ -2312,23 +2311,32 @@ function DashboardKPIs({token}){
     const todayStr=now.toISOString().slice(0,10);
     const transitStates=["en_transito","en_aduana","preparando_envio"];
     const etaPassed=o.filter(x=>x.eta&&x.eta<todayStr&&transitStates.includes(x.status));
+    // Nuevas alertas
+    const threeDaysAgo=new Date(now-3*86400000).toISOString();
+    const orphanPkgsArr=(Array.isArray(unPkgs)?unPkgs:[]);
+    const orphanPkgsOld=orphanPkgsArr.filter(p=>p.created_at&&p.created_at<threeDaysAgo);
+    // Clientes con anticipo > budget (saldo a favor)
+    const saldoFavorOps=o.filter(x=>!finalStates.includes(x.status)&&Number(x.total_anticipos||0)>Number(x.budget_total||0)&&Number(x.budget_total||0)>0);
+    // Ops activas sin presupuesto calculado
+    const sinBudgetOps=o.filter(x=>!finalStates.includes(x.status)&&x.status!=="pendiente"&&x.status!=="en_deposito_origen"&&Number(x.budget_total||0)===0);
     // Deuda tarjeta USD (gestión de pagos pendiente de débito)
     const cardUsdArr=Array.isArray(cardUsd)?cardUsd:[];
     const deudaTarjetaUsd=cardUsdArr.reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
-    // Deuda tarjeta ARS + USD (gastos en finance_entries)
     const cardArsArr=Array.isArray(cardArs)?cardArs:[];
     const deudaTarjetaArsExtra=cardArsArr.filter(e=>e.currency!=="USD").reduce((s,e)=>s+Number(e.amount_ars||e.amount||0),0);
     const deudaTarjetaUsdExtra=cardArsArr.filter(e=>e.currency==="USD").reduce((s,e)=>s+Number(e.amount||0),0);
-    setData({activeOps:activeOps.length,transitOps:transitOps.length,activeFlights:activeFlights.length,ingresosMes,staleOps,etaPassed:etaPassed.length,orphanPkgs:(Array.isArray(unPkgs)?unPkgs:[]).length,pendingAgents:(Array.isArray(signups)?signups:[]).length,deudaTarjetaUsd:deudaTarjetaUsd+deudaTarjetaUsdExtra,deudaTarjetaArs:deudaTarjetaArsExtra,cardUsdCount:cardUsdArr.length+cardArsArr.filter(e=>e.currency==="USD").length,cardArsCount:cardArsArr.filter(e=>e.currency!=="USD").length});
+    setData({activeOps:activeOps.length,transitOps:transitOps.length,activeFlights:activeFlights.length,ingresosMes,staleOps,etaPassed,orphanPkgsOld,saldoFavorOps,sinBudgetOps,pendingAgents:(Array.isArray(signups)?signups:[]).length,deudaTarjetaUsd:deudaTarjetaUsd+deudaTarjetaUsdExtra,deudaTarjetaArs:deudaTarjetaArsExtra,cardUsdCount:cardUsdArr.length+cardArsArr.filter(e=>e.currency==="USD").length,cardArsCount:cardArsArr.filter(e=>e.currency!=="USD").length});
     setLo(false);
   })();},[token]);
   if(lo)return <p style={{color:"rgba(255,255,255,0.5)",padding:20}}>Cargando dashboard...</p>;
   if(!data)return null;
   const opsAlerts=[
-    {label:"Ops Estancadas",desc:"Sin cambios hace +5 días",value:data.staleOps.length,color:data.staleOps.length>0?"#ef4444":"#22c55e",items:data.staleOps.slice(0,10).map(x=>x.op_code||x.id)},
-    {label:"ETA Pasada",desc:"En tránsito con ETA vencida",value:data.etaPassed,color:data.etaPassed>0?"#ef4444":"#22c55e"},
-    {label:"Paquetes Huérfanos",desc:"Sin operación asignada",value:data.orphanPkgs,color:data.orphanPkgs>0?"#f59e0b":"#22c55e"},
-    {label:"Agentes Pendientes",desc:"Solicitudes por aprobar",value:data.pendingAgents,color:data.pendingAgents>0?"#f59e0b":"#22c55e"}
+    {label:"Ops Estancadas",desc:"Sin cambios hace +5 días",value:data.staleOps.length,color:"#ef4444",items:data.staleOps.slice(0,10).map(x=>x.operation_code||x.id)},
+    {label:"ETA Pasada",desc:"En tránsito con ETA vencida",value:data.etaPassed.length,color:"#ef4444",items:data.etaPassed.slice(0,10).map(x=>x.operation_code||x.id)},
+    {label:"Paquetes Huérfanos",desc:"Sin asignar hace +3 días",value:data.orphanPkgsOld.length,color:"#f59e0b"},
+    {label:"Sin Presupuesto",desc:"Activa sin budget calculado",value:data.sinBudgetOps.length,color:"#f59e0b",items:data.sinBudgetOps.slice(0,10).map(x=>x.operation_code||x.id)},
+    {label:"Saldo a Favor",desc:"Anticipo > presupuesto",value:data.saldoFavorOps.length,color:"#3b82f6",items:data.saldoFavorOps.slice(0,10).map(x=>x.operation_code||x.id)},
+    {label:"Agentes Pendientes",desc:"Solicitudes por aprobar",value:data.pendingAgents,color:"#f59e0b"}
   ];
   const hasOpsAlerts=opsAlerts.some(a=>a.value>0);
   return <div style={{marginBottom:28}}>
