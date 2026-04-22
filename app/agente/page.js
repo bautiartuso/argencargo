@@ -461,22 +461,22 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   </div>;};
 
   return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token}>
-    <div style={{marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+    <div style={{marginBottom:24,display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
       <div>
-        <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{t.hello}, {signup.first_name||signup.email}</h2>
-        <p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>🟢 {t.active_in} {signup.country||"China"}</p>
+        <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.02em"}}>{t.hello}, {signup.first_name||signup.email}</h2>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0,display:"inline-flex",alignItems:"center",gap:6}}><span style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 8px rgba(34,197,94,0.6)"}}/>{t.active_in} <span style={{color:GOLD_LIGHT,fontWeight:600}}>{signup.country||"China"}</span></p>
       </div>
       {!showForm&&<Btn onClick={()=>{setTab("deposit");setShowForm(true);}}>+ {t.register_pkg}</Btn>}
     </div>
-    {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.1)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:10,fontSize:13,color:"#22c55e",marginBottom:16}}>{flashMsg}</div>}
-    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+    {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:10,fontSize:13,color:"#22c55e",marginBottom:16,animation:"ac_fade_in 200ms",fontWeight:600}}>✓ {flashMsg}</div>}
+    <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
       {[
-        {k:"deposit",l:`${t.tab_deposit} (${depositPkgsAll.length}) \u00b7 ${depositTotalKg} kg`},
-        {k:"active_flights",l:`${t.tab_active_flights} (${activeFlights.length})`},
-        {k:"history",l:`${t.tab_history} (${historyFlights.length})`},
+        {k:"deposit",l:t.tab_deposit,n:depositPkgsAll.length,extra:`${depositTotalKg} kg`},
+        {k:"active_flights",l:t.tab_active_flights,n:activeFlights.length},
+        {k:"history",l:t.tab_history,n:historyFlights.length},
         {k:"stats",l:t.tab_stats},
-        {k:"account",l:`${t.tab_account} · ${usdF(balance)}`}
-      ].map(tb=><button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:tab===tb.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===tb.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:tab===tb.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{tb.l}</button>)}
+        {k:"account",l:t.tab_account,extra:usdF(balance)}
+      ].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"10px 16px",fontSize:12,fontWeight:active?700:600,border:"none",background:"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",display:"inline-flex",alignItems:"center",gap:6}} onMouseEnter={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.8)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{tb.l}{tb.n!==undefined&&<span style={{fontSize:10,fontWeight:700,color:active?GOLD_LIGHT:"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}{tb.extra&&<span style={{fontSize:10,fontWeight:500,color:"rgba(255,255,255,0.4)",marginLeft:2,textTransform:"none",letterSpacing:0}}>· {tb.extra}</span>}</button>;})}
     </div>
 
     {/* TAB 1: Depósito — paquetes sin vuelo */}
@@ -745,15 +745,15 @@ function NotifBell({token}){
 
 function SimpleShell({children,lang,setLang,t,onLogout,token}){
   return <div style={{minHeight:"100vh",background:BG,fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif"}}>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 24px",background:"rgba(0,0,0,0.25)",borderBottom:"1px solid rgba(255,255,255,0.08)",flexWrap:"wrap",gap:12}}>
-      <img src={LOGO} alt="AC" style={{height:36,objectFit:"contain"}}/>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 28px",background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap",gap:12,position:"sticky",top:0,zIndex:10}}>
+      <img src={LOGO} alt="AC" style={{height:36,objectFit:"contain",filter:"drop-shadow(0 2px 12px rgba(184,149,106,0.22))"}}/>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         {token&&<NotifBell token={token}/>}
         <LangToggle lang={lang} setLang={setLang}/>
-        <button onClick={onLogout} style={{padding:"7px 14px",fontSize:12,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:600}}>{t.logout}</button>
+        <button onClick={onLogout} style={{padding:"7px 14px",fontSize:11.5,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:600,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";e.currentTarget.style.color=GOLD_LIGHT;}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{t.logout}</button>
       </div>
     </div>
-    <div style={{maxWidth:1100,margin:"0 auto",padding:"24px 24px"}}>{children}</div>
+    <div style={{maxWidth:1200,margin:"0 auto",padding:"32px 28px"}}>{children}</div>
   </div>;
 }
 
