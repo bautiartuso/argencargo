@@ -16,7 +16,8 @@ const ACTIVE_STATUSES = ["en_transito", "arribo_argentina", "en_aduana", "entreg
 
 // Internal secret for server-to-server calls to /api/notify.
 const CRON_SECRET = process.env.CRON_SECRET || "";
-const BASE_URL = process.env.PUBLIC_BASE_URL || "https://argencargo.com.ar";
+// Explicit www. para evitar 307 redirect que strippea Authorization.
+const BASE_URL = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
 
 // Dispara /api/notify con bypass de CRON_SECRET (el endpoint lo acepta además del JWT admin).
 async function triggerMail(op_id, trigger) {
