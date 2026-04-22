@@ -1,16 +1,58 @@
 import './globals.css';
 import Script from 'next/script';
 
+const SITE_URL = 'https://www.argencargo.com.ar';
+const OG_LOGO = 'https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png';
+
 export const metadata = {
-  title: 'Argencargo — Importaciones desde China a Argentina | Courier Aéreo y Marítimo',
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: 'Argencargo — Importaciones desde China a Argentina | Courier Aéreo y Marítimo',
+    template: '%s | Argencargo',
+  },
   description: 'Importá desde China con courier aéreo (8-12 días), carga aérea o marítimo. Seguimiento en tiempo real, despacho de aduana y entrega puerta a puerta en Argentina. Cotizá online.',
-  keywords: 'importar desde china, courier china argentina, importaciones china, flete china argentina, envio china argentina, courier aereo china',
+  keywords: ['importar desde china','courier china argentina','importaciones china','flete china argentina','envio china argentina','courier aereo china','importar usa argentina','aduana importacion','argencargo'],
+  authors: [{ name: 'Argencargo' }],
+  applicationName: 'Argencargo',
+  referrer: 'origin-when-cross-origin',
+  icons: {
+    icon: [
+      { url: '/icon.png', type: 'image/png', sizes: '512x512' },
+    ],
+    apple: [
+      { url: '/apple-icon.png', type: 'image/png', sizes: '512x512' },
+    ],
+    shortcut: '/icon.png',
+  },
   openGraph: {
     title: 'Argencargo — Importaciones desde China a Argentina',
     description: 'Courier aéreo, carga aérea y marítimo. Seguimiento en tiempo real y entrega puerta a puerta.',
-    url: 'https://www.argencargo.com.ar',
+    url: SITE_URL,
     siteName: 'Argencargo',
     type: 'website',
+    locale: 'es_AR',
+    images: [
+      { url: OG_LOGO, width: 1200, height: 630, alt: 'Argencargo — Importaciones desde China y USA a Argentina' },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Argencargo — Importaciones desde China a Argentina',
+    description: 'Courier aéreo, carga aérea y marítimo. Seguimiento en tiempo real y entrega puerta a puerta.',
+    images: [OG_LOGO],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+  alternates: {
+    canonical: SITE_URL,
   },
 };
 
@@ -37,6 +79,47 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.googleapis.com"/>
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous"/>
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap"/>
+        {/* Structured data: Organization (ayuda a Google a mostrar el logo y datos) */}
+        <Script id="ld-organization" type="application/ld+json" strategy="beforeInteractive">
+          {JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'Organization',
+            name: 'Argencargo',
+            legalName: 'Argencargo',
+            url: 'https://www.argencargo.com.ar',
+            logo: 'https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png',
+            image: 'https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png',
+            description: 'Empresa argentina de importaciones desde China y USA. Courier aéreo, carga aérea consolidada y marítimo LCL/FCL con despacho de aduana y entrega puerta a puerta.',
+            foundingDate: '2020',
+            address: {
+              '@type': 'PostalAddress',
+              streetAddress: 'Av. Callao 1137',
+              addressLocality: 'Recoleta',
+              addressRegion: 'CABA',
+              addressCountry: 'AR',
+            },
+            contactPoint: {
+              '@type': 'ContactPoint',
+              telephone: '+54-9-11-2508-8580',
+              contactType: 'customer service',
+              email: 'info@argencargo.com.ar',
+              availableLanguage: ['Spanish','English'],
+            },
+            sameAs: [
+              'https://www.instagram.com/argencargo',
+              'https://wa.me/5491125088580',
+            ],
+          })}
+        </Script>
+        <Script id="ld-website" type="application/ld+json" strategy="beforeInteractive">
+          {JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'WebSite',
+            url: 'https://www.argencargo.com.ar',
+            name: 'Argencargo',
+            inLanguage: 'es-AR',
+          })}
+        </Script>
         {META_PIXEL_ID && (
           <Script id="meta-pixel" strategy="afterInteractive">
             {`!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${META_PIXEL_ID}');fbq('track','PageView');`}

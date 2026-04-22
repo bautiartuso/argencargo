@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState } from "../../lib/ui";
+import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, WhatsAppFab } from "../../lib/ui";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -1336,6 +1336,7 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
     <div className="main-content" style={{marginLeft:220,minHeight:"100vh",position:"relative",zIndex:1}}>
       <div className="desktop-notif-bar" style={{display:"flex",alignItems:"center",justifyContent:"flex-end",padding:"12px 32px 0",gap:12}}>{token&&<NotifBell token={token}/>}</div>
       <div className="main-inner" style={{maxWidth:1000,margin:"0 auto",padding:"28px 32px"}}>{children}</div></div>
+    <WhatsAppFab message={`Hola Argencargo! 👋 Soy ${client?.first_name||""} ${client?.last_name||""}${client?.client_code?` (${client.client_code})`:""}, tengo una consulta.`}/>
   </div>;
 }
 function Dashboard({profile,client,user,token,onLogout}){
