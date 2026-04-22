@@ -2748,10 +2748,11 @@ function DashboardKPIs({token}){
 function OperationalAnalytics({token}){
   const [data,setData]=useState(null);
   useEffect(()=>{(async()=>{
-    const [ops,fbs,clients]=await Promise.all([
-      dq("operations",{token,filters:"?select=id,operation_code,status,channel,budget_total,created_at,closed_at,client_id,clients(first_name,last_name,client_code)&order=created_at.desc"}),
+    const [ops,fbs,clients,pmsRaw]=await Promise.all([
+      dq("operations",{token,filters:"?select=id,operation_code,status,channel,service_type,budget_total,collected_amount,collection_currency,collection_exchange_rate,credit_applied_usd,discount_applied_usd,is_collected,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,cost_producto_usd,created_at,closed_at,client_id,clients(first_name,last_name,client_code)&order=created_at.desc"}),
       dq("op_feedback",{token,filters:"?select=operation_id,rating"}),
-      dq("clients",{token,filters:"?select=id,first_name,last_name,client_code,loyalty_level"})
+      dq("clients",{token,filters:"?select=id,first_name,last_name,client_code,loyalty_level"}),
+      dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro"})
     ]);
     const o=Array.isArray(ops)?ops:[];const fb=Array.isArray(fbs)?fbs:[];const cl=Array.isArray(clients)?clients:[];
     const closed=o.filter(x=>x.status==="operacion_cerrada");
@@ -2767,16 +2768,35 @@ function OperationalAnalytics({token}){
       const ms=new Date(c.closed_at)-new Date(c.created_at);return ms/(1000*60*60*24);
     });
     const avgCycleDays=durations.length>0?durations.reduce((a,b)=>a+b,0)/durations.length:0;
-    // Top clientes por revenue (closed only, 90 días)
+    // Top clientes por GANANCIA (closed only, 90 días)
     const since=new Date(Date.now()-90*86400000);
     const recent=closed.filter(c=>c.closed_at&&new Date(c.closed_at)>=since);
+    const pms=Array.isArray(pmsRaw)?pmsRaw:[];
+    const pmByOp={};pms.forEach(p=>{if(!pmByOp[p.operation_id])pmByOp[p.operation_id]=[];pmByOp[p.operation_id].push(p);});
+    const calcOpGan=(o)=>{
+      let ing;
+      if(o.is_collected){
+        const raw=Number(o.collected_amount||0);
+        const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
+        const cash=isArs&&rate>0?raw/rate:raw;
+        const bt=Number(o.budget_total||0);
+        const cashForOp=bt>0?Math.min(cash,bt):cash;
+        ing=cashForOp+Number(o.credit_applied_usd||0)+Number(o.discount_applied_usd||0);
+        if(ing<=0)ing=bt;
+      } else ing=Number(o.budget_total||0);
+      const costProd=o.service_type==="gestion_integral"?Number(o.cost_producto_usd||0):0;
+      const cost=Number(o.cost_flete||0)+costProd+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
+      const pm=pmByOp[o.id]||[];
+      const pmGan=pm.reduce((s,p)=>s+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);
+      return(ing-cost)+pmGan;
+    };
     const byCli={};
     for(const c of recent){
       const k=c.client_id;if(!k)continue;
-      if(!byCli[k])byCli[k]={name:`${c.clients?.first_name||""} ${c.clients?.last_name||""}`.trim()||c.clients?.client_code||"—",code:c.clients?.client_code||"",count:0,total:0};
-      byCli[k].count+=1;byCli[k].total+=Number(c.budget_total||0);
+      if(!byCli[k])byCli[k]={name:`${c.clients?.first_name||""} ${c.clients?.last_name||""}`.trim()||c.clients?.client_code||"—",code:c.clients?.client_code||"",count:0,gan:0};
+      byCli[k].count+=1;byCli[k].gan+=calcOpGan(c);
     }
-    const topClients=Object.values(byCli).sort((a,b)=>b.total-a.total).slice(0,10);
+    const topClients=Object.values(byCli).sort((a,b)=>b.gan-a.gan).slice(0,10);
     // Distribución por canal (closed)
     const byCh={};for(const c of closed){const k=c.channel||"—";byCh[k]=(byCh[k]||0)+1;}
     const totalClosed=closed.length||1;
@@ -2799,9 +2819,9 @@ function OperationalAnalytics({token}){
     </div>
     <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12}}>
       <div style={card}>
-        <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>Top clientes (últimos 90 días)</h3>
+        <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>Top clientes por ganancia (últimos 90 días)</h3>
         {data.topClients.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Sin datos</p>:
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>{data.topClients.map((c,i)=>{const max=data.topClients[0].total;const pct=max>0?(c.total/max)*100:0;return <div key={i} style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:10,color:"rgba(255,255,255,0.45)",width:18,fontWeight:700}}>#{i+1}</span><div style={{flex:1,minWidth:0}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:3}}><span style={{fontSize:12,color:"#fff",fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name} <span style={{color:"rgba(255,255,255,0.35)",fontFamily:"monospace",fontSize:10}}>({c.code})</span></span><span style={{fontSize:12,fontWeight:700,color:"#22c55e"}}>USD {c.total.toLocaleString("en-US",{maximumFractionDigits:0})}</span></div><div style={{height:4,background:"rgba(255,255,255,0.06)",borderRadius:2,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",background:`linear-gradient(90deg,${NAVY},${AC})`,borderRadius:2}}/></div><div style={{fontSize:9,color:"rgba(255,255,255,0.4)",marginTop:2}}>{c.count} op{c.count!==1?"s":""}</div></div></div>;})}</div>}
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>{data.topClients.map((c,i)=>{const maxAbs=Math.max(...data.topClients.map(x=>Math.abs(x.gan)),1);const pct=(Math.abs(c.gan)/maxAbs)*100;const ganColor=c.gan>=0?"#22c55e":"#ff6b6b";return <div key={i} style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:10,color:"rgba(255,255,255,0.45)",width:18,fontWeight:700}}>#{i+1}</span><div style={{flex:1,minWidth:0}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:3}}><span style={{fontSize:12,color:"#fff",fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name} <span style={{color:"rgba(255,255,255,0.35)",fontFamily:"monospace",fontSize:10}}>({c.code})</span></span><span style={{fontSize:12,fontWeight:700,color:ganColor}}>USD {c.gan.toLocaleString("en-US",{maximumFractionDigits:0})}</span></div><div style={{height:4,background:"rgba(255,255,255,0.06)",borderRadius:2,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",background:c.gan>=0?`linear-gradient(90deg,${NAVY},${AC})`:"#ff6b6b",borderRadius:2}}/></div><div style={{fontSize:9,color:"rgba(255,255,255,0.4)",marginTop:2}}>{c.count} op{c.count!==1?"s":""}</div></div></div>;})}</div>}
       </div>
       <div style={card}>
         <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>Distribución por canal</h3>
@@ -2983,47 +3003,85 @@ function FinanceDashboard({token}){
       </div>;
     })()}
 
-    {/* ═══ FILA 3: Ranking de ingresos y costos (comparativa) ═══ */}
+    {/* ═══ FILA 3: Comparativa ingreso vs costo por concepto ═══ */}
     {(()=>{
-      // Top clientes por ingreso del período
-      const clientIng={};periodOps.forEach(o=>{const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—";if(!clientIng[cn])clientIng[cn]={ing:0,count:0};const g=calcGan(o);clientIng[cn].ing+=g.ing;clientIng[cn].count++;});
-      const topIng=Object.entries(clientIng).sort((a,b)=>b[1].ing-a[1].ing).slice(0,6);
-      const maxIng=topIng.length?Math.max(...topIng.map(([,d])=>d.ing),1):1;
-      // Ranking de costos: desglose por tipo del período (ops) + gastos fijos agrupados por categoría
-      const opCostBreak=[
-        {label:"Flete internacional",value:periodOps.reduce((s,o)=>s+Number(o.cost_flete||0),0),color:"#60a5fa",type:"op"},
-        {label:"Impuestos",value:periodOps.reduce((s,o)=>s+Number(o.cost_impuestos_reales||0),0),color:"#f97316",type:"op"},
-        {label:"Gasto documental",value:periodOps.reduce((s,o)=>s+Number(o.cost_gasto_documental||0),0),color:"#a78bfa",type:"op"},
-        {label:"Seguro",value:periodOps.reduce((s,o)=>s+Number(o.cost_seguro||0),0),color:"#fbbf24",type:"op"},
-        {label:"Flete local",value:periodOps.reduce((s,o)=>s+Number(o.cost_flete_local||0),0),color:"#34d399",type:"op"},
-        {label:"Otros (op)",value:periodOps.reduce((s,o)=>s+Number(o.cost_otros||0),0),color:"#fb7185",type:"op"},
-        {label:"Giros (pagos int.)",value:periodOps.reduce((s,o)=>{const pm=pmtsByOp[o.id]||[];return s+pm.reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0),color:"#c084fc",type:"op"}
-      ];
+      // Cobertura: % del budget_total que viene de cash + credit + discount
+      // Usamos eso para escalar los budget_flete/seguro/taxes al ingreso real cobrado
+      const sum=(f)=>periodOps.reduce((s,o)=>s+Number(o[f]||0),0);
+      const sumIng=(f)=>periodOps.reduce((s,o)=>{
+        const bt=Number(o.budget_total||0);if(bt<=0)return s;
+        const comp=Number(o[f]||0);
+        if(!o.is_collected)return s+comp;
+        const raw=Number(o.collected_amount||0);
+        const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
+        const cash=isArs&&rate>0?raw/rate:raw;
+        const cashForOp=Math.min(cash,bt);
+        const ing=cashForOp+Number(o.credit_applied_usd||0)+Number(o.discount_applied_usd||0);
+        const ratio=bt>0?ing/bt:0;
+        return s+comp*ratio;
+      },0);
+      // Conceptos con ingreso↔costo directo
+      const concepts=[
+        {label:"Flete internacional",ingF:"budget_flete",costF:"cost_flete",color:"#60a5fa"},
+        {label:"Seguro",ingF:"budget_seguro",costF:"cost_seguro",color:"#fbbf24"},
+        {label:"Impuestos",ingF:"budget_taxes",costF:"cost_impuestos_reales",color:"#f97316"}
+      ].map(c=>{
+        const ing=sumIng(c.ingF);const cost=sum(c.costF);const gan=ing-cost;const mg=ing>0?(gan/ing)*100:0;
+        return{...c,ing,cost,gan,mg};
+      }).filter(c=>c.ing>0||c.cost>0);
+      // Conceptos de costo puro (sin ingreso directo, absorben parte del margen global)
+      const pureCosts=[
+        {label:"Gasto documental",cost:sum("cost_gasto_documental"),color:"#a78bfa"},
+        {label:"Flete local",cost:sum("cost_flete_local"),color:"#34d399"},
+        {label:"Otros (op)",cost:sum("cost_otros"),color:"#fb7185"},
+        {label:"Giros (gestión pagos)",cost:periodOps.reduce((s,o)=>{const pm=pmtsByOp[o.id]||[];return s+pm.reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0),color:"#c084fc"}
+      ].filter(c=>c.cost>0);
+      // Gastos fijos del período por categoría
       const fixedByCat={};filterByPeriod(fixedCostsManual,"date").forEach(e=>{const k=e.category||"otros";if(!fixedByCat[k])fixedByCat[k]=0;fixedByCat[k]+=Number(e.amount||0);});
-      const fixedBreak=Object.entries(fixedByCat).map(([k,v])=>({label:CAT_LBL[k]||k,value:v,color:CAT_COLOR[k]||"#888",type:"fijo"}));
-      const allCosts=[...opCostBreak,...fixedBreak].filter(c=>c.value>0).sort((a,b)=>b.value-a.value).slice(0,7);
-      const totAllCosts=allCosts.reduce((s,c)=>s+c.value,0);
-      const maxCost=allCosts.length?Math.max(...allCosts.map(c=>c.value),1):1;
-      return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
-        <Card title="💰 Top ingresos (clientes)">
-          {topIng.length>0?topIng.map(([name,d],i)=>{const pct=(d.ing/maxIng)*100;const shareTot=totalIng>0?(d.ing/totalIng)*100:0;return <div key={name} style={{marginBottom:11}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-              <div><span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{i+1}. {name}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:6}}>({d.count})</span></div>
-              <div><span style={{fontSize:12,fontWeight:700,color:"#22c55e"}}>{usd(d.ing)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:6}}>{shareTot.toFixed(0)}%</span></div>
-            </div>
-            {bar(pct,"#22c55e")}
-          </div>;}):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin ingresos en el período</p>}
-        </Card>
-        <Card title="📉 Top costos (categorías)">
-          {allCosts.length>0?allCosts.map((c,i)=>{const pct=(c.value/maxCost)*100;const shareTot=totAllCosts>0?(c.value/totAllCosts)*100:0;return <div key={c.label+i} style={{marginBottom:11}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-              <div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:8,height:8,borderRadius:2,background:c.color}}/><span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{i+1}. {c.label}</span><span style={{fontSize:9,color:"rgba(255,255,255,0.35)",padding:"1px 5px",borderRadius:3,border:"1px solid rgba(255,255,255,0.08)",marginLeft:4}}>{c.type==="op"?"op":"fijo"}</span></div>
-              <div><span style={{fontSize:12,fontWeight:700,color:"#ff6b6b"}}>{usd(c.value)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:6}}>{shareTot.toFixed(0)}%</span></div>
-            </div>
-            {bar(pct,c.color)}
-          </div>;}):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin costos en el período</p>}
-        </Card>
-      </div>;
+      const fixedRows=Object.entries(fixedByCat).map(([k,v])=>({label:CAT_LBL[k]||k,cost:v,color:CAT_COLOR[k]||"#888"})).sort((a,b)=>b.cost-a.cost);
+
+      const maxAny=Math.max(...concepts.map(c=>Math.max(c.ing,c.cost)),...pureCosts.map(c=>c.cost),...fixedRows.map(c=>c.cost),1);
+
+      return <div style={{marginBottom:24}}><Card title="📊 Comparativa por concepto — ingreso vs costo">
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 14px"}}>Flete, Seguro, Impuestos se cobran al cliente (lo que facturás) vs lo que realmente pagás. Los costos sin ingreso directo (documental, flete local, giros, gastos fijos) se absorben del margen global.</p>
+        <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr 0.8fr",gap:10,paddingBottom:8,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:8}}>
+          {["CONCEPTO","INGRESO","COSTO","GANANCIA","MARGEN"].map(h=><p key={h} style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textAlign:h==="CONCEPTO"?"left":"right"}}>{h}</p>)}
+        </div>
+        {concepts.map(c=><div key={c.label} style={{padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr 0.8fr",gap:10,alignItems:"center"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:2,background:c.color}}/><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{c.label}</span></div>
+            <span style={{fontSize:12,fontWeight:600,color:"#22c55e",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{usd(c.ing)}</span>
+            <span style={{fontSize:12,fontWeight:600,color:"#ff6b6b",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{usd(c.cost)}</span>
+            <span style={{fontSize:12,fontWeight:700,color:c.gan>=0?"#22c55e":"#ff6b6b",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{usd(c.gan)}</span>
+            <span style={{fontSize:12,fontWeight:700,color:c.mg>=20?"#22c55e":c.mg>=0?"#fbbf24":"#ff6b6b",textAlign:"right"}}>{c.mg.toFixed(1)}%</span>
+          </div>
+          {/* Dual bar: ingreso arriba (verde), costo abajo (rojo) */}
+          <div style={{display:"flex",gap:6,marginTop:6,alignItems:"center"}}>
+            <div style={{flex:1,height:5,background:"rgba(255,255,255,0.04)",borderRadius:3,overflow:"hidden"}}><div style={{width:`${(c.ing/maxAny)*100}%`,height:"100%",background:"#22c55e"}}/></div>
+            <div style={{flex:1,height:5,background:"rgba(255,255,255,0.04)",borderRadius:3,overflow:"hidden"}}><div style={{width:`${(c.cost/maxAny)*100}%`,height:"100%",background:"#ff6b6b"}}/></div>
+          </div>
+        </div>)}
+        {pureCosts.length>0&&<>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"16px 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Costos sin ingreso directo (ops)</p>
+          {pureCosts.map(c=><div key={c.label} style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr 0.8fr",gap:10,alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:2,background:c.color}}/><span style={{fontSize:12,color:"rgba(255,255,255,0.75)"}}>{c.label}</span></div>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.3)",textAlign:"right"}}>—</span>
+            <span style={{fontSize:12,fontWeight:600,color:"#ff6b6b",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{usd(c.cost)}</span>
+            <span style={{fontSize:12,fontWeight:600,color:"#ff6b6b",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>-{usd(c.cost)}</span>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.3)",textAlign:"right"}}>—</span>
+          </div>)}
+        </>}
+        {fixedRows.length>0&&<>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"16px 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Gastos fijos del negocio (período)</p>
+          {fixedRows.map(c=><div key={c.label} style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr 0.8fr",gap:10,alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:2,background:c.color}}/><span style={{fontSize:12,color:"rgba(255,255,255,0.75)"}}>{c.label}</span></div>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.3)",textAlign:"right"}}>—</span>
+            <span style={{fontSize:12,fontWeight:600,color:"#ff6b6b",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{usd(c.cost)}</span>
+            <span style={{fontSize:12,fontWeight:600,color:"#ff6b6b",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>-{usd(c.cost)}</span>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.3)",textAlign:"right"}}>—</span>
+          </div>)}
+        </>}
+      </Card></div>;
     })()}
 
     {/* ═══ FILA 4: Contadores operativos ═══ */}
@@ -4099,7 +4157,7 @@ function AdminDashboard({session,onLogout}){
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
       {page==="tasks"&&<AdminTasks token={token}/>}
       {page==="comms"&&<ComunicacionesPanel token={token}/>}
-      {page==="dashboard"&&<><DashboardKPIs token={token}/><OperationalAnalytics token={token}/><FinanceDashboard token={token}/></>}
+      {page==="dashboard"&&<><FinanceDashboard token={token}/><OperationalAnalytics token={token}/><DashboardKPIs token={token}/></>}
       {page==="shipments"&&<ShipmentsTracking token={token} onSelectOp={op=>{setPage("operations");setSelOp(op);}}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
