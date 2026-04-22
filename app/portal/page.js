@@ -131,8 +131,13 @@ function OperationDetail({op,token,onBack}){
     const saldoReal=Math.max(0,totalAbonar-cliPaid);
     const pagosRows=cliPmts.map(p=>`<tr><td>${new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}</td><td class="r">USD ${Number(p.amount_usd).toFixed(2)}${p.currency==="ARS"?`<br/><span class="sm">ARS ${Number(p.amount_ars).toLocaleString("es-AR")} @ ${p.exchange_rate}</span>`:""}</td><td>${p.payment_method||"—"}</td><td>${p.notes||"—"}</td></tr>`).join("");
     const statusLbl={pendiente:"Pendiente",en_deposito_origen:"En depósito origen",en_preparacion:"En preparación",en_transito:"En tránsito",arribo_argentina:"Arribó a Argentina",en_aduana:"En aduana",entregada:"Lista para retirar",operacion_cerrada:"Operación cerrada",cancelada:"Cancelada"}[op.status]||op.status;
+    const LOGO_COLOR="https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png";
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Presupuesto ${op.operation_code}</title><style>
       *{box-sizing:border-box}body{font-family:'Helvetica Neue',Arial,sans-serif;padding:32px;color:#111;max-width:900px;margin:0 auto}
+      .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1B4F8A;padding-bottom:16px;margin-bottom:20px}
+      .header img{max-width:180px;height:auto}
+      .header .meta{text-align:right;font-size:10px;color:#666;line-height:1.5}
+      .header .meta b{color:#1B4F8A;font-size:13px;display:block;margin-bottom:2px;font-family:monospace}
       h1{font-size:22px;margin:0 0 4px;color:#1B4F8A}.sub{color:#666;font-size:12px;margin-bottom:24px}
       .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;padding:14px;background:#f5f7fa;border-radius:8px}
       .grid div{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.05em}.grid b{font-size:13px;color:#111;display:block;margin-top:2px;text-transform:none;letter-spacing:0}
@@ -142,15 +147,27 @@ function OperationDetail({op,token,onBack}){
       th{background:#1B4F8A;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:0.05em}
       td.c{text-align:center}td.r{text-align:right}td.mono{font-family:monospace;font-size:10px}.sm{font-size:9px;color:#666}
       tr:nth-child(even) td{background:#fafbfc}
-      .totals{margin-top:18px;padding:16px;background:#1B4F8A;color:#fff;border-radius:8px}
+      .totals{margin-top:18px;padding:16px;background:linear-gradient(135deg,#152D54,#3B7DD8);color:#fff;border-radius:8px}
       .totals .row{display:flex;justify-content:space-between;padding:4px 0}
       .totals .row.big{border-top:1px solid rgba(255,255,255,0.25);margin-top:6px;padding-top:10px;font-size:15px;font-weight:700}
       .totals .lbl{opacity:0.8}
-      .foot{margin-top:28px;padding-top:14px;border-top:1px solid #e5e7eb;font-size:10px;color:#666;line-height:1.5}
+      .foot{margin-top:28px;padding:18px 20px;background:#152D54;color:#fff;border-radius:8px;display:flex;align-items:center;gap:18px}
+      .foot img{max-width:80px;height:auto}
+      .foot .info{font-size:11px;line-height:1.7;flex:1}
+      .foot .info b{display:block;font-size:13px;letter-spacing:0.03em;margin-bottom:3px}
+      .foot .lbl{color:#8ea3c4;margin-right:4px}
+      .foot a{color:#8fb8ff;text-decoration:none}
+      .disclaimer{margin-top:14px;font-size:9px;color:#999;line-height:1.5;text-align:center}
       .badge{display:inline-block;padding:3px 10px;border-radius:4px;background:#3B7DD8;color:#fff;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em}
     </style></head><body>
-      <h1>Presupuesto — Argencargo</h1>
-      <div class="sub">Operación <b style="color:#1B4F8A">${op.operation_code}</b> · Emitido ${new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})}</div>
+      <div class="header">
+        <img src="${LOGO_COLOR}" alt="Argencargo"/>
+        <div class="meta">
+          <b>${op.operation_code}</b>
+          <div>Emitido ${new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})}</div>
+          <div>Presupuesto de importación</div>
+        </div>
+      </div>
       <div class="grid">
         <div>Mercadería<b>${op.description||"—"}</b></div>
         <div>Canal<b>${chLbl}</b></div>
@@ -170,7 +187,16 @@ function OperationDetail({op,token,onBack}){
         ${cliPaid>0?`<div class="row" style="margin-top:8px"><span class="lbl">Ya pagado</span><span>USD ${cliPaid.toFixed(2)}</span></div><div class="row" style="font-weight:700"><span>Saldo</span><span>${saldoReal>0.01?`USD ${saldoReal.toFixed(2)}`:"PAGADO EN SU TOTALIDAD ✓"}</span></div>`:""}
       </div>
       ${cliPmts.length>0?`<h3>Pagos realizados</h3><table><thead><tr><th>Fecha</th><th class="r">Monto</th><th>Método</th><th>Detalle</th></tr></thead><tbody>${pagosRows}</tbody></table>`:""}
-      <div class="foot">Este presupuesto incluye flete internacional, seguro y gestión aduanera${shipC>0?", más envío a domicilio":""}. Los valores pueden variar según tipo de cambio, volumen final despachado y gastos documentales reales al momento del cierre de la operación. Para cualquier consulta contactanos al WhatsApp oficial.<br/><br/><b>Argencargo</b> — Tu operación de importación, resuelta.</div>
+      <div class="foot">
+        <img src="${LOGO_COLOR}" alt="Argencargo"/>
+        <div class="info">
+          <b>ARGENCARGO</b>
+          <div><span class="lbl">T.</span>+54 9 11 2508-8580</div>
+          <div><span class="lbl">E-mail:</span><a href="mailto:info@argencargo.com.ar">info@argencargo.com.ar</a></div>
+          <div>Av Callao 1137 — Recoleta, CABA</div>
+        </div>
+      </div>
+      <div class="disclaimer">Este presupuesto incluye flete internacional, seguro y gestión aduanera${shipC>0?", más envío a domicilio":""}. Los valores pueden variar según tipo de cambio, volumen final despachado y gastos documentales reales al momento del cierre de la operación.</div>
       <script>setTimeout(()=>window.print(),300)</script>
     </body></html>`);w.document.close();
   };

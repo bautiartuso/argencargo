@@ -357,6 +357,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>EVENTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{events.length}</p></div>
         </div>
       </Card>
+      {(()=>{const statusEvents=(events||[]).filter(e=>e.source==="internal"&&e.status_code).sort((a,b)=>new Date(b.occurred_at)-new Date(a.occurred_at));if(statusEvents.length===0)return null;const fmtDt=d=>{try{return new Date(d).toLocaleString("es-AR",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});}catch{return d;}};const icons={pendiente:"🕓",en_deposito_origen:"📦",en_preparacion:"📋",en_transito:"✈️",arribo_argentina:"🇦🇷",en_aduana:"🛃",entregada:"✅",operacion_cerrada:"📬",cancelada:"❌"};return <Card title="Historial de estados"><div style={{display:"flex",flexDirection:"column",gap:6}}>{statusEvents.map(ev=><div key={ev.id} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 12px",background:"rgba(255,255,255,0.03)",borderRadius:8,borderLeft:`2px solid ${SM[ev.status_code]?.c||"#666"}`}}><span style={{fontSize:16,width:24,textAlign:"center"}}>{icons[ev.status_code]||"•"}</span><div style={{flex:1,minWidth:0}}><p style={{fontSize:12,fontWeight:700,color:SM[ev.status_code]?.c||"#fff",margin:0}}>{SM[ev.status_code]?.l||ev.status_code}</p><p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{fmtDt(ev.occurred_at)}</p></div></div>)}</div></Card>;})()}
     </>}
 
     {tab==="budget"&&(()=>{
