@@ -1439,7 +1439,37 @@ function Dashboard({profile,client,user,token,onLogout}){
 export default function Page(){
   const [view,setView]=useState("login");const [step,setStep]=useState(0);const [form,setForm]=useState(INIT);const [errors,setErrors]=useState({});const [loading,setLoading]=useState(false);const [gErr,setGErr]=useState("");const [okMsg,setOkMsg]=useState("");
   const [session,setSession]=useState(null);const [client,setClient]=useState(null);const [profile,setProfile]=useState(null);const [restoring,setRestoring]=useState(true);
-  useEffect(()=>{const r=async()=>{const s=loadSession();if(!s?.token||!s?.user){setRestoring(false);return;}try{const uid=s.user.id;const p=await dq("profiles",{token:s.token,filters:`?id=eq.${uid}&select=*`});const prof=Array.isArray(p)?p[0]:null;if(!prof){clearSession();setRestoring(false);return;}if(prof.role==="cliente"){const c=await dq("clients",{token:s.token,filters:`?auth_user_id=eq.${uid}&select=*`});setClient(Array.isArray(c)?c[0]:null);}setSession(s);setProfile(prof);}catch{clearSession();}setRestoring(false);};r();},[]);
+  const [adminPreview,setAdminPreview]=useState(false); // flag para mostrar banner "modo preview"
+  useEffect(()=>{const r=async()=>{
+    // Admin preview mode: /portal?admin_preview=<client_id>
+    // Usa la session del admin (ac_admin localStorage) para cargar el portal
+    // como si fuera ese cliente — solo lectura, no se puede operar.
+    if(typeof window!=="undefined"){
+      const params=new URLSearchParams(window.location.search);
+      const previewId=params.get("admin_preview");
+      if(previewId){
+        try{
+          const raw=localStorage.getItem("ac_admin");
+          const adminSess=raw?JSON.parse(raw):null;
+          if(adminSess?.token&&adminSess?.profile?.role==="admin"){
+            const c=await dq("clients",{token:adminSess.token,filters:`?id=eq.${previewId}&select=*`});
+            const cl=Array.isArray(c)&&c[0]?c[0]:null;
+            if(cl){
+              setSession({token:adminSess.token,refresh_token:adminSess.refresh_token,user:adminSess.user});
+              setProfile({role:"cliente"}); // simular perfil cliente para que renderice Dashboard
+              setClient(cl);
+              setAdminPreview(true);
+              setRestoring(false);
+              return;
+            }
+          }
+        }catch{}
+        // Fallback: si no se pudo preview, limpiar el param y seguir flujo normal
+        window.history.replaceState({},"",window.location.pathname);
+      }
+    }
+    const s=loadSession();if(!s?.token||!s?.user){setRestoring(false);return;}try{const uid=s.user.id;const p=await dq("profiles",{token:s.token,filters:`?id=eq.${uid}&select=*`});const prof=Array.isArray(p)?p[0]:null;if(!prof){clearSession();setRestoring(false);return;}if(prof.role==="cliente"){const c=await dq("clients",{token:s.token,filters:`?auth_user_id=eq.${uid}&select=*`});setClient(Array.isArray(c)?c[0]:null);}setSession(s);setProfile(prof);}catch{clearSession();}setRestoring(false);
+  };r();},[]);
   const ch=f=>v=>{setForm(p=>({...p,[f]:v}));setErrors(p=>({...p,[f]:undefined}));setGErr("");};
   const val=s=>{const e={};if(s===0){if(!form.first_name.trim())e.first_name="Requerido";if(!form.last_name.trim())e.last_name="Requerido";if(!form.whatsapp.trim())e.whatsapp="Requerido";else if(form.whatsapp.replace(/\D/g,"").length<10)e.whatsapp="Número inválido (mínimo 10 dígitos)";if(!form.email.trim())e.email="Requerido";else if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))e.email="Email inválido";if(!form.password)e.password="Requerido";else if(form.password.length<6)e.password="Mínimo 6 caracteres";if(form.password!==form.confirm_password)e.confirm_password="No coinciden";}if(s===1){if(!form.street.trim())e.street="Requerido";if(!form.postal_code.trim())e.postal_code="Requerido";if(!form.city.trim())e.city="Requerido";if(!form.province)e.province="Requerido";}if(s===2&&form.tax_condition==="responsable_inscripto"){if(!form.company_name.trim())e.company_name="Requerido";if(!form.cuit.trim())e.cuit="Requerido";else if(form.cuit.replace(/\D/g,"").length!==11)e.cuit="CUIT inválido (debe tener 11 dígitos)";}setErrors(e);return !Object.keys(e).length;};
   const gc=(fn,ln)=>(fn.substring(0,3)+ln.substring(0,3)).toUpperCase();
@@ -1453,7 +1483,14 @@ export default function Page(){
       setClient(cl);}const ss={token,refresh_token:r.refresh_token,user:r.user};saveSession(ss);setSession(ss);setProfile(prof);}catch{setGErr("Email o contraseña incorrectos. Verificá tus datos e intentá de nuevo.");}setLoading(false);};
   const logout=()=>{clearSession();setSession(null);setClient(null);setProfile(null);setForm(INIT);setStep(0);setView("login");setGErr("");setOkMsg("");};
   if(restoring)return <><ToastStack/><div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG}}><p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p></div></>;
-  if(session&&profile)return <><ToastStack/><Dashboard profile={profile} client={client} user={session.user} token={session.token} onLogout={logout}/></>;
+  if(session&&profile)return <><ToastStack/>
+    {adminPreview&&<div style={{position:"fixed",top:0,left:0,right:0,zIndex:9999,background:"linear-gradient(90deg, rgba(184,149,106,0.95), rgba(232,208,152,0.95))",color:"#0A1628",padding:"10px 18px",display:"flex",alignItems:"center",justifyContent:"center",gap:12,fontSize:12,fontWeight:700,letterSpacing:"0.04em",boxShadow:"0 2px 12px rgba(0,0,0,0.3)"}}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span>MODO PREVIEW — viendo portal como <strong>{client?.first_name} {client?.last_name} ({client?.client_code})</strong></span>
+      <button onClick={()=>{if(typeof window!=="undefined")window.close();}} style={{marginLeft:8,padding:"4px 12px",fontSize:11,fontWeight:700,background:"rgba(10,22,40,0.85)",color:"#fff",border:"none",borderRadius:6,cursor:"pointer",letterSpacing:"0.04em"}}>Cerrar</button>
+    </div>}
+    <div style={{paddingTop:adminPreview?38:0}}><Dashboard profile={profile} client={client} user={session.user} token={session.token} onLogout={logout}/></div>
+  </>;
   if(okMsg)return <><ToastStack/><AuthPage><div style={{textAlign:"center"}}><p style={{fontSize:15,color:"rgba(255,255,255,0.65)",margin:"0 0 24px"}}>{okMsg}</p><PBtn onClick={()=>{setOkMsg("");setView("login");setForm(INIT);setStep(0);}}>Ir a iniciar sesión</PBtn></div></AuthPage></>;
   const ST=["Datos personales","Dirección","Condición fiscal"];
   return <><ToastStack/><AuthPage>

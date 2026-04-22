@@ -1384,7 +1384,10 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
         {Number(cl.account_balance_usd||0)!==0&&(()=>{const bal=Number(cl.account_balance_usd||0);const isCredit=bal>0;return <span title={isCredit?"Saldo a favor en cuenta corriente":"Deuda en cuenta corriente"} onClick={()=>setTab("cc")} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,background:isCredit?"rgba(34,197,94,0.14)":"rgba(239,68,68,0.14)",color:isCredit?"#22c55e":"#ef4444",border:`1px solid ${isCredit?"rgba(34,197,94,0.35)":"rgba(239,68,68,0.35)"}`,letterSpacing:"0.06em",fontVariantNumeric:"tabular-nums",cursor:"pointer"}}>{isCredit?"+":""}USD {bal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>;})()}
         {msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600,animation:"ac_fade_in 200ms"}}>✓ {msg}</span>}
       </div>
-      <Btn onClick={deleteClient} variant="danger" small>Eliminar cliente</Btn>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <Btn onClick={()=>{if(typeof window!=="undefined")window.open(`/portal?admin_preview=${cl.id}`,"_blank");}} variant="secondary" small>👁 Ver como cliente</Btn>
+        <Btn onClick={deleteClient} variant="danger" small>Eliminar cliente</Btn>
+      </div>
     </div>
     <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",paddingBottom:0}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"10px 18px",fontSize:12,fontWeight:active?700:600,border:"none",background:"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.8)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{t.l}</button>;})}</div>
     {tab==="info"&&<Card title="Datos del Cliente" actions={<Btn onClick={saveClient} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
