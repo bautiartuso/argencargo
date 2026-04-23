@@ -454,11 +454,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             {op.skip_review_request&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0",lineHeight:1.4}}>Usar si la experiencia fue mala y no queremos incentivar una reseña pública.</p>}
           </div>
         </div>
-        {op.channel==="aereo_blanco"&&<div style={{marginBottom:12}}>
+        {op.channel==="aereo_blanco"&&!isGI&&<div style={{marginBottom:12}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>¿La carga contiene baterías internas?</p>
           <div style={{display:"flex",gap:10}}>{[{k:true,icon:"⚡",l:"Sí, tiene baterías",sub:"Recargo $2/kg"},{k:false,icon:"✓",l:"No tiene baterías",sub:"Producto estándar"}].map(o=><div key={String(o.k)} onClick={()=>chOp("has_battery")(o.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:12,border:`1.5px solid ${(op.has_battery||false)===o.k?"#fb923c":"rgba(255,255,255,0.08)"}`,background:(op.has_battery||false)===o.k?"rgba(251,146,60,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer",transition:"all 0.15s"}}><p style={{fontSize:22,margin:"0 0 4px"}}>{o.icon}</p><p style={{fontSize:13,fontWeight:700,color:(op.has_battery||false)===o.k?"#fb923c":"rgba(255,255,255,0.55)",margin:"0 0 2px"}}>{o.l}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{o.sub}</p></div>)}</div>
         </div>}
-        {op.channel==="aereo_negro"&&op.origin==="USA"&&<div style={{marginBottom:12}}>
+        {op.channel==="aereo_negro"&&op.origin==="USA"&&!isGI&&<div style={{marginBottom:12}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>¿La carga es de celulares?</p>
           <div style={{display:"flex",gap:10}}>{[{k:true,icon:"📱",l:"Sí, celulares",sub:"Tarifa $65/kg"},{k:false,icon:"📦",l:"Carga general",sub:"Tarifa estándar"}].map(o=><div key={String(o.k)} onClick={()=>chOp("has_phones")(o.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:12,border:`1.5px solid ${(op.has_phones||false)===o.k?IC:"rgba(255,255,255,0.08)"}`,background:(op.has_phones||false)===o.k?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer",transition:"all 0.15s"}}><p style={{fontSize:22,margin:"0 0 4px"}}>{o.icon}</p><p style={{fontSize:13,fontWeight:700,color:(op.has_phones||false)===o.k?IC:"rgba(255,255,255,0.55)",margin:"0 0 2px"}}>{o.l}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{o.sub}</p></div>)}</div>
         </div>}
