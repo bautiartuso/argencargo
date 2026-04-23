@@ -102,7 +102,17 @@ function AuthPage({children}){return <div style={{minHeight:"100vh",display:"fle
 </div>;}
 function SI({k,a,cur,isA,sz=20,alert}){let key=k;if(k==="en_transito")key=isA?"en_transito_aereo":"en_transito_maritimo";const ps=SP[key]||[];const co=alert?"#fbbf24":cur?GOLD_LIGHT:a?"rgba(232,208,152,0.55)":"rgba(255,255,255,0.18)";return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={co} strokeWidth={alert?2:1.6} strokeLinecap="round" strokeLinejoin="round">{ps.map((d,i)=><path key={i} d={d}/>)}</svg>;}
 function NI({p,a,sz=17}){return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={a?GOLD_LIGHT:"rgba(255,255,255,0.4)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{p.map((d,i)=><path key={i} d={d}/>)}</svg>;}
-function OpProgress({status,isAereo,onActionClick}){const si=S2S[status]??0;const isDoc=status==="en_preparacion";return <div className="op-progress" style={{display:"flex",alignItems:"center",padding:"18px 0 6px"}}>{OS.map((s,i)=>{const a=i<=si;const cur=i===si;const isAlert=cur&&s.k==="documentacion"&&isDoc;const handleClick=isAlert&&onActionClick?(e)=>{e.stopPropagation();onActionClick();}:null;return <div key={s.k} style={{display:"flex",alignItems:"center",flex:1}}><div onClick={handleClick} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:7,width:"100%",cursor:handleClick?"pointer":"default"}}><div style={{width:38,height:38,borderRadius:999,display:"flex",alignItems:"center",justifyContent:"center",background:isAlert?"rgba(251,191,36,0.18)":cur?"rgba(184,149,106,0.15)":a?"rgba(184,149,106,0.06)":"rgba(255,255,255,0.02)",border:`1px solid ${isAlert?"rgba(251,191,36,0.6)":cur?"rgba(184,149,106,0.55)":a?"rgba(184,149,106,0.2)":"rgba(255,255,255,0.028)"}`,boxShadow:isAlert?"0 0 18px rgba(251,191,36,0.4)":cur?"0 0 16px rgba(184,149,106,0.25)":"none",animation:isAlert?"pulse 1.5s ease-in-out infinite":"none",transition:"all 200ms"}}><SI k={s.k} a={a} cur={cur} isA={isAereo} alert={isAlert}/></div><span style={{fontSize:9,color:isAlert?"#fbbf24":cur?GOLD_LIGHT:a?"rgba(255,255,255,0.55)":"rgba(255,255,255,0.22)",textAlign:"center",lineHeight:1.25,fontWeight:isAlert||cur?700:500,whiteSpace:"pre-line",minHeight:22,letterSpacing:"0.03em"}}>{isAlert?"COMPLETAR":s.l}</span></div>{i<OS.length-1&&<div style={{width:18,height:1,background:i<si?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.06)",flexShrink:0,marginTop:-20}}/>}</div>})}</div>;}
+function OpProgress({status,isAereo,onActionClick,isGI}){
+  // Para GI: saltear el paso "documentacion" (el cliente no carga nada en GI).
+  const STEPS=isGI?OS.filter(s=>s.k!=="documentacion"):OS;
+  // Mapeo status → índice en STEPS. Si es GI y el status es "en_preparacion"
+  // (caso legacy por alguna op vieja), tratarlo como "warehouse" para que no rompa.
+  const statusToKey={pendiente:"proveedor",en_deposito_origen:"warehouse",en_preparacion:isGI?"warehouse":"documentacion",en_transito:"en_transito",arribo_argentina:"arribo",en_aduana:"aduana",entregada:"entrega",operacion_cerrada:"cerrada"};
+  const key=statusToKey[status]||"proveedor";
+  const si=STEPS.findIndex(s=>s.k===key);
+  const isDoc=status==="en_preparacion"&&!isGI;
+  return <div className="op-progress" style={{display:"flex",alignItems:"center",padding:"18px 0 6px"}}>{STEPS.map((s,i)=>{const a=i<=si;const cur=i===si;const isAlert=cur&&s.k==="documentacion"&&isDoc;const handleClick=isAlert&&onActionClick?(e)=>{e.stopPropagation();onActionClick();}:null;return <div key={s.k} style={{display:"flex",alignItems:"center",flex:1}}><div onClick={handleClick} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:7,width:"100%",cursor:handleClick?"pointer":"default"}}><div style={{width:38,height:38,borderRadius:999,display:"flex",alignItems:"center",justifyContent:"center",background:isAlert?"rgba(251,191,36,0.18)":cur?"rgba(184,149,106,0.15)":a?"rgba(184,149,106,0.06)":"rgba(255,255,255,0.02)",border:`1px solid ${isAlert?"rgba(251,191,36,0.6)":cur?"rgba(184,149,106,0.55)":a?"rgba(184,149,106,0.2)":"rgba(255,255,255,0.028)"}`,boxShadow:isAlert?"0 0 18px rgba(251,191,36,0.4)":cur?"0 0 16px rgba(184,149,106,0.25)":"none",animation:isAlert?"pulse 1.5s ease-in-out infinite":"none",transition:"all 200ms"}}><SI k={s.k} a={a} cur={cur} isA={isAereo} alert={isAlert}/></div><span style={{fontSize:9,color:isAlert?"#fbbf24":cur?GOLD_LIGHT:a?"rgba(255,255,255,0.55)":"rgba(255,255,255,0.22)",textAlign:"center",lineHeight:1.25,fontWeight:isAlert||cur?700:500,whiteSpace:"pre-line",minHeight:22,letterSpacing:"0.03em"}}>{isAlert?"COMPLETAR":s.l}</span></div>{i<STEPS.length-1&&<div style={{width:18,height:1,background:i<si?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.06)",flexShrink:0,marginTop:-20}}/>}</div>})}</div>;
+}
 function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByOp={},cliPmtsByOp={}}){
   // Orden: más cerca de la entrega primero. ETA asc como desempate (antes = más urgente).
   const STATUS_WEIGHT={entregada:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
@@ -125,7 +135,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     </div>
     <p style={{fontSize:16,fontWeight:600,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>{gd(op)}</p>
     {op.tier_discount_applied_usd>0&&(()=>{const ti=getTierInfo(op.tier_discount_applied);return <div style={{marginTop:10,marginBottom:4,padding:"10px 14px",background:`linear-gradient(90deg, ${ti.color}22, transparent)`,border:`1px solid ${ti.color}55`,borderRadius:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:16}}>{ti.icon}</span><div style={{flex:1,minWidth:200}}><p style={{fontSize:11,fontWeight:700,color:ti.light,margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>Descuento {ti.label} aplicado</p><p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:"2px 0 0"}}>Se te aplicó automáticamente tu beneficio de tier</p></div><span style={{fontSize:14,fontWeight:800,color:ti.light,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>−USD {Number(op.tier_discount_applied_usd).toFixed(2)}</span></div>;})()}
-    <OpProgress status={op.status} isAereo={isA} onActionClick={()=>onSelect(op)}/>
+    <OpProgress status={op.status} isAereo={isA} onActionClick={()=>onSelect(op)} isGI={op.service_type==="gestion_integral"}/>
     <div className="op-info" style={{display:"flex",gap:32,alignItems:"center",borderTop:"1px solid rgba(255,255,255,0.028)",paddingTop:14,marginTop:8,flexWrap:"wrap"}}>
       <div><span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Origen</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"3px 0 0"}}>{op.origin||"China"}</p></div>
       <div><span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Canal</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"3px 0 0"}}>{CM[op.channel]||"—"}</p></div>
@@ -317,7 +327,7 @@ function OperationDetail({op,token,onBack}){
         {op.eta&&op.status!=="entregada"&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.55)",letterSpacing:"0.02em",marginLeft:"auto"}}>ETA · <span style={{color:"#fff",fontWeight:600}}>{formatDate(op.eta)}</span></span>}
       </div>
       <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 12px",textTransform:"uppercase"}}>{op.description}</h2>
-      <OpProgress status={op.status} isAereo={isA}/>
+      <OpProgress status={op.status} isAereo={isA} isGI={isGI}/>
       {(()=>{const totGW=pkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);const totCBM=pkgs.reduce((s,p)=>{const q=Number(p.quantity||1),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);return s+(l&&w&&h?((l*w*h)/1000000)*q:0);},0);let pf=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const vw=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(gw*q,vw);});
       // Para GI: mostrar Origen + Canal + Total a abonar. Sin bultos/peso/CBM (no le interesan al cliente).
       const giFields=[
@@ -1508,7 +1518,7 @@ function TutorialOverlay({client,token,onClose,onComplete}){
       icon:"🧮",
       title:"Calculadora de importación",
       subtitle:"Cotizá en segundos",
-      body:"Cargá tus productos, bultos y origen (China o USA). Te mostramos los 4 canales comparados — aéreo y marítimo, blanco y negro — para que elijas el que mejor te conviene.",
+      body:"Cargá tus productos, bultos y origen (China o USA). Te mostramos las opciones de envío disponibles — aéreo y marítimo — con sus tiempos y costos para que elijas la que mejor se adapte a tu importación.",
       cta:"Siguiente",
       nav:"calculator"
     },
