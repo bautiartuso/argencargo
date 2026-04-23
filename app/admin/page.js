@@ -280,7 +280,7 @@ function NewOperation({token,clients,onBack,onCreated}){
 }
 
 function OperationEditor({op:initOp,token,onBack,onDelete}){
-  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});  const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:""});
+  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});  const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:""});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const [pendingRedemptions,setPendingRedemptions]=useState([]);
   const loadRedemptions=async()=>{if(!op.client_id)return;const r=await dq("client_reward_redemptions",{token,filters:`?client_id=eq.${op.client_id}&status=eq.pending&select=*&order=redeemed_at.asc`});setPendingRedemptions(Array.isArray(r)?r:[]);};
@@ -396,7 +396,17 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const delEvt=async(id)=>{await dq("tracking_events",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadEvents();flash("Evento eliminado");};
 
   const isCanalB=op.channel?.includes("negro");
-  const tabs=[
+  const isGI=op.service_type==="gestion_integral";
+  // Para GI armamos un set de tabs distinto: Productos + Costos (ledger) reemplazan Presupuesto + Pagos.
+  // Tracking y Bultos quedan porque siguen teniendo sentido para el seguimiento.
+  const tabs=isGI?[
+    {k:"general",l:"General"},
+    {k:"items",l:"Productos"},
+    {k:"gi_costs",l:"Costos"},
+    {k:"packages",l:"Bultos"},
+    {k:"tracking",l:"Seguimiento"},
+    {k:"finance",l:"Finanzas"}
+  ]:[
     {k:"general",l:"General"},
     {k:"budget",l:"Presupuesto"},
     ...(isCanalB?[]:[{k:"items",l:"Productos"}]),
@@ -612,6 +622,102 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       {items.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>No hay productos.</p>}
     </Card>}
 
+    {tab==="gi_costs"&&isGI&&(()=>{
+      // Ledger de costos para ops Gestión Integral.
+      // Cada pago del admin al proveedor/intermediario se guarda en operation_supplier_payments
+      // con: fecha, monto, descripción (notes), referencia opcional, método opcional, estado pagado.
+      const totalCosto=supplierPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      const totalPagadoCosto=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      const totalPendCosto=totalCosto-totalPagadoCosto;
+      const addCost=async()=>{
+        const amt=Number(newSupPmt.amount_usd);
+        if(!amt||amt<=0||!newSupPmt.payment_date)return;
+        const body={operation_id:op.id,payment_date:newSupPmt.payment_date,amount_usd:amt,payment_method:newSupPmt.payment_method,is_paid:newSupPmt.is_paid,notes:newSupPmt.notes||null,reference:newSupPmt.reference||null,paid_at:newSupPmt.is_paid?new Date(newSupPmt.payment_date+"T12:00:00Z").toISOString():null};
+        await dq("operation_supplier_payments",{method:"POST",token,body});
+        // Sync cost_producto_usd en la op
+        const newTotal=totalCosto+amt;
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{cost_producto_usd:newTotal}});
+        setOp(p=>({...p,cost_producto_usd:newTotal}));
+        setNewSupPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:""});
+        load();
+        flash("Costo registrado");
+      };
+      const deleteCost=async(id)=>{
+        if(!confirm("¿Eliminar este costo?"))return;
+        await dq("operation_supplier_payments",{method:"DELETE",token,filters:`?id=eq.${id}`});
+        const remaining=supplierPayments.filter(p=>p.id!==id);
+        const newTotal=remaining.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{cost_producto_usd:newTotal}});
+        setOp(p=>({...p,cost_producto_usd:newTotal}));
+        load();
+      };
+      const toggleCostPaid=async(p)=>{
+        const newPaid=!p.is_paid;
+        await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${p.id}`,body:{is_paid:newPaid,paid_at:newPaid?new Date().toISOString():null}});
+        load();
+      };
+      return <Card title="Costos de la operación">
+        {/* Resumen */}
+        <div style={{display:"flex",gap:20,marginBottom:16,flexWrap:"wrap",padding:"14px 18px",background:"rgba(0,0,0,0.2)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total costos</p><p style={{fontSize:20,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalCosto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+          <div style={{width:1,background:"rgba(255,255,255,0.08)"}}/>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Ya pagado</p><p style={{fontSize:20,fontWeight:800,color:"#22c55e",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalPagadoCosto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+          {totalPendCosto>0.01&&<>
+            <div style={{width:1,background:"rgba(255,255,255,0.08)"}}/>
+            <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Pendiente pago</p><p style={{fontSize:20,fontWeight:800,color:"#fb923c",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalPendCosto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+          </>}
+        </div>
+
+        {/* Tabla de costos */}
+        {supplierPayments.length>0?<div style={{background:"rgba(0,0,0,0.18)",borderRadius:10,overflow:"hidden",marginBottom:16}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.02)"}}>
+                <th style={{textAlign:"left",padding:"10px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Fecha</th>
+                <th style={{textAlign:"right",padding:"10px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Monto</th>
+                <th style={{textAlign:"left",padding:"10px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Descripción</th>
+                <th style={{textAlign:"left",padding:"10px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Referencia</th>
+                <th style={{textAlign:"left",padding:"10px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Método</th>
+                <th style={{textAlign:"left",padding:"10px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Estado</th>
+                <th style={{padding:"10px 14px"}}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {supplierPayments.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}</td>
+                <td style={{padding:"10px 14px",textAlign:"right",color:"#c084fc",fontWeight:700,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>USD {Number(p.amount_usd).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.75)"}}>{p.notes||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</td>
+                <td style={{padding:"10px 14px",color:GOLD_LIGHT,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11}}>{p.reference||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</td>
+                <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.6)",textTransform:"capitalize"}}>{(p.payment_method||"—").replace("_"," ")}</td>
+                <td style={{padding:"10px 14px"}}>{p.is_paid?<span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",letterSpacing:"0.05em"}}>✓ PAGADO</span>:<span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:4,background:"rgba(251,146,60,0.15)",color:"#fb923c",letterSpacing:"0.05em"}}>PENDIENTE</span>}</td>
+                <td style={{padding:"10px 14px",textAlign:"right",whiteSpace:"nowrap"}}>
+                  {!p.is_paid&&<button onClick={()=>toggleCostPaid(p)} style={{padding:"4px 9px",fontSize:10,fontWeight:700,background:"rgba(34,197,94,0.15)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:4,color:"#22c55e",cursor:"pointer",marginRight:4}}>Marcar pagado</button>}
+                  <button onClick={()=>deleteCost(p.id)} style={{padding:"4px 9px",fontSize:11,background:"transparent",border:"1px solid rgba(255,80,80,0.25)",borderRadius:4,color:"rgba(255,100,100,0.7)",cursor:"pointer"}}>✕</button>
+                </td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>:<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1.5rem 0",fontSize:13}}>Sin costos registrados todavía. Agregá el primero abajo.</p>}
+
+        {/* Form nuevo costo */}
+        <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"14px 16px"}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Registrar nuevo costo</p>
+          <div style={{display:"grid",gridTemplateColumns:"auto 1fr 2fr 1fr 1fr auto",gap:10,alignItems:"end"}}>
+            <Inp label="Fecha" type="date" value={newSupPmt.payment_date} onChange={v=>setNewSupPmt(p=>({...p,payment_date:v}))}/>
+            <Inp label="Monto USD" type="number" value={newSupPmt.amount_usd} onChange={v=>setNewSupPmt(p=>({...p,amount_usd:v}))} step="0.01" placeholder="0.00"/>
+            <Inp label="Descripción" value={newSupPmt.notes} onChange={v=>setNewSupPmt(p=>({...p,notes:v}))} placeholder="Ej: Orden Alibaba (incluye comisión)"/>
+            <Inp label="Referencia (opcional)" value={newSupPmt.reference||""} onChange={v=>setNewSupPmt(p=>({...p,reference:v}))} placeholder="Nº orden / comprobante"/>
+            <Sel label="Método" value={newSupPmt.payment_method} onChange={v=>setNewSupPmt(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Contado"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"swift",label:"SWIFT / Wire"},{value:"otro",label:"Otro"}]}/>
+            <Btn onClick={addCost} disabled={!newSupPmt.amount_usd||Number(newSupPmt.amount_usd)<=0} small>+ Agregar</Btn>
+          </div>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:"rgba(255,255,255,0.6)",cursor:"pointer",marginTop:10}}>
+            <input type="checkbox" checked={newSupPmt.is_paid} onChange={e=>setNewSupPmt(p=>({...p,is_paid:e.target.checked}))}/>
+            Ya está pagado (desmarcar si es tarjeta aún no debitada)
+          </label>
+        </div>
+      </Card>;
+    })()}
+
     {tab==="packages"&&<Card title="Bultos" actions={<Btn onClick={addPkg} small>+ Agregar bulto</Btn>}>
       {pkgs.map((pk,i)=>{const q=Number(pk.quantity||1),l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0),gw=Number(pk.gross_weight_kg||0);const bruto=gw*q;const vw=l&&w&&h?((l*w*h)/5000)*q:0;const cbm=l&&w&&h?((l*w*h)/1000000)*q:0;return <div key={pk.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
@@ -821,7 +927,75 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </>;
     })()}
 
-    {tab==="finance"&&(()=>{
+    {tab==="finance"&&isGI&&(()=>{
+      // Finanzas simplificada para Gestión Integral:
+      //   Ingreso = total productos (cant × precio unitario) acordado con el cliente
+      //   Cobrado = suma operation_client_payments (plata que efectivamente entró)
+      //   Costos = suma operation_supplier_payments (plata que salió o sale al proveedor)
+      //   Ganancia = Ingreso − Costos
+      const totalIngreso=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
+      const totalCobrado=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      const saldoCliente=Math.max(0,totalIngreso-totalCobrado);
+      const totalCostos=supplierPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      const costoPagado=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      const costoPendiente=totalCostos-costoPagado;
+      const ganancia=totalIngreso-totalCostos;
+      const margen=totalIngreso>0?(ganancia/totalIngreso)*100:0;
+      const cashNeto=totalCobrado-costoPagado;
+      const usdF=v=>`USD ${Math.abs(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      return <div>
+        {/* Cards grandes: Ganancia / Ingreso / Costos / Margen */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:14,marginBottom:18}}>
+          <div style={{background:ganancia>=0?"linear-gradient(135deg,rgba(34,197,94,0.14),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(255,80,80,0.14),rgba(255,80,80,0.03))",border:`1px solid ${ganancia>=0?"rgba(34,197,94,0.3)":"rgba(255,80,80,0.3)"}`,borderRadius:14,padding:"18px 20px"}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Ganancia neta</p>
+            <p style={{fontSize:24,fontWeight:800,color:ganancia>=0?"#22c55e":"#ff6b6b",margin:0,fontVariantNumeric:"tabular-nums"}}>{ganancia<0?"−":""}{usdF(ganancia)}</p>
+            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"6px 0 0"}}>Ingreso − costos totales</p>
+          </div>
+          <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 20px"}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Ingreso (productos)</p>
+            <p style={{fontSize:24,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{usdF(totalIngreso)}</p>
+            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"6px 0 0"}}>{items.length} producto{items.length===1?"":"s"} acordados con el cliente</p>
+          </div>
+          <div style={{background:"rgba(255,80,80,0.04)",border:"1px solid rgba(255,80,80,0.15)",borderRadius:14,padding:"18px 20px"}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Costos totales</p>
+            <p style={{fontSize:24,fontWeight:800,color:"#ff6b6b",margin:0,fontVariantNumeric:"tabular-nums"}}>{usdF(totalCostos)}</p>
+            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"6px 0 0"}}>{supplierPayments.length} costo{supplierPayments.length===1?"":"s"} registrado{supplierPayments.length===1?"":"s"}</p>
+          </div>
+          <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 20px"}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Margen</p>
+            <p style={{fontSize:24,fontWeight:800,color:margen>=20?"#22c55e":margen>=0?"#fbbf24":"#ff6b6b",margin:0}}>{margen.toFixed(1)}%</p>
+            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"6px 0 0"}}>{margen>=30?"Excelente":margen>=15?"Saludable":margen>=0?"Ajustado":"En rojo"}</p>
+          </div>
+        </div>
+
+        {/* Cash flow actual */}
+        <Card title="Estado de caja (lo que ya entró vs lo que ya salió)">
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:12}}>
+            <div style={{padding:"14px 18px",background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.18)",borderRadius:10}}>
+              <p style={{fontSize:10,fontWeight:700,color:"#22c55e",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Cobrado al cliente</p>
+              <p style={{fontSize:20,fontWeight:800,color:"#fff",margin:"0 0 4px",fontVariantNumeric:"tabular-nums"}}>{usdF(totalCobrado)}</p>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:0}}>{clientPayments.length} pago{clientPayments.length===1?"":"s"} del cliente{saldoCliente>0.01?` · saldo ${usdF(saldoCliente)} pendiente`:" · ✓ saldado"}</p>
+            </div>
+            <div style={{padding:"14px 18px",background:"rgba(255,80,80,0.05)",border:"1px solid rgba(255,80,80,0.18)",borderRadius:10}}>
+              <p style={{fontSize:10,fontWeight:700,color:"#ff6b6b",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Pagado al proveedor</p>
+              <p style={{fontSize:20,fontWeight:800,color:"#fff",margin:"0 0 4px",fontVariantNumeric:"tabular-nums"}}>{usdF(costoPagado)}</p>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:0}}>De USD {totalCostos.toFixed(2)} totales{costoPendiente>0.01?` · ${usdF(costoPendiente)} pendiente de pagar`:" · ✓ todo pagado"}</p>
+            </div>
+          </div>
+          <div style={{padding:"14px 18px",background:cashNeto>=0?"rgba(255,255,255,0.03)":"rgba(251,146,60,0.06)",border:`1px solid ${cashNeto>=0?"rgba(255,255,255,0.08)":"rgba(251,146,60,0.2)"}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <div>
+              <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Cash neto (lo que entró − lo que salió)</p>
+              <p style={{fontSize:22,fontWeight:800,color:cashNeto>=0?"#22c55e":"#fb923c",margin:0,fontVariantNumeric:"tabular-nums"}}>{cashNeto<0?"−":""}{usdF(cashNeto)}</p>
+            </div>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:0,maxWidth:320,textAlign:"right",lineHeight:1.5}}>
+              {cashNeto<0?`Adelantaste ${usdF(cashNeto)}. Cobrá al cliente para recuperar caja.`:cashNeto>=totalCostos-costoPagado?`Estás en verde: cobraste más de lo que adelantaste.`:`Equilibrado, pero quedan ${usdF(totalCostos-costoPagado)} por pagar al proveedor.`}
+            </p>
+          </div>
+        </Card>
+      </div>;
+    })()}
+
+    {tab==="finance"&&!isGI&&(()=>{
       const costFlete=Number(op.cost_flete||0);const costImp=Number(op.cost_impuestos_reales||0);const costDoc=Number(op.cost_gasto_documental||0);const costSeg=Number(op.cost_seguro||0);const costLocal=Number(op.cost_flete_local||0);const costOtros=Number(op.cost_otros||0);
       const costProducto=op.service_type==="gestion_integral"?Number(op.cost_producto_usd||0):0;
       const totalCostos=costFlete+costImp+costDoc+costSeg+costLocal+costOtros+costProducto;
