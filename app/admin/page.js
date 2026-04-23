@@ -2049,7 +2049,7 @@ function FinancePanel({token}){
   const [agentMvs,setAgentMvs]=useState([]);const [agentSignups,setAgentSignups]=useState([]);
   const [supplierPmts,setSupplierPmts]=useState([]);
   const [clientPmts,setClientPmts]=useState([]);
-  const load=async()=>{const [e,o,pm,dp,am,ag,sp,cp,cdUsd,cdArs,cdPmts]=await Promise.all([
+  const load=async()=>{const [e,o,pm,dp,am,ag,sp,cp,cdUsd,cdArs,cdPmts,supTcArs,supTcUsd]=await Promise.all([
     dq("finance_entries",{token,filters:"?select=*&auto_generated=is.false&order=date.desc,created_at.desc"}),
     dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,closed_at,cost_flete,cost_flete_method,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,service_type,cost_producto_usd,cost_producto_method,cost_producto_paid,cost_producto_paid_at,clients(first_name,last_name,client_code)&order=created_at.desc"}),
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)"}),
@@ -2063,8 +2063,12 @@ function FinancePanel({token}){
     // Deuda tarjeta ARS: finance_entries ARS pendientes (mostrar resumen, detalle en Dollarización)
     dq("finance_entries",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&currency=eq.ARS&order=card_closing_date.asc"}),
     // Giros al exterior con TC pendientes (payment_management)
-    dq("payment_management",{token,filters:"?select=*,operations(operation_code)&giro_payment_method=eq.tarjeta_credito&giro_tarjeta_paid=eq.false&order=giro_tarjeta_due_date.asc"})
-  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);setCardDebt({usd:Array.isArray(cdUsd)?cdUsd:[],ars:Array.isArray(cdArs)?cdArs:[],pmts:Array.isArray(cdPmts)?cdPmts:[]});setLo(false);};
+    dq("payment_management",{token,filters:"?select=*,operations(operation_code)&giro_payment_method=eq.tarjeta_credito&giro_tarjeta_paid=eq.false&order=giro_tarjeta_due_date.asc"}),
+    // Costos GI con TC + ARS pendientes (dolarización)
+    dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&currency=eq.ARS&order=card_closing_date.asc"}),
+    // Costos GI con TC + USD pendientes (deuda tarjeta USD)
+    dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&or=(currency.eq.USD,currency.is.null)&order=card_closing_date.asc"})
+  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);setCardDebt({usd:Array.isArray(cdUsd)?cdUsd:[],ars:Array.isArray(cdArs)?cdArs:[],pmts:Array.isArray(cdPmts)?cdPmts:[],supTcArs:Array.isArray(supTcArs)?supTcArs:[],supTcUsd:Array.isArray(supTcUsd)?supTcUsd:[]});setLo(false);};
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const addEntry=async()=>{
@@ -2223,31 +2227,50 @@ function FinancePanel({token}){
       {ledger.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>No hay movimientos</p>}
     </div>)}
     {tab==="dollar"&&(()=>{
-      // Group pending ARS entries by card_closing_date
-      const groups={};dollarPending.forEach(e=>{const k=e.card_closing_date||"sin_fecha";if(!groups[k])groups[k]=[];groups[k].push(e);});
+      // Dos fuentes: (1) finance_entries (gastos del negocio + impuestos/gasto doc de ops)
+      //              (2) operation_supplier_payments (costos de ops GI con TC+ARS)
+      // Merge en groups por card_closing_date, cada item carga su source para el dollarize.
+      const groups={};
+      dollarPending.forEach(e=>{const k=e.card_closing_date||"sin_fecha";if(!groups[k])groups[k]=[];groups[k].push({source:"entry",raw:e,id:e.id,description:e.description,amount_ars:Number(e.amount_ars||0),op_code:e.operations?.operation_code,operation_id:e.operation_id});});
+      (cardDebt.supTcArs||[]).forEach(p=>{const k=p.card_closing_date||"sin_fecha";if(!groups[k])groups[k]=[];groups[k].push({source:"supplier",raw:p,id:p.id,description:`Costo op ${p.operations?.operation_code||"—"} — ${p.notes||"Sin descripción"}`,amount_ars:Number(p.amount_ars||0),op_code:p.operations?.operation_code,operation_id:p.operation_id});});
       const dollarize=async(closingDate)=>{const rate=Number(dollarRates[closingDate]||0);if(!rate){alert("Ingresá el tipo de cambio");return;}
-        const ents=groups[closingDate];
-        for(const e of ents){
-          const usdAmt=Number(e.amount_ars)/rate;
-          await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${e.id}`,body:{amount:Math.round(usdAmt*100)/100,exchange_rate:rate,dollarized_at:new Date().toISOString(),is_paid:true}});
-          // Update linked operation cost
-          if(e.operation_id){
-            const field=e.description?.includes("Impuestos")?"cost_impuestos_reales":"cost_gasto_documental";
-            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${e.operation_id}`,body:{[field]:Math.round(usdAmt*100)/100}});
+        const items=groups[closingDate];
+        // Para recomputar cost_producto_usd después, trackeamos ops afectadas
+        const affectedGiOps=new Set();
+        for(const item of items){
+          const usdAmt=Math.round((item.amount_ars/rate)*100)/100;
+          if(item.source==="entry"){
+            await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{amount:usdAmt,exchange_rate:rate,dollarized_at:new Date().toISOString(),is_paid:true}});
+            if(item.operation_id){
+              const field=item.description?.includes("Impuestos")?"cost_impuestos_reales":"cost_gasto_documental";
+              await dq("operations",{method:"PATCH",token,filters:`?id=eq.${item.operation_id}`,body:{[field]:usdAmt}});
+            }
+          } else if(item.source==="supplier"){
+            await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{amount_usd:usdAmt,exchange_rate:rate,is_paid:true,paid_at:new Date().toISOString()}});
+            if(item.operation_id)affectedGiOps.add(item.operation_id);
           }
         }
-        load();flash(`Dollarizados ${ents.length} gastos al TC $${rate}`);
+        // Recompute cost_producto_usd de cada op GI afectada
+        for(const opId of affectedGiOps){
+          const fresh=await dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${opId}&select=amount_usd`});
+          const total=(Array.isArray(fresh)?fresh:[]).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opId}`,body:{cost_producto_usd:total}});
+        }
+        load();flash(`Dollarizados ${items.length} gastos al TC $${rate}`);
       };
       return <>
       {Object.keys(groups).length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>No hay gastos pendientes de dollarización</p>}
-      {Object.entries(groups).map(([closingDate,ents])=>{
-        const totalArs=ents.reduce((s,e)=>s+Number(e.amount_ars||0),0);
+      {Object.entries(groups).map(([closingDate,items])=>{
+        const totalArs=items.reduce((s,it)=>s+Number(it.amount_ars||0),0);
         const rate=Number(dollarRates[closingDate]||0);
         return <Card key={closingDate} title={`Cierre: ${formatDate(closingDate)}`}>
           <div style={{marginBottom:12}}>
-            {ents.map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-              <span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>{e.description}</span>
-              <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>ARS {Number(e.amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2})}</span>
+            {items.map(it=><div key={`${it.source}_${it.id}`} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",gap:10}}>
+              <div style={{flex:1,minWidth:0}}>
+                <span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{it.description}</span>
+                {it.source==="supplier"&&<span style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:3,background:"rgba(184,149,106,0.15)",color:GOLD_LIGHT,marginLeft:8,letterSpacing:"0.05em",textTransform:"uppercase"}}>GI</span>}
+              </div>
+              <span style={{fontSize:13,fontWeight:600,color:"#fff",whiteSpace:"nowrap"}}>ARS {Number(it.amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2})}</span>
             </div>)}
             <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",marginTop:4}}><span style={{fontSize:14,fontWeight:700,color:"#fff"}}>Total ARS</span><span style={{fontSize:16,fontWeight:700,color:IC}}>ARS {totalArs.toLocaleString("es-AR",{minimumFractionDigits:2})}</span></div>
           </div>
@@ -2264,17 +2287,20 @@ function FinancePanel({token}){
     {tab==="tcdebt"&&(()=>{
       const usdTotEntries=cardDebt.usd.reduce((s,e)=>s+Number(e.amount||0),0);
       const usdTotPmts=cardDebt.pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
-      const usdTot=usdTotEntries+usdTotPmts;
+      const usdTotSup=(cardDebt.supTcUsd||[]).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      const usdTot=usdTotEntries+usdTotPmts+usdTotSup;
       const arsTot=cardDebt.ars.reduce((s,e)=>s+Number(e.amount_ars||0),0);
-      // Agrupar por fecha de cierre mezclando entries USD + pmts (ambos van a pagarse en USD)
+      // Agrupar por fecha de cierre mezclando: gastos USD + giros al exterior + costos GI USD
       const groups={};
       cardDebt.usd.forEach(e=>{const k=e.card_closing_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:Number(e.amount||0),dateLoad:e.date,op:e.operations?.operation_code});});
       cardDebt.pmts.forEach(p=>{const k=p.giro_tarjeta_due_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"pmt",id:p.id,desc:`Giro al exterior${p.operations?.operation_code?` — ${p.operations.operation_code}`:""}`,detail:p.description||"",amt:Number(p.giro_amount_usd||0),dateLoad:p.created_at?String(p.created_at).slice(0,10):null,op:p.operations?.operation_code});});
+      (cardDebt.supTcUsd||[]).forEach(p=>{const k=p.card_closing_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"supplier",id:p.id,desc:`Costo op ${p.operations?.operation_code||"—"} (GI)`,detail:p.notes||p.reference||"",amt:Number(p.amount_usd||0),dateLoad:p.payment_date,op:p.operations?.operation_code,operation_id:p.operation_id});});
       const sortedGroups=Object.values(groups).sort((a,b)=>{if(a.date==="sin_fecha")return 1;if(b.date==="sin_fecha")return -1;return a.date.localeCompare(b.date);});
       const todayStr=new Date().toISOString().slice(0,10);
       const markPaid=async(item)=>{
         if(!confirm(`¿Marcar "${item.desc}" como debitada de la tarjeta? Esto la resta del cash real.`))return;
         if(item.source==="finance"){await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true}});}
+        else if(item.source==="supplier"){await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,paid_at:new Date().toISOString()}});}
         else{await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});}
         load();flash("Marcada como debitada");
       };
@@ -2282,6 +2308,7 @@ function FinancePanel({token}){
         if(!confirm(`¿Marcar las ${g.items.length} deudas de ${g.date==="sin_fecha"?"sin fecha":formatDate(g.date)} como debitadas? Total: USD ${g.items.reduce((s,i)=>s+i.amt,0).toFixed(2)}`))return;
         for(const item of g.items){
           if(item.source==="finance")await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true}});
+          else if(item.source==="supplier")await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,paid_at:new Date().toISOString()}});
           else await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});
         }
         load();flash(`${g.items.length} deudas marcadas como debitadas`);
@@ -2292,7 +2319,7 @@ function FinancePanel({token}){
           <div style={{background:usdTot>0?"rgba(251,146,60,0.06)":"rgba(34,197,94,0.06)",border:`1px solid ${usdTot>0?"rgba(251,146,60,0.2)":"rgba(34,197,94,0.2)"}`,borderRadius:12,padding:"18px 22px"}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",letterSpacing:"0.05em"}}>💳 DEUDA TARJETA USD</p>
             <p style={{fontSize:28,fontWeight:700,color:usdTot>0?"#fb923c":"#22c55e",margin:0}}>USD {usdTot.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>{cardDebt.usd.length} gasto{cardDebt.usd.length!==1?"s":""} del negocio{usdTotEntries>0?` (USD ${usdTotEntries.toFixed(2)})`:""} · {cardDebt.pmts.length} giro{cardDebt.pmts.length!==1?"s":""} al exterior{usdTotPmts>0?` (USD ${usdTotPmts.toFixed(2)})`:""}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>{cardDebt.usd.length} gasto{cardDebt.usd.length!==1?"s":""} del negocio{usdTotEntries>0?` (USD ${usdTotEntries.toFixed(2)})`:""} · {cardDebt.pmts.length} giro{cardDebt.pmts.length!==1?"s":""} al exterior{usdTotPmts>0?` (USD ${usdTotPmts.toFixed(2)})`:""}{(cardDebt.supTcUsd||[]).length>0?` · ${cardDebt.supTcUsd.length} costo${cardDebt.supTcUsd.length!==1?"s":""} GI (USD ${usdTotSup.toFixed(2)})`:""}</p>
           </div>
           {arsTot>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:12,padding:"18px 22px"}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",letterSpacing:"0.05em"}}>💳 DEUDA TARJETA ARS (sin dollarizar)</p>
