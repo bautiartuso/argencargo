@@ -374,9 +374,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const isBlanco=opForCalc.channel?.includes("blanco");
       if(isBlanco&&its.length===0)return;
       if(!isBlanco&&pks.length===0)return;
-      const{totalTax,flete,seguro,totalAbonar}=calcOpBudget(opForCalc,its,pks,tariffsFresh,config,overridesFresh,clientFresh);
-      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}});
-      setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}));
+      const{totalTax,flete,seguro,totalAbonar,surcharge}=calcOpBudget(opForCalc,its,pks,tariffsFresh,config,overridesFresh,clientFresh);
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}});
+      setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}));
     }catch(e){console.error("autoSync budget",e);}
   };
   const saveItem=async(it)=>{const{id,...rest}=it;delete rest.created_at;await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Producto guardado");autoSyncBudget();};
@@ -542,9 +542,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       // Usar presupuesto guardado si: (a) no hay productos cargados Y hay budget en DB, o (b) operación cerrada con budget
       const hasStoredBudget=Number(op.budget_total||0)>0&&(items.length===0||op.status==="operacion_cerrada");
       const isRI=opClient?.tax_condition==="responsable_inscripto";
-      let totalTax,flete,seguro,totalAbonar;
+      let totalTax,flete,seguro,totalAbonar,surcharge=0,surchargePct=0;
       if(hasStoredBudget){
-        totalTax=Number(op.budget_taxes||0);flete=Number(op.budget_flete||0);seguro=Number(op.budget_seguro||0);
+        totalTax=Number(op.budget_taxes||0);flete=Number(op.budget_flete||0);seguro=Number(op.budget_seguro||0);surcharge=Number(op.budget_surcharge||0);
         const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
         totalAbonar=Number(op.budget_total||0);
       } else {
@@ -577,29 +577,78 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         else{const desemb=getDesembolso(cif)*pct;t+=desemb+desemb*0.21;}
         totalTax+=t;});}
       const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
-      totalAbonar=isBlanco?(totalTax+flete+seguro+shipCost):(flete+shipCost);
+      // Recargo por valor mercadería (solo canal B)
+      if(!isBlanco){
+        const merchVal=Number(op.merchandise_value_usd||0)||totalFob;
+        const amtForVpu=op.channel?.includes("aereo")?(op.channel==="aereo_negro"?totGW:pf):totCBM;
+        if(merchVal>0&&amtForVpu>0){
+          const vpu=merchVal/amtForVpu;
+          const surchs=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty||0)-Number(a.min_qty||0));
+          for(const s of surchs){if(vpu>=Number(s.min_qty||0)){surchargePct=Number(s.rate||0);surcharge=Math.round(merchVal*(surchargePct/100)*100)/100;break;}}
+        }
+      }
+      totalAbonar=isBlanco?(totalTax+flete+seguro+shipCost):(flete+surcharge+shipCost);
       }
       const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
       const rw=(l,v)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>USD {v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
       return <Card title={`Presupuesto${opClient?` — ${opClient.first_name} ${opClient.last_name} (${isRI?"Resp. Inscripto":"No RI"})`:""}`}>
+        {/* Canal B: input para valor de mercadería (base del recargo por valor) */}
+        {!isBlanco&&<div style={{marginBottom:14,padding:"12px 14px",background:"rgba(96,165,250,0.05)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:12,alignItems:"end"}}>
+            <Inp label="Valor mercadería (USD) — para cálculo de recargo por valor" type="number" value={op.merchandise_value_usd||""} onChange={v=>chOp("merchandise_value_usd")(v)} step="0.01" placeholder={totalFob>0?`Suma productos: ${totalFob.toFixed(2)}`:"Ej: 15000"} small/>
+            <Btn small variant="secondary" onClick={async()=>{setSaving(true);const mv=Number(op.merchandise_value_usd||0)||null;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{merchandise_value_usd:mv}});setOp(p=>({...p,merchandise_value_usd:mv}));autoSyncBudget();flash("Valor mercadería guardado");setSaving(false);}} disabled={saving}>{saving?"Guardando...":"Guardar y recalcular"}</Btn>
+          </div>
+          <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"8px 0 0",fontStyle:"italic"}}>
+            {(()=>{const amtForVpu=op.channel?.includes("aereo")?(op.channel==="aereo_negro"?totGW:pf):totCBM;const merchVal=Number(op.merchandise_value_usd||0)||totalFob;if(merchVal<=0||amtForVpu<=0)return "Cargá valor mercadería + bultos para calcular el recargo.";const vpu=merchVal/amtForVpu;const u=op.channel?.includes("aereo")?"kg":"CBM";return `Valor por ${u}: USD ${vpu.toFixed(2)}. ${surchargePct>0?`→ Recargo del ${surchargePct}% aplicado.`:"→ No aplica recargo (valor bajo el umbral)."}`;})()}
+          </p>
+        </div>}
         {isBlanco?<>
           {rw("Total Impuestos",totalTax)}
           {rw("Flete internacional",flete)}
           {rw("Seguro de carga",seguro)}
         </>:<>
           {rw("Servicio Integral ARGENCARGO",flete)}
+          {surcharge>0&&rw(`Recargo por valor (${surchargePct}%)`,surcharge)}
         </>}
         {shipCost>0&&rw("Envío a domicilio",shipCost)}
         <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}><span style={{fontSize:16,fontWeight:700,color:"#fff"}}>TOTAL A ABONAR</span><span style={{fontSize:20,fontWeight:700,color:IC}}>USD {totalAbonar.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
+        {/* Controles de Envío a domicilio — siempre visibles, auto-save cuando cambian */}
+        <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          {(()=>{
+            // Auto-save: actualiza shipping_to_door + shipping_cost + recalc budget_total
+            const saveShipping=async(newToDoor,newCost)=>{
+              const costToUse=Number(newCost??op.shipping_cost??0);
+              const toDoorToUse=newToDoor??op.shipping_to_door??false;
+              const shipAdd=toDoorToUse?costToUse:0;
+              // Recalc budget_total: mantenemos taxes+flete+seguro del estado actual y recalculamos el shipping
+              const bt=Number(op.budget_taxes||0)+Number(op.budget_flete||0)+Number(op.budget_seguro||0)+shipAdd;
+              await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{shipping_to_door:toDoorToUse,shipping_cost:costToUse,budget_total:bt}});
+              setOp(p=>({...p,shipping_to_door:toDoorToUse,shipping_cost:costToUse,budget_total:bt}));
+              flash(`Envío a domicilio ${toDoorToUse?"activado":"desactivado"}`);
+            };
+            return <>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,padding:"12px 16px",background:op.shipping_to_door?"rgba(34,197,94,0.06)":"rgba(255,255,255,0.03)",border:`1px solid ${op.shipping_to_door?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.06)"}`,borderRadius:10,flexWrap:"wrap"}}>
+                <div onClick={()=>saveShipping(!op.shipping_to_door,op.shipping_cost)} style={{display:"flex",alignItems:"center",gap:14,cursor:"pointer",userSelect:"none",flex:1,minWidth:220}}>
+                  <div style={{width:44,height:24,background:op.shipping_to_door?"linear-gradient(135deg,#22c55e,#10b981)":"rgba(255,255,255,0.1)",borderRadius:999,position:"relative",transition:"all 200ms",boxShadow:op.shipping_to_door?"0 0 10px rgba(34,197,94,0.35)":"",flexShrink:0}}>
+                    <div style={{position:"absolute",top:2,left:op.shipping_to_door?22:2,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left 220ms cubic-bezier(0.34,1.56,0.64,1)"}}/>
+                  </div>
+                  <div>
+                    <p style={{fontSize:13,fontWeight:op.shipping_to_door?700:600,color:op.shipping_to_door?"#22c55e":"rgba(255,255,255,0.6)",margin:0,letterSpacing:"0.02em"}}>Envío a domicilio</p>
+                    <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{op.shipping_to_door?`Suma USD ${Number(op.shipping_cost||0).toFixed(2)} al total`:"Retiro por oficina"}</p>
+                  </div>
+                </div>
+                {op.shipping_to_door&&<div style={{minWidth:160}}>
+                  <Inp label="Costo envío (USD)" type="number" value={op.shipping_cost} onChange={v=>{chOp("shipping_cost")(v);setTimeout(()=>saveShipping(true,v),400);}} step="0.01"/>
+                </div>}
+              </div>
+            </>;
+          })()}
+        </div>
         {hasStoredBudget&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)",gap:12,flexWrap:"wrap"}}>
           <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic",flex:1}}>Presupuesto cargado manualmente. Si querés recalcular con productos/bultos, limpialo primero.</p>
           <Btn variant="danger" small onClick={async()=>{if(!confirm("¿Limpiar presupuesto guardado? Se borrarán los valores actuales y podrás recargar productos/bultos para recalcular."))return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0}});setOp(p=>({...p,budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0}));flash("Presupuesto limpiado");setSaving(false);}} disabled={saving}>Limpiar presupuesto</Btn>
         </div>}
-        {!hasStoredBudget&&<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px",marginTop:12,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
-          <Inp label="Envío a Domicilio (USD)" type="number" value={op.shipping_cost} onChange={chOp("shipping_cost")} step="0.01"/>
-          <div style={{paddingTop:22}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.shipping_to_door||false} onChange={e=>chOp("shipping_to_door")(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>Envío a domicilio</span></label></div>
-        </div>
-        <div style={{display:"flex",gap:12,marginTop:8}}><Btn onClick={async()=>{setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar,shipping_cost:Number(op.shipping_cost||0),shipping_to_door:op.shipping_to_door||false,total_services:0}});setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}));flash("Presupuesto sincronizado");setSaving(false);}} disabled={saving}>{saving?"Guardando...":"Sincronizar presupuesto"}</Btn></div></>}
+        {!hasStoredBudget&&<div style={{display:"flex",gap:12,marginTop:12}}><Btn onClick={async()=>{setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar,shipping_cost:Number(op.shipping_cost||0),shipping_to_door:op.shipping_to_door||false,total_services:0}});setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}));flash("Presupuesto sincronizado");setSaving(false);}} disabled={saving}>{saving?"Guardando...":"Sincronizar presupuesto"}</Btn></div>}
       </Card>;})()}
 
     {tab==="items"&&<Card title="Productos" actions={<Btn onClick={addItem} small>+ Agregar producto</Btn>}>
