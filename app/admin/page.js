@@ -280,7 +280,7 @@ function NewOperation({token,clients,onBack,onCreated}){
 }
 
 function OperationEditor({op:initOp,token,onBack,onDelete}){
-  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});  const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:""});
+  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});  const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:""});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const [pendingRedemptions,setPendingRedemptions]=useState([]);
   const loadRedemptions=async()=>{if(!op.client_id)return;const r=await dq("client_reward_redemptions",{token,filters:`?client_id=eq.${op.client_id}&status=eq.pending&select=*&order=redeemed_at.asc`});setPendingRedemptions(Array.isArray(r)?r:[]);};
@@ -403,7 +403,6 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {k:"general",l:"General"},
     {k:"items",l:"Productos"},
     {k:"gi_costs",l:"Costos"},
-    {k:"packages",l:"Bultos"},
     {k:"tracking",l:"Seguimiento"},
     {k:"finance",l:"Finanzas"}
   ]:[
@@ -606,7 +605,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <Inp label="Precio unit. USD" type="number" value={it.unit_price_usd} onChange={v=>chItem(i,"unit_price_usd",v)} step="0.01" small/>
           <Inp label="Cantidad" type="number" value={it.quantity} onChange={v=>chItem(i,"quantity",v?parseInt(v):0)} small/>
         </div>
-        {isBlanco&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:8,padding:"12px",border:"1px solid rgba(255,255,255,0.04)",marginTop:4}}>
+        {isBlanco&&!isGI&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:8,padding:"12px",border:"1px solid rgba(255,255,255,0.04)",marginTop:4}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Tasas Impositivas</p>
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"0 12px"}}>
             <Inp label="DIE %" type="number" value={it.import_duty_rate} onChange={v=>chItem(i,"import_duty_rate",v)} step="0.01" small/>
@@ -632,13 +631,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const addCost=async()=>{
         const amt=Number(newSupPmt.amount_usd);
         if(!amt||amt<=0||!newSupPmt.payment_date)return;
-        const body={operation_id:op.id,payment_date:newSupPmt.payment_date,amount_usd:amt,payment_method:newSupPmt.payment_method,is_paid:newSupPmt.is_paid,notes:newSupPmt.notes||null,reference:newSupPmt.reference||null,paid_at:newSupPmt.is_paid?new Date(newSupPmt.payment_date+"T12:00:00Z").toISOString():null};
+        const isTC=newSupPmt.payment_method==="tarjeta_credito";
+        const body={operation_id:op.id,payment_date:newSupPmt.payment_date,amount_usd:amt,payment_method:newSupPmt.payment_method,is_paid:newSupPmt.is_paid,notes:newSupPmt.notes||null,reference:newSupPmt.reference||null,currency:newSupPmt.currency||"USD",card_closing_date:isTC&&newSupPmt.card_closing_date?newSupPmt.card_closing_date:null,paid_at:newSupPmt.is_paid?new Date(newSupPmt.payment_date+"T12:00:00Z").toISOString():null};
         await dq("operation_supplier_payments",{method:"POST",token,body});
         // Sync cost_producto_usd en la op
         const newTotal=totalCosto+amt;
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{cost_producto_usd:newTotal}});
         setOp(p=>({...p,cost_producto_usd:newTotal}));
-        setNewSupPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:""});
+        setNewSupPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:""});
         load();
         flash("Costo registrado");
       };
@@ -700,20 +700,38 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>:<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1.5rem 0",fontSize:13}}>Sin costos registrados todavía. Agregá el primero abajo.</p>}
 
         {/* Form nuevo costo */}
-        <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"14px 16px"}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Registrar nuevo costo</p>
-          <div style={{display:"grid",gridTemplateColumns:"auto 1fr 2fr 1fr 1fr auto",gap:10,alignItems:"end"}}>
+        <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"16px 18px"}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Registrar nuevo costo</p>
+          {/* Fila 1: fecha + monto + moneda + método */}
+          <div style={{display:"grid",gridTemplateColumns:"140px 1fr 100px 1.3fr",gap:10,alignItems:"end",marginBottom:10}}>
             <Inp label="Fecha" type="date" value={newSupPmt.payment_date} onChange={v=>setNewSupPmt(p=>({...p,payment_date:v}))}/>
-            <Inp label="Monto USD" type="number" value={newSupPmt.amount_usd} onChange={v=>setNewSupPmt(p=>({...p,amount_usd:v}))} step="0.01" placeholder="0.00"/>
+            <Inp label="Monto" type="number" value={newSupPmt.amount_usd} onChange={v=>setNewSupPmt(p=>({...p,amount_usd:v}))} step="0.01" placeholder="0.00"/>
+            <Sel label="Moneda" value={newSupPmt.currency||"USD"} onChange={v=>setNewSupPmt(p=>({...p,currency:v}))} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"},{value:"EUR",label:"EUR"},{value:"CNY",label:"CNY"}]}/>
+            <Sel label="Método" value={newSupPmt.payment_method} onChange={v=>setNewSupPmt(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Contado"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"swift",label:"SWIFT / Wire"},{value:"alibaba",label:"Alibaba"},{value:"otro",label:"Otro"}]}/>
+          </div>
+          {/* Fila 2: descripción + referencia */}
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10,alignItems:"end",marginBottom:12}}>
             <Inp label="Descripción" value={newSupPmt.notes} onChange={v=>setNewSupPmt(p=>({...p,notes:v}))} placeholder="Ej: Orden Alibaba (incluye comisión)"/>
             <Inp label="Referencia (opcional)" value={newSupPmt.reference||""} onChange={v=>setNewSupPmt(p=>({...p,reference:v}))} placeholder="Nº orden / comprobante"/>
-            <Sel label="Método" value={newSupPmt.payment_method} onChange={v=>setNewSupPmt(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Contado"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"swift",label:"SWIFT / Wire"},{value:"otro",label:"Otro"}]}/>
-            <Btn onClick={addCost} disabled={!newSupPmt.amount_usd||Number(newSupPmt.amount_usd)<=0} small>+ Agregar</Btn>
           </div>
-          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:"rgba(255,255,255,0.6)",cursor:"pointer",marginTop:10}}>
-            <input type="checkbox" checked={newSupPmt.is_paid} onChange={e=>setNewSupPmt(p=>({...p,is_paid:e.target.checked}))}/>
-            Ya está pagado (desmarcar si es tarjeta aún no debitada)
-          </label>
+          {/* Fila 3: condicional — si TC, mostrar fecha cierre */}
+          {newSupPmt.payment_method==="tarjeta_credito"&&<div style={{display:"grid",gridTemplateColumns:"180px 1fr",gap:10,alignItems:"end",marginBottom:12,padding:"10px 14px",background:"rgba(167,139,250,0.06)",border:"1px solid rgba(167,139,250,0.18)",borderRadius:8}}>
+            <Inp label="Cierre de tarjeta" type="date" value={newSupPmt.card_closing_date||""} onChange={v=>setNewSupPmt(p=>({...p,card_closing_date:v}))}/>
+            <p style={{fontSize:11,color:"rgba(167,139,250,0.85)",margin:0,paddingBottom:8,lineHeight:1.5}}>💳 Con tarjeta: el débito ocurre en la fecha de cierre. Hasta entonces, la plata está en el bolsillo pero es deuda TC del dashboard.</p>
+          </div>}
+          {/* Fila 4: toggle "ya está pagado" + botón agregar */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,flexWrap:"wrap",paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+            <div onClick={()=>setNewSupPmt(p=>({...p,is_paid:!p.is_paid}))} style={{display:"flex",alignItems:"center",gap:12,cursor:"pointer",userSelect:"none"}}>
+              <div style={{width:46,height:26,background:newSupPmt.is_paid?"linear-gradient(135deg,#22c55e,#10b981)":"rgba(255,255,255,0.1)",borderRadius:999,position:"relative",transition:"all 200ms",boxShadow:newSupPmt.is_paid?"0 0 10px rgba(34,197,94,0.3)":""}}>
+                <div style={{position:"absolute",top:2,left:newSupPmt.is_paid?22:2,width:22,height:22,borderRadius:"50%",background:"#fff",transition:"left 220ms cubic-bezier(0.34,1.56,0.64,1)",display:"flex",alignItems:"center",justifyContent:"center"}}>{newSupPmt.is_paid&&<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}</div>
+              </div>
+              <div>
+                <p style={{fontSize:12,fontWeight:700,color:newSupPmt.is_paid?"#22c55e":"rgba(255,255,255,0.55)",margin:0,letterSpacing:"0.02em"}}>{newSupPmt.is_paid?"Ya está pagado":"Pendiente de pago"}</p>
+                <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"1px 0 0"}}>Tocá para cambiar</p>
+              </div>
+            </div>
+            <Btn onClick={addCost} disabled={!newSupPmt.amount_usd||Number(newSupPmt.amount_usd)<=0} small>+ Agregar costo</Btn>
+          </div>
         </div>
       </Card>;
     })()}

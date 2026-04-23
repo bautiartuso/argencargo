@@ -118,8 +118,8 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <span style={{fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,0.95)",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{op.operation_code}</span>
         <span style={{width:1,height:14,background:"rgba(255,255,255,0.12)"}}/>
+        {op.service_type==="gestion_integral"&&<span style={{fontSize:10,fontWeight:800,padding:"5px 12px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.12em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`,boxShadow:`${GOLD_GLOW}, inset 0 1px 0 rgba(255,255,255,0.35)`}}>Gestión Integral</span>}
         <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,border:`1px solid ${st.c}40`,background:`${st.c}14`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px ${st.c}`:"none"}}/>{st.l}</span>
-        {op.service_type==="gestion_integral"&&<span style={{fontSize:9.5,fontWeight:800,padding:"4px 10px",borderRadius:999,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW}}>✨ Gestión Integral</span>}
       </div>
       {op.eta&&op.status!=="entregada"&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.55)",letterSpacing:"0.02em"}}>ETA · <span style={{color:"#fff",fontWeight:600}}>{formatDate(op.eta)}</span></span>}
     </div>
@@ -136,7 +136,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
       <span style={{fontSize:12.5,fontWeight:500,color:"#fbbf24"}}>Tu paquete llegó a nuestro depósito. ¿Vas a enviar más paquetes o es el único?</span>
       <button onClick={async(e)=>{e.stopPropagation();const btn=e.currentTarget;btn.disabled=true;btn.textContent="Confirmando...";try{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}});onReload&&await onReload();}catch(err){btn.disabled=false;btn.textContent="Es el único, pueden enviarlo";}}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.02em"}}>Es el único, pueden enviarlo</button>
     </div>}
-    {(op.status==="en_preparacion"||(op.status==="en_deposito_origen"&&op.consolidation_confirmed))&&(itemsByOp[op.id]||0)===0&&<div style={{marginTop:14,background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.22)",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+    {op.service_type!=="gestion_integral"&&(op.status==="en_preparacion"||(op.status==="en_deposito_origen"&&op.consolidation_confirmed))&&(itemsByOp[op.id]||0)===0&&<div style={{marginTop:14,background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.22)",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <span style={{fontSize:12.5,fontWeight:500,color:GOLD_LIGHT}}>Completá la documentación de tu carga para avanzar</span>
       <button onClick={(e)=>{e.stopPropagation();onSelect(op);}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628"}}>+ Agregar productos</button>
     </div>}
@@ -312,17 +312,17 @@ function OperationDetail({op,token,onBack}){
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
         <span style={{fontSize:18,fontWeight:700,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{op.operation_code}</span>
         <span style={{width:1,height:16,background:"rgba(255,255,255,0.12)"}}/>
+        {isGI&&<span style={{fontSize:10,fontWeight:800,padding:"6px 14px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.12em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`,boxShadow:`${GOLD_GLOW}, inset 0 1px 0 rgba(255,255,255,0.35)`}}>Gestión Integral</span>}
         {(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,border:`1px solid ${st.c}40`,background:`${st.c}14`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px ${st.c}`:"none"}}/>{st.l}</span>;})()}
-        {isGI&&<span style={{fontSize:9.5,fontWeight:800,padding:"4px 10px",borderRadius:999,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW}}>✨ Gestión Integral</span>}
         {op.eta&&op.status!=="entregada"&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.55)",letterSpacing:"0.02em",marginLeft:"auto"}}>ETA · <span style={{color:"#fff",fontWeight:600}}>{formatDate(op.eta)}</span></span>}
       </div>
       <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 12px",textTransform:"uppercase"}}>{op.description}</h2>
       <OpProgress status={op.status} isAereo={isA}/>
       {(()=>{const totGW=pkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);const totCBM=pkgs.reduce((s,p)=>{const q=Number(p.quantity||1),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);return s+(l&&w&&h?((l*w*h)/1000000)*q:0);},0);let pf=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const vw=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(gw*q,vw);});
-      // Para GI: mostrar solo Canal + CBM + Total. Sin bultos/peso (no le interesan al cliente).
+      // Para GI: mostrar Origen + Canal + Total a abonar. Sin bultos/peso/CBM (no le interesan al cliente).
       const giFields=[
+        {l:"Origen",v:op.origin||"China"},
         {l:"Canal",v:CM[op.channel]||"—"},
-        ...(totCBM>0?[{l:"CBM",v:`${totCBM.toFixed(4)} m³`,a:true}]:[]),
         {l:"Total a abonar",v:(()=>{const totItems=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);if(totItems<=0)return"Pendiente";const cliPaid=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);const saldo=Math.max(0,totItems-cliPaid);return `USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;})(),a:true}
       ];
       // Para op normal: lo de siempre
@@ -364,7 +364,7 @@ function OperationDetail({op,token,onBack}){
       </div>
       <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>¿Necesitás modificar algo? Contactá a tu asesor de Argencargo.</p>
     </div>}
-    {canDocument&&!loading&&items.length===0&&<div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+    {!isGI&&canDocument&&!loading&&items.length===0&&<div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12,marginBottom:showDocPanel?16:0}}>
         <div>
           <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>📋 Completá la documentación de tu carga</h3>
