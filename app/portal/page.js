@@ -1173,21 +1173,41 @@ function ServicesPage({client}){
 function AccountPage({token,client,onRestartTutorial}){
   const [timeline,setTimeline]=useState([]);
   const [balance,setBalance]=useState(Number(client?.account_balance_usd||0));
+  const [pendingGiOps,setPendingGiOps]=useState([]);
   const [loading,setLoading]=useState(true);
   const MOV_LABELS={overpayment:"Pago de más",applied:"Aplicado a op",adjustment:"Ajuste",refund:"Reintegro",debt:"Pago de menos",op_cobro:"Cobro de op",op_anticipo:"Anticipo de op",gpi_cobro:"Gestión pagos internac."};
   const MOV_COLORS={overpayment:"#22c55e",applied:GOLD_LIGHT,adjustment:"#a78bfa",refund:"#60a5fa",debt:"#ef4444",op_cobro:"#22c55e",op_anticipo:"#60a5fa",gpi_cobro:"#10b981"};
   useEffect(()=>{if(!client?.id){setLoading(false);return;}(async()=>{
-    const[m,cl,ops,pm,pg]=await Promise.all([
+    const[m,cl,ops,pm,pg,giOps,giItems,giCliPmts]=await Promise.all([
       dq("client_account_movements",{token,filters:`?client_id=eq.${client.id}&select=*,operations(operation_code)&order=created_at.desc`}),
       dq("clients",{token,filters:`?id=eq.${client.id}&select=account_balance_usd`}),
       dq("operations",{token,filters:`?client_id=eq.${client.id}&is_collected=eq.true&select=id,operation_code,collected_amount,collection_currency,collection_exchange_rate,collection_date,closed_at`}),
       dq("operation_client_payments",{token,filters:`?select=*,operations!inner(operation_code,client_id)&operations.client_id=eq.${client.id}&order=payment_date.desc`}),
-      dq("payment_management",{token,filters:`?select=*,operations!inner(operation_code,client_id)&operations.client_id=eq.${client.id}&client_paid=eq.true&order=client_paid_at.desc`})
+      dq("payment_management",{token,filters:`?select=*,operations!inner(operation_code,client_id)&operations.client_id=eq.${client.id}&client_paid=eq.true&order=client_paid_at.desc`}),
+      // Ops GI activas (no cerradas/canceladas/cobradas) del cliente
+      dq("operations",{token,filters:`?client_id=eq.${client.id}&service_type=eq.gestion_integral&status=not.in.(operacion_cerrada,cancelada)&select=id,operation_code,description,eta,status,is_collected&order=created_at.desc`}),
+      // Items de esas ops GI activas (para calcular total acordado)
+      dq("operation_items",{token,filters:`?select=operation_id,quantity,unit_price_usd,operations!inner(client_id,service_type,status)&operations.client_id=eq.${client.id}&operations.service_type=eq.gestion_integral&operations.status=not.in.(operacion_cerrada,cancelada)`}),
+      // Cobros del cliente para esas ops GI (para calcular cuánto pagó ya)
+      dq("operation_client_payments",{token,filters:`?select=operation_id,amount_usd,operations!inner(client_id,service_type,status)&operations.client_id=eq.${client.id}&operations.service_type=eq.gestion_integral&operations.status=not.in.(operacion_cerrada,cancelada)`})
     ]);
     const movs=Array.isArray(m)?m:[];
     const opsList=Array.isArray(ops)?ops:[];
     const pmts=Array.isArray(pm)?pm:[];
     const gpi=Array.isArray(pg)?pg:[];
+    const giOpsList=Array.isArray(giOps)?giOps:[];
+    const giItemsList=Array.isArray(giItems)?giItems:[];
+    const giCliPmtsList=Array.isArray(giCliPmts)?giCliPmts:[];
+    // Para cada op GI activa: total acordado = sum(items.unit×qty), cobrado = sum(cli_payments), saldo = diff
+    const pending=giOpsList.map(o=>{
+      const ops_items=giItemsList.filter(i=>i.operation_id===o.id);
+      const total=ops_items.reduce((s,i)=>s+Number(i.unit_price_usd||0)*Number(i.quantity||1),0);
+      const ops_cpmts=giCliPmtsList.filter(p=>p.operation_id===o.id);
+      const cobrado=ops_cpmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      const saldo=Math.max(0,total-cobrado);
+      return {id:o.id,code:o.operation_code,desc:o.description||"",eta:o.eta,status:o.status,total,cobrado,saldo,pct:total>0?Math.min(100,(cobrado/total)*100):0};
+    }).filter(x=>x.saldo>0.01);
+    setPendingGiOps(pending);
     const merged=[
       ...movs.map(x=>({id:"m_"+x.id,date:x.created_at,type:x.type,amount:Number(x.amount_usd),op_code:x.operations?.operation_code,description:x.description})),
       ...opsList.filter(o=>Number(o.collected_amount||0)>0).map(o=>{const raw=Number(o.collected_amount||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const usd=isArs&&rate>0?raw/rate:raw;return{id:"o_"+o.id,date:o.collection_date||o.closed_at,type:"op_cobro",amount:usd,op_code:o.operation_code,description:isArs?`Pago ARS ${raw.toLocaleString("es-AR")} @ ${rate}`:"Pago recibido"};}),
@@ -1217,6 +1237,41 @@ function AccountPage({token,client,onRestartTutorial}){
       {isDebt&&<p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"10px 0 0",lineHeight:1.5}}>Este saldo se saldará en tu próxima operación.</p>}
       {!isCredit&&!isDebt&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"10px 0 0"}}>Sin movimientos pendientes.</p>}
     </div>
+    {/* Pendientes de pago (ops GI activas con saldo) */}
+    {pendingGiOps.length>0&&<div style={{marginBottom:24}}>
+      <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Pendientes de pago</h3>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {pendingGiOps.map(p=><div key={p.id} style={{background:"linear-gradient(135deg, rgba(251,146,60,0.08) 0%, rgba(255,255,255,0.02) 100%)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:14,padding:"18px 22px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,flexWrap:"wrap",marginBottom:14}}>
+            <div style={{flex:1,minWidth:220}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+                <span style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:999,background:"rgba(251,146,60,0.15)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.4)",letterSpacing:"0.08em",textTransform:"uppercase"}}>Pendiente de pago</span>
+                <span style={{fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`}}>Gestión Integral</span>
+                <span style={{fontSize:12,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,color:GOLD_LIGHT,letterSpacing:"0.04em"}}>{p.code}</span>
+              </div>
+              {p.desc&&<p style={{fontSize:14,fontWeight:600,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>{p.desc}</p>}
+              {p.eta&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:0}}>Entrega estimada · <span style={{color:"#fff",fontWeight:600}}>{fmtDate(p.eta)}</span></p>}
+            </div>
+            <div style={{textAlign:"right"}}>
+              <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Saldo a abonar</p>
+              <p style={{fontSize:22,fontWeight:800,color:"#fb923c",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {p.saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            </div>
+          </div>
+          {/* Progress bar */}
+          <div style={{marginBottom:8}}>
+            <div style={{height:6,background:"rgba(255,255,255,0.06)",borderRadius:3,overflow:"hidden"}}>
+              <div style={{width:`${p.pct}%`,height:"100%",background:p.pct>=50?"#60a5fa":"#fb923c",transition:"width 0.3s"}}/>
+            </div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(255,255,255,0.55)"}}>
+            <span>Pagaste <b style={{color:"#22c55e"}}>USD {p.cobrado.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</b> de USD {p.total.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+            <span style={{fontWeight:700}}>{p.pct.toFixed(0)}%</span>
+          </div>
+        </div>)}
+      </div>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"12px 0 0",fontStyle:"italic"}}>El saldo se actualiza automáticamente a medida que registramos tus pagos.</p>
+    </div>}
+
     {/* Historial */}
     <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Historial de movimientos</h3>
     {loading?<SkeletonTable rows={4} cols={3} hideHeader/>:timeline.length===0?
