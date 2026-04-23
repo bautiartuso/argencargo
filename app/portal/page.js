@@ -488,18 +488,44 @@ function OperationDetail({op,token,onBack}){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0"}}><div style={{flex:1}}><p style={{fontSize:14,color:"#fff",margin:0,fontWeight:500}}>{it.description}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{it.quantity} unidades</p></div>
           <div style={{display:"flex",alignItems:"center",gap:12}}><div style={{textAlign:"right"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>VALOR FOB</p><p style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>USD {fob.toLocaleString("en-US")}</p></div>
             <button onClick={()=>setExpItem(exp?null:it.id)} style={{fontSize:11,fontWeight:600,color:IC,background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.22)",borderRadius:6,padding:"6px 12px",cursor:"pointer",whiteSpace:"nowrap"}}>{exp?"Ocultar ▲":"Desglose ▼"}</button></div></div>
-        {exp&&(()=>{const isB=op.channel?.includes("negro");const isAer=op.channel?.includes("aereo");const isMar=op.channel?.includes("maritimo");const dr=(l,rate,amt)=><div style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{l}{rate!=null?` (${rate}%)`:""}</span><span style={{fontSize:12,fontWeight:600,color:amt!=null?"#fff":"rgba(255,255,255,0.5)"}}>{amt!=null?`USD ${amt.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"A confirmar"}</span></div>;const taxRows=[];if(!isB){const rr=(label,rate)=>{const amt=rate!=null?fob*(Number(rate)/100):null;taxRows.push({l:label,r:rate,a:amt});};rr("Derechos de Importación",it.import_duty_rate);rr("Tasa de Estadística",it.statistics_rate);rr("IVA",it.iva_rate);if(isAer&&op.channel==="aereo_blanco"){
-  // Calcular gasto documental: desembolso por CIF total, distribuido proporcionalmente
-  const totalFob=items.reduce((s,x)=>s+Number(x.unit_price_usd||0)*Number(x.quantity||1),0);
-  const pct=totalFob>0?fob/totalFob:1;
-  let pf=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);pf+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});
-  const certFl=pf*3.5;const cif=(totalFob+certFl)*1.01;
-  const desemb=((c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;})(cif);
-  const propDesemb=desemb*pct;const ivaD=propDesemb*0.21;
-  taxRows.push({l:"Gasto Documental Aduana",r:null,a:propDesemb+ivaD});
-}if(isMar&&op.channel==="maritimo_blanco"){rr("IVA Adicional",it.iva_additional_rate);rr("I.I.G.G.",it.iigg_rate);rr("I.I.B.B.",it.iibb_rate);}}const totalItemTax=taxRows.reduce((s,r)=>s+(r.a||0),0);return <div style={{padding:"0 0 12px",marginLeft:16}}><div style={{background:"rgba(255,255,255,0.028)",borderRadius:8,padding:"12px 16px",border:"1px solid rgba(255,255,255,0.08)"}}>
+        {exp&&(()=>{const isB=op.channel?.includes("negro");const isAer=op.channel?.includes("aereo");const isMar=op.channel?.includes("maritimo");const dr=(l,rate,amt)=><div style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{l}{rate!=null?` (${rate}%)`:""}</span><span style={{fontSize:12,fontWeight:600,color:amt!=null?"#fff":"rgba(255,255,255,0.5)"}}>{amt!=null?`USD ${amt.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"A confirmar"}</span></div>;const taxRows=[];
+          // Cálculo de impuestos sobre CIF (no sobre FOB). Matchea admin/lib.calc.js.
+          // certFl: flete ficticio per kg (aéreo) o per CBM (marítimo). Default: 3.5/kg aéreo, 100/cbm marítimo.
+          const totalFob=items.reduce((s,x)=>s+Number(x.unit_price_usd||0)*Number(x.quantity||1),0);
+          const pctItem=totalFob>0?fob/totalFob:1;
+          let pf=0,totCBM=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);pf+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});
+          const certFlRate=isAer?3.5:100;
+          const certFlAmt=isAer?pf*certFlRate:totCBM*certFlRate;
+          const iCert=certFlAmt*pctItem;
+          const iSeg=(fob+iCert)*0.01;
+          const iCif=fob+iCert+iSeg;
+          if(!isB){
+            const rr=(label,rate,base)=>{const amt=rate!=null?base*(Number(rate)/100):null;taxRows.push({l:label,r:rate,a:amt});};
+            rr("Derechos de Importación",it.import_duty_rate,iCif);
+            rr("Tasa de Estadística",it.statistics_rate,iCif);
+            // IVA se calcula sobre base imponible = CIF + derechos + TE
+            const die=iCif*(Number(it.import_duty_rate||0)/100);
+            const teAmt=iCif*(Number(it.statistics_rate||0)/100);
+            const bi=iCif+die+teAmt;
+            rr("IVA",it.iva_rate,bi);
+            if(isAer&&op.channel==="aereo_blanco"){
+              // Gasto documental: desembolso por CIF TOTAL (no item), prorrateado al item
+              const cifTotal=totalFob+certFlAmt+(totalFob+certFlAmt)*0.01;
+              const desemb=((c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;})(cifTotal);
+              const propDesemb=desemb*pctItem;const ivaD=propDesemb*0.21;
+              taxRows.push({l:"Gasto Documental Aduana",r:null,a:propDesemb+ivaD});
+            }
+            if(isMar&&op.channel==="maritimo_blanco"){
+              rr("IVA Adicional",it.iva_additional_rate,bi);
+              rr("I.I.G.G.",it.iigg_rate,bi);
+              rr("I.I.B.B.",it.iibb_rate,bi);
+            }
+          }
+          const totalItemTax=taxRows.reduce((s,r)=>s+(r.a||0),0);
+          return <div style={{padding:"0 0 12px",marginLeft:16}}><div style={{background:"rgba(255,255,255,0.028)",borderRadius:8,padding:"12px 16px",border:"1px solid rgba(255,255,255,0.08)"}}>
           {taxRows.map((r,ri)=><div key={ri}>{dr(r.l,r.r,r.a)}</div>)}
           {!isB&&taxRows.length>0&&<div style={{borderTop:"1px solid rgba(255,255,255,0.06)",marginTop:6,paddingTop:6,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,fontWeight:700,color:"#fff"}}>Total Impuestos</span><span style={{fontSize:12,fontWeight:700,color:IC}}>USD {totalItemTax.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>}
+          <p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:"8px 0 0",fontStyle:"italic"}}>Impuestos calculados sobre el CIF (FOB + flete + seguro), según normativa aduanera.</p>
         </div></div>;})()}
       </div>;})}
     </div>}
