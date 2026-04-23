@@ -403,8 +403,6 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {k:"general",l:"General"},
     {k:"items",l:"Productos"},
     {k:"gi_costs",l:"Costos"},
-    // Bultos solo en GI + Aéreo A (para calcular costo flete de agentes según peso facturable)
-    ...(op.channel==="aereo_blanco"?[{k:"packages",l:"Bultos"}]:[]),
     {k:"tracking",l:"Seguimiento"},
     {k:"finance",l:"Finanzas"}
   ]:[
@@ -959,27 +957,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       // Finanzas simplificada para Gestión Integral:
       //   Ingreso = total productos (cant × precio unitario) acordado con el cliente
       //   Cobrado = suma operation_client_payments (plata que efectivamente entró)
-      //   Costos = supplier_payments (proveedor) + costoFleteAgente (solo GI + aéreo A)
+      //   Costos = suma operation_supplier_payments (plata que salió o sale al proveedor)
       //   Ganancia = Ingreso − Costos
       const totalIngreso=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
       const totalCobrado=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const saldoCliente=Math.max(0,totalIngreso-totalCobrado);
-      // Costo de flete del AGENTE (solo GI + aéreo A): se calcula auto con tabla de tarifas
-      // y peso facturable. Para otros canales GI el flete se carga a mano en "Costos".
-      let costoFleteAgente=0,fletePeso=0;
-      if(op.channel==="aereo_blanco"&&pkgs.length>0){
-        pkgs.forEach(pk=>{const q=Number(pk.quantity||1),gw=Number(pk.gross_weight_kg||0),l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0);fletePeso+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});
-        if(fletePeso>0){
-          const svcKey=op.origin==="USA"?"aereo_a_usa":"aereo_a_china";
-          const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate");
-          let cost=0;
-          for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(fletePeso>=min&&fletePeso<max){cost=Number(r.cost||0);break;}}
-          if(cost===0&&rates.length>0)cost=Number(rates[rates.length-1].cost||0);
-          costoFleteAgente=Math.round(fletePeso*cost*100)/100;
-        }
-      }
-      const totalSupplierPayments=supplierPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
-      const totalCostos=totalSupplierPayments+costoFleteAgente;
+      const totalCostos=supplierPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const costoPagado=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const costoPendiente=totalCostos-costoPagado;
       const ganancia=totalIngreso-totalCostos;
@@ -1002,7 +985,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <div style={{background:"rgba(255,80,80,0.04)",border:"1px solid rgba(255,80,80,0.15)",borderRadius:14,padding:"18px 20px"}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Costos totales</p>
             <p style={{fontSize:24,fontWeight:800,color:"#ff6b6b",margin:0,fontVariantNumeric:"tabular-nums"}}>{usdF(totalCostos)}</p>
-            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"6px 0 0"}}>{supplierPayments.length} proveedor · {costoFleteAgente>0?`flete agentes ${usdF(costoFleteAgente)}`:"sin flete"}</p>
+            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"6px 0 0"}}>{supplierPayments.length} costo{supplierPayments.length===1?"":"s"} registrado{supplierPayments.length===1?"":"s"}</p>
           </div>
           <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 20px"}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Margen</p>
@@ -1010,21 +993,6 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"6px 0 0"}}>{margen>=30?"Excelente":margen>=15?"Saludable":margen>=0?"Ajustado":"En rojo"}</p>
           </div>
         </div>
-
-        {/* Desglose de costos (solo GI + aéreo A) */}
-        {op.channel==="aereo_blanco"&&(costoFleteAgente>0||totalSupplierPayments>0)&&<Card title="Desglose de costos">
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {totalSupplierPayments>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",background:"rgba(168,85,247,0.06)",border:"1px solid rgba(168,85,247,0.15)",borderRadius:10}}>
-              <div><p style={{fontSize:12,fontWeight:700,color:"#c084fc",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>Costos al proveedor (manual)</p><p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>Cargados desde el tab Costos · {supplierPayments.length} pago{supplierPayments.length===1?"":"s"}</p></div>
-              <p style={{fontSize:18,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{usdF(totalSupplierPayments)}</p>
-            </div>}
-            {costoFleteAgente>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:10}}>
-              <div><p style={{fontSize:12,fontWeight:700,color:"#60a5fa",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>Costo flete a agente (auto)</p><p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>{fletePeso.toFixed(1)} kg facturables × tabla tarifas {op.origin==="USA"?"USA":"China"}</p></div>
-              <p style={{fontSize:18,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{usdF(costoFleteAgente)}</p>
-            </div>}
-            {op.channel==="aereo_blanco"&&pkgs.length===0&&<p style={{fontSize:11,color:"rgba(251,191,36,0.7)",margin:"4px 0 0",fontStyle:"italic"}}>⚠ Cargá bultos en el tab <b>Bultos</b> para calcular el costo de flete de agentes automáticamente.</p>}
-          </div>
-        </Card>}
 
         {/* Cash flow actual */}
         <Card title="Estado de caja (lo que ya entró vs lo que ya salió)">
