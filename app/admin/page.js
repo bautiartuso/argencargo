@@ -23,7 +23,7 @@ const GOLD_GRADIENT="linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 10
 const GOLD_GLOW="0 0 20px rgba(184,149,106,0.25)";
 const GOLD_GLOW_STRONG="0 0 28px rgba(184,149,106,0.4)";
 // Keyframes globales (pulsing dots, shimmer)
-const AC_KEYFRAMES=`@keyframes ac_pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}@keyframes ac_pulse_gold{0%{box-shadow:0 0 0 0 rgba(184,149,106,.55)}70%{box-shadow:0 0 0 10px rgba(184,149,106,0)}100%{box-shadow:0 0 0 0 rgba(184,149,106,0)}}@keyframes ac_shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}@keyframes ac_fade_in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}`;
+const AC_KEYFRAMES=`@keyframes ac_pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}@keyframes ac_pulse_gold{0%{box-shadow:0 0 0 0 rgba(184,149,106,.55)}70%{box-shadow:0 0 0 10px rgba(184,149,106,0)}100%{box-shadow:0 0 0 0 rgba(184,149,106,0)}}@keyframes ac_shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}@keyframes ac_fade_in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}@keyframes acGiPulse{0%,100%{box-shadow:0 0 16px rgba(184,149,106,0.35), inset 0 1px 0 rgba(255,255,255,0.4)}50%{box-shadow:0 0 28px rgba(232,208,152,0.6), inset 0 1px 0 rgba(255,255,255,0.4)}}`;
 const sf=async(p,o={})=>{const r=await fetch(`${SB_URL}${p}`,{...o,headers:{apikey:SB_KEY,"Content-Type":"application/json",...(o.headers||{})}});const txt=await r.text();try{return JSON.parse(txt);}catch{return null;}};
 const ac=async(e,b)=>sf(`/auth/v1/${e}`,{method:"POST",body:JSON.stringify(b)});
 const saveSession=(d)=>{try{localStorage.setItem("ac_admin",JSON.stringify(d));}catch(e){}};
@@ -424,7 +424,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
         <button onClick={onBack} style={{fontSize:12,color:"rgba(255,255,255,0.55)",background:"transparent",border:"1px solid rgba(255,255,255,0.08)",cursor:"pointer",fontWeight:600,padding:"6px 12px",borderRadius:8,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.color=GOLD_LIGHT;e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";}} onMouseLeave={e=>{e.currentTarget.style.color="rgba(255,255,255,0.55)";e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";}}>← Volver</button>
         <span style={{fontSize:18,fontWeight:700,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{op.operation_code}</span>
-        {op.service_type==="gestion_integral"&&<span title="Gestión Integral" style={{fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:999,background:"rgba(168,85,247,0.15)",color:"#c084fc",border:"1px solid rgba(168,85,247,0.35)",letterSpacing:"0.08em"}}>GESTIÓN INTEGRAL</span>}
+        {op.service_type==="gestion_integral"&&<span title="Gestión Integral" style={{fontSize:11,fontWeight:800,padding:"6px 14px",borderRadius:8,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.14em",textTransform:"uppercase",border:`1.5px solid ${GOLD_DEEP}`,boxShadow:`${GOLD_GLOW}, inset 0 1px 0 rgba(255,255,255,0.4)`,animation:"acGiPulse 2.4s ease-in-out infinite"}}>Gestión Integral</span>}
         {msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600,animation:"ac_fade_in 200ms"}}>✓ {msg}</span>}
       </div>
       <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
@@ -445,7 +445,15 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
         <Inp label="ETA (fecha estimada de arribo)" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>
         <Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>
-        <div style={{padding:"10px 14px",background:op.skip_review_request?"rgba(251,146,60,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${op.skip_review_request?"rgba(251,146,60,0.25)":"rgba(255,255,255,0.06)"}`,borderRadius:8,marginTop:8}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={op.skip_review_request||false} onChange={e=>chOp("skip_review_request")(e.target.checked)}/><span style={{fontSize:13,color:op.skip_review_request?"#fb923c":"rgba(255,255,255,0.5)",fontWeight:op.skip_review_request?600:400}}>⛔ No pedir reseña al cerrar esta op</span></label>{op.skip_review_request&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0 24px"}}>Usar si la experiencia fue mala y no queremos incentivar una reseña pública.</p>}</div>
+        <div onClick={()=>chOp("skip_review_request")(!op.skip_review_request)} style={{padding:"12px 16px",background:op.skip_review_request?"rgba(251,146,60,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${op.skip_review_request?"rgba(251,146,60,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:10,marginTop:8,cursor:"pointer",display:"flex",alignItems:"center",gap:14,userSelect:"none",transition:"all 180ms"}}>
+          <div style={{width:44,height:24,background:op.skip_review_request?"linear-gradient(135deg, #fb923c, #f97316)":"rgba(255,255,255,0.1)",borderRadius:999,position:"relative",transition:"all 200ms",boxShadow:op.skip_review_request?"0 0 10px rgba(251,146,60,0.35)":"",flexShrink:0}}>
+            <div style={{position:"absolute",top:2,left:op.skip_review_request?22:2,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left 220ms cubic-bezier(0.34,1.56,0.64,1)"}}/>
+          </div>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontSize:13,fontWeight:op.skip_review_request?700:600,color:op.skip_review_request?"#fb923c":"rgba(255,255,255,0.6)",margin:0,letterSpacing:"0.02em"}}>No pedir reseña al cerrar esta op</p>
+            {op.skip_review_request&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0",lineHeight:1.4}}>Usar si la experiencia fue mala y no queremos incentivar una reseña pública.</p>}
+          </div>
+        </div>
         {op.channel==="aereo_blanco"&&<div style={{marginBottom:12}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>¿La carga contiene baterías internas?</p>
           <div style={{display:"flex",gap:10}}>{[{k:true,icon:"⚡",l:"Sí, tiene baterías",sub:"Recargo $2/kg"},{k:false,icon:"✓",l:"No tiene baterías",sub:"Producto estándar"}].map(o=><div key={String(o.k)} onClick={()=>chOp("has_battery")(o.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:12,border:`1.5px solid ${(op.has_battery||false)===o.k?"#fb923c":"rgba(255,255,255,0.08)"}`,background:(op.has_battery||false)===o.k?"rgba(251,146,60,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer",transition:"all 0.15s"}}><p style={{fontSize:22,margin:"0 0 4px"}}>{o.icon}</p><p style={{fontSize:13,fontWeight:700,color:(op.has_battery||false)===o.k?"#fb923c":"rgba(255,255,255,0.55)",margin:"0 0 2px"}}>{o.l}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{o.sub}</p></div>)}</div>
@@ -459,7 +467,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           {!op.consolidation_confirmed&&<Btn small onClick={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString()}});setOp(p=>({...p,consolidation_confirmed:true}));flash("Consolidación confirmada");}}>Marcar lista para enviar</Btn>}
         </div>}
       </Card>
-      <Card title="Resumen">
+      {!isGI&&<Card title="Resumen">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16}}>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>CANAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{CM[op.channel]||op.channel}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>ORIGEN</p><p style={{fontSize:14,color:"#fff",margin:0}}>{op.origin||"—"}</p></div>
@@ -470,7 +478,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>CBM</p><p style={{fontSize:14,color:"#fff",margin:0}}>{pkgs.reduce((s,p)=>{const q=Number(p.quantity||1),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);return s+(l&&w&&h?((l*w*h)/1000000)*q:0);},0).toFixed(4)} m³</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>EVENTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{events.length}</p></div>
         </div>
-      </Card>
+      </Card>}
       {(()=>{
         // Timeline enriquecido: status changes + emails enviados + eventos del courier
         const fmtDt=d=>{try{return new Date(d).toLocaleString("es-AR",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});}catch{return d;}};
