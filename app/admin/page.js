@@ -280,7 +280,7 @@ function NewOperation({token,clients,onBack,onCreated}){
 }
 
 function OperationEditor({op:initOp,token,onBack,onDelete}){
-  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});  const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:""});
+  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});  const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const [pendingRedemptions,setPendingRedemptions]=useState([]);
   const loadRedemptions=async()=>{if(!op.client_id)return;const r=await dq("client_reward_redemptions",{token,filters:`?client_id=eq.${op.client_id}&status=eq.pending&select=*&order=redeemed_at.asc`});setPendingRedemptions(Array.isArray(r)?r:[]);};
@@ -682,10 +682,13 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       // Ledger de costos para ops Gestión Integral.
       // Cada pago del admin al proveedor/intermediario se guarda en operation_supplier_payments.
       // Soporte multi-moneda: USD directo vs ARS (pendiente de dolarización hasta cierre TC).
-      const totalCosto=supplierPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
-      const totalCostoArs=supplierPayments.reduce((s,p)=>s+Number(p.amount_ars||0),0);
-      const totalPagadoCosto=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      // type='payment' suma, type='refund' resta (reembolsos del proveedor).
+      const sign=(p)=>p.type==="refund"?-1:1;
+      const totalCosto=supplierPayments.reduce((s,p)=>s+sign(p)*Number(p.amount_usd||0),0);
+      const totalCostoArs=supplierPayments.reduce((s,p)=>s+sign(p)*Number(p.amount_ars||0),0);
+      const totalPagadoCosto=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+sign(p)*Number(p.amount_usd||0),0);
       const totalPendCosto=totalCosto-totalPagadoCosto;
+      const totalReembolsos=supplierPayments.filter(p=>p.type==="refund").reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const addCost=async()=>{
         const amt=Number(newSupPmt.amount_usd);
         if(!amt||amt<=0||!newSupPmt.payment_date)return;
@@ -696,6 +699,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         // ARS + no-TC (efectivo/transf): debería llevar un exchange_rate para convertir a USD,
         //           pero por ahora lo dejamos como ARS pendiente también.
         // USD: amount_usd = amt, amount_ars = null.
+        const isRefund=newSupPmt.type==="refund";
         const body={
           operation_id:op.id,
           payment_date:newSupPmt.payment_date,
@@ -707,26 +711,32 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           reference:newSupPmt.reference||null,
           currency:newSupPmt.currency||"USD",
           card_closing_date:isTC&&newSupPmt.card_closing_date?newSupPmt.card_closing_date:null,
-          paid_at:newSupPmt.is_paid&&!isArs?new Date(newSupPmt.payment_date+"T12:00:00Z").toISOString():null
+          paid_at:newSupPmt.is_paid&&!isArs?new Date(newSupPmt.payment_date+"T12:00:00Z").toISOString():null,
+          type:newSupPmt.type||"payment"
         };
-        // Si ARS: forzar is_paid=false hasta que se dolarice (para que aparezca en Dolarización)
+        // Si ARS: forzar is_paid=false hasta que se dolarice
+        // Reembolsos en ARS: también pending dolarizar (cuando recibas pesos de vuelta necesitás saber el TC del día)
         if(isArs){body.is_paid=false;body.paid_at=null;}
         await dq("operation_supplier_payments",{method:"POST",token,body});
-        // Sync cost_producto_usd en la op (solo suma los pagos en USD; los ARS se sumarán cuando se dolaricen)
+        // Sync cost_producto_usd: los reembolsos RESTAN, los pagos SUMAN. ARS queda fuera hasta dolarizar.
         if(!isArs){
-          const newTotal=totalCosto+amt;
+          const delta=isRefund?-amt:amt;
+          const newTotal=totalCosto+delta;
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{cost_producto_usd:newTotal}});
           setOp(p=>({...p,cost_producto_usd:newTotal}));
         }
-        setNewSupPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:""});
+        setNewSupPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
         load();
-        flash(isArs?"Costo ARS registrado — se dolariza al cerrar tarjeta":"Costo registrado");
+        flash(isRefund?(isArs?"Reembolso ARS registrado":"Reembolso registrado"):(isArs?"Costo ARS registrado — se dolariza al cerrar tarjeta":"Costo registrado"));
       };
       const deleteCost=async(id)=>{
-        if(!confirm("¿Eliminar este costo?"))return;
+        const target=supplierPayments.find(p=>p.id===id);
+        const isRefund=target?.type==="refund";
+        if(!confirm(isRefund?"¿Eliminar este reembolso?":"¿Eliminar este costo?"))return;
         await dq("operation_supplier_payments",{method:"DELETE",token,filters:`?id=eq.${id}`});
         const remaining=supplierPayments.filter(p=>p.id!==id);
-        const newTotal=remaining.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+        // Recomputar cost_producto_usd = sum(payments USD) - sum(refunds USD). Solo USD (los ARS se suman cuando se dolaricen).
+        const newTotal=remaining.reduce((s,p)=>{const sgn=p.type==="refund"?-1:1;return s+sgn*Number(p.amount_usd||0);},0);
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{cost_producto_usd:newTotal}});
         setOp(p=>({...p,cost_producto_usd:newTotal}));
         load();
@@ -767,13 +777,16 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               </tr>
             </thead>
             <tbody>
-              {supplierPayments.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-                <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}</td>
+              {supplierPayments.map(p=>{const isRefund=p.type==="refund";const rowBg=isRefund?"rgba(34,197,94,0.04)":"transparent";return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",background:rowBg}}>
+                <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
+                  {new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}
+                  {isRefund&&<span style={{display:"block",fontSize:9,fontWeight:700,color:"#22c55e",marginTop:2,letterSpacing:"0.06em",textTransform:"uppercase"}}>↩ Reembolso</span>}
+                </td>
                 <td style={{padding:"10px 14px",textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
                   {p.currency==="ARS"?<>
-                    <span style={{color:"#60a5fa",fontWeight:700}}>ARS {Number(p.amount_ars||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                    <span style={{color:isRefund?"#22c55e":"#60a5fa",fontWeight:700}}>{isRefund?"− ":""}ARS {Number(p.amount_ars||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
                     {Number(p.amount_usd||0)>0?<span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.5)",fontWeight:500}}>= USD {Number(p.amount_usd).toFixed(2)} @ {Number(p.exchange_rate||0).toFixed(2)}</span>:<span style={{display:"block",fontSize:10,color:"rgba(251,146,60,0.8)",fontWeight:500}}>pendiente dolarizar</span>}
-                  </>:<span style={{color:"#c084fc",fontWeight:700}}>USD {Number(p.amount_usd).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+                  </>:<span style={{color:isRefund?"#22c55e":"#c084fc",fontWeight:700}}>{isRefund?"− ":""}USD {Number(p.amount_usd).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
                 </td>
                 <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.75)"}}>{p.notes||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</td>
                 <td style={{padding:"10px 14px",color:GOLD_LIGHT,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11}}>{p.reference||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</td>
@@ -783,14 +796,22 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                   {!p.is_paid&&<button onClick={()=>toggleCostPaid(p)} style={{padding:"4px 9px",fontSize:10,fontWeight:700,background:"rgba(34,197,94,0.15)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:4,color:"#22c55e",cursor:"pointer",marginRight:4}}>Marcar pagado</button>}
                   <button onClick={()=>deleteCost(p.id)} style={{padding:"4px 9px",fontSize:11,background:"transparent",border:"1px solid rgba(255,80,80,0.25)",borderRadius:4,color:"rgba(255,100,100,0.7)",cursor:"pointer"}}>✕</button>
                 </td>
-              </tr>)}
+              </tr>;})}
             </tbody>
           </table>
         </div>:<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1.5rem 0",fontSize:13}}>Sin costos registrados todavía. Agregá el primero abajo.</p>}
 
         {/* Form nuevo costo */}
-        <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"16px 18px"}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Registrar nuevo costo</p>
+        <div style={{background:"rgba(255,255,255,0.025)",border:`1px solid ${newSupPmt.type==="refund"?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.06)"}`,borderRadius:10,padding:"16px 18px",transition:"border-color 180ms"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}}>
+            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>{newSupPmt.type==="refund"?"Registrar reembolso del proveedor":"Registrar nuevo costo"}</p>
+            {/* Tabs toggle: Costo vs Reembolso */}
+            <div style={{display:"flex",gap:4,padding:3,background:"rgba(0,0,0,0.2)",borderRadius:8}}>
+              <button onClick={()=>setNewSupPmt(p=>({...p,type:"payment"}))} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:newSupPmt.type!=="refund"?"rgba(192,132,252,0.15)":"transparent",color:newSupPmt.type!=="refund"?"#c084fc":"rgba(255,255,255,0.5)",letterSpacing:"0.04em"}}>Costo</button>
+              <button onClick={()=>setNewSupPmt(p=>({...p,type:"refund"}))} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:newSupPmt.type==="refund"?"rgba(34,197,94,0.15)":"transparent",color:newSupPmt.type==="refund"?"#22c55e":"rgba(255,255,255,0.5)",letterSpacing:"0.04em"}}>↩ Reembolso</button>
+            </div>
+          </div>
+          {newSupPmt.type==="refund"&&<p style={{fontSize:11,color:"rgba(34,197,94,0.8)",margin:"0 0 12px",padding:"8px 12px",background:"rgba(34,197,94,0.05)",border:"1px solid rgba(34,197,94,0.15)",borderRadius:6}}>💚 Reembolso del proveedor (ej: devolución por fallas de producción, crédito, ajuste). El monto se resta del costo total de la op.</p>}
           {/* Fila 1: fecha + monto + moneda + método */}
           <div style={{display:"grid",gridTemplateColumns:"140px 1fr 100px 1.3fr",gap:10,alignItems:"end",marginBottom:10}}>
             <Inp label="Fecha" type="date" value={newSupPmt.payment_date} onChange={v=>setNewSupPmt(p=>({...p,payment_date:v}))}/>
@@ -819,7 +840,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                 <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"1px 0 0"}}>Tocá para cambiar</p>
               </div>
             </div>
-            <Btn onClick={addCost} disabled={!newSupPmt.amount_usd||Number(newSupPmt.amount_usd)<=0} small>+ Agregar costo</Btn>
+            <Btn onClick={addCost} disabled={!newSupPmt.amount_usd||Number(newSupPmt.amount_usd)<=0} small>{newSupPmt.type==="refund"?"↩ Registrar reembolso":"+ Agregar costo"}</Btn>
           </div>
         </div>
       </Card>;
@@ -1043,8 +1064,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const totalIngreso=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
       const totalCobrado=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const saldoCliente=Math.max(0,totalIngreso-totalCobrado);
-      const totalCostos=supplierPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
-      const costoPagado=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      // type='refund' resta al total (reembolso del proveedor)
+      const signCost=(p)=>p.type==="refund"?-1:1;
+      const totalCostos=supplierPayments.reduce((s,p)=>s+signCost(p)*Number(p.amount_usd||0),0);
+      const costoPagado=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+signCost(p)*Number(p.amount_usd||0),0);
       const costoPendiente=totalCostos-costoPagado;
       const ganancia=totalIngreso-totalCostos;
       const margen=totalIngreso>0?(ganancia/totalIngreso)*100:0;
