@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, WhatsAppFab } from "../../lib/ui";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -710,7 +710,29 @@ function CalculatorPage({token,client}){
   const autoDelivLabel=(()=>{if(delivery==="oficina")return"Retiro por Oficina (Gratis)";const{totWeight}=calcTotals();const cost=getShipCost(delivery,totWeight);return delivery==="caba"?`Envío CABA (USD ${cost})`:`Envío GBA (USD ${cost})`;})();
   const DELIV={oficina:"Retiro por Oficina (Gratis)",caba:"Envío CABA",gba:"Envío GBA"};
   const [savedMsg,setSavedMsg]=useState("");
-  const saveQuote=async(ch,showMsg)=>{const{totWeight,totCBM}=calcTotals();try{await dq("quotes",{method:"POST",token,body:{client_id:client?.id||null,client_name:client?`${client.first_name} ${client.last_name}`:"Anónimo",client_code:client?.client_code||"—",origin,channel_key:ch.key,channel_name:ch.name,products:products,packages:pkgs,delivery,total_fob:totalFob,total_weight:totWeight,total_cbm:totCBM,total_cost:ch.total+(getShipCost(delivery,calcTotals().totWeight))}});if(showMsg){setSavedMsg(ch.key);setTimeout(()=>setSavedMsg(""),2500);}}catch(e){console.error("Error saving quote:",e);}};
+  const savedQuoteIdsRef=useRef({});
+  const saveInFlightRef=useRef({});
+  const saveQuote=async(ch,showMsg)=>{
+    // Dedup: si ya hay un save en vuelo para este canal, ignorar
+    if(saveInFlightRef.current[ch.key])return;
+    const{totWeight,totCBM}=calcTotals();
+    const body={client_id:client?.id||null,client_name:client?`${client.first_name} ${client.last_name}`:"Anónimo",client_code:client?.client_code||"—",origin,channel_key:ch.key,channel_name:ch.name,products:products,packages:pkgs,delivery,total_fob:totalFob,total_weight:totWeight,total_cbm:totCBM,total_cost:ch.total+(getShipCost(delivery,calcTotals().totWeight))};
+    saveInFlightRef.current[ch.key]=true;
+    try{
+      const existingId=savedQuoteIdsRef.current[ch.key];
+      if(existingId){
+        // Ya guardamos esta cotización en esta sesión → UPDATE en vez de duplicar
+        await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${existingId}`,body});
+      }else{
+        // Primer save → POST y guardar el ID devuelto para futuras actualizaciones
+        const r=await dq("quotes",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
+        const newId=Array.isArray(r)&&r[0]?r[0].id:null;
+        if(newId)savedQuoteIdsRef.current[ch.key]=newId;
+      }
+      if(showMsg){setSavedMsg(ch.key);setTimeout(()=>setSavedMsg(""),2500);}
+    }catch(e){console.error("Error saving quote:",e);}
+    finally{saveInFlightRef.current[ch.key]=false;}
+  };
   const makeWAMsg=(ch)=>{const{totWeight,totCBM}=calcTotals();const name=client?`${client.first_name} ${client.last_name}`:"Cliente";const code=client?.client_code||"—";const flag=origin==="USA"?"\ud83c\uddfa\ud83c\uddf8":"\ud83c\udde8\ud83c\uddf3";const isAereo=ch.key?.includes("aereo");const delivCost=getShipCost(delivery,calcTotals().totWeight);const total=ch.total+delivCost;
     const usdF=v=>`USD ${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
     if(ch.isBlanco){return encodeURIComponent(`Hola Bautista! Acabo de cotizar una importación y quiero avanzar con la operación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${prodSummary}*\n\nTipo de envío: *${ch.name}*\n\nValor Total: *${usdF(totalFob)}*\n${isAereo?`Peso Total: *${totWeight.toFixed(2)} kg*`:`CBM Total: *${totCBM.toFixed(4)} m³*`}\n\nImpuestos estimados: *${usdF(ch.totalImp||0)}*\nFlete Internacional: *${usdF(ch.flete||0)}*\nSeguro: *${usdF(ch.seguro||0)}*\nEntrega en Destino: *${autoDelivLabel}*\nTotal estimado: *${usdF(total)}*\n\nCódigo cliente: *${code}*`);}
