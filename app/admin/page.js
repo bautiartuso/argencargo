@@ -321,6 +321,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const isBlanco=op.channel?.includes("blanco");const isAereo=op.channel?.includes("aereo");const isMaritimo=op.channel?.includes("maritimo");
 
   const saveOp=async()=>{setSaving(true);const{id,clients,...rest}=op;delete rest.created_at;delete rest.updated_at;
+    // En ops GI el budget_total lo maneja un trigger DB (sync_gi_budget_total = SUM items).
+    // Si el state tiene un valor stale, lo sacamos del PATCH para no pisar al trigger.
+    if(op.service_type==="gestion_integral"){delete rest.budget_total;}
     if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();
     if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
