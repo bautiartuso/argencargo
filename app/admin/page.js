@@ -2179,10 +2179,10 @@ function FinancePanel({token}){
     dq("finance_entries",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&currency=eq.ARS&order=card_closing_date.asc"}),
     // Giros al exterior con TC pendientes (payment_management)
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)&giro_payment_method=eq.tarjeta_credito&giro_tarjeta_paid=eq.false&order=giro_tarjeta_due_date.asc"}),
-    // Costos GI con TC + ARS pendientes (dolarización)
-    dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&currency=eq.ARS&order=card_closing_date.asc"}),
-    // Costos GI con TC + USD pendientes (deuda tarjeta USD)
-    dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&or=(currency.eq.USD,currency.is.null)&order=card_closing_date.asc"})
+    // Costos GI con TC + ARS pendientes (dolarización) — NO incluir refunds (no son deuda)
+    dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&currency=eq.ARS&type=neq.refund&order=card_closing_date.asc"}),
+    // Costos GI con TC + USD pendientes (deuda tarjeta USD) — NO incluir refunds
+    dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&or=(currency.eq.USD,currency.is.null)&type=neq.refund&order=card_closing_date.asc"})
   ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);setCardDebt({usd:Array.isArray(cdUsd)?cdUsd:[],ars:Array.isArray(cdArs)?cdArs:[],pmts:Array.isArray(cdPmts)?cdPmts:[],supTcArs:Array.isArray(supTcArs)?supTcArs:[],supTcUsd:Array.isArray(supTcUsd)?supTcUsd:[]});setLo(false);};
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
@@ -2238,7 +2238,16 @@ function FinancePanel({token}){
     const op=allOps.find(o=>o.id===p.operation_id);
     const code=op?.operation_code||"";
     const cc=op?.clients?.client_code||"";
-    ledger.push({date:p.payment_date,type:"gasto",origen:"supplier_pmt",code,desc:`Pago producto ${code} — ${cc}`,amount:Number(p.amount_usd||0),detail:p.notes||"Pago al proveedor (Gestión Integral)"});
+    const isRefund=p.type==="refund";
+    ledger.push({
+      date:p.payment_date,
+      type:isRefund?"ingreso":"gasto",
+      origen:"supplier_pmt",
+      code,
+      desc:isRefund?`↩ Reembolso ${code} — ${cc}`:`Pago producto ${code} — ${cc}`,
+      amount:Number(p.amount_usd||0),
+      detail:p.notes||(isRefund?"Reembolso del proveedor (Gestión Integral)":"Pago al proveedor (Gestión Integral)")
+    });
   });
   // Pagos parciales del cliente (anticipos) → cada uno es un ingreso en su fecha
   clientPmts.forEach(p=>{
@@ -2365,10 +2374,10 @@ function FinancePanel({token}){
             if(item.operation_id)affectedGiOps.add(item.operation_id);
           }
         }
-        // Recompute cost_producto_usd de cada op GI afectada
+        // Recompute cost_producto_usd: payments suman, refunds restan
         for(const opId of affectedGiOps){
-          const fresh=await dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${opId}&select=amount_usd`});
-          const total=(Array.isArray(fresh)?fresh:[]).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+          const fresh=await dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${opId}&select=amount_usd,type`});
+          const total=(Array.isArray(fresh)?fresh:[]).reduce((s,p)=>{const sgn=p.type==="refund"?-1:1;return s+sgn*Number(p.amount_usd||0);},0);
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opId}`,body:{cost_producto_usd:total}});
         }
         load();flash(`Dollarizados ${items.length} gastos al TC $${rate}`);
@@ -3432,7 +3441,8 @@ function FinanceDashboard({token}){
       // Costos op para cash flow: excluir cost_flete cuando method=cuenta_corriente (ya se contó en el anticipo al agente)
       const totCostosOps=ops.reduce((s,o)=>{const fleteMethod=o.cost_flete_method||"cuenta_corriente";const fleteCash=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);return s+fleteCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);},0);
       // Pagos al proveedor (Gestión Integral): suma de pagos efectivamente hechos (is_paid=true)
-      const totSupplierPmts=supplierPmts.filter(p=>p.is_paid).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      // Pagos al proveedor: payments suman, refunds restan (cuando el proveedor devuelve plata)
+      const totSupplierPmts=supplierPmts.filter(p=>p.is_paid).reduce((s,p)=>{const sgn=p.type==="refund"?-1:1;return s+sgn*Number(p.amount_usd||0);},0);
       // Costos de gestión de pagos para cash flow:
       //  - Comisión financiera: SIEMPRE se cuenta como contado (si giro confirmado), no espera débito TC
       //  - Giro al exterior: sólo se cuenta cuando se pagó de verdad (no TC pendiente)
@@ -3453,12 +3463,13 @@ function FinanceDashboard({token}){
       const margenActivas=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada").reduce((s,o)=>{const ing=Number(o.budget_total||0);const costProd=o.service_type==="gestion_integral"?Number(o.cost_producto_usd||0):0;const cost=Number(o.cost_flete||0)+costProd+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);const pmts=pmtsByOp[o.id]||[];const pmtGan=pmts.reduce((a,p)=>a+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);return s+(ing-cost)+pmtGan;},0);
       // Deuda TC pendiente en ARS (de finance_entries + supplier_payments ARS no pagados)
       const deudaTCArsFinance=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="ARS").reduce((s,e)=>s+Number(e.amount_ars||0),0);
-      const deudaTCArsSup=supplierPmts.filter(p=>p.payment_method==="tarjeta_credito"&&!p.is_paid&&p.currency==="ARS").reduce((s,p)=>s+Number(p.amount_ars||p.amount_usd||0),0);
+      // Solo costos pendientes (no refunds — un refund pendiente es plata viniendo a vos, no deuda TC)
+      const deudaTCArsSup=supplierPmts.filter(p=>p.payment_method==="tarjeta_credito"&&!p.is_paid&&p.currency==="ARS"&&p.type!=="refund").reduce((s,p)=>s+Number(p.amount_ars||p.amount_usd||0),0);
       const deudaTCArs=deudaTCArsFinance+deudaTCArsSup;
       // Deuda tarjeta USD: finance_entries USD + payment_management TC pendientes + supplier_payments TC USD pendientes
       const deudaTCUsdFinance=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="USD"&&e.payment_method==="tarjeta_credito").reduce((s,e)=>s+Number(e.amount||0),0);
       const deudaTCUsdPmts=Object.values(pmtsByOp).flat().filter(p=>p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid).reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
-      const deudaTCUsdSup=supplierPmts.filter(p=>p.payment_method==="tarjeta_credito"&&!p.is_paid&&(p.currency==="USD"||!p.currency)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      const deudaTCUsdSup=supplierPmts.filter(p=>p.payment_method==="tarjeta_credito"&&!p.is_paid&&(p.currency==="USD"||!p.currency)&&p.type!=="refund").reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const deudaTCUsd=deudaTCUsdFinance+deudaTCUsdPmts+deudaTCUsdSup;
       const cashDisponible=totCobrado-totCostosTotales;
       return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
