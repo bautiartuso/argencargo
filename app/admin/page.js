@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { calcOpBudget } from "../../lib/calc";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState } from "../../lib/ui";
 
@@ -2752,6 +2752,8 @@ function AgentsPanel({token}){
   const [opsWithDocs,setOpsWithDocs]=useState(new Set());
   const [selFlight,setSelFlight]=useState(null);
   const [showAnticipoForm,setShowAnticipoForm]=useState(null);
+  const [expandedOp,setExpandedOp]=useState(null);
+  const [depositItems,setDepositItems]=useState([]);
   const [lo,setLo]=useState(true);
   const [msg,setMsg]=useState("");
   const load=async()=>{setLo(true);
@@ -2765,11 +2767,12 @@ function AgentsPanel({token}){
       dq("flight_operations",{token,filters:"?select=*"}),
       dq("flight_invoice_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
-      dq("operation_items",{token,filters:"?select=operation_id"})
+      dq("operation_items",{token,filters:"?select=*&order=created_at.asc"})
     ]);
     setSignups(Array.isArray(r)?r:[]);setUnassigned(Array.isArray(u)?u:[]);setAllOps(Array.isArray(o)?o:[]);
     setDepositOps(Array.isArray(depOps)?depOps:[]);setDepositPkgs(Array.isArray(depPkgs)?depPkgs:[]);
     setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(flOps)?flOps:[]);setInvoiceItems(Array.isArray(fii)?fii:[]);setAccMovements(Array.isArray(accM)?accM:[]);
+    setDepositItems(Array.isArray(depItems)?depItems:[]);
     // Set de ops que tienen al menos un item (documentación completa)
     const idsWithItems=new Set((Array.isArray(depItems)?depItems:[]).map(i=>i.operation_id));
     setOpsWithDocs(idsWithItems);
@@ -2868,8 +2871,8 @@ function AgentsPanel({token}){
               <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 {["✓","Op","Cliente","Mercadería","Bultos","Peso","Estado","Consolidación","WA"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
               </tr></thead>
-              <tbody>{grp.ops.map(o=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const pkgsCount=opPackages(o.id).length;const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;return <tr key={o.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:inFlight?0.5:0.7}}>
-                <td style={{padding:"10px 12px"}}>{canSelect?<input type="checkbox" checked={selectedOps.includes(o.id)} onChange={()=>toggleSelOp(o.id)}/>:""}</td>
+              <tbody>{grp.ops.map(o=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const pkgsCount=opPackages(o.id).length;const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;const isExpanded=expandedOp===o.id;return <Fragment key={o.id}><tr style={{borderBottom:isExpanded?"none":"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:inFlight?0.5:0.7,cursor:"pointer",background:isExpanded?"rgba(184,149,106,0.06)":"transparent",transition:"background 150ms"}} onClick={(e)=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button"))return;setExpandedOp(isExpanded?null:o.id);}} onMouseEnter={e=>{if(!isExpanded)e.currentTarget.style.background="rgba(255,255,255,0.03)";}} onMouseLeave={e=>{if(!isExpanded)e.currentTarget.style.background="transparent";}}>
+                <td style={{padding:"10px 12px"}}>{canSelect?<input type="checkbox" checked={selectedOps.includes(o.id)} onChange={(e)=>{e.stopPropagation();toggleSelOp(o.id);}} onClick={e=>e.stopPropagation()}/>:<span style={{color:"rgba(255,255,255,0.3)",fontSize:14}}>{isExpanded?"▾":"▸"}</span>}</td>
                 <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12}}>{o.operation_code}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)"}}>{o.clients?`${o.clients.client_code} - ${o.clients.first_name}`:"—"}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.description||"—"}</td>
@@ -2899,7 +2902,60 @@ function AgentsPanel({token}){
                     </button>
                   </span>;
                 })()}</td>
-              </tr>;})}</tbody>
+              </tr>
+              {isExpanded&&(()=>{
+                const itemsOfOp=depositItems.filter(i=>i.operation_id===o.id);
+                const pkgsOfOp=opPackages(o.id);
+                const totalFob=itemsOfOp.reduce((s,i)=>s+Number(i.unit_price_usd||0)*Number(i.quantity||1),0);
+                return <tr><td colSpan={9} style={{padding:0,borderBottom:"1px solid rgba(184,149,106,0.2)"}}>
+                  <div style={{padding:"16px 18px",background:"rgba(184,149,106,0.04)",display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
+                    {/* Productos declarados por el cliente */}
+                    <div>
+                      <h4 style={{fontSize:10,fontWeight:700,color:IC,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>📋 Productos declarados ({itemsOfOp.length})</h4>
+                      {itemsOfOp.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic"}}>Aún no cargó productos</p>:<>
+                        <div style={{background:"rgba(0,0,0,0.2)",borderRadius:8,overflow:"hidden"}}>
+                          <table style={{width:"100%",fontSize:11,borderCollapse:"collapse"}}>
+                            <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+                              {["Descripción","Cant.","P.U.","Total"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:h==="Descripción"?"left":"right",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+                            </tr></thead>
+                            <tbody>{itemsOfOp.map(it=><tr key={it.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                              <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.8)"}}>{it.description||"—"}</td>
+                              <td style={{padding:"6px 10px",textAlign:"right",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>{it.quantity||1}</td>
+                              <td style={{padding:"6px 10px",textAlign:"right",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>USD {Number(it.unit_price_usd||0).toFixed(2)}</td>
+                              <td style={{padding:"6px 10px",textAlign:"right",color:"#fff",fontWeight:600,fontVariantNumeric:"tabular-nums"}}>USD {(Number(it.unit_price_usd||0)*Number(it.quantity||1)).toFixed(2)}</td>
+                            </tr>)}</tbody>
+                            <tfoot><tr style={{borderTop:"1px solid rgba(184,149,106,0.3)"}}>
+                              <td colSpan={3} style={{padding:"6px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,0.7)",fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total FOB</td>
+                              <td style={{padding:"6px 10px",textAlign:"right",fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>USD {totalFob.toFixed(2)}</td>
+                            </tr></tfoot>
+                          </table>
+                        </div>
+                      </>}
+                    </div>
+                    {/* Detalle de bultos */}
+                    <div>
+                      <h4 style={{fontSize:10,fontWeight:700,color:IC,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>📦 Bultos ({pkgsOfOp.length})</h4>
+                      {pkgsOfOp.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic"}}>Sin bultos registrados</p>:<>
+                        <div style={{background:"rgba(0,0,0,0.2)",borderRadius:8,overflow:"hidden"}}>
+                          <table style={{width:"100%",fontSize:11,borderCollapse:"collapse"}}>
+                            <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+                              {["#","Cant.","Dimensiones (cm)","Peso","Facturable","Tracking"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+                            </tr></thead>
+                            <tbody>{pkgsOfOp.map(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),wi=Number(p.width_cm||0),h=Number(p.height_cm||0);const bruto=gw*q;const vol=l&&wi&&h?((l*wi*h)/5000)*q:0;const fact=Math.max(bruto,vol);return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                              <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontWeight:600}}>{p.package_number}</td>
+                              <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>{q}</td>
+                              <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>{l&&wi&&h?`${l}×${wi}×${h}`:"—"}</td>
+                              <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{bruto?`${bruto.toFixed(2)} kg`:"—"}</td>
+                              <td style={{padding:"6px 10px",color:fact>0?IC:"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums",fontWeight:600}}>{fact?`${fact.toFixed(2)} kg`:"—"}</td>
+                              <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.5)",fontFamily:"monospace",fontSize:10}}>{p.national_tracking||"—"}</td>
+                            </tr>;})}</tbody>
+                          </table>
+                        </div>
+                      </>}
+                    </div>
+                  </div>
+                </td></tr>;
+              })()}</Fragment>;})}</tbody>
             </table>
           </div>
         </div>;})}
