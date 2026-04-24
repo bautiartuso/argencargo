@@ -680,24 +680,47 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
 
     {tab==="gi_costs"&&isGI&&(()=>{
       // Ledger de costos para ops Gestión Integral.
-      // Cada pago del admin al proveedor/intermediario se guarda en operation_supplier_payments
-      // con: fecha, monto, descripción (notes), referencia opcional, método opcional, estado pagado.
+      // Cada pago del admin al proveedor/intermediario se guarda en operation_supplier_payments.
+      // Soporte multi-moneda: USD directo vs ARS (pendiente de dolarización hasta cierre TC).
       const totalCosto=supplierPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      const totalCostoArs=supplierPayments.reduce((s,p)=>s+Number(p.amount_ars||0),0);
       const totalPagadoCosto=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const totalPendCosto=totalCosto-totalPagadoCosto;
       const addCost=async()=>{
         const amt=Number(newSupPmt.amount_usd);
         if(!amt||amt<=0||!newSupPmt.payment_date)return;
         const isTC=newSupPmt.payment_method==="tarjeta_credito";
-        const body={operation_id:op.id,payment_date:newSupPmt.payment_date,amount_usd:amt,payment_method:newSupPmt.payment_method,is_paid:newSupPmt.is_paid,notes:newSupPmt.notes||null,reference:newSupPmt.reference||null,currency:newSupPmt.currency||"USD",card_closing_date:isTC&&newSupPmt.card_closing_date?newSupPmt.card_closing_date:null,paid_at:newSupPmt.is_paid?new Date(newSupPmt.payment_date+"T12:00:00Z").toISOString():null};
+        const isArs=newSupPmt.currency==="ARS";
+        // ARS + TC: amount_usd queda 0 hasta que se dolarice en tab Dolarización.
+        //           amount_ars se guarda con el monto real.
+        // ARS + no-TC (efectivo/transf): debería llevar un exchange_rate para convertir a USD,
+        //           pero por ahora lo dejamos como ARS pendiente también.
+        // USD: amount_usd = amt, amount_ars = null.
+        const body={
+          operation_id:op.id,
+          payment_date:newSupPmt.payment_date,
+          amount_usd:isArs?0:amt,
+          amount_ars:isArs?amt:null,
+          payment_method:newSupPmt.payment_method,
+          is_paid:newSupPmt.is_paid,
+          notes:newSupPmt.notes||null,
+          reference:newSupPmt.reference||null,
+          currency:newSupPmt.currency||"USD",
+          card_closing_date:isTC&&newSupPmt.card_closing_date?newSupPmt.card_closing_date:null,
+          paid_at:newSupPmt.is_paid&&!isArs?new Date(newSupPmt.payment_date+"T12:00:00Z").toISOString():null
+        };
+        // Si ARS: forzar is_paid=false hasta que se dolarice (para que aparezca en Dolarización)
+        if(isArs){body.is_paid=false;body.paid_at=null;}
         await dq("operation_supplier_payments",{method:"POST",token,body});
-        // Sync cost_producto_usd en la op
-        const newTotal=totalCosto+amt;
-        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{cost_producto_usd:newTotal}});
-        setOp(p=>({...p,cost_producto_usd:newTotal}));
+        // Sync cost_producto_usd en la op (solo suma los pagos en USD; los ARS se sumarán cuando se dolaricen)
+        if(!isArs){
+          const newTotal=totalCosto+amt;
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{cost_producto_usd:newTotal}});
+          setOp(p=>({...p,cost_producto_usd:newTotal}));
+        }
         setNewSupPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:""});
         load();
-        flash("Costo registrado");
+        flash(isArs?"Costo ARS registrado — se dolariza al cerrar tarjeta":"Costo registrado");
       };
       const deleteCost=async(id)=>{
         if(!confirm("¿Eliminar este costo?"))return;
@@ -716,7 +739,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       return <Card title="Costos de la operación">
         {/* Resumen */}
         <div style={{display:"flex",gap:20,marginBottom:16,flexWrap:"wrap",padding:"14px 18px",background:"rgba(0,0,0,0.2)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total costos</p><p style={{fontSize:20,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalCosto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+          <div>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total costos</p>
+            <p style={{fontSize:20,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalCosto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            {totalCostoArs>0&&<p style={{fontSize:12,fontWeight:600,color:"#60a5fa",margin:"3px 0 0",fontVariantNumeric:"tabular-nums"}}>+ ARS {totalCostoArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}<span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:6}}>pendiente dolarizar</span></p>}
+          </div>
           <div style={{width:1,background:"rgba(255,255,255,0.08)"}}/>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Ya pagado</p><p style={{fontSize:20,fontWeight:800,color:"#22c55e",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalPagadoCosto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
           {totalPendCosto>0.01&&<>
@@ -742,7 +769,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <tbody>
               {supplierPayments.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
                 <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}</td>
-                <td style={{padding:"10px 14px",textAlign:"right",color:"#c084fc",fontWeight:700,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>USD {Number(p.amount_usd).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                <td style={{padding:"10px 14px",textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
+                  {p.currency==="ARS"?<>
+                    <span style={{color:"#60a5fa",fontWeight:700}}>ARS {Number(p.amount_ars||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                    {Number(p.amount_usd||0)>0?<span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.5)",fontWeight:500}}>= USD {Number(p.amount_usd).toFixed(2)} @ {Number(p.exchange_rate||0).toFixed(2)}</span>:<span style={{display:"block",fontSize:10,color:"rgba(251,146,60,0.8)",fontWeight:500}}>pendiente dolarizar</span>}
+                  </>:<span style={{color:"#c084fc",fontWeight:700}}>USD {Number(p.amount_usd).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+                </td>
                 <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.75)"}}>{p.notes||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</td>
                 <td style={{padding:"10px 14px",color:GOLD_LIGHT,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11}}>{p.reference||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</td>
                 <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.6)",textTransform:"capitalize"}}>{(p.payment_method||"—").replace("_"," ")}</td>
