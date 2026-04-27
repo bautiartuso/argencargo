@@ -173,7 +173,7 @@ const I18N={
     photo_pending_msg:"Recordá subir la foto cuando puedas. Se mostrará al admin y al cliente.",
     photos_pending_count:"paquete(s) pendiente(s) de foto",
     add_photo:"Agregar foto",
-    photo_help:"Sacá una foto clara de la mercadería antes de empaquetar. Se sube en JPG/PNG (máx 5MB).",
+    photo_help:"Sacá una foto clara o subí una desde la galería (JPG/PNG, máx 5MB).",
     upload_failed:"Error al subir foto. Intentá de nuevo.",
     photo_uploaded:"Foto subida ✓",
   },
@@ -283,7 +283,7 @@ const I18N={
     photo_pending_msg:"请尽快上传照片。管理员和客户都会看到。",
     photos_pending_count:"个包裹待上传照片",
     add_photo:"添加照片",
-    photo_help:"打包前请拍清晰的货物照片。支持 JPG/PNG（最大 5MB）。",
+    photo_help:"拍照或从相册选择清晰的货物照片（JPG/PNG，最大 5MB）。",
     upload_failed:"上传失败，请重试。",
     photo_uploaded:"照片已上传 ✓",
   }
@@ -850,7 +850,7 @@ function PackagePhotoCell({pkg,token,t,onUpdated}){
     </>;
   }
   return <>
-    <input id={`reup-${pkg.id}`} type="file" accept="image/*" capture="environment" onChange={e=>{const f=e.target.files?.[0];if(f)upload(f);}} style={{display:"none"}} disabled={uploading}/>
+    <input id={`reup-${pkg.id}`} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)upload(f);}} style={{display:"none"}} disabled={uploading}/>
     <label htmlFor={`reup-${pkg.id}`} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 9px",fontSize:10,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:uploading?"wait":"pointer",letterSpacing:"0.04em",textTransform:"uppercase",whiteSpace:"nowrap",opacity:uploading?0.5:1}}>{uploading?"…":`📷 ${t.photo_pending}`}</label>
   </>;
 }
@@ -1005,7 +1005,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
               <button type="button" onClick={()=>setPhoto(i,null)} style={{alignSelf:"flex-start",fontSize:10,padding:"4px 9px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer",fontWeight:600,marginTop:4}}>{t.remove}</button>
             </div>
           </div>:<div>
-            <input id={`photo-${i}`} type="file" accept="image/*" capture="environment" onChange={e=>{const f=e.target.files?.[0];if(f)setPhoto(i,f);}} style={{display:"none"}}/>
+            <input id={`photo-${i}`} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)setPhoto(i,f);}} style={{display:"none"}}/>
             <label htmlFor={`photo-${i}`} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.06)",color:IC,cursor:"pointer"}}>📷 {t.add_photo}</label>
             <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"6px 0 0",fontStyle:"italic"}}>{t.photo_help}</p>
           </div>}
