@@ -48,6 +48,21 @@ const dq=async(t,{method="GET",body,token,filters=""})=>{
 };
 const saveSession=(d)=>{try{localStorage.setItem("ac_agent_s",JSON.stringify(d));}catch(e){}};
 const loadSession=()=>{try{const d=localStorage.getItem("ac_agent_s");return d?JSON.parse(d):null;}catch(e){return null;}};
+
+// Upload a photo (File) to the package-photos storage bucket. Returns public URL or null on failure.
+const uploadPackagePhoto=async(file,token)=>{
+  if(!file)return null;
+  const ext=(file.name?.split(".").pop()||"jpg").toLowerCase();
+  const path=`${Date.now()}_${Math.random().toString(36).slice(2,9)}.${ext}`;
+  const fresh=await ensureFreshToken(token);
+  const r=await fetch(`${SB_URL}/storage/v1/object/package-photos/${path}`,{
+    method:"POST",
+    headers:{Authorization:`Bearer ${fresh}`,apikey:SB_KEY,"Content-Type":file.type||"image/jpeg"},
+    body:file
+  });
+  if(!r.ok){console.error("upload failed",await r.text());return null;}
+  return `${SB_URL}/storage/v1/object/public/package-photos/${path}`;
+};
 const clearSession=()=>{try{localStorage.removeItem("ac_agent_s");}catch(e){}};
 
 // i18n
@@ -149,6 +164,18 @@ const I18N={
     cc_description:"Descripción",
     search_deposit:"Buscar en depósito...",
     confirm:"Confirmar",
+    photo:"Foto",
+    photo_required:"Foto de la mercadería",
+    upload_photo:"Subir foto",
+    take_photo:"Tomar foto",
+    skip_photo:"Sin foto (cargar después)",
+    photo_pending:"Foto pendiente",
+    photo_pending_msg:"Recordá subir la foto cuando puedas. Se mostrará al admin y al cliente.",
+    photos_pending_count:"paquete(s) pendiente(s) de foto",
+    add_photo:"Agregar foto",
+    photo_help:"Sacá una foto clara de la mercadería antes de empaquetar. Se sube en JPG/PNG (máx 5MB).",
+    upload_failed:"Error al subir foto. Intentá de nuevo.",
+    photo_uploaded:"Foto subida ✓",
   },
   zh:{
     login_title:"代理门户",
@@ -247,6 +274,18 @@ const I18N={
     cc_description:"描述",
     search_deposit:"搜索仓库...",
     confirm:"确认",
+    photo:"照片",
+    photo_required:"货物照片",
+    upload_photo:"上传照片",
+    take_photo:"拍照",
+    skip_photo:"无照片（稍后上传）",
+    photo_pending:"照片待上传",
+    photo_pending_msg:"请尽快上传照片。管理员和客户都会看到。",
+    photos_pending_count:"个包裹待上传照片",
+    add_photo:"添加照片",
+    photo_help:"打包前请拍清晰的货物照片。支持 JPG/PNG（最大 5MB）。",
+    upload_failed:"上传失败，请重试。",
+    photo_uploaded:"照片已上传 ✓",
   }
 };
 
@@ -483,19 +522,29 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     {/* TAB 1: Depósito — paquetes sin vuelo */}
     {tab==="deposit"&&<>
       {showForm&&<NewPackageForm token={token} lang={lang} t={t} agentId={userId} onCancel={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);reloadPackages();flash(t.success);}}/>}
+      {/* Banner: paquetes pendientes de foto */}
+      {(()=>{const pendientes=depositPkgsAll.filter(p=>!p.photo_url);if(pendientes.length===0)return null;
+        return <div style={{padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.1),rgba(251,191,36,0.02))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:10,margin:"16px 0 0",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <span style={{fontSize:18}}>📷</span>
+          <div style={{flex:1,minWidth:200}}>
+            <p style={{fontSize:13,fontWeight:700,color:"#fbbf24",margin:0}}>{pendientes.length} {t.photos_pending_count}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>{t.photo_pending_msg}</p>
+          </div>
+        </div>;})()}
       <input value={depositSearch} onChange={e=>setDepositSearch(e.target.value)} placeholder={t.search_deposit} style={{width:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",marginTop:16,marginBottom:0}}/>
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden",marginTop:10}}>
         <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.tab_deposit} ({depositPkgs.length}) {"\u00b7"} {depositTotalKg} kg</h3></div>
         {depositPkgs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",margin:0}}>{t.no_pkgs}</p>:
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-            {[t.op,t.client,t.tracking,t.weight,t.date,""].map((h,i)=><th key={i} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+            {[t.op,t.client,t.tracking,t.weight,t.photo,t.date,""].map((h,i)=><th key={i} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
           </tr></thead>
           <tbody>{depositPkgs.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{p.operations?.operation_code||"—"}</td>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)"}}>{p.operations?.clients?.client_code||"—"}</td>
             <td style={{padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{p.national_tracking||"—"}</td>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.5)"}}>{p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—"}</td>
+            <td style={{padding:"10px 14px"}}><PackagePhotoCell pkg={p} token={token} t={t} onUpdated={reloadAll}/></td>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{new Date(p.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</td>
             <td style={{padding:"10px 14px",textAlign:"right"}}>
               <button onClick={async()=>{if(!confirm(`¿Eliminar el paquete de la operación ${p.operations?.operation_code}?`))return;await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});reloadAll();flash("Paquete eliminado");}} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>Eliminar</button>
@@ -773,6 +822,39 @@ function SimpleShell({children,lang,setLang,t,onLogout,token}){
   </div>;
 }
 
+// Celda de foto de paquete: muestra thumbnail si hay, o badge "pendiente" con upload si no.
+// Click en thumbnail abre lightbox. Click en upload selecciona file y sube + actualiza package.
+function PackagePhotoCell({pkg,token,t,onUpdated}){
+  const [uploading,setUploading]=useState(false);
+  const [lightbox,setLightbox]=useState(false);
+  const upload=async(file)=>{
+    if(!file)return;
+    setUploading(true);
+    const url=await uploadPackagePhoto(file,token);
+    if(url){
+      // Determinar tabla: operation_packages u unassigned_packages
+      const table=pkg.operation_id?"operation_packages":"unassigned_packages";
+      await dq(table,{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{photo_url:url,photo_uploaded_at:new Date().toISOString()}});
+      onUpdated&&onUpdated();
+    }else{
+      alert(t.upload_failed);
+    }
+    setUploading(false);
+  };
+  if(pkg.photo_url){
+    return <>
+      <img src={pkg.photo_url} alt="" onClick={()=>setLightbox(true)} style={{width:42,height:42,objectFit:"cover",borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",cursor:"pointer"}}/>
+      {lightbox&&<div onClick={()=>setLightbox(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,cursor:"zoom-out"}}>
+        <img src={pkg.photo_url} alt="" style={{maxWidth:"95vw",maxHeight:"95vh",objectFit:"contain",borderRadius:8}}/>
+      </div>}
+    </>;
+  }
+  return <>
+    <input id={`reup-${pkg.id}`} type="file" accept="image/*" capture="environment" onChange={e=>{const f=e.target.files?.[0];if(f)upload(f);}} style={{display:"none"}} disabled={uploading}/>
+    <label htmlFor={`reup-${pkg.id}`} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 9px",fontSize:10,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:uploading?"wait":"pointer",letterSpacing:"0.04em",textTransform:"uppercase",whiteSpace:"nowrap",opacity:uploading?0.5:1}}>{uploading?"…":`📷 ${t.photo_pending}`}</label>
+  </>;
+}
+
 function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
   const [allClients,setAllClients]=useState([]);
   const [clientSearch,setClientSearch]=useState("");
@@ -780,7 +862,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
   const [showDrop,setShowDrop]=useState(false);
   const [existingOp,setExistingOp]=useState(null);
   const [tracking,setTracking]=useState("");
-  const [bultos,setBultos]=useState([{weight:"",length:"",width:"",height:""}]);
+  const [bultos,setBultos]=useState([{weight:"",length:"",width:"",height:"",photo:null,photoPreview:null}]);
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
 
@@ -798,9 +880,15 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
     setExistingOp(Array.isArray(ops)&&ops[0]?ops[0]:null);
   })();},[clientId,token]);
 
-  const addBulto=()=>setBultos(p=>[...p,{weight:"",length:"",width:"",height:""}]);
+  const addBulto=()=>setBultos(p=>[...p,{weight:"",length:"",width:"",height:"",photo:null,photoPreview:null}]);
   const rmBulto=(i)=>setBultos(p=>p.filter((_,j)=>j!==i));
   const chBulto=(i,f,v)=>setBultos(p=>p.map((b,j)=>j===i?{...b,[f]:v}:b));
+  const setPhoto=(i,file)=>{
+    if(!file){setBultos(p=>p.map((b,j)=>j===i?{...b,photo:null,photoPreview:null}:b));return;}
+    const reader=new FileReader();
+    reader.onload=ev=>setBultos(p=>p.map((b,j)=>j===i?{...b,photo:file,photoPreview:ev.target.result}:b));
+    reader.readAsDataURL(file);
+  };
 
   const save=async()=>{
     if(!clientId){setErr(t.err_client);return;}
@@ -809,9 +897,10 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
     try {
       const validBultos=bultos.filter(b=>b.weight||b.length||b.width||b.height||true); // todos cuentan, opcional
       if(clientId==="unregistered"){
-        // Insertar en unassigned_packages, una entry por bulto
+        // Insertar en unassigned_packages, una entry por bulto. Subir foto antes (si hay).
         for(let i=0;i<validBultos.length;i++){const b=validBultos[i];const body={national_tracking:tracking.trim(),package_number:i+1,quantity:1,registered_by_agent_id:agentId};
           if(b.weight)body.gross_weight_kg=Number(b.weight);if(b.length)body.length_cm=Number(b.length);if(b.width)body.width_cm=Number(b.width);if(b.height)body.height_cm=Number(b.height);
+          if(b.photo){const url=await uploadPackagePhoto(b.photo,token);if(url){body.photo_url=url;body.photo_uploaded_at=new Date().toISOString();}}
           await dq("unassigned_packages",{method:"POST",token,body});
         }
         // Notificar al admin: paquete huérfano recibido
@@ -841,6 +930,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
       const lastNum=Array.isArray(pkgs)&&pkgs[0]?Number(pkgs[0].package_number)||0:0;
       for(let i=0;i<validBultos.length;i++){const b=validBultos[i];const body={operation_id:opId,package_number:lastNum+i+1,quantity:1,national_tracking:tracking.trim()};
         if(b.weight)body.gross_weight_kg=Number(b.weight);if(b.length)body.length_cm=Number(b.length);if(b.width)body.width_cm=Number(b.width);if(b.height)body.height_cm=Number(b.height);
+        if(b.photo){const url=await uploadPackagePhoto(b.photo,token);if(url){body.photo_url=url;body.photo_uploaded_at=new Date().toISOString();}}
         await dq("operation_packages",{method:"POST",token,body});
       }
       // Notificar al admin: paquete recibido en depósito
@@ -903,6 +993,22 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
           <Inp label={t.length} type="number" value={b.length} onChange={v=>chBulto(i,"length",v)} placeholder="45"/>
           <Inp label={t.width} type="number" value={b.width} onChange={v=>chBulto(i,"width",v)} placeholder="30"/>
           <Inp label={t.height} type="number" value={b.height} onChange={v=>chBulto(i,"height",v)} placeholder="25"/>
+        </div>
+        {/* Foto del bulto */}
+        <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>📷 {t.photo_required}</label>
+          {b.photoPreview?<div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+            <img src={b.photoPreview} alt="preview" style={{width:80,height:80,objectFit:"cover",borderRadius:8,border:"2px solid rgba(34,197,94,0.4)"}}/>
+            <div style={{flex:1,display:"flex",flexDirection:"column",gap:4}}>
+              <p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>{t.photo_uploaded}</p>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:0,wordBreak:"break-all"}}>{b.photo?.name||""}</p>
+              <button type="button" onClick={()=>setPhoto(i,null)} style={{alignSelf:"flex-start",fontSize:10,padding:"4px 9px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer",fontWeight:600,marginTop:4}}>{t.remove}</button>
+            </div>
+          </div>:<div>
+            <input id={`photo-${i}`} type="file" accept="image/*" capture="environment" onChange={e=>{const f=e.target.files?.[0];if(f)setPhoto(i,f);}} style={{display:"none"}}/>
+            <label htmlFor={`photo-${i}`} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.06)",color:IC,cursor:"pointer"}}>📷 {t.add_photo}</label>
+            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"6px 0 0",fontStyle:"italic"}}>{t.photo_help}</p>
+          </div>}
         </div>
       </div>)}
       <button type="button" onClick={addBulto} style={{width:"100%",padding:"10px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>{t.add_bulto}</button>

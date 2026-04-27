@@ -888,6 +888,23 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <Inp label="Alto cm" type="number" value={pk.height_cm} onChange={v=>chPkg(i,"height_cm",v)} step="0.1" small/>
           <Inp label="Peso unit. kg" type="number" value={pk.gross_weight_kg} onChange={v=>chPkg(i,"gross_weight_kg",v)} step="0.1" small/>
         </div>
+        {/* Foto del bulto cargada por el agente */}
+        <div style={{marginTop:12,padding:"10px 12px",background:pk.photo_url?"rgba(34,197,94,0.06)":"rgba(251,191,36,0.06)",border:`1px solid ${pk.photo_url?"rgba(34,197,94,0.18)":"rgba(251,191,36,0.2)"}`,borderRadius:8,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          {pk.photo_url?<>
+            <a href={pk.photo_url} target="_blank" rel="noopener noreferrer"><img src={pk.photo_url} alt="" style={{width:60,height:60,objectFit:"cover",borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in"}}/></a>
+            <div style={{flex:1,minWidth:160}}>
+              <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:0,letterSpacing:"0.04em",textTransform:"uppercase"}}>📷 Foto del agente</p>
+              <p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>Subida {pk.photo_uploaded_at?new Date(pk.photo_uploaded_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):""}</p>
+            </div>
+            <a href={pk.photo_url} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:GOLD_LIGHT,fontWeight:600,textDecoration:"none"}}>Ver completa →</a>
+          </>:<>
+            <span style={{fontSize:18}}>📷</span>
+            <div style={{flex:1,minWidth:160}}>
+              <p style={{fontSize:11,fontWeight:700,color:"#fbbf24",margin:0,letterSpacing:"0.04em",textTransform:"uppercase"}}>Foto pendiente</p>
+              <p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>El agente aún no subió foto de la mercadería</p>
+            </div>
+          </>}
+        </div>
         {(bruto>0||vw>0)&&<div style={{display:"flex",gap:16,marginTop:8,fontSize:11,color:"rgba(255,255,255,0.4)"}}><span>Bruto total: <strong style={{color:"#fff"}}>{bruto.toFixed(1)} kg</strong></span>{vw>0&&<span>Vol: <strong style={{color:"#fff"}}>{vw.toFixed(1)} kg</strong></span>}{cbm>0&&<span>CBM: <strong style={{color:"#fff"}}>{cbm.toFixed(4)} m³</strong></span>}{vw>bruto&&<span style={{color:"#fb923c"}}>Volumétrico mayor</span>}</div>}
       </div>;})}
       {pkgs.length>0&&(()=>{let pf=0,totGW=0,totCBM=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});return <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:12,marginTop:8,display:"flex",gap:20}}><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>PESO FACTURABLE</p><p style={{fontSize:16,fontWeight:700,color:IC,margin:0}}>{pf.toFixed(2)} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>PESO BRUTO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{totGW.toFixed(2)} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>CBM TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{totCBM.toFixed(4)} m³</p></div></div>;})()}
@@ -2973,10 +2990,11 @@ function AgentsPanel({token}){
                         <div style={{background:"rgba(0,0,0,0.2)",borderRadius:8,overflow:"hidden"}}>
                           <table style={{width:"100%",fontSize:11,borderCollapse:"collapse"}}>
                             <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-                              {["#","Cant.","Dimensiones (cm)","Peso","Facturable","Tracking"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+                              {["#","Foto","Cant.","Dimensiones (cm)","Peso","Facturable","Tracking"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
                             </tr></thead>
                             <tbody>{pkgsOfOp.map(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),wi=Number(p.width_cm||0),h=Number(p.height_cm||0);const bruto=gw*q;const vol=l&&wi&&h?((l*wi*h)/5000)*q:0;const fact=Math.max(bruto,vol);return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontWeight:600}}>{p.package_number}</td>
+                              <td style={{padding:"6px 10px"}}>{p.photo_url?<a href={p.photo_url} target="_blank" rel="noopener noreferrer"><img src={p.photo_url} alt="" style={{width:36,height:36,objectFit:"cover",borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in"}}/></a>:<span title="Sin foto" style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.12)",color:"#fbbf24",fontWeight:700}}>📷 Pendiente</span>}</td>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>{q}</td>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>{l&&wi&&h?`${l}×${wi}×${h}`:"—"}</td>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{bruto?`${bruto.toFixed(2)} kg`:"—"}</td>

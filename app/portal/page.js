@@ -219,7 +219,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
   </div>;
 }
 function OperationDetail({op,token,onBack}){
-  const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);
+  const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);
   const [localConfirmed,setLocalConfirmed]=useState(false);
   const canDocument=op.status==="en_preparacion"||op.status==="en_deposito_origen"||localConfirmed;
   const addDocItem=()=>setDocItems(p=>[...p,{description:"",quantity:"1",unit_price_usd:""}]);
@@ -533,14 +533,17 @@ function OperationDetail({op,token,onBack}){
       <button onClick={()=>toggleSection("packages")} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",padding:0,marginBottom:openSections.packages?14:0}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>BULTOS ({pkgs.length})</h3><span style={{color:"rgba(255,255,255,0.4)",fontSize:14}}>{openSections.packages?"▲":"▼"}</span></button>
       {openSections.packages&&pkData.map((pk,i)=><div key={pk.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.08)":"none",padding:"14px 0"}}>
         <p style={{fontSize:13,fontWeight:700,color:IC,margin:"0 0 10px"}}>Bulto {pk.package_number}</p>
-        <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
-          {dd("Cantidad",pk.quantity||"—")}
-          {dd("Largo",pk.l?`${pk.l} cm`:"—")}
-          {dd("Alto",pk.h?`${pk.h} cm`:"—")}
-          {dd("Ancho",pk.w?`${pk.w} cm`:"—")}
-          {dd("Peso Bruto",pk.gw?`${pk.gw} kg`:"—")}
-          {dd("Peso Vol.",pk.vw?`${pk.vw.toFixed(2)} kg`:"—")}
-          {dd("CBM",pk.cbm?`${pk.cbm.toFixed(4)} m³`:"—")}
+        <div style={{display:"flex",gap:14,alignItems:"flex-start",flexWrap:"wrap"}}>
+          {pk.photo_url&&<button onClick={()=>setLightboxPhoto(pk.photo_url)} style={{padding:0,border:"none",background:"none",cursor:"zoom-in"}}><img src={pk.photo_url} alt={`Bulto ${pk.package_number}`} style={{width:88,height:88,objectFit:"cover",borderRadius:10,border:"2px solid rgba(184,149,106,0.35)",boxShadow:"0 4px 12px rgba(0,0,0,0.3)"}}/></button>}
+          <div style={{flex:1,minWidth:240,display:"flex",gap:20,flexWrap:"wrap"}}>
+            {dd("Cantidad",pk.quantity||"—")}
+            {dd("Largo",pk.l?`${pk.l} cm`:"—")}
+            {dd("Alto",pk.h?`${pk.h} cm`:"—")}
+            {dd("Ancho",pk.w?`${pk.w} cm`:"—")}
+            {dd("Peso Bruto",pk.gw?`${pk.gw} kg`:"—")}
+            {dd("Peso Vol.",pk.vw?`${pk.vw.toFixed(2)} kg`:"—")}
+            {dd("CBM",pk.cbm?`${pk.cbm.toFixed(4)} m³`:"—")}
+          </div>
         </div>
         {pk.l&&pk.w&&pk.h&&pk.vw>pk.gw&&<p style={{fontSize:11,fontWeight:600,color:"#f59e0b",margin:"8px 0 0",lineHeight:1.4,background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:6,padding:"6px 10px"}}>⚠️ El peso volumétrico ({pk.vw.toFixed(1)} kg) supera al peso bruto ({pk.gw.toFixed(1)} kg). Se facturará por peso volumétrico.</p>}
       </div>)}
@@ -574,6 +577,11 @@ function OperationDetail({op,token,onBack}){
       </div>;})}
     </div>}
     {loading&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"2rem 0"}}>Cargando...</p>}
+    {/* Lightbox para ver foto de bulto en grande */}
+    {lightboxPhoto&&<div onClick={()=>setLightboxPhoto(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,cursor:"zoom-out"}}>
+      <button onClick={(e)=>{e.stopPropagation();setLightboxPhoto(null);}} style={{position:"absolute",top:20,right:20,padding:"8px 16px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.2)",background:"rgba(0,0,0,0.5)",color:"#fff",cursor:"pointer"}}>✕ Cerrar</button>
+      <img src={lightboxPhoto} alt="" onClick={(e)=>e.stopPropagation()} style={{maxWidth:"95vw",maxHeight:"95vh",objectFit:"contain",borderRadius:8,boxShadow:"0 20px 60px rgba(0,0,0,0.7)"}}/>
+    </div>}
   </div>;
 }
 function ProfilePage({client}){if(!client)return null;const f=[{l:"Nombre",v:`${client.first_name} ${client.last_name}`},{l:"Código",v:client.client_code,m:true},{l:"Email",v:client.email},{l:"WhatsApp",v:client.whatsapp},{l:"Dirección",v:`${client.street}${client.floor_apt?`, ${client.floor_apt}`:""}`},{l:"Localidad",v:`${client.city}, ${client.province}`},{l:"CP",v:client.postal_code},{l:"IVA",v:client.tax_condition==="responsable_inscripto"?"Resp. Inscripto":client.tax_condition==="monotributista"?"Monotributista":"Consumidor final"}];return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 24px",letterSpacing:"-0.02em"}}>Mi perfil</h2><div style={{background:"rgba(255,255,255,0.025)",borderRadius:16,border:"1px solid rgba(255,255,255,0.06)",padding:"1.75rem 2rem"}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"24px 28px"}}>{f.map((x,i)=><div key={i}><p style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{x.l}</p><p style={{fontSize:15,color:"#fff",margin:0,fontWeight:500,...(x.m?{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:18,color:GOLD_LIGHT,letterSpacing:"0.04em"}:{})}}>{x.v||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</p></div>)}</div></div><div style={{background:"rgba(184,149,106,0.06)",borderRadius:12,border:"1px solid rgba(184,149,106,0.18)",padding:"14px 20px",marginTop:16,display:"flex",alignItems:"center",gap:12}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={GOLD_LIGHT} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg><p style={{fontSize:13,color:"rgba(255,255,255,0.65)",margin:0,lineHeight:1.5}}>Tu código es <strong style={{color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.04em"}}>{client.client_code}</strong>. Incluilo en todos los paquetes que envíes.</p></div></div>;}
