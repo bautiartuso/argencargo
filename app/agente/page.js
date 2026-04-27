@@ -138,6 +138,12 @@ const I18N={
     download_invoice:"Descargar factura",
     destination:"Dirección de destino",
     no_destination_yet:"El admin todavía no cargó la dirección",
+    dest_name:"Nombre",
+    dest_taxid:"CUIT/DNI",
+    dest_address:"Dirección",
+    dest_postal:"Código Postal",
+    dest_phone:"Teléfono",
+    dest_email:"Email",
     operations_in_flight:"Operaciones del vuelo",
     dispatch_form:"Despachar vuelo",
     total_weight:"Peso total (kg)",
@@ -263,6 +269,12 @@ const I18N={
     download_invoice:"下载发票",
     destination:"目的地地址",
     no_destination_yet:"管理员尚未填写地址",
+    dest_name:"姓名",
+    dest_taxid:"CUIT/DNI",
+    dest_address:"地址",
+    dest_postal:"邮编",
+    dest_phone:"电话",
+    dest_email:"电子邮件",
     operations_in_flight:"航班操作",
     dispatch_form:"发送航班",
     total_weight:"总重量 (公斤)",
@@ -674,17 +686,23 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
   useEffect(()=>{(async()=>{const r=await dq("flight_invoice_items",{token,filters:`?flight_id=eq.${flight.id}&select=*&order=sort_order.asc`});setInvoiceItems(Array.isArray(r)?r:[]);})();},[flight.id,token]);
   // Generar factura PDF con info comercial de la mercadería: descripción, cantidad, valor, NCM, dirección destino
   const downloadInvoicePdf=async()=>{
-    // Cargar items de cada op del vuelo
+    // Cargar items factura editables (con HS code) y datos de op/cliente
     const opIds=flightOps.map(fo=>fo.operation_id);
     if(opIds.length===0)return;
-    const itemsData=await dq("operation_items",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=*,operations(operation_code,clients(client_code,first_name,last_name))&order=created_at.asc`});
-    const items=Array.isArray(itemsData)?itemsData:[];
-    const pkgsByOp={};flightOps.forEach(fo=>{pkgsByOp[fo.operation_id]=packages.filter(p=>p.operation_id===fo.operation_id);});
+    const fiData=await dq("flight_invoice_items",{token,filters:`?flight_id=eq.${flight.id}&select=*,operations(operation_code,ncm_code,clients(client_code,first_name,last_name))&order=sort_order.asc`});
+    let items=Array.isArray(fiData)?fiData:[];
+    // Fallback: si no hay flight_invoice_items, usar operation_items
+    if(items.length===0){
+      const opData=await dq("operation_items",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=*,operations(operation_code,ncm_code,clients(client_code,first_name,last_name))&order=created_at.asc`});
+      items=(Array.isArray(opData)?opData:[]).map(it=>({...it,unit_price_declared_usd:it.unit_price_usd,hs_code:it.ncm_code}));
+    }
     const fmt=v=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
     const today=new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"});
+    const priceOf=it=>Number(it.unit_price_declared_usd??it.unit_price_usd??0);
+    const hsOf=it=>it.hs_code||it.ncm_code||it.operations?.ncm_code||"—";
     const totalQty=items.reduce((s,it)=>s+Number(it.quantity||0),0);
-    const totalValue=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
-    const rows=items.length>0?items.map(it=>{const op=it.operations;const cli=op?.clients;const total=Number(it.unit_price_usd||0)*Number(it.quantity||1);return `<tr><td>${op?.operation_code||"—"}</td><td>${cli?cli.client_code:"—"}</td><td>${it.description||"—"}</td><td class="c mono">${it.ncm_code||"—"}</td><td class="c">${it.quantity||1}</td><td class="r">${fmt(it.unit_price_usd)}</td><td class="r"><b>${fmt(total)}</b></td></tr>`;}).join(""):'<tr><td colspan="7" style="text-align:center;color:#666;padding:20px">Sin items declarados.</td></tr>';
+    const totalValue=items.reduce((s,it)=>s+priceOf(it)*Number(it.quantity||1),0);
+    const rows=items.length>0?items.map(it=>{const op=it.operations;const cli=op?.clients;const up=priceOf(it);const total=up*Number(it.quantity||1);return `<tr><td>${op?.operation_code||"—"}</td><td>${cli?cli.client_code:"—"}</td><td>${it.description||"—"}</td><td class="c mono">${hsOf(it)}</td><td class="c">${it.quantity||1}</td><td class="r">${fmt(up)}</td><td class="r"><b>${fmt(total)}</b></td></tr>`;}).join(""):'<tr><td colspan="7" style="text-align:center;color:#666;padding:20px">Sin items declarados.</td></tr>';
     const destRow=(lbl,val)=>val?`<div class="dest-row"><span>${lbl}</span><b>${val}</b></div>`:"";
     const w=window.open("","_blank");if(!w)return;
     const LOGO="https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png";
@@ -789,12 +807,12 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
           <span style={{color:"#fff",flex:1,wordBreak:"break-word",fontFamily:copyable?"monospace":"inherit"}}>{val}</span>
         </div>:null;
         return <>
-          {row("Nombre",flight.dest_name)}
-          {row("CUIT/DNI",flight.dest_tax_id,true)}
-          {row("Dirección",flight.dest_address||flight.destination_address)}
-          {row("Código Postal",flight.dest_postal_code,true)}
-          {row("Teléfono",flight.dest_phone,true)}
-          {row("Email",flight.dest_email,true)}
+          {row(t.dest_name,flight.dest_name)}
+          {row(t.dest_taxid,flight.dest_tax_id,true)}
+          {row(t.dest_address,flight.dest_address||flight.destination_address)}
+          {row(t.dest_postal,flight.dest_postal_code,true)}
+          {row(t.dest_phone,flight.dest_phone,true)}
+          {row(t.dest_email,flight.dest_email,true)}
         </>;})()}
       </div>
       <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"12px 0 8px",textTransform:"uppercase"}}>{t.operations_in_flight} ({flightOps.length})</p>
