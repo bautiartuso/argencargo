@@ -376,6 +376,19 @@ function OperationDetail({op,token,onBack}){
       </div>
       <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>¿Necesitás modificar algo? Contactá a tu asesor de Argencargo.</p>
     </div>}
+    {/* Galería destacada de fotos del agente — aparece arriba si hay al menos una foto */}
+    {!loading&&pkgs.some(p=>p.photo_url)&&<div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(184,149,106,0.18)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+      <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>📷 Fotos de tu mercadería</h3>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"0 0 14px"}}>Imágenes capturadas por nuestro agente en el depósito de origen.</p>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12}}>
+        {pkgs.filter(p=>p.photo_url).map(p=><button key={p.id} onClick={()=>setLightboxPhoto(p.photo_url)} style={{padding:0,border:"none",background:"none",cursor:"zoom-in",borderRadius:12,overflow:"hidden",position:"relative",aspectRatio:"1",boxShadow:"0 4px 16px rgba(0,0,0,0.3)"}}>
+          <img src={p.photo_url} alt={`Bulto ${p.package_number}`} style={{width:"100%",height:"100%",objectFit:"cover",display:"block",transition:"transform 220ms"}} onMouseEnter={e=>{e.currentTarget.style.transform="scale(1.04)";}} onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}/>
+          <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"8px 10px",background:"linear-gradient(to top, rgba(0,0,0,0.85), transparent)",color:"#fff",fontSize:11,fontWeight:700,textAlign:"left",letterSpacing:"0.04em"}}>BULTO {p.package_number}</div>
+        </button>)}
+      </div>
+      {pkgs.filter(p=>!p.photo_url).length>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"12px 0 0",fontStyle:"italic"}}>{pkgs.filter(p=>!p.photo_url).length} bulto{pkgs.filter(p=>!p.photo_url).length>1?"s":""} sin foto disponible aún.</p>}
+    </div>}
+
     {!isGI&&op.channel==="aereo_blanco"&&canDocument&&!loading&&items.length===0&&<div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12,marginBottom:showDocPanel?16:0}}>
         <div>

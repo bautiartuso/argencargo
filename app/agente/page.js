@@ -174,6 +174,21 @@ const I18N={
     photos_pending_count:"paquete(s) pendiente(s) de foto",
     add_photo:"Agregar foto",
     photo_help:"Sacá una foto clara o subí una desde la galería (JPG/PNG, máx 5MB).",
+    weight_gross_short:"Bruto",
+    weight_vol_short:"Volumétrico",
+    weight_billable_short:"Facturable",
+    period:"Período",
+    period_week:"Semana",
+    period_month:"Mes",
+    period_year:"Año",
+    period_all:"Total",
+    delete:"Eliminar",
+    delete_success:"Paquete eliminado",
+    confirm_delete_pkg:"¿Eliminar el paquete de la operación",
+    flight_waiting_msg:"Cuando el admin presente la factura de exportación, vas a poder despachar este vuelo.",
+    dispatch_data:"Datos del despacho",
+    mark_all_read:"Marcar todas leídas",
+    no_notifs:"Sin notificaciones",
     upload_failed:"Error al subir foto. Intentá de nuevo.",
     photo_uploaded:"Foto subida ✓",
   },
@@ -284,6 +299,21 @@ const I18N={
     photos_pending_count:"个包裹待上传照片",
     add_photo:"添加照片",
     photo_help:"拍照或从相册选择清晰的货物照片（JPG/PNG，最大 5MB）。",
+    weight_gross_short:"毛重",
+    weight_vol_short:"体积重",
+    weight_billable_short:"计费重",
+    period:"时期",
+    period_week:"周",
+    period_month:"月",
+    period_year:"年",
+    period_all:"全部",
+    delete:"删除",
+    delete_success:"包裹已删除",
+    confirm_delete_pkg:"确定删除该操作的包裹",
+    flight_waiting_msg:"管理员上传出口发票后，您可以发送此航班。",
+    dispatch_data:"发送数据",
+    mark_all_read:"全部标记为已读",
+    no_notifs:"无通知",
     upload_failed:"上传失败，请重试。",
     photo_uploaded:"照片已上传 ✓",
   }
@@ -474,10 +504,18 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const activeFlights=flights.filter(f=>f.status==="preparando");
   const historyFlights=flights.filter(f=>f.status==="despachado"||f.status==="recibido");
 
-  // Stats
-  const statFlightsCompleted=historyFlights.length;
-  const statTotalKg=flights.filter(f=>f.total_weight_kg).reduce((s,f)=>s+Number(f.total_weight_kg||0),0);
-  const statTotalUsd=flights.filter(f=>f.total_cost_usd).reduce((s,f)=>s+Number(f.total_cost_usd||0),0);
+  // Stats con filtro de período (week / month / year / all)
+  const [statsPeriod,setStatsPeriod]=useState("month");
+  const periodCutoff=()=>{const now=Date.now();const day=86400000;if(statsPeriod==="week")return new Date(now-7*day).toISOString();if(statsPeriod==="month")return new Date(now-30*day).toISOString();if(statsPeriod==="year")return new Date(now-365*day).toISOString();return null;};
+  const cutoff=periodCutoff();
+  const inPeriod=(dateStr)=>!cutoff||(dateStr&&new Date(dateStr).toISOString()>=cutoff);
+  const periodPackages=packages.filter(p=>inPeriod(p.created_at));
+  const periodFlights=flights.filter(f=>inPeriod(f.dispatched_at||f.updated_at||f.created_at));
+  const periodHistory=periodFlights.filter(f=>f.status==="despachado"||f.status==="recibido");
+  const statFlightsCompleted=periodHistory.length;
+  const statTotalKg=periodFlights.filter(f=>f.total_weight_kg).reduce((s,f)=>s+Number(f.total_weight_kg||0),0);
+  const statTotalUsd=periodFlights.filter(f=>f.total_cost_usd).reduce((s,f)=>s+Number(f.total_cost_usd||0),0);
+  const statTotalPkgs=periodPackages.length;
 
   const FlightCard=({f})=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);
     const isReady=f.status==="preparando"&&f.invoice_presented_at;
@@ -537,19 +575,24 @@ function Dashboard({session,onLogout,lang,setLang,t}){
         {depositPkgs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",margin:0}}>{t.no_pkgs}</p>:
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-            {[t.op,t.client,t.tracking,t.weight,t.photo,t.date,""].map((h,i)=><th key={i} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+            {[t.op,t.client,t.tracking,t.weight_gross_short||t.weight,t.weight_vol_short||"Vol.",t.weight_billable_short||"Fact.",t.photo,t.date,""].map((h,i)=><th key={i} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
           </tr></thead>
-          <tbody>{depositPkgs.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <tbody>{depositPkgs.map(p=>{
+            const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);
+            const bruto=gw*q;const vol=l&&w&&h?((l*w*h)/5000)*q:0;const fact=Math.max(bruto,vol);const isVolBigger=vol>bruto;
+            return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{p.operations?.operation_code||"—"}</td>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)"}}>{p.operations?.clients?.client_code||"—"}</td>
             <td style={{padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{p.national_tracking||"—"}</td>
-            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.5)"}}>{p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—"}</td>
+            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums"}}>{bruto?`${bruto.toFixed(2)} kg`:"—"}</td>
+            <td style={{padding:"10px 14px",color:isVolBigger?"#fb923c":"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{vol?`${vol.toFixed(2)} kg`:"—"}</td>
+            <td style={{padding:"10px 14px",color:fact>0?IC:"rgba(255,255,255,0.3)",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{fact?`${fact.toFixed(2)} kg`:"—"}</td>
             <td style={{padding:"10px 14px"}}><PackagePhotoCell pkg={p} token={token} t={t} onUpdated={reloadAll}/></td>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{new Date(p.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</td>
             <td style={{padding:"10px 14px",textAlign:"right"}}>
-              <button onClick={async()=>{if(!confirm(`¿Eliminar el paquete de la operación ${p.operations?.operation_code}?`))return;await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});reloadAll();flash("Paquete eliminado");}} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>Eliminar</button>
+              <button onClick={async()=>{if(!confirm(`${t.confirm_delete_pkg} ${p.operations?.operation_code}?`))return;await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});reloadAll();flash(t.delete_success);}} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>{t.delete}</button>
             </td>
-          </tr>)}</tbody>
+          </tr>;})}</tbody>
         </table>}
       </div>
     </>}
@@ -570,10 +613,15 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     {(tab==="active_flights"||tab==="history")&&selFlight&&(()=>{const f=flights.find(x=>x.id===selFlight);if(!f)return null;const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <FlightDetail token={token} flight={f} flightOps={ops} packages={packages} t={t} onBack={()=>setSelFlight(null)} onDispatched={()=>{reloadAll();setSelFlight(null);flash(t.success);}}/>;})()}
 
     {/* TAB 4: Estadísticas */}
-    {tab==="stats"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
+    {tab==="stats"&&<>
+      <div style={{display:"flex",gap:8,marginBottom:18,alignItems:"center",flexWrap:"wrap"}}>
+        <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t.period||"Período"}:</span>
+        {[{k:"week",l:t.period_week||"Semana"},{k:"month",l:t.period_month||"Mes"},{k:"year",l:t.period_year||"Año"},{k:"all",l:t.period_all||"Total"}].map(p=><button key={p.k} onClick={()=>setStatsPeriod(p.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:statsPeriod===p.k?`1.5px solid ${GOLD}`:"1.5px solid rgba(255,255,255,0.08)",background:statsPeriod===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:statsPeriod===p.k?GOLD_LIGHT:"rgba(255,255,255,0.4)",cursor:"pointer",letterSpacing:"0.04em",textTransform:"uppercase"}}>{p.l}</button>)}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
       {[
         {label:t.stats_current_deposit,value:depositPkgs.length,icon:"📦",color:"#60a5fa"},
-        {label:t.stats_total_pkgs,value:packages.length,icon:"📬",color:"#a78bfa"},
+        {label:t.stats_total_pkgs,value:statTotalPkgs,icon:"📬",color:"#a78bfa"},
         {label:t.stats_flights_completed,value:statFlightsCompleted,icon:"✈️",color:"#22c55e"},
         {label:t.stats_total_kg,value:`${statTotalKg.toFixed(1)} kg`,icon:"⚖️",color:"#fbbf24"},
         {label:t.stats_total_usd,value:usdF(statTotalUsd),icon:"💵",color:"#34d399"}
@@ -582,7 +630,8 @@ function Dashboard({session,onLogout,lang,setLang,t}){
         <p style={{fontSize:28,fontWeight:700,color:s.color,margin:"0 0 6px"}}>{s.value}</p>
         <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textTransform:"uppercase"}}>{s.label}</p>
       </div>)}
-    </div>}
+      </div>
+    </>}
 
     {/* TAB 5: Cuenta corriente */}
     {tab==="account"&&<div>
@@ -717,7 +766,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
     </Card>}
     {flight.status==="preparando"&&!flight.invoice_presented_at&&<div style={{padding:"14px 18px",background:"rgba(251,191,36,0.08)",border:"1.5px solid rgba(251,191,36,0.25)",borderRadius:10,marginBottom:14}}>
       <p style={{fontSize:13,fontWeight:700,color:"#fbbf24",margin:0}}>⏳ Esperando factura de Argencargo</p>
-      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>Cuando el admin presente la factura de exportación, vas a poder despachar este vuelo.</p>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>{t.flight_waiting_msg}</p>
     </div>}
     {flight.status==="preparando"&&flight.invoice_presented_at&&<Card title={t.dispatch_form}>
       {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
@@ -751,7 +800,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
       </div>}
     </Card>}
     {flight.status!=="preparando"&&<div style={{padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10}}>
-      <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase"}}>Datos del despacho</p>
+      <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase"}}>{t.dispatch_data}</p>
       <div style={{display:"flex",gap:24,flexWrap:"wrap",fontSize:12,color:"rgba(255,255,255,0.6)"}}>
         <span><strong style={{color:"#fff"}}>{t.total_weight}:</strong> {flight.total_weight_kg} kg</span>
         <span><strong style={{color:"#fff"}}>{t.total_cost}:</strong> {usdF(flight.total_cost_usd)}</span>
@@ -762,7 +811,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
   </div>;
 }
 
-function NotifBell({token}){
+function NotifBell({token,t}){
   const [open,setOpen]=useState(false);
   const [notifs,setNotifs]=useState([]);
   const [unread,setUnread]=useState(0);
@@ -781,9 +830,9 @@ function NotifBell({token}){
     {open&&<div style={{position:"fixed",right:16,top:70,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflow:"auto",background:"#142038",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:12,boxShadow:"0 10px 40px rgba(0,0,0,0.5)",zIndex:1000}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
         <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>Notificaciones</span>
-        {unread>0&&<button onClick={markAllRead} style={{fontSize:10,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600}}>Marcar todas leídas</button>}
+        {unread>0&&<button onClick={markAllRead} style={{fontSize:10,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600}}>{t?.mark_all_read||"Marcar todas leídas"}</button>}
       </div>
-      {notifs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",fontSize:12,margin:0}}>Sin notificaciones</p>:
+      {notifs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",fontSize:12,margin:0}}>{t?.no_notifs||"Sin notificaciones"}</p>:
       notifs.map(n=><div key={n.id} onClick={()=>{markRead(n.id);setOpen(false);if(n.link)window.location.search=n.link;}} style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:n.link?"pointer":"default",background:n.read?"transparent":"rgba(184,149,106,0.06)"}}>
         <p style={{fontSize:12,fontWeight:n.read?400:700,color:n.read?"rgba(255,255,255,0.5)":"#fff",margin:"0 0 2px"}}>{n.title}</p>
         {n.body&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{n.body}</p>}
@@ -813,7 +862,7 @@ function SimpleShell({children,lang,setLang,t,onLogout,token}){
     <div className="ac-agente-header" style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 28px",background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap",gap:12,position:"sticky",top:0,zIndex:10}}>
       <img src={LOGO} alt="AC" style={{height:36,objectFit:"contain",filter:"drop-shadow(0 2px 12px rgba(184,149,106,0.22))"}}/>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        {token&&<NotifBell token={token}/>}
+        {token&&<NotifBell token={token} t={t}/>}
         <LangToggle lang={lang} setLang={setLang}/>
         <button onClick={onLogout} style={{padding:"7px 14px",fontSize:11.5,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:600,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";e.currentTarget.style.color=GOLD_LIGHT;}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{t.logout}</button>
       </div>
@@ -874,9 +923,12 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
   // Filtro de búsqueda
   const filtered=clientSearch.trim()?allClients.filter(c=>{const s=clientSearch.toLowerCase();return c.client_code?.toLowerCase().includes(s)||c.first_name?.toLowerCase().includes(s)||c.last_name?.toLowerCase().includes(s);}).slice(0,50):allClients.slice(0,50);
 
-  // Buscar op abierta cuando se selecciona cliente
+  // Buscar op abierta cuando se selecciona cliente.
+  // Regla: si hay una op del mismo cliente en estado pre-vuelo (depósito o preparación),
+  // se reutiliza — los nuevos bultos se agregan a ella aunque ya esté consolidada
+  // (mientras no haya despachado, podemos seguir sumando paquetes).
   useEffect(()=>{if(!clientId||clientId==="unregistered"){setExistingOp(null);return;}(async()=>{
-    const ops=await dq("operations",{token,filters:`?client_id=eq.${clientId}&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&consolidation_confirmed=eq.false&select=id,operation_code,status&order=created_at.desc&limit=1`});
+    const ops=await dq("operations",{token,filters:`?client_id=eq.${clientId}&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&select=id,operation_code,status&order=created_at.desc&limit=1`});
     setExistingOp(Array.isArray(ops)&&ops[0]?ops[0]:null);
   })();},[clientId,token]);
 

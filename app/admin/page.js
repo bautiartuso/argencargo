@@ -2811,8 +2811,8 @@ function AgentsPanel({token}){
     const [r,u,o,depOps,depPkgs,fl,flOps,fii,accM,depItems]=await Promise.all([
       dq("agent_signups",{token,filters:"?select=*&order=created_at.desc"}),
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
-      dq("operations",{token,filters:"?select=id,operation_code,client_id,clients(client_code,first_name,last_name)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&consolidation_confirmed=eq.false&order=created_at.desc"}),
-      dq("operations",{token,filters:"?select=id,operation_code,description,client_id,created_by_agent_id,status,consolidation_confirmed,origin,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
+      dq("operations",{token,filters:"?select=id,operation_code,client_id,clients(client_code,first_name,last_name,tax_condition)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&consolidation_confirmed=eq.false&order=created_at.desc"}),
+      dq("operations",{token,filters:"?select=id,operation_code,description,client_id,created_by_agent_id,status,consolidation_confirmed,origin,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp,tax_condition)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
       dq("operation_packages",{token,filters:"?select=*&order=package_number.asc"}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
       dq("flight_operations",{token,filters:"?select=*"}),
@@ -2907,13 +2907,23 @@ function AgentsPanel({token}){
       const byAgent={};depositOps.forEach(o=>{const k=o.created_by_agent_id||"sin_agente";if(!byAgent[k])byAgent[k]={ops:[],agentName:""};byAgent[k].ops.push(o);});
       Object.keys(byAgent).forEach(k=>{const a=approvedAgents.find(s=>s.auth_user_id===k);byAgent[k].agentName=a?(a.first_name+" "+(a.last_name||"")):"(sin agente)";});
       return <div>
-        {selectedOps.length>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:10,marginBottom:14}}>
-          <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>{selectedOps.length} operación(es) seleccionada(s)</p>
-          <div style={{display:"flex",gap:8}}>
-            <Btn variant="secondary" small onClick={()=>setSelectedOps([])}>Limpiar</Btn>
-            <Btn small onClick={createFlight}>+ Crear vuelo con seleccionadas</Btn>
-          </div>
-        </div>}
+        {selectedOps.length>0&&(()=>{
+          const selObjs=depositOps.filter(o=>selectedOps.includes(o.id));
+          const riOps=selObjs.filter(o=>o.clients?.tax_condition==="responsable_inscripto");
+          return <div style={{padding:"12px 16px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:10,marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>{selectedOps.length} operación(es) seleccionada(s)</p>
+                {riOps.length>0&&<span title={"Clientes RI: "+riOps.map(o=>o.clients?.client_code).join(", ")} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:6,background:"rgba(96,165,250,0.15)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.05em"}}>⚠ {riOps.length} RI · facturar con CUIT</span>}
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <Btn variant="secondary" small onClick={()=>setSelectedOps([])}>Limpiar</Btn>
+                <Btn small onClick={createFlight}>+ Crear vuelo con seleccionadas</Btn>
+              </div>
+            </div>
+            {riOps.length>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"8px 0 0",lineHeight:1.5}}>Hay clientes Responsable Inscripto en este vuelo. Recordá emitir factura A con su CUIT y aplicar el régimen impositivo correspondiente.</p>}
+          </div>;
+        })()}
         {Object.keys(byAgent).length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay paquetes en depósito</p>}
         {Object.entries(byAgent).map(([agentId,grp])=>{return <div key={agentId} style={{marginBottom:20}}>
           <h3 style={{fontSize:13,fontWeight:700,color:IC,margin:"0 0 10px",textTransform:"uppercase"}}>{grp.agentName} ({grp.ops.length} ops)</h3>
@@ -2925,7 +2935,7 @@ function AgentsPanel({token}){
               <tbody>{grp.ops.map(o=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const pkgsCount=opPackages(o.id).length;const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;const isExpanded=expandedOp===o.id;return <Fragment key={o.id}><tr style={{borderBottom:isExpanded?"none":"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:inFlight?0.5:0.7,cursor:"pointer",background:isExpanded?"rgba(184,149,106,0.06)":"transparent",transition:"background 150ms"}} onClick={(e)=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button"))return;setExpandedOp(isExpanded?null:o.id);}} onMouseEnter={e=>{if(!isExpanded)e.currentTarget.style.background="rgba(255,255,255,0.03)";}} onMouseLeave={e=>{if(!isExpanded)e.currentTarget.style.background="transparent";}}>
                 <td style={{padding:"10px 12px"}}>{canSelect?<input type="checkbox" checked={selectedOps.includes(o.id)} onChange={(e)=>{e.stopPropagation();toggleSelOp(o.id);}} onClick={e=>e.stopPropagation()}/>:<span style={{color:"rgba(255,255,255,0.3)",fontSize:14}}>{isExpanded?"▾":"▸"}</span>}</td>
                 <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12}}>{o.operation_code}</td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)"}}>{o.clients?`${o.clients.client_code} - ${o.clients.first_name}`:"—"}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)"}}>{o.clients?<span style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{`${o.clients.client_code} - ${o.clients.first_name}`}{o.clients.tax_condition==="responsable_inscripto"&&<span title="Cliente Responsable Inscripto" style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.18)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.05em"}}>RI</span>}</span>:"—"}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.description||"—"}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)"}}>{pkgsCount}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)"}}>{w?`${w.toFixed(2)} kg`:"—"}</td>
