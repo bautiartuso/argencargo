@@ -797,6 +797,31 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                 <td style={{padding:"10px 14px"}}>{p.is_paid?<span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",letterSpacing:"0.05em"}}>✓ PAGADO</span>:<span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:4,background:"rgba(251,146,60,0.15)",color:"#fb923c",letterSpacing:"0.05em"}}>PENDIENTE</span>}</td>
                 <td style={{padding:"10px 14px",textAlign:"right",whiteSpace:"nowrap"}}>
                   {!p.is_paid&&<button onClick={()=>toggleCostPaid(p)} style={{padding:"4px 9px",fontSize:10,fontWeight:700,background:"rgba(34,197,94,0.15)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:4,color:"#22c55e",cursor:"pointer",marginRight:4}}>Marcar pagado</button>}
+                  <button title="Editar moneda y monto" onClick={async()=>{
+                    const curCur=p.currency||"USD";
+                    const newCur=window.prompt(`Moneda actual: ${curCur}\n\nNueva moneda (USD / ARS / EUR / CNY):`,curCur);
+                    if(!newCur||!["USD","ARS","EUR","CNY"].includes(newCur.toUpperCase()))return;
+                    const cur=newCur.toUpperCase();
+                    const isArsNew=cur==="ARS";
+                    const curAmt=isArsNew?Number(p.amount_ars||0):Number(p.amount_usd||0);
+                    const newAmtStr=window.prompt(`Monto actual: ${curCur} ${curAmt.toLocaleString("es-AR")}\n\nIngresá el nuevo monto en ${cur}:`,String(curAmt));
+                    const newAmt=Number(newAmtStr);
+                    if(!newAmt||newAmt<=0)return;
+                    const body={currency:cur};
+                    if(isArsNew){
+                      body.amount_ars=newAmt;
+                      body.amount_usd=0;
+                      body.exchange_rate=null;
+                      body.is_paid=false;
+                      body.paid_at=null;
+                    }else{
+                      body.amount_usd=newAmt;
+                      body.amount_ars=null;
+                      body.exchange_rate=null;
+                    }
+                    await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${p.id}`,body});
+                    load();flash("Costo editado");
+                  }} style={{padding:"4px 9px",fontSize:11,background:"transparent",border:"1px solid rgba(96,165,250,0.3)",borderRadius:4,color:"#60a5fa",cursor:"pointer",marginRight:4}}>✎</button>
                   <button onClick={()=>deleteCost(p.id)} style={{padding:"4px 9px",fontSize:11,background:"transparent",border:"1px solid rgba(255,80,80,0.25)",borderRadius:4,color:"rgba(255,100,100,0.7)",cursor:"pointer"}}>✕</button>
                 </td>
               </tr>;})}
@@ -818,7 +843,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           {/* Fila 1: fecha + monto + moneda + método */}
           <div style={{display:"grid",gridTemplateColumns:"140px 1fr 100px 1.3fr",gap:10,alignItems:"end",marginBottom:10}}>
             <Inp label="Fecha" type="date" value={newSupPmt.payment_date} onChange={v=>setNewSupPmt(p=>({...p,payment_date:v}))}/>
-            <Inp label="Monto" type="number" value={newSupPmt.amount_usd} onChange={v=>setNewSupPmt(p=>({...p,amount_usd:v}))} step="0.01" placeholder="0.00"/>
+            <Inp label={`Monto (${newSupPmt.currency||"USD"})`} type="number" value={newSupPmt.amount_usd} onChange={v=>setNewSupPmt(p=>({...p,amount_usd:v}))} step="0.01" placeholder={newSupPmt.currency==="ARS"?"Ej: 500000":"0.00"}/>
             <Sel label="Moneda" value={newSupPmt.currency||"USD"} onChange={v=>setNewSupPmt(p=>({...p,currency:v}))} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"},{value:"EUR",label:"EUR"},{value:"CNY",label:"CNY"}]}/>
             <Sel label="Método" value={newSupPmt.payment_method} onChange={v=>setNewSupPmt(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Contado"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"swift",label:"SWIFT / Wire"},{value:"alibaba",label:"Alibaba"},{value:"otro",label:"Otro"}]}/>
           </div>
