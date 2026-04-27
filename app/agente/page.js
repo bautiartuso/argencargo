@@ -437,6 +437,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const [tab,setTab]=useState("deposit");
   const [selFlight,setSelFlight]=useState(null);
   const [depositSearch,setDepositSearch]=useState("");
+  const [statsPeriod,setStatsPeriod]=useState("month");
 
   const reloadAll=async()=>{
     const [pk,fl,fo,acc]=await Promise.all([
@@ -505,7 +506,6 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const historyFlights=flights.filter(f=>f.status==="despachado"||f.status==="recibido");
 
   // Stats con filtro de período (week / month / year / all)
-  const [statsPeriod,setStatsPeriod]=useState("month");
   const periodCutoff=()=>{const now=Date.now();const day=86400000;if(statsPeriod==="week")return new Date(now-7*day).toISOString();if(statsPeriod==="month")return new Date(now-30*day).toISOString();if(statsPeriod==="year")return new Date(now-365*day).toISOString();return null;};
   const cutoff=periodCutoff();
   const inPeriod=(dateStr)=>!cutoff||(dateStr&&new Date(dateStr).toISOString()>=cutoff);
