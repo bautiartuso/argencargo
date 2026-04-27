@@ -672,6 +672,73 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
   const usdF=(v)=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   useEffect(()=>{(async()=>{const r=await dq("flight_invoice_items",{token,filters:`?flight_id=eq.${flight.id}&select=*&order=sort_order.asc`});setInvoiceItems(Array.isArray(r)?r:[]);})();},[flight.id,token]);
+  // Generar factura PDF con info comercial de la mercadería: descripción, cantidad, valor, NCM, dirección destino
+  const downloadInvoicePdf=async()=>{
+    // Cargar items de cada op del vuelo
+    const opIds=flightOps.map(fo=>fo.operation_id);
+    if(opIds.length===0)return;
+    const itemsData=await dq("operation_items",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=*,operations(operation_code,clients(client_code,first_name,last_name))&order=created_at.asc`});
+    const items=Array.isArray(itemsData)?itemsData:[];
+    const pkgsByOp={};flightOps.forEach(fo=>{pkgsByOp[fo.operation_id]=packages.filter(p=>p.operation_id===fo.operation_id);});
+    const fmt=v=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    const today=new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"});
+    const totalQty=items.reduce((s,it)=>s+Number(it.quantity||0),0);
+    const totalValue=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
+    const rows=items.length>0?items.map(it=>{const op=it.operations;const cli=op?.clients;const total=Number(it.unit_price_usd||0)*Number(it.quantity||1);return `<tr><td>${op?.operation_code||"—"}</td><td>${cli?cli.client_code:"—"}</td><td>${it.description||"—"}</td><td class="c mono">${it.ncm_code||"—"}</td><td class="c">${it.quantity||1}</td><td class="r">${fmt(it.unit_price_usd)}</td><td class="r"><b>${fmt(total)}</b></td></tr>`;}).join(""):'<tr><td colspan="7" style="text-align:center;color:#666;padding:20px">Sin items declarados.</td></tr>';
+    const destRow=(lbl,val)=>val?`<div class="dest-row"><span>${lbl}</span><b>${val}</b></div>`:"";
+    const w=window.open("","_blank");if(!w)return;
+    const LOGO="https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png";
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${flight.flight_code}</title><style>
+      *{box-sizing:border-box}body{font-family:'Helvetica Neue',Arial,sans-serif;padding:32px;color:#111;max-width:920px;margin:0 auto}
+      .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1B4F8A;padding-bottom:16px;margin-bottom:20px}
+      .header img{max-width:170px;height:auto}
+      .header .meta{text-align:right;font-size:10px;color:#666;line-height:1.5}
+      .header .meta b{color:#1B4F8A;font-size:13px;display:block;margin-bottom:2px;font-family:monospace}
+      h1{font-size:22px;margin:0 0 4px;color:#1B4F8A}.sub{color:#666;font-size:12px;margin-bottom:24px}
+      .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-bottom:18px}
+      .box{padding:14px 16px;background:#f5f7fa;border-radius:8px}
+      .box h3{font-size:11px;color:#1B4F8A;margin:0 0 10px;text-transform:uppercase;letter-spacing:0.05em}
+      .dest-row{display:flex;justify-content:space-between;padding:4px 0;font-size:11px;color:#444}.dest-row span{color:#888;font-weight:600}
+      table{width:100%;border-collapse:collapse;margin-top:10px;font-size:11px}
+      th,td{padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:left;vertical-align:top}
+      th{background:#1B4F8A;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:0.05em}
+      td.c{text-align:center}td.r{text-align:right}td.mono{font-family:monospace;font-size:10px}
+      tr:nth-child(even) td{background:#fafbfc}
+      .totals{margin-top:18px;padding:16px;background:linear-gradient(135deg,#152D54,#3B7DD8);color:#fff;border-radius:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px}
+      .totals .lbl{font-size:11px;text-transform:uppercase;letter-spacing:0.05em;opacity:0.85}
+      .totals .big{font-size:20px;font-weight:700}
+      .foot{margin-top:24px;padding:18px 20px;background:#152D54;color:#fff;border-radius:8px;display:flex;align-items:center;gap:16px}
+      .foot img{max-width:80px;height:auto}
+      .foot .info{font-size:11px;line-height:1.7;flex:1}.foot .info b{display:block;font-size:13px;letter-spacing:0.03em;margin-bottom:3px}
+      .foot .lbl{color:#8ea3c4;margin-right:4px}
+      .disclaimer{margin-top:14px;font-size:9px;color:#999;line-height:1.5;text-align:center;font-style:italic}
+    </style></head><body>
+      <div class="header"><img src="${LOGO}" alt="Argencargo"/><div class="meta"><b>FLIGHT ${flight.flight_code}</b><div>Issued ${today}</div><div>Commercial Invoice / Packing List</div></div></div>
+      <div class="grid">
+        <div class="box"><h3>Shipper / Exporter</h3>
+          <div class="dest-row"><span>Company</span><b>ARGENCARGO</b></div>
+          <div class="dest-row"><span>Address</span><b>Av. Callao 1137, CABA, Argentina</b></div>
+          <div class="dest-row"><span>Origin</span><b>China</b></div>
+          <div class="dest-row"><span>Carrier</span><b>${flight.international_carrier||carrier||"—"}</b></div>
+        </div>
+        <div class="box"><h3>Consignee / Destination</h3>
+          ${destRow("Name",flight.dest_name)}
+          ${destRow("CUIT/DNI",flight.dest_tax_id)}
+          ${destRow("Address",flight.dest_address||flight.destination_address)}
+          ${destRow("Postal Code",flight.dest_postal_code)}
+          ${destRow("Phone",flight.dest_phone)}
+          ${destRow("Email",flight.dest_email)}
+          ${destRow("Country","Argentina")}
+        </div>
+      </div>
+      <h3 style="margin:18px 0 0;font-size:13px;color:#1B4F8A;text-transform:uppercase;letter-spacing:0.05em">Items / Goods Description</h3>
+      <table><thead><tr><th>Op</th><th>Client</th><th>Description</th><th>HS Code</th><th>Qty</th><th class="r">Unit Value</th><th class="r">Total Value</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="totals"><div><div class="lbl">Total Quantity</div><div class="big">${totalQty}</div></div><div><div class="lbl">Total Weight</div><div class="big">${(autoWeight||0).toFixed(2)} kg</div></div><div><div class="lbl">Total Commercial Value</div><div class="big">${fmt(totalValue)}</div></div></div>
+      <div class="foot"><img src="${LOGO}" alt="Argencargo"/><div class="info"><b>ARGENCARGO</b><div><span class="lbl">Tel:</span>+54 9 11 2508-8580</div><div><span class="lbl">Email:</span>info@argencargo.com.ar</div><div>Av Callao 1137 — Recoleta, CABA, Argentina</div></div></div>
+      <div class="disclaimer">This document is generated for customs and freight forwarding purposes only. Final commercial invoice may differ subject to actual shipment data.</div>
+      <script>setTimeout(()=>window.print(),300)</script>
+    </body></html>`);w.document.close();
+  };
   const dispatch=async()=>{
     if(!totalCost||!tracking){setErr(t.err_generic);return;}
     if(autoWeight<=0){setErr("El peso total es 0 - cargá peso en los bultos primero");return;}
@@ -706,9 +773,12 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
         <h3 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.flight_code}</h3>
         {(()=>{const ready=flight.status==="preparando"&&flight.invoice_presented_at;const c=ready?"#22c55e":stColors[flight.status];return <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:c,background:`${c}20`,border:`1px solid ${c}40`,textTransform:"uppercase"}}>{ready?t.flight_status_listo:t["flight_status_"+flight.status]}</span>;})()}
       </div>
-      <div style={{marginBottom:14}}>
-        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>{t.invoice}</p>
-        {flight.invoice_presented_at?<p style={{fontSize:13,color:"#22c55e",fontWeight:600,margin:0}}>✅ Factura presentada</p>:<p style={{fontSize:13,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>}
+      <div style={{marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:12,flexWrap:"wrap"}}>
+        <div>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>{t.invoice}</p>
+          {flight.invoice_presented_at?<p style={{fontSize:13,color:"#22c55e",fontWeight:600,margin:0}}>✅ Factura presentada</p>:<p style={{fontSize:13,color:"#fbbf24",margin:0}}>⏳ {t.no_invoice_yet}</p>}
+        </div>
+        <button onClick={downloadInvoicePdf} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.04em",boxShadow:GOLD_GLOW,whiteSpace:"nowrap"}}>📄 {t.download_invoice}</button>
       </div>
       {/* Datos de destino completos — lo que el agente necesita para despachar */}
       <div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.18)",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
