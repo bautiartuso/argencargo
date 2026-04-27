@@ -2854,7 +2854,6 @@ function AgentsPanel({token}){
     if(!created?.id){alert("Error creando vuelo");return;}
     for(const op of ops){const w=opWeight(op.id);
       await dq("flight_operations",{method:"POST",token,body:{flight_id:created.id,operation_id:op.id,weight_kg:w}});
-      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{status:"en_transito"}});
       // Clonar los operation_items del cliente como items de factura (base editable)
       const items=await dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});
       let sort=0;for(const it of (Array.isArray(items)?items:[])){sort++;
