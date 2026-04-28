@@ -167,6 +167,13 @@ const I18N={
     push_ios_step2:"Buscá y tocá «Agregar a inicio» (Add to Home Screen)",
     push_ios_step3:"Abrí Argencargo desde el ícono que apareció en tu home — NO desde Safari",
     push_ios_step4:"Volvé acá y aparecerá el botón para activar notificaciones",
+    push_android_install_title:"Instalá la app en tu pantalla de inicio",
+    push_android_install_msg:"Para recibir notificaciones, primero instalá la app desde Chrome.",
+    push_android_install_btn:"📥 Instalar app",
+    push_android_step1:"Tocá los 3 puntos arriba a la derecha en Chrome",
+    push_android_step2:"Tocá «Instalar app» o «Agregar a pantalla principal»",
+    push_android_step3:"Abrí Argencargo desde el ícono que apareció — NO desde Chrome",
+    push_android_step4:"Volvé acá y se activarán las notificaciones automáticamente",
     save:"Guardar",
     scan:"Escanear",
     scan_tracking:"Sacar foto al sticker para detectar tracking",
@@ -326,6 +333,13 @@ const I18N={
     push_ios_step2:"找到并点击「添加到主屏幕」",
     push_ios_step3:"从主屏幕图标打开 Argencargo（不要从 Safari 打开）",
     push_ios_step4:"回到这里，会出现开启通知的按钮",
+    push_android_install_title:"请把应用添加到主屏幕",
+    push_android_install_msg:"开启通知前，请先从 Chrome 安装应用。",
+    push_android_install_btn:"📥 安装应用",
+    push_android_step1:"点击 Chrome 右上角的三个点",
+    push_android_step2:"点击「安装应用」或「添加到主屏幕」",
+    push_android_step3:"从主屏幕图标打开 Argencargo（不要从 Chrome 打开）",
+    push_android_step4:"回到这里，通知会自动开启",
     save:"保存",
     scan:"扫描",
     scan_tracking:"拍照自动识别快递单号",
@@ -1091,17 +1105,33 @@ function usePushStatus(token){
 function PushNagBanner({token,t}){
   const {supported,permission,subscribed,setSubscribed,setPermission,VAPID_PUB}=usePushStatus(token);
   const [busy,setBusy]=useState(false);
-  // Detectar iOS y standalone (PWA instalada vs Safari normal)
+  // Detectar plataforma y standalone (PWA instalada vs navegador)
   const ua=typeof navigator!=="undefined"?navigator.userAgent:"";
-  const isIOS=/iPad|iPhone|iPod/.test(ua)&&!window.MSStream;
+  const isIOS=typeof window!=="undefined"&&/iPad|iPhone|iPod/.test(ua)&&!window.MSStream;
+  const isAndroid=/Android/i.test(ua);
   const isStandalone=typeof window!=="undefined"&&(window.matchMedia?.("(display-mode: standalone)").matches||window.navigator.standalone===true);
   const iosNeedsInstall=isIOS&&!isStandalone;
+  // Android: detectar si se puede instalar (beforeinstallprompt event de Chrome)
+  const [installPromptEvent,setInstallPromptEvent]=useState(null);
+  useEffect(()=>{
+    if(typeof window==="undefined")return;
+    const handler=(e)=>{e.preventDefault();setInstallPromptEvent(e);};
+    window.addEventListener("beforeinstallprompt",handler);
+    return()=>window.removeEventListener("beforeinstallprompt",handler);
+  },[]);
+  const androidNeedsInstall=isAndroid&&!isStandalone;
+  const triggerInstall=async()=>{
+    if(!installPromptEvent)return;
+    installPromptEvent.prompt();
+    await installPromptEvent.userChoice;
+    setInstallPromptEvent(null);
+  };
   // Auto-mostrar prompt 2s después de cargar (solo si permission===default Y no es iOS sin instalar)
   useEffect(()=>{
-    if(!supported||subscribed||permission!=="default"||!VAPID_PUB||!token||iosNeedsInstall)return;
+    if(!supported||subscribed||permission!=="default"||!VAPID_PUB||!token||iosNeedsInstall||androidNeedsInstall)return;
     const tm=setTimeout(()=>activate(),2000);
     return()=>clearTimeout(tm);
-  },[supported,subscribed,permission,VAPID_PUB,token,iosNeedsInstall]);
+  },[supported,subscribed,permission,VAPID_PUB,token,iosNeedsInstall,androidNeedsInstall]);
   const activate=async()=>{
     if(!VAPID_PUB){return;}
     setBusy(true);
@@ -1118,6 +1148,24 @@ function PushNagBanner({token,t}){
     setBusy(false);
   };
   if(subscribed)return null;
+  // Caso especial Android: si no está instalada, mostrar instrucciones / botón nativo
+  if(androidNeedsInstall){
+    return <div style={{background:"linear-gradient(135deg,rgba(91,155,213,0.18),rgba(91,155,213,0.05))",border:"1.5px solid rgba(91,155,213,0.5)",borderRadius:12,padding:"14px 18px",marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:installPromptEvent?12:8}}>
+        <span style={{fontSize:24}}>📲</span>
+        <div style={{flex:1}}>
+          <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.push_android_install_title||"Instalá la app en tu pantalla de inicio"}</p>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:"3px 0 0",lineHeight:1.5}}>{t.push_android_install_msg||"Para recibir notificaciones, primero instalá la app desde Chrome."}</p>
+        </div>
+      </div>
+      {installPromptEvent?<button onClick={triggerInstall} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>{t.push_android_install_btn||"📥 Instalar app"}</button>:<ol style={{margin:"8px 0 0",paddingLeft:24,fontSize:12,color:"rgba(255,255,255,0.85)",lineHeight:1.7}}>
+        <li>{t.push_android_step1||"Tocá los 3 puntos arriba a la derecha en Chrome"} <strong style={{display:"inline-block",padding:"0 6px",border:"1px solid rgba(255,255,255,0.4)",borderRadius:3,fontSize:10,marginLeft:4,verticalAlign:"middle"}}>⋮</strong></li>
+        <li>{t.push_android_step2||"Tocá «Instalar app» o «Agregar a pantalla principal»"}</li>
+        <li>{t.push_android_step3||"Abrí Argencargo desde el ícono que apareció — NO desde Chrome"}</li>
+        <li>{t.push_android_step4||"Volvé acá y se activarán las notificaciones automáticamente"}</li>
+      </ol>}
+    </div>;
+  }
   // Caso especial iOS: necesita instalar PWA primero antes de poder activar push
   if(iosNeedsInstall){
     return <div style={{background:"linear-gradient(135deg,rgba(91,155,213,0.18),rgba(91,155,213,0.05))",border:"1.5px solid rgba(91,155,213,0.5)",borderRadius:12,padding:"14px 18px",marginBottom:16}}>
