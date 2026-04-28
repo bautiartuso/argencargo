@@ -434,7 +434,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {k:"items",l:"Productos"},
     {k:"gi_costs",l:"Costos"},
     {k:"tracking",l:"Seguimiento"},
-    {k:"finance",l:"Finanzas"}
+    {k:"finance",l:"Finanzas"},
+    {k:"comms",l:"Comunicaciones"}
   ]:[
     {k:"general",l:"General"},
     {k:"budget",l:"Presupuesto"},
@@ -442,7 +443,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {k:"packages",l:"Bultos"},
     ...(isCanalB?[]:[{k:"tracking",l:"Seguimiento"}]),
     {k:"payments",l:"Pagos"},
-    {k:"finance",l:"Finanzas"}
+    {k:"finance",l:"Finanzas"},
+    {k:"comms",l:"Comunicaciones"}
   ];
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
   const chItem=(idx,f,v)=>{setItems(p=>{const n=[...p];n[idx]={...n[idx],[f]:v};return n;});};
@@ -3167,7 +3169,7 @@ function AgentsPanel({token}){
                             <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
                               {["#","Foto","Cant.","Dimensiones (cm)","Peso","Facturable","Tracking"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
                             </tr></thead>
-                            <tbody>{pkgsOfOp.map(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),wi=Number(p.width_cm||0),h=Number(p.height_cm||0);const bruto=gw*q;const vol=l&&wi&&h?((l*wi*h)/opVolDiv)*q:0;const fact=Math.max(bruto,vol);return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                            <tbody>{pkgsOfOp.map(p=>{const opAg=signups.find(s=>s.auth_user_id===o.created_by_agent_id);const opVD=Number(opAg?.volumetric_divisor)||5000;const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),wi=Number(p.width_cm||0),h=Number(p.height_cm||0);const bruto=gw*q;const vol=l&&wi&&h?((l*wi*h)/opVD)*q:0;const fact=Math.max(bruto,vol);return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontWeight:600}}>{p.package_number}</td>
                               <td style={{padding:"6px 10px"}}>{p.photo_url?<a href={p.photo_url} target="_blank" rel="noopener noreferrer"><img src={p.photo_url} alt="" style={{width:36,height:36,objectFit:"cover",borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in"}}/></a>:<span title="Sin foto" style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.12)",color:"#fbbf24",fontWeight:700}}>📷 Pendiente</span>}</td>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>{q}</td>
