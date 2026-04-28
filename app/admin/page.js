@@ -447,6 +447,29 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {k:"comms",l:"Comunicaciones"}
   ];
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
+  // Checklist de cierre — modal cuando se intenta cerrar la op
+  const [showCloseChecklist,setShowCloseChecklist]=useState(false);
+  const executeSave=async()=>{
+    let desc=op.description;
+    if(!desc){const autoDesc=items.map(it=>it.description).filter(Boolean).join(", ");if(autoDesc){desc=autoDesc;setOp(p=>({...p,description:desc}));}}
+    setSaving(true);
+    const prevStatus=initOp.status;
+    const{id,clients,...rest}=({...op,description:desc});
+    delete rest.created_at;delete rest.updated_at;
+    if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();
+    if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
+    if(rest.status!==prevStatus){
+      const triggerMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};
+      const trigger=triggerMap[rest.status];
+      if(trigger){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${trigger} enviado al cliente`);else if(resp?.skipped==="already_sent"){}else if(resp?.skipped)flash(`⚠️ Email ${trigger} NO enviado: ${resp.skipped}`);else{console.error("email error",resp);flash(`❌ Email ${trigger} falló: ${resp?.error||"ver consola"}`);}}catch(e){console.error("email error",e);flash(`❌ Email ${trigger} falló: ${e.message}`);}}
+    }else{flash("Operación guardada");}
+    setSaving(false);
+  };
+  const handleSave=()=>{
+    if(op.status==="operacion_cerrada"&&initOp.status!=="operacion_cerrada"){setShowCloseChecklist(true);return;}
+    executeSave();
+  };
   const chItem=(idx,f,v)=>{setItems(p=>{const n=[...p];n[idx]={...n[idx],[f]:v};return n;});};
   const chPkg=(idx,f,v)=>{setPkgs(p=>{const n=[...p];n[idx]={...n[idx],[f]:v};return n;});};
   const chEvt=(idx,f,v)=>{setEvents(p=>{const n=[...p];n[idx]={...n[idx],[f]:v};return n;});};
@@ -472,7 +495,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:<>
 
     {tab==="general"&&<>
-      <Card title="Estado" actions={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&<Btn small variant="secondary" onClick={async()=>{if(!confirm("¿Reabrir la declaración? El cliente podrá modificar/agregar productos."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{status:"en_deposito_origen",consolidation_confirmed:false}});setOp(p=>({...p,status:"en_deposito_origen",consolidation_confirmed:false}));flash("✅ Declaración reabierta — el cliente puede editar");}}>↻ Reabrir declaración</Btn>}{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];return <Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>;})()}<Btn onClick={async()=>{let desc=op.description;if(!desc){const autoDesc=items.map(it=>it.description).filter(Boolean).join(", ");if(autoDesc){desc=autoDesc;setOp(p=>({...p,description:desc}));}}setSaving(true);const prevStatus=initOp.status;const{id,clients,...rest}=({...op,description:desc});delete rest.created_at;delete rest.updated_at;if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});if(rest.status!==prevStatus){const triggerMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};const trigger=triggerMap[rest.status];if(trigger){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${trigger} enviado al cliente`);else if(resp?.skipped==="already_sent"){/* silencioso: el mail ya fue enviado antes */}else if(resp?.skipped)flash(`⚠️ Email ${trigger} NO enviado: ${resp.skipped}`);else{console.error("email error",resp);flash(`❌ Email ${trigger} falló: ${resp?.error||"ver consola"}`);}}catch(e){console.error("email error",e);flash(`❌ Email ${trigger} falló: ${e.message}`);}}}else{flash("Operación guardada");}setSaving(false);}} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
+      <Card title="Estado" actions={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&<Btn small variant="secondary" onClick={async()=>{if(!confirm("¿Reabrir la declaración? El cliente podrá modificar/agregar productos."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{status:"en_deposito_origen",consolidation_confirmed:false}});setOp(p=>({...p,status:"en_deposito_origen",consolidation_confirmed:false}));flash("✅ Declaración reabierta — el cliente puede editar");}}>↻ Reabrir declaración</Btn>}{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];return <Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>;})()}<Btn onClick={handleSave} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
         <Sel label="Estado de la carga" value={op.status} onChange={chOp("status")} options={STATUSES.filter(s=>!(isGI&&s==="en_preparacion")).map(s=>({value:s,label:SM[s].l}))}/>
         <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
         <Inp label="ETA (fecha estimada de arribo)" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>
@@ -1748,7 +1771,124 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </>;})()}
 
     </>}
+
+    {tab==="comms"&&<CommsLog opId={op.id} token={token}/>}
+    {showCloseChecklist&&<CloseChecklistModal op={op} items={items} payments={payments} clientPayments={clientPayments} supplierPayments={supplierPayments} onCancel={()=>{setShowCloseChecklist(false);setOp(p=>({...p,status:initOp.status}));}} onConfirm={async()=>{setShowCloseChecklist(false);await executeSave();}}/>}
   </div>;
+}
+
+function CloseChecklistModal({op,items,payments,clientPayments,supplierPayments,onCancel,onConfirm}){
+  const isGI=op.service_type==="gestion_integral";
+  // Cálculos de checks automáticos
+  const cliPaidGI=(clientPayments||[]).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+  const cliPaidNoGI=(()=>{const raw=Number(op.collected_amount||0);const isArs=op.collection_currency==="ARS";const rate=Number(op.collection_exchange_rate||0);return isArs&&rate>0?raw/rate:raw;})();
+  const cliPaid=isGI?cliPaidGI:cliPaidNoGI;
+  const credit=Number(op.credit_applied_usd||0);
+  const discount=Number(op.discount_applied_usd||0);
+  const bt=Number(op.budget_total||0);
+  const saldo=Math.max(0,bt-cliPaid-credit-discount);
+  const pmtTot=(payments||[]).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
+  const ant=Number(op.total_anticipos||0);
+  const exceso=Math.max(0,pmtTot-ant);
+  const totalSaldo=saldo+exceso;
+  const supPmts=(supplierPayments||[]);
+  const supPaid=supPmts.filter(p=>p.is_paid).length;
+  const supTotal=supPmts.length;
+  const arsSupSinDolarizar=supPmts.filter(p=>p.currency==="ARS"&&p.is_paid&&!p.exchange_rate).length;
+  const cliPmtsAll=clientPayments||[];
+  const arsCliSinDolarizar=cliPmtsAll.filter(p=>p.currency==="ARS"&&!p.exchange_rate).length;
+
+  // Checks: cada uno con label, status auto (pasa/no), y opcionalmente acción
+  const checks=[
+    {k:"paid",label:"Cliente pagó completo",pass:totalSaldo<0.01,detail:totalSaldo<0.01?"✓ Pagado":`Falta cobrar USD ${totalSaldo.toFixed(2)}`},
+    ...(isGI?[
+      {k:"sup_paid",label:"Pagos al proveedor liquidados",pass:supTotal===0||supPaid===supTotal,detail:supTotal===0?"Sin pagos cargados":`${supPaid}/${supTotal} pagados`},
+      {k:"sup_ars",label:"Pagos ARS al proveedor dolarizados",pass:arsSupSinDolarizar===0,detail:arsSupSinDolarizar===0?"✓ Todos dolarizados":`${arsSupSinDolarizar} pendientes`},
+    ]:[]),
+    {k:"cli_ars",label:"Pagos ARS del cliente dolarizados",pass:arsCliSinDolarizar===0,detail:arsCliSinDolarizar===0?"✓ OK":`${arsCliSinDolarizar} sin dolarizar`},
+    {k:"items",label:"Productos declarados",pass:items&&items.length>0,detail:`${items?.length||0} productos`},
+    {k:"closed_date",label:"Fecha de cierre",pass:true,detail:new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})},
+  ];
+  const allPass=checks.every(c=>c.pass);
+  const failedCount=checks.filter(c=>!c.pass).length;
+
+  return <div onClick={onCancel} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(8px)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div onClick={e=>e.stopPropagation()} style={{maxWidth:560,width:"100%",background:"#142038",border:`2px solid ${allPass?"rgba(34,197,94,0.5)":"rgba(251,191,36,0.5)"}`,borderRadius:14,padding:"24px 26px",boxShadow:"0 24px 80px rgba(0,0,0,0.8)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+        <span style={{fontSize:24}}>{allPass?"✅":"⚠️"}</span>
+        <h3 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>Cerrar operación {op.operation_code}</h3>
+      </div>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 18px",lineHeight:1.5}}>{allPass?"Todo en orden — podés cerrar sin pendientes.":`Hay ${failedCount} item${failedCount>1?"s":""} sin completar. Revisá antes de cerrar.`}</p>
+      <div style={{background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"4px 0",marginBottom:18}}>
+        {checks.map((c,i)=><div key={c.k} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 16px",borderBottom:i<checks.length-1?"1px solid rgba(255,255,255,0.04)":"none"}}>
+          <span style={{fontSize:16,minWidth:20}}>{c.pass?"✅":"⚠️"}</span>
+          <div style={{flex:1}}>
+            <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{c.label}</p>
+            <p style={{fontSize:11,color:c.pass?"rgba(34,197,94,0.8)":"rgba(251,191,36,0.85)",margin:"2px 0 0"}}>{c.detail}</p>
+          </div>
+        </div>)}
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+        <Btn variant="secondary" onClick={onCancel} small>Cancelar</Btn>
+        <Btn onClick={onConfirm} small>{allPass?"✓ Cerrar":"⚠️ Cerrar igual"}</Btn>
+      </div>
+    </div>
+  </div>;
+}
+
+function CommsLog({opId,token}){
+  const [items,setItems]=useState([]);
+  const [type,setType]=useState("whatsapp");
+  const [direction,setDirection]=useState("in");
+  const [content,setContent]=useState("");
+  const [saving,setSaving]=useState(false);
+  const TYPES=[
+    {k:"whatsapp",l:"WhatsApp",icon:"💬",color:"#25D366"},
+    {k:"email",l:"Email",icon:"✉️",color:"#60a5fa"},
+    {k:"call",l:"Llamada",icon:"📞",color:"#a78bfa"},
+    {k:"meeting",l:"Reunión",icon:"🤝",color:"#fbbf24"},
+    {k:"note",l:"Nota",icon:"📝",color:"#94a3b8"},
+  ];
+  const load=async()=>{const r=await dq("op_communications",{token,filters:`?operation_id=eq.${opId}&select=*&order=occurred_at.desc&limit=100`});setItems(Array.isArray(r)?r:[]);};
+  useEffect(()=>{load();},[opId,token]);
+  const add=async()=>{
+    if(!content.trim())return;
+    setSaving(true);
+    await dq("op_communications",{method:"POST",token,body:{operation_id:opId,type,direction:type==="note"?null:direction,content:content.trim()}});
+    setContent("");setSaving(false);load();
+  };
+  const del=async(id)=>{if(!confirm("¿Eliminar esta entrada?"))return;await dq("op_communications",{method:"DELETE",token,filters:`?id=eq.${id}`});load();};
+  const fmtAgo=(d)=>{const m=Math.floor((Date.now()-new Date(d).getTime())/60000);if(m<1)return"recién";if(m<60)return`hace ${m}min`;const h=Math.floor(m/60);if(h<24)return`hace ${h}h`;const dd=Math.floor(h/24);if(dd<30)return`hace ${dd}d`;return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"2-digit"});};
+  return <Card title="Comunicaciones con el cliente">
+    <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>+ Nueva entrada</p>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+        {TYPES.map(t=><button key={t.k} onClick={()=>setType(t.k)} style={{padding:"5px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:`1px solid ${type===t.k?t.color:"rgba(255,255,255,0.1)"}`,background:type===t.k?`${t.color}20`:"transparent",color:type===t.k?t.color:"rgba(255,255,255,0.5)",cursor:"pointer"}}>{t.icon} {t.l}</button>)}
+      </div>
+      {type!=="note"&&<div style={{display:"flex",gap:6,marginBottom:8}}>
+        {[{k:"in",l:"Recibido del cliente"},{k:"out",l:"Enviado al cliente"}].map(d=><button key={d.k} onClick={()=>setDirection(d.k)} style={{padding:"4px 10px",fontSize:10,fontWeight:600,borderRadius:5,border:`1px solid ${direction===d.k?GOLD_DEEP:"rgba(255,255,255,0.1)"}`,background:direction===d.k?"rgba(184,149,106,0.12)":"transparent",color:direction===d.k?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer"}}>{d.k==="in"?"← ":"→ "}{d.l}</button>)}
+      </div>}
+      <textarea value={content} onChange={e=>setContent(e.target.value)} placeholder={type==="note"?"Nota interna sobre esta op...":`Pegá lo que ${direction==="in"?"recibiste del":"enviaste al"} cliente`} rows={3} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",fontFamily:"inherit",resize:"vertical"}}/>
+      <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}>
+        <Btn onClick={add} disabled={!content.trim()||saving} small>{saving?"Guardando...":"+ Agregar"}</Btn>
+      </div>
+    </div>
+    {items.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0",fontSize:13}}>Sin comunicaciones registradas todavía.</p>:
+    <div>{items.map(it=>{const t=TYPES.find(x=>x.k===it.type)||TYPES[4];return <div key={it.id} style={{display:"flex",gap:12,padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+      <div style={{width:36,height:36,borderRadius:"50%",background:`${t.color}18`,border:`1px solid ${t.color}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>{t.icon}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8,marginBottom:4,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:11,fontWeight:700,color:t.color,textTransform:"uppercase",letterSpacing:"0.04em"}}>{t.l}</span>
+            {it.direction&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:3,background:it.direction==="in"?"rgba(34,197,94,0.12)":"rgba(96,165,250,0.12)",color:it.direction==="in"?"#22c55e":"#60a5fa",fontWeight:600}}>{it.direction==="in"?"← Entrante":"→ Saliente"}</span>}
+            <span style={{fontSize:10,color:"rgba(255,255,255,0.35)"}}>· {fmtAgo(it.occurred_at)}</span>
+          </div>
+          <button onClick={()=>del(it.id)} title="Eliminar" style={{fontSize:10,padding:"2px 6px",borderRadius:4,border:"1px solid rgba(255,80,80,0.2)",background:"transparent",color:"rgba(255,80,80,0.6)",cursor:"pointer"}}>X</button>
+        </div>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.85)",margin:0,whiteSpace:"pre-wrap",lineHeight:1.5}}>{it.content}</p>
+      </div>
+    </div>;})}</div>}
+  </Card>;
 }
 
 function ClientsList({token,onSelect}){
@@ -3630,7 +3770,57 @@ function FinanceDashboard({token}){
   const bar=(pct,color)=><div style={{flex:1,height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden"}}><div style={{width:`${Math.min(Math.max(pct,0),100)}%`,height:"100%",background:color,borderRadius:4,transition:"width 0.3s"}}/></div>;
 
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
+
+  // === TERMÓMETRO FINANCIERO: salud líquida estimada a 30 días ===
+  // cash actual = saldo agentes (anticipos pendientes) + balance ARS dolarizado
+  // por cobrar 30d = saldo de ops entregadas/cerradas no cobradas + payment_management con cliente_paid=false
+  // por pagar 30d = supplier payments + finance_entries con due_date próximos 30d no pagados
+  const ahora=Date.now();
+  const in30=ahora+30*86400000;
+  // Por cobrar: ops sin is_collected con saldo > 0
+  const porCobrar=ops.filter(o=>!o.is_collected&&o.status!=="cancelada"&&Number(o.budget_total||0)>0).reduce((s,o)=>{
+    const bt=Number(o.budget_total||0);
+    const cliPaid=o.service_type==="gestion_integral"?clientPmts.filter(p=>p.operation_id===o.id).reduce((a,p)=>a+Number(p.amount_usd||0),0):0;
+    const credit=Number(o.credit_applied_usd||0);
+    const discount=Number(o.discount_applied_usd||0);
+    const saldo=Math.max(0,bt-cliPaid-credit-discount);
+    return s+saldo;
+  },0);
+  // Por pagar: supplier payments no pagados con due ≤ 30d (o sin due) + finance_entries con tarjeta no pagada
+  const porPagarSup=supplierPmts.filter(p=>!p.is_paid&&p.type!=="refund").reduce((s,p)=>s+Number(p.amount_usd||0),0);
+  const porPagarFE=finEntries.filter(e=>e.payment_method==="tarjeta_credito"&&!e.is_paid).reduce((s,e)=>{
+    const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);
+    return s+c;
+  },0);
+  const porPagar=porPagarSup+porPagarFE;
+  // Cash estimado: usamos saldos agente como proxy de cash bajo gestión (anticipos disponibles - ya gastados)
+  const cashAgentes=agentMvs.reduce((s,m)=>s+(m.type==="anticipo"?-Number(m.amount_usd||0):Number(m.amount_usd||0)),0);
+  // El termómetro: lo que esperás tener neto en próximos 30d
+  const termometro=cashAgentes+porCobrar-porPagar;
+  const themeColor=termometro>=5000?"#22c55e":termometro>=0?"#fbbf24":"#ef4444";
+  const themeLabel=termometro>=5000?"Saludable":termometro>=0?"Ajustado":"En rojo";
+
   return <div>
+    <div style={{background:`linear-gradient(135deg, ${themeColor}15, ${themeColor}03)`,border:`1.5px solid ${themeColor}50`,borderRadius:16,padding:"22px 26px",marginBottom:24,display:"flex",justifyContent:"space-between",alignItems:"center",gap:18,flexWrap:"wrap"}}>
+      <div style={{flex:1,minWidth:240}}>
+        <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:6}}>
+          <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Termómetro 30d</span>
+          <span style={{fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:6,background:`${themeColor}25`,color:themeColor,border:`1px solid ${themeColor}50`,letterSpacing:"0.06em",textTransform:"uppercase"}}>{themeLabel}</span>
+        </div>
+        <p style={{fontSize:36,fontWeight:800,color:themeColor,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{termometro>=0?"+":""}{usd(termometro)}</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"6px 0 0",lineHeight:1.5}}>Cash agentes ({usd(cashAgentes)}) + por cobrar ({usd(porCobrar)}) − por pagar ({usd(porPagar)})</p>
+      </div>
+      <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+        <div style={{padding:"10px 16px",borderRadius:10,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.06)",minWidth:130}}>
+          <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px",textTransform:"uppercase"}}>Por cobrar</p>
+          <p style={{fontSize:16,fontWeight:700,color:"#22c55e",margin:0,fontVariantNumeric:"tabular-nums"}}>+{usd(porCobrar)}</p>
+        </div>
+        <div style={{padding:"10px 16px",borderRadius:10,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.06)",minWidth:130}}>
+          <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px",textTransform:"uppercase"}}>Por pagar</p>
+          <p style={{fontSize:16,fontWeight:700,color:"#ef4444",margin:0,fontVariantNumeric:"tabular-nums"}}>−{usd(porPagar)}</p>
+        </div>
+      </div>
+    </div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
       <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Dashboard Financiero</h2>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>{[{k:"week",l:"Semana"},{k:"month",l:"Mes"},{k:"year",l:"Año"},{k:"all",l:"Total"}].map(p=><button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k==="month")setSelMonth(`${thisYear}-${String(thisMonth+1).padStart(2,"0")}`);}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:period===p.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:period===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:period===p.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{p.l}</button>)}
