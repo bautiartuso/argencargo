@@ -7,22 +7,23 @@ export const maxDuration = 60;
 
 const SYSTEM_PROMPT = `Sos un asistente que extrae items de facturas comerciales (commercial invoice / packing list) de proveedores chinos o estadounidenses para importaciones argentinas.
 
-Tu trabajo: extraer todos los productos listados con su descripción, cantidad y precio unitario en USD.
+Tu trabajo: extraer todos los productos listados con su descripción, cantidad, precio unitario en USD, y HS Code / NCM si está presente.
 
 REGLAS:
-- Buscá tablas con columnas tipo: Description / Item / Product, Quantity / Qty / 数量, Unit Price / 单价, Total / Amount.
+- Buscá tablas con columnas tipo: Description / Item / Product, Quantity / Qty / 数量, Unit Price / 单价, Total / Amount, HS Code / HSCode / HS / NCM / 海关编码 / 商品编码.
 - Si el precio está en CNY/RMB/¥ convertilo a USD aproximadamente (1 USD = 7.2 CNY).
 - Si la moneda no está clara, asumí USD.
 - Si el precio unitario no aparece pero sí el total y la cantidad, dividí.
 - Ignorá líneas de subtotal, freight, tax, total, etc.
 - Si una descripción está en chino, traducila al español: "无线耳机" → "Auriculares inalámbricos".
 - Cantidad debe ser un número entero. Precio unitario debe ser número decimal.
+- HS Code: extraé el código tal cual aparece. Suele ser 6, 8 o 10 dígitos (ej: "8517.62", "8517.62.00", "85176200"). Si no aparece HS code para ese item, omitilo (no inventes).
 - Devolvé SOLO el JSON, sin texto adicional ni markdown.
 
 FORMATO DE SALIDA (JSON estricto):
 {
   "items": [
-    {"description": "string en español", "quantity": number, "unit_price_usd": number}
+    {"description": "string en español", "quantity": number, "unit_price_usd": number, "hs_code": "string o null"}
   ]
 }
 
@@ -82,7 +83,12 @@ export async function POST(req) {
       it && typeof it.description === "string" && it.description.trim() &&
       typeof it.quantity === "number" && it.quantity > 0 &&
       typeof it.unit_price_usd === "number" && it.unit_price_usd > 0
-    ) : [];
+    ).map(it => ({
+      description: it.description.trim(),
+      quantity: it.quantity,
+      unit_price_usd: it.unit_price_usd,
+      hs_code: typeof it.hs_code === "string" && it.hs_code.trim() ? it.hs_code.trim() : null,
+    })) : [];
     return Response.json({ ok: true, items, count: items.length });
   } catch (e) {
     console.error("parse-invoice-pdf error:", e);

@@ -296,7 +296,7 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
   const updateItem=(i,f,v)=>setItems(p=>p.map((it,j)=>j===i?{...it,[f]:v}:it));
   const toggleAll=(checked)=>{const sel={};items.forEach((_,i)=>sel[i]=checked);setSelected(sel);};
   const confirm=()=>{
-    const final=items.filter((_,i)=>selected[i]).map(it=>({description:it.description,quantity:Number(it.quantity)||1,unit_price_usd:Number(it.unit_price_usd)||0}));
+    const final=items.filter((_,i)=>selected[i]).map(it=>({description:it.description,quantity:Number(it.quantity)||1,unit_price_usd:Number(it.unit_price_usd)||0,hs_code:it.hs_code?String(it.hs_code).trim():null}));
     if(final.length===0){setError("Seleccioná al menos un producto");return;}
     onItemsConfirmed(final);
   };
@@ -324,13 +324,19 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
         </div>
       </div>
       <div style={{maxHeight:"50vh",overflowY:"auto",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,marginBottom:12}}>
-        {items.map((it,i)=><div key={i} style={{display:"flex",gap:8,padding:"10px 12px",borderBottom:i<items.length-1?"1px solid rgba(255,255,255,0.04)":"none",background:selected[i]?"transparent":"rgba(0,0,0,0.2)",opacity:selected[i]?1:0.5}}>
-          <input type="checkbox" checked={!!selected[i]} onChange={e=>setSelected(p=>({...p,[i]:e.target.checked}))} style={{cursor:"pointer",marginTop:6}}/>
-          <div style={{flex:1,display:"grid",gridTemplateColumns:"3fr 1fr 1.2fr",gap:6}}>
-            <input value={it.description} onChange={e=>updateItem(i,"description",e.target.value)} placeholder="Descripción" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
-            <input type="number" value={it.quantity} onChange={e=>updateItem(i,"quantity",e.target.value)} placeholder="Cant" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
-            <input type="number" step="0.01" value={it.unit_price_usd} onChange={e=>updateItem(i,"unit_price_usd",e.target.value)} placeholder="USD c/u" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
+        {items.map((it,i)=><div key={i} style={{padding:"10px 12px",borderBottom:i<items.length-1?"1px solid rgba(255,255,255,0.04)":"none",background:selected[i]?"transparent":"rgba(0,0,0,0.2)",opacity:selected[i]?1:0.5}}>
+          <div style={{display:"flex",gap:8}}>
+            <input type="checkbox" checked={!!selected[i]} onChange={e=>setSelected(p=>({...p,[i]:e.target.checked}))} style={{cursor:"pointer",marginTop:6}}/>
+            <div style={{flex:1,display:"grid",gridTemplateColumns:"3fr 1fr 1.2fr",gap:6}}>
+              <input value={it.description} onChange={e=>updateItem(i,"description",e.target.value)} placeholder="Descripción" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
+              <input type="number" value={it.quantity} onChange={e=>updateItem(i,"quantity",e.target.value)} placeholder="Cant" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
+              <input type="number" step="0.01" value={it.unit_price_usd} onChange={e=>updateItem(i,"unit_price_usd",e.target.value)} placeholder="USD c/u" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
+            </div>
           </div>
+          {it.hs_code&&<div style={{marginLeft:24,marginTop:6,display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)",textTransform:"uppercase"}}>HS detectado</span>
+            <input value={it.hs_code} onChange={e=>updateItem(i,"hs_code",e.target.value)} placeholder="HS Code" style={{padding:"4px 8px",fontSize:11,fontFamily:"monospace",background:"rgba(34,197,94,0.05)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:5,color:"#fff",outline:"none",width:140}}/>
+          </div>}
         </div>)}
       </div>
       <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
@@ -378,7 +384,7 @@ function OperationDetail({op,token,onBack}){
   const rmDocItem=(i)=>setDocItems(p=>p.filter((_,j)=>j!==i));
   const chDocItem=(i,f,v)=>setDocItems(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
   const saveDocs=async()=>{const valid=docItems.filter(d=>d.description?.trim()&&Number(d.quantity)>0&&Number(d.unit_price_usd)>0);if(valid.length===0){alert("Completá al menos un producto");return;}setSavingDocs(true);
-    for(const d of valid){await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:d.description,quantity:Number(d.quantity),unit_price_usd:Number(d.unit_price_usd)}});}
+    for(const d of valid){const body={operation_id:op.id,description:d.description,quantity:Number(d.quantity),unit_price_usd:Number(d.unit_price_usd)};if(d.hs_code)body.ncm_code=d.hs_code;await dq("operation_items",{method:"POST",token,body});}
     setShowDocPanel(false);setDocItems([]);await loadAll();setSavingDocs(false);
   };
   const toggleSection=(s)=>setOpenSections(p=>({...p,[s]:!p[s]}));
@@ -509,25 +515,31 @@ function OperationDetail({op,token,onBack}){
         <button style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",cursor:"default"}}>⏳ Tengo más paquetes por llegar</button>
       </div>
     </div>}
-    {!loading&&!isGI&&items.length>0&&<div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
-      <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>📋 Productos declarados</h3>
+    {(()=>{const isReopened=op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&!op.consolidation_confirmed&&items.length>0;
+    return !loading&&!isGI&&items.length>0&&<div style={{background:isReopened?"linear-gradient(135deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04))":"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:`1.5px solid ${isReopened?"rgba(96,165,250,0.4)":"rgba(184,149,106,0.3)"}`,borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+        <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>📋 Productos declarados {isReopened&&<span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.2)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8}}>↻ Editable</span>}</h3>
+        {isReopened&&<button onClick={()=>{setShowDocPanel(true);setDocInputMode(null);if(docItems.length===0)setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);setTimeout(()=>{const el=document.getElementById("ac-doc-panel");if(el)el.scrollIntoView({behavior:"smooth"});},100);}} style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer"}}>+ Agregar más</button>}
+      </div>
+      {isReopened&&<p style={{fontSize:11,color:"#60a5fa",margin:"0 0 12px",lineHeight:1.4}}>✏️ Argencargo reabrió tu declaración — podés modificar los productos antes de avanzar.</p>}
       <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,overflow:"hidden"}}>
-        <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.08)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
-          <span>Descripción</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Precio unit.</span><span style={{textAlign:"right"}}>Subtotal</span>
+        <div style={{display:"grid",gridTemplateColumns:isReopened?"3fr 1fr 1fr 1fr 36px":"3fr 1fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.08)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
+          <span>Descripción</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Precio unit.</span><span style={{textAlign:"right"}}>Subtotal</span>{isReopened&&<span/>}
         </div>
-        {items.map(it=><div key={it.id} style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:13,color:"rgba(255,255,255,0.85)"}}>
+        {items.map(it=><div key={it.id} style={{display:"grid",gridTemplateColumns:isReopened?"3fr 1fr 1fr 1fr 36px":"3fr 1fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:13,color:"rgba(255,255,255,0.85)",alignItems:"center"}}>
           <span>{it.description}</span>
           <span style={{textAlign:"right"}}>{Number(it.quantity||0)}</span>
           <span style={{textAlign:"right"}}>USD {Number(it.unit_price_usd||0).toFixed(2)}</span>
           <span style={{textAlign:"right",fontWeight:700}}>USD {(Number(it.quantity||0)*Number(it.unit_price_usd||0)).toFixed(2)}</span>
+          {isReopened&&<button onClick={async()=>{if(!confirm(`¿Eliminar "${it.description}"?`))return;await dq("operation_items",{method:"DELETE",token,filters:`?id=eq.${it.id}`});await loadAll();}} title="Eliminar" style={{padding:"4px 6px",fontSize:11,borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>✕</button>}
         </div>)}
         <div style={{display:"flex",justifyContent:"space-between",padding:"10px 12px",borderTop:"1px solid rgba(184,149,106,0.3)"}}>
           <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>TOTAL</span>
           <span style={{fontSize:14,fontWeight:700,color:IC}}>USD {items.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_usd||0),0).toFixed(2)}</span>
         </div>
       </div>
-      <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>¿Necesitás modificar algo? Contactá a tu asesor de Argencargo.</p>
-    </div>}
+      {!isReopened&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>¿Necesitás modificar algo? Contactá a tu asesor de Argencargo.</p>}
+    </div>;})()}
     {/* Galería destacada de fotos del agente — aparece arriba si hay al menos una foto */}
     {!loading&&pkgs.some(p=>p.photo_url)&&<div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(184,149,106,0.18)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>📷 Fotos de tu mercadería</h3>
@@ -541,7 +553,7 @@ function OperationDetail({op,token,onBack}){
       {pkgs.filter(p=>!p.photo_url).length>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"12px 0 0",fontStyle:"italic"}}>{pkgs.filter(p=>!p.photo_url).length} bulto{pkgs.filter(p=>!p.photo_url).length>1?"s":""} sin foto disponible aún.</p>}
     </div>}
 
-    {!isGI&&op.channel==="aereo_blanco"&&canDocument&&!loading&&items.length===0&&<div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+    {!isGI&&op.channel==="aereo_blanco"&&canDocument&&!loading&&(items.length===0||(op.status==="en_deposito_origen"&&!op.consolidation_confirmed))&&<div id="ac-doc-panel" style={{background:"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12,marginBottom:showDocPanel?16:0}}>
         <div>
           <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>📋 Completá la documentación de tu carga</h3>
@@ -551,7 +563,7 @@ function OperationDetail({op,token,onBack}){
       </div>
       {showDocPanel&&<div style={{borderTop:"1px solid rgba(184,149,106,0.2)",paddingTop:14}}>
         <InputModeSelector mode={docInputMode} onChange={setDocInputMode}/>
-        {docInputMode==="pdf"&&<PdfInvoiceReader onCancel={()=>setDocInputMode("manual")} onItemsConfirmed={(detected)=>{setDocItems(detected.map(it=>({description:it.description,quantity:String(it.quantity),unit_price_usd:String(it.unit_price_usd)})));setDocInputMode("manual");}}/>}
+        {docInputMode==="pdf"&&<PdfInvoiceReader onCancel={()=>setDocInputMode("manual")} onItemsConfirmed={(detected)=>{setDocItems(detected.map(it=>({description:it.description,quantity:String(it.quantity),unit_price_usd:String(it.unit_price_usd),hs_code:it.hs_code||""})));setDocInputMode("manual");}}/>}
         {docInputMode==="manual"&&<>
         <div style={{padding:"10px 14px",background:"rgba(251,191,36,0.1)",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:10,marginBottom:14}}>
           <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:"0 0 4px"}}>⚠️ Importante: describí cada producto con el mayor detalle posible</p>
@@ -1040,11 +1052,25 @@ function CalculatorPage({token,client}){
 
       <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"20px 0 16px"}}>PRODUCTOS</h3>
       <InputModeSelector mode={calcInputMode} onChange={setCalcInputMode}/>
-      {calcInputMode==="pdf"&&<PdfInvoiceReader onCancel={()=>setCalcInputMode("manual")} onItemsConfirmed={(detected)=>{
-        // Convertir detected items a formato de products de la calculadora
-        const newProducts=detected.map(it=>({type:"general",description:it.description,unit_price:String(it.unit_price_usd),quantity:String(it.quantity),ncm:null,ncmLoading:false,ncmError:false}));
+      {calcInputMode==="pdf"&&<PdfInvoiceReader onCancel={()=>setCalcInputMode("manual")} onItemsConfirmed={async(detected)=>{
+        // Convertir detected items. Si traen HS code, intentar clasificar automáticamente
+        const newProducts=detected.map(it=>({type:"general",description:it.description,unit_price:String(it.unit_price_usd),quantity:String(it.quantity),ncm:it.hs_code?{ncm_code:it.hs_code,ncm_description:it.description,import_duty_rate:35,statistics_rate:3,iva_rate:21}:null,ncmLoading:!!it.hs_code,ncmError:false}));
         setProducts(newProducts);
         setCalcInputMode("manual");
+        // Para los items con HS code, hacer lookup en background al endpoint NCM para validar y traer alícuotas reales
+        for(let i=0;i<detected.length;i++){
+          const it=detected[i];
+          if(!it.hs_code)continue;
+          try{
+            const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
+            const d=await r.json();
+            if(d?.ncm_code){
+              setProducts(p=>p.map((x,j)=>j===i?{...x,ncm:{ncm_code:d.ncm_code,ncm_description:d.ncm_description||it.description,import_duty_rate:d.import_duty_rate||35,statistics_rate:d.statistics_rate||3,iva_rate:d.iva_rate||21},ncmLoading:false}:x));
+            }else{
+              setProducts(p=>p.map((x,j)=>j===i?{...x,ncmLoading:false}:x));
+            }
+          }catch(e){setProducts(p=>p.map((x,j)=>j===i?{...x,ncmLoading:false}:x));}
+        }
       }}/>}
       {calcInputMode==="manual"&&<>
       {productHistory.length>0&&<div style={{background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
