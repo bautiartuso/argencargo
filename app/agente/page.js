@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, SkeletonTable, EmptyState } from "../../lib/ui";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -645,7 +645,8 @@ function Dashboard({session,onLogout,lang,setLang,t}){
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden",marginTop:10}}>
         <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.06)"}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.tab_deposit} ({depositPkgs.length}) {"\u00b7"} {depositTotalKg} kg</h3></div>
         {depositPkgs.length===0?<p style={{padding:"2rem",textAlign:"center",color:"rgba(255,255,255,0.4)",margin:0}}>{t.no_pkgs}</p>:
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+        <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:880,whiteSpace:"nowrap"}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
             {[t.op,t.client,t.tracking,t.weight_gross_short||t.weight,t.weight_vol_short||"Vol.",t.weight_billable_short||"Fact.",t.photo,t.date,""].map((h,i)=><th key={i} style={{padding:"10px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
           </tr></thead>
@@ -665,7 +666,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
               <button onClick={async()=>{if(!confirm(`${t.confirm_delete_pkg} ${p.operations?.operation_code}?`))return;await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});reloadAll();flash(t.delete_success);}} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>{t.delete}</button>
             </td>
           </tr>;})}</tbody>
-        </table>}
+        </table></div>}
       </div>
     </>}
 
@@ -765,9 +766,8 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
     const totalValue=items.reduce((s,it)=>s+priceOf(it)*Number(it.quantity||1),0);
     const rows=items.length>0?items.map(it=>{const op=it.operations;const cli=op?.clients;const up=priceOf(it);const total=up*Number(it.quantity||1);return `<tr><td>${op?.operation_code||"—"}</td><td>${cli?cli.client_code:"—"}</td><td>${it.description||"—"}</td><td class="c mono">${hsOf(it)}</td><td class="c">${it.quantity||1}</td><td class="r">${fmt(up)}</td><td class="r"><b>${fmt(total)}</b></td></tr>`;}).join(""):'<tr><td colspan="7" style="text-align:center;color:#666;padding:20px">Sin items declarados.</td></tr>';
     const destRow=(lbl,val)=>val?`<div class="dest-row"><span>${lbl}</span><b>${val}</b></div>`:"";
-    const w=window.open("","_blank");if(!w)return;
     const LOGO="https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png";
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${flight.flight_code}</title><style>
+    const htmlContent=`<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${flight.flight_code}</title><style>
       *{box-sizing:border-box}body{font-family:'Helvetica Neue',Arial,sans-serif;padding:32px;color:#111;max-width:920px;margin:0 auto}
       .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1B4F8A;padding-bottom:16px;margin-bottom:20px}
       .header img{max-width:170px;height:auto}
@@ -815,8 +815,22 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
       <div class="totals"><div><div class="lbl">Total Quantity</div><div class="big">${totalQty}</div></div><div><div class="lbl">Total Weight</div><div class="big">${(autoWeight||0).toFixed(2)} kg</div></div><div><div class="lbl">Total Commercial Value</div><div class="big">${fmt(totalValue)}</div></div></div>
       <div class="foot"><img src="${LOGO}" alt="Argencargo"/><div class="info"><b>ARGENCARGO</b><div><span class="lbl">Tel:</span>+54 9 11 2508-8580</div><div><span class="lbl">Email:</span>info@argencargo.com.ar</div><div>Av Callao 1137 — Recoleta, CABA, Argentina</div></div></div>
       <div class="disclaimer">This document is generated for customs and freight forwarding purposes only. Final commercial invoice may differ subject to actual shipment data.</div>
-      <script>setTimeout(()=>window.print(),300)</script>
-    </body></html>`);w.document.close();
+      <script>setTimeout(()=>{try{window.print();}catch(e){}},400)</script>
+    </body></html>`;
+    // Estrategia universal: intenta abrir nueva tab; si falla (PWA standalone iOS), descarga HTML
+    const w=window.open("","_blank");
+    if(w&&w.document){
+      w.document.write(htmlContent);
+      w.document.close();
+    } else {
+      // Fallback: descargar como archivo .html (se abre en cualquier navegador, se puede imprimir desde ahí)
+      const blob=new Blob([htmlContent],{type:"text/html;charset=utf-8"});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url;a.download=`invoice-${flight.flight_code}.html`;
+      document.body.appendChild(a);a.click();
+      setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},100);
+    }
   };
   const dispatch=async()=>{
     if(!totalCost||!tracking){setErr(t.err_generic);return;}

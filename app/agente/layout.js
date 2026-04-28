@@ -7,7 +7,8 @@ export const metadata = {
     title: "Argencargo Agente",
   },
   icons: {
-    apple: [{ url: "/apple-icon.png", sizes: "512x512" }],
+    apple: [{ url: "/apple-icon-pwa.png", sizes: "512x512" }],
+    icon: [{ url: "/icon-pwa.png", sizes: "512x512" }],
   },
 };
 

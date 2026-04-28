@@ -2,7 +2,7 @@ import './globals.css';
 import Script from 'next/script';
 
 const SITE_URL = 'https://www.argencargo.com.ar';
-const OG_LOGO = 'https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png';
+const OG_LOGO = `${SITE_URL}/og-image.png`;
 
 export const metadata = {
   metadataBase: new URL(SITE_URL),
