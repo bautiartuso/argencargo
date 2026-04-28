@@ -449,6 +449,23 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
   // Checklist de cierre — modal cuando se intenta cerrar la op
   const [showCloseChecklist,setShowCloseChecklist]=useState(false);
+  // Reempaque pendiente
+  const [repackReq,setRepackReq]=useState(null);
+  useEffect(()=>{(async()=>{const r=await dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&order=requested_at.desc&limit=1`});if(Array.isArray(r)&&r[0])setRepackReq(r[0]);else setRepackReq(null);})();},[op.id,token]);
+  const requestRepack=async()=>{
+    const reason=prompt("Motivo del pedido de reempaque (opcional):\n\nEj: 'Reempaquetar para reducir volumétrico, intentar bajar de 50kg a 35kg'","");
+    if(reason===null)return;
+    // Calcular peso facturable actual usando divisor del agente
+    const billable=pkgs.reduce((s,p)=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/agentVolDiv)*q:0;return s+Math.max(b,v);},0);
+    const r=await dq("repack_requests",{method:"POST",token,body:{operation_id:op.id,status:"pending",reason:reason||null,original_billable_kg:Number(billable.toFixed(2)),original_pkg_count:pkgs.length}});
+    setRepackReq(Array.isArray(r)?r[0]:r);
+    // Auto-log en comms
+    try{await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"note",content:`🔄 Pedido de reempaque al agente.\nPeso facturable actual: ${billable.toFixed(2)} kg (${pkgs.length} bultos)${reason?`\nMotivo: ${reason}`:""}`}});}catch(e){}
+    // Push al agente
+    if(op.created_by_agent_id){try{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:op.created_by_agent_id,title:`🔄 Pedido de reempaque ${op.operation_code}`,body:reason||`Reempaquetar para bajar volumétrico (${billable.toFixed(1)} kg)`,url:`/agente?tab=deposit`})});}catch(e){}}
+    flash("✅ Pedido de reempaque enviado al agente");
+  };
+  const cancelRepack=async()=>{if(!repackReq||!confirm("¿Cancelar el pedido de reempaque?"))return;await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${repackReq.id}`,body:{status:"cancelled"}});setRepackReq(p=>({...p,status:"cancelled"}));flash("Pedido cancelado");};
   const executeSave=async()=>{
     let desc=op.description;
     if(!desc){const autoDesc=items.map(it=>it.description).filter(Boolean).join(", ");if(autoDesc){desc=autoDesc;setOp(p=>({...p,description:desc}));}}
@@ -485,6 +502,17 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
     </div>
     <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"10px 16px",fontSize:12,fontWeight:active?700:600,border:"none",background:"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.8)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{t.l}</button>;})}</div>
+    {repackReq&&repackReq.status==="pending"&&<div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.4)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <div style={{flex:1,minWidth:200}}>
+        <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:0}}>⏳ Reempaque pendiente — el agente todavía no completó</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Pedido el {new Date(repackReq.requested_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})} · Peso original: {Number(repackReq.original_billable_kg||0).toFixed(2)} kg ({repackReq.original_pkg_count} bultos){repackReq.reason?` · "${repackReq.reason}"`:""}</p>
+      </div>
+      <Btn small variant="secondary" onClick={cancelRepack}>Cancelar pedido</Btn>
+    </div>}
+    {repackReq&&repackReq.status==="done"&&(()=>{const before=Number(repackReq.original_billable_kg||0);const after=Number(repackReq.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;return <div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(34,197,94,0.12),rgba(34,197,94,0.04))",border:"1.5px solid rgba(34,197,94,0.35)",borderRadius:10}}>
+      <p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✅ Reempaque completado por el agente</p>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0"}}>Peso facturable: <strong style={{color:"#fff"}}>{before.toFixed(2)} kg → {after.toFixed(2)} kg</strong>{delta>0&&<span style={{color:"#22c55e",marginLeft:6,fontWeight:700}}>(−{delta.toFixed(2)} kg / −{pct.toFixed(0)}%)</span>}{repackReq.agent_notes?` · ${repackReq.agent_notes}`:""}</p>
+    </div>;})()}
     {pendingRedemptions.length>0&&<div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:10}}>
       <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>⭐ Canje de puntos pendiente{pendingRedemptions.length>1?"s":""}</p>
       {pendingRedemptions.map(r=><div key={r.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"8px 0",borderTop:"1px solid rgba(251,191,36,0.15)",flexWrap:"wrap"}}>
@@ -495,7 +523,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:<>
 
     {tab==="general"&&<>
-      <Card title="Estado" actions={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&<Btn small variant="secondary" onClick={async()=>{if(!confirm("¿Reabrir la declaración? El cliente podrá modificar/agregar productos."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{status:"en_deposito_origen",consolidation_confirmed:false}});setOp(p=>({...p,status:"en_deposito_origen",consolidation_confirmed:false}));flash("✅ Declaración reabierta — el cliente puede editar");}}>↻ Reabrir declaración</Btn>}{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];return <Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>;})()}<Btn onClick={handleSave} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
+      <Card title="Estado" actions={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{op.created_by_agent_id&&pkgs.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(op.status)&&(!repackReq||repackReq.status!=="pending")&&<Btn small variant="secondary" onClick={requestRepack}>🔄 Pedir reempaque</Btn>}{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&<Btn small variant="secondary" onClick={async()=>{if(!confirm("¿Reabrir la declaración? El cliente podrá modificar/agregar productos."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{status:"en_deposito_origen",consolidation_confirmed:false}});setOp(p=>({...p,status:"en_deposito_origen",consolidation_confirmed:false}));flash("✅ Declaración reabierta — el cliente puede editar");}}>↻ Reabrir declaración</Btn>}{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];return <Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>;})()}<Btn onClick={handleSave} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
         <Sel label="Estado de la carga" value={op.status} onChange={chOp("status")} options={STATUSES.filter(s=>!(isGI&&s==="en_preparacion")).map(s=>({value:s,label:SM[s].l}))}/>
         <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
         <Inp label="ETA (fecha estimada de arribo)" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>

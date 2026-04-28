@@ -174,6 +174,19 @@ const I18N={
     push_android_step2:"Tocá «Instalar app» o «Agregar a pantalla principal»",
     push_android_step3:"Abrí Argencargo desde el ícono que apareció — NO desde Chrome",
     push_android_step4:"Volvé acá y se activarán las notificaciones automáticamente",
+    repack_pending:"Reempaque pedido",
+    repack_current:"Peso actual",
+    repack_open:"Reempaquetar",
+    repack_done:"Reempaque guardado",
+    repack_title:"Reempaquetar",
+    repack_reason:"Motivo del pedido",
+    repack_before:"Antes",
+    repack_after:"Después",
+    repack_add_pkg:"Agregar bulto",
+    repack_notes:"Notas (opcional)",
+    repack_notes_ph:"Ej: combiné 6 cajas en 4, sin daño a la mercadería",
+    repack_save:"Marcar completado",
+    cancel:"Cancelar",
     save:"Guardar",
     scan:"Escanear",
     scan_tracking:"Sacar foto al sticker para detectar tracking",
@@ -340,6 +353,19 @@ const I18N={
     push_android_step2:"点击「安装应用」或「添加到主屏幕」",
     push_android_step3:"从主屏幕图标打开 Argencargo（不要从 Chrome 打开）",
     push_android_step4:"回到这里，通知会自动开启",
+    repack_pending:"重新打包请求",
+    repack_current:"当前重量",
+    repack_open:"重新打包",
+    repack_done:"重新打包已保存",
+    repack_title:"重新打包",
+    repack_reason:"请求原因",
+    repack_before:"之前",
+    repack_after:"之后",
+    repack_add_pkg:"添加包裹",
+    repack_notes:"备注（可选）",
+    repack_notes_ph:"例如：将6个箱子合并为4个，货物无损",
+    repack_save:"标记为已完成",
+    cancel:"取消",
     save:"保存",
     scan:"扫描",
     scan_tracking:"拍照自动识别快递单号",
@@ -517,6 +543,8 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const [flights,setFlights]=useState([]);
   const [flightOps,setFlightOps]=useState([]);
   const [account,setAccount]=useState([]);
+  const [repackRequests,setRepackRequests]=useState([]);
+  const [repackOpen,setRepackOpen]=useState(null); // operation_id activo en modal
   const [showForm,setShowForm]=useState(false);
   const [flashMsg,setFlashMsg]=useState("");
   const [tab,setTab]=useState("deposit");
@@ -525,13 +553,14 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const [statsPeriod,setStatsPeriod]=useState("month");
 
   const reloadAll=async()=>{
-    const [pk,fl,fo,acc]=await Promise.all([
+    const [pk,fl,fo,acc,rp]=await Promise.all([
       dq("operation_packages",{token,filters:"?select=*,operations!inner(operation_code,client_id,channel,created_by_agent_id,clients(client_code,first_name))&operations.channel=eq.aereo_blanco&operations.created_by_agent_id=not.is.null&order=created_at.desc&limit=100"}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
       dq("flight_operations",{token,filters:"?select=*"}),
-      dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"})
+      dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
+      dq("repack_requests",{token,filters:"?status=eq.pending&select=*,operations(operation_code,clients(client_code,first_name))&order=requested_at.desc"})
     ]);
-    setPackages(Array.isArray(pk)?pk:[]);setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(fo)?fo:[]);setAccount(Array.isArray(acc)?acc:[]);
+    setPackages(Array.isArray(pk)?pk:[]);setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(fo)?fo:[]);setAccount(Array.isArray(acc)?acc:[]);setRepackRequests(Array.isArray(rp)?rp:[]);
   };
 
   useEffect(()=>{(async()=>{
@@ -632,6 +661,19 @@ function Dashboard({session,onLogout,lang,setLang,t}){
       {!showForm&&<Btn onClick={()=>{setTab("deposit");setShowForm(true);}}>+ {t.register_pkg}</Btn>}
     </div>
     <PushNagBanner token={token} t={t}/>
+    {repackRequests.length>0&&<div style={{marginBottom:16}}>
+      {repackRequests.map(r=><div key={r.id} style={{padding:"14px 18px",background:"linear-gradient(135deg,rgba(251,191,36,0.15),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.5)",borderRadius:12,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:200,display:"flex",alignItems:"center",gap:12}}>
+          <span style={{fontSize:24}}>🔄</span>
+          <div>
+            <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.repack_pending||"Reempaque pedido"} · <span style={{fontFamily:"monospace",color:"#fbbf24"}}>{r.operations?.operation_code}</span></p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.7)",margin:"3px 0 0",lineHeight:1.5}}>{t.repack_current||"Peso actual"}: <strong>{Number(r.original_billable_kg||0).toFixed(2)} kg</strong> ({r.original_pkg_count} {t.bultos||"bultos"}){r.reason?`\n${r.reason}`:""}</p>
+          </div>
+        </div>
+        <button onClick={()=>setRepackOpen(r.operation_id)} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>🔄 {t.repack_open||"Reempaquetar"}</button>
+      </div>)}
+    </div>}
+    {repackOpen&&<RepackModal opId={repackOpen} request={repackRequests.find(r=>r.operation_id===repackOpen)} packages={packages.filter(p=>p.operation_id===repackOpen)} divisor={Number(signup?.volumetric_divisor)||5000} token={token} userId={userId} t={t} onClose={()=>setRepackOpen(null)} onDone={async()=>{setRepackOpen(null);await reloadAll();flash(t.repack_done||"Reempaque guardado");}}/>}
     {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:10,fontSize:13,color:"#22c55e",marginBottom:16,animation:"ac_fade_in 200ms",fontWeight:600}}>✓ {flashMsg}</div>}
     <div className="ac-agente-tabs" style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
       {[
@@ -1045,6 +1087,126 @@ function SimpleShell({children,lang,setLang,t,onLogout,token}){
       </div>
     </div>
     <div className="ac-agente-main" style={{maxWidth:1200,margin:"0 auto",padding:"32px 28px"}}>{children}</div>
+  </div>;
+}
+
+// Modal de reempaque — agente edita bultos para reducir volumétrico
+function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDone}){
+  const [bultos,setBultos]=useState(packages.map(p=>({id:p.id,quantity:p.quantity||1,weight:p.gross_weight_kg||"",length:p.length_cm||"",width:p.width_cm||"",height:p.height_cm||"",national_tracking:p.national_tracking||"",_orig:p})));
+  const [newBultos,setNewBultos]=useState([]); // bultos agregados
+  const [deleted,setDeleted]=useState([]); // ids borrados
+  const [notes,setNotes]=useState("");
+  const [saving,setSaving]=useState(false);
+  const calcBillable=(arr)=>arr.reduce((s,b)=>{const q=Number(b.quantity||1),gw=Number(b.weight||0),l=Number(b.length||0),w=Number(b.width||0),h=Number(b.height||0);const br=gw*q;const v=l&&w&&h?((l*w*h)/divisor)*q:0;return s+Math.max(br,v);},0);
+  const before=Number(request?.original_billable_kg||0);
+  const after=calcBillable([...bultos,...newBultos]);
+  const delta=before-after;
+  const ch=(arr,setArr,i,f,v)=>setArr(p=>p.map((b,j)=>j===i?{...b,[f]:v}:b));
+  const rmExisting=(i)=>{const b=bultos[i];if(b.id)setDeleted(p=>[...p,b.id]);setBultos(p=>p.filter((_,j)=>j!==i));};
+  const rmNew=(i)=>setNewBultos(p=>p.filter((_,j)=>j!==i));
+  const save=async()=>{
+    setSaving(true);
+    try{
+      // 1. UPDATE bultos existentes
+      for(const b of bultos){
+        if(!b.id)continue;
+        const body={quantity:Number(b.quantity||1)};
+        if(b.weight!==""&&b.weight!=null)body.gross_weight_kg=Number(b.weight);
+        if(b.length!==""&&b.length!=null)body.length_cm=Number(b.length);
+        if(b.width!==""&&b.width!=null)body.width_cm=Number(b.width);
+        if(b.height!==""&&b.height!=null)body.height_cm=Number(b.height);
+        await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${b.id}`,body});
+      }
+      // 2. DELETE bultos sacados
+      for(const id of deleted){
+        await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${id}`});
+      }
+      // 3. INSERT bultos nuevos
+      const lastNum=Math.max(0,...packages.map(p=>p.package_number||0));
+      let nn=lastNum;
+      for(const b of newBultos){
+        nn++;
+        const body={operation_id:opId,package_number:nn,quantity:Number(b.quantity||1),national_tracking:b.national_tracking||"",registered_by_agent_id:userId};
+        if(b.weight)body.gross_weight_kg=Number(b.weight);
+        if(b.length)body.length_cm=Number(b.length);
+        if(b.width)body.width_cm=Number(b.width);
+        if(b.height)body.height_cm=Number(b.height);
+        await dq("operation_packages",{method:"POST",token,body});
+      }
+      // 4. Marcar request como done
+      if(request?.id){
+        await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${request.id}`,body:{status:"done",new_billable_kg:Number(after.toFixed(2)),new_pkg_count:bultos.length+newBultos.length,agent_notes:notes||null,completed_at:new Date().toISOString(),completed_by:userId}});
+      }
+      // 5. Auto-log en comms
+      try{await dq("op_communications",{method:"POST",token,body:{operation_id:opId,type:"note",content:`✅ Reempaque completado por el agente.\nPeso facturable: ${before.toFixed(2)} kg → ${after.toFixed(2)} kg${delta>0?` (−${delta.toFixed(2)} kg)`:""}\nBultos: ${packages.length} → ${bultos.length+newBultos.length}${notes?`\nNotas: ${notes}`:""}`}});}catch(e){}
+      // 6. Notificar al admin (push)
+      try{
+        const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
+        const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
+        if(adminId){fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:adminId,title:`✅ Reempaque completado · ${request?.operations?.operation_code||""}`,body:`${before.toFixed(1)} kg → ${after.toFixed(1)} kg${delta>0?` (−${delta.toFixed(1)} kg)`:""}`,url:"/admin"})});}
+      }catch(e){}
+      onDone();
+    }catch(e){alert("Error: "+e.message);setSaving(false);}
+  };
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(8px)",zIndex:9999,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"4vh 16px",overflowY:"auto"}}>
+    <div onClick={e=>e.stopPropagation()} style={{maxWidth:720,width:"100%",background:"#142038",border:"2px solid rgba(184,149,106,0.5)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 80px rgba(0,0,0,0.8)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:12}}>
+        <h3 style={{fontSize:18,fontWeight:700,color:"#fff",margin:0}}>🔄 {t.repack_title||"Reempaquetar"} {request?.operations?.operation_code||""}</h3>
+        <button onClick={onClose} style={{fontSize:18,background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer"}}>✕</button>
+      </div>
+      {request?.reason&&<div style={{padding:"10px 14px",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:8,marginBottom:14}}>
+        <p style={{fontSize:11,color:"rgba(251,191,36,0.85)",margin:0,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em"}}>{t.repack_reason||"Motivo del pedido"}:</p>
+        <p style={{fontSize:13,color:"#fff",margin:"4px 0 0"}}>{request.reason}</p>
+      </div>}
+      {/* Comparación arriba */}
+      <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:140,padding:"10px 14px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8}}>
+          <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase"}}>{t.repack_before||"Antes"}</p>
+          <p style={{fontSize:18,fontWeight:700,color:"#fff",margin:"3px 0 0"}}>{before.toFixed(2)} kg</p>
+        </div>
+        <div style={{flex:1,minWidth:140,padding:"10px 14px",background:delta>0?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.04)",border:`1px solid ${delta>0?"rgba(34,197,94,0.3)":"rgba(255,255,255,0.08)"}`,borderRadius:8}}>
+          <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase"}}>{t.repack_after||"Después"}</p>
+          <p style={{fontSize:18,fontWeight:700,color:delta>0?"#22c55e":"#fff",margin:"3px 0 0"}}>{after.toFixed(2)} kg {delta>0&&<span style={{fontSize:11,fontWeight:600,color:"#22c55e"}}>(−{delta.toFixed(2)})</span>}{delta<0&&<span style={{fontSize:11,fontWeight:600,color:"#ff6b6b"}}>(+{Math.abs(delta).toFixed(2)})</span>}</p>
+        </div>
+      </div>
+      {/* Lista de bultos editables */}
+      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.04em"}}>{t.bultos||"Bultos"} ({bultos.length+newBultos.length})</p>
+      {bultos.map((b,i)=><div key={"e"+i} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:"10px 12px",marginBottom:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+          <span style={{fontSize:11,fontWeight:700,color:IC}}>Bulto {i+1}</span>
+          <button onClick={()=>rmExisting(i)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>{t.remove||"Eliminar"}</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:6}}>
+          <Inp label="Cant" type="number" value={b.quantity} onChange={v=>ch(bultos,setBultos,i,"quantity",v)}/>
+          <Inp label="Peso kg" type="number" value={b.weight} onChange={v=>ch(bultos,setBultos,i,"weight",v)}/>
+          <Inp label="L cm" type="number" value={b.length} onChange={v=>ch(bultos,setBultos,i,"length",v)}/>
+          <Inp label="W cm" type="number" value={b.width} onChange={v=>ch(bultos,setBultos,i,"width",v)}/>
+          <Inp label="H cm" type="number" value={b.height} onChange={v=>ch(bultos,setBultos,i,"height",v)}/>
+        </div>
+      </div>)}
+      {newBultos.map((b,i)=><div key={"n"+i} style={{background:"rgba(34,197,94,0.05)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:8,padding:"10px 12px",marginBottom:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+          <span style={{fontSize:11,fontWeight:700,color:"#22c55e"}}>+ Bulto nuevo</span>
+          <button onClick={()=>rmNew(i)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>{t.remove||"Eliminar"}</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:6}}>
+          <Inp label="Cant" type="number" value={b.quantity} onChange={v=>ch(newBultos,setNewBultos,i,"quantity",v)}/>
+          <Inp label="Peso kg" type="number" value={b.weight} onChange={v=>ch(newBultos,setNewBultos,i,"weight",v)}/>
+          <Inp label="L cm" type="number" value={b.length} onChange={v=>ch(newBultos,setNewBultos,i,"length",v)}/>
+          <Inp label="W cm" type="number" value={b.width} onChange={v=>ch(newBultos,setNewBultos,i,"width",v)}/>
+          <Inp label="H cm" type="number" value={b.height} onChange={v=>ch(newBultos,setNewBultos,i,"height",v)}/>
+        </div>
+      </div>)}
+      <button onClick={()=>setNewBultos(p=>[...p,{quantity:1,weight:"",length:"",width:"",height:""}])} style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.4)",background:"transparent",color:IC,cursor:"pointer",marginBottom:14,width:"100%"}}>+ {t.repack_add_pkg||"Agregar bulto"}</button>
+      <div style={{marginBottom:14}}>
+        <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.04em"}}>{t.repack_notes||"Notas (opcional)"}</label>
+        <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder={t.repack_notes_ph||"Ej: combiné 6 cajas en 4, sin daño a la mercadería"} rows={2} style={{width:"100%",padding:"8px 12px",fontSize:12,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",fontFamily:"inherit",resize:"vertical"}}/>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+        <button onClick={onClose} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>{t.cancel||"Cancelar"}</button>
+        <button onClick={save} disabled={saving} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:saving?"wait":"pointer"}}>{saving?"...":"✓ "+(t.repack_save||"Marcar completado")}</button>
+      </div>
+    </div>
   </div>;
 }
 
