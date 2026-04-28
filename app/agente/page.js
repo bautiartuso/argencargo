@@ -722,7 +722,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
     {/* TAB 5: Cuenta corriente */}
     {tab==="account"&&<div>
-      <PushSetup token={token} signup={signup} t={t}/>
+      <PushSetup token={token} userId={userId} signup={signup} t={t}/>
       <div style={{display:"flex",gap:16,marginBottom:20,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:200,background:bal=>(bal>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)"),borderRadius:14,padding:"20px 24px",border:`1px solid ${balance>=0?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)"}`,backgroundColor:balance>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)"}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>{t.balance}</p>
@@ -1198,8 +1198,9 @@ function PushNagBanner({token,t}){
   </div>;
 }
 
-function PushSetup({token,signup,t}){
+function PushSetup({token,userId,signup,t}){
   const {supported,permission,subscribed,setSubscribed,setPermission,VAPID_PUB}=usePushStatus(token);
+  const targetUserId=userId||signup?.auth_user_id;
   const [busy,setBusy]=useState(false);
   const [msg,setMsg]=useState("");
   const urlBase64ToUint8Array=(b64)=>{const pad="=".repeat((4-b64.length%4)%4);const s=(b64+pad).replace(/-/g,"+").replace(/_/g,"/");const raw=atob(s);const out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out;};
@@ -1220,7 +1221,12 @@ function PushSetup({token,signup,t}){
     setBusy(false);
   };
   const test=async()=>{setBusy(true);setMsg("");
-    try{const r=await fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:signup.auth_user_id,title:t.push_test_title||"Test Argencargo",body:t.push_test_body||"Notificaciones funcionando ✅",url:"/agente"})});const j=await r.json();setMsg(j.ok&&j.sent>0?"✅ "+(t.push_test_ok||"Enviada — revisá tu celular"):j.skipped==="no_subscriptions"?"⚠️ "+(t.push_no_subs||"No hay dispositivos suscritos"):"❌ "+(j.error||"error"));}catch(e){setMsg("❌ "+e.message);}
+    try{
+      if(!targetUserId){setMsg("❌ No se detectó user_id");setBusy(false);return;}
+      const r=await fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:targetUserId,title:t.push_test_title||"Test Argencargo",body:t.push_test_body||"Notificaciones funcionando ✅",url:"/agente"})});
+      const j=await r.json();
+      setMsg(j.ok&&j.sent>0?"✅ "+(t.push_test_ok||"Enviada — revisá tu celular"):j.skipped==="no_subscriptions"?"⚠️ "+(t.push_no_subs||"No hay dispositivos suscritos"):"❌ "+(j.error||"error"));
+    }catch(e){setMsg("❌ "+e.message);}
     setBusy(false);};
   if(!supported)return <div style={{background:"rgba(251,191,36,0.05)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:12,padding:"12px 14px",marginBottom:16}}>
     <p style={{fontSize:12,color:"#fbbf24",margin:0}}>⚠️ {t.push_unsupported||"Tu navegador no soporta notificaciones. Usá Chrome o Edge en Android, o Safari en iOS 16.4+."}</p>
