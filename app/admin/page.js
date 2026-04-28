@@ -2564,7 +2564,8 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const [items,setItems]=useState(invoiceItems);
   useEffect(()=>{setItems(invoiceItems);},[invoiceItems]);
   const chItem=(i,f,v)=>setItems(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
-  const saveItem=async(it)=>{await dq("flight_invoice_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{description:it.description,quantity:Number(it.quantity||0),unit_price_declared_usd:Number(it.unit_price_declared_usd||0),hs_code:it.hs_code||"",notes:it.notes||""}});onFlash("Item guardado");onReload();};
+  const saveItem=async(it)=>{await dq("flight_invoice_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{description:it.description,quantity:Number(it.quantity||0),unit_price_declared_usd:Number(it.unit_price_declared_usd||0),hs_code:it.hs_code||"",notes:it.notes||""}});};
+  const saveAllItems=async()=>{for(const it of items){await saveItem(it);}};
   const addItem=async()=>{const opId=opsUnique[0]?.id;if(!opId)return;const r=await dq("flight_invoice_items",{method:"POST",token,body:{flight_id:flight.id,operation_id:opId,description:"",quantity:1,unit_price_declared_usd:0,hs_code:"",sort_order:items.length+1}});const created=Array.isArray(r)?r[0]:r;if(created?.id)setItems(p=>[...p,created]);onReload();};
   const delItem=async(id)=>{await dq("flight_invoice_items",{method:"DELETE",token,filters:`?id=eq.${id}`});setItems(p=>p.filter(x=>x.id!==id));onReload();};
   const markReceived=async()=>{
@@ -2721,7 +2722,6 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
             <span style={{fontSize:11,fontWeight:700,color:IC,fontFamily:"monospace"}}>{op?op.operation_code:""} · Item {i+1}</span>
             <div style={{display:"flex",gap:6}}>
-              <button onClick={()=>saveItem(it)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(34,197,94,0.25)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer",fontWeight:600}}>Guardar</button>
               <button onClick={()=>delItem(it.id)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>X</button>
             </div>
           </div>
@@ -2737,11 +2737,14 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL DECLARADO</span>
           <span style={{fontSize:16,fontWeight:700,color:IC}}>USD {totalDeclaredUSD.toFixed(2)}</span>
         </div>
-        <div style={{display:"flex",justifyContent:"center",marginTop:10}}><button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button></div>
+        <div style={{display:"flex",justifyContent:"center",gap:10,marginTop:10,flexWrap:"wrap"}}>
+          <button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button>
+          {!flight.invoice_presented_at&&items.length>0&&<button onClick={async()=>{await saveAllItems();onFlash("Cambios guardados");onReload();}} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>💾 Guardar cambios</button>}
+        </div>
       </div>}
       {flight.status==="preparando"&&<div style={{marginTop:16,padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
         {flight.invoice_presented_at?<div><p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✓ Factura presentada {formatDate(flight.invoice_presented_at)}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>El agente ya puede despacharla</p></div>:<div><p style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",margin:0}}>⏳ La factura todavía no está presentada</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>El agente no puede despachar hasta que la presentes</p></div>}
-        {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn small onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!flight.dest_address){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}await updateFlight({invoice_presented_at:new Date().toISOString()});for(const fo of flightOps){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}});}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));onFlash("Factura presentada · agente notificado");}}>✓ Guardar y presentar factura</Btn>}
+        {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn small onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!flight.dest_address){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}await saveAllItems();await updateFlight({invoice_presented_at:new Date().toISOString()});for(const fo of flightOps){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}});}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));onFlash("Factura presentada · agente notificado");}}>✓ Guardar y presentar factura</Btn>}
       </div>}
     </Card>
     {flight.status==="despachado"&&<Card title="Datos del despacho (cargados por agente)">
