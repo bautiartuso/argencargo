@@ -218,8 +218,160 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     {ops.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>No tenés operaciones todavía.</p>}
   </div>;
 }
+// === PDF INVOICE READER === (compartido entre cotización y declaración)
+// Carga pdf.js desde CDN (no agrega al bundle), renderiza páginas a imagen,
+// llama /api/parse-invoice-pdf, devuelve items detectados para confirmar.
+let _pdfjsPromise=null;
+function loadPdfJs(){
+  if(_pdfjsPromise)return _pdfjsPromise;
+  _pdfjsPromise=new Promise((resolve,reject)=>{
+    if(typeof window==="undefined")return reject(new Error("ssr"));
+    if(window.pdfjsLib)return resolve(window.pdfjsLib);
+    // UMD build (no ESM) — expone window.pdfjsLib
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload=()=>{
+      if(!window.pdfjsLib)return reject(new Error("pdfjsLib not on window"));
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      resolve(window.pdfjsLib);
+    };
+    s.onerror=()=>reject(new Error("pdf.js failed to load"));
+    document.head.appendChild(s);
+  });
+  return _pdfjsPromise;
+}
+
+function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
+  const L={
+    upload_pdf:labels.upload_pdf||"Subir PDF",
+    drop_or_pick:labels.drop_or_pick||"Arrastrá tu factura PDF acá o tocá para seleccionar",
+    processing:labels.processing||"Leyendo el PDF...",
+    rendering:labels.rendering||"Procesando páginas",
+    extracting:labels.extracting||"Detectando productos con IA",
+    no_items:labels.no_items||"No se detectaron productos. Cargalos a mano.",
+    confirm_items:labels.confirm_items||"Productos detectados — revisá antes de confirmar",
+    confirm:labels.confirm||"Confirmar e importar",
+    cancel:labels.cancel||"Cancelar",
+    select_all:labels.select_all||"Seleccionar todos",
+    deselect_all:labels.deselect_all||"Deseleccionar",
+  };
+  const [stage,setStage]=useState("idle"); // idle | rendering | extracting | review | error
+  const [error,setError]=useState("");
+  const [items,setItems]=useState([]);
+  const [selected,setSelected]=useState({});
+  const fileRef=useRef(null);
+
+  const handleFile=async(file)=>{
+    if(!file)return;
+    if(!file.name.toLowerCase().endsWith(".pdf")&&file.type!=="application/pdf"){setError("Tiene que ser un archivo PDF");return;}
+    setError("");setStage("rendering");
+    try{
+      const pdfjs=await loadPdfJs();
+      const arrayBuffer=await file.arrayBuffer();
+      const pdf=await pdfjs.getDocument({data:arrayBuffer}).promise;
+      const pages=Math.min(pdf.numPages,10);
+      const images=[];
+      for(let i=1;i<=pages;i++){
+        const page=await pdf.getPage(i);
+        const vp=page.getViewport({scale:2}); // 2x for better OCR
+        const canvas=document.createElement("canvas");
+        canvas.width=vp.width;canvas.height=vp.height;
+        const ctx=canvas.getContext("2d");
+        await page.render({canvasContext:ctx,viewport:vp}).promise;
+        images.push(canvas.toDataURL("image/jpeg",0.85));
+      }
+      setStage("extracting");
+      const r=await fetch("/api/parse-invoice-pdf",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images})});
+      const j=await r.json();
+      if(!j.ok){setError(j.error||"Error al leer el PDF");setStage("error");return;}
+      const its=Array.isArray(j.items)?j.items:[];
+      if(its.length===0){setError(L.no_items);setStage("error");return;}
+      setItems(its);
+      const sel={};its.forEach((_,i)=>sel[i]=true);
+      setSelected(sel);
+      setStage("review");
+    }catch(e){console.error(e);setError(e.message||"Error al procesar");setStage("error");}
+  };
+
+  const updateItem=(i,f,v)=>setItems(p=>p.map((it,j)=>j===i?{...it,[f]:v}:it));
+  const toggleAll=(checked)=>{const sel={};items.forEach((_,i)=>sel[i]=checked);setSelected(sel);};
+  const confirm=()=>{
+    const final=items.filter((_,i)=>selected[i]).map(it=>({description:it.description,quantity:Number(it.quantity)||1,unit_price_usd:Number(it.unit_price_usd)||0}));
+    if(final.length===0){setError("Seleccioná al menos un producto");return;}
+    onItemsConfirmed(final);
+  };
+
+  if(stage==="rendering"||stage==="extracting"){
+    return <div style={{padding:"40px 20px",textAlign:"center"}}>
+      <div style={{fontSize:36,marginBottom:12}}>📄</div>
+      <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>{L.processing}</p>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:0}}>{stage==="rendering"?L.rendering:L.extracting}...</p>
+      <div style={{width:120,height:3,background:"rgba(255,255,255,0.08)",borderRadius:2,margin:"16px auto 0",overflow:"hidden"}}>
+        <div style={{width:"40%",height:"100%",background:GOLD_GRADIENT,borderRadius:2,animation:"pdfBar 1.2s ease-in-out infinite"}}/>
+      </div>
+      <style dangerouslySetInnerHTML={{__html:`@keyframes pdfBar{0%{margin-left:-40%}100%{margin-left:100%}}`}}/>
+    </div>;
+  }
+
+  if(stage==="review"){
+    return <div>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:"0 0 12px",lineHeight:1.5}}>✅ {L.confirm_items}</p>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>{Object.values(selected).filter(Boolean).length}/{items.length}</span>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={()=>toggleAll(true)} style={{fontSize:10,padding:"4px 8px",borderRadius:5,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>{L.select_all}</button>
+          <button onClick={()=>toggleAll(false)} style={{fontSize:10,padding:"4px 8px",borderRadius:5,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>{L.deselect_all}</button>
+        </div>
+      </div>
+      <div style={{maxHeight:"50vh",overflowY:"auto",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,marginBottom:12}}>
+        {items.map((it,i)=><div key={i} style={{display:"flex",gap:8,padding:"10px 12px",borderBottom:i<items.length-1?"1px solid rgba(255,255,255,0.04)":"none",background:selected[i]?"transparent":"rgba(0,0,0,0.2)",opacity:selected[i]?1:0.5}}>
+          <input type="checkbox" checked={!!selected[i]} onChange={e=>setSelected(p=>({...p,[i]:e.target.checked}))} style={{cursor:"pointer",marginTop:6}}/>
+          <div style={{flex:1,display:"grid",gridTemplateColumns:"3fr 1fr 1.2fr",gap:6}}>
+            <input value={it.description} onChange={e=>updateItem(i,"description",e.target.value)} placeholder="Descripción" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
+            <input type="number" value={it.quantity} onChange={e=>updateItem(i,"quantity",e.target.value)} placeholder="Cant" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
+            <input type="number" step="0.01" value={it.unit_price_usd} onChange={e=>updateItem(i,"unit_price_usd",e.target.value)} placeholder="USD c/u" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
+          </div>
+        </div>)}
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+        <button onClick={onCancel} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>{L.cancel}</button>
+        <button onClick={confirm} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>✓ {L.confirm}</button>
+      </div>
+    </div>;
+  }
+
+  // idle / error
+  return <div>
+    <input ref={fileRef} type="file" accept=".pdf,application/pdf" onChange={e=>handleFile(e.target.files?.[0])} style={{display:"none"}}/>
+    <div onClick={()=>fileRef.current?.click()} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=GOLD;e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";e.currentTarget.style.background="rgba(184,149,106,0.04)";}} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";handleFile(e.dataTransfer.files?.[0]);}} style={{border:"2px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.04)",borderRadius:12,padding:"32px 20px",textAlign:"center",cursor:"pointer",transition:"all 200ms"}}>
+      <div style={{fontSize:42,marginBottom:8}}>📄</div>
+      <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"0 0 4px"}}>{L.drop_or_pick}</p>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>PDF · max 10 páginas · facturas chinas o USA</p>
+    </div>
+    {error&&<p style={{fontSize:12,color:"#ff6b6b",margin:"10px 0 0",textAlign:"center"}}>{error}</p>}
+    {onCancel&&<div style={{display:"flex",justifyContent:"center",marginTop:10}}>
+      <button onClick={onCancel} style={{fontSize:11,color:"rgba(255,255,255,0.5)",background:"transparent",border:"none",cursor:"pointer"}}>← Cargar a mano en su lugar</button>
+    </div>}
+  </div>;
+}
+
+// Selector grande arriba: PDF vs manual. Modo exclusivo.
+function InputModeSelector({mode,onChange,labels={}}){
+  const L={pdf_title:labels.pdf_title||"📄 Subir PDF",pdf_desc:labels.pdf_desc||"Factura del proveedor — detección automática",manual_title:labels.manual_title||"✍️ Cargar a mano",manual_desc:labels.manual_desc||"Producto por producto, manual"};
+  if(mode)return null;
+  const Card=({k,title,desc,color})=><button onClick={()=>onChange(k)} style={{flex:"1 1 240px",minWidth:200,padding:"22px 20px",background:"rgba(255,255,255,0.028)",border:`2px solid ${color}30`,borderRadius:14,cursor:"pointer",textAlign:"center",transition:"all 200ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=color;e.currentTarget.style.background=`${color}10`;e.currentTarget.style.transform="translateY(-2px)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor=`${color}30`;e.currentTarget.style.background="rgba(255,255,255,0.028)";e.currentTarget.style.transform="none";}}>
+    <p style={{fontSize:18,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>{title}</p>
+    <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0,lineHeight:1.4}}>{desc}</p>
+  </button>;
+  return <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:18}}>
+    <Card k="pdf" title={L.pdf_title} desc={L.pdf_desc} color="#5b9bd5"/>
+    <Card k="manual" title={L.manual_title} desc={L.manual_desc} color="#B8956A"/>
+  </div>;
+}
+
 function OperationDetail({op,token,onBack}){
   const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);
+  const [docInputMode,setDocInputMode]=useState(null); // 'pdf' | 'manual'
   const [localConfirmed,setLocalConfirmed]=useState(false);
   const canDocument=op.status==="en_preparacion"||op.status==="en_deposito_origen"||localConfirmed;
   const addDocItem=()=>setDocItems(p=>[...p,{description:"",quantity:"1",unit_price_usd:""}]);
@@ -353,7 +505,7 @@ function OperationDetail({op,token,onBack}){
       <h3 style={{fontSize:15,fontWeight:700,color:"#fbbf24",margin:"0 0 6px"}}>📦 Tu paquete ya está en nuestro depósito</h3>
       <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>¿Este es el único paquete que vas a enviar, o tenés más paquetes por llegar al depósito? Si es el único, confirmalo y empezamos a preparar tu envío.</p>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-        <button onClick={()=>{setLocalConfirmed(true);setShowDocPanel(true);setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}}).then(()=>loadAll());}} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW}}>✅ Es el único, pueden enviarlo</button>
+        <button onClick={()=>{setLocalConfirmed(true);setShowDocPanel(true);setDocInputMode(null);setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}}).then(()=>loadAll());}} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW}}>✅ Es el único, pueden enviarlo</button>
         <button style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",cursor:"default"}}>⏳ Tengo más paquetes por llegar</button>
       </div>
     </div>}
@@ -395,9 +547,12 @@ function OperationDetail({op,token,onBack}){
           <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>📋 Completá la documentación de tu carga</h3>
           <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:0}}>Necesitamos los datos de la mercadería para avanzar con el envío</p>
         </div>
-        <button onClick={()=>{setShowDocPanel(!showDocPanel);if(!showDocPanel&&docItems.length===0)setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);}} style={{padding:"10px 20px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW}}>{showDocPanel?"Cerrar":"+ Agregar productos"}</button>
+        <button onClick={()=>{setShowDocPanel(!showDocPanel);if(!showDocPanel){setDocInputMode(null);if(docItems.length===0)setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);}}} style={{padding:"10px 20px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW}}>{showDocPanel?"Cerrar":"+ Agregar productos"}</button>
       </div>
       {showDocPanel&&<div style={{borderTop:"1px solid rgba(184,149,106,0.2)",paddingTop:14}}>
+        <InputModeSelector mode={docInputMode} onChange={setDocInputMode}/>
+        {docInputMode==="pdf"&&<PdfInvoiceReader onCancel={()=>setDocInputMode("manual")} onItemsConfirmed={(detected)=>{setDocItems(detected.map(it=>({description:it.description,quantity:String(it.quantity),unit_price_usd:String(it.unit_price_usd)})));setDocInputMode("manual");}}/>}
+        {docInputMode==="manual"&&<>
         <div style={{padding:"10px 14px",background:"rgba(251,191,36,0.1)",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:10,marginBottom:14}}>
           <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:"0 0 4px"}}>⚠️ Importante: describí cada producto con el mayor detalle posible</p>
           <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:0,lineHeight:1.5}}>Necesitamos saber exactamente qué contiene tu paquete para la documentación aduanera. En vez de "electrónica", poné "smartwatch Xiaomi Band 8 Pro". Cuanto más específico, mejor.</p>
@@ -418,6 +573,7 @@ function OperationDetail({op,token,onBack}){
         <div style={{display:"flex",gap:8}}>
           <button onClick={saveDocs} disabled={savingDocs} style={{flex:1,padding:"12px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:savingDocs?"not-allowed":"pointer",background:savingDocs?"rgba(255,255,255,0.08)":`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff"}}>{savingDocs?"Guardando...":"Guardar productos"}</button>
         </div>
+        </>}
       </div>}
     </div>}
     {!loading&&(()=>{const bt=Number(op.budget_total||0);const bTax=Number(op.budget_taxes||0);const bFlete=Number(op.budget_flete||0);const bSeg=Number(op.budget_seguro||0);const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;const isB=op.channel?.includes("negro");
@@ -623,6 +779,7 @@ function CalculatorPage({token,client}){
   const [products,setProducts]=useState([{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false}]);
   const [pkgs,setPkgs]=useState([{qty:"1",length:"",width:"",height:"",weight:""}]);const [noDims,setNoDims]=useState(false);const clientAutoZone=(()=>{if(!client)return"oficina";const c=(client.city||"").toLowerCase();const p=(client.province||"").toLowerCase();if(c.includes("capital")||c.includes("caba")||p.includes("capital")||p==="caba")return"caba";if(p.includes("buenos aires")||c.includes("buenos aires"))return"gba";return"oficina";})();const [delivery,setDelivery]=useState(clientAutoZone);
   const [hasBattery,setHasBattery]=useState(false);const [hasBrand,setHasBrand]=useState(false);const [expandedCh,setExpandedCh]=useState(null);
+  const [calcInputMode,setCalcInputMode]=useState(null); // 'pdf' | 'manual'
   // Keep global ncm for backward compat in calculations (use first product's NCM)
   const ncm=products.find(p=>p.ncm?.ncm_code)?.ncm||null;const ncmManual=false;
   const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [config,setConfig]=useState({});const [results,setResults]=useState(null);
@@ -882,6 +1039,14 @@ function CalculatorPage({token,client}){
       {hasBattery&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:10,padding:"12px 16px",marginBottom:20}}><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Productos con batería interna (ej: auriculares bluetooth, power banks, smartwatch) son mercadería peligrosa y deben despacharse desde <strong style={{color:IC}}>Hong Kong</strong>. Recargo de <strong style={{color:IC}}>$2/kg</strong>.</p></div>}
 
       <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"20px 0 16px"}}>PRODUCTOS</h3>
+      <InputModeSelector mode={calcInputMode} onChange={setCalcInputMode}/>
+      {calcInputMode==="pdf"&&<PdfInvoiceReader onCancel={()=>setCalcInputMode("manual")} onItemsConfirmed={(detected)=>{
+        // Convertir detected items a formato de products de la calculadora
+        const newProducts=detected.map(it=>({type:"general",description:it.description,unit_price:String(it.unit_price_usd),quantity:String(it.quantity),ncm:null,ncmLoading:false,ncmError:false}));
+        setProducts(newProducts);
+        setCalcInputMode("manual");
+      }}/>}
+      {calcInputMode==="manual"&&<>
       {productHistory.length>0&&<div style={{background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
         <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>↻ Importaste antes — usar de nuevo:</p>
         <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
@@ -903,6 +1068,7 @@ function CalculatorPage({token,client}){
         {!hasBrand&&!p.ncm&&!p.ncmError&&!p.ncmLoading&&p.description?.trim()&&<div style={{marginBottom:8}}><button onClick={()=>chProd(i,"ncm",{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,statistics_rate:3,iva_rate:21})} style={{fontSize:11,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",padding:0}}>¿No querés clasificar? Usar valores estimados →</button></div>}
       </div>)}
       <button onClick={addProduct} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar otro producto</button>
+      </>}
 
       {totalFob>0&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:12,marginTop:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Valor total mercadería</span><span style={{fontSize:16,fontWeight:700,color:IC}}>{usd(totalFob)}</span></div>}
       {(()=>{const hasPriced=products.some(p=>Number(p.unit_price)>0);const pendingClass=!hasBrand&&products.some(p=>Number(p.unit_price)>0&&!p.ncm);const blocked=!hasPriced||pendingClass;return <>
