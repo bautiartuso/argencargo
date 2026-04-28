@@ -6,7 +6,7 @@
   "scope": "/agente",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0F1E3D",
+  "background_color": "#ffffff",
   "theme_color": "#0F1E3D",
   "lang": "zh",
   "icons": [
@@ -17,7 +17,7 @@
       "purpose": "any"
     },
     {
-      "src": "/apple-icon-pwa.png",
+      "src": "/icon-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
