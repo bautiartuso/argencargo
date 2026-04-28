@@ -156,6 +156,11 @@ const I18N={
     push_enabled:"Notificaciones activadas",
     push_denied:"Permiso denegado. Habilitalo en ajustes del navegador.",
     push_unsupported:"Tu navegador no soporta notificaciones. Usá Chrome o Edge en Android, o Safari en iOS 16.4+.",
+    push_nag_title:"Activá las notificaciones",
+    push_nag_msg:"Necesarias para recibir avisos cuando admin crea o despacha vuelos.",
+    push_nag_denied_title:"Notificaciones bloqueadas",
+    push_nag_denied_msg:"Activalas desde los ajustes del navegador para recibir avisos de nuevos vuelos.",
+    push_activate_now:"Activar ahora",
     save:"Guardar",
     scan:"Escanear",
     scan_tracking:"Sacar foto al sticker para detectar tracking",
@@ -304,6 +309,11 @@ const I18N={
     push_enabled:"通知已开启",
     push_denied:"权限被拒绝。请在浏览器设置中开启。",
     push_unsupported:"您的浏览器不支持通知。请使用安卓 Chrome/Edge 或 iOS 16.4+ 的 Safari。",
+    push_nag_title:"请开启通知",
+    push_nag_msg:"管理员创建或发出航班时，需要通知您。",
+    push_nag_denied_title:"通知已被拒绝",
+    push_nag_denied_msg:"请在浏览器设置中开启通知，以便接收新航班提醒。",
+    push_activate_now:"立即开启",
     save:"保存",
     scan:"扫描",
     scan_tracking:"拍照自动识别快递单号",
@@ -595,6 +605,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
       </div>
       {!showForm&&<Btn onClick={()=>{setTab("deposit");setShowForm(true);}}>+ {t.register_pkg}</Btn>}
     </div>
+    <PushNagBanner token={token} t={t}/>
     {flashMsg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:10,fontSize:13,color:"#22c55e",marginBottom:16,animation:"ac_fade_in 200ms",fontWeight:600}}>✓ {flashMsg}</div>}
     <div className="ac-agente-tabs" style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
       {[
@@ -1021,21 +1032,78 @@ function TrackingScanButton({onDetected,t}){
 }
 
 // Configuración de Web Push notifications del agente (sin terceros, gratis, funciona en China)
-function PushSetup({token,signup,t}){
+// Hook reutilizable: estado de notificaciones + auto-subscribe si permission ya está granted
+function usePushStatus(token){
   const [supported,setSupported]=useState(false);
   const [permission,setPermission]=useState("default");
   const [subscribed,setSubscribed]=useState(false);
-  const [busy,setBusy]=useState(false);
-  const [msg,setMsg]=useState("");
-  const VAPID_PUB=process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY||"";
+  const VAPID_PUB=typeof process!=="undefined"?(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY||""):"";
   useEffect(()=>{
     if(typeof window==="undefined")return;
     const ok="serviceWorker"in navigator&&"PushManager"in window&&"Notification"in window;
     setSupported(ok);
     if(!ok)return;
     setPermission(Notification.permission);
-    navigator.serviceWorker.ready.then(reg=>reg.pushManager.getSubscription()).then(sub=>setSubscribed(!!sub)).catch(()=>{});
-  },[]);
+    navigator.serviceWorker.ready.then(reg=>reg.pushManager.getSubscription()).then(async sub=>{
+      setSubscribed(!!sub);
+      // Auto-subscribe si permission ya está granted pero no hay subscription (re-instaló app, limpió datos, etc.)
+      if(!sub&&Notification.permission==="granted"&&VAPID_PUB&&token){
+        try{
+          const urlBase64ToUint8Array=(b64)=>{const pad="=".repeat((4-b64.length%4)%4);const s=(b64+pad).replace(/-/g,"+").replace(/_/g,"/");const raw=atob(s);const out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out;};
+          const reg2=await navigator.serviceWorker.ready;
+          const newSub=await reg2.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(VAPID_PUB)});
+          await fetch("/api/push/subscribe",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({subscription:newSub.toJSON(),portal:"agente"})});
+          setSubscribed(true);
+        }catch(e){}
+      }
+    }).catch(()=>{});
+  },[token]);
+  return {supported,permission,subscribed,setSubscribed,setPermission,VAPID_PUB};
+}
+
+// Banner persistente arriba del Dashboard cuando notifs no están activas
+function PushNagBanner({token,t}){
+  const {supported,permission,subscribed,setSubscribed,setPermission,VAPID_PUB}=usePushStatus(token);
+  const [busy,setBusy]=useState(false);
+  // Auto-mostrar prompt 2s después de cargar (solo si permission===default — sino el navegador no lo abre)
+  useEffect(()=>{
+    if(!supported||subscribed||permission!=="default"||!VAPID_PUB||!token)return;
+    const tm=setTimeout(()=>activate(),2000);
+    return()=>clearTimeout(tm);
+  },[supported,subscribed,permission,VAPID_PUB,token]);
+  const activate=async()=>{
+    if(!VAPID_PUB){return;}
+    setBusy(true);
+    try{
+      let perm=Notification.permission;
+      if(perm==="default"){perm=await Notification.requestPermission();setPermission(perm);}
+      if(perm!=="granted"){setBusy(false);return;}
+      const urlBase64ToUint8Array=(b64)=>{const pad="=".repeat((4-b64.length%4)%4);const s=(b64+pad).replace(/-/g,"+").replace(/_/g,"/");const raw=atob(s);const out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out;};
+      const reg=await navigator.serviceWorker.ready;
+      const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(VAPID_PUB)});
+      await fetch("/api/push/subscribe",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({subscription:sub.toJSON(),portal:"agente"})});
+      setSubscribed(true);
+    }catch(e){}
+    setBusy(false);
+  };
+  if(!supported||subscribed)return null;
+  const isDenied=permission==="denied";
+  return <div style={{background:isDenied?"linear-gradient(135deg,rgba(248,113,113,0.18),rgba(248,113,113,0.05))":"linear-gradient(135deg,rgba(251,191,36,0.18),rgba(251,191,36,0.05))",border:`1.5px solid ${isDenied?"rgba(248,113,113,0.5)":"rgba(251,191,36,0.5)"}`,borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+    <div style={{flex:1,minWidth:200,display:"flex",alignItems:"center",gap:12}}>
+      <span style={{fontSize:24}}>🔔</span>
+      <div>
+        <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{isDenied?(t.push_nag_denied_title||"Notificaciones bloqueadas"):(t.push_nag_title||"Activá las notificaciones")}</p>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"3px 0 0",lineHeight:1.4}}>{isDenied?(t.push_nag_denied_msg||"Activalas desde los ajustes del navegador para recibir avisos de nuevos vuelos."):(t.push_nag_msg||"Necesarias para recibir avisos cuando admin crea o despacha vuelos.")}</p>
+      </div>
+    </div>
+    {!isDenied&&<button onClick={activate} disabled={busy} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:busy?"wait":"pointer",whiteSpace:"nowrap"}}>{busy?"...":(t.push_activate_now||"Activar ahora")}</button>}
+  </div>;
+}
+
+function PushSetup({token,signup,t}){
+  const {supported,permission,subscribed,setSubscribed,setPermission,VAPID_PUB}=usePushStatus(token);
+  const [busy,setBusy]=useState(false);
+  const [msg,setMsg]=useState("");
   const urlBase64ToUint8Array=(b64)=>{const pad="=".repeat((4-b64.length%4)%4);const s=(b64+pad).replace(/-/g,"+").replace(/_/g,"/");const raw=atob(s);const out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out;};
   const subscribe=async()=>{
     if(!VAPID_PUB){setMsg("❌ Falta NEXT_PUBLIC_VAPID_PUBLIC_KEY en variables de entorno");return;}
