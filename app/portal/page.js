@@ -627,6 +627,22 @@ function CalculatorPage({token,client}){
   const ncm=products.find(p=>p.ncm?.ncm_code)?.ncm||null;const ncmManual=false;
   const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [config,setConfig]=useState({});const [results,setResults]=useState(null);
   useEffect(()=>{(async()=>{const [t,c,ov]=await Promise.all([dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"}),client?.id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${client.id}&select=*`}):Promise.resolve([])]);setTariffs(Array.isArray(t)?t:[]);setOverrides(Array.isArray(ov)?ov:[]);const cfg={};(Array.isArray(c)?c:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);})();},[token,client?.id]);
+  // Historial de productos del cliente: para sugerir "repetir" en nueva cotización
+  const [productHistory,setProductHistory]=useState([]);
+  useEffect(()=>{if(!client?.id)return;(async()=>{
+    const ops=await dq("operations",{token,filters:`?client_id=eq.${client.id}&select=id,operation_code,description,created_at&order=created_at.desc&limit=10`});
+    if(!Array.isArray(ops)||ops.length===0)return;
+    const opIds=ops.map(o=>o.id).join(",");
+    const items=await dq("operation_items",{token,filters:`?operation_id=in.(${opIds})&select=description,unit_price_usd,quantity,ncm_code,import_duty_rate,statistics_rate,iva_rate,operation_id&order=created_at.desc`});
+    if(!Array.isArray(items))return;
+    // Dedup por descripción, último uso primero
+    const seen={};const dedup=[];
+    items.forEach(it=>{const k=(it.description||"").trim().toLowerCase();if(!k||seen[k])return;seen[k]=true;dedup.push(it);});
+    setProductHistory(dedup.slice(0,8));
+  })();},[client?.id,token]);
+  const useHistorical=(it)=>{
+    setProducts(p=>[...p,{type:"general",description:it.description||"",unit_price:String(it.unit_price_usd||""),quantity:String(it.quantity||"1"),ncm:it.ncm_code?{ncm_code:it.ncm_code,ncm_description:it.description,import_duty_rate:it.import_duty_rate||35,statistics_rate:it.statistics_rate||3,iva_rate:it.iva_rate||21}:null,ncmLoading:false,ncmError:false}]);
+  };
 
   const addProduct=()=>setProducts(p=>[...p,{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false}]);
   const rmProduct=i=>setProducts(p=>p.filter((_,j)=>j!==i));
@@ -866,6 +882,12 @@ function CalculatorPage({token,client}){
       {hasBattery&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:10,padding:"12px 16px",marginBottom:20}}><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Productos con batería interna (ej: auriculares bluetooth, power banks, smartwatch) son mercadería peligrosa y deben despacharse desde <strong style={{color:IC}}>Hong Kong</strong>. Recargo de <strong style={{color:IC}}>$2/kg</strong>.</p></div>}
 
       <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"20px 0 16px"}}>PRODUCTOS</h3>
+      {productHistory.length>0&&<div style={{background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+        <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>↻ Importaste antes — usar de nuevo:</p>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {productHistory.map((it,i)=><button key={i} onClick={()=>useHistorical(it)} title={`USD ${Number(it.unit_price_usd||0).toFixed(2)} c/u${it.ncm_code?` · NCM ${it.ncm_code}`:""}`} style={{fontSize:11,padding:"5px 10px",borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:"rgba(255,255,255,0.85)",cursor:"pointer",fontWeight:500}}>+ {it.description?.slice(0,30)}{it.description?.length>30?"...":""}{it.ncm_code&&<span style={{marginLeft:5,fontSize:9,color:IC}}>NCM</span>}</button>)}
+        </div>
+      </div>}
       {products.map((p,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:IC}}>Producto {i+1}</span>{products.length>1&&<button onClick={()=>rmProduct(i)} style={{fontSize:11,padding:"4px 10px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>Eliminar</button>}</div>
         <div style={{marginBottom:14}}><label style={{display:"block",fontSize:13,fontWeight:700,color:"#fff",marginBottom:5}}>Descripción de la mercadería</label><div style={{display:"flex",gap:8}}><input value={p.description||""} onChange={e=>chProd(i,"description",e.target.value)} placeholder="Sé específico. Ej: Auriculares inalámbricos bluetooth" style={{flex:1,padding:"11px 14px",fontSize:14,border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.1)",color:"#fff",outline:"none"}} onFocus={e=>{e.target.style.borderColor=IC;}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";}}/>{!hasBrand&&<button onClick={()=>classifyProduct(i)} disabled={p.ncmLoading||!p.description?.trim()} style={{padding:"11px 16px",fontSize:12,fontWeight:600,borderRadius:10,border:"none",cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW,whiteSpace:"nowrap",opacity:p.ncmLoading?0.6:1}}>{p.ncmLoading?"Clasificando...":"Clasificar"}</button>}</div></div>

@@ -154,6 +154,10 @@ const I18N={
     wechat_test_body:"Si ves este mensaje, las notificaciones funcionan ✅",
     wechat_test_ok:"Mensaje enviado, revisá WeChat",
     save:"Guardar",
+    scan:"Escanear",
+    scan_tracking:"Sacar foto al sticker para detectar tracking",
+    scan_detected:"Detectado",
+    scan_not_found:"No se detectó tracking. Cargalo a mano.",
     operations_in_flight:"Operaciones del vuelo",
     dispatch_form:"Despachar vuelo",
     total_weight:"Peso total (kg)",
@@ -295,6 +299,10 @@ const I18N={
     wechat_test_body:"如果你看到这条消息，说明通知功能正常 ✅",
     wechat_test_ok:"消息已发送，请查看企业微信",
     save:"保存",
+    scan:"扫描",
+    scan_tracking:"拍照自动识别快递单号",
+    scan_detected:"已识别",
+    scan_not_found:"未识别到单号，请手动输入",
     operations_in_flight:"航班操作",
     dispatch_form:"发送航班",
     total_weight:"总重量 (公斤)",
@@ -614,7 +622,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
           </tr></thead>
           <tbody>{depositPkgs.map(p=>{
             const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);
-            const bruto=gw*q;const vol=l&&w&&h?((l*w*h)/5000)*q:0;const fact=Math.max(bruto,vol);const isVolBigger=vol>bruto;
+            const volDiv=Number(signup?.volumetric_divisor)||5000;const bruto=gw*q;const vol=l&&w&&h?((l*w*h)/volDiv)*q:0;const fact=Math.max(bruto,vol);const isVolBigger=vol>bruto;
             return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{p.operations?.operation_code||"—"}</td>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)"}}>{p.operations?.clients?.client_code||"—"}</td>
@@ -983,6 +991,29 @@ function SimpleShell({children,lang,setLang,t,onLogout,token}){
   </div>;
 }
 
+// Botón "📷 Escanear" — saca foto al sticker, OCR via OpenAI Vision, autocompleta tracking
+function TrackingScanButton({onDetected,t}){
+  const [scanning,setScanning]=useState(false);
+  const ref=useRef(null);
+  const handleFile=async(file)=>{
+    if(!file)return;setScanning(true);
+    try{
+      const reader=new FileReader();
+      const dataUrl=await new Promise((res,rej)=>{reader.onload=()=>res(reader.result);reader.onerror=rej;reader.readAsDataURL(file);});
+      const r=await fetch("/api/ocr-tracking",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image_base64:dataUrl})});
+      const j=await r.json();
+      if(j?.tracking){onDetected(j.tracking);toast(`✅ ${t.scan_detected||"Detectado"}: ${j.tracking}`,"success");}
+      else{toast(`⚠️ ${t.scan_not_found||"No se detectó tracking. Cargalo a mano."}`,"error");}
+    }catch(e){toast("❌ "+e.message,"error");}
+    setScanning(false);
+    if(ref.current)ref.current.value="";
+  };
+  return <>
+    <input ref={ref} type="file" accept="image/*" capture="environment" onChange={e=>handleFile(e.target.files?.[0])} style={{display:"none"}}/>
+    <button type="button" onClick={()=>ref.current?.click()} disabled={scanning} title={t.scan_tracking||"Escanear tracking con foto"} style={{padding:"10px 14px",fontSize:12,fontWeight:600,borderRadius:10,border:`1px solid ${scanning?"rgba(255,255,255,0.1)":"rgba(91,155,213,0.4)"}`,background:scanning?"rgba(255,255,255,0.04)":"rgba(91,155,213,0.1)",color:scanning?"rgba(255,255,255,0.4)":"#5b9bd5",cursor:scanning?"wait":"pointer",whiteSpace:"nowrap",height:42,boxSizing:"border-box"}}>{scanning?"…":"📷 "+(t.scan||"Escanear")}</button>
+  </>;
+}
+
 // Configuración de notificaciones WeChat Work del agente
 function WeChatSetup({token,signup,onSaved,t}){
   const [url,setUrl]=useState(signup?.wechat_webhook_url||"");
@@ -1176,7 +1207,10 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
       <p style={{fontSize:12,color:IC,margin:0,fontWeight:600}}>ℹ {t.new_op_info}</p>
     </div>}
 
-    <Inp label={t.tracking} value={tracking} onChange={setTracking} placeholder={t.tracking_ph} req/>
+    <div style={{display:"flex",gap:8,alignItems:"end",marginBottom:12}}>
+      <div style={{flex:1}}><Inp label={t.tracking} value={tracking} onChange={setTracking} placeholder={t.tracking_ph} req/></div>
+      <TrackingScanButton onDetected={setTracking} t={t}/>
+    </div>
 
     <div style={{marginTop:8,marginBottom:14}}>
       <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 10px",textTransform:"uppercase"}}>{t.bultos} ({bultos.length})</p>

@@ -201,6 +201,18 @@ function OperationsList({token,onSelect,onNew}){
   });
   const toggleSort=(col)=>{if(sortCol===col){setSortDir(d=>d==="asc"?"desc":"asc");}else{setSortCol(col);setSortDir("asc");}};
   const SH=({label,col})=><th onClick={()=>toggleSort(col)} style={{padding:"14px 16px",textAlign:"left",fontSize:10,fontWeight:700,color:sortCol===col?GOLD_LIGHT:"rgba(255,255,255,0.45)",textTransform:"uppercase",cursor:"pointer",userSelect:"none",letterSpacing:"0.08em",transition:"color 150ms"}}>{label}{sortCol===col?<span style={{marginLeft:6,fontSize:9}}>{sortDir==="asc"?"▲":"▼"}</span>:null}</th>;
+  // Cards "qué necesita atención": cuenta ops por categoría problemática
+  const STALE_DAYS={en_deposito_origen:14,en_preparacion:10,en_transito:30,arribo_argentina:7,en_aduana:14,entregada:30};
+  const daysSince=(dateStr)=>dateStr?Math.floor((Date.now()-new Date(dateStr).getTime())/86400000):0;
+  const staleOps=ops.filter(o=>{const limit=STALE_DAYS[o.status];if(!limit)return false;const since=daysSince(o.updated_at||o.created_at);return since>=limit;});
+  const noBudgetOps=ops.filter(o=>!["operacion_cerrada","cancelada","pendiente"].includes(o.status)&&Number(o.budget_total||0)<=0);
+  const unpaidClosedOps=ops.filter(o=>{const s=calcSaldo(o);return s!==null&&s>0&&["entregada","operacion_cerrada"].includes(o.status);});
+  const noEtaOps=ops.filter(o=>["en_transito","arribo_argentina"].includes(o.status)&&!o.eta);
+  const attentionTotal=staleOps.length+noBudgetOps.length+unpaidClosedOps.length+noEtaOps.length;
+  const AttCard=({n,label,color,onClick})=><button onClick={onClick} style={{flex:"1 1 160px",minWidth:140,padding:"14px 16px",background:n>0?`${color}10`:"rgba(255,255,255,0.02)",border:`1px solid ${n>0?color+"50":"rgba(255,255,255,0.05)"}`,borderRadius:12,cursor:n>0?"pointer":"default",textAlign:"left",transition:"all 150ms"}} onMouseEnter={e=>{if(n>0)e.currentTarget.style.background=`${color}20`;}} onMouseLeave={e=>{if(n>0)e.currentTarget.style.background=`${color}10`;}}>
+    <p style={{fontSize:24,fontWeight:800,color:n>0?color:"rgba(255,255,255,0.25)",margin:0,fontVariantNumeric:"tabular-nums"}}>{n}</p>
+    <p style={{fontSize:11,color:n>0?"#fff":"rgba(255,255,255,0.4)",margin:"2px 0 0",fontWeight:600,letterSpacing:"0.02em"}}>{label}</p>
+  </button>;
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:10,flexWrap:"wrap"}}>
       <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Operaciones</h2>
@@ -208,6 +220,12 @@ function OperationsList({token,onSelect,onNew}){
         <Btn variant="gold" onClick={onNew}>+ Nueva operación</Btn>
       </div>
     </div>
+    {attentionTotal>0&&<div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
+      <AttCard n={staleOps.length} label="Estancadas" color="#f87171" onClick={()=>{if(staleOps[0])onSelect(staleOps[0]);}}/>
+      <AttCard n={noBudgetOps.length} label="Sin presupuesto" color="#fbbf24" onClick={()=>{if(noBudgetOps[0])onSelect(noBudgetOps[0]);}}/>
+      <AttCard n={noEtaOps.length} label="Sin ETA" color="#60a5fa" onClick={()=>{if(noEtaOps[0])onSelect(noEtaOps[0]);}}/>
+      <AttCard n={unpaidClosedOps.length} label="Cobradas con saldo" color="#a78bfa" onClick={()=>{if(unpaidClosedOps[0])onSelect(unpaidClosedOps[0]);}}/>
+    </div>}
     <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
       <div style={{flex:1,minWidth:200}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por código, cliente o descripción..." style={{width:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
       <div style={{position:"relative"}}><button onClick={()=>setShowStatusDrop(p=>!p)} style={{padding:"10px 14px",fontSize:12,border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{fStatuses.length>0?`${fStatuses.length} estados`:"Todos los estados"} ▼</button>
@@ -231,7 +249,7 @@ function OperationsList({token,onSelect,onNew}){
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.78)",whiteSpace:"nowrap",fontSize:13}}>{cn}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12.5}}>{op.description||"—"}</td>
           <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}><span style={{fontSize:10.5,padding:"3px 9px",borderRadius:999,background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",border:"1px solid rgba(255,255,255,0.06)"}}>{CM[op.channel]||op.channel}</span></td>
-          <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>{(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px ${st.c}`:"none"}}/>{st.l}</span>;})()}</td>
+          <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>{(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);const limit=STALE_DAYS[op.status];const since=daysSince(op.updated_at||op.created_at);const isStale=limit&&since>=limit;return <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px ${st.c}`:"none"}}/>{st.l}</span>{isStale&&<span title={`Hace ${since} días en este estado`} style={{fontSize:9,fontWeight:700,padding:"3px 6px",borderRadius:4,background:"rgba(248,113,113,0.15)",color:"#f87171",border:"1px solid rgba(248,113,113,0.4)"}}>⚠ {since}d</span>}</span>;})()}</td>
           {showGanancia?<td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap",fontSize:12.5}}>{formatDate(op.collection_date||op.closed_at)}</td>:<><td style={{padding:"14px 16px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontSize:12.5}}>{formatDate(op.eta)}</td><td style={{padding:"14px 16px",whiteSpace:"nowrap",fontSize:12.5,fontWeight:700,fontVariantNumeric:"tabular-nums",color:saldo===null?"rgba(255,255,255,0.35)":saldo===0?"#22c55e":GOLD_LIGHT}}>{saldo===null?<span style={{fontWeight:500}}>—</span>:saldo===0?"Cobrada":`USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</td></>}
           {showGanancia&&<td style={{padding:"14px 16px",fontWeight:700,color:gan>0?"#22c55e":gan<0?"#ff6b6b":"rgba(255,255,255,0.4)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{(()=>{
             const realIng=op.is_collected?Number(op.collected_amount||op.budget_total||0):Number(op.budget_total||0);
@@ -449,7 +467,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:<>
 
     {tab==="general"&&<>
-      <Card title="Estado" actions={<div style={{display:"flex",gap:8}}>{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];return <Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>;})()}<Btn onClick={async()=>{let desc=op.description;if(!desc){const autoDesc=items.map(it=>it.description).filter(Boolean).join(", ");if(autoDesc){desc=autoDesc;setOp(p=>({...p,description:desc}));}}setSaving(true);const prevStatus=initOp.status;const{id,clients,...rest}=({...op,description:desc});delete rest.created_at;delete rest.updated_at;if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});if(rest.status!==prevStatus){const triggerMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};const trigger=triggerMap[rest.status];if(trigger){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${trigger} enviado al cliente`);else if(resp?.skipped==="already_sent"){/* silencioso: el mail ya fue enviado antes */}else if(resp?.skipped)flash(`⚠️ Email ${trigger} NO enviado: ${resp.skipped}`);else{console.error("email error",resp);flash(`❌ Email ${trigger} falló: ${resp?.error||"ver consola"}`);}}catch(e){console.error("email error",e);flash(`❌ Email ${trigger} falló: ${e.message}`);}}}else{flash("Operación guardada");}setSaving(false);}} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
+      <Card title="Estado" actions={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&<Btn small variant="secondary" onClick={async()=>{if(!confirm("¿Reabrir la declaración? El cliente podrá modificar/agregar productos."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{status:"en_deposito_origen",consolidation_confirmed:false}});setOp(p=>({...p,status:"en_deposito_origen",consolidation_confirmed:false}));flash("✅ Declaración reabierta — el cliente puede editar");}}>↻ Reabrir declaración</Btn>}{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];return <Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>;})()}<Btn onClick={async()=>{let desc=op.description;if(!desc){const autoDesc=items.map(it=>it.description).filter(Boolean).join(", ");if(autoDesc){desc=autoDesc;setOp(p=>({...p,description:desc}));}}setSaving(true);const prevStatus=initOp.status;const{id,clients,...rest}=({...op,description:desc});delete rest.created_at;delete rest.updated_at;if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});if(rest.status!==prevStatus){const triggerMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",operacion_cerrada:"cerrada"};const trigger=triggerMap[rest.status];if(trigger){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${trigger} enviado al cliente`);else if(resp?.skipped==="already_sent"){/* silencioso: el mail ya fue enviado antes */}else if(resp?.skipped)flash(`⚠️ Email ${trigger} NO enviado: ${resp.skipped}`);else{console.error("email error",resp);flash(`❌ Email ${trigger} falló: ${resp?.error||"ver consola"}`);}}catch(e){console.error("email error",e);flash(`❌ Email ${trigger} falló: ${e.message}`);}}}else{flash("Operación guardada");}setSaving(false);}} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
         <Sel label="Estado de la carga" value={op.status} onChange={chOp("status")} options={STATUSES.filter(s=>!(isGI&&s==="en_preparacion")).map(s=>({value:s,label:SM[s].l}))}/>
         <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
         <Inp label="ETA (fecha estimada de arribo)" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>
@@ -2332,10 +2350,92 @@ function FinancePanel({token}){
   const ledgerGastosOp=ledger.filter(l=>l.type==="gasto"&&l.origen!=="manual").reduce((s,l)=>s+l.amount,0);
   const ledgerGastosFijos=ledger.filter(l=>l.type==="gasto"&&l.origen==="manual").reduce((s,l)=>s+l.amount,0);
   const ganancia=ledgerIngresos-ledgerGastosOp-ledgerGastosFijos;
+  // Genera PDF de cierre de mes (mes anterior por defecto)
+  const generateMonthClosingPDF=(monthOffset=-1)=>{
+    const now=new Date();const target=new Date(now.getFullYear(),now.getMonth()+monthOffset,1);
+    const year=target.getFullYear(),month=target.getMonth();
+    const monthStart=new Date(year,month,1).toISOString().slice(0,10);
+    const monthEnd=new Date(year,month+1,0).toISOString().slice(0,10);
+    const inMonth=(d)=>d&&d>=monthStart&&d<=monthEnd;
+    const monthLedger=ledger.filter(l=>inMonth(l.date));
+    const ingresos=monthLedger.filter(l=>l.type==="ingreso");
+    const gastosOp=monthLedger.filter(l=>l.type==="gasto"&&l.origen!=="manual");
+    const gastosFijos=monthLedger.filter(l=>l.type==="gasto"&&l.origen==="manual");
+    const totIng=ingresos.reduce((s,l)=>s+l.amount,0);
+    const totGOp=gastosOp.reduce((s,l)=>s+l.amount,0);
+    const totGF=gastosFijos.reduce((s,l)=>s+l.amount,0);
+    const ganancia=totIng-totGOp-totGF;
+    const fmt=(v)=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    const monthName=target.toLocaleDateString("es-AR",{month:"long",year:"numeric"});
+    // Comparativa mes anterior
+    const prevTarget=new Date(year,month-1,1);
+    const prevStart=new Date(prevTarget.getFullYear(),prevTarget.getMonth(),1).toISOString().slice(0,10);
+    const prevEnd=new Date(prevTarget.getFullYear(),prevTarget.getMonth()+1,0).toISOString().slice(0,10);
+    const prevInMonth=(d)=>d&&d>=prevStart&&d<=prevEnd;
+    const prevIng=ledger.filter(l=>prevInMonth(l.date)&&l.type==="ingreso").reduce((s,l)=>s+l.amount,0);
+    const prevGanancia=prevIng-ledger.filter(l=>prevInMonth(l.date)&&l.type==="gasto"&&l.origen!=="manual").reduce((s,l)=>s+l.amount,0)-ledger.filter(l=>prevInMonth(l.date)&&l.type==="gasto"&&l.origen==="manual").reduce((s,l)=>s+l.amount,0);
+    const deltaPct=prevIng>0?((totIng-prevIng)/prevIng*100).toFixed(1):"—";
+    const deltaGan=prevGanancia!==0?((ganancia-prevGanancia)/Math.abs(prevGanancia)*100).toFixed(1):"—";
+    // Top clientes
+    const byClient={};ingresos.forEach(l=>{const k=l.cliente||"—";if(!byClient[k])byClient[k]={ops:0,total:0};byClient[k].ops++;byClient[k].total+=l.amount;});
+    const topClientes=Object.entries(byClient).sort((a,b)=>b[1].total-a[1].total).slice(0,5);
+    // Por canal
+    const byChannel={};ingresos.forEach(l=>{const k=l.canal||"—";if(!byChannel[k])byChannel[k]={ops:0,total:0};byChannel[k].ops++;byChannel[k].total+=l.amount;});
+    const w=window.open("","_blank");if(!w)return;
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Cierre ${monthName}</title><style>
+      *{box-sizing:border-box}body{font-family:'Helvetica Neue',Arial,sans-serif;padding:32px;color:#1a1f2e;max-width:900px;margin:0 auto;background:#fff}
+      h1{font-size:22px;color:#1f4e8a;margin:0 0 4px;border-bottom:2px solid #1f4e8a;padding-bottom:8px}
+      .sub{color:#64748b;font-size:12px;margin:6px 0 24px}
+      .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+      .kpi{padding:14px 16px;border-radius:8px;border:1px solid #e2e8f0}
+      .kpi .l{font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 6px}
+      .kpi .v{font-size:18px;font-weight:800;margin:0}
+      .kpi.in{background:#f0fdf4;border-color:#86efac}.kpi.in .v{color:#15803d}
+      .kpi.op{background:#fef2f2;border-color:#fecaca}.kpi.op .v{color:#b91c1c}
+      .kpi.fx{background:#fff7ed;border-color:#fed7aa}.kpi.fx .v{color:#c2410c}
+      .kpi.gn{background:${ganancia>=0?"#f0fdf4":"#fef2f2"};border-color:${ganancia>=0?"#86efac":"#fecaca"}}.kpi.gn .v{color:${ganancia>=0?"#15803d":"#b91c1c"}}
+      h2{font-size:14px;color:#1f4e8a;margin:24px 0 8px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e2e8f0;padding-bottom:6px}
+      table{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}
+      th{text-align:left;padding:8px 10px;background:#f1f5f9;color:#475569;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1.5px solid #1f4e8a}
+      td{padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#1e293b}
+      .r{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+      .delta{font-size:10px;color:#64748b;margin-left:6px}
+      .delta.pos{color:#15803d}.delta.neg{color:#b91c1c}
+      .footer{margin-top:32px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:9px;color:#94a3b8;text-align:center}
+      @media print{body{padding:20px}}
+    </style></head><body>
+      <h1>Cierre Financiero — ${monthName}</h1>
+      <p class="sub">Argencargo · Generado ${new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})}</p>
+      <div class="kpis">
+        <div class="kpi in"><p class="l">Ingresos</p><p class="v">${fmt(totIng)}</p>${deltaPct!=="—"?`<span class="delta ${Number(deltaPct)>=0?"pos":"neg"}">${Number(deltaPct)>=0?"▲":"▼"} ${Math.abs(Number(deltaPct))}% vs mes ant.</span>`:""}</div>
+        <div class="kpi op"><p class="l">Costos Ops</p><p class="v">${fmt(totGOp)}</p></div>
+        <div class="kpi fx"><p class="l">Gastos Negocio</p><p class="v">${fmt(totGF)}</p></div>
+        <div class="kpi gn"><p class="l">Ganancia Neta</p><p class="v">${fmt(ganancia)}</p>${deltaGan!=="—"?`<span class="delta ${Number(deltaGan)>=0?"pos":"neg"}">${Number(deltaGan)>=0?"▲":"▼"} ${Math.abs(Number(deltaGan))}%</span>`:""}</div>
+      </div>
+      <h2>Top 5 clientes (por ingreso)</h2>
+      <table><thead><tr><th>Cliente</th><th class="r">Ops</th><th class="r">Total</th><th class="r">% del mes</th></tr></thead><tbody>
+        ${topClientes.map(([n,d])=>`<tr><td>${n}</td><td class="r">${d.ops}</td><td class="r">${fmt(d.total)}</td><td class="r">${totIng>0?(d.total/totIng*100).toFixed(1):"0"}%</td></tr>`).join("")||'<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:20px">Sin ingresos en el mes</td></tr>'}
+      </tbody></table>
+      <h2>Distribución por canal</h2>
+      <table><thead><tr><th>Canal</th><th class="r">Ops</th><th class="r">Ingreso</th><th class="r">% del mes</th></tr></thead><tbody>
+        ${Object.entries(byChannel).map(([n,d])=>`<tr><td>${n}</td><td class="r">${d.ops}</td><td class="r">${fmt(d.total)}</td><td class="r">${totIng>0?(d.total/totIng*100).toFixed(1):"0"}%</td></tr>`).join("")||'<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:20px">—</td></tr>'}
+      </tbody></table>
+      <h2>Detalle de Gastos del Negocio (${gastosFijos.length})</h2>
+      <table><thead><tr><th>Fecha</th><th>Detalle</th><th class="r">Importe</th></tr></thead><tbody>
+        ${gastosFijos.slice(0,30).map(l=>`<tr><td>${l.date||"—"}</td><td>${l.detalle||l.cliente||"—"}</td><td class="r">${fmt(l.amount)}</td></tr>`).join("")||'<tr><td colspan="3" style="text-align:center;color:#94a3b8;padding:20px">Sin gastos fijos</td></tr>'}
+      </tbody></table>
+      <div class="footer">Argencargo · www.argencargo.com.ar · Reporte interno — confidencial</div>
+      <script>setTimeout(()=>window.print(),300)</script>
+    </body></html>`);w.document.close();
+  };
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:10,flexWrap:"wrap"}}>
       <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Finanzas</h2>
-      {tab==="fixed"&&<Btn onClick={()=>setShowAdd(true)} small>+ Nuevo gasto</Btn>}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <Btn small variant="secondary" onClick={()=>generateMonthClosingPDF(-1)}>📊 Cierre mes anterior</Btn>
+        <Btn small variant="secondary" onClick={()=>generateMonthClosingPDF(0)}>📊 Cierre mes actual</Btn>
+        {tab==="fixed"&&<Btn onClick={()=>setShowAdd(true)} small>+ Nuevo gasto</Btn>}
+      </div>
     </div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:20}}>
@@ -2849,7 +2949,22 @@ function AgentsPanel({token}){
   const opsInFlightIds=new Set(flightOps.map(fo=>fo.operation_id));
   const availableForFlight=depositOps.filter(o=>o.consolidation_confirmed&&!opsInFlightIds.has(o.id)&&opsWithDocs.has(o.id));
   const opPackages=(opId)=>depositPkgs.filter(p=>p.operation_id===opId);
-  const opWeight=(opId)=>opPackages(opId).reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);
+  // Peso facturable: max(bruto, volumétrico) por bulto, sumado. Usa divisor del agente (default 5000).
+  const opWeight=(opId)=>{
+    const pkgs=opPackages(opId);
+    const op=depositOps.find(o=>o.id===opId)||allOps.find(o=>o.id===opId);
+    const agentId=op?.created_by_agent_id;
+    const agent=signups.find(s=>s.auth_user_id===agentId);
+    const div=Number(agent?.volumetric_divisor)||5000;
+    return pkgs.reduce((s,p)=>{
+      const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0);
+      const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);
+      const bruto=gw*q;
+      const vol=l&&w&&h?((l*w*h)/div)*q:0;
+      return s+Math.max(bruto,vol);
+    },0);
+  };
+  const opGrossWeight=(opId)=>opPackages(opId).reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);
   const agentBalance=(agentId)=>accMovements.filter(m=>m.agent_id===agentId).reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):-Number(m.amount_usd)),0);
   const toggleSelOp=(opId)=>setSelectedOps(p=>p.includes(opId)?p.filter(x=>x!==opId):[...p,opId]);
   const createFlight=async()=>{
@@ -2917,9 +3032,20 @@ function AgentsPanel({token}){
     </div>
 
     {tab==="deposito"&&(()=>{
-      // Agrupar por agente
-      const byAgent={};depositOps.forEach(o=>{const k=o.created_by_agent_id||"sin_agente";if(!byAgent[k])byAgent[k]={ops:[],agentName:""};byAgent[k].ops.push(o);});
-      Object.keys(byAgent).forEach(k=>{const a=approvedAgents.find(s=>s.auth_user_id===k);byAgent[k].agentName=a?(a.first_name+" "+(a.last_name||"")):"(sin agente)";});
+      // Filtrar: ops que ya están asignadas a un vuelo (despachado o no) NO aparecen acá
+      const trulyInDeposit=depositOps.filter(o=>!opsInFlightIds.has(o.id));
+      // Score de orden: 0=listo (confirmed+docs), 1=esperando docs (confirmed+sin docs), 2=esperando más (no confirmed)
+      const orderScore=(o)=>{
+        if(o.consolidation_confirmed&&opsWithDocs.has(o.id))return 0; // listo arriba
+        if(o.consolidation_confirmed&&!opsWithDocs.has(o.id))return 1; // documentación medio
+        return 2; // esperando más paquetes abajo
+      };
+      // Agrupar por agente y ordenar dentro
+      const byAgent={};trulyInDeposit.forEach(o=>{const k=o.created_by_agent_id||"sin_agente";if(!byAgent[k])byAgent[k]={ops:[],agentName:""};byAgent[k].ops.push(o);});
+      Object.keys(byAgent).forEach(k=>{
+        const a=approvedAgents.find(s=>s.auth_user_id===k);byAgent[k].agentName=a?(a.first_name+" "+(a.last_name||"")):"(sin agente)";
+        byAgent[k].ops.sort((a,b)=>orderScore(a)-orderScore(b)||(b.created_at||"").localeCompare(a.created_at||""));
+      });
       return <div>
         {selectedOps.length>0&&(()=>{
           const selObjs=depositOps.filter(o=>selectedOps.includes(o.id));
@@ -3067,7 +3193,16 @@ function AgentsPanel({token}){
       approvedAgents.map(a=>{const bal=agentBalance(a.auth_user_id);const movs=accMovements.filter(m=>m.agent_id===a.auth_user_id);return <Card key={a.id} title={`${a.first_name} ${a.last_name||""} — ${a.email}`}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:12,flexWrap:"wrap"}}>
           <div style={{background:"rgba(34,197,94,0.06)",borderRadius:10,padding:"14px 18px",border:"1px solid rgba(34,197,94,0.15)"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>SALDO</p><p style={{fontSize:22,fontWeight:700,color:bal>0?"#22c55e":bal<0?"#ff6b6b":"#fff",margin:0}}>{usd(bal)}</p></div>
-          <Btn small onClick={()=>setShowAnticipoForm(showAnticipoForm===a.auth_user_id?null:a.auth_user_id)}>+ Cargar anticipo</Btn>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"rgba(255,255,255,0.55)"}} title="Divisor para peso volumétrico (cm³ ÷ divisor). Estándar 5000, algunos couriers usan 6000.">
+              <span>Vol ÷</span>
+              <select defaultValue={a.volumetric_divisor||5000} onChange={async(e)=>{const v=parseInt(e.target.value);await dq("agent_signups",{method:"PATCH",token,filters:`?id=eq.${a.id}`,body:{volumetric_divisor:v}});load();flash(`Divisor de ${a.first_name} ahora /${v}`);}} style={{padding:"4px 8px",fontSize:11,background:"rgba(255,255,255,0.06)",color:"#fff",border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,cursor:"pointer"}}>
+                <option value="5000" style={{background:"#142038"}}>5000</option>
+                <option value="6000" style={{background:"#142038"}}>6000</option>
+              </select>
+            </label>
+            <Btn small onClick={()=>setShowAnticipoForm(showAnticipoForm===a.auth_user_id?null:a.auth_user_id)}>+ Cargar anticipo</Btn>
+          </div>
         </div>
         {showAnticipoForm===a.auth_user_id&&<AnticipoForm token={token} agentId={a.auth_user_id} onSaved={()=>{setShowAnticipoForm(null);load();flash("Anticipo cargado");}}/>}
         {movs.length>0?<table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
