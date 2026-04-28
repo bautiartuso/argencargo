@@ -1,0 +1,26 @@
+{
+  "name": "Argencargo — 代理门户",
+  "short_name": "Argencargo",
+  "description": "Argencargo agent portal — manage packages, flights and invoices",
+  "start_url": "/agente",
+  "scope": "/agente",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0F1E3D",
+  "theme_color": "#0F1E3D",
+  "lang": "zh",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

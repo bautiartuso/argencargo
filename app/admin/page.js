@@ -382,8 +382,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}));
     }catch(e){console.error("autoSync budget",e);}
   };
-  const saveItem=async(it)=>{const{id,...rest}=it;delete rest.created_at;await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Producto guardado");autoSyncBudget();};
+  const saveItem=async(it)=>{const{id,...rest}=it;delete rest.created_at;
+    // Auto-clasificar NCM si tiene descripción pero no código
+    if(rest.description&&!rest.ncm_code){
+      try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:rest.description})});const d=await r.json();if(d?.ncm_code){rest.ncm_code=d.ncm_code;if(d.import_duty_rate&&!rest.import_duty_rate)rest.import_duty_rate=d.import_duty_rate;if(d.statistics_rate&&!rest.statistics_rate)rest.statistics_rate=d.statistics_rate;if(d.iva_rate&&!rest.iva_rate)rest.iva_rate=d.iva_rate;}}catch(e){}
+    }
+    await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash(rest.ncm_code?`Producto guardado · NCM ${rest.ncm_code}`:"Producto guardado");autoSyncBudget();await reloadItems();};
   const addItem=async()=>{await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:"Nuevo producto",quantity:1,unit_price_usd:0}});await reloadItems();flash("Producto agregado");autoSyncBudget();};
+  const autoClassifyAll=async()=>{const pending=items.filter(it=>it.description&&!it.ncm_code);if(pending.length===0){flash("Todos los items ya tienen NCM");return;}flash(`Clasificando ${pending.length} items...`);for(const it of pending){try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});const d=await r.json();if(d?.ncm_code){await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{ncm_code:d.ncm_code,import_duty_rate:d.import_duty_rate||it.import_duty_rate||35,statistics_rate:d.statistics_rate||it.statistics_rate||3,iva_rate:d.iva_rate||it.iva_rate||21}});}}catch(e){}}await reloadItems();flash(`✨ ${pending.length} items clasificados`);};
   const delItem=async(id)=>{await dq("operation_items",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadItems();flash("Producto eliminado");autoSyncBudget();};
 
   const reloadPkgs=async()=>{const pk=await dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`});setPkgs(Array.isArray(pk)?pk:[]);};
@@ -654,10 +660,13 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {!hasStoredBudget&&<div style={{display:"flex",gap:12,marginTop:12}}><Btn onClick={async()=>{setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar,shipping_cost:Number(op.shipping_cost||0),shipping_to_door:op.shipping_to_door||false,total_services:0}});setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}));flash("Presupuesto sincronizado");setSaving(false);}} disabled={saving}>{saving?"Guardando...":"Sincronizar presupuesto"}</Btn></div>}
       </Card>;})()}
 
-    {tab==="items"&&<Card title="Productos" actions={<Btn onClick={addItem} small>+ Agregar producto</Btn>}>
+    {tab==="items"&&<Card title="Productos" actions={<div style={{display:"flex",gap:6}}>{items.some(it=>it.description&&!it.ncm_code)&&<Btn onClick={autoClassifyAll} small variant="secondary">✨ Auto-NCM</Btn>}<Btn onClick={addItem} small>+ Agregar producto</Btn></div>}>
       {items.map((it,i)=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);return <div key={it.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:10}}>
-          <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Producto {i+1} — FOB: USD {fob.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:10,gap:10,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Producto {i+1} — FOB: USD {fob.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            {it.ncm_code?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.25)",fontFamily:"monospace",fontWeight:700}}>NCM {it.ncm_code}</span>:it.description?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.25)",fontWeight:700}}>SIN NCM</span>:null}
+          </div>
           <div style={{display:"flex",gap:6}}><Btn onClick={()=>saveItem(it)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delItem(it.id)} small variant="danger">Eliminar</Btn></div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"0 12px"}}>
@@ -2574,6 +2583,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     for(const fo of flightOps){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"arribo_argentina"}});}
     // Notification #3a: notify agent about flight received
     try{await dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Vuelo ${flight.flight_code} recibido en Buenos Aires`,body:null,link:"?tab=history"}});}catch(e){console.error("notif error",e);}
+    try{fetch("/api/wechat-notify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent_id:flight.agent_id,title:`Vuelo ${flight.flight_code} recibido en Buenos Aires`,link:"?tab=history"})});}catch(e){}
     // Notification #3b: notify each client whose operation is in this flight
     try{
       const opIds=flightOps.map(fo=>fo.operation_id);
@@ -2744,7 +2754,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       </div>}
       {flight.status==="preparando"&&<div style={{marginTop:16,padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
         {flight.invoice_presented_at?<div><p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✓ Factura presentada {formatDate(flight.invoice_presented_at)}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>El agente ya puede despacharla</p></div>:<div><p style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",margin:0}}>⏳ La factura todavía no está presentada</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>El agente no puede despachar hasta que la presentes</p></div>}
-        {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn small onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!flight.dest_address){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}await saveAllItems();await updateFlight({invoice_presented_at:new Date().toISOString()});for(const fo of flightOps){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}});}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));onFlash("Factura presentada · agente notificado");}}>✓ Guardar y presentar factura</Btn>}
+        {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn small onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!flight.dest_address){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}await saveAllItems();await updateFlight({invoice_presented_at:new Date().toISOString()});for(const fo of flightOps){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}});}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));fetch("/api/wechat-notify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent_id:flight.agent_id,title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"})}).catch(()=>{});onFlash("Factura presentada · agente notificado");}}>✓ Guardar y presentar factura</Btn>}
       </div>}
     </Card>
     {flight.status==="despachado"&&<Card title="Datos del despacho (cargados por agente)">
@@ -2865,6 +2875,7 @@ function AgentsPanel({token}){
     }
     // Notification #1: notify agent about new flight
     try{await dq("notifications",{method:"POST",token,body:{user_id:agentId,portal:"agente",title:`Nuevo vuelo ${newCode} creado`,body:`${ops.length} operaciones asignadas`,link:"?tab=active_flights"}});}catch(e){console.error("notif error",e);}
+    try{fetch("/api/wechat-notify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent_id:agentId,title:`Nuevo vuelo ${newCode} creado`,body:`${ops.length} operaciones asignadas`,link:"?tab=active_flights"})});}catch(e){}
     setSelectedOps([]);load();flash(`Vuelo ${newCode} creado con factura base. Editá HS code y valores declarados.`);setTab("flights");setSelFlight(created.id);
   };
   const assignToOp=async(pkg,opId)=>{
@@ -4650,6 +4661,72 @@ function QuotesList({token}){
   </div>;
 }
 
+function CmdK({token,onNavigate,allClients}){
+  const [open,setOpen]=useState(false);
+  const [q,setQ]=useState("");
+  const [results,setResults]=useState({ops:[],clients:[],flights:[]});
+  const [loading,setLoading]=useState(false);
+  const inputRef=useRef(null);
+  useEffect(()=>{const handler=(e)=>{if((e.metaKey||e.ctrlKey)&&e.key==="k"){e.preventDefault();setOpen(o=>!o);}else if(e.key==="Escape")setOpen(false);};window.addEventListener("keydown",handler);return()=>window.removeEventListener("keydown",handler);},[]);
+  useEffect(()=>{if(open)setTimeout(()=>inputRef.current?.focus(),50);else{setQ("");setResults({ops:[],clients:[],flights:[]});}},[open]);
+  useEffect(()=>{if(!q||q.length<2){setResults({ops:[],clients:[],flights:[]});return;}
+    const tm=setTimeout(async()=>{setLoading(true);
+      const ql=q.toLowerCase();
+      try{
+        const [ops,fls]=await Promise.all([
+          dq("operations",{token,filters:`?or=(operation_code.ilike.*${q}*,description.ilike.*${q}*,international_tracking.ilike.*${q}*)&select=id,operation_code,description,status,client_id,clients(client_code,first_name,last_name)&limit=8`}),
+          dq("flights",{token,filters:`?or=(flight_code.ilike.*${q}*,international_tracking.ilike.*${q}*)&select=id,flight_code,status,international_tracking&limit=5`}),
+        ]);
+        const clientsLocal=(allClients||[]).filter(c=>(c.first_name||"").toLowerCase().includes(ql)||(c.last_name||"").toLowerCase().includes(ql)||(c.client_code||"").toLowerCase().includes(ql)).slice(0,8);
+        setResults({ops:Array.isArray(ops)?ops:[],clients:clientsLocal,flights:Array.isArray(fls)?fls:[]});
+      }catch(e){}
+      setLoading(false);
+    },200);return()=>clearTimeout(tm);
+  },[q,token,allClients]);
+  if(!open)return null;
+  const total=results.ops.length+results.clients.length+results.flights.length;
+  return <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(6px)",zIndex:9999,display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:"10vh"}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"min(640px, 92vw)",background:"#142038",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:14,boxShadow:"0 20px 60px rgba(0,0,0,0.7)",overflow:"hidden"}}>
+      <div style={{padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.06)",display:"flex",alignItems:"center",gap:10}}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input ref={inputRef} value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar operación, cliente, vuelo o tracking..." style={{flex:1,fontSize:15,background:"transparent",border:"none",outline:"none",color:"#fff",fontFamily:"inherit"}}/>
+        <span style={{fontSize:10,color:"rgba(255,255,255,0.3)",border:"1px solid rgba(255,255,255,0.1)",padding:"2px 6px",borderRadius:4,fontFamily:"monospace"}}>ESC</span>
+      </div>
+      <div style={{maxHeight:"60vh",overflowY:"auto"}}>
+        {q.length<2&&<p style={{padding:"24px 18px",fontSize:13,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>Escribí 2+ letras para buscar...</p>}
+        {q.length>=2&&!loading&&total===0&&<p style={{padding:"24px 18px",fontSize:13,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>Sin resultados para "{q}"</p>}
+        {results.ops.length>0&&<div>
+          <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:0,padding:"10px 18px 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Operaciones</p>
+          {results.ops.map(o=><button key={o.id} onClick={()=>{onNavigate({type:"operation",op:o});setOpen(false);}} style={{width:"100%",textAlign:"left",padding:"10px 18px",background:"transparent",border:"none",borderTop:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",color:"#fff",display:"flex",alignItems:"center",gap:10}} onMouseEnter={e=>e.currentTarget.style.background="rgba(184,149,106,0.08)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+            <span style={{fontSize:12,fontFamily:"monospace",fontWeight:700,color:GOLD_LIGHT,minWidth:80}}>{o.operation_code}</span>
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.7)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.clients?`${o.clients.first_name} ${o.clients.last_name||""} · `:""}{o.description||"—"}</span>
+            <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>{(SM[o.status]?.l||o.status||"").slice(0,12)}</span>
+          </button>)}
+        </div>}
+        {results.clients.length>0&&<div>
+          <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:0,padding:"10px 18px 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Clientes</p>
+          {results.clients.map(c=><button key={c.id} onClick={()=>{onNavigate({type:"client",client:c});setOpen(false);}} style={{width:"100%",textAlign:"left",padding:"10px 18px",background:"transparent",border:"none",borderTop:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",color:"#fff",display:"flex",alignItems:"center",gap:10}} onMouseEnter={e=>e.currentTarget.style.background="rgba(184,149,106,0.08)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+            <span style={{fontSize:12,fontFamily:"monospace",fontWeight:700,color:GOLD_LIGHT,minWidth:80}}>{c.client_code}</span>
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.7)"}}>{c.first_name} {c.last_name||""}</span>
+          </button>)}
+        </div>}
+        {results.flights.length>0&&<div>
+          <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:0,padding:"10px 18px 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Vuelos</p>
+          {results.flights.map(f=><button key={f.id} onClick={()=>{onNavigate({type:"flight",flight:f});setOpen(false);}} style={{width:"100%",textAlign:"left",padding:"10px 18px",background:"transparent",border:"none",borderTop:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",color:"#fff",display:"flex",alignItems:"center",gap:10}} onMouseEnter={e=>e.currentTarget.style.background="rgba(184,149,106,0.08)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+            <span style={{fontSize:12,fontFamily:"monospace",fontWeight:700,color:GOLD_LIGHT,minWidth:80}}>{f.flight_code}</span>
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.7)",flex:1}}>{f.international_tracking||"—"}</span>
+            <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>{f.status}</span>
+          </button>)}
+        </div>}
+      </div>
+      <div style={{padding:"8px 18px",borderTop:"1px solid rgba(255,255,255,0.06)",fontSize:10,color:"rgba(255,255,255,0.4)",display:"flex",justifyContent:"space-between"}}>
+        <span>↵ para abrir</span>
+        <span><kbd style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",padding:"1px 5px",borderRadius:3,fontFamily:"monospace"}}>⌘K</kbd> para buscar</span>
+      </div>
+    </div>
+  </div>;
+}
+
 function AdminDashboard({session,onLogout}){
   const [page,setPage]=useState("operations");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);const [mobOpen,setMobOpen]=useState(false);
   const token=session.token;
@@ -4705,7 +4782,10 @@ function AdminDashboard({session,onLogout}){
     {/* Desktop sidebar */}
     <div className="ac-admin-sidebar-desktop" style={{width:220,flexShrink:0,background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",borderRight:"1px solid rgba(255,255,255,0.06)",display:"flex",flexDirection:"column",height:"100vh",position:"sticky",top:0}}>{sidebarContent}</div>
     <div className="ac-admin-main" style={{flex:1,overflow:"auto"}}>
-      <div className="ac-admin-top-notif" style={{display:"flex",alignItems:"center",justifyContent:"flex-end",padding:"12px 32px 0",gap:12}}><NotifBell token={token}/></div>
+      <CmdK token={token} allClients={allClients} onNavigate={(target)=>{if(target.type==="operation"){setPage("operations");setSelOp(target.op);setSelClient(null);setNewOp(false);}else if(target.type==="client"){setPage("clients");setSelClient(target.client);setSelOp(null);setNewOp(false);}else if(target.type==="flight"){setPage("agents");setSelOp(null);setSelClient(null);setNewOp(false);}}}/>
+      <div className="ac-admin-top-notif" style={{display:"flex",alignItems:"center",justifyContent:"flex-end",padding:"12px 32px 0",gap:12}}>
+        <button onClick={()=>{const e=new KeyboardEvent("keydown",{key:"k",metaKey:true});window.dispatchEvent(e);}} title="Buscar (⌘K)" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"6px 12px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.6)",cursor:"pointer"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Buscar<kbd style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.08)",padding:"1px 5px",borderRadius:3,fontSize:10,fontFamily:"monospace"}}>⌘K</kbd></button>
+        <NotifBell token={token}/></div>
       <div className="ac-admin-main-inner" style={{maxWidth:1400,margin:"0 auto",padding:"28px 32px"}}>
       {page==="operations"&&!selOp&&!newOp&&<OperationsList token={token} onSelect={setSelOp} onNew={()=>setNewOp(true)}/>}
       {page==="operations"&&selOp&&<OperationEditor op={selOp} token={token} onBack={()=>setSelOp(null)} onDelete={()=>setSelOp(null)}/>}

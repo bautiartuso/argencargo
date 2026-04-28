@@ -144,6 +144,16 @@ const I18N={
     dest_postal:"Código Postal",
     dest_phone:"Teléfono",
     dest_email:"Email",
+    wechat_title:"Notificaciones por WeChat",
+    wechat_subtitle_on:"Recibís notificaciones en WeChat cuando admin crea/despacha vuelos.",
+    wechat_subtitle_off:"Configurá tu robot grupal de WeChat Work para recibir avisos al instante.",
+    wechat_instructions:"En WeChat Work → crear bot grupal (群机器人) → copiar Webhook URL → pegarla acá.",
+    wechat_saved:"Guardado",
+    wechat_test:"Probar",
+    wechat_test_title:"Test desde Argencargo",
+    wechat_test_body:"Si ves este mensaje, las notificaciones funcionan ✅",
+    wechat_test_ok:"Mensaje enviado, revisá WeChat",
+    save:"Guardar",
     operations_in_flight:"Operaciones del vuelo",
     dispatch_form:"Despachar vuelo",
     total_weight:"Peso total (kg)",
@@ -275,6 +285,16 @@ const I18N={
     dest_postal:"邮编",
     dest_phone:"电话",
     dest_email:"电子邮件",
+    wechat_title:"企业微信通知",
+    wechat_subtitle_on:"管理员创建/发出航班时，你会在企业微信收到通知。",
+    wechat_subtitle_off:"配置你的企业微信群机器人，及时收到通知。",
+    wechat_instructions:"在企业微信中创建群机器人 → 复制 Webhook URL → 粘贴到下面。",
+    wechat_saved:"已保存",
+    wechat_test:"测试",
+    wechat_test_title:"Argencargo 测试消息",
+    wechat_test_body:"如果你看到这条消息，说明通知功能正常 ✅",
+    wechat_test_ok:"消息已发送，请查看企业微信",
+    save:"保存",
     operations_in_flight:"航班操作",
     dispatch_form:"发送航班",
     total_weight:"总重量 (公斤)",
@@ -351,7 +371,10 @@ export default function AgentePortal(){
   const [loading,setLoading]=useState(true);
   const [lang,setLang]=useState("es");
   const t=I18N[lang];
-  useEffect(()=>{const s=loadSession();if(s?.access_token){setSession(s);}setLoading(false);const savedLang=typeof window!=="undefined"?localStorage.getItem("ac_agent_lang"):null;if(savedLang==="zh"||savedLang==="es")setLang(savedLang);},[]);
+  useEffect(()=>{const s=loadSession();if(s?.access_token){setSession(s);}setLoading(false);const savedLang=typeof window!=="undefined"?localStorage.getItem("ac_agent_lang"):null;if(savedLang==="zh"||savedLang==="es")setLang(savedLang);
+    // Registrar service worker (PWA)
+    if(typeof window!=="undefined"&&"serviceWorker"in navigator){navigator.serviceWorker.register("/sw-agente.js",{scope:"/agente"}).catch(()=>{});}
+  },[]);
   useEffect(()=>{try{localStorage.setItem("ac_agent_lang",lang);}catch(e){}},[lang]);
   if(loading)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:BG,color:"rgba(255,255,255,0.4)"}}>Cargando...</div>;
   if(!session)return <><ToastStack/><AuthScreen onLogin={setSession} lang={lang} setLang={setLang} t={t}/></>;
@@ -647,6 +670,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
     {/* TAB 5: Cuenta corriente */}
     {tab==="account"&&<div>
+      <WeChatSetup token={token} signup={signup} onSaved={async()=>{const r=await dq("agent_signups",{token,filters:`?id=eq.${signup.id}&select=*`});if(Array.isArray(r)&&r[0])setSignup(r[0]);}} t={t}/>
       <div style={{display:"flex",gap:16,marginBottom:20,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:200,background:bal=>(bal>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)"),borderRadius:14,padding:"20px 24px",border:`1px solid ${balance>=0?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)"}`,backgroundColor:balance>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)"}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>{t.balance}</p>
@@ -956,6 +980,39 @@ function SimpleShell({children,lang,setLang,t,onLogout,token}){
       </div>
     </div>
     <div className="ac-agente-main" style={{maxWidth:1200,margin:"0 auto",padding:"32px 28px"}}>{children}</div>
+  </div>;
+}
+
+// Configuración de notificaciones WeChat Work del agente
+function WeChatSetup({token,signup,onSaved,t}){
+  const [url,setUrl]=useState(signup?.wechat_webhook_url||"");
+  const [saving,setSaving]=useState(false);
+  const [msg,setMsg]=useState("");
+  const [open,setOpen]=useState(!signup?.wechat_webhook_url);
+  const isSet=!!signup?.wechat_webhook_url;
+  const save=async()=>{setSaving(true);setMsg("");
+    try{await dq("agent_signups",{method:"PATCH",token,filters:`?id=eq.${signup.id}`,body:{wechat_webhook_url:url||null}});setMsg("✅ "+(t.wechat_saved||"Guardado"));onSaved&&await onSaved();}catch(e){setMsg("❌ "+e.message);}
+    setSaving(false);};
+  const test=async()=>{setSaving(true);setMsg("");
+    try{const r=await fetch("/api/wechat-notify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent_id:signup.auth_user_id,title:t.wechat_test_title||"Test desde Argencargo",body:t.wechat_test_body||"Si ves este mensaje, las notificaciones funcionan ✅",link:""})});const j=await r.json();setMsg(j.ok?"✅ "+(t.wechat_test_ok||"Mensaje enviado, revisá WeChat"):"❌ "+(j.error||"error"));}catch(e){setMsg("❌ "+e.message);}
+    setSaving(false);};
+  return <div style={{background:isSet?"rgba(34,197,94,0.05)":"rgba(91,155,213,0.06)",border:`1px solid ${isSet?"rgba(34,197,94,0.2)":"rgba(91,155,213,0.25)"}`,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+    <div onClick={()=>setOpen(!open)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",gap:12,flexWrap:"wrap"}}>
+      <div style={{flex:1,minWidth:200}}>
+        <p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0,display:"flex",alignItems:"center",gap:8}}>💬 {t.wechat_title||"WeChat 通知"} {isSet&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"rgba(34,197,94,0.2)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.4)",fontWeight:700}}>ON</span>}</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>{isSet?(t.wechat_subtitle_on||"Recibís notificaciones en WeChat cuando llega un nuevo vuelo o cambia algo.")  :(t.wechat_subtitle_off||"Configurá tu robot grupal de WeChat Work para recibir avisos al instante.")}</p>
+      </div>
+      <span style={{fontSize:14,color:"rgba(255,255,255,0.4)"}}>{open?"▴":"▾"}</span>
+    </div>
+    {open&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",lineHeight:1.5}}>{t.wechat_instructions||"在企业微信中创建群机器人 → 复制 Webhook URL → 粘贴到下面 (Crear bot grupal en WeChat Work → copiar Webhook URL → pegar acá)"}</p>
+      <input value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." style={{width:"100%",padding:"10px 12px",fontSize:12,fontFamily:"monospace",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",boxSizing:"border-box"}}/>
+      <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+        <button onClick={save} disabled={saving} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:saving?"wait":"pointer"}}>{saving?"...":(t.save||"保存")}</button>
+        {isSet&&<button onClick={test} disabled={saving} style={{padding:"7px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(91,155,213,0.4)",background:"rgba(91,155,213,0.1)",color:"#5b9bd5",cursor:saving?"wait":"pointer"}}>{t.wechat_test||"测试"} 🧪</button>}
+        {msg&&<span style={{fontSize:11,color:msg.startsWith("✅")?"#22c55e":"#ff6b6b",alignSelf:"center"}}>{msg}</span>}
+      </div>
+    </div>}
   </div>;
 }
 
