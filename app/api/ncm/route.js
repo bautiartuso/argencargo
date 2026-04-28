@@ -104,16 +104,9 @@ export async function POST(req) {
 
     let suggestedCode = null;
 
-    // Try Gemini (free, no credit card needed)
-    const geminiKey = process.env.GEMINI_API_KEY;
-    if (geminiKey && !suggestedCode) {
-      try { suggestedCode = await classifyWithGemini(description, geminiKey); }
-      catch (e) {}
-    }
-
-    // Fallback: OpenAI
+    // Solo OpenAI (más confiable para clasificación NCM argentina)
     const openaiKey = process.env.OPENAI_API_KEY;
-    if (openaiKey && !suggestedCode) {
+    if (openaiKey) {
       try { suggestedCode = await classifyWithOpenAI(description, openaiKey); }
       catch (e) { console.error("OpenAI error:", e.message); }
     }
