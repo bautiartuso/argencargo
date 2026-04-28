@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --test tests/"
+    "test": "node --test tests/",
+    "lint:strict": "eslint app/ lib/ --no-eslintrc --config .eslintrc.cjs --ext .js"
   },
   "dependencies": {
     "@sentry/nextjs": "^8.45.0",

@@ -1035,16 +1035,16 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const gan=cliRealOrExpected-Number(pm.giro_amount_usd||0)-Number(pm.cost_comision_giro||0);
           const gs=GST[pm.giro_status]||{l:pm.giro_status,c:"#999"};
           const isTarj=pm.giro_payment_method==="tarjeta_credito";
-          const markTarjDeb=async()=>{if(!confirm("¿Marcar la tarjeta como ya debitada? Esto restará del cash real."))return;await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});reload();};
+          const markTarjDeb=async()=>{if(!confirm("¿Marcar la tarjeta como ya debitada? Esto restará del cash real."))return;await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});load();};
           const cycleGiro=()=>{const order=["pendiente","enviado","confirmado"];const idx=order.indexOf(pm.giro_status);const next=order[(idx+1)%order.length];updatePmt(pm.id,"giro_status",next);};
           const toggleCliPaid=async()=>{
-            if(pm.client_paid){if(confirm("¿Desmarcar cobro del cliente?")){await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{client_paid:false,client_paid_date:null,client_paid_amount_usd:null}});reload();}return;}
+            if(pm.client_paid){if(confirm("¿Desmarcar cobro del cliente?")){await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{client_paid:false,client_paid_date:null,client_paid_amount_usd:null}});load();}return;}
             const expected=Number(pm.client_amount_usd||0);
             const input=prompt(`¿Cuánto pagó el cliente en USD?\n(Esperado: USD ${expected.toFixed(2)})`,expected.toFixed(2));
             if(input===null)return;
             const amt=Number(String(input).replace(",","."));
             if(isNaN(amt)||amt<0){alert("Monto inválido");return;}
-            await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{client_paid:true,client_paid_date:new Date().toISOString().slice(0,10),client_paid_amount_usd:amt}});reload();
+            await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{client_paid:true,client_paid_date:new Date().toISOString().slice(0,10),client_paid_amount_usd:amt}});load();
           };
           const StatusCard=({label,value,sub,color,bg,border,onClick,icon})=><div onClick={onClick} style={{flex:1,minWidth:160,padding:"12px 14px",borderRadius:10,border:`1px solid ${border}`,background:bg,cursor:onClick?"pointer":"default",transition:"background 0.15s"}} onMouseEnter={e=>{if(onClick)e.currentTarget.style.background=bg.replace(/[\d.]+\)$/,m=>Math.min(Number(m.slice(0,-1))*1.5,0.2)+")");}} onMouseLeave={e=>{if(onClick)e.currentTarget.style.background=bg;}}>
             <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</p>

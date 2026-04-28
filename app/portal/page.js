@@ -640,7 +640,7 @@ function CalculatorPage({token,client}){
     items.forEach(it=>{const k=(it.description||"").trim().toLowerCase();if(!k||seen[k])return;seen[k]=true;dedup.push(it);});
     setProductHistory(dedup.slice(0,8));
   })();},[client?.id,token]);
-  const useHistorical=(it)=>{
+  const addFromHistorical=(it)=>{
     setProducts(p=>[...p,{type:"general",description:it.description||"",unit_price:String(it.unit_price_usd||""),quantity:String(it.quantity||"1"),ncm:it.ncm_code?{ncm_code:it.ncm_code,ncm_description:it.description,import_duty_rate:it.import_duty_rate||35,statistics_rate:it.statistics_rate||3,iva_rate:it.iva_rate||21}:null,ncmLoading:false,ncmError:false}]);
   };
 
@@ -885,7 +885,7 @@ function CalculatorPage({token,client}){
       {productHistory.length>0&&<div style={{background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
         <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>↻ Importaste antes — usar de nuevo:</p>
         <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-          {productHistory.map((it,i)=><button key={i} onClick={()=>useHistorical(it)} title={`USD ${Number(it.unit_price_usd||0).toFixed(2)} c/u${it.ncm_code?` · NCM ${it.ncm_code}`:""}`} style={{fontSize:11,padding:"5px 10px",borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:"rgba(255,255,255,0.85)",cursor:"pointer",fontWeight:500}}>+ {it.description?.slice(0,30)}{it.description?.length>30?"...":""}{it.ncm_code&&<span style={{marginLeft:5,fontSize:9,color:IC}}>NCM</span>}</button>)}
+          {productHistory.map((it,i)=><button key={i} onClick={()=>addFromHistorical(it)} title={`USD ${Number(it.unit_price_usd||0).toFixed(2)} c/u${it.ncm_code?` · NCM ${it.ncm_code}`:""}`} style={{fontSize:11,padding:"5px 10px",borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:"rgba(255,255,255,0.85)",cursor:"pointer",fontWeight:500}}>+ {it.description?.slice(0,30)}{it.description?.length>30?"...":""}{it.ncm_code&&<span style={{marginLeft:5,fontSize:9,color:IC}}>NCM</span>}</button>)}
         </div>
       </div>}
       {products.map((p,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
