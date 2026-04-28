@@ -375,6 +375,44 @@ function InputModeSelector({mode,onChange,labels={}}){
   </div>;
 }
 
+// Fila editable inline para items declarados (cliente)
+function EditableItemRow({item,editable,token,onChange}){
+  const [desc,setDesc]=useState(item.description||"");
+  const [qty,setQty]=useState(String(item.quantity||""));
+  const [price,setPrice]=useState(String(item.unit_price_usd||""));
+  const [saving,setSaving]=useState(false);
+  const tRef=useRef(null);
+  useEffect(()=>{setDesc(item.description||"");setQty(String(item.quantity||""));setPrice(String(item.unit_price_usd||""));},[item.id]);
+  const persist=async(patch)=>{
+    setSaving(true);
+    try{await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:patch});}
+    catch(e){console.error(e);}
+    setSaving(false);
+  };
+  const debouncedSave=(patch)=>{
+    if(tRef.current)clearTimeout(tRef.current);
+    tRef.current=setTimeout(async()=>{await persist(patch);if(onChange)await onChange();},700);
+  };
+  const onDel=async()=>{if(!confirm(`¿Eliminar "${item.description}"?`))return;await dq("operation_items",{method:"DELETE",token,filters:`?id=eq.${item.id}`});if(onChange)await onChange();};
+  const subtotal=(Number(qty)||0)*(Number(price)||0);
+  if(!editable){
+    return <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:13,color:"rgba(255,255,255,0.85)",alignItems:"center"}}>
+      <span>{item.description}</span>
+      <span style={{textAlign:"right"}}>{Number(item.quantity||0)}</span>
+      <span style={{textAlign:"right"}}>USD {Number(item.unit_price_usd||0).toFixed(2)}</span>
+      <span style={{textAlign:"right",fontWeight:700}}>USD {subtotal.toFixed(2)}</span>
+    </div>;
+  }
+  const inputStyle={width:"100%",padding:"6px 8px",fontSize:12,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:5,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"};
+  return <div style={{display:"grid",gridTemplateColumns:"3fr 0.8fr 1fr 1fr 36px",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:13,color:"rgba(255,255,255,0.85)",alignItems:"center"}}>
+    <input value={desc} onChange={e=>{setDesc(e.target.value);debouncedSave({description:e.target.value});}} style={inputStyle}/>
+    <input type="number" value={qty} onChange={e=>{const v=e.target.value;setQty(v);debouncedSave({quantity:Number(v)||0});}} style={{...inputStyle,textAlign:"right"}}/>
+    <input type="number" step="0.01" value={price} onChange={e=>{const v=e.target.value;setPrice(v);debouncedSave({unit_price_usd:Number(v)||0});}} style={{...inputStyle,textAlign:"right"}}/>
+    <span style={{textAlign:"right",fontWeight:700,opacity:saving?0.5:1}}>USD {subtotal.toFixed(2)}</span>
+    <button onClick={onDel} title="Eliminar" style={{padding:"4px 6px",fontSize:11,borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>✕</button>
+  </div>;
+}
+
 function OperationDetail({op,token,onBack}){
   const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);
   const [docInputMode,setDocInputMode]=useState(null); // 'pdf' | 'manual'
@@ -515,30 +553,26 @@ function OperationDetail({op,token,onBack}){
         <button style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",cursor:"default"}}>⏳ Tengo más paquetes por llegar</button>
       </div>
     </div>}
-    {(()=>{const isReopened=op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&!op.consolidation_confirmed&&items.length>0;
-    return !loading&&!isGI&&items.length>0&&<div style={{background:isReopened?"linear-gradient(135deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04))":"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:`1.5px solid ${isReopened?"rgba(96,165,250,0.4)":"rgba(184,149,106,0.3)"}`,borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+    {(()=>{
+      // Editable mientras la op esté pre-vuelo (en depósito o preparación)
+      const isEditable=op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&items.length>0;
+      return !loading&&!isGI&&items.length>0&&<div style={{background:isEditable?"linear-gradient(135deg,rgba(96,165,250,0.10),rgba(96,165,250,0.03))":"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:`1.5px solid ${isEditable?"rgba(96,165,250,0.35)":"rgba(184,149,106,0.3)"}`,borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
-        <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>📋 Productos declarados {isReopened&&<span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.2)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8}}>↻ Editable</span>}</h3>
-        {isReopened&&<button onClick={()=>{setShowDocPanel(true);setDocInputMode(null);if(docItems.length===0)setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);setTimeout(()=>{const el=document.getElementById("ac-doc-panel");if(el)el.scrollIntoView({behavior:"smooth"});},100);}} style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer"}}>+ Agregar más</button>}
+        <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>📋 Productos declarados {isEditable&&<span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.2)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8}}>✏️ Editable</span>}</h3>
+        {isEditable&&<button onClick={()=>{setShowDocPanel(true);setDocInputMode(null);if(docItems.length===0)setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);setTimeout(()=>{const el=document.getElementById("ac-doc-panel");if(el)el.scrollIntoView({behavior:"smooth"});},100);}} style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer"}}>+ Agregar más</button>}
       </div>
-      {isReopened&&<p style={{fontSize:11,color:"#60a5fa",margin:"0 0 12px",lineHeight:1.4}}>✏️ Argencargo reabrió tu declaración — podés modificar los productos antes de avanzar.</p>}
+      {isEditable&&<p style={{fontSize:11,color:"#60a5fa",margin:"0 0 12px",lineHeight:1.4}}>✏️ Podés modificar la cantidad y el precio, eliminar productos o agregar nuevos. Los cambios se guardan al instante.</p>}
       <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,overflow:"hidden"}}>
-        <div style={{display:"grid",gridTemplateColumns:isReopened?"3fr 1fr 1fr 1fr 36px":"3fr 1fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.08)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
-          <span>Descripción</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Precio unit.</span><span style={{textAlign:"right"}}>Subtotal</span>{isReopened&&<span/>}
+        <div style={{display:"grid",gridTemplateColumns:isEditable?"3fr 0.8fr 1fr 1fr 36px":"3fr 1fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.08)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
+          <span>Descripción</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Precio unit.</span><span style={{textAlign:"right"}}>Subtotal</span>{isEditable&&<span/>}
         </div>
-        {items.map(it=><div key={it.id} style={{display:"grid",gridTemplateColumns:isReopened?"3fr 1fr 1fr 1fr 36px":"3fr 1fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:13,color:"rgba(255,255,255,0.85)",alignItems:"center"}}>
-          <span>{it.description}</span>
-          <span style={{textAlign:"right"}}>{Number(it.quantity||0)}</span>
-          <span style={{textAlign:"right"}}>USD {Number(it.unit_price_usd||0).toFixed(2)}</span>
-          <span style={{textAlign:"right",fontWeight:700}}>USD {(Number(it.quantity||0)*Number(it.unit_price_usd||0)).toFixed(2)}</span>
-          {isReopened&&<button onClick={async()=>{if(!confirm(`¿Eliminar "${it.description}"?`))return;await dq("operation_items",{method:"DELETE",token,filters:`?id=eq.${it.id}`});await loadAll();}} title="Eliminar" style={{padding:"4px 6px",fontSize:11,borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>✕</button>}
-        </div>)}
+        {items.map(it=><EditableItemRow key={it.id} item={it} editable={isEditable} token={token} onChange={loadAll}/>)}
         <div style={{display:"flex",justifyContent:"space-between",padding:"10px 12px",borderTop:"1px solid rgba(184,149,106,0.3)"}}>
           <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>TOTAL</span>
           <span style={{fontSize:14,fontWeight:700,color:IC}}>USD {items.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_usd||0),0).toFixed(2)}</span>
         </div>
       </div>
-      {!isReopened&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>¿Necesitás modificar algo? Contactá a tu asesor de Argencargo.</p>}
+      {!isEditable&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>¿Necesitás modificar algo? Contactá a tu asesor de Argencargo.</p>}
     </div>;})()}
     {/* Galería destacada de fotos del agente — aparece arriba si hay al menos una foto */}
     {!loading&&pkgs.some(p=>p.photo_url)&&<div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(184,149,106,0.18)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
@@ -553,7 +587,7 @@ function OperationDetail({op,token,onBack}){
       {pkgs.filter(p=>!p.photo_url).length>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"12px 0 0",fontStyle:"italic"}}>{pkgs.filter(p=>!p.photo_url).length} bulto{pkgs.filter(p=>!p.photo_url).length>1?"s":""} sin foto disponible aún.</p>}
     </div>}
 
-    {!isGI&&op.channel==="aereo_blanco"&&canDocument&&!loading&&(items.length===0||(op.status==="en_deposito_origen"&&!op.consolidation_confirmed))&&<div id="ac-doc-panel" style={{background:"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+    {!isGI&&op.channel==="aereo_blanco"&&canDocument&&!loading&&(items.length===0||showDocPanel)&&<div id="ac-doc-panel" style={{background:"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12,marginBottom:showDocPanel?16:0}}>
         <div>
           <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>📋 Completá la documentación de tu carga</h3>
