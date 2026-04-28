@@ -161,6 +161,12 @@ const I18N={
     push_nag_denied_title:"Notificaciones bloqueadas",
     push_nag_denied_msg:"Activalas desde los ajustes del navegador para recibir avisos de nuevos vuelos.",
     push_activate_now:"Activar ahora",
+    push_ios_install_title:"Instalá la app en tu pantalla de inicio",
+    push_ios_install_msg:"En iPhone, las notificaciones solo funcionan después de instalar la app desde el menú compartir de Safari.",
+    push_ios_step1:"Tocá el botón de compartir en la barra inferior de Safari",
+    push_ios_step2:"Buscá y tocá «Agregar a inicio» (Add to Home Screen)",
+    push_ios_step3:"Abrí Argencargo desde el ícono que apareció en tu home — NO desde Safari",
+    push_ios_step4:"Volvé acá y aparecerá el botón para activar notificaciones",
     save:"Guardar",
     scan:"Escanear",
     scan_tracking:"Sacar foto al sticker para detectar tracking",
@@ -314,6 +320,12 @@ const I18N={
     push_nag_denied_title:"通知已被拒绝",
     push_nag_denied_msg:"请在浏览器设置中开启通知，以便接收新航班提醒。",
     push_activate_now:"立即开启",
+    push_ios_install_title:"请把应用添加到主屏幕",
+    push_ios_install_msg:"iPhone 用户必须先通过 Safari 分享菜单安装应用，才能开启通知功能。",
+    push_ios_step1:"在 Safari 底部点击「分享」按钮",
+    push_ios_step2:"找到并点击「添加到主屏幕」",
+    push_ios_step3:"从主屏幕图标打开 Argencargo（不要从 Safari 打开）",
+    push_ios_step4:"回到这里，会出现开启通知的按钮",
     save:"保存",
     scan:"扫描",
     scan_tracking:"拍照自动识别快递单号",
@@ -1065,12 +1077,17 @@ function usePushStatus(token){
 function PushNagBanner({token,t}){
   const {supported,permission,subscribed,setSubscribed,setPermission,VAPID_PUB}=usePushStatus(token);
   const [busy,setBusy]=useState(false);
-  // Auto-mostrar prompt 2s después de cargar (solo si permission===default — sino el navegador no lo abre)
+  // Detectar iOS y standalone (PWA instalada vs Safari normal)
+  const ua=typeof navigator!=="undefined"?navigator.userAgent:"";
+  const isIOS=/iPad|iPhone|iPod/.test(ua)&&!window.MSStream;
+  const isStandalone=typeof window!=="undefined"&&(window.matchMedia?.("(display-mode: standalone)").matches||window.navigator.standalone===true);
+  const iosNeedsInstall=isIOS&&!isStandalone;
+  // Auto-mostrar prompt 2s después de cargar (solo si permission===default Y no es iOS sin instalar)
   useEffect(()=>{
-    if(!supported||subscribed||permission!=="default"||!VAPID_PUB||!token)return;
+    if(!supported||subscribed||permission!=="default"||!VAPID_PUB||!token||iosNeedsInstall)return;
     const tm=setTimeout(()=>activate(),2000);
     return()=>clearTimeout(tm);
-  },[supported,subscribed,permission,VAPID_PUB,token]);
+  },[supported,subscribed,permission,VAPID_PUB,token,iosNeedsInstall]);
   const activate=async()=>{
     if(!VAPID_PUB){return;}
     setBusy(true);
@@ -1086,7 +1103,26 @@ function PushNagBanner({token,t}){
     }catch(e){}
     setBusy(false);
   };
-  if(!supported||subscribed)return null;
+  if(subscribed)return null;
+  // Caso especial iOS: necesita instalar PWA primero antes de poder activar push
+  if(iosNeedsInstall){
+    return <div style={{background:"linear-gradient(135deg,rgba(91,155,213,0.18),rgba(91,155,213,0.05))",border:"1.5px solid rgba(91,155,213,0.5)",borderRadius:12,padding:"14px 18px",marginBottom:16}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
+        <span style={{fontSize:24}}>📲</span>
+        <div style={{flex:1}}>
+          <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.push_ios_install_title||"Instalá la app en tu pantalla de inicio"}</p>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:"3px 0 0",lineHeight:1.5}}>{t.push_ios_install_msg||"En iPhone, las notificaciones solo funcionan después de instalar la app desde el menú compartir."}</p>
+        </div>
+      </div>
+      <ol style={{margin:"8px 0 0",paddingLeft:24,fontSize:12,color:"rgba(255,255,255,0.85)",lineHeight:1.7}}>
+        <li>{t.push_ios_step1||"Tocá el botón de compartir en la barra inferior de Safari"} <strong style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:18,height:18,border:"1px solid rgba(255,255,255,0.4)",borderRadius:4,fontSize:10,marginLeft:4,verticalAlign:"middle"}}>⬆️</strong></li>
+        <li>{t.push_ios_step2||"Buscá y tocá «Agregar a inicio» (Add to Home Screen)"}</li>
+        <li>{t.push_ios_step3||"Abrí Argencargo desde el ícono que apareció en tu home — NO desde Safari"}</li>
+        <li>{t.push_ios_step4||"Volvé acá y aparecerá el botón para activar notificaciones"}</li>
+      </ol>
+    </div>;
+  }
+  if(!supported)return null;
   const isDenied=permission==="denied";
   return <div style={{background:isDenied?"linear-gradient(135deg,rgba(248,113,113,0.18),rgba(248,113,113,0.05))":"linear-gradient(135deg,rgba(251,191,36,0.18),rgba(251,191,36,0.05))",border:`1.5px solid ${isDenied?"rgba(248,113,113,0.5)":"rgba(251,191,36,0.5)"}`,borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
     <div style={{flex:1,minWidth:200,display:"flex",alignItems:"center",gap:12}}>
