@@ -2192,6 +2192,16 @@ function Calculator({token,clients}){
 
 function AdminSettings({token,session}){
   const [curPw,setCurPw]=useState("");const [newPw,setNewPw]=useState("");const [confPw,setConfPw]=useState("");const [msg,setMsg]=useState("");const [err,setErr]=useState("");const [lo,setLo]=useState(false);
+  // Retención de fotos
+  const [photoDays,setPhotoDays]=useState("");const [photoMsg,setPhotoMsg]=useState("");const [photoSaving,setPhotoSaving]=useState(false);const [cleanupMsg,setCleanupMsg]=useState("");
+  useEffect(()=>{(async()=>{const r=await dq("calc_config",{token,filters:"?key=eq.photo_retention_days&select=value"});if(Array.isArray(r)&&r[0])setPhotoDays(String(r[0].value));else setPhotoDays("90");})();},[token]);
+  const savePhotoDays=async()=>{const n=parseInt(photoDays);if(isNaN(n)||n<7||n>3650){setPhotoMsg("Ingresá un número entre 7 y 3650 días");return;}setPhotoSaving(true);setPhotoMsg("");
+    const exists=await dq("calc_config",{token,filters:"?key=eq.photo_retention_days&select=key"});
+    if(Array.isArray(exists)&&exists.length>0){await dq("calc_config",{method:"PATCH",token,filters:"?key=eq.photo_retention_days",body:{value:String(n)}});}
+    else{await dq("calc_config",{method:"POST",token,body:{key:"photo_retention_days",value:String(n)}});}
+    setPhotoMsg("✅ Guardado");setPhotoSaving(false);setTimeout(()=>setPhotoMsg(""),3000);};
+  const runCleanupNow=async()=>{if(!confirm("¿Ejecutar la limpieza ahora? Borra las fotos de bultos de operaciones cerradas hace más del período configurado."))return;setCleanupMsg("Ejecutando...");
+    try{const r=await fetch("/api/cleanup/photos");const j=await r.json();if(j.ok){setCleanupMsg(`✅ ${j.deleted} fotos borradas (${j.ops_checked} ops revisadas, retención ${j.retention_days} días)${j.sample_ops?.length?` — ej: ${j.sample_ops.join(", ")}`:""}`);}else{setCleanupMsg(`❌ ${j.error}`);}}catch(e){setCleanupMsg("❌ "+e.message);}};
   const changePw=async()=>{if(!curPw||!newPw){setErr("Completá todos los campos");return;}if(newPw.length<6){setErr("La nueva contraseña debe tener al menos 6 caracteres");return;}if(newPw!==confPw){setErr("Las contraseñas no coinciden");return;}
     setLo(true);setErr("");setMsg("");
     // Verify current password by re-logging
@@ -2217,6 +2227,17 @@ function AdminSettings({token,session}){
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>EMAIL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{session.user.email}</p></div>
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>ROL</p><p style={{fontSize:14,color:IC,margin:0,fontWeight:600}}>Administrador</p></div>
       </div>
+    </Card>
+    <Card title="Retención de fotos de bultos">
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Las fotos cargadas por los agentes ocupan espacio en Storage. Se borran automáticamente <strong style={{color:"#fff"}}>N días después</strong> de cerrarse la operación. La limpieza corre todos los días a las 3am.</p>
+      <div style={{display:"flex",gap:10,alignItems:"end",flexWrap:"wrap",maxWidth:520}}>
+        <div style={{flex:1,minWidth:180}}><Inp label="Días después del cierre de op" type="number" value={photoDays} onChange={setPhotoDays} small/></div>
+        <Btn small onClick={savePhotoDays} disabled={photoSaving}>{photoSaving?"Guardando...":"Guardar"}</Btn>
+        <Btn small variant="secondary" onClick={runCleanupNow}>▶ Ejecutar ahora</Btn>
+      </div>
+      {photoMsg&&<p style={{fontSize:11,color:photoMsg.startsWith("✅")?"#22c55e":"#ff6b6b",margin:"8px 0 0"}}>{photoMsg}</p>}
+      {cleanupMsg&&<p style={{fontSize:11,color:cleanupMsg.startsWith("✅")?"#22c55e":cleanupMsg.startsWith("❌")?"#ff6b6b":"rgba(255,255,255,0.6)",margin:"8px 0 0"}}>{cleanupMsg}</p>}
+      <p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:"10px 0 0",fontStyle:"italic"}}>Sugerencia: 90 días. Mínimo recomendado 30, máximo razonable 365.</p>
     </Card>
   </div>;
 }
