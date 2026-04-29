@@ -3266,6 +3266,24 @@ function AgentsPanel({token}){
   const opsInFlightIds=new Set(flightOps.map(fo=>fo.operation_id));
   const availableForFlight=depositOps.filter(o=>o.consolidation_confirmed&&!opsInFlightIds.has(o.id)&&opsWithDocs.has(o.id));
   const opPackages=(opId)=>depositPkgs.filter(p=>p.operation_id===opId);
+  const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),3000);};
+  // Mover bulto a otra operación (caso típico: agente cargó el paquete al cliente equivocado)
+  const movePkgToOp=async(pkg,fromOpCode)=>{
+    const code=prompt(`Mover bulto #${pkg.package_number} (de ${fromOpCode}) a otra operación.\n\nIngresá el código de la op destino (ej: AC-0123):`);
+    if(!code)return;
+    const target=await dq("operations",{token,filters:`?operation_code=eq.${code.trim().toUpperCase()}&select=id,operation_code,status,client_id,clients(client_code,first_name,last_name)`});
+    const dest=Array.isArray(target)&&target[0];
+    if(!dest){flash(`❌ No encontré ${code}`);return;}
+    if(dest.id===pkg.operation_id){flash("Misma operación");return;}
+    if(["operacion_cerrada","cancelada"].includes(dest.status)){flash(`❌ Op destino está ${dest.status}`);return;}
+    const destName=dest.clients?`${dest.clients.client_code} — ${dest.clients.first_name} ${dest.clients.last_name}`:"(sin cliente)";
+    if(!confirm(`Mover bulto #${pkg.package_number} de ${fromOpCode} → ${dest.operation_code}?\n\nCliente destino: ${destName}\n\nSe renumera en la op destino.`))return;
+    const destPkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${dest.id}&select=package_number`});
+    const maxNum=Array.isArray(destPkgs)&&destPkgs.length>0?Math.max(...destPkgs.map(p=>Number(p.package_number||0))):0;
+    await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{operation_id:dest.id,package_number:maxNum+1}});
+    flash(`✓ Bulto movido a ${dest.operation_code}`);
+    load();
+  };
   // Peso facturable: max(bruto, volumétrico) por bulto, sumado. Usa divisor del agente (default 5000).
   const opWeight=(opId)=>{
     const pkgs=opPackages(opId);
@@ -3458,7 +3476,7 @@ function AgentsPanel({token}){
                         <div style={{background:"rgba(0,0,0,0.2)",borderRadius:8,overflow:"hidden"}}>
                           <table style={{width:"100%",fontSize:11,borderCollapse:"collapse"}}>
                             <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
-                              {["#","Foto","Cant.","Dimensiones (cm)","Peso","Facturable","Tracking"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+                              {["#","Foto","Cant.","Dimensiones (cm)","Peso","Facturable","Tracking",""].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
                             </tr></thead>
                             <tbody>{pkgsOfOp.map(p=>{const opAg=signups.find(s=>s.auth_user_id===o.created_by_agent_id);const opVD=Number(opAg?.volumetric_divisor)||5000;const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),wi=Number(p.width_cm||0),h=Number(p.height_cm||0);const bruto=gw*q;const vol=l&&wi&&h?((l*wi*h)/opVD)*q:0;const fact=Math.max(bruto,vol);return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontWeight:600}}>{p.package_number}</td>
@@ -3468,6 +3486,7 @@ function AgentsPanel({token}){
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{bruto?`${bruto.toFixed(2)} kg`:"—"}</td>
                               <td style={{padding:"6px 10px",color:fact>0?IC:"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums",fontWeight:600}}>{fact?`${fact.toFixed(2)} kg`:"—"}</td>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.5)",fontFamily:"monospace",fontSize:10}}>{p.national_tracking||"—"}</td>
+                              <td style={{padding:"6px 10px",textAlign:"right"}}><button onClick={(e)=>{e.stopPropagation();movePkgToOp(p,o.operation_code);}} title="Mover este bulto a otra operación (cliente equivocado)" style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",fontWeight:600}}>↪ Mover</button></td>
                             </tr>;})}</tbody>
                           </table>
                         </div>
