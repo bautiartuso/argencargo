@@ -2940,16 +2940,33 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     if(!newCost||!newWeight){onFlash("Cargá costo y peso (>0)");return;}
     if(!confirm(`¿Actualizar despacho?\n\nNuevo costo: USD ${newCost.toFixed(2)}\nNuevo peso: ${newWeight} kg\n\nSe recalculará cost_flete en cada operación del vuelo.`))return;
     setSavingCost(true);
-    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{total_cost_usd:newCost,total_weight_kg:newWeight,international_carrier:costForm.international_carrier||null,international_tracking:costForm.international_tracking||null,payment_method:costForm.payment_method||null}});
+    const newPmt=costForm.payment_method||null;
+    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{total_cost_usd:newCost,total_weight_kg:newWeight,international_carrier:costForm.international_carrier||null,international_tracking:costForm.international_tracking||null,payment_method:newPmt}});
     // Recalcular share por peso ya guardado en flight_operations
     for(const fo of flightOps){
       const opW=Number(fo.weight_kg||0);
       const share=newWeight>0?(opW/newWeight)*newCost:0;
+      const cflMethod=newPmt==="cuenta_corriente"?"cuenta_corriente":(newPmt==="transferencia"?"transferencia":"contado");
       await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{cost_share_usd:share}});
-      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{cost_flete:share}});
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{cost_flete:share,cost_flete_method:cflMethod}});
     }
+    // Sincronizar movimiento de CC del agente (creado en dispatch si era cuenta_corriente)
+    try{
+      const existing=await dq("agent_account_movements",{token,filters:`?flight_id=eq.${flight.id}&type=eq.deduccion&select=id`});
+      const exId=Array.isArray(existing)&&existing[0]?existing[0].id:null;
+      if(newPmt==="cuenta_corriente"){
+        if(exId){
+          await dq("agent_account_movements",{method:"PATCH",token,filters:`?id=eq.${exId}`,body:{amount_usd:newCost,description:`Costo vuelo ${flight.flight_code}`}});
+        } else if(flight.agent_id){
+          await dq("agent_account_movements",{method:"POST",token,body:{agent_id:flight.agent_id,type:"deduccion",amount_usd:newCost,description:`Costo vuelo ${flight.flight_code}`,flight_id:flight.id,date:new Date().toISOString().slice(0,10)}});
+        }
+      } else if(exId){
+        // Cambió de cuenta_corriente a otro método → eliminar deducción huérfana
+        await dq("agent_account_movements",{method:"DELETE",token,filters:`?id=eq.${exId}`});
+      }
+    }catch(e){console.error("sync CC mov error",e);}
     setSavingCost(false);setEditCost(false);
-    onFlash("Despacho actualizado · cost_flete recalculado");onReload();
+    onFlash("Despacho actualizado · cost_flete y CC agente recalculados");onReload();
   };
   const markReceived=async()=>{
     if(!confirm(`¿Marcar ${flight.flight_code} como recibido en Bs As? Las ops cambiarán a 'arribo_argentina'.`))return;
