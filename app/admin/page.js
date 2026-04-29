@@ -2949,6 +2949,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     }
     setClassifyingHs(false);
     onFlash(`✨ ${ok}/${pending.length} HS codes asignados`);
+    onReload();
   };
   // --- Editar datos de despacho (costo, peso, carrier, tracking) y recalcular cost_share por op ---
   const [editCost,setEditCost]=useState(false);
@@ -3288,21 +3289,45 @@ function AgentsPanel({token}){
   const opsInFlightIds=new Set(flightOps.map(fo=>fo.operation_id));
   const availableForFlight=depositOps.filter(o=>o.consolidation_confirmed&&!opsInFlightIds.has(o.id)&&opsWithDocs.has(o.id));
   const opPackages=(opId)=>depositPkgs.filter(p=>p.operation_id===opId);
-  // Mover bulto a otra operación (caso típico: agente cargó el paquete al cliente equivocado)
-  const movePkgToOp=async(pkg,fromOpCode)=>{
-    const code=prompt(`Mover bulto #${pkg.package_number} (de ${fromOpCode}) a otra operación.\n\nIngresá el código de la op destino (ej: AC-0123):`);
-    if(!code)return;
-    const target=await dq("operations",{token,filters:`?operation_code=eq.${code.trim().toUpperCase()}&select=id,operation_code,status,client_id,clients(client_code,first_name,last_name)`});
-    const dest=Array.isArray(target)&&target[0];
-    if(!dest){flash(`❌ No encontré ${code}`);return;}
-    if(dest.id===pkg.operation_id){flash("Misma operación");return;}
-    if(["operacion_cerrada","cancelada"].includes(dest.status)){flash(`❌ Op destino está ${dest.status}`);return;}
-    const destName=dest.clients?`${dest.clients.client_code} — ${dest.clients.first_name} ${dest.clients.last_name}`:"(sin cliente)";
-    if(!confirm(`Mover bulto #${pkg.package_number} de ${fromOpCode} → ${dest.operation_code}?\n\nCliente destino: ${destName}\n\nSe renumera en la op destino.`))return;
-    const destPkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${dest.id}&select=package_number`});
+  // Mover bulto a otro cliente (caso típico: agente lo cargó al cliente equivocado)
+  // Modal: pide cliente. Si tiene op abierta en depósito → suma ahí. Si no → crea nueva op (mismo agente/canal/origen).
+  const [movePkgState,setMovePkgState]=useState(null); // {pkg, fromOp}
+  const [moveClients,setMoveClients]=useState([]);
+  const [moveSearch,setMoveSearch]=useState("");
+  const [moveSelClient,setMoveSelClient]=useState(null);
+  const [moveSaving,setMoveSaving]=useState(false);
+  const openMoveModal=async(pkg,fromOp)=>{
+    setMovePkgState({pkg,fromOp});setMoveSearch("");setMoveSelClient(null);
+    if(moveClients.length===0){
+      const r=await dq("clients",{token,filters:"?select=id,client_code,first_name,last_name&order=client_code.asc"});
+      setMoveClients(Array.isArray(r)?r:[]);
+    }
+  };
+  const closeMoveModal=()=>{setMovePkgState(null);setMoveSelClient(null);setMoveSearch("");};
+  // Para el cliente seleccionado: busca su op abierta más reciente en depósito (en_deposito_origen / en_preparacion)
+  const moveTargetOp=moveSelClient?(allOps.find(o=>o.client_id===moveSelClient.id)||depositOps.find(o=>o.client_id===moveSelClient.id)):null;
+  const executeMove=async()=>{
+    if(!moveSelClient||!movePkgState)return;
+    const {pkg,fromOp}=movePkgState;
+    if(moveSelClient.id===fromOp.client_id){flash("Mismo cliente");return;}
+    setMoveSaving(true);
+    let destOpId=moveTargetOp?.id;let destCode=moveTargetOp?.operation_code;
+    if(!destOpId){
+      // Crear nueva op para el cliente destino, copiando metadata de la op origen
+      const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
+      const newCode=typeof rpc==="string"?rpc:null;
+      if(!newCode){flash("❌ No pude generar código");setMoveSaving(false);return;}
+      const r=await dq("operations",{method:"POST",token,body:{operation_code:newCode,client_id:moveSelClient.id,channel:fromOp.channel||"aereo_blanco",status:"en_deposito_origen",origin:fromOp.origin||"China",created_by_agent_id:fromOp.created_by_agent_id||null}});
+      const created=Array.isArray(r)?r[0]:r;
+      if(!created?.id){flash("❌ No pude crear op");setMoveSaving(false);return;}
+      destOpId=created.id;destCode=newCode;
+    }
+    // Renumerar en la op destino
+    const destPkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${destOpId}&select=package_number`});
     const maxNum=Array.isArray(destPkgs)&&destPkgs.length>0?Math.max(...destPkgs.map(p=>Number(p.package_number||0))):0;
-    await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{operation_id:dest.id,package_number:maxNum+1}});
-    flash(`✓ Bulto movido a ${dest.operation_code}`);
+    await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{operation_id:destOpId,package_number:maxNum+1}});
+    setMoveSaving(false);closeMoveModal();
+    flash(`✓ Bulto movido a ${destCode} (${moveSelClient.client_code})`);
     load();
   };
   // Peso facturable: max(bruto, volumétrico) por bulto, sumado. Usa divisor del agente (default 5000).
@@ -3507,7 +3532,7 @@ function AgentsPanel({token}){
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{bruto?`${bruto.toFixed(2)} kg`:"—"}</td>
                               <td style={{padding:"6px 10px",color:fact>0?IC:"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums",fontWeight:600}}>{fact?`${fact.toFixed(2)} kg`:"—"}</td>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.5)",fontFamily:"monospace",fontSize:10}}>{p.national_tracking||"—"}</td>
-                              <td style={{padding:"6px 10px",textAlign:"right"}}><button onClick={(e)=>{e.stopPropagation();movePkgToOp(p,o.operation_code);}} title="Mover este bulto a otra operación (cliente equivocado)" style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",fontWeight:600}}>↪ Mover</button></td>
+                              <td style={{padding:"6px 10px",textAlign:"right"}}><button onClick={(e)=>{e.stopPropagation();openMoveModal(p,o);}} title="Mover este bulto a otro cliente (el agente lo cargó al equivocado)" style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",fontWeight:600}}>↪ Mover</button></td>
                             </tr>;})}</tbody>
                           </table>
                         </div>
@@ -3621,6 +3646,34 @@ function AgentsPanel({token}){
         </tr>;})}</tbody>
       </table>
     </div>)}
+    {movePkgState&&(()=>{const filteredCl=moveClients.filter(c=>{if(!moveSearch)return true;const s=moveSearch.toLowerCase();return c.client_code?.toLowerCase().includes(s)||`${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(s);}).slice(0,12);const fromCl=movePkgState.fromOp.clients;const fromName=fromCl?`${fromCl.client_code} — ${fromCl.first_name} ${fromCl.last_name}`:"(sin cliente)";return <div onClick={closeMoveModal} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
+          <div>
+            <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>↪ Mover bulto #{movePkgState.pkg.package_number} a otro cliente</h3>
+            <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>Origen: <strong style={{color:"#fff"}}>{movePkgState.fromOp.operation_code}</strong> · {fromName}</p>
+          </div>
+          <button onClick={closeMoveModal} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+        </div>
+        <input autoFocus value={moveSearch} onChange={e=>{setMoveSearch(e.target.value);setMoveSelClient(null);}} placeholder="Buscar cliente por código o nombre…" style={{width:"100%",padding:"10px 12px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",marginBottom:10,outline:"none"}}/>
+        {!moveSelClient&&<div style={{maxHeight:260,overflowY:"auto",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,marginBottom:12}}>
+          {filteredCl.length===0?<p style={{padding:"14px",fontSize:12,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>{moveSearch?"Sin coincidencias":"Escribí para buscar…"}</p>:filteredCl.map(c=>{const isFrom=c.id===movePkgState.fromOp.client_id;return <button key={c.id} disabled={isFrom} onClick={()=>setMoveSelClient(c)} style={{width:"100%",padding:"10px 12px",border:"none",borderBottom:"1px solid rgba(255,255,255,0.04)",background:"transparent",color:isFrom?"rgba(255,255,255,0.3)":"#fff",cursor:isFrom?"not-allowed":"pointer",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{if(!isFrom)e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+            <span><strong style={{fontFamily:"monospace",color:isFrom?"rgba(255,255,255,0.3)":IC}}>{c.client_code}</strong> — {c.first_name} {c.last_name}</span>
+            {isFrom&&<span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>(origen)</span>}
+          </button>;})}
+        </div>}
+        {moveSelClient&&<div style={{padding:"14px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,marginBottom:12}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Cliente destino</p>
+          <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 10px"}}><span style={{fontFamily:"monospace",color:IC}}>{moveSelClient.client_code}</span> — {moveSelClient.first_name} {moveSelClient.last_name}</p>
+          {moveTargetOp?<p style={{fontSize:12,color:"#22c55e",margin:0}}>✓ Tiene op abierta <strong style={{fontFamily:"monospace"}}>{moveTargetOp.operation_code}</strong> — el bulto se agrega ahí</p>:<p style={{fontSize:12,color:"#fbbf24",margin:0}}>⚠ Sin op abierta — se va a crear una nueva (mismo agente, canal y origen que la op origen)</p>}
+          <button onClick={()=>setMoveSelClient(null)} style={{marginTop:8,fontSize:11,color:"rgba(255,255,255,0.5)",background:"transparent",border:"none",cursor:"pointer",padding:0,textDecoration:"underline"}}>← Cambiar cliente</button>
+        </div>}
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={closeMoveModal} disabled={moveSaving} style={{padding:"8px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:"pointer"}}>Cancelar</button>
+          <button onClick={executeMove} disabled={!moveSelClient||moveSaving} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:moveSelClient?GOLD_GRADIENT:"rgba(255,255,255,0.05)",color:moveSelClient?"#0A1628":"rgba(255,255,255,0.3)",cursor:moveSelClient?"pointer":"not-allowed",opacity:moveSaving?0.6:1}}>{moveSaving?"Moviendo…":"✓ Confirmar"}</button>
+        </div>
+      </div>
+    </div>;})()}
   </div>;
 }
 
