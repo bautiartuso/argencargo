@@ -3334,11 +3334,13 @@ function AgentsPanel({token}){
   };
   const closeMoveModal=()=>{setMovePkgState(null);setMoveSelClient(null);setMoveSearch("");};
   // Para el cliente seleccionado: busca su op abierta más reciente en depósito (en_deposito_origen / en_preparacion)
-  const moveTargetOp=moveSelClient?(allOps.find(o=>o.client_id===moveSelClient.id)||depositOps.find(o=>o.client_id===moveSelClient.id)):null;
+  // Buscar op abierta del cliente destino, EXCLUYENDO la op origen (para permitir split del mismo cliente)
+  const moveTargetOp=moveSelClient&&movePkgState?([...allOps,...depositOps].find(o=>o.client_id===moveSelClient.id&&o.id!==movePkgState.fromOp.id)):null;
+  const isSameClient=moveSelClient&&movePkgState&&moveSelClient.id===movePkgState.fromOp.client_id;
   const executeMove=async()=>{
     if(!moveSelClient||!movePkgState)return;
     const {pkg,fromOp}=movePkgState;
-    if(moveSelClient.id===fromOp.client_id){flash("Mismo cliente");return;}
+    // Mismo cliente está OK = split. La condición vital es que destino ≠ op origen, lo asegura moveTargetOp.
     setMoveSaving(true);
     let destOpId=moveTargetOp?.id;let destCode=moveTargetOp?.operation_code;
     if(!destOpId){
@@ -3699,15 +3701,15 @@ function AgentsPanel({token}){
         </div>
         <input autoFocus value={moveSearch} onChange={e=>{setMoveSearch(e.target.value);setMoveSelClient(null);}} placeholder="Buscar cliente por código o nombre…" style={{width:"100%",padding:"10px 12px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",marginBottom:10,outline:"none"}}/>
         {!moveSelClient&&<div style={{maxHeight:260,overflowY:"auto",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,marginBottom:12}}>
-          {filteredCl.length===0?<p style={{padding:"14px",fontSize:12,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>{moveSearch?"Sin coincidencias":"Escribí para buscar…"}</p>:filteredCl.map(c=>{const isFrom=c.id===movePkgState.fromOp.client_id;return <button key={c.id} disabled={isFrom} onClick={()=>setMoveSelClient(c)} style={{width:"100%",padding:"10px 12px",border:"none",borderBottom:"1px solid rgba(255,255,255,0.04)",background:"transparent",color:isFrom?"rgba(255,255,255,0.3)":"#fff",cursor:isFrom?"not-allowed":"pointer",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{if(!isFrom)e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-            <span><strong style={{fontFamily:"monospace",color:isFrom?"rgba(255,255,255,0.3)":IC}}>{c.client_code}</strong> — {c.first_name} {c.last_name}</span>
-            {isFrom&&<span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>(origen)</span>}
+          {filteredCl.length===0?<p style={{padding:"14px",fontSize:12,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>{moveSearch?"Sin coincidencias":"Escribí para buscar…"}</p>:filteredCl.map(c=>{const isFrom=c.id===movePkgState.fromOp.client_id;return <button key={c.id} onClick={()=>setMoveSelClient(c)} style={{width:"100%",padding:"10px 12px",border:"none",borderBottom:"1px solid rgba(255,255,255,0.04)",background:"transparent",color:"#fff",cursor:"pointer",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+            <span><strong style={{fontFamily:"monospace",color:IC}}>{c.client_code}</strong> — {c.first_name} {c.last_name}</span>
+            {isFrom&&<span style={{fontSize:10,fontWeight:700,color:"#a78bfa",padding:"2px 6px",borderRadius:4,background:"rgba(167,139,250,0.12)",border:"1px solid rgba(167,139,250,0.3)"}}>SPLIT (mismo cliente)</span>}
           </button>;})}
         </div>}
         {moveSelClient&&<div style={{padding:"14px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,marginBottom:12}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Cliente destino</p>
           <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 10px"}}><span style={{fontFamily:"monospace",color:IC}}>{moveSelClient.client_code}</span> — {moveSelClient.first_name} {moveSelClient.last_name}</p>
-          {moveTargetOp?<p style={{fontSize:12,color:"#22c55e",margin:0}}>✓ Tiene op abierta <strong style={{fontFamily:"monospace"}}>{moveTargetOp.operation_code}</strong> — el bulto se agrega ahí</p>:<p style={{fontSize:12,color:"#fbbf24",margin:0}}>⚠ Sin op abierta — se va a crear una nueva (mismo agente, canal y origen que la op origen)</p>}
+          {moveTargetOp?<p style={{fontSize:12,color:"#22c55e",margin:0}}>✓ {isSameClient?"Otra op abierta del cliente":"Tiene op abierta"} <strong style={{fontFamily:"monospace"}}>{moveTargetOp.operation_code}</strong> — el bulto se agrega ahí</p>:<p style={{fontSize:12,color:isSameClient?"#a78bfa":"#fbbf24",margin:0}}>{isSameClient?`✂️ SPLIT — se crea una nueva op para este cliente con este bulto. La op origen ${movePkgState.fromOp.operation_code} sigue con el resto.`:"⚠ Sin op abierta — se va a crear una nueva (mismo agente, canal y origen que la op origen)"}</p>}
           <button onClick={()=>setMoveSelClient(null)} style={{marginTop:8,fontSize:11,color:"rgba(255,255,255,0.5)",background:"transparent",border:"none",cursor:"pointer",padding:0,textDecoration:"underline"}}>← Cambiar cliente</button>
         </div>}
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
