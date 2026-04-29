@@ -380,9 +380,10 @@ function EditableItemRow({item,editable,token,onChange}){
   const [desc,setDesc]=useState(item.description||"");
   const [qty,setQty]=useState(String(item.quantity||""));
   const [price,setPrice]=useState(String(item.unit_price_usd||""));
+  const [hs,setHs]=useState(item.ncm_code||"");
   const [saving,setSaving]=useState(false);
   const tRef=useRef(null);
-  useEffect(()=>{setDesc(item.description||"");setQty(String(item.quantity||""));setPrice(String(item.unit_price_usd||""));},[item.id]);
+  useEffect(()=>{setDesc(item.description||"");setQty(String(item.quantity||""));setPrice(String(item.unit_price_usd||""));setHs(item.ncm_code||"");},[item.id]);
   const persist=async(patch)=>{
     setSaving(true);
     try{await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:patch});}
@@ -396,16 +397,18 @@ function EditableItemRow({item,editable,token,onChange}){
   const onDel=async()=>{if(!confirm(`¿Eliminar "${item.description}"?`))return;await dq("operation_items",{method:"DELETE",token,filters:`?id=eq.${item.id}`});if(onChange)await onChange();};
   const subtotal=(Number(qty)||0)*(Number(price)||0);
   if(!editable){
-    return <div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:13,color:"rgba(255,255,255,0.85)",alignItems:"center"}}>
+    return <div style={{display:"grid",gridTemplateColumns:"3fr 0.9fr 0.7fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:13,color:"rgba(255,255,255,0.85)",alignItems:"center"}}>
       <span>{item.description}</span>
+      <span style={{fontFamily:"monospace",fontSize:12,color:item.ncm_code?"#22c55e":"rgba(255,255,255,0.3)"}}>{item.ncm_code||"—"}</span>
       <span style={{textAlign:"right"}}>{Number(item.quantity||0)}</span>
       <span style={{textAlign:"right"}}>USD {Number(item.unit_price_usd||0).toFixed(2)}</span>
       <span style={{textAlign:"right",fontWeight:700}}>USD {subtotal.toFixed(2)}</span>
     </div>;
   }
   const inputStyle={width:"100%",padding:"6px 8px",fontSize:12,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:5,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"};
-  return <div style={{display:"grid",gridTemplateColumns:"3fr 0.8fr 1fr 1fr 36px",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:13,color:"rgba(255,255,255,0.85)",alignItems:"center"}}>
+  return <div style={{display:"grid",gridTemplateColumns:"3fr 0.9fr 0.7fr 1fr 1fr 36px",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:13,color:"rgba(255,255,255,0.85)",alignItems:"center"}}>
     <input value={desc} onChange={e=>{setDesc(e.target.value);debouncedSave({description:e.target.value});}} style={inputStyle}/>
+    <input value={hs} onChange={e=>{setHs(e.target.value);debouncedSave({ncm_code:e.target.value||null});}} placeholder="HS Code" style={{...inputStyle,fontFamily:"monospace"}}/>
     <input type="number" value={qty} onChange={e=>{const v=e.target.value;setQty(v);debouncedSave({quantity:Number(v)||0});}} style={{...inputStyle,textAlign:"right"}}/>
     <input type="number" step="0.01" value={price} onChange={e=>{const v=e.target.value;setPrice(v);debouncedSave({unit_price_usd:Number(v)||0});}} style={{...inputStyle,textAlign:"right"}}/>
     <span style={{textAlign:"right",fontWeight:700,opacity:saving?0.5:1}}>USD {subtotal.toFixed(2)}</span>
@@ -561,10 +564,10 @@ function OperationDetail({op,token,onBack}){
         <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>📋 Productos declarados {isEditable&&<span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.2)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8}}>✏️ Editable</span>}</h3>
         {isEditable&&<button onClick={()=>{setShowDocPanel(true);setDocInputMode(null);if(docItems.length===0)setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);setTimeout(()=>{const el=document.getElementById("ac-doc-panel");if(el)el.scrollIntoView({behavior:"smooth"});},100);}} style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer"}}>+ Agregar más</button>}
       </div>
-      {isEditable&&<p style={{fontSize:11,color:"#60a5fa",margin:"0 0 12px",lineHeight:1.4}}>✏️ Podés modificar la cantidad y el precio, eliminar productos o agregar nuevos. Los cambios se guardan al instante.</p>}
+      {isEditable&&<p style={{fontSize:11,color:"#60a5fa",margin:"0 0 12px",lineHeight:1.4}}>✏️ Podés modificar descripción, HS Code, cantidad y precio, eliminar productos o agregar nuevos (con PDF de la factura o a mano). Los cambios se guardan al instante.</p>}
       <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,overflow:"hidden"}}>
-        <div style={{display:"grid",gridTemplateColumns:isEditable?"3fr 0.8fr 1fr 1fr 36px":"3fr 1fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.08)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
-          <span>Descripción</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Precio unit.</span><span style={{textAlign:"right"}}>Subtotal</span>{isEditable&&<span/>}
+        <div style={{display:"grid",gridTemplateColumns:isEditable?"3fr 0.9fr 0.7fr 1fr 1fr 36px":"3fr 0.9fr 0.7fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.08)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
+          <span>Descripción</span><span>HS Code</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Precio unit.</span><span style={{textAlign:"right"}}>Subtotal</span>{isEditable&&<span/>}
         </div>
         {items.map(it=><EditableItemRow key={it.id} item={it} editable={isEditable} token={token} onChange={loadAll}/>)}
         <div style={{display:"flex",justifyContent:"space-between",padding:"10px 12px",borderTop:"1px solid rgba(184,149,106,0.3)"}}>
