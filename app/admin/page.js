@@ -3372,7 +3372,20 @@ function AgentsPanel({token}){
     // Notification #1: notify agent about new flight
     try{await dq("notifications",{method:"POST",token,body:{user_id:agentId,portal:"agente",title:`Nuevo vuelo ${newCode} creado`,body:`${ops.length} operaciones asignadas`,link:"?tab=active_flights"}});}catch(e){console.error("notif error",e);}
     try{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:agentId,title:`Nuevo vuelo ${newCode} creado`,body:`${ops.length} operaciones asignadas`,url:"/agente?tab=active_flights"})});}catch(e){}
-    setSelectedOps([]);load();flash(`Vuelo ${newCode} creado con factura base. Editá HS code y valores declarados.`);setTab("flights");setSelFlight(created.id);
+    // Notification #2: notify each client whose op is in this flight (in-app + push)
+    try{
+      const opIds=ops.map(o=>o.id);
+      const opsWithClients=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,client_id,clients(auth_user_id)`});
+      for(const op of (Array.isArray(opsWithClients)?opsWithClients:[])){
+        const userId=op.clients?.auth_user_id;
+        if(!userId)continue;
+        const title=`✈️ Tu operación ${op.operation_code} fue asignada al vuelo ${newCode}`;
+        const body="Estamos preparando la documentación. Te avisamos cuando despegue.";
+        dq("notifications",{method:"POST",token,body:{user_id:userId,portal:"cliente",title,body,link:`?op=${op.operation_code}`}}).catch(e=>console.error("notif client",e));
+        fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:userId,title,body,url:`/portal?op=${op.operation_code}`})}).catch(()=>{});
+      }
+    }catch(e){console.error("notif clients error",e);}
+    setSelectedOps([]);load();flash(`Vuelo ${newCode} creado con factura base. Clientes y agente notificados.`);setTab("flights");setSelFlight(created.id);
   };
   const assignToOp=async(pkg,opId)=>{
     if(!opId)return;
