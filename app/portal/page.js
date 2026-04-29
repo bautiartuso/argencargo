@@ -420,6 +420,25 @@ function OperationDetail({op,token,onBack}){
   const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);
   const [docInputMode,setDocInputMode]=useState(null); // 'pdf' | 'manual'
   const [localConfirmed,setLocalConfirmed]=useState(false);
+  const [classifyingHs,setClassifyingHs]=useState(false);
+  const autoClassifyHs=async()=>{
+    const pending=items.filter(it=>it.description&&it.description.trim()&&(!it.ncm_code||!it.ncm_code.trim()));
+    if(pending.length===0)return;
+    setClassifyingHs(true);
+    let ok=0;
+    for(const it of pending){
+      try{
+        const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
+        const d=await r.json();
+        if(d?.ncm_code){
+          await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{ncm_code:d.ncm_code}});
+          ok++;
+        }
+      }catch(e){console.error("ncm error",e);}
+    }
+    setClassifyingHs(false);
+    await loadAll();
+  };
   const canDocument=op.status==="en_preparacion"||op.status==="en_deposito_origen"||localConfirmed;
   const addDocItem=()=>setDocItems(p=>[...p,{description:"",quantity:"1",unit_price_usd:""}]);
   const rmDocItem=(i)=>setDocItems(p=>p.filter((_,j)=>j!==i));
@@ -562,7 +581,10 @@ function OperationDetail({op,token,onBack}){
       return !loading&&!isGI&&items.length>0&&<div style={{background:isEditable?"linear-gradient(135deg,rgba(96,165,250,0.10),rgba(96,165,250,0.03))":"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:`1.5px solid ${isEditable?"rgba(96,165,250,0.35)":"rgba(184,149,106,0.3)"}`,borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
         <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>📋 Productos declarados {isEditable&&<span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.2)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8}}>✏️ Editable</span>}</h3>
-        {isEditable&&<button onClick={()=>{setShowDocPanel(true);setDocInputMode(null);if(docItems.length===0)setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);setTimeout(()=>{const el=document.getElementById("ac-doc-panel");if(el)el.scrollIntoView({behavior:"smooth"});},100);}} style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer"}}>+ Agregar más</button>}
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {isEditable&&items.some(it=>it.description&&it.description.trim()&&(!it.ncm_code||!it.ncm_code.trim()))&&<button onClick={autoClassifyHs} disabled={classifyingHs} title="Completar HS Code automáticamente con IA para los productos que no lo tengan" style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.12)",color:"#a78bfa",cursor:classifyingHs?"wait":"pointer",opacity:classifyingHs?0.6:1}}>{classifyingHs?"Clasificando…":"✨ Auto-completar HS Code (IA)"}</button>}
+          {isEditable&&<button onClick={()=>{setShowDocPanel(true);setDocInputMode(null);if(docItems.length===0)setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);setTimeout(()=>{const el=document.getElementById("ac-doc-panel");if(el)el.scrollIntoView({behavior:"smooth"});},100);}} style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer"}}>+ Agregar más</button>}
+        </div>
       </div>
       {isEditable&&<p style={{fontSize:11,color:"#60a5fa",margin:"0 0 12px",lineHeight:1.4}}>✏️ Podés modificar descripción, HS Code, cantidad y precio, eliminar productos o agregar nuevos (con PDF de la factura o a mano). Los cambios se guardan al instante.</p>}
       <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,overflow:"hidden"}}>
