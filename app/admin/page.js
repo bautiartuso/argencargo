@@ -3334,9 +3334,13 @@ function AgentsPanel({token}){
   };
   const closeMoveModal=()=>{setMovePkgState(null);setMoveSelClient(null);setMoveSearch("");};
   // Para el cliente seleccionado: busca su op abierta más reciente en depósito (en_deposito_origen / en_preparacion)
-  // Buscar op abierta del cliente destino, EXCLUYENDO la op origen (para permitir split del mismo cliente)
-  const moveTargetOp=moveSelClient&&movePkgState?([...allOps,...depositOps].find(o=>o.client_id===moveSelClient.id&&o.id!==movePkgState.fromOp.id)):null;
+  // SPLIT (mismo cliente) → SIEMPRE crea op nueva, jamás fusiona.
+  // Otro cliente → busca op abierta del cliente destino DEL MISMO AGENTE que la op origen.
+  // Si no hay → crea op nueva preservando el agente de la op origen.
   const isSameClient=moveSelClient&&movePkgState&&moveSelClient.id===movePkgState.fromOp.client_id;
+  const moveTargetOp=moveSelClient&&movePkgState&&!isSameClient
+    ?[...allOps,...depositOps].find(o=>o.client_id===moveSelClient.id&&o.id!==movePkgState.fromOp.id&&o.created_by_agent_id===movePkgState.fromOp.created_by_agent_id)
+    :null;
   const executeMove=async()=>{
     if(!moveSelClient||!movePkgState)return;
     const {pkg,fromOp}=movePkgState;
@@ -3709,7 +3713,7 @@ function AgentsPanel({token}){
         {moveSelClient&&<div style={{padding:"14px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,marginBottom:12}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Cliente destino</p>
           <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 10px"}}><span style={{fontFamily:"monospace",color:IC}}>{moveSelClient.client_code}</span> — {moveSelClient.first_name} {moveSelClient.last_name}</p>
-          {moveTargetOp?<p style={{fontSize:12,color:"#22c55e",margin:0}}>✓ {isSameClient?"Otra op abierta del cliente":"Tiene op abierta"} <strong style={{fontFamily:"monospace"}}>{moveTargetOp.operation_code}</strong> — el bulto se agrega ahí</p>:<p style={{fontSize:12,color:isSameClient?"#a78bfa":"#fbbf24",margin:0}}>{isSameClient?`✂️ SPLIT — se crea una nueva op para este cliente con este bulto. La op origen ${movePkgState.fromOp.operation_code} sigue con el resto.`:"⚠ Sin op abierta — se va a crear una nueva (mismo agente, canal y origen que la op origen)"}</p>}
+          {isSameClient?<p style={{fontSize:12,color:"#a78bfa",margin:0}}>✂️ SPLIT — se crea una NUEVA op para este cliente con este bulto (mismo agente que {movePkgState.fromOp.operation_code}). La op origen sigue con el resto.</p>:moveTargetOp?<p style={{fontSize:12,color:"#22c55e",margin:0}}>✓ Tiene op abierta del MISMO agente <strong style={{fontFamily:"monospace"}}>{moveTargetOp.operation_code}</strong> — el bulto se agrega ahí</p>:<p style={{fontSize:12,color:"#fbbf24",margin:0}}>⚠ Sin op abierta de ese agente — se va a crear una nueva (preservando el agente de {movePkgState.fromOp.operation_code})</p>}
           <button onClick={()=>setMoveSelClient(null)} style={{marginTop:8,fontSize:11,color:"rgba(255,255,255,0.5)",background:"transparent",border:"none",cursor:"pointer",padding:0,textDecoration:"underline"}}>← Cambiar cliente</button>
         </div>}
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
