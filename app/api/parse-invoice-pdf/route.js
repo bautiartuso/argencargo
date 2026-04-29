@@ -15,7 +15,11 @@ REGLAS:
 - Si la moneda no está clara, asumí USD.
 - Si el precio unitario no aparece pero sí el total y la cantidad, dividí.
 - Ignorá líneas de subtotal, freight, tax, total, etc.
-- Si una descripción está en chino, traducila al español: "无线耳机" → "Auriculares inalámbricos".
+- IMPORTANTE: las descripciones se usan para declaraciones aduaneras y deben estar SIEMPRE en INGLÉS.
+  · Si la descripción ya está en inglés, dejala TAL CUAL (no traduzcas).
+  · Si está en chino, traducila al inglés: "无线耳机" → "Wireless earphones".
+  · Si está en español u otro idioma, traducila al inglés: "Auriculares inalámbricos" → "Wireless earphones".
+  · Usá terminología comercial estándar (la que aparecería en una commercial invoice).
 - Cantidad debe ser un número entero. Precio unitario debe ser número decimal.
 - HS Code: extraé el código tal cual aparece. Suele ser 6, 8 o 10 dígitos (ej: "8517.62", "8517.62.00", "85176200"). Si no aparece HS code para ese item, omitilo (no inventes).
 - Devolvé SOLO el JSON, sin texto adicional ni markdown.
@@ -23,7 +27,7 @@ REGLAS:
 FORMATO DE SALIDA (JSON estricto):
 {
   "items": [
-    {"description": "string en español", "quantity": number, "unit_price_usd": number, "hs_code": "string o null"}
+    {"description": "string en INGLÉS", "quantity": number, "unit_price_usd": number, "hs_code": "string o null"}
   ]
 }
 
