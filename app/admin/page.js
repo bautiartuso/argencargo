@@ -3288,7 +3288,6 @@ function AgentsPanel({token}){
   const opsInFlightIds=new Set(flightOps.map(fo=>fo.operation_id));
   const availableForFlight=depositOps.filter(o=>o.consolidation_confirmed&&!opsInFlightIds.has(o.id)&&opsWithDocs.has(o.id));
   const opPackages=(opId)=>depositPkgs.filter(p=>p.operation_id===opId);
-  const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),3000);};
   // Mover bulto a otra operación (caso típico: agente cargó el paquete al cliente equivocado)
   const movePkgToOp=async(pkg,fromOpCode)=>{
     const code=prompt(`Mover bulto #${pkg.package_number} (de ${fromOpCode}) a otra operación.\n\nIngresá el código de la op destino (ej: AC-0123):`);
