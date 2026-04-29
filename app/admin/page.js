@@ -324,6 +324,50 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     else flash(`❌ ${r?.error||"error"}`);
   };
   useEffect(()=>{loadRedemptions();},[op.client_id]);
+  // --- Reasignar cliente de la operación (caso: agente creó la op para el cliente equivocado) ---
+  const [allClients,setAllClients]=useState([]);
+  const [showReassign,setShowReassign]=useState(false);
+  const [reassignToId,setReassignToId]=useState("");
+  const [reassigning,setReassigning]=useState(false);
+  const loadAllClients=async()=>{const r=await dq("clients",{token,filters:"?select=id,client_code,first_name,last_name&order=client_code.asc"});setAllClients(Array.isArray(r)?r:[]);};
+  const openReassign=async()=>{if(allClients.length===0)await loadAllClients();setReassignToId("");setShowReassign(true);};
+  const reassignClient=async()=>{
+    if(!reassignToId||reassignToId===op.client_id){setShowReassign(false);return;}
+    const newCl=allClients.find(c=>c.id===reassignToId);
+    if(!newCl)return;
+    const oldCl=opClient?`${opClient.client_code} — ${opClient.first_name} ${opClient.last_name}`:"(sin cliente)";
+    const closedish=["en_transito","arribo_argentina","en_aduana","entregada","operacion_cerrada"].includes(op.status);
+    const warn=closedish?"\n\n⚠ ATENCIÓN: la op ya está en/después de tránsito. Pueden quedar inconsistencias en cobranzas/cuenta corriente del cliente anterior. Revisá manualmente movimientos de cuenta y pagos.":"";
+    if(!confirm(`¿Reasignar ${op.operation_code}?\n\nDe: ${oldCl}\nA: ${newCl.client_code} — ${newCl.first_name} ${newCl.last_name}${warn}`))return;
+    setReassigning(true);
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{client_id:reassignToId}});
+    // Refresh op + opClient
+    const fresh=await dq("operations",{token,filters:`?id=eq.${op.id}&select=*,clients(first_name,last_name,client_code)`});
+    if(Array.isArray(fresh)&&fresh[0])setOp(fresh[0]);
+    const cl=await dq("clients",{token,filters:`?id=eq.${reassignToId}&select=*`});
+    setOpClient(Array.isArray(cl)?cl[0]:null);
+    setReassigning(false);setShowReassign(false);
+    flash(`✓ Operación reasignada a ${newCl.client_code}`);
+  };
+  // --- Mover bulto a otra operación (caso: bulto cargado en op equivocada) ---
+  const movePkgToOp=async(pkg)=>{
+    const code=prompt(`Mover bulto #${pkg.package_number} a otra operación.\n\nIngresá el código de la op destino (ej: AC-0123):`);
+    if(!code)return;
+    const target=await dq("operations",{token,filters:`?operation_code=eq.${code.trim().toUpperCase()}&select=id,operation_code,status,client_id,clients(client_code,first_name,last_name)`});
+    const dest=Array.isArray(target)&&target[0];
+    if(!dest){flash(`❌ No encontré operación ${code}`);return;}
+    if(dest.id===op.id){flash("Esa es la misma operación");return;}
+    if(["operacion_cerrada","cancelada"].includes(dest.status)){flash(`❌ Op destino está ${dest.status}`);return;}
+    const destName=dest.clients?`${dest.clients.client_code} — ${dest.clients.first_name} ${dest.clients.last_name}`:"(sin cliente)";
+    if(!confirm(`Mover bulto #${pkg.package_number} de ${op.operation_code} a ${dest.operation_code}?\n\nCliente destino: ${destName}\n\nEl bulto se renumerará en la op destino. Se recalcula presupuesto en ambas.`))return;
+    // Asignar nuevo package_number en destino
+    const destPkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${dest.id}&select=package_number`});
+    const maxNum=Array.isArray(destPkgs)&&destPkgs.length>0?Math.max(...destPkgs.map(p=>Number(p.package_number||0))):0;
+    await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{operation_id:dest.id,package_number:maxNum+1}});
+    await reloadPkgs();
+    flash(`✓ Bulto movido a ${dest.operation_code}`);
+    autoSyncBudget();
+  };
   const loadCCBalance=async()=>{const mvs=await dq("supplier_account_movements",{token,filters:"?select=type,amount_usd"});if(Array.isArray(mvs)){const bal=mvs.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):(-Number(m.amount_usd))),0);setCcBalance(bal);}};
   // Divisor volumétrico del agente que creó la op (default 5000 si no hay agente o no está set)
   const [agentVolDiv,setAgentVolDiv]=useState(5000);
@@ -499,8 +543,22 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {op.service_type==="gestion_integral"&&<span title="Gestión Integral" style={{fontSize:11,fontWeight:800,padding:"6px 14px",borderRadius:8,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.14em",textTransform:"uppercase",border:`1.5px solid ${GOLD_DEEP}`,boxShadow:`${GOLD_GLOW}, inset 0 1px 0 rgba(255,255,255,0.4)`,animation:"acGiPulse 2.4s ease-in-out infinite"}}>Gestión Integral</span>}
         {msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600,animation:"ac_fade_in 200ms"}}>✓ {msg}</span>}
       </div>
-      <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <Btn onClick={openReassign} variant="secondary" small>👤 Reasignar cliente</Btn>
+        <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
+      </div>
     </div>
+    {showReassign&&<div style={{marginBottom:16,padding:"14px 16px",background:"rgba(184,149,106,0.06)",border:"1.5px solid rgba(184,149,106,0.25)",borderRadius:10}}>
+      <p style={{fontSize:12,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Reasignar cliente</p>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 10px"}}>Cliente actual: <strong style={{color:"#fff"}}>{opClient?`${opClient.client_code} — ${opClient.first_name} ${opClient.last_name}`:"(sin cliente)"}</strong></p>
+      <div style={{display:"flex",gap:8,alignItems:"end",flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:240}}>
+          <Sel label="Nuevo cliente" value={reassignToId} onChange={setReassignToId} options={allClients.filter(c=>c.id!==op.client_id).map(c=>({value:c.id,label:`${c.client_code} — ${c.first_name} ${c.last_name}`}))} ph="Seleccionar cliente"/>
+        </div>
+        <Btn small onClick={reassignClient} disabled={!reassignToId||reassigning}>{reassigning?"Reasignando…":"Confirmar"}</Btn>
+        <Btn small variant="secondary" onClick={()=>setShowReassign(false)} disabled={reassigning}>Cancelar</Btn>
+      </div>
+    </div>}
     <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"10px 16px",fontSize:12,fontWeight:active?700:600,border:"none",background:"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.8)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{t.l}</button>;})}</div>
     {repackReq&&repackReq.status==="pending"&&<div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.4)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <div style={{flex:1,minWidth:200}}>
@@ -961,7 +1019,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       {pkgs.map((pk,i)=>{const q=Number(pk.quantity||1),l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0),gw=Number(pk.gross_weight_kg||0);const bruto=gw*q;const vw=l&&w&&h?((l*w*h)/agentVolDiv)*q:0;const cbm=l&&w&&h?((l*w*h)/1000000)*q:0;return <div key={pk.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Bulto {pk.package_number}</p>
-          <div style={{display:"flex",gap:6}}><Btn onClick={()=>savePkg(pk)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delPkg(pk.id)} small variant="danger">Eliminar</Btn></div>
+          <div style={{display:"flex",gap:6}}><Btn onClick={()=>savePkg(pk)} small variant="secondary">Guardar</Btn><Btn onClick={()=>movePkgToOp(pk)} small variant="secondary" title="Mover este bulto a otra operación (cliente equivocado)">↪ Mover</Btn><Btn onClick={()=>delPkg(pk.id)} small variant="danger">Eliminar</Btn></div>
         </div>
         <Inp label="Seguimiento nacional" value={pk.national_tracking} onChange={v=>chPkg(i,"national_tracking",v)} placeholder="Código de seguimiento nacional" small/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 12px"}}>
@@ -2871,6 +2929,28 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const saveAllItems=async()=>{for(const it of items){await saveItem(it);}};
   const addItem=async()=>{const opId=opsUnique[0]?.id;if(!opId)return;const r=await dq("flight_invoice_items",{method:"POST",token,body:{flight_id:flight.id,operation_id:opId,description:"",quantity:1,unit_price_declared_usd:0,hs_code:"",sort_order:items.length+1}});const created=Array.isArray(r)?r[0]:r;if(created?.id)setItems(p=>[...p,created]);onReload();};
   const delItem=async(id)=>{await dq("flight_invoice_items",{method:"DELETE",token,filters:`?id=eq.${id}`});setItems(p=>p.filter(x=>x.id!==id));onReload();};
+  // --- Editar datos de despacho (costo, peso, carrier, tracking) y recalcular cost_share por op ---
+  const [editCost,setEditCost]=useState(false);
+  const [costForm,setCostForm]=useState({total_cost_usd:"",total_weight_kg:"",international_carrier:"",international_tracking:"",payment_method:""});
+  const [savingCost,setSavingCost]=useState(false);
+  const openEditCost=()=>{setCostForm({total_cost_usd:flight.total_cost_usd||"",total_weight_kg:flight.total_weight_kg||"",international_carrier:flight.international_carrier||"",international_tracking:flight.international_tracking||"",payment_method:flight.payment_method||""});setEditCost(true);};
+  const saveCost=async()=>{
+    const newCost=Number(costForm.total_cost_usd||0);
+    const newWeight=Number(costForm.total_weight_kg||0);
+    if(!newCost||!newWeight){onFlash("Cargá costo y peso (>0)");return;}
+    if(!confirm(`¿Actualizar despacho?\n\nNuevo costo: USD ${newCost.toFixed(2)}\nNuevo peso: ${newWeight} kg\n\nSe recalculará cost_flete en cada operación del vuelo.`))return;
+    setSavingCost(true);
+    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{total_cost_usd:newCost,total_weight_kg:newWeight,international_carrier:costForm.international_carrier||null,international_tracking:costForm.international_tracking||null,payment_method:costForm.payment_method||null}});
+    // Recalcular share por peso ya guardado en flight_operations
+    for(const fo of flightOps){
+      const opW=Number(fo.weight_kg||0);
+      const share=newWeight>0?(opW/newWeight)*newCost:0;
+      await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{cost_share_usd:share}});
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{cost_flete:share}});
+    }
+    setSavingCost(false);setEditCost(false);
+    onFlash("Despacho actualizado · cost_flete recalculado");onReload();
+  };
   const markReceived=async()=>{
     if(!confirm(`¿Marcar ${flight.flight_code} como recibido en Bs As? Las ops cambiarán a 'arribo_argentina'.`))return;
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{status:"recibido",received_at:new Date().toISOString()}});
@@ -3051,16 +3131,42 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn small onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!flight.dest_address){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}await saveAllItems();await updateFlight({invoice_presented_at:new Date().toISOString()});for(const fo of flightOps){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}});}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",url:"/agente?tab=active_flights"})}).catch(()=>{});onFlash("Factura presentada · agente notificado");}}>✓ Guardar y presentar factura</Btn>}
       </div>}
     </Card>
-    {flight.status==="despachado"&&<Card title="Datos del despacho (cargados por agente)">
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,fontSize:12}}>
-        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>CARRIER</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.international_carrier||"—"}</p></div>
-        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>TRACKING</p><p style={{fontSize:14,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.international_tracking||"—"}</p></div>
-        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PESO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.total_weight_kg?`${flight.total_weight_kg} kg`:"—"}</p></div>
-        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>COSTO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{usd(flight.total_cost_usd||0)}</p></div>
-        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PAGO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.payment_method||"—"}</p></div>
-        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>DESPACHADO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{formatDate(flight.dispatched_at)}</p></div>
-      </div>
-      <div style={{marginTop:14}}><Btn small onClick={markReceived}>✓ Marcar como recibido en Bs As</Btn></div>
+    {(flight.status==="despachado"||flight.status==="recibido")&&<Card title="Datos del despacho (cargados por agente)" actions={!editCost?<Btn small variant="secondary" onClick={openEditCost}>✎ Editar</Btn>:null}>
+      {!editCost?<>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,fontSize:12}}>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>CARRIER</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.international_carrier||"—"}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>TRACKING</p><p style={{fontSize:14,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.international_tracking||"—"}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PESO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.total_weight_kg?`${flight.total_weight_kg} kg`:"—"}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>COSTO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{usd(flight.total_cost_usd||0)}{flight.total_weight_kg?<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginLeft:6}}>· {usd((flight.total_cost_usd||0)/flight.total_weight_kg)}/kg</span>:null}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PAGO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.payment_method||"—"}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>DESPACHADO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{formatDate(flight.dispatched_at)}</p></div>
+        </div>
+        {flight.status==="despachado"&&<div style={{marginTop:14}}><Btn small onClick={markReceived}>✓ Marcar como recibido en Bs As</Btn></div>}
+      </>:<>
+        <div style={{background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8,padding:"10px 12px",marginBottom:12}}>
+          <p style={{fontSize:11,color:"#fbbf24",margin:0,fontWeight:600}}>⚠ Editar redistribuye el costo entre las {flightOps.length} operaciones del vuelo proporcional al peso de cada una. Se actualiza <code>cost_flete</code> en cada op.</p>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+          <Inp label="Costo total (USD)" type="number" step="0.01" value={costForm.total_cost_usd} onChange={v=>setCostForm(p=>({...p,total_cost_usd:v}))}/>
+          <Inp label="Peso total (kg)" type="number" step="0.01" value={costForm.total_weight_kg} onChange={v=>setCostForm(p=>({...p,total_weight_kg:v}))}/>
+          <Inp label="Carrier" value={costForm.international_carrier} onChange={v=>setCostForm(p=>({...p,international_carrier:v}))}/>
+          <Inp label="Tracking" value={costForm.international_tracking} onChange={v=>setCostForm(p=>({...p,international_tracking:v}))}/>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+          <label style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>Método de pago</label>
+          <select value={costForm.payment_method||""} onChange={e=>setCostForm(p=>({...p,payment_method:e.target.value}))} style={{padding:"6px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff"}}>
+            <option value="" style={{background:"#142038"}}>—</option>
+            <option value="contado" style={{background:"#142038"}}>contado</option>
+            <option value="transferencia" style={{background:"#142038"}}>transferencia</option>
+            <option value="cuenta_corriente" style={{background:"#142038"}}>cuenta corriente</option>
+          </select>
+        </div>
+        {Number(costForm.total_cost_usd)>0&&Number(costForm.total_weight_kg)>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"0 0 10px"}}>Tarifa resultante: <strong style={{color:IC}}>{usd(Number(costForm.total_cost_usd)/Number(costForm.total_weight_kg))}/kg</strong></p>}
+        <div style={{display:"flex",gap:8}}>
+          <Btn small onClick={saveCost} disabled={savingCost}>{savingCost?"Guardando…":"💾 Guardar y recalcular"}</Btn>
+          <Btn small variant="secondary" onClick={()=>setEditCost(false)} disabled={savingCost}>Cancelar</Btn>
+        </div>
+      </>}
     </Card>}
   </div>;
 }
