@@ -2990,6 +2990,32 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     setSavingCost(false);setEditCost(false);
     onFlash("Despacho actualizado · cost_flete y CC agente recalculados");onReload();
   };
+  // Eliminar vuelo (solo si está "preparando" — las ops vuelven al depósito)
+  const [deletingFlight,setDeletingFlight]=useState(false);
+  const deleteFlight=async()=>{
+    if(flight.status!=="preparando"){onFlash("Solo se pueden eliminar vuelos en estado 'preparando'");return;}
+    if(!confirm(`¿Eliminar vuelo ${flight.flight_code}?\n\n· Las ${flightOps.length} operaciones vuelven al depósito (status 'en_deposito_origen').\n· Se borran los items de factura cargados.\n· Se borra el vuelo.\n\nEsta acción no se puede deshacer.`))return;
+    setDeletingFlight(true);
+    try{
+      // 1. Devolver cada op al depósito (status en_deposito_origen, consolidación se mantiene)
+      for(const fo of flightOps){
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"en_deposito_origen"}});
+      }
+      // 2. Borrar items de factura del vuelo
+      await dq("flight_invoice_items",{method:"DELETE",token,filters:`?flight_id=eq.${flight.id}`});
+      // 3. Borrar flight_operations
+      await dq("flight_operations",{method:"DELETE",token,filters:`?flight_id=eq.${flight.id}`});
+      // 4. Borrar el vuelo
+      await dq("flights",{method:"DELETE",token,filters:`?id=eq.${flight.id}`});
+      onFlash(`✓ Vuelo ${flight.flight_code} eliminado · ${flightOps.length} ops devueltas al depósito`);
+      onReload();
+      onBack();
+    }catch(e){
+      console.error("delete flight error",e);
+      onFlash(`❌ Error: ${e.message}`);
+      setDeletingFlight(false);
+    }
+  };
   const markReceived=async()=>{
     if(!confirm(`¿Marcar ${flight.flight_code} como recibido en Bs As? Las ops cambiarán a 'arribo_argentina'.`))return;
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{status:"recibido",received_at:new Date().toISOString()}});
@@ -3048,7 +3074,10 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),400);
   };
   return <div>
-    <button onClick={onBack} style={{fontSize:12,color:"rgba(255,255,255,0.55)",background:"transparent",border:"1px solid rgba(255,255,255,0.08)",cursor:"pointer",fontWeight:600,marginBottom:14,padding:"6px 12px",borderRadius:8,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.color=GOLD_LIGHT;e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";}} onMouseLeave={e=>{e.currentTarget.style.color="rgba(255,255,255,0.55)";e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";}}>← Volver a vuelos</button>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:8,flexWrap:"wrap"}}>
+      <button onClick={onBack} style={{fontSize:12,color:"rgba(255,255,255,0.55)",background:"transparent",border:"1px solid rgba(255,255,255,0.08)",cursor:"pointer",fontWeight:600,padding:"6px 12px",borderRadius:8,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.color=GOLD_LIGHT;e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";}} onMouseLeave={e=>{e.currentTarget.style.color="rgba(255,255,255,0.55)";e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";}}>← Volver a vuelos</button>
+      {flight.status==="preparando"&&<button onClick={deleteFlight} disabled={deletingFlight} title="Borra el vuelo y devuelve las ops al depósito" style={{fontSize:12,color:"#ff6b6b",background:"rgba(255,80,80,0.08)",border:"1px solid rgba(255,80,80,0.3)",cursor:deletingFlight?"wait":"pointer",fontWeight:600,padding:"6px 12px",borderRadius:8,opacity:deletingFlight?0.6:1}}>{deletingFlight?"Eliminando…":"🗑 Eliminar vuelo"}</button>}
+    </div>
     <Card title={`${flight.flight_code} — ${a?(a.first_name+" "+(a.last_name||"")):""}`}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
         {(()=>{const ready=flight.status==="preparando"&&flight.invoice_presented_at;const c=ready?"#22c55e":stColors[flight.status];const label=ready?"listo para enviar":flight.status;return <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:c,background:`${c}20`,border:`1px solid ${c}40`,textTransform:"uppercase"}}>{label}</span>;})()}
