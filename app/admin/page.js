@@ -2929,6 +2929,27 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const saveAllItems=async()=>{for(const it of items){await saveItem(it);}};
   const addItem=async()=>{const opId=opsUnique[0]?.id;if(!opId)return;const r=await dq("flight_invoice_items",{method:"POST",token,body:{flight_id:flight.id,operation_id:opId,description:"",quantity:1,unit_price_declared_usd:0,hs_code:"",sort_order:items.length+1}});const created=Array.isArray(r)?r[0]:r;if(created?.id)setItems(p=>[...p,created]);onReload();};
   const delItem=async(id)=>{await dq("flight_invoice_items",{method:"DELETE",token,filters:`?id=eq.${id}`});setItems(p=>p.filter(x=>x.id!==id));onReload();};
+  // Auto-clasificar HS Code con IA (sólo rellena hs_code, NO toca derechos/IVA/estadística)
+  const [classifyingHs,setClassifyingHs]=useState(false);
+  const autoClassifyHs=async()=>{
+    const pending=items.filter(it=>it.description&&it.description.trim()&&(!it.hs_code||!it.hs_code.trim()));
+    if(pending.length===0){onFlash("Todos los items ya tienen HS code");return;}
+    setClassifyingHs(true);onFlash(`Clasificando ${pending.length} items…`);
+    let ok=0;
+    for(const it of pending){
+      try{
+        const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
+        const d=await r.json();
+        if(d?.ncm_code){
+          await dq("flight_invoice_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{hs_code:d.ncm_code}});
+          setItems(p=>p.map(x=>x.id===it.id?{...x,hs_code:d.ncm_code}:x));
+          ok++;
+        }
+      }catch(e){console.error("ncm error",e);}
+    }
+    setClassifyingHs(false);
+    onFlash(`✨ ${ok}/${pending.length} HS codes asignados`);
+  };
   // --- Editar datos de despacho (costo, peso, carrier, tracking) y recalcular cost_share por op ---
   const [editCost,setEditCost]=useState(false);
   const [costForm,setCostForm]=useState({total_cost_usd:"",total_weight_kg:"",international_carrier:"",international_tracking:"",payment_method:""});
@@ -3140,6 +3161,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         </div>
         <div style={{display:"flex",justifyContent:"center",gap:10,marginTop:10,flexWrap:"wrap"}}>
           <button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button>
+          {items.some(it=>it.description&&it.description.trim()&&(!it.hs_code||!it.hs_code.trim()))&&<button onClick={autoClassifyHs} disabled={classifyingHs} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:classifyingHs?"wait":"pointer",opacity:classifyingHs?0.6:1}}>{classifyingHs?"Clasificando…":"✨ Auto-completar HS Code (IA)"}</button>}
           {!flight.invoice_presented_at&&items.length>0&&<button onClick={async()=>{await saveAllItems();onFlash("Cambios guardados");onReload();}} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>💾 Guardar cambios</button>}
         </div>
       </div>}
