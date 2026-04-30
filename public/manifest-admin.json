@@ -1,0 +1,26 @@
+{
+  "name": "Argencargo — Admin",
+  "short_name": "AC Admin",
+  "description": "Argencargo admin panel — operaciones, vuelos, finanzas y clientes",
+  "start_url": "/admin",
+  "scope": "/admin",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0A1628",
+  "theme_color": "#0A1628",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "/icon-pwa.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
