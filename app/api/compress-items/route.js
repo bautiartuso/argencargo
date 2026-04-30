@@ -83,48 +83,70 @@ export async function POST(req) {
     // CALCULAMOS quantity + unit_price_usd EN CÓDIGO desde los items originales
     // (no confiamos en lo que devuelve la IA porque suele errar en el promedio ponderado).
     // La IA solo decide cómo agrupar (description + hs_code + source_indices).
-    const groups = Array.isArray(parsed.groups) ? parsed.groups.filter(g =>
-      g && typeof g.description === "string" && g.description.trim() &&
-      Array.isArray(g.source_indices) && g.source_indices.length > 0
-    ).map(g => {
-      const validIndices = g.source_indices.filter(x => Number.isInteger(x) && x >= 0 && x < items.length);
+    // ROBUSTNESS: deduplicamos índices (si la IA repitió alguno, contamos solo 1ra ocurrencia)
+    // y RESCATAMOS items perdidos como grupos singleton.
+    const seenIndices = new Set();
+    const rawGroups = Array.isArray(parsed.groups) ? parsed.groups : [];
+    const groups = [];
+    const aiDuplicates = []; // índices que la IA puso en >1 grupo (los descartamos en grupos posteriores)
+    for (const g of rawGroups) {
+      if (!g || typeof g.description !== "string" || !g.description.trim() || !Array.isArray(g.source_indices)) continue;
+      const validIndices = [];
+      for (const x of g.source_indices) {
+        if (!Number.isInteger(x) || x < 0 || x >= items.length) continue;
+        if (seenIndices.has(x)) { aiDuplicates.push(x); continue; }
+        seenIndices.add(x);
+        validIndices.push(x);
+      }
+      if (validIndices.length === 0) continue;
       const groupItems = validIndices.map(i => items[i]);
       const totalQty = groupItems.reduce((s, it) => s + Number(it.quantity || 0), 0);
       const totalAmount = groupItems.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price_usd || 0), 0);
       const unit_price_usd = totalQty > 0 ? Number((totalAmount / totalQty).toFixed(4)) : 0;
-      return {
+      if (totalQty <= 0) continue;
+      groups.push({
         description: g.description.trim(),
         quantity: totalQty,
         unit_price_usd,
         hs_code: typeof g.hs_code === "string" && g.hs_code.trim() ? g.hs_code.trim() : null,
         source_indices: validIndices,
-      };
-    }).filter(g => g.quantity > 0) : [];
+      });
+    }
+    // RESCATE: items que la IA dejó afuera → los agregamos como grupos singleton
+    const rescued = [];
+    for (let i = 0; i < items.length; i++) {
+      if (seenIndices.has(i)) continue;
+      const it = items[i];
+      const qty = Number(it.quantity || 0);
+      const price = Number(it.unit_price_usd || 0);
+      if (qty <= 0) continue;
+      groups.push({
+        description: it.description || `Item ${i + 1}`,
+        quantity: qty,
+        unit_price_usd: price,
+        hs_code: it.hs_code || null,
+        source_indices: [i],
+      });
+      rescued.push(i);
+    }
 
     // Nota: NO rechazamos si groups.length > maxItems — el prompt conservador puede dejar
     // más grupos que el ideal cuando los items son muy heterogéneos. Lo marcamos en warnings.
 
-    // Validación: cobertura + DUPLICADOS + FOB
-    const covered = new Set();
-    const duplicates = new Set(); // índices que aparecen >1 vez
-    groups.forEach(g => g.source_indices.forEach(i => {
-      if (covered.has(i)) duplicates.add(i);
-      covered.add(i);
-    }));
-    const missing = items.map((_, i) => i).filter(i => !covered.has(i));
+    // Validación final: ahora cobertura está garantizada por el rescate
     const newTotalFob = groups.reduce((s, g) => s + g.quantity * g.unit_price_usd, 0);
     const fobDelta = Math.abs(newTotalFob - totalFob);
     const fobDeltaPct = totalFob > 0 ? (fobDelta / totalFob) * 100 : 0;
 
-    // Errores críticos: bloquean el aplicar (UI no debería dejar)
+    // Solo error crítico es FOB delta significativo (no debería pasar con el cálculo en código)
     const criticalErrors = [];
-    if (duplicates.size > 0) criticalErrors.push(`❌ La IA duplicó items (índices: ${[...duplicates].join(",")}) → totales mal calculados`);
-    if (missing.length > 0) criticalErrors.push(`❌ ${missing.length} items no fueron mergeados (índices: ${missing.join(",")})`);
-    if (fobDeltaPct > 1.5) criticalErrors.push(`❌ Diferencia de FOB: USD ${fobDelta.toFixed(2)} (${fobDeltaPct.toFixed(1)}%) — la suma no cierra`);
+    if (fobDeltaPct > 1.5) criticalErrors.push(`❌ Diferencia de FOB: USD ${fobDelta.toFixed(2)} (${fobDeltaPct.toFixed(1)}%)`);
 
     const warnings = [
+      ...(rescued.length > 0 ? [`La IA dejó ${rescued.length} items sin agrupar (índices: ${rescued.join(",")}) — los agregué como grupos sueltos para no perderlos. Si querés más compresión, tocá Re-comprimir.`] : []),
+      ...(aiDuplicates.length > 0 ? [`La IA duplicó ${aiDuplicates.length} índices (los descarté de la 2da ocurrencia).`] : []),
       ...(fobDelta > 0.5 && fobDeltaPct <= 1.5 ? [`Diferencia menor de FOB: USD ${fobDelta.toFixed(2)} (probable redondeo)`] : []),
-      ...(groups.length > maxItems ? [`La IA prefirió dejar ${groups.length} grupos (>${maxItems}) en vez de mergear productos heterogéneos.`] : []),
+      ...(groups.length > maxItems ? [`Quedaron ${groups.length} grupos (objetivo era ${maxItems}). Tocá Re-comprimir si necesitás reducir más.`] : []),
     ];
 
     return Response.json({
