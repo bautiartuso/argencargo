@@ -3024,7 +3024,11 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   // ---- Comprimir items con IA (RG 5608: max 8 items por factura) ----
   const MAX_INVOICE_ITEMS=8;
   const itemsByOp=items.reduce((acc,it)=>{(acc[it.operation_id]=acc[it.operation_id]||[]).push(it);return acc;},{});
-  const opsNeedingCompression=Object.entries(itemsByOp).filter(([_,list])=>list.length>MAX_INVOICE_ITEMS).map(([opId,list])=>({opId,count:list.length,opCode:opsUnique.find(o=>o.id===opId)?.operation_code||"?"}));
+  // El límite RG 5608 es por FACTURA TOTAL (no por op). Si la factura total supera el límite,
+  // ofrecer comprimir cada op por separado (cada cliente comprime sus propios items).
+  const totalInvoiceItems=items.length;
+  const needsCompression=totalInvoiceItems>MAX_INVOICE_ITEMS;
+  const opsCompressible=needsCompression?Object.entries(itemsByOp).map(([opId,list])=>({opId,count:list.length,opCode:opsUnique.find(o=>o.id===opId)?.operation_code||"?"})).filter(o=>o.count>=2):[];
   const [compressState,setCompressState]=useState(null);
   const openCompressFor=async(opId)=>{
     const opItems=itemsByOp[opId]||[];
@@ -3068,12 +3072,14 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       setCompressState(s=>({...s,applying:false,error:e.message}));
     }
   };
+  // Banner persistente de intervenciones detectadas por la IA
+  const [interventionWarnings,setInterventionWarnings]=useState([]); // [{description, ncm, types, reason}]
   const autoClassifyHs=async()=>{
     const pending=items.filter(it=>it.description&&it.description.trim()&&(!it.hs_code||!it.hs_code.trim()));
     if(pending.length===0){onFlash("Todos los items ya tienen HS code");return;}
     setClassifyingHs(true);onFlash(`Clasificando ${pending.length} items…`);
     let ok=0;
-    const interventions=[];
+    const detectedInterventions=[];
     for(const it of pending){
       try{
         const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
@@ -3082,15 +3088,16 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           await dq("flight_invoice_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{hs_code:d.ncm_code}});
           setItems(p=>p.map(x=>x.id===it.id?{...x,hs_code:d.ncm_code}:x));
           ok++;
-          if(d.intervention?.required)interventions.push(`${it.description.slice(0,25)}: ${d.intervention.types.join("/")}`);
+          if(d.intervention?.required)detectedInterventions.push({description:it.description,ncm:d.ncm_code,types:d.intervention.types||[],reason:d.intervention.reason||null});
         }
       }catch(e){console.error("ncm error",e);}
     }
     setClassifyingHs(false);
-    if(interventions.length>0){
-      onFlash(`✨ ${ok}/${pending.length} HS codes · ⚠ ${interventions.length} con intervención: ${interventions.join(" | ")}`);
+    setInterventionWarnings(detectedInterventions);
+    if(detectedInterventions.length>0){
+      onFlash(`✨ ${ok}/${pending.length} HS codes · ⚠ ${detectedInterventions.length} con intervención (ver banner abajo)`);
     } else {
-      onFlash(`✨ ${ok}/${pending.length} HS codes asignados`);
+      onFlash(`✨ ${ok}/${pending.length} HS codes asignados — sin intervenciones detectadas`);
     }
     onReload();
   };
@@ -3352,10 +3359,24 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL DECLARADO</span>
           <span style={{fontSize:16,fontWeight:700,color:IC}}>USD {totalDeclaredUSD.toFixed(2)}</span>
         </div>
+        {needsCompression&&<div style={{padding:"10px 14px",background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.3)",borderRadius:8,marginTop:10}}>
+          <p style={{fontSize:12,color:"#fb923c",margin:0,fontWeight:600}}>⚠ Esta factura tiene <strong>{totalInvoiceItems} items</strong> y el límite RG 5608 es <strong>{MAX_INVOICE_ITEMS}</strong>. Comprimí los items de cada op (botones naranjas abajo) para llegar al límite.</p>
+        </div>}
+        {interventionWarnings.length>0&&<div style={{padding:"12px 14px",background:"rgba(251,191,36,0.10)",border:"1.5px solid rgba(251,191,36,0.4)",borderRadius:10,marginTop:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:6}}>
+            <span style={{fontSize:12,fontWeight:800,color:"#fbbf24",textTransform:"uppercase",letterSpacing:"0.05em"}}>⚠ {interventionWarnings.length} {interventionWarnings.length===1?"item":"items"} con posible intervención de organismo</span>
+            <button onClick={()=>setInterventionWarnings([])} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:18,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+          </div>
+          <ul style={{margin:0,paddingLeft:18,listStyle:"disc"}}>
+            {interventionWarnings.map((w,i)=><li key={i} style={{fontSize:12,color:"rgba(255,255,255,0.85)",marginBottom:4}}>
+              <strong>{w.description.slice(0,60)}{w.description.length>60?"…":""}</strong> ({w.ncm}) → <span style={{color:"#fbbf24",fontWeight:700}}>{w.types.join(" · ")}</span>{w.reason?<span style={{color:"rgba(255,255,255,0.55)",fontStyle:"italic"}}> · {w.reason}</span>:""}
+            </li>)}
+          </ul>
+        </div>}
         <div style={{display:"flex",justifyContent:"center",gap:10,marginTop:10,flexWrap:"wrap"}}>
           <button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button>
           {items.some(it=>it.description&&it.description.trim()&&(!it.hs_code||!it.hs_code.trim()))&&<button onClick={autoClassifyHs} disabled={classifyingHs} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:classifyingHs?"wait":"pointer",opacity:classifyingHs?0.6:1}}>{classifyingHs?"Clasificando…":"✨ Auto-completar HS Code (IA)"}</button>}
-          {opsNeedingCompression.length>0&&!flight.invoice_presented_at&&opsNeedingCompression.map(({opId,opCode,count})=><button key={opId} onClick={()=>openCompressFor(opId)} title={`Comprimir los ${count} items de ${opCode} a máximo ${MAX_INVOICE_ITEMS} agrupando variantes con IA`} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🗜 Comprimir {opCode} ({count} → ≤{MAX_INVOICE_ITEMS})</button>)}
+          {needsCompression&&!flight.invoice_presented_at&&opsCompressible.map(({opId,opCode,count})=><button key={opId} onClick={()=>openCompressFor(opId)} title={`Comprimir los ${count} items de ${opCode} agrupando variantes con IA. Total factura: ${totalInvoiceItems} items (límite RG 5608: ${MAX_INVOICE_ITEMS})`} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🗜 Comprimir {opCode} ({count} items)</button>)}
           {!flight.invoice_presented_at&&items.length>0&&<button onClick={async()=>{await saveAllItems();onFlash("Cambios guardados");onReload();}} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>💾 Guardar cambios</button>}
         </div>
       </div>}

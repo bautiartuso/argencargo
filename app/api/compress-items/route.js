@@ -7,39 +7,44 @@ import { callClaudeText } from "../../../lib/anthropic";
 
 export const maxDuration = 60;
 
-const SYSTEM_PROMPT = `Sos un asistente que ayuda a comprimir listas largas de items para declaraciones aduaneras argentinas.
+const SYSTEM_PROMPT = `Sos un asistente que comprime listas de items para declaraciones aduaneras argentinas.
 
-CONTEXTO: La factura de exportación tiene un límite máximo de items (RG 5608 — usualmente 8). Cuando un cliente declara muchos productos, hay que agruparlos manteniendo trazabilidad.
+CONTEXTO: La factura de exportación tiene un límite máximo de items (RG 5608 — usualmente 8). Hay que agruparlos preservando la información lo más posible.
 
-REGLAS DE COMPRESIÓN:
-1. Items con MISMO HS code Y producto similar (variantes de color, talle, material) → MERGE en 1 entrada.
-   Ejemplo: 5 "T-shirt rosa", "T-shirt rojo", "T-shirt negro" → 1 entrada "T-shirts (assorted colors)".
-2. Items realmente distintos (diferente NCM/función) → mantener separados.
-3. Si hay >maxItems entradas resultantes, agrupar las más cercanas (mismo capítulo NCM) para reducir.
+PRINCIPIO CLAVE — CONSERVADOR, NO AGRESIVO:
+- La compresión debe ser MÍNIMA. Solo agrupar lo que sea CLARAMENTE la misma cosa con variantes obvias.
+- Si alcanzás el maxItems mergeando solo variantes obvias, listo, parar ahí.
+- Si todavía superás maxItems pero el resto son productos heterogéneos → ES PREFERIBLE devolver más de maxItems que mergear cosas distintas. El admin puede ajustar a mano.
+- ANTES era muy agresivo: por favor sé conservador. Mejor dejar 9-10 items que mergear "auriculares" con "fundas".
 
-CÁLCULO DE GRUPO:
-- description: en INGLÉS, genérica para cubrir las variantes (ej: "Stainless steel cookware (various sizes)").
+QUÉ MERGEAR (variantes obvias):
+- Mismo producto + variante de color: "Camiseta roja", "Camiseta azul", "Camiseta negra" → "Cotton T-shirts (assorted colors)"
+- Mismo producto + variante de talle: "Zapatilla 38", "Zapatilla 39" → "Sport sneakers (assorted sizes)"
+- Mismo producto + variante de material similar: "Funda silicona iPhone 13", "Funda silicona iPhone 14" → "Silicone phone cases"
+- Items con MISMO HS code Y descripción muy similar (>70% de palabras en común)
+
+QUÉ NO MERGEAR — JAMÁS:
+- HS code de capítulos distintos (primeros 2 dígitos diferentes)
+- Productos de función/uso totalmente diferente aunque compartan HS code
+- Si el merge requiere una descripción genérica que pierde info útil para el cliente o aduana
+
+CÁLCULO DEL GRUPO MERGEADO:
+- description: en INGLÉS, descriptiva pero específica. NO usar términos vagos como "various items" o "mixed products".
 - quantity: SUMA de las cantidades del grupo.
-- unit_price_usd: PROMEDIO PONDERADO por cantidad. Es decir: (sum of quantity*price) / sum of quantity.
-- hs_code: el HS code más específico común al grupo. Si los del grupo difieren ligeramente, usar el más general (ej: "8517.62" en vez de "8517.62.30").
-- source_indices: array con los índices (0-based) de los items originales que se mergearon en este grupo.
+- unit_price_usd: PROMEDIO PONDERADO. (sum of quantity*price) / sum of quantity. Redondear a 2 decimales.
+- hs_code: el HS code común. Si difieren ligeramente (último dígito), usar el más general.
+- source_indices: array de índices (0-based) que se mergearon.
 
-CRÍTICO:
-- Devolvé MÁXIMO maxItems grupos. Si no podés bajar a maxItems sin agrupar productos heterogéneos, hacelo igual pero ponelos al final.
-- Cada índice del input debe aparecer en exactamente UN source_indices del output (sin duplicados ni omisiones).
-- El total de USD del output debe ser igual al total del input (suma quantity*unit_price). Verificá antes de devolver.
-- Devolvé SOLO el JSON, sin texto extra ni markdown.
+REGLAS TÉCNICAS:
+- Cada índice del input debe aparecer en UN solo source_indices del output.
+- Items que NO se mergean con nadie quedan como grupo de 1 con source_indices=[i].
+- El total quantity*price del output debe ser igual al input.
+- Devolvé SOLO JSON, sin markdown.
 
-FORMATO DE SALIDA:
+FORMATO:
 {
   "groups": [
-    {
-      "description": "string en inglés",
-      "quantity": number,
-      "unit_price_usd": number,
-      "hs_code": "string o null",
-      "source_indices": [number, number, ...]
-    }
+    {"description": "...", "quantity": N, "unit_price_usd": N, "hs_code": "...", "source_indices": [...]}
   ]
 }`;
 
@@ -87,9 +92,8 @@ export async function POST(req) {
       source_indices: g.source_indices.filter(x => Number.isInteger(x) && x >= 0 && x < items.length),
     })) : [];
 
-    if (groups.length > maxItems) {
-      return Response.json({ ok: false, error: `IA devolvió ${groups.length} grupos, máximo ${maxItems}`, groups }, { status: 422 });
-    }
+    // Nota: NO rechazamos si groups.length > maxItems — el prompt conservador puede dejar
+    // más grupos que el ideal cuando los items son muy heterogéneos. Lo marcamos en warnings.
 
     // Validación de cobertura: cada índice debe aparecer al menos una vez
     const covered = new Set();
@@ -109,6 +113,7 @@ export async function POST(req) {
       warnings: [
         ...(missing.length > 0 ? [`${missing.length} items no fueron mergeados (índices: ${missing.join(",")})`] : []),
         ...(fobDelta > 0.5 ? [`Diferencia de FOB: USD ${fobDelta.toFixed(2)} (revisar)`] : []),
+        ...(groups.length > maxItems ? [`La IA prefirió dejar ${groups.length} grupos (>${maxItems}) en vez de mergear productos heterogéneos. Podés ajustar a mano si necesitás llegar al límite.`] : []),
       ],
     });
   } catch (e) {
