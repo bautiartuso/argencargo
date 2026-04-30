@@ -906,6 +906,18 @@ function CalculatorPage({token,client}){
     pkgs.forEach(pk=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0),gw=Number(pk.weight||0);totWeight+=gw*q;if(l&&w&&h){totVol+=((l*w*h)/5000)*q;totCBM+=((l*w*h)/1000000)*q;}});
     return{totWeight,totVol,totCBM,billable:Math.max(totWeight,totVol)};
   };
+  // Detección de ropa/textiles. Por NCM (capítulos 50-63 son textiles) o keywords.
+  // Si es ropa Y CBM < MIN_CBM_CLOTHING → marítimo NO se ofrece (restricción aduanera).
+  const MIN_CBM_CLOTHING=5;
+  const TEXTILE_CHAPTERS=new Set(["50","51","52","53","54","55","56","57","58","59","60","61","62","63"]);
+  const TEXTILE_KEYWORDS=/\b(ropa|remer[ao]s?|camiset[ao]s?|pantal[oó]n(es)?|vestido?s?|buzo?s?|camper[ao]s?|blus[ao]s?|poller[ao]s?|sweater|sueter|cardigan|jean(s)?|short(s)?|legging(s)?|hoodie|jacket|t-?shirt|polo|bermudas?|trajes?|abrigos?|tapado|blazer|chaleco|cinturones?|underwear|ropa interior|calzon(es|cillos?)?|bombach(as?|ones?)|sost[eé]n(es)?|brassiere|panties|boxers?|medias?|socks|joggings?|conjunto[s]? deportivo|deportiva)\b/i;
+  const isClothing=products.some(p=>{
+    const ncm=(p.ncm?.ncm_code||"").replace(/[^0-9]/g,"");
+    const chapter=ncm.slice(0,2);
+    if(TEXTILE_CHAPTERS.has(chapter))return true;
+    const d=(p.description||"").toLowerCase();
+    return TEXTILE_KEYWORDS.test(d);
+  });
 
   const getEffRate=(t)=>{const ov=overrides.find(o=>o.tariff_id===t.id);return ov?Number(ov.custom_rate):Number(t.rate);};
   const getFleteRate=(svcKey,amount)=>{const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate");for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return getEffRate(r);}return rates.length?getEffRate(rates[rates.length-1]):0;};
@@ -913,6 +925,7 @@ function CalculatorPage({token,client}){
 
   const calculateUSA=()=>{
     const{totWeight,totVol,totCBM,billable}=calcTotals();const channels=[];
+    // En USA solo hay marítimo Integral AC, que SIEMPRE permite ropa (no aplica restricción del 01/05)
     // Aéreo Integral AC (USA) — usa peso BRUTO, no volumétrico
     if(totWeight>0){const bw=Math.max(totWeight,1);const fleteRate=hasPhones?65:getFleteRate("aereo_b_usa",bw);const flete=bw*fleteRate;const sur=getSurcharge("aereo_b_usa",totalFob,bw);
       channels.push({key:"aereo_b_usa",name:"Aéreo Integral AC",info:"48-72 hs hábiles",flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totWeight.toFixed(1)} kg`});}
@@ -920,7 +933,7 @@ function CalculatorPage({token,client}){
     if(!hasPhones&&!noDims&&totCBM>0){const fleteRate=getFleteRate("maritimo_b",totCBM);const flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
       channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totCBM.toFixed(4)} CBM`});}
     else if(!hasPhones&&noDims){channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",noCalc:true,total:0,unit:"—"});}
-    setResults({channels,totWeight,totVol,totCBM,billable});setStep(4);
+    setResults({channels,totWeight,totVol,totCBM,billable,isClothing});setStep(4);
   };
 
   const classifyProduct=async(idx)=>{const p=products[idx];if(!p.description?.trim())return;
@@ -970,8 +983,12 @@ function CalculatorPage({token,client}){
       channels.push({key:"aereo_b_china",name:"Aéreo Integral AC",info:"10-15 días hábiles",isBlanco:false,
         flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,pesoBruto:totWeight,unit:`${totWeight.toFixed(1)} kg`});}
 
-    // Marítimo Carga LCL/FCL (A) — SIEMPRE ficticio. Omitido si hay marca.
-    if(!hasBrand&&!noDims&&totCBM>0){const cbmFact=Math.max(totCBM,1);const fleteRate=getFleteRate("maritimo_a_china",cbmFact);const flete=cbmFact*fleteRate;
+    // Restricción ropa: a partir del 01/05/2026, marítimo LCL/FCL solo si >= 5 CBM.
+    // Marítimo Integral AC sigue siempre disponible para ropa (excepción del régimen).
+    const blockMaritimoLclTextil=isClothing&&totCBM>0&&totCBM<MIN_CBM_CLOTHING;
+
+    // Marítimo Carga LCL/FCL (A) — SIEMPRE ficticio. Omitido si hay marca, si es ropa <5 CBM, o sin medidas.
+    if(!hasBrand&&!blockMaritimoLclTextil&&!noDims&&totCBM>0){const cbmFact=Math.max(totCBM,1);const fleteRate=getFleteRate("maritimo_a_china",cbmFact);const flete=cbmFact*fleteRate;
       const certFlete=totCBM*certMarFict;
       const seguro=(totalFob+certFlete)*0.01;
       const totalCifMar=totalFob+certFlete+seguro;
@@ -980,11 +997,11 @@ function CalculatorPage({token,client}){
       channels.push({key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"",isBlanco:true,isMar:true,
         flete,seguro,totalImp,totalSvc,total:totalImp+totalSvc,items,cbm:totCBM,unit:`${totCBM.toFixed(4)} CBM`});}
 
-    // Marítimo Integral AC (B)
+    // Marítimo Integral AC (B) — siempre disponible (incluso para ropa <5 CBM)
     if(!noDims&&totCBM>0){const fleteRate=getFleteRate("maritimo_b",totCBM);const flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
       channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",isBlanco:false,
         flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,cbm:totCBM,unit:`${totCBM.toFixed(4)} CBM`});}
-    setResults({channels,totWeight,totCBM});setStep(4);
+    setResults({channels,totWeight,totCBM,blockMaritimoLclTextil,isClothing});setStep(4);
   };
 
   const getShipCost=(zone,weight)=>{if(zone==="oficina")return 0;const ranges=[[25,config.envio_caba_0_25||20],[50,config.envio_caba_25_50||30],[100,config.envio_caba_50_100||50],[Infinity,config.envio_caba_100||75]];let cost=0;for(const[max,amt]of ranges){if(weight<max){cost=amt;break;}}if(zone==="gba")cost+=(config.envio_gba_extra||10);return cost;};
@@ -1083,6 +1100,10 @@ function CalculatorPage({token,client}){
         {results.totCBM>0&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>CBM</p><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{results.totCBM.toFixed(4)} m³</p></div>}
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>ENTREGA</p><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{DELIV[delivery]}</p></div>
       </div>
+      {results.blockMaritimoLclTextil&&<div style={{padding:"12px 16px",background:"rgba(96,165,250,0.08)",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:12,marginBottom:16}}>
+        <p style={{fontSize:12,fontWeight:800,color:"#60a5fa",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>ℹ️ Aviso sobre marítimo para textiles</p>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.85)",margin:0,lineHeight:1.5}}>A partir del <strong>01/05/2026</strong>, por nuevas regulaciones, la importación marítima de prendas/textiles solo se permite mediante el servicio <strong style={{color:"#60a5fa"}}>Marítimo Integral AC</strong>, excepto cargas de gran volumen (más de 5 CBM). Por eso no aparece la opción <em>Marítimo Carga LCL/FCL</em> en tu cotización.</p>
+      </div>}
       <div className="grid-2" style={{display:"grid",gridTemplateColumns:results.channels.length>1?"1fr 1fr":"1fr",gap:20}}>{results.channels.map(ch=>{const isAereo=ch.key?.includes("aereo");const delivCost=getShipCost(delivery,calcTotals().totWeight);const total=ch.noCalc?0:ch.total+delivCost;
       return <div key={ch.key} style={{background:"rgba(255,255,255,0.028)",borderRadius:16,border:`1.5px solid ${ch.key==="aereo_b_usa"?"rgba(251,146,60,0.4)":"rgba(255,255,255,0.1)"}`,padding:"1.5rem",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
