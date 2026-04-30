@@ -123,10 +123,16 @@ export async function POST(req) {
     const override = checkOverride(description);
     if (override) return Response.json(override);
 
+    let claudeError = null;
     const claudeResult = await classifyWithClaude(description).catch(e => {
+      claudeError = { message: e.message, status: e.status, error: e.error, type: e.type, name: e.name };
       console.error("Claude error:", e.message);
       return null;
     });
+    // DEBUG: si vino con ?debug=1 devolver el error completo
+    if (req.url?.includes("debug=1") && claudeError) {
+      return Response.json({ debug: true, claudeError, ANTHROPIC_API_KEY_configured: !!process.env.ANTHROPIC_API_KEY, key_prefix: (process.env.ANTHROPIC_API_KEY||"").slice(0,10) });
+    }
 
     if (claudeResult?.ncm_code) {
       const results = await searchDB(claudeResult.ncm_code);
