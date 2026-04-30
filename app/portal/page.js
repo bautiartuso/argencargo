@@ -67,7 +67,7 @@ const OS=[{k:"proveedor",l:"Proveedor"},{k:"warehouse",l:"Warehouse\nArgencargo"
 const S2S={pendiente:0,en_deposito_origen:1,en_preparacion:2,en_transito:3,arribo_argentina:4,en_aduana:5,entregada:6,operacion_cerrada:7,cancelada:-1};
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},entregada:{l:"LISTA PARA RETIRAR",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
 const CM={aereo_blanco:"Aéreo Courier Comercial",aereo_negro:"Aéreo Integral AC",maritimo_blanco:"Marítimo Carga LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
-const CN=[{key:"imports",label:"IMPORTACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8","M10 9H8"]},{key:"payments",label:"PAGOS INTERNACIONALES",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"account",label:"CUENTA CORRIENTE",p:["M3 3h18v18H3z","M3 9h18","M9 21V9"]},{key:"points",label:"PUNTOS",p:["M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"]},{key:"services",label:"SERVICIOS",p:["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"]},{key:"profile",label:"MI PERFIL",p:["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
+const CN=[{key:"imports",label:"IMPORTACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"]},{key:"purchases",label:"COMPRAS EN CAMINO",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8","M10 9H8"]},{key:"payments",label:"PAGOS INTERNACIONALES",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"account",label:"CUENTA CORRIENTE",p:["M3 3h18v18H3z","M3 9h18","M9 21V9"]},{key:"points",label:"PUNTOS",p:["M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"]},{key:"services",label:"SERVICIOS",p:["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"]},{key:"profile",label:"MI PERFIL",p:["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
 function WorldMap(){const d=[[120,80],[135,85],[150,78],[165,90],[180,85],[200,95],[215,88],[230,92],[250,100],[265,95],[280,105],[300,98],[320,110],[335,105],[350,115],[370,108],[390,120],[410,112],[430,125],[450,118],[470,130],[490,122],[510,135],[530,128],[550,140],[570,132],[590,145],[610,138],[630,150],[140,120],[160,130],[180,125],[200,140],[220,135],[240,145],[260,138],[280,150],[300,142],[320,155],[340,148],[360,158],[380,152],[400,162],[420,155],[440,165],[460,158],[480,170],[500,162],[520,175],[540,168],[560,180],[580,172],[600,185],[620,178]];const l=[[200,95,450,118],[300,98,520,135],[180,125,400,162],[280,150,500,208],[350,115,570,132]];return <svg width="100%" height="100%" viewBox="0 0 750 320" preserveAspectRatio="xMidYMid slice" style={{position:"absolute",inset:0,opacity:0.05,pointerEvents:"none"}}>{l.map((v,i)=><line key={i} x1={v[0]} y1={v[1]} x2={v[2]} y2={v[3]} stroke="#4A90D9" strokeWidth="0.5" opacity="0.4"/>)}{d.map((v,i)=><circle key={i} cx={v[0]} cy={v[1]} r={1.5} fill="#4A90D9" opacity="0.5"/>)}</svg>;}
 function Inp({label,type="text",value,onChange,placeholder,req,error}){return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label><input type={type} value={value||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:`1px solid ${error?"#ff6b6b":"rgba(255,255,255,0.12)"}`,borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",transition:"all 180ms"}} onFocus={e=>{if(!error){e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";e.target.style.background="rgba(255,255,255,0.09)";}}} onBlur={e=>{e.target.style.borderColor=error?"#ff6b6b":"rgba(255,255,255,0.12)";e.target.style.boxShadow="none";e.target.style.background="rgba(255,255,255,0.06)";}}/>{error&&<p style={{fontSize:11,color:"#ff6b6b",margin:"4px 0 0"}}>{error}</p>}</div>;}
 function Sel({label,value,onChange,options,req,ph}){return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label><select value={value} onChange={e=>onChange(e.target.value)} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";e.target.style.boxShadow="none";}} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:value?"#fff":"rgba(255,255,255,0.45)",outline:"none",transition:"all 180ms",cursor:"pointer"}}>{ph&&<option value="" style={{background:"#0F1F3A"}}>{ph}</option>}{options.map(o=><option key={typeof o==="string"?o:o.value} value={typeof o==="string"?o:o.value} style={{background:"#0F1F3A",color:"#fff"}}>{typeof o==="string"?o:o.label}</option>)}</select></div>;}
@@ -1832,6 +1832,145 @@ function InternationalPaymentsPage({client}){
   </div>;
 }
 
+// PurchaseNotificationsPage — cliente carga avisos de compras en camino antes de que lleguen al depósito
+function PurchaseNotificationsPage({token,client}){
+  const [items,setItems]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [showForm,setShowForm]=useState(false);
+  const [editing,setEditing]=useState(null); // notif being edited
+  const [form,setForm]=useState({tracking_code:"",origin:"china",shipping_method:"aereo",description:"",estimated_packages:"",estimated_dispatch_date:""});
+  const [saving,setSaving]=useState(false);
+  const [filter,setFilter]=useState("all"); // all | pending | received | cancelled
+  const [confirmCancel,setConfirmCancel]=useState(null);
+  const load=async()=>{setLo(true);const r=await dq("purchase_notifications",{token,filters:`?client_id=eq.${client.id}&select=*,operations(operation_code)&order=created_at.desc`});setItems(Array.isArray(r)?r:[]);setLo(false);};
+  useEffect(()=>{if(client?.id)load();},[client?.id]);
+  const openNew=()=>{setEditing(null);setForm({tracking_code:"",origin:"china",shipping_method:"aereo",description:"",estimated_packages:"",estimated_dispatch_date:""});setShowForm(true);};
+  const openEdit=(n)=>{if(n.status!=="pending")return;setEditing(n);setForm({tracking_code:n.tracking_code||"",origin:n.origin||"china",shipping_method:n.shipping_method||"aereo",description:n.description||"",estimated_packages:n.estimated_packages?String(n.estimated_packages):"",estimated_dispatch_date:n.estimated_dispatch_date||""});setShowForm(true);};
+  const save=async()=>{
+    if(!form.tracking_code.trim()){alert("Cargá el tracking de la compra");return;}
+    setSaving(true);
+    const body={client_id:client.id,tracking_code:form.tracking_code.trim(),origin:form.origin,shipping_method:form.shipping_method,description:form.description.trim()||null,estimated_packages:form.estimated_packages?Number(form.estimated_packages):null,estimated_dispatch_date:form.estimated_dispatch_date||null};
+    if(editing){
+      await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
+    } else {
+      await dq("purchase_notifications",{method:"POST",token,body});
+      // Notif a admin
+      try{
+        const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
+        const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
+        if(adminId){
+          dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:`📦 Nuevo aviso de compra · ${client.client_code}`,body:`${client.first_name} ${client.last_name}: tracking ${body.tracking_code} · ${body.origin.toUpperCase()} · ${body.shipping_method}`,link:""}}).catch(()=>{});
+          fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:adminId,title:`📦 Nuevo aviso de compra · ${client.client_code}`,body:`${client.first_name}: ${body.tracking_code} (${body.origin.toUpperCase()})`,url:"/admin"})}).catch(()=>{});
+        }
+      }catch(e){}
+    }
+    setSaving(false);setShowForm(false);load();
+  };
+  const cancel=async(n)=>{
+    await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{status:"cancelled",cancelled_at:new Date().toISOString()}});
+    setConfirmCancel(null);load();
+  };
+  const filtered=filter==="all"?items:items.filter(i=>i.status===filter);
+  const counts={all:items.length,pending:items.filter(i=>i.status==="pending").length,received:items.filter(i=>i.status==="received").length,cancelled:items.filter(i=>i.status==="cancelled").length};
+  return <div style={{maxWidth:1100,margin:"0 auto",padding:"0 16px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,gap:12,flexWrap:"wrap"}}>
+      <div>
+        <h1 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>📦 Mis compras en camino</h1>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>Avisanos qué compraste y cuando lleguen al depósito creamos la operación.</p>
+      </div>
+      <button onClick={openNew} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.02em"}}>+ Dar aviso de compra</button>
+    </div>
+    <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+      {[{k:"all",l:"Todas",c:counts.all},{k:"pending",l:"⏳ Pendientes",c:counts.pending},{k:"received",l:"✓ Recibidas",c:counts.received},{k:"cancelled",l:"✕ Canceladas",c:counts.cancelled}].map(t=><button key={t.k} onClick={()=>setFilter(t.k)} style={{padding:"6px 12px",fontSize:12,fontWeight:600,borderRadius:7,border:`1px solid ${filter===t.k?IC:"rgba(255,255,255,0.1)"}`,background:filter===t.k?"rgba(184,149,106,0.1)":"transparent",color:filter===t.k?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{t.l} ({t.c})</button>)}
+    </div>
+    {lo?<p style={{textAlign:"center",padding:"3rem 0",color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<div style={{padding:"3rem 1rem",textAlign:"center",background:"rgba(255,255,255,0.02)",border:"1px dashed rgba(255,255,255,0.08)",borderRadius:14}}>
+      <p style={{fontSize:14,color:"rgba(255,255,255,0.55)",margin:"0 0 6px"}}>{filter==="all"?"Todavía no diste avisos de compras":`Sin compras ${filter==="pending"?"pendientes":filter==="received"?"recibidas":"canceladas"}`}</p>
+      {filter==="all"&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Cuando hagas una compra y tengas el tracking del proveedor, dejanos el aviso acá.</p>}
+    </div>:<div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {filtered.map(n=><div key={n.id} style={{padding:"14px 16px",background:n.status==="pending"?"rgba(251,191,36,0.05)":n.status==="received"?"rgba(34,197,94,0.05)":"rgba(255,255,255,0.02)",border:`1px solid ${n.status==="pending"?"rgba(251,191,36,0.25)":n.status==="received"?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.06)"}`,borderRadius:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:8,gap:10,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:200}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
+              <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{n.tracking_code}</span>
+              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:n.origin==="china"?"rgba(239,68,68,0.15)":"rgba(59,130,246,0.15)",color:n.origin==="china"?"#fca5a5":"#93c5fd",border:`1px solid ${n.origin==="china"?"rgba(239,68,68,0.3)":"rgba(59,130,246,0.3)"}`}}>{n.origin==="china"?"🇨🇳 CHINA":"🇺🇸 USA"}</span>
+              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{n.shipping_method==="aereo"?"✈️ Aéreo":"🚢 Marítimo"}</span>
+              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:n.status==="pending"?"rgba(251,191,36,0.15)":n.status==="received"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:n.status==="pending"?"#fbbf24":n.status==="received"?"#22c55e":"#ff6b6b"}}>{n.status==="pending"?"⏳ PENDIENTE":n.status==="received"?"✓ RECIBIDA":"✕ CANCELADA"}</span>
+            </div>
+            {n.description&&<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 4px"}}>{n.description}</p>}
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>
+              Avisado {formatDate(n.created_at)}
+              {n.estimated_packages?` · ${n.estimated_packages} bultos estimados`:""}
+              {n.estimated_dispatch_date?` · sale ${formatDate(n.estimated_dispatch_date)}`:""}
+              {n.status==="received"&&n.operations?.operation_code?` · operación creada: `:""}{n.status==="received"&&n.operations?.operation_code?<strong style={{color:IC,fontFamily:"monospace"}}>{n.operations.operation_code}</strong>:""}
+            </p>
+          </div>
+          {n.status==="pending"&&<div style={{display:"flex",gap:6}}>
+            <button onClick={()=>openEdit(n)} style={{padding:"5px 12px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Editar</button>
+            <button onClick={()=>setConfirmCancel(n)} style={{padding:"5px 12px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>Cancelar</button>
+          </div>}
+        </div>
+      </div>)}
+    </div>}
+
+    {showForm&&<div onClick={()=>!saving&&setShowForm(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:14,padding:"22px 24px",maxWidth:540,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>{editing?"Editar aviso":"📦 Nuevo aviso de compra"}</h3>
+          <button onClick={()=>!saving&&setShowForm(false)} disabled={saving} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:saving?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+          <div style={{gridColumn:"1 / -1"}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Tracking de la compra *</label>
+            <input value={form.tracking_code} onChange={e=>setForm(p=>({...p,tracking_code:e.target.value}))} placeholder="Código que te dio el proveedor o courier" style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",fontFamily:"monospace"}}/>
+          </div>
+          <div>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Origen *</label>
+            <select value={form.origin} onChange={e=>setForm(p=>({...p,origin:e.target.value}))} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}>
+              <option value="china" style={{background:"#142038"}}>🇨🇳 China</option>
+              <option value="usa" style={{background:"#142038"}}>🇺🇸 Estados Unidos</option>
+            </select>
+          </div>
+          <div>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Modalidad *</label>
+            <select value={form.shipping_method} onChange={e=>setForm(p=>({...p,shipping_method:e.target.value}))} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}>
+              <option value="aereo" style={{background:"#142038"}}>✈️ Aéreo</option>
+              <option value="maritimo" style={{background:"#142038"}}>🚢 Marítimo</option>
+            </select>
+          </div>
+          <div style={{gridColumn:"1 / -1"}}>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Descripción de la compra (opcional)</label>
+            <input value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))} placeholder='Ej: "Camisetas Yiwu"' style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+          </div>
+          <div>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Bultos estimados (opcional)</label>
+            <input type="number" value={form.estimated_packages} onChange={e=>setForm(p=>({...p,estimated_packages:e.target.value}))} placeholder="Ej: 3" style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+          </div>
+          <div>
+            <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Fecha estimada de salida (opcional)</label>
+            <input type="date" value={form.estimated_dispatch_date} onChange={e=>setForm(p=>({...p,estimated_dispatch_date:e.target.value}))} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+          </div>
+        </div>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"0 0 14px",fontStyle:"italic"}}>Cuando tu carga llegue al depósito en origen, vamos a confirmar y crear la operación oficial. Te avisamos por la campanita.</p>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>!saving&&setShowForm(false)} disabled={saving} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:saving?"not-allowed":"pointer"}}>Cancelar</button>
+          <button onClick={save} disabled={saving} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:saving?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:saving?"rgba(255,255,255,0.4)":"#0A1628",cursor:saving?"wait":"pointer"}}>{saving?"Guardando…":(editing?"✓ Actualizar":"✓ Enviar aviso")}</button>
+        </div>
+      </div>
+    </div>}
+
+    {confirmCancel&&<div onClick={()=>setConfirmCancel(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(255,80,80,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:420,width:"100%"}}>
+        <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 8px"}}>¿Cancelar este aviso?</h3>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px"}}>Tracking <strong style={{color:"#fff",fontFamily:"monospace"}}>{confirmCancel.tracking_code}</strong>. Si cancelás, podés volver a darlo de alta más adelante.</p>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>setConfirmCancel(null)} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Volver</button>
+          <button onClick={()=>cancel(confirmCancel)} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,80,80,0.5)",background:"linear-gradient(135deg,#ff6b6b,#ef4444)",color:"#fff",cursor:"pointer"}}>Sí, cancelar aviso</button>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
 function NotifBell({token}){
   const [open,setOpen]=useState(false);const [notifs,setNotifs]=useState([]);const [unread,setUnread]=useState(0);
   const load=async()=>{const r=await dq("notifications",{token,filters:"?select=*&order=created_at.desc&limit=20"});const list=Array.isArray(r)?r:[];setNotifs(list);setUnread(list.filter(n=>!n.read).length);};
@@ -1942,6 +2081,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     {page==="imports"&&!selOp&&<>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp}/>}</>}
     {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} onBack={()=>setSelOp(null)}/>}
     {page==="profile"&&<ProfilePage client={client}/>}
+    {page==="purchases"&&<PurchaseNotificationsPage token={token} client={client}/>}
     {page==="rates"&&<RatesPage token={token} client={client}/>}
     {page==="calculator"&&<CalculatorPage token={token} client={client}/>}
     {page==="services"&&<ServicesPage client={client}/>}
