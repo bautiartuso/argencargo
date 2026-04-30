@@ -2,7 +2,8 @@ import './globals.css';
 import Script from 'next/script';
 
 const SITE_URL = 'https://www.argencargo.com.ar';
-const OG_LOGO = `${SITE_URL}/og-image.png`;
+// OG image dinámica generada por app/opengraph-image.js (Next 14 auto-detecta).
+// Mantenemos esta var para retro-compat por si en el futuro se quiere forzar un PNG estático.
 
 export const metadata = {
   metadataBase: new URL(SITE_URL),
@@ -31,15 +32,13 @@ export const metadata = {
     siteName: 'Argencargo',
     type: 'website',
     locale: 'es_AR',
-    images: [
-      { url: OG_LOGO, width: 1200, height: 630, alt: 'Argencargo — Importaciones desde China y USA a Argentina' },
-    ],
+    // images: omitido a propósito → Next usa app/opengraph-image.js dinámica
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Argencargo — Importaciones desde China a Argentina',
     description: 'Courier aéreo, carga aérea y marítimo. Seguimiento en tiempo real y entrega puerta a puerta.',
-    images: [OG_LOGO],
+    // images omitido → Next usa app/twitter-image.js o cae al opengraph-image.js
   },
   robots: {
     index: true,
