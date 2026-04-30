@@ -4131,6 +4131,111 @@ function AgentsPanel({token}){
   </div>;
 }
 
+// PurchaseNotificationsAdmin — admin gestiona avisos de compra: confirma → crea op, o rechaza
+function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
+  const [items,setItems]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [filter,setFilter]=useState("pending"); // pending | received | cancelled | all
+  const [search,setSearch]=useState("");
+  const [confirmAction,setConfirmAction]=useState(null); // {type: 'confirm'|'cancel', notif}
+  const [working,setWorking]=useState(false);
+  const load=async()=>{setLo(true);const r=await dq("purchase_notifications",{token,filters:"?select=*,clients(client_code,first_name,last_name,whatsapp,auth_user_id),operations(operation_code)&order=created_at.desc"});setItems(Array.isArray(r)?r:[]);setLo(false);};
+  useEffect(()=>{load();},[token]);
+  const filteredByStatus=filter==="all"?items:items.filter(i=>i.status===filter);
+  const filtered=search?filteredByStatus.filter(n=>{const q=search.toLowerCase();return n.tracking_code?.toLowerCase().includes(q)||n.clients?.client_code?.toLowerCase().includes(q)||`${n.clients?.first_name||""} ${n.clients?.last_name||""}`.toLowerCase().includes(q)||n.description?.toLowerCase().includes(q);}):filteredByStatus;
+  const counts={pending:items.filter(i=>i.status==="pending").length,received:items.filter(i=>i.status==="received").length,cancelled:items.filter(i=>i.status==="cancelled").length,all:items.length};
+  const confirmReceipt=async(n)=>{
+    setWorking(true);
+    try{
+      // Crear op nueva con datos del aviso pre-cargados
+      const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
+      const newCode=typeof rpc==="string"?rpc:null;
+      if(!newCode){alert("Error generando código de op");setWorking(false);return;}
+      // Mapear shipping_method + origen al channel del sistema
+      // (este flow es para canal B/integral AC mayormente — usar aereo_negro/maritimo_negro como default razonable)
+      const channel=n.shipping_method==="maritimo"?"maritimo_negro":"aereo_negro";
+      const origin=n.origin==="usa"?"USA":"China";
+      const opBody={operation_code:newCode,client_id:n.client_id,channel,origin,service_type:"courier",status:"en_deposito_origen",description:n.description||null,international_tracking:n.tracking_code};
+      const created=await dq("operations",{method:"POST",token,body:opBody});
+      const opObj=Array.isArray(created)?created[0]:created;
+      if(!opObj?.id){alert("Error creando op");setWorking(false);return;}
+      // Linkear el aviso con la op + marcar received
+      await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{status:"received",operation_id:opObj.id,confirmed_at:new Date().toISOString()}});
+      // Notif al cliente
+      try{
+        if(n.clients?.auth_user_id){
+          dq("notifications",{method:"POST",token,body:{user_id:n.clients.auth_user_id,portal:"cliente",title:`✓ Tu carga llegó al depósito`,body:`Tracking ${n.tracking_code} → operación ${newCode} creada`,link:`?op=${newCode}`}}).catch(()=>{});
+          fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:n.clients.auth_user_id,title:`✓ Tu carga llegó al depósito`,body:`${n.tracking_code} → ${newCode}`,url:`/portal?op=${newCode}`})}).catch(()=>{});
+        }
+      }catch(e){}
+      setConfirmAction(null);load();
+      if(onCreateOp)onCreateOp(opObj);
+    }catch(e){alert("Error: "+e.message);}
+    setWorking(false);
+  };
+  const cancelNotif=async(n)=>{
+    setWorking(true);
+    await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{status:"cancelled",cancelled_at:new Date().toISOString()}});
+    setConfirmAction(null);load();
+    setWorking(false);
+  };
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:12,flexWrap:"wrap"}}>
+      <div>
+        <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>📦 Avisos de compra de clientes</h2>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>Pre-avisos del cliente. Confirmá cuando la carga llegue al depósito y se crea la operación oficial.</p>
+      </div>
+      {counts.pending>0&&<span style={{padding:"6px 14px",fontSize:12,fontWeight:700,borderRadius:8,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)"}}>⏳ {counts.pending} pendientes</span>}
+    </div>
+    <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+      {[{k:"pending",l:"Pendientes",c:counts.pending},{k:"received",l:"Recibidas",c:counts.received},{k:"cancelled",l:"Canceladas",c:counts.cancelled},{k:"all",l:"Todas",c:counts.all}].map(t=><button key={t.k} onClick={()=>setFilter(t.k)} style={{padding:"6px 12px",fontSize:12,fontWeight:600,borderRadius:7,border:`1px solid ${filter===t.k?IC:"rgba(255,255,255,0.1)"}`,background:filter===t.k?"rgba(184,149,106,0.1)":"transparent",color:filter===t.k?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{t.l} ({t.c})</button>)}
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por tracking, cliente o descripción…" style={{flex:1,minWidth:240,padding:"7px 12px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
+    </div>
+    {lo?<p style={{textAlign:"center",padding:"3rem 0",color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<div style={{padding:"3rem 1rem",textAlign:"center",background:"rgba(255,255,255,0.02)",border:"1px dashed rgba(255,255,255,0.08)",borderRadius:14}}>
+      <p style={{fontSize:14,color:"rgba(255,255,255,0.55)",margin:0}}>Sin avisos {filter!=="all"?filter:""}</p>
+    </div>:<div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {filtered.map(n=>{const cl=n.clients;return <div key={n.id} style={{padding:"14px 16px",background:n.status==="pending"?"rgba(251,191,36,0.05)":n.status==="received"?"rgba(34,197,94,0.04)":"rgba(255,255,255,0.02)",border:`1px solid ${n.status==="pending"?"rgba(251,191,36,0.25)":n.status==="received"?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.06)"}`,borderRadius:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",gap:12,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:240}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+              <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{n.tracking_code}</span>
+              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:n.origin==="china"?"rgba(239,68,68,0.15)":"rgba(59,130,246,0.15)",color:n.origin==="china"?"#fca5a5":"#93c5fd",border:`1px solid ${n.origin==="china"?"rgba(239,68,68,0.3)":"rgba(59,130,246,0.3)"}`}}>{n.origin==="china"?"🇨🇳 CHINA":"🇺🇸 USA"}</span>
+              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{n.shipping_method==="aereo"?"✈️ Aéreo":"🚢 Marítimo"}</span>
+              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:n.status==="pending"?"rgba(251,191,36,0.15)":n.status==="received"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:n.status==="pending"?"#fbbf24":n.status==="received"?"#22c55e":"#ff6b6b"}}>{n.status==="pending"?"⏳ PENDIENTE":n.status==="received"?"✓ RECIBIDA":"✕ CANCELADA"}</span>
+            </div>
+            <p style={{fontSize:13,color:"#fff",margin:"0 0 4px"}}><strong style={{color:IC,fontFamily:"monospace"}}>{cl?.client_code||"?"}</strong> — {cl?.first_name} {cl?.last_name}</p>
+            {n.description&&<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 4px"}}>{n.description}</p>}
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>Avisado {formatDate(n.created_at)}{n.estimated_packages?` · ${n.estimated_packages} bultos`:""}{n.estimated_dispatch_date?` · sale ${formatDate(n.estimated_dispatch_date)}`:""}{n.status==="received"&&n.operations?.operation_code?` · op `:""}{n.status==="received"&&n.operations?.operation_code?<strong style={{color:IC,fontFamily:"monospace"}}>{n.operations.operation_code}</strong>:""}</p>
+          </div>
+          {n.status==="pending"&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <button onClick={()=>setConfirmAction({type:"confirm",notif:n})} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:7,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>✓ Confirmar y crear op</button>
+            <button onClick={()=>setConfirmAction({type:"cancel",notif:n})} style={{padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>Rechazar</button>
+          </div>}
+        </div>
+      </div>;})}
+    </div>}
+
+    {confirmAction&&(()=>{const {type,notif}=confirmAction;const cl=notif.clients;return <div onClick={()=>!working&&setConfirmAction(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${type==="confirm"?"rgba(34,197,94,0.4)":"rgba(255,80,80,0.4)"}`,borderRadius:14,padding:"22px 24px",maxWidth:480,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>{type==="confirm"?"✓ Confirmar recepción y crear op":"Rechazar aviso"}</h3>
+          <button onClick={()=>!working&&setConfirmAction(null)} disabled={working} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:working?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
+        </div>
+        <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,marginBottom:14}}>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"0 0 6px"}}>Cliente: <strong style={{color:"#fff"}}>{cl?.client_code} — {cl?.first_name} {cl?.last_name}</strong></p>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"0 0 6px"}}>Tracking: <strong style={{color:"#fff",fontFamily:"monospace"}}>{notif.tracking_code}</strong></p>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0}}>{notif.origin==="china"?"🇨🇳 China":"🇺🇸 USA"} · {notif.shipping_method==="aereo"?"✈️ Aéreo":"🚢 Marítimo"}{notif.description?` · ${notif.description}`:""}</p>
+        </div>
+        {type==="confirm"?<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px",lineHeight:1.5}}>Se va a crear una nueva operación (canal <strong>{notif.shipping_method==="maritimo"?"Marítimo Integral AC":"Aéreo Integral AC"}</strong>) con este tracking. El cliente recibe notificación.</p>:<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px"}}>El aviso queda marcado como cancelado. El cliente puede dar otro aviso si vuelve a intentarlo.</p>}
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>!working&&setConfirmAction(null)} disabled={working} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:working?"not-allowed":"pointer"}}>Volver</button>
+          <button onClick={()=>type==="confirm"?confirmReceipt(notif):cancelNotif(notif)} disabled={working} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${type==="confirm"?"rgba(34,197,94,0.5)":"rgba(255,80,80,0.5)"}`,background:working?"rgba(255,255,255,0.05)":(type==="confirm"?"linear-gradient(135deg,#22c55e,#16a34a)":"linear-gradient(135deg,#ff6b6b,#ef4444)"),color:working?"rgba(255,255,255,0.4)":"#fff",cursor:working?"wait":"pointer"}}>{working?"Procesando…":(type==="confirm"?"✓ Sí, crear op":"Sí, rechazar")}</button>
+        </div>
+      </div>
+    </div>;})()}
+  </div>;
+}
+
 function ShipmentsTracking({token,onSelectOp}){
   const [ops,setOps]=useState([]);const [pkgs,setPkgs]=useState([]);const [items,setItems]=useState([]);const [lo,setLo]=useState(true);const [fChannel,setFChannel]=useState("");const [search,setSearch]=useState("");const [sortCol,setSortCol]=useState("op");const [sortDir,setSortDir]=useState("desc");
   const toggleSort=(col)=>{if(sortCol===col){setSortDir(d=>d==="asc"?"desc":"asc");}else{setSortCol(col);setSortDir("asc");}};
@@ -5781,7 +5886,7 @@ function AdminDashboard({session,onLogout}){
   const [page,setPage]=useState("operations");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);const [mobOpen,setMobOpen]=useState(false);
   const token=session.token;
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
-  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"agents",label:"AGENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},{key:"tasks",label:"TAREAS",p:["M9 11l3 3 8-8","M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"finance",label:"FINANZAS",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"shipments",label:"SEGUIMIENTOS",p:["M16 3h5v5","M21 3l-7 7","M8 21H3v-5","M3 21l7-7","M21 16v5h-5","M21 21l-7-7","M3 8V3h5","M3 3l7 7"]},{key:"comms",label:"COMUNICACIONES",p:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
+  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"purchase_notifs",label:"AVISOS COMPRA",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},{key:"agents",label:"AGENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},{key:"tasks",label:"TAREAS",p:["M9 11l3 3 8-8","M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"finance",label:"FINANZAS",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"shipments",label:"SEGUIMIENTOS",p:["M16 3h5v5","M21 3l-7 7","M8 21H3v-5","M3 21l7-7","M21 16v5h-5","M21 21l-7-7","M3 8V3h5","M3 3l7 7"]},{key:"comms",label:"COMUNICACIONES",p:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
   const [pendingTasks,setPendingTasks]=useState(0);
   useEffect(()=>{let mounted=true;const load=async()=>{const r=await dq("admin_tasks",{token,filters:"?select=id&done=eq.false"});if(mounted&&Array.isArray(r))setPendingTasks(r.length);};load();const iv=setInterval(load,30000);return()=>{mounted=false;clearInterval(iv);};},[token,page]);
   const sidebarContent=<>
@@ -5847,6 +5952,7 @@ function AdminDashboard({session,onLogout}){
       {page==="dashboard"&&<><FinanceDashboard token={token}/><OperationalAnalytics token={token}/><DashboardKPIs token={token}/></>}
       {page==="shipments"&&<ShipmentsTracking token={token} onSelectOp={op=>{setPage("operations");setSelOp(op);}}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
+      {page==="purchase_notifs"&&<PurchaseNotificationsAdmin token={token} allClients={allClients} onCreateOp={op=>{setPage("operations");setSelOp(op);}}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
