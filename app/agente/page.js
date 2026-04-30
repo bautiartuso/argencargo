@@ -1150,7 +1150,7 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
         <button onClick={onClose} style={{fontSize:20,background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer"}}>✕</button>
       </div>
 
-      {/* Instrucciones MUY explícitas para Vivi */}
+      {/* Instrucciones explícitas en español + chino para que el agente no se trabe */}
       <div style={{padding:"12px 14px",background:"rgba(251,191,36,0.10)",border:"1.5px solid rgba(251,191,36,0.35)",borderRadius:10,marginBottom:14}}>
         <p style={{fontSize:13,color:"#fbbf24",margin:0,fontWeight:700}}>📋 Instrucciones / 操作说明</p>
         <ol style={{fontSize:12,color:"rgba(255,255,255,0.85)",margin:"6px 0 0",paddingLeft:18,lineHeight:1.6}}>
