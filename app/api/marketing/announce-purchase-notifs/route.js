@@ -44,107 +44,52 @@ async function isAdmin(req) {
 }
 
 function renderEmail({ firstName, portalLink, optOutLink }) {
-  const NAVY = "#152D54";
-  const AC = "#3B7DD8";
-  const GOLD = "#B8956A";
-  const GOLD_LIGHT = "#D4B17A";
-  const LOGO_WHITE = `${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
   const greeting = firstName ? `Hola ${firstName},` : "Hola,";
-  const subject = "Nueva función: avisanos tus compras antes de que lleguen 📦";
+  // Subject estilo personal — sin emojis, sin "promo words"
+  const subject = "Algo nuevo en el portal";
+  // HTML mínimo, estilo email personal, sin botones, sin gradientes, sin imágenes
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${subject}</title></head>
-<body style="margin:0;padding:0;background:#eef1f5;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Arial,sans-serif;color:#1a1a1a">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f5;padding:24px 0">
-    <tr><td align="center">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.04)">
+<body style="margin:0;padding:24px 16px;background:#ffffff;font-family:Arial,sans-serif;color:#222;font-size:15px;line-height:1.6">
+  <div style="max-width:580px;margin:0 auto">
+    <p style="margin:0 0 14px">${greeting}</p>
 
-        <!-- HEADER -->
-        <tr><td align="center" style="background:linear-gradient(135deg,${NAVY},${AC});padding:36px 32px">
-          <img src="${LOGO_WHITE}" alt="Argencargo" width="180" style="display:block;max-width:180px;height:auto;margin:0 auto 14px"/>
-          <div style="font-size:11px;font-weight:700;color:${GOLD_LIGHT};letter-spacing:0.18em;text-transform:uppercase;margin-top:8px">✨ Nueva función</div>
-        </td></tr>
+    <p style="margin:0 0 14px">Te escribo para contarte sobre una función nueva que sumamos al portal: ahora podés avisarnos las compras que estás esperando, antes de que lleguen al depósito.</p>
 
-        <!-- BODY -->
-        <tr><td style="padding:32px 36px 8px">
-          <h1 style="color:${NAVY};font-size:24px;line-height:1.3;margin:0 0 6px;font-weight:700;letter-spacing:-0.01em">Avisanos tus compras antes de que lleguen al depósito</h1>
-          <p style="font-size:14px;color:#6b7280;margin:0 0 20px">${greeting}</p>
+    <p style="margin:0 0 14px">¿Para qué sirve? Cuando nos avisás con el tracking, apenas la carga llega la asociamos al instante con tu aviso y empezamos a procesarla en el día, sin tener que identificarla manualmente. Vas a tener visibilidad desde el primer día y nosotros podemos planificar mejor cada vuelo.</p>
 
-          <p style="font-size:15px;line-height:1.65;color:#374151;margin:0 0 16px">
-            Sumamos una nueva sección al portal: <strong style="color:${NAVY}">Compras en camino</strong>. Ahora podés avisarnos cada compra que estés esperando antes de que llegue a nuestro depósito en China o USA.
-          </p>
+    <p style="margin:0 0 14px">Para usarla, entrá al portal y andá a <strong>"Compras en camino"</strong> &rarr; <strong>Nuevo aviso</strong>. Cargás el tracking, el origen (China o USA), la modalidad (aéreo o marítimo) y una breve descripción. Listo.</p>
 
-          <p style="font-size:15px;line-height:1.65;color:#374151;margin:0 0 22px">
-            Es simple y trae <strong>tres beneficios concretos</strong> para vos:
-          </p>
+    <p style="margin:0 0 14px"><a href="${portalLink}" style="color:#1B4F8A;text-decoration:underline">${portalLink.replace(/^https?:\/\//,"")}</a></p>
 
-          <!-- BENEFITS -->
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px">
-            <tr><td style="padding:14px 16px;background:#f8fafc;border-left:3px solid ${AC};border-radius:6px">
-              <div style="font-size:14px;font-weight:700;color:${NAVY};margin-bottom:4px">🚀 Tu carga se procesa más rápido</div>
-              <div style="font-size:13px;line-height:1.55;color:#4b5563">Cuando llega al depósito, la asociamos al instante con tu aviso y empezamos a prepararla en el día — sin esperar a que la identifiquemos manualmente.</div>
-            </td></tr>
-            <tr><td style="height:10px"></td></tr>
-            <tr><td style="padding:14px 16px;background:#f8fafc;border-left:3px solid ${AC};border-radius:6px">
-              <div style="font-size:14px;font-weight:700;color:${NAVY};margin-bottom:4px">📍 Visibilidad desde el primer día</div>
-              <div style="font-size:13px;line-height:1.55;color:#4b5563">Ves todas tus compras pendientes en un solo lugar, con su estado (pendiente, recibida o cancelada). No hay sorpresas.</div>
-            </td></tr>
-            <tr><td style="height:10px"></td></tr>
-            <tr><td style="padding:14px 16px;background:#f8fafc;border-left:3px solid ${AC};border-radius:6px">
-              <div style="font-size:14px;font-weight:700;color:${NAVY};margin-bottom:4px">🤝 Mejor coordinación</div>
-              <div style="font-size:13px;line-height:1.55;color:#4b5563">Sabemos qué carga tuya esperar, en qué modalidad (aéreo o marítimo) y aproximadamente cuándo. Eso nos permite planificar mejor cada vuelo y consolidación.</div>
-            </td></tr>
-          </table>
+    <p style="margin:0 0 14px">Cualquier duda escribime por acá o por WhatsApp al +54 9 11 2508-8580.</p>
 
-          <!-- HOW TO -->
-          <h2 style="color:${NAVY};font-size:17px;margin:24px 0 12px;font-weight:700">Cómo usarlo</h2>
-          <ol style="font-size:14px;line-height:1.7;color:#374151;margin:0 0 24px;padding-left:22px">
-            <li>Entrá a tu portal y andá a <strong>Compras en camino</strong></li>
-            <li>Tocá <strong>+ Nuevo aviso</strong></li>
-            <li>Cargá el tracking, el origen (China/USA), la modalidad y una breve descripción</li>
-            <li>Listo — al confirmarlo en depósito, lo ves automáticamente como operación oficial</li>
-          </ol>
+    <p style="margin:0 0 6px">Saludos,</p>
+    <p style="margin:0 0 4px">Bautista Artuso</p>
+    <p style="margin:0;color:#666;font-size:14px">Argencargo</p>
 
-          <!-- CTA -->
-          <div style="text-align:center;margin:28px 0 8px">
-            <a href="${portalLink}" style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,${GOLD},${GOLD_LIGHT});color:#fff;text-decoration:none;font-weight:700;border-radius:8px;font-size:15px;letter-spacing:0.02em;box-shadow:0 4px 12px rgba(184,149,106,0.3)">Probar Compras en camino →</a>
-          </div>
-
-          <p style="font-size:12px;color:#9ca3af;text-align:center;margin:14px 0 0;font-style:italic">El tracking es obligatorio (sin él no podemos hacer el match). El resto de los datos podés editarlos hasta que confirmemos la recepción.</p>
-
-          <p style="font-size:14px;line-height:1.65;color:#374151;margin:28px 0 0">
-            Cualquier consulta, escribinos por WhatsApp al <a href="https://wa.me/5491125088580" style="color:${AC};text-decoration:none;font-weight:600">+54 9 11 2508-8580</a>.
-          </p>
-          <p style="font-size:14px;line-height:1.65;color:#374151;margin:8px 0 0">
-            Saludos,<br/>
-            <strong>El equipo de Argencargo</strong>
-          </p>
-        </td></tr>
-
-        <!-- FOOTER -->
-        <tr><td style="padding:28px 32px;background:${NAVY}">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-            <tr>
-              <td width="110" valign="middle" style="padding-right:16px">
-                <img src="${LOGO_WHITE}" alt="Argencargo" width="100" style="display:block;max-width:100px;height:auto"/>
-              </td>
-              <td valign="middle" style="font-size:12px;line-height:1.7;color:#cfd8e8">
-                <div style="font-weight:800;color:#fff;letter-spacing:0.02em;margin-bottom:2px">ARGENCARGO</div>
-                <div><span style="color:#8ea3c4">T.</span> +54 9 11 2508-8580</div>
-                <div><span style="color:#8ea3c4">E-mail:</span> <a href="mailto:info@argencargo.com.ar" style="color:#8fb8ff;text-decoration:none">info@argencargo.com.ar</a></div>
-                <div>Av Callao 1137 — Recoleta, CABA</div>
-              </td>
-            </tr>
-          </table>
-        </td></tr>
-      </table>
-
-      <p style="font-size:10px;color:#aaa;margin:12px 0 0;text-align:center;line-height:1.5">
-        © ${new Date().getFullYear()} Argencargo · <a href="https://argencargo.com.ar" style="color:#888;text-decoration:none">argencargo.com.ar</a><br/>
-        ${optOutLink ? `Si no querés recibir más comunicaciones de novedades, <a href="${optOutLink}" style="color:#888">cancelá la suscripción</a>.` : ""}
-      </p>
-    </td></tr>
-  </table>
+    ${optOutLink ? `<p style="margin:36px 0 0;font-size:11px;color:#999;border-top:1px solid #eee;padding-top:12px">Si no querés recibir más estos mensajes, <a href="${optOutLink}" style="color:#999">cancelá acá</a>.</p>` : ""}
+  </div>
 </body></html>`;
-  return { subject, html };
+  // Versión texto plano (mejora delivery a Primary inbox)
+  const text = `${greeting}
+
+Te escribo para contarte sobre una función nueva que sumamos al portal: ahora podés avisarnos las compras que estás esperando, antes de que lleguen al depósito.
+
+¿Para qué sirve? Cuando nos avisás con el tracking, apenas la carga llega la asociamos al instante con tu aviso y empezamos a procesarla en el día, sin tener que identificarla manualmente. Vas a tener visibilidad desde el primer día y nosotros podemos planificar mejor cada vuelo.
+
+Para usarla, entrá al portal y andá a "Compras en camino" -> Nuevo aviso. Cargás el tracking, el origen (China o USA), la modalidad (aéreo o marítimo) y una breve descripción. Listo.
+
+${portalLink}
+
+Cualquier duda escribime por acá o por WhatsApp al +54 9 11 2508-8580.
+
+Saludos,
+Bautista Artuso
+Argencargo${optOutLink ? `
+
+---
+Si no querés recibir más estos mensajes: ${optOutLink}` : ""}`;
+  return { subject, html, text };
 }
 
 export async function GET(req) {
@@ -181,7 +126,7 @@ export async function POST(req) {
   if (mode === "test") {
     const email = body.email;
     if (!email) return Response.json({ error: "email requerido" }, { status: 400 });
-    const { subject, html } = renderEmail({
+    const { subject, html, text } = renderEmail({
       firstName: body.firstName || "Bautista",
       portalLink: `${BASE_URL}/portal`,
       optOutLink: `${BASE_URL}/api/marketing/optout?token=test`,
@@ -189,7 +134,7 @@ export async function POST(req) {
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: RESEND_FROM, to: [email], subject, html }),
+      body: JSON.stringify({ from: RESEND_FROM, to: [email], subject, html, text, reply_to: "info@argencargo.com.ar" }),
     });
     const j = await r.json().catch(() => null);
     if (!r.ok) return Response.json({ error: "send failed", detail: j }, { status: 500 });
@@ -205,7 +150,7 @@ export async function POST(req) {
 
     const results = { sent: 0, failed: 0, errors: [] };
     for (const c of list) {
-      const { subject, html } = renderEmail({
+      const { subject, html, text } = renderEmail({
         firstName: c.first_name || "",
         portalLink: `${BASE_URL}/portal`,
         optOutLink: `${BASE_URL}/api/marketing/optout?cid=${c.id}`,
@@ -214,7 +159,7 @@ export async function POST(req) {
         const r = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: { Authorization: `Bearer ${RESEND_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ from: RESEND_FROM, to: [c.email], subject, html }),
+          body: JSON.stringify({ from: RESEND_FROM, to: [c.email], subject, html, text, reply_to: "info@argencargo.com.ar" }),
         });
         if (!r.ok) {
           const err = await r.text().catch(() => "");
