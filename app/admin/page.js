@@ -2511,6 +2511,98 @@ function Calculator({token,clients}){
   </div>;
 }
 
+function MarketingCampaignCard({token}){
+  const [stats,setStats]=useState(null);
+  const [testEmail,setTestEmail]=useState("");
+  const [batchLimit,setBatchLimit]=useState("100");
+  const [busy,setBusy]=useState(false);
+  const [msg,setMsg]=useState(null); // {type:'ok'|'err', text}
+  const [confirmSend,setConfirmSend]=useState(false);
+  const loadStats=async()=>{
+    try{
+      const r=await fetch("/api/marketing/announce-purchase-notifs?stats=1",{headers:{Authorization:`Bearer ${token}`}});
+      const j=await r.json();
+      if(j.ok)setStats(j);
+    }catch(e){}
+  };
+  useEffect(()=>{loadStats();},[token]);
+  const sendTest=async()=>{
+    if(!testEmail){setMsg({type:"err",text:"Ingresá un email"});return;}
+    setBusy(true);setMsg(null);
+    try{
+      const r=await fetch("/api/marketing/announce-purchase-notifs",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({mode:"test",email:testEmail.trim()})});
+      const j=await r.json();
+      if(j.ok)setMsg({type:"ok",text:`✓ Test enviado a ${testEmail}`});
+      else setMsg({type:"err",text:j.error||"Error"});
+    }catch(e){setMsg({type:"err",text:e.message});}
+    setBusy(false);
+  };
+  const sendBatch=async()=>{
+    setBusy(true);setMsg(null);setConfirmSend(false);
+    try{
+      const limit=Math.min(100,Math.max(1,Number(batchLimit)||100));
+      const r=await fetch("/api/marketing/announce-purchase-notifs",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({mode:"send",limit})});
+      const j=await r.json();
+      if(j.ok){
+        setMsg({type:"ok",text:`✓ Batch enviado: ${j.sent} OK, ${j.failed} fallaron${j.errors?.length?` — ej: ${j.errors[0]?.error?.slice(0,80)}`:""}`});
+        loadStats();
+      }else{setMsg({type:"err",text:j.error||"Error"});}
+    }catch(e){setMsg({type:"err",text:e.message});}
+    setBusy(false);
+  };
+  return <Card title="📣 Campaña: Anuncio Compras en Camino">
+    <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Email marketing a clientes con email registrado, anunciando la nueva sección <strong style={{color:"#fff"}}>Compras en Camino</strong>. Resend free tier permite <strong style={{color:"#fff"}}>100 mails/día</strong> y 3.000/mes.</p>
+    {stats&&<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
+      <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase"}}>Con email</p>
+        <p style={{fontSize:18,fontWeight:700,color:"#fff",margin:"3px 0 0"}}>{stats.total_with_email}</p>
+      </div>
+      <div style={{padding:"10px 12px",background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase"}}>Pendientes</p>
+        <p style={{fontSize:18,fontWeight:700,color:"#fbbf24",margin:"3px 0 0"}}>{stats.pending}</p>
+      </div>
+      <div style={{padding:"10px 12px",background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:8}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase"}}>Enviados</p>
+        <p style={{fontSize:18,fontWeight:700,color:"#22c55e",margin:"3px 0 0"}}>{stats.sent}</p>
+      </div>
+      <div style={{padding:"10px 12px",background:"rgba(255,80,80,0.05)",border:"1px solid rgba(255,80,80,0.18)",borderRadius:8}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase"}}>Opt-out</p>
+        <p style={{fontSize:18,fontWeight:700,color:"#ff6b6b",margin:"3px 0 0"}}>{stats.opted_out}</p>
+      </div>
+    </div>}
+    <div style={{display:"flex",gap:8,alignItems:"end",flexWrap:"wrap",marginBottom:14}}>
+      <a href="/api/marketing/announce-purchase-notifs?preview=1" target="_blank" rel="noopener" style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:7,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",textDecoration:"none"}}>👁 Ver preview en navegador</a>
+    </div>
+    <div style={{padding:"12px 14px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,marginBottom:12}}>
+      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>1. Probá primero con tu email</p>
+      <div style={{display:"flex",gap:8,alignItems:"end",flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:220}}><Inp label="Tu email" value={testEmail} onChange={setTestEmail} placeholder="bautista@argencargo.com.ar" small/></div>
+        <Btn small variant="secondary" onClick={sendTest} disabled={busy||!testEmail}>{busy?"Enviando…":"Enviar test"}</Btn>
+      </div>
+    </div>
+    <div style={{padding:"12px 14px",background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10}}>
+      <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>2. Enviar batch a clientes pendientes</p>
+      <div style={{display:"flex",gap:8,alignItems:"end",flexWrap:"wrap"}}>
+        <div style={{width:130}}><Inp label="Batch size (max 100)" type="number" value={batchLimit} onChange={setBatchLimit} small/></div>
+        <Btn small onClick={()=>setConfirmSend(true)} disabled={busy||!stats||stats.pending===0}>{busy?"Enviando…":`Enviar a ${Math.min(Number(batchLimit)||100,stats?.pending||0)} clientes`}</Btn>
+      </div>
+      <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"8px 0 0",fontStyle:"italic"}}>Si tenés más de 100 pendientes, ejecutá el batch hoy y otro mañana (free tier de Resend = 100/día).</p>
+    </div>
+    {msg&&<p style={{fontSize:12,color:msg.type==="ok"?"#22c55e":"#ff6b6b",margin:"12px 0 0",padding:"8px 12px",background:msg.type==="ok"?"rgba(34,197,94,0.08)":"rgba(255,80,80,0.08)",borderRadius:6}}>{msg.text}</p>}
+
+    {confirmSend&&<div onClick={()=>!busy&&setConfirmSend(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(184,149,106,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:440,width:"100%"}}>
+        <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 12px"}}>¿Confirmar envío?</h3>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:"0 0 16px",lineHeight:1.5}}>Vas a enviar el email a <strong style={{color:IC}}>{Math.min(Number(batchLimit)||100,stats?.pending||0)} clientes</strong>. Esta acción no se puede deshacer.</p>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>setConfirmSend(false)} disabled={busy} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Cancelar</button>
+          <button onClick={sendBatch} disabled={busy} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>{busy?"Enviando…":"Sí, enviar"}</button>
+        </div>
+      </div>
+    </div>}
+  </Card>;
+}
+
 function AdminSettings({token,session}){
   const [curPw,setCurPw]=useState("");const [newPw,setNewPw]=useState("");const [confPw,setConfPw]=useState("");const [msg,setMsg]=useState("");const [err,setErr]=useState("");const [lo,setLo]=useState(false);
   // Retención de fotos
@@ -2549,6 +2641,7 @@ function AdminSettings({token,session}){
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>ROL</p><p style={{fontSize:14,color:IC,margin:0,fontWeight:600}}>Administrador</p></div>
       </div>
     </Card>
+    <MarketingCampaignCard token={token}/>
     <Card title="Retención de fotos de bultos">
       <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Las fotos cargadas por los agentes ocupan espacio en Storage. Se borran automáticamente <strong style={{color:"#fff"}}>N días después</strong> de cerrarse la operación. La limpieza corre todos los días a las 3am.</p>
       <div style={{display:"flex",gap:10,alignItems:"end",flexWrap:"wrap",maxWidth:520}}>
