@@ -3494,10 +3494,11 @@ function AgentsPanel({token}){
   const [showAnticipoForm,setShowAnticipoForm]=useState(null);
   const [expandedOp,setExpandedOp]=useState(null);
   const [depositItems,setDepositItems]=useState([]);
+  const [repackReqs,setRepackReqs]=useState([]);
   const [lo,setLo]=useState(true);
   const [msg,setMsg]=useState("");
   const load=async()=>{setLo(true);
-    const [r,u,o,depOps,depPkgs,fl,flOps,fii,accM,depItems]=await Promise.all([
+    const [r,u,o,depOps,depPkgs,fl,flOps,fii,accM,depItems,rpkReqs]=await Promise.all([
       dq("agent_signups",{token,filters:"?select=*&order=created_at.desc"}),
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
       dq("operations",{token,filters:"?select=id,operation_code,client_id,clients(client_code,first_name,last_name,tax_condition)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&consolidation_confirmed=eq.false&order=created_at.desc"}),
@@ -3507,12 +3508,14 @@ function AgentsPanel({token}){
       dq("flight_operations",{token,filters:"?select=*"}),
       dq("flight_invoice_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
-      dq("operation_items",{token,filters:"?select=*&order=created_at.asc"})
+      dq("operation_items",{token,filters:"?select=*&order=created_at.asc"}),
+      dq("repack_requests",{token,filters:"?select=*&order=requested_at.desc"})
     ]);
     setSignups(Array.isArray(r)?r:[]);setUnassigned(Array.isArray(u)?u:[]);setAllOps(Array.isArray(o)?o:[]);
     setDepositOps(Array.isArray(depOps)?depOps:[]);setDepositPkgs(Array.isArray(depPkgs)?depPkgs:[]);
     setFlights(Array.isArray(fl)?fl:[]);setFlightOps(Array.isArray(flOps)?flOps:[]);setInvoiceItems(Array.isArray(fii)?fii:[]);setAccMovements(Array.isArray(accM)?accM:[]);
     setDepositItems(Array.isArray(depItems)?depItems:[]);
+    setRepackReqs(Array.isArray(rpkReqs)?rpkReqs:[]);
     // Set de ops que tienen al menos un item (documentación completa)
     const idsWithItems=new Set((Array.isArray(depItems)?depItems:[]).map(i=>i.operation_id));
     setOpsWithDocs(idsWithItems);
@@ -3525,6 +3528,25 @@ function AgentsPanel({token}){
   const opsInFlightIds=new Set(flightOps.map(fo=>fo.operation_id));
   const availableForFlight=depositOps.filter(o=>o.consolidation_confirmed&&!opsInFlightIds.has(o.id)&&opsWithDocs.has(o.id));
   const opPackages=(opId)=>depositPkgs.filter(p=>p.operation_id===opId);
+  // Repack request por op (la más reciente, si existe)
+  const repackReqOf=(opId)=>repackReqs.find(r=>r.operation_id===opId);
+  const requestRepackForOp=async(op)=>{
+    if(!op.created_by_agent_id){flash("Op sin agente asignado");return;}
+    const pkgs=opPackages(op.id);
+    if(pkgs.length===0){flash("La op no tiene bultos");return;}
+    const existing=repackReqOf(op.id);
+    if(existing&&existing.status==="pending"){flash("Ya hay un pedido de reempaque pendiente");return;}
+    const reason=prompt(`Motivo del pedido de reempaque para ${op.operation_code} (opcional):\n\nEj: 'Reempaquetar para reducir volumétrico'`,"");
+    if(reason===null)return;
+    const opAgent=signups.find(s=>s.auth_user_id===op.created_by_agent_id);
+    const opVolDiv=Number(opAgent?.volumetric_divisor)||5000;
+    const billable=pkgs.reduce((s,p)=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/opVolDiv)*q:0;return s+Math.max(b,v);},0);
+    await dq("repack_requests",{method:"POST",token,body:{operation_id:op.id,status:"pending",reason:reason||null,original_billable_kg:Number(billable.toFixed(2)),original_pkg_count:pkgs.length}});
+    try{await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"note",content:`🔄 Pedido de reempaque al agente.\nPeso facturable actual: ${billable.toFixed(2)} kg (${pkgs.length} bultos)${reason?`\nMotivo: ${reason}`:""}`}});}catch(e){}
+    fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:op.created_by_agent_id,title:`🔄 Pedido de reempaque ${op.operation_code}`,body:reason||`Reempaquetar para bajar volumétrico (${billable.toFixed(1)} kg)`,url:"/agente?tab=deposit"})}).catch(()=>{});
+    flash(`✅ Pedido de reempaque enviado al agente para ${op.operation_code}`);
+    load();
+  };
   // Mover bulto a otro cliente (caso típico: agente lo cargó al cliente equivocado)
   // Modal: pide cliente. Si tiene op abierta en depósito → suma ahí. Si no → crea nueva op (mismo agente/canal/origen).
   const [movePkgState,setMovePkgState]=useState(null); // {pkg, fromOp}
@@ -3709,7 +3731,12 @@ function AgentsPanel({token}){
                 {["✓","Op","Cliente","Mercadería","Bultos","Peso","Estado","Consolidación","WA"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
               </tr></thead>
               <tbody>{grp.ops.map(o=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const pkgsCount=opPackages(o.id).length;const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;const isExpanded=expandedOp===o.id;return <Fragment key={o.id}><tr style={{borderBottom:isExpanded?"none":"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:inFlight?0.5:0.7,cursor:"pointer",background:isExpanded?"rgba(184,149,106,0.06)":"transparent",transition:"background 150ms"}} onClick={(e)=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button"))return;setExpandedOp(isExpanded?null:o.id);}} onMouseEnter={e=>{if(!isExpanded)e.currentTarget.style.background="rgba(255,255,255,0.03)";}} onMouseLeave={e=>{if(!isExpanded)e.currentTarget.style.background="transparent";}}>
-                <td style={{padding:"10px 12px"}}>{canSelect?<input type="checkbox" checked={selectedOps.includes(o.id)} onChange={(e)=>{e.stopPropagation();toggleSelOp(o.id);}} onClick={e=>e.stopPropagation()}/>:<span style={{color:"rgba(255,255,255,0.3)",fontSize:14}}>{isExpanded?"▾":"▸"}</span>}</td>
+                <td style={{padding:"10px 12px"}}>{canSelect?(()=>{const isChecked=selectedOps.includes(o.id);return <label onClick={e=>e.stopPropagation()} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",width:20,height:20}}>
+                  <input type="checkbox" checked={isChecked} onChange={()=>toggleSelOp(o.id)} style={{position:"absolute",opacity:0,width:0,height:0,pointerEvents:"none"}}/>
+                  <span style={{width:18,height:18,borderRadius:5,border:isChecked?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.25)",background:isChecked?GOLD_GRADIENT:"rgba(255,255,255,0.04)",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 150ms",boxShadow:isChecked?GOLD_GLOW:"none"}}>
+                    {isChecked&&<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#0A1628" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                  </span>
+                </label>;})():<span style={{color:"rgba(255,255,255,0.3)",fontSize:14}}>{isExpanded?"▾":"▸"}</span>}</td>
                 <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12}}>{o.operation_code}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)"}}>{o.clients?<span style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{`${o.clients.client_code} - ${o.clients.first_name}`}{o.clients.tax_condition==="responsable_inscripto"&&<span title="Cliente Responsable Inscripto" style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.18)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.05em"}}>RI</span>}</span>:"—"}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.description||"—"}</td>
@@ -3745,8 +3772,19 @@ function AgentsPanel({token}){
                 const itemsOfOp=depositItems.filter(i=>i.operation_id===o.id);
                 const pkgsOfOp=opPackages(o.id);
                 const totalFob=itemsOfOp.reduce((s,i)=>s+Number(i.unit_price_usd||0)*Number(i.quantity||1),0);
+                const rpk=repackReqOf(o.id);
+                const canRepack=o.created_by_agent_id&&pkgsOfOp.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(o.status)&&(!rpk||rpk.status!=="pending");
                 return <tr><td colSpan={9} style={{padding:0,borderBottom:"1px solid rgba(184,149,106,0.2)"}}>
-                  <div style={{padding:"16px 18px",background:"rgba(184,149,106,0.04)",display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
+                  <div style={{padding:"16px 18px",background:"rgba(184,149,106,0.04)"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+                      <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Detalle de {o.operation_code}</span>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        {rpk?.status==="pending"&&<span style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)"}}>⏳ Reempaque pedido</span>}
+                        {rpk?.status==="done"&&(()=>{const before=Number(rpk.original_billable_kg||0),after=Number(rpk.new_billable_kg||0),delta=before-after;return <span title={`${before.toFixed(2)} kg → ${after.toFixed(2)} kg`} style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)"}}>✅ Reempaque hecho{delta>0?` (−${delta.toFixed(1)} kg)`:""}</span>;})()}
+                        {canRepack&&<button onClick={(e)=>{e.stopPropagation();requestRepackForOp(o);}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🔄 Pedir reempaque</button>}
+                      </div>
+                    </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
                     {/* Productos declarados por el cliente */}
                     <div>
                       <h4 style={{fontSize:10,fontWeight:700,color:IC,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>📋 Productos declarados ({itemsOfOp.length})</h4>
@@ -3793,6 +3831,7 @@ function AgentsPanel({token}){
                         </div>
                       </>}
                     </div>
+                  </div>
                   </div>
                 </td></tr>;
               })()}</Fragment>;})}</tbody>
