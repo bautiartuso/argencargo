@@ -3535,23 +3535,37 @@ function AgentsPanel({token}){
   const opPackages=(opId)=>depositPkgs.filter(p=>p.operation_id===opId);
   // Repack request por op (la más reciente, si existe)
   const repackReqOf=(opId)=>repackReqs.find(r=>r.operation_id===opId);
-  const requestRepackForOp=async(op)=>{
+  // ---- Modal moderno para pedir reempaque (reemplaza el prompt() feo) ----
+  const [repackModal,setRepackModal]=useState(null); // {op, billable, pkgs, reason, sending}
+  const openRepackModal=(op)=>{
     if(!op.created_by_agent_id){flash("Op sin agente asignado");return;}
     const pkgs=opPackages(op.id);
     if(pkgs.length===0){flash("La op no tiene bultos");return;}
     const existing=repackReqOf(op.id);
     if(existing&&existing.status==="pending"){flash("Ya hay un pedido de reempaque pendiente");return;}
-    const reason=prompt(`Motivo del pedido de reempaque para ${op.operation_code} (opcional):\n\nEj: 'Reempaquetar para reducir volumétrico'`,"");
-    if(reason===null)return;
     const opAgent=signups.find(s=>s.auth_user_id===op.created_by_agent_id);
     const opVolDiv=Number(opAgent?.volumetric_divisor)||5000;
     const billable=pkgs.reduce((s,p)=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/opVolDiv)*q:0;return s+Math.max(b,v);},0);
-    await dq("repack_requests",{method:"POST",token,body:{operation_id:op.id,status:"pending",reason:reason||null,original_billable_kg:Number(billable.toFixed(2)),original_pkg_count:pkgs.length}});
-    try{await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"note",content:`🔄 Pedido de reempaque al agente.\nPeso facturable actual: ${billable.toFixed(2)} kg (${pkgs.length} bultos)${reason?`\nMotivo: ${reason}`:""}`}});}catch(e){}
-    fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:op.created_by_agent_id,title:`🔄 Pedido de reempaque ${op.operation_code}`,body:reason||`Reempaquetar para bajar volumétrico (${billable.toFixed(1)} kg)`,url:"/agente?tab=deposit"})}).catch(()=>{});
-    flash(`✅ Pedido de reempaque enviado al agente para ${op.operation_code}`);
-    load();
+    setRepackModal({op,pkgs,billable,reason:"",sending:false});
   };
+  const submitRepack=async()=>{
+    if(!repackModal)return;
+    const {op,pkgs,billable,reason}=repackModal;
+    setRepackModal(s=>({...s,sending:true}));
+    try{
+      await dq("repack_requests",{method:"POST",token,body:{operation_id:op.id,status:"pending",reason:reason.trim()||null,original_billable_kg:Number(billable.toFixed(2)),original_pkg_count:pkgs.length}});
+      try{await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"note",content:`🔄 Pedido de reempaque al agente.\nPeso facturable actual: ${billable.toFixed(2)} kg (${pkgs.length} bultos)${reason.trim()?`\nMotivo: ${reason.trim()}`:""}`}});}catch(e){}
+      fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:op.created_by_agent_id,title:`🔄 Pedido de reempaque ${op.operation_code}`,body:reason.trim()||`Reempaquetar para bajar volumétrico (${billable.toFixed(1)} kg)`,url:"/agente?tab=deposit"})}).catch(()=>{});
+      setRepackModal(null);
+      flash(`✅ Pedido de reempaque enviado al agente para ${op.operation_code}`);
+      load();
+    }catch(e){
+      setRepackModal(s=>({...s,sending:false}));
+      flash(`❌ ${e.message}`);
+    }
+  };
+  // Backwards-compat: alias para el botón existente
+  const requestRepackForOp=openRepackModal;
   // Mover bulto a otro cliente (caso típico: agente lo cargó al cliente equivocado)
   // Modal: pide cliente. Si tiene op abierta en depósito → suma ahí. Si no → crea nueva op (mismo agente/canal/origen).
   const [movePkgState,setMovePkgState]=useState(null); // {pkg, fromOp}
@@ -3970,6 +3984,30 @@ function AgentsPanel({token}){
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={closeMoveModal} disabled={moveSaving} style={{padding:"8px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:"pointer"}}>Cancelar</button>
           <button onClick={executeMove} disabled={!moveSelClient||moveSaving} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:moveSelClient?GOLD_GRADIENT:"rgba(255,255,255,0.05)",color:moveSelClient?"#0A1628":"rgba(255,255,255,0.3)",cursor:moveSelClient?"pointer":"not-allowed",opacity:moveSaving?0.6:1}}>{moveSaving?"Moviendo…":"✓ Confirmar"}</button>
+        </div>
+      </div>
+    </div>;})()}
+    {repackModal&&(()=>{const {op,pkgs,billable,reason,sending}=repackModal;const opAg=signups.find(s=>s.auth_user_id===op.created_by_agent_id);const agentName=opAg?(opAg.first_name||opAg.email||"agente"):"agente";return <div onClick={()=>!sending&&setRepackModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(251,146,60,0.35)",borderRadius:14,padding:"22px 24px",maxWidth:540,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
+          <div>
+            <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>🔄 Pedir reempaque · {op.operation_code}</h3>
+            <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>Se le envía push notif a <strong style={{color:"#fff"}}>{agentName}</strong> con el motivo. {agentName} va a poder reempaquetar las cajas físicamente y cargar las nuevas medidas.</p>
+          </div>
+          <button onClick={()=>!sending&&setRepackModal(null)} disabled={sending} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:sending?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
+        </div>
+        <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,marginBottom:14}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Estado actual</p>
+          <p style={{fontSize:13,color:"#fff",margin:0}}>{pkgs.length} bultos · peso facturable <strong style={{color:IC}}>{billable.toFixed(2)} kg</strong></p>
+        </div>
+        <div style={{marginBottom:14}}>
+          <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>Motivo del pedido (opcional)</label>
+          <textarea autoFocus value={reason} onChange={e=>setRepackModal(s=>({...s,reason:e.target.value}))} placeholder="Ej: Reempaquetar para reducir volumétrico, intentar bajar de 50kg a 35kg" rows={3} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",fontFamily:"inherit",resize:"vertical"}}/>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"6px 0 0"}}>Tip: dejá vacío si solo querés que reempaquete sin instrucciones específicas.</p>
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>!sending&&setRepackModal(null)} disabled={sending} style={{padding:"8px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:sending?"not-allowed":"pointer"}}>Cancelar</button>
+          <button onClick={submitRepack} disabled={sending} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(251,146,60,0.4)",background:sending?"rgba(255,255,255,0.05)":"linear-gradient(135deg,#fb923c,#f97316)",color:sending?"rgba(255,255,255,0.4)":"#0A1628",cursor:sending?"wait":"pointer"}}>{sending?"Enviando…":"🔄 Enviar pedido"}</button>
         </div>
       </div>
     </div>;})()}
