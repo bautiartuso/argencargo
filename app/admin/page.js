@@ -3002,6 +3002,53 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const delItem=async(id)=>{await dq("flight_invoice_items",{method:"DELETE",token,filters:`?id=eq.${id}`});setItems(p=>p.filter(x=>x.id!==id));onReload();};
   // Auto-clasificar HS Code con IA (sólo rellena hs_code, NO toca derechos/IVA/estadística)
   const [classifyingHs,setClassifyingHs]=useState(false);
+  // ---- Comprimir items con IA (RG 5608: max 8 items por factura) ----
+  const MAX_INVOICE_ITEMS=8;
+  const itemsByOp=items.reduce((acc,it)=>{(acc[it.operation_id]=acc[it.operation_id]||[]).push(it);return acc;},{});
+  const opsNeedingCompression=Object.entries(itemsByOp).filter(([_,list])=>list.length>MAX_INVOICE_ITEMS).map(([opId,list])=>({opId,count:list.length,opCode:opsUnique.find(o=>o.id===opId)?.operation_code||"?"}));
+  const [compressState,setCompressState]=useState(null);
+  const openCompressFor=async(opId)=>{
+    const opItems=itemsByOp[opId]||[];
+    const op=opsUnique.find(o=>o.id===opId);
+    setCompressState({opId,opCode:op?.operation_code||"?",original:opItems,proposed:null,loading:true,error:null,applying:false});
+    try{
+      const r=await fetch("/api/compress-items",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        items:opItems.map(it=>({description:it.description,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_declared_usd||0),hs_code:it.hs_code||null})),
+        maxItems:MAX_INVOICE_ITEMS,
+      })});
+      const d=await r.json();
+      if(!d.ok){setCompressState(s=>({...s,loading:false,error:d.error||"Error desconocido"}));return;}
+      setCompressState(s=>({...s,loading:false,proposed:d}));
+    }catch(e){setCompressState(s=>({...s,loading:false,error:e.message}));}
+  };
+  const applyCompress=async()=>{
+    if(!compressState?.proposed)return;
+    const {opId,proposed}=compressState;
+    setCompressState(s=>({...s,applying:true}));
+    try{
+      // 1. Backup operation_items originales
+      const opItemsFull=await dq("operation_items",{token,filters:`?operation_id=eq.${opId}&select=*`});
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opId}`,body:{items_backup_json:Array.isArray(opItemsFull)?opItemsFull:[]}});
+      // 2. Reemplazar flight_invoice_items de esta op en este vuelo
+      await dq("flight_invoice_items",{method:"DELETE",token,filters:`?flight_id=eq.${flight.id}&operation_id=eq.${opId}`});
+      let sortIdx=0;
+      for(const g of proposed.groups){
+        sortIdx++;
+        await dq("flight_invoice_items",{method:"POST",token,body:{flight_id:flight.id,operation_id:opId,description:g.description,quantity:g.quantity,unit_price_declared_usd:g.unit_price_usd,hs_code:g.hs_code||"",sort_order:sortIdx}});
+      }
+      // 3. Reemplazar operation_items (cliente también ve los comprimidos)
+      await dq("operation_items",{method:"DELETE",token,filters:`?operation_id=eq.${opId}`});
+      for(const g of proposed.groups){
+        await dq("operation_items",{method:"POST",token,body:{operation_id:opId,description:g.description,quantity:g.quantity,unit_price_usd:g.unit_price_usd,ncm_code:g.hs_code||""}});
+      }
+      setCompressState(null);
+      onFlash(`✓ ${proposed.original_count} → ${proposed.compressed_count} items · sincronizado · backup guardado`);
+      onReload();
+    }catch(e){
+      console.error("compress apply error",e);
+      setCompressState(s=>({...s,applying:false,error:e.message}));
+    }
+  };
   const autoClassifyHs=async()=>{
     const pending=items.filter(it=>it.description&&it.description.trim()&&(!it.hs_code||!it.hs_code.trim()));
     if(pending.length===0){onFlash("Todos los items ya tienen HS code");return;}
@@ -3269,6 +3316,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         <div style={{display:"flex",justifyContent:"center",gap:10,marginTop:10,flexWrap:"wrap"}}>
           <button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button>
           {items.some(it=>it.description&&it.description.trim()&&(!it.hs_code||!it.hs_code.trim()))&&<button onClick={autoClassifyHs} disabled={classifyingHs} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:classifyingHs?"wait":"pointer",opacity:classifyingHs?0.6:1}}>{classifyingHs?"Clasificando…":"✨ Auto-completar HS Code (IA)"}</button>}
+          {opsNeedingCompression.length>0&&!flight.invoice_presented_at&&opsNeedingCompression.map(({opId,opCode,count})=><button key={opId} onClick={()=>openCompressFor(opId)} title={`Comprimir los ${count} items de ${opCode} a máximo ${MAX_INVOICE_ITEMS} agrupando variantes con IA`} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🗜 Comprimir {opCode} ({count} → ≤{MAX_INVOICE_ITEMS})</button>)}
           {!flight.invoice_presented_at&&items.length>0&&<button onClick={async()=>{await saveAllItems();onFlash("Cambios guardados");onReload();}} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>💾 Guardar cambios</button>}
         </div>
       </div>}
@@ -3314,6 +3362,54 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         </div>
       </>}
     </Card>}
+    {compressState&&(()=>{const {opCode,original,proposed,loading,error,applying}=compressState;return <div onClick={()=>!applying&&setCompressState(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(251,146,60,0.35)",borderRadius:14,padding:"20px 22px",maxWidth:920,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
+          <div>
+            <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>🗜 Comprimir items de {opCode}</h3>
+            <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>De {original.length} items → máximo {MAX_INVOICE_ITEMS} (RG 5608). La IA agrupa variantes (color, talle, etc.).</p>
+          </div>
+          <button onClick={()=>!applying&&setCompressState(null)} disabled={applying} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:applying?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
+        </div>
+        {loading&&<p style={{padding:"30px",textAlign:"center",fontSize:13,color:"#a78bfa"}}>⏳ La IA está agrupando los {original.length} items…</p>}
+        {error&&<div style={{padding:"12px 14px",background:"rgba(255,80,80,0.1)",border:"1px solid rgba(255,80,80,0.3)",borderRadius:8,marginBottom:12}}>
+          <p style={{fontSize:12,color:"#ff6b6b",margin:0,fontWeight:700}}>❌ {error}</p>
+          <button onClick={()=>openCompressFor(compressState.opId)} style={{marginTop:8,fontSize:11,padding:"4px 10px",borderRadius:5,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:"pointer"}}>🔄 Reintentar</button>
+        </div>}
+        {proposed&&<>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+            <div>
+              <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 8px",textTransform:"uppercase"}}>📋 Original ({proposed.original_count}) · USD {proposed.original_fob.toFixed(2)}</p>
+              <div style={{maxHeight:340,overflowY:"auto",background:"rgba(0,0,0,0.2)",borderRadius:6,padding:"6px 8px"}}>
+                {original.map((it,i)=><div key={it.id} style={{padding:"4px 0",fontSize:11,color:"rgba(255,255,255,0.7)",borderBottom:i<original.length-1?"1px solid rgba(255,255,255,0.04)":"none"}}>
+                  <span style={{color:"rgba(255,255,255,0.4)",marginRight:6}}>[{i}]</span>{it.description} · {it.quantity}u × USD {Number(it.unit_price_declared_usd||0).toFixed(2)}{it.hs_code?` · ${it.hs_code}`:""}
+                </div>)}
+              </div>
+            </div>
+            <div>
+              <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:"0 0 8px",textTransform:"uppercase"}}>✨ Comprimido ({proposed.compressed_count}) · USD {proposed.compressed_fob.toFixed(2)}</p>
+              <div style={{maxHeight:340,overflowY:"auto",background:"rgba(34,197,94,0.06)",borderRadius:6,padding:"6px 8px",border:"1px solid rgba(34,197,94,0.2)"}}>
+                {proposed.groups.map((g,i)=><div key={i} style={{padding:"6px 0",fontSize:11,color:"#fff",borderBottom:i<proposed.groups.length-1?"1px solid rgba(255,255,255,0.06)":"none"}}>
+                  <p style={{margin:"0 0 2px",fontWeight:700}}>{g.description}</p>
+                  <p style={{margin:0,color:"rgba(255,255,255,0.55)",fontSize:10}}>{g.quantity}u × USD {g.unit_price_usd.toFixed(2)}{g.hs_code?` · ${g.hs_code}`:""} · merge de [{g.source_indices.join(",")}]</p>
+                </div>)}
+              </div>
+            </div>
+          </div>
+          {proposed.warnings?.length>0&&<div style={{padding:"8px 12px",background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.3)",borderRadius:6,marginBottom:12}}>
+            {proposed.warnings.map((w,i)=><p key={i} style={{fontSize:11,color:"#fbbf24",margin:i>0?"4px 0 0":0}}>⚠ {w}</p>)}
+          </div>}
+          <div style={{padding:"10px 12px",background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:6,marginBottom:12}}>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.7)",margin:0}}>Al aplicar: se reemplazan los items en la <strong>factura del vuelo</strong> Y en la <strong>operación del cliente</strong>. Los originales se guardan como backup en <code>operations.items_backup_json</code> y el cliente los ve en una sección secundaria "Detalle original".</p>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <button onClick={()=>!applying&&setCompressState(null)} disabled={applying} style={{padding:"8px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:applying?"not-allowed":"pointer"}}>Cancelar</button>
+            <button onClick={()=>openCompressFor(compressState.opId)} disabled={applying} style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:applying?"not-allowed":"pointer"}}>🔄 Re-comprimir</button>
+            <button onClick={applyCompress} disabled={applying} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:applying?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:applying?"rgba(255,255,255,0.4)":"#0A1628",cursor:applying?"wait":"pointer"}}>{applying?"Aplicando…":"✓ Aplicar y sincronizar"}</button>
+          </div>
+        </>}
+      </div>
+    </div>;})()}
   </div>;
 }
 

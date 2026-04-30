@@ -599,6 +599,23 @@ function OperationDetail({op,token,onBack}){
       </div>
       {!isEditable&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>¿Necesitás modificar algo? Contactá a tu asesor de Argencargo.</p>}
     </div>;})()}
+    {/* Detalle original (si admin comprimió los items con IA) */}
+    {Array.isArray(op.items_backup_json)&&op.items_backup_json.length>0&&!loading&&!isGI&&<details style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"10px 14px",marginBottom:16}}>
+      <summary style={{cursor:"pointer",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.55)"}}>📦 Ver detalle original ({op.items_backup_json.length} productos antes de agrupar)</summary>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"8px 0 10px",fontStyle:"italic"}}>Estos son los productos que declaraste originalmente, antes de que tu asesor los agrupara para cumplir con la limitación de la factura de exportación (máximo 8 items).</p>
+      <div style={{background:"rgba(0,0,0,0.15)",borderRadius:6,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"3fr 0.9fr 0.7fr 1fr 1fr",gap:8,padding:"6px 12px",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
+          <span>Descripción</span><span>HS Code</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Precio unit.</span><span style={{textAlign:"right"}}>Subtotal</span>
+        </div>
+        {op.items_backup_json.map((it,i)=>{const sub=Number(it.quantity||0)*Number(it.unit_price_usd||0);return <div key={i} style={{display:"grid",gridTemplateColumns:"3fr 0.9fr 0.7fr 1fr 1fr",gap:8,padding:"6px 12px",borderBottom:i<op.items_backup_json.length-1?"1px solid rgba(255,255,255,0.04)":"none",fontSize:11,color:"rgba(255,255,255,0.7)",alignItems:"center"}}>
+          <span>{it.description}</span>
+          <span style={{fontFamily:"monospace",fontSize:10,color:it.ncm_code?"#22c55e":"rgba(255,255,255,0.3)"}}>{it.ncm_code||"—"}</span>
+          <span style={{textAlign:"right"}}>{Number(it.quantity||0)}</span>
+          <span style={{textAlign:"right"}}>USD {Number(it.unit_price_usd||0).toFixed(2)}</span>
+          <span style={{textAlign:"right",fontWeight:600}}>USD {sub.toFixed(2)}</span>
+        </div>;})}
+      </div>
+    </details>}
     {/* Galería destacada de fotos del agente — aparece arriba si hay al menos una foto */}
     {!loading&&pkgs.some(p=>p.photo_url)&&<div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(184,149,106,0.18)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>📷 Fotos de tu mercadería</h3>
