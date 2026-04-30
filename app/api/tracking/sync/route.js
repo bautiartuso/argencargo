@@ -117,12 +117,21 @@ async function syncOne(op) {
     } catch (e) { /* noop - el cron lo hará en 15 min */ }
   }
 
+  let patchResult = null;
   if (Object.keys(patch).length) {
-    await fetch(`${SB_URL}/rest/v1/operations?id=eq.${op.id}`, {
+    const r = await fetch(`${SB_URL}/rest/v1/operations?id=eq.${op.id}`, {
       method: "PATCH",
       headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "return=minimal" },
       body: JSON.stringify(patch)
     });
+    patchResult = { status: r.status, ok: r.ok };
+    if (!r.ok) {
+      const txt = await r.text();
+      patchResult.error = txt.slice(0, 200);
+      console.error(`PATCH eta failed for ${op.operation_code}:`, r.status, txt.slice(0, 300));
+    } else {
+      console.log(`PATCH eta OK for ${op.operation_code}: eta=${patch.eta}`);
+    }
   }
 
   // Si la función DB cambió el status, disparar mail correspondiente (dedup por sent_notifications).
@@ -158,7 +167,7 @@ async function syncOne(op) {
   }
 
   await updateSyncStatus(op.id, route, inserted, errors[0] || null);
-  return { op: op.operation_code, inserted, carrier: route, eta: d.eta || null, errors: errors.length ? errors : undefined };
+  return { op: op.operation_code, inserted, carrier: route, eta_from_carrier: d.eta || null, eta_patch: patch.eta || null, eta_patch_result: patchResult, errors: errors.length ? errors : undefined };
 }
 
 async function runSync(req) {
