@@ -454,7 +454,29 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     }
     await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash(rest.ncm_code?`Producto guardado · NCM ${rest.ncm_code}`:"Producto guardado");autoSyncBudget();await reloadItems();};
   const addItem=async()=>{await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:"Nuevo producto",quantity:1,unit_price_usd:0}});await reloadItems();flash("Producto agregado");autoSyncBudget();};
-  const autoClassifyAll=async()=>{const pending=items.filter(it=>it.description&&!it.ncm_code);if(pending.length===0){flash("Todos los items ya tienen NCM");return;}flash(`Clasificando ${pending.length} items...`);for(const it of pending){try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});const d=await r.json();if(d?.ncm_code){await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{ncm_code:d.ncm_code,import_duty_rate:d.import_duty_rate||it.import_duty_rate||35,statistics_rate:d.statistics_rate||it.statistics_rate||3,iva_rate:d.iva_rate||it.iva_rate||21}});}}catch(e){}}await reloadItems();autoSyncBudget();flash(`✨ ${pending.length} items clasificados · presupuesto recalculado`);};
+  const autoClassifyAll=async()=>{
+    const pending=items.filter(it=>it.description&&!it.ncm_code);
+    if(pending.length===0){flash("Todos los items ya tienen NCM");return;}
+    flash(`Clasificando ${pending.length} items...`);
+    const interventions=[];
+    for(const it of pending){
+      try{
+        const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
+        const d=await r.json();
+        if(d?.ncm_code){
+          await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{ncm_code:d.ncm_code,import_duty_rate:d.import_duty_rate||it.import_duty_rate||35,statistics_rate:d.statistics_rate||it.statistics_rate||3,iva_rate:d.iva_rate||it.iva_rate||21}});
+          if(d.intervention?.required)interventions.push(`${it.description.slice(0,30)}: ${d.intervention.types.join("/")}`);
+        }
+      }catch(e){}
+    }
+    await reloadItems();
+    autoSyncBudget();
+    if(interventions.length>0){
+      flash(`✨ ${pending.length} clasificados · ⚠ ${interventions.length} con intervención: ${interventions.join(" | ")}`);
+    } else {
+      flash(`✨ ${pending.length} items clasificados · presupuesto recalculado`);
+    }
+  };
   // Clasificar UN item con preview interactivo (admin ve resultado antes de aplicar)
   const [classifying,setClassifying]=useState(null);   // it.id en curso
   const [ncmPreview,setNcmPreview]=useState({});       // {itemId: {ncm_code,duty,stats,iva,reasoning}}
@@ -465,7 +487,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
       const d=await r.json();
       if(d?.ncm_code){
-        setNcmPreview(p=>({...p,[it.id]:{ncm_code:d.ncm_code,import_duty_rate:d.import_duty_rate||35,statistics_rate:d.statistics_rate||3,iva_rate:d.iva_rate||21,reasoning:d.reasoning||d.ncm_description||""}}));
+        setNcmPreview(p=>({...p,[it.id]:{ncm_code:d.ncm_code,import_duty_rate:d.import_duty_rate||35,statistics_rate:d.statistics_rate||3,iva_rate:d.iva_rate||21,reasoning:d.reasoning||d.ncm_description||"",intervention:d.intervention||{required:false,types:[],reason:null}}}));
       } else flash("❌ La IA no pudo clasificar — cargá manual");
     }catch(e){flash(`❌ ${e.message}`);}
     setClassifying(null);
@@ -840,6 +862,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 2px",textTransform:"uppercase"}}>IVA</p><p style={{fontSize:14,color:"#fff",fontWeight:700,margin:0}}>{p.iva_rate}%</p></div>
           </div>
           {p.reasoning&&<p style={{fontSize:11,color:"rgba(255,255,255,0.6)",margin:"0 0 8px",fontStyle:"italic"}}>{p.reasoning}</p>}
+          {p.intervention?.required&&<div style={{padding:"8px 10px",marginBottom:10,background:"rgba(251,191,36,0.10)",border:"1.5px solid rgba(251,191,36,0.4)",borderRadius:8}}>
+            <p style={{fontSize:11,fontWeight:800,color:"#fbbf24",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.05em"}}>⚠ Posible intervención: {p.intervention.types.join(" · ")}</p>
+            {p.intervention.reason&&<p style={{fontSize:11,color:"rgba(255,255,255,0.7)",margin:0}}>{p.intervention.reason}</p>}
+          </div>}
           <p style={{fontSize:11,color:"#a78bfa",margin:"0 0 10px"}}>💰 Impuestos estimados: <strong style={{color:"#fff"}}>USD {taxes.toFixed(2)}</strong> sobre FOB USD {fobX.toFixed(2)}</p>
           <div style={{display:"flex",gap:8}}>
             <Btn small onClick={()=>applyClassification(it)}>✓ Aplicar y sincronizar presupuesto</Btn>
@@ -2981,6 +3007,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     if(pending.length===0){onFlash("Todos los items ya tienen HS code");return;}
     setClassifyingHs(true);onFlash(`Clasificando ${pending.length} items…`);
     let ok=0;
+    const interventions=[];
     for(const it of pending){
       try{
         const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
@@ -2989,11 +3016,16 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           await dq("flight_invoice_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{hs_code:d.ncm_code}});
           setItems(p=>p.map(x=>x.id===it.id?{...x,hs_code:d.ncm_code}:x));
           ok++;
+          if(d.intervention?.required)interventions.push(`${it.description.slice(0,25)}: ${d.intervention.types.join("/")}`);
         }
       }catch(e){console.error("ncm error",e);}
     }
     setClassifyingHs(false);
-    onFlash(`✨ ${ok}/${pending.length} HS codes asignados`);
+    if(interventions.length>0){
+      onFlash(`✨ ${ok}/${pending.length} HS codes · ⚠ ${interventions.length} con intervención: ${interventions.join(" | ")}`);
+    } else {
+      onFlash(`✨ ${ok}/${pending.length} HS codes asignados`);
+    }
     onReload();
   };
   // --- Editar datos de despacho (costo, peso, carrier, tracking) y recalcular cost_share por op ---
