@@ -1449,6 +1449,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
   const [showDrop,setShowDrop]=useState(false);
   const [existingOp,setExistingOp]=useState(null);
   const [tracking,setTracking]=useState("");
+  const [matchedNotif,setMatchedNotif]=useState(null); // aviso de compra que matchea el tracking
   const [bultos,setBultos]=useState([{weight:"",length:"",width:"",height:"",photo:null,photoPreview:null}]);
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
@@ -1476,6 +1477,26 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
     const trulyOpen=ops.filter(o=>!inFlightIds.has(o.id));
     setExistingOp(trulyOpen[0]||null);
   })();},[clientId,token]);
+
+  // Buscar aviso de compra pendiente que matchee el tracking (debounce 350ms)
+  useEffect(()=>{
+    const code=tracking?.trim();
+    if(!code||code.length<4){setMatchedNotif(null);return;}
+    const tm=setTimeout(async()=>{
+      try{
+        const r=await dq("purchase_notifications",{token,filters:`?status=eq.pending&tracking_code=ilike.${encodeURIComponent(code)}&select=id,tracking_code,origin,shipping_method,description,estimated_packages,client_id,clients(id,client_code,first_name,last_name)&limit=1`});
+        const found=Array.isArray(r)&&r[0]?r[0]:null;
+        setMatchedNotif(found);
+      }catch(e){setMatchedNotif(null);}
+    },350);
+    return ()=>clearTimeout(tm);
+  },[tracking,token]);
+
+  const useMatchedNotif=()=>{
+    if(!matchedNotif)return;
+    setClientId(matchedNotif.client_id);
+    setShowDrop(false);
+  };
 
   const addBulto=()=>setBultos(p=>[...p,{weight:"",length:"",width:"",height:"",photo:null,photoPreview:null}]);
   const rmBulto=(i)=>setBultos(p=>p.filter((_,j)=>j!==i));
@@ -1530,6 +1551,12 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
         if(b.photo){const url=await uploadPackagePhoto(b.photo,token);if(url){body.photo_url=url;body.photo_uploaded_at=new Date().toISOString();}}
         await dq("operation_packages",{method:"POST",token,body});
       }
+      // Si el tracking matchea un aviso de compra del MISMO cliente, marcarlo como received y linkear
+      if(matchedNotif&&matchedNotif.client_id===clientId){
+        try{
+          await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${matchedNotif.id}`,body:{status:"received",operation_id:opId,confirmed_at:new Date().toISOString()}});
+        }catch(e){console.error("link notif error",e);}
+      }
       // Notificar al admin: paquete recibido en depósito
       try{
         const sel=allClients.find(c=>c.id===clientId);
@@ -1537,7 +1564,8 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
         const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
         const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
         if(adminId){
-          await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:`📦 Paquete recibido en depósito`,body:`${clName} · Tracking: ${tracking.trim()} · ${validBultos.length} bulto${validBultos.length>1?"s":""}`,link:null}});
+          const matchSuffix=matchedNotif&&matchedNotif.client_id===clientId?" · ✓ aviso confirmado":"";
+          await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:`📦 Paquete recibido en depósito`,body:`${clName} · Tracking: ${tracking.trim()} · ${validBultos.length} bulto${validBultos.length>1?"s":""}${matchSuffix}`,link:null}});
         }
       }catch(e){console.error("notif error",e);}
       onSaved();
@@ -1580,6 +1608,17 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
       <div style={{flex:1}}><Inp label={t.tracking} value={tracking} onChange={setTracking} placeholder={t.tracking_ph} req/></div>
       <TrackingScanButton onDetected={setTracking} t={t}/>
     </div>
+
+    {matchedNotif&&matchedNotif.client_id!==clientId&&<div style={{padding:"12px 14px",background:"rgba(34,197,94,0.08)",border:"1.5px solid rgba(34,197,94,0.35)",borderRadius:10,marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+      <div style={{flex:1,minWidth:200}}>
+        <p style={{fontSize:13,color:"#22c55e",margin:"0 0 3px",fontWeight:700}}>💡 Aviso de compra encontrado</p>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:0}}>Cliente <strong style={{color:"#fff",fontFamily:"monospace"}}>{matchedNotif.clients?.client_code}</strong> — {matchedNotif.clients?.first_name} {matchedNotif.clients?.last_name}{matchedNotif.description?` · ${matchedNotif.description}`:""}</p>
+      </div>
+      <button type="button" onClick={useMatchedNotif} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:7,border:"1px solid rgba(34,197,94,0.5)",background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",cursor:"pointer"}}>Usar este cliente</button>
+    </div>}
+    {matchedNotif&&matchedNotif.client_id===clientId&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:10,marginBottom:14}}>
+      <p style={{fontSize:12,color:"#22c55e",margin:0,fontWeight:600}}>✓ Match con aviso de compra del cliente — al guardar se confirma automáticamente</p>
+    </div>}
 
     <div style={{marginTop:8,marginBottom:14}}>
       <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 10px",textTransform:"uppercase"}}>{t.bultos} ({bultos.length})</p>
