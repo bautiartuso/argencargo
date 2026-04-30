@@ -1465,8 +1465,15 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
   // se reutiliza — los nuevos bultos se agregan a ella aunque ya esté consolidada
   // (mientras no haya despachado, podemos seguir sumando paquetes).
   useEffect(()=>{if(!clientId||clientId==="unregistered"){setExistingOp(null);return;}(async()=>{
-    const ops=await dq("operations",{token,filters:`?client_id=eq.${clientId}&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&select=id,operation_code,status&order=created_at.desc&limit=1`});
-    setExistingOp(Array.isArray(ops)&&ops[0]?ops[0]:null);
+    // Buscar ops abiertas del cliente
+    const ops=await dq("operations",{token,filters:`?client_id=eq.${clientId}&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&select=id,operation_code,status&order=created_at.desc`});
+    if(!Array.isArray(ops)||ops.length===0){setExistingOp(null);return;}
+    // Filtrar las que YA están en un vuelo activo (preparando/despachado/recibido) — esas no aceptan más bultos
+    const opIds=ops.map(o=>o.id);
+    const fos=await dq("flight_operations",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=operation_id,flights(status)`});
+    const inFlightIds=new Set((Array.isArray(fos)?fos:[]).filter(fo=>fo.flights&&["preparando","despachado","recibido"].includes(fo.flights.status)).map(fo=>fo.operation_id));
+    const trulyOpen=ops.filter(o=>!inFlightIds.has(o.id));
+    setExistingOp(trulyOpen[0]||null);
   })();},[clientId,token]);
 
   const addBulto=()=>setBultos(p=>[...p,{weight:"",length:"",width:"",height:"",photo:null,photoPreview:null}]);
