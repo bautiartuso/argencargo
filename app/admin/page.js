@@ -3487,6 +3487,11 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
               </div>
             </div>
           </div>
+          {proposed.critical_errors?.length>0&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1.5px solid rgba(255,80,80,0.4)",borderRadius:8,marginBottom:12}}>
+            <p style={{fontSize:12,color:"#ff6b6b",margin:"0 0 6px",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.05em"}}>⛔ La IA falló — no se puede aplicar</p>
+            {proposed.critical_errors.map((e,i)=><p key={i} style={{fontSize:11,color:"rgba(255,255,255,0.9)",margin:i>0?"4px 0 0":0}}>{e}</p>)}
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"6px 0 0",fontStyle:"italic"}}>Tocá <strong>Re-comprimir</strong> para que la IA intente de nuevo. Si vuelve a fallar varias veces, ajustá la lista de items a mano (eliminá variantes muy parecidas).</p>
+          </div>}
           {proposed.warnings?.length>0&&<div style={{padding:"8px 12px",background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.3)",borderRadius:6,marginBottom:12}}>
             {proposed.warnings.map((w,i)=><p key={i} style={{fontSize:11,color:"#fbbf24",margin:i>0?"4px 0 0":0}}>⚠ {w}</p>)}
           </div>}
@@ -3496,7 +3501,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
             <button onClick={()=>!applying&&setCompressState(null)} disabled={applying} style={{padding:"8px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:applying?"not-allowed":"pointer"}}>Cancelar</button>
             <button onClick={()=>openCompressFor(compressState.opId,compressState.target)} disabled={applying} style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:applying?"not-allowed":"pointer"}}>🔄 Re-comprimir</button>
-            <button onClick={applyCompress} disabled={applying} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:applying?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:applying?"rgba(255,255,255,0.4)":"#0A1628",cursor:applying?"wait":"pointer"}}>{applying?"Aplicando…":"✓ Aplicar y sincronizar"}</button>
+            <button onClick={applyCompress} disabled={applying||proposed.can_apply===false} title={proposed.can_apply===false?"La IA tuvo errores críticos. Tocá Re-comprimir.":"Aplicar y sincronizar"} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${proposed.can_apply===false?"rgba(255,255,255,0.1)":IC}`,background:applying||proposed.can_apply===false?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:applying||proposed.can_apply===false?"rgba(255,255,255,0.4)":"#0A1628",cursor:applying?"wait":(proposed.can_apply===false?"not-allowed":"pointer")}}>{applying?"Aplicando…":(proposed.can_apply===false?"⛔ Bloqueado por errores":"✓ Aplicar y sincronizar")}</button>
           </div>
         </>}
       </div>

@@ -35,10 +35,12 @@ CÁLCULO DEL GRUPO MERGEADO:
 - hs_code: el HS code común. Si difieren ligeramente (último dígito), usar el más general.
 - source_indices: array de índices (0-based) que se mergearon.
 
-REGLAS TÉCNICAS:
-- Cada índice del input debe aparecer en UN solo source_indices del output.
+REGLAS TÉCNICAS — CRÍTICAS, ROMPER ALGUNA INVALIDA TODO EL OUTPUT:
+- ⚠️ CADA ÍNDICE DEL INPUT DEBE APARECER EN EXACTAMENTE UN GRUPO. Ni más, ni menos. NO DUPLICAR.
+- ⚠️ TODOS LOS ÍNDICES DEBEN ESTAR CUBIERTOS. Si tenés 22 items (índices 0..21), todos los 22 deben aparecer en algún source_indices.
 - Items que NO se mergean con nadie quedan como grupo de 1 con source_indices=[i].
-- El total quantity*price del output debe ser igual al input.
+- ⚠️ EL TOTAL Σ(quantity × unit_price_usd) DEL OUTPUT DEBE SER IGUAL AL DEL INPUT (con tolerancia <$0.50 por redondeo).
+- Antes de devolver: VERIFICÁ MENTALMENTE que cada índice aparezca exactamente 1 vez en algún grupo. Si dudás, revisá tu output.
 - Devolvé SOLO JSON, sin markdown.
 
 FORMATO:
@@ -95,12 +97,28 @@ export async function POST(req) {
     // Nota: NO rechazamos si groups.length > maxItems — el prompt conservador puede dejar
     // más grupos que el ideal cuando los items son muy heterogéneos. Lo marcamos en warnings.
 
-    // Validación de cobertura: cada índice debe aparecer al menos una vez
+    // Validación: cobertura + DUPLICADOS + FOB
     const covered = new Set();
-    groups.forEach(g => g.source_indices.forEach(i => covered.add(i)));
+    const duplicates = new Set(); // índices que aparecen >1 vez
+    groups.forEach(g => g.source_indices.forEach(i => {
+      if (covered.has(i)) duplicates.add(i);
+      covered.add(i);
+    }));
     const missing = items.map((_, i) => i).filter(i => !covered.has(i));
     const newTotalFob = groups.reduce((s, g) => s + g.quantity * g.unit_price_usd, 0);
     const fobDelta = Math.abs(newTotalFob - totalFob);
+    const fobDeltaPct = totalFob > 0 ? (fobDelta / totalFob) * 100 : 0;
+
+    // Errores críticos: bloquean el aplicar (UI no debería dejar)
+    const criticalErrors = [];
+    if (duplicates.size > 0) criticalErrors.push(`❌ La IA duplicó items (índices: ${[...duplicates].join(",")}) → totales mal calculados`);
+    if (missing.length > 0) criticalErrors.push(`❌ ${missing.length} items no fueron mergeados (índices: ${missing.join(",")})`);
+    if (fobDeltaPct > 1.5) criticalErrors.push(`❌ Diferencia de FOB: USD ${fobDelta.toFixed(2)} (${fobDeltaPct.toFixed(1)}%) — la suma no cierra`);
+
+    const warnings = [
+      ...(fobDelta > 0.5 && fobDeltaPct <= 1.5 ? [`Diferencia menor de FOB: USD ${fobDelta.toFixed(2)} (probable redondeo)`] : []),
+      ...(groups.length > maxItems ? [`La IA prefirió dejar ${groups.length} grupos (>${maxItems}) en vez de mergear productos heterogéneos.`] : []),
+    ];
 
     return Response.json({
       ok: true,
@@ -110,11 +128,9 @@ export async function POST(req) {
       original_fob: Number(totalFob.toFixed(2)),
       compressed_fob: Number(newTotalFob.toFixed(2)),
       fob_delta: Number(fobDelta.toFixed(2)),
-      warnings: [
-        ...(missing.length > 0 ? [`${missing.length} items no fueron mergeados (índices: ${missing.join(",")})`] : []),
-        ...(fobDelta > 0.5 ? [`Diferencia de FOB: USD ${fobDelta.toFixed(2)} (revisar)`] : []),
-        ...(groups.length > maxItems ? [`La IA prefirió dejar ${groups.length} grupos (>${maxItems}) en vez de mergear productos heterogéneos. Podés ajustar a mano si necesitás llegar al límite.`] : []),
-      ],
+      critical_errors: criticalErrors,
+      warnings,
+      can_apply: criticalErrors.length === 0,
     });
   } catch (e) {
     console.error("compress-items error:", e);
