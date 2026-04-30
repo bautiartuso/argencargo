@@ -117,15 +117,10 @@ export async function POST(req) {
     const override = checkOverride(description);
     if (override) return Response.json(override);
 
-    let claudeError = null;
     const claudeResult = await classifyWithClaude(description).catch(e => {
-      claudeError = { message: e.message, status: e.status, error: e.error };
       console.error("Claude error:", e.message);
       return null;
     });
-    if (req.url?.includes("debug=1") && claudeError) {
-      return Response.json({ debug: true, claudeError });
-    }
 
     if (claudeResult?.ncm_code) {
       const results = await searchDB(claudeResult.ncm_code);
