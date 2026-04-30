@@ -454,7 +454,30 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     }
     await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash(rest.ncm_code?`Producto guardado · NCM ${rest.ncm_code}`:"Producto guardado");autoSyncBudget();await reloadItems();};
   const addItem=async()=>{await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:"Nuevo producto",quantity:1,unit_price_usd:0}});await reloadItems();flash("Producto agregado");autoSyncBudget();};
-  const autoClassifyAll=async()=>{const pending=items.filter(it=>it.description&&!it.ncm_code);if(pending.length===0){flash("Todos los items ya tienen NCM");return;}flash(`Clasificando ${pending.length} items...`);for(const it of pending){try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});const d=await r.json();if(d?.ncm_code){await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{ncm_code:d.ncm_code,import_duty_rate:d.import_duty_rate||it.import_duty_rate||35,statistics_rate:d.statistics_rate||it.statistics_rate||3,iva_rate:d.iva_rate||it.iva_rate||21}});}}catch(e){}}await reloadItems();flash(`✨ ${pending.length} items clasificados`);};
+  const autoClassifyAll=async()=>{const pending=items.filter(it=>it.description&&!it.ncm_code);if(pending.length===0){flash("Todos los items ya tienen NCM");return;}flash(`Clasificando ${pending.length} items...`);for(const it of pending){try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});const d=await r.json();if(d?.ncm_code){await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{ncm_code:d.ncm_code,import_duty_rate:d.import_duty_rate||it.import_duty_rate||35,statistics_rate:d.statistics_rate||it.statistics_rate||3,iva_rate:d.iva_rate||it.iva_rate||21}});}}catch(e){}}await reloadItems();autoSyncBudget();flash(`✨ ${pending.length} items clasificados · presupuesto recalculado`);};
+  // Clasificar UN item con preview interactivo (admin ve resultado antes de aplicar)
+  const [classifying,setClassifying]=useState(null);   // it.id en curso
+  const [ncmPreview,setNcmPreview]=useState({});       // {itemId: {ncm_code,duty,stats,iva,reasoning}}
+  const classifyOne=async(it)=>{
+    if(!it.description||!it.description.trim()){flash("Cargá descripción primero");return;}
+    setClassifying(it.id);
+    try{
+      const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
+      const d=await r.json();
+      if(d?.ncm_code){
+        setNcmPreview(p=>({...p,[it.id]:{ncm_code:d.ncm_code,import_duty_rate:d.import_duty_rate||35,statistics_rate:d.statistics_rate||3,iva_rate:d.iva_rate||21,reasoning:d.reasoning||d.ncm_description||""}}));
+      } else flash("❌ La IA no pudo clasificar — cargá manual");
+    }catch(e){flash(`❌ ${e.message}`);}
+    setClassifying(null);
+  };
+  const applyClassification=async(it)=>{
+    const p=ncmPreview[it.id];if(!p)return;
+    await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{ncm_code:p.ncm_code,import_duty_rate:p.import_duty_rate,statistics_rate:p.statistics_rate,iva_rate:p.iva_rate}});
+    setNcmPreview(prev=>{const n={...prev};delete n[it.id];return n;});
+    await reloadItems();
+    autoSyncBudget();
+    flash(`✓ ${p.ncm_code} aplicado · presupuesto sincronizado`);
+  };
   const delItem=async(id)=>{await dq("operation_items",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadItems();flash("Producto eliminado");autoSyncBudget();};
 
   const reloadPkgs=async()=>{const pk=await dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`});setPkgs(Array.isArray(pk)?pk:[]);};
@@ -799,8 +822,30 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Producto {i+1} — FOB: USD {fob.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
             {it.ncm_code?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.25)",fontFamily:"monospace",fontWeight:700}}>NCM {it.ncm_code}</span>:it.description?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.25)",fontWeight:700}}>SIN NCM</span>:null}
           </div>
-          <div style={{display:"flex",gap:6}}><Btn onClick={()=>saveItem(it)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delItem(it.id)} small variant="danger">Eliminar</Btn></div>
+          <div style={{display:"flex",gap:6}}>
+            {isBlanco&&!isGI&&it.description&&<Btn onClick={()=>classifyOne(it)} small variant="secondary" disabled={classifying===it.id}>{classifying===it.id?"⏳…":"🔍 Clasificar NCM (IA)"}</Btn>}
+            <Btn onClick={()=>saveItem(it)} small variant="secondary">Guardar</Btn>
+            <Btn onClick={()=>delItem(it.id)} small variant="danger">Eliminar</Btn>
+          </div>
         </div>
+        {ncmPreview[it.id]&&(()=>{const p=ncmPreview[it.id];const fobX=Number(it.unit_price_usd||0)*Number(it.quantity||1);const taxes=fobX*(p.import_duty_rate/100+p.statistics_rate/100)+fobX*(1+p.import_duty_rate/100+p.statistics_rate/100)*(p.iva_rate/100);return <div style={{marginBottom:12,padding:"12px 14px",background:"linear-gradient(135deg,rgba(167,139,250,0.10),rgba(96,165,250,0.05))",border:"1.5px solid rgba(167,139,250,0.35)",borderRadius:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:6}}>
+            <span style={{fontSize:11,fontWeight:800,color:"#a78bfa",textTransform:"uppercase",letterSpacing:"0.05em"}}>✨ La IA clasificó este producto</span>
+            <button onClick={()=>setNcmPreview(prev=>{const n={...prev};delete n[it.id];return n;})} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:18,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",gap:10,marginBottom:8,fontSize:12}}>
+            <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 2px",textTransform:"uppercase"}}>NCM</p><p style={{fontSize:14,color:"#fff",fontFamily:"monospace",fontWeight:700,margin:0}}>{p.ncm_code}</p></div>
+            <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 2px",textTransform:"uppercase"}}>DIE (Derechos)</p><p style={{fontSize:14,color:"#fff",fontWeight:700,margin:0}}>{p.import_duty_rate}%</p></div>
+            <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 2px",textTransform:"uppercase"}}>TE (Estadística)</p><p style={{fontSize:14,color:"#fff",fontWeight:700,margin:0}}>{p.statistics_rate}%</p></div>
+            <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 2px",textTransform:"uppercase"}}>IVA</p><p style={{fontSize:14,color:"#fff",fontWeight:700,margin:0}}>{p.iva_rate}%</p></div>
+          </div>
+          {p.reasoning&&<p style={{fontSize:11,color:"rgba(255,255,255,0.6)",margin:"0 0 8px",fontStyle:"italic"}}>{p.reasoning}</p>}
+          <p style={{fontSize:11,color:"#a78bfa",margin:"0 0 10px"}}>💰 Impuestos estimados: <strong style={{color:"#fff"}}>USD {taxes.toFixed(2)}</strong> sobre FOB USD {fobX.toFixed(2)}</p>
+          <div style={{display:"flex",gap:8}}>
+            <Btn small onClick={()=>applyClassification(it)}>✓ Aplicar y sincronizar presupuesto</Btn>
+            <Btn small variant="secondary" onClick={()=>classifyOne(it)}>🔄 Re-clasificar</Btn>
+          </div>
+        </div>;})()}
         <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"0 12px"}}>
           <Inp label="Descripción" value={it.description} onChange={v=>chItem(i,"description",v)} small/>
           <Inp label="Precio unit. USD" type="number" value={it.unit_price_usd} onChange={v=>chItem(i,"unit_price_usd",v)} step="0.01" small/>
