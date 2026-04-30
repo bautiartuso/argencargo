@@ -3223,20 +3223,40 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       </div>
       <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"12px 0 8px",textTransform:"uppercase"}}>Operaciones en este vuelo</p>
       <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px",marginBottom:16}}>
-        {opsUnique.map(o=>{const fo=flightOps.find(x=>x.operation_id===o.id);const pkgs=depositPkgs.filter(p=>p.operation_id===o.id);const w=pkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);return <div key={o.id} style={{padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:pkgs.length>0?6:0}}>
-            <span style={{fontSize:13,color:"#fff"}}><strong style={{fontFamily:"monospace"}}>{o.operation_code}</strong> — {o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
-            <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{pkgs.length} bultos · {w.toFixed(2)} kg{fo?.cost_share_usd?` · ${usd(fo.cost_share_usd)}`:""}</span>
-          </div>
-          {pkgs.length>0&&<div style={{marginLeft:16,fontSize:11,color:"rgba(255,255,255,0.4)"}}>
-            {pkgs.map(p=><div key={p.id} style={{display:"flex",gap:12,padding:"2px 0"}}>
-              <span>#{p.package_number}</span>
-              <span>{p.national_tracking||"—"}</span>
-              <span>{p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—"}</span>
-              {p.length_cm&&p.width_cm&&p.height_cm?<span>{p.length_cm}×{p.width_cm}×{p.height_cm} cm</span>:null}
-            </div>)}
-          </div>}
-        </div>;})}
+        {opsUnique.map(o=>{
+          const fo=flightOps.find(x=>x.operation_id===o.id);
+          const pkgs=depositPkgs.filter(p=>p.operation_id===o.id);
+          // Divisor volumétrico del agente que creó la op (no del agente del vuelo)
+          const opAgent=signups.find(s=>s.auth_user_id===o.created_by_agent_id);
+          const opDiv=Number(opAgent?.volumetric_divisor)||5000;
+          let totBruto=0,totFact=0;
+          const pkgRows=pkgs.map(p=>{
+            const q=Number(p.quantity||1);
+            const gw=Number(p.gross_weight_kg||0);
+            const l=Number(p.length_cm||0),wd=Number(p.width_cm||0),h=Number(p.height_cm||0);
+            const bruto=gw*q;
+            const vol=l&&wd&&h?((l*wd*h)/opDiv)*q:0;
+            const fact=Math.max(bruto,vol);
+            totBruto+=bruto;totFact+=fact;
+            return {p,q,bruto,vol,fact};
+          });
+          return <div key={o.id} style={{padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:pkgs.length>0?6:0,flexWrap:"wrap",gap:6}}>
+              <span style={{fontSize:13,color:"#fff"}}><strong style={{fontFamily:"monospace"}}>{o.operation_code}</strong> — {o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
+              <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{pkgs.length} bultos · bruto <strong style={{color:"rgba(255,255,255,0.75)"}}>{totBruto.toFixed(2)} kg</strong> · facturable <strong style={{color:IC}}>{totFact.toFixed(2)} kg</strong>{fo?.cost_share_usd?` · ${usd(fo.cost_share_usd)}`:""}</span>
+            </div>
+            {pkgs.length>0&&<div style={{marginLeft:16,fontSize:11,color:"rgba(255,255,255,0.4)"}}>
+              {pkgRows.map(({p,bruto,vol,fact})=><div key={p.id} style={{display:"flex",gap:12,padding:"2px 0",flexWrap:"wrap"}}>
+                <span style={{minWidth:30}}>#{p.package_number}</span>
+                <span style={{minWidth:120}}>{p.national_tracking||"—"}</span>
+                {p.length_cm&&p.width_cm&&p.height_cm?<span style={{minWidth:90}}>{p.length_cm}×{p.width_cm}×{p.height_cm} cm</span>:<span style={{minWidth:90}}>—</span>}
+                <span style={{minWidth:90}}>bruto: {bruto>0?`${bruto.toFixed(2)} kg`:"—"}</span>
+                <span style={{minWidth:90}}>vol: {vol>0?`${vol.toFixed(2)} kg`:"—"}</span>
+                <span style={{color:fact>0?IC:"rgba(255,255,255,0.3)",fontWeight:600}}>facturable: {fact>0?`${fact.toFixed(2)} kg`:"—"}</span>
+              </div>)}
+            </div>}
+          </div>;
+        })}
       </div>
     </Card>
     <Card title="Factura de exportación (destinatario + items)" actions={<div style={{display:"flex",gap:8}}><Btn small variant="secondary" onClick={printInvoice} disabled={items.length===0}>📄 Ver / Imprimir</Btn></div>}>
