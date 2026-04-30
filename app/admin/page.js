@@ -3173,9 +3173,12 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   };
   // Eliminar vuelo (solo si está "preparando" — las ops vuelven al depósito)
   const [deletingFlight,setDeletingFlight]=useState(false);
-  const deleteFlight=async()=>{
+  const [showDeleteFlightModal,setShowDeleteFlightModal]=useState(false);
+  const requestDeleteFlight=()=>{
     if(flight.status!=="preparando"){onFlash("Solo se pueden eliminar vuelos en estado 'preparando'");return;}
-    if(!confirm(`¿Eliminar vuelo ${flight.flight_code}?\n\n· Las ${flightOps.length} operaciones vuelven al depósito (status 'en_deposito_origen').\n· Se borran los items de factura cargados.\n· Se borra el vuelo.\n\nEsta acción no se puede deshacer.`))return;
+    setShowDeleteFlightModal(true);
+  };
+  const deleteFlight=async()=>{
     setDeletingFlight(true);
     try{
       // 1. Devolver cada op al depósito (status en_deposito_origen, consolidación se mantiene)
@@ -3188,6 +3191,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       await dq("flight_operations",{method:"DELETE",token,filters:`?flight_id=eq.${flight.id}`});
       // 4. Borrar el vuelo
       await dq("flights",{method:"DELETE",token,filters:`?id=eq.${flight.id}`});
+      setShowDeleteFlightModal(false);
       onFlash(`✓ Vuelo ${flight.flight_code} eliminado · ${flightOps.length} ops devueltas al depósito`);
       onReload();
       onBack();
@@ -3257,7 +3261,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:8,flexWrap:"wrap"}}>
       <button onClick={onBack} style={{fontSize:12,color:"rgba(255,255,255,0.55)",background:"transparent",border:"1px solid rgba(255,255,255,0.08)",cursor:"pointer",fontWeight:600,padding:"6px 12px",borderRadius:8,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.color=GOLD_LIGHT;e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";}} onMouseLeave={e=>{e.currentTarget.style.color="rgba(255,255,255,0.55)";e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";}}>← Volver a vuelos</button>
-      {flight.status==="preparando"&&<button onClick={deleteFlight} disabled={deletingFlight} title="Borra el vuelo y devuelve las ops al depósito" style={{fontSize:12,color:"#ff6b6b",background:"rgba(255,80,80,0.08)",border:"1px solid rgba(255,80,80,0.3)",cursor:deletingFlight?"wait":"pointer",fontWeight:600,padding:"6px 12px",borderRadius:8,opacity:deletingFlight?0.6:1}}>{deletingFlight?"Eliminando…":"🗑 Eliminar vuelo"}</button>}
+      {flight.status==="preparando"&&<button onClick={requestDeleteFlight} disabled={deletingFlight} title="Borra el vuelo y devuelve las ops al depósito" style={{fontSize:12,color:"#ff6b6b",background:"rgba(255,80,80,0.08)",border:"1px solid rgba(255,80,80,0.3)",cursor:deletingFlight?"wait":"pointer",fontWeight:600,padding:"6px 12px",borderRadius:8,opacity:deletingFlight?0.6:1}}>{deletingFlight?"Eliminando…":"🗑 Eliminar vuelo"}</button>}
     </div>
     <Card title={`${flight.flight_code} — ${a?(a.first_name+" "+(a.last_name||"")):""}`}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
@@ -3506,6 +3510,27 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         </>}
       </div>
     </div>;})()}
+    {showDeleteFlightModal&&<div onClick={()=>!deletingFlight&&setShowDeleteFlightModal(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(255,80,80,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:480,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>🗑 Eliminar vuelo {flight.flight_code}</h3>
+          <button onClick={()=>!deletingFlight&&setShowDeleteFlightModal(false)} disabled={deletingFlight} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:deletingFlight?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
+        </div>
+        <div style={{padding:"12px 14px",background:"rgba(255,80,80,0.06)",border:"1px solid rgba(255,80,80,0.2)",borderRadius:10,marginBottom:14}}>
+          <p style={{fontSize:12,fontWeight:700,color:"#ff6b6b",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>⚠ Esta acción no se puede deshacer</p>
+          <ul style={{margin:0,paddingLeft:18,listStyle:"disc"}}>
+            <li style={{fontSize:13,color:"rgba(255,255,255,0.85)",marginBottom:4}}>Las <strong style={{color:"#fff"}}>{flightOps.length} operaciones</strong> vuelven al depósito</li>
+            <li style={{fontSize:13,color:"rgba(255,255,255,0.85)",marginBottom:4}}>Se borran los <strong style={{color:"#fff"}}>items de factura</strong> ya cargados</li>
+            <li style={{fontSize:13,color:"rgba(255,255,255,0.85)",marginBottom:0}}>Se elimina el vuelo</li>
+          </ul>
+        </div>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"0 0 14px"}}>Los <strong style={{color:"#fff"}}>bultos de cada op no se tocan</strong> — quedan donde están. Solo cambia el status de las ops.</p>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>!deletingFlight&&setShowDeleteFlightModal(false)} disabled={deletingFlight} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:deletingFlight?"not-allowed":"pointer"}}>Cancelar</button>
+          <button onClick={deleteFlight} disabled={deletingFlight} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,80,80,0.5)",background:deletingFlight?"rgba(255,255,255,0.05)":"linear-gradient(135deg,#ff6b6b,#ef4444)",color:deletingFlight?"rgba(255,255,255,0.4)":"#fff",cursor:deletingFlight?"wait":"pointer"}}>{deletingFlight?"Eliminando…":"🗑 Sí, eliminar vuelo"}</button>
+        </div>
+      </div>
+    </div>}
   </div>;
 }
 
