@@ -74,11 +74,17 @@ FORMATO DE SALIDA (JSON estricto, sin markdown):
 }`;
 
 async function classifyWithClaude(description) {
-  const text = await callClaudeText({
-    system: SYSTEM_PROMPT,
-    user: `Clasificá: "${description}"`,
-    max_tokens: 500,
-  });
+  let text;
+  try {
+    text = await callClaudeText({
+      system: SYSTEM_PROMPT,
+      user: `Clasificá: "${description}"`,
+      max_tokens: 500,
+    });
+  } catch (e) {
+    console.error("classifyWithClaude FULL ERROR:", JSON.stringify({ message: e.message, status: e.status, error: e.error, type: e.type, name: e.name, stack: e.stack?.slice(0, 500) }));
+    throw e;
+  }
   // Parse JSON (puede venir con o sin code fences)
   let json;
   try {
