@@ -1143,7 +1143,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const r=await fetch(`/api/tracking/sync?operation_id=${op.id}`,{headers:{Authorization:`Bearer ${token}`}});const d=await r.json();
           if(d.error){alert("Error: "+d.error);return;}
           const first=d.results?.[0];if(first?.error)alert("Error carrier: "+first.error);
-          else if(first?.inserted!==undefined)flash(`✓ ${first.inserted} eventos sincronizados vía ${first.carrier}`);
+          else if(first?.inserted!==undefined){
+            // Refrescar también el state local de la op para que ETA/status actualizados aparezcan
+            const fresh=await dq("operations",{token,filters:`?id=eq.${op.id}&select=*,clients(first_name,last_name,client_code)`});
+            if(Array.isArray(fresh)&&fresh[0])setOp(fresh[0]);
+            flash(`✓ ${first.inserted} eventos sincronizados${first.eta_patch?` · ETA: ${first.eta_patch}`:""}`);
+          }
           else if(first?.skipped)alert(first.skipped);
           await reloadEvents();
         }}>↻ Sincronizar tracking</Btn>
