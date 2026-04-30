@@ -28,25 +28,24 @@ QUÉ NO MERGEAR — JAMÁS:
 - Productos de función/uso totalmente diferente aunque compartan HS code
 - Si el merge requiere una descripción genérica que pierde info útil para el cliente o aduana
 
-CÁLCULO DEL GRUPO MERGEADO:
+QUÉ DEVOLVER POR GRUPO:
 - description: en INGLÉS, descriptiva pero específica. NO usar términos vagos como "various items" o "mixed products".
-- quantity: SUMA de las cantidades del grupo.
-- unit_price_usd: PROMEDIO PONDERADO. (sum of quantity*price) / sum of quantity. Redondear a 2 decimales.
 - hs_code: el HS code común. Si difieren ligeramente (último dígito), usar el más general.
-- source_indices: array de índices (0-based) que se mergearon.
+- source_indices: array de índices (0-based) de los items que se mergean en este grupo.
 
-REGLAS TÉCNICAS — CRÍTICAS, ROMPER ALGUNA INVALIDA TODO EL OUTPUT:
+⚠️ NO CALCULES quantity NI unit_price_usd. Esos los calcula el código exactamente desde los items originales. Solo decidí agrupación.
+
+REGLAS TÉCNICAS — CRÍTICAS:
 - ⚠️ CADA ÍNDICE DEL INPUT DEBE APARECER EN EXACTAMENTE UN GRUPO. Ni más, ni menos. NO DUPLICAR.
-- ⚠️ TODOS LOS ÍNDICES DEBEN ESTAR CUBIERTOS. Si tenés 22 items (índices 0..21), todos los 22 deben aparecer en algún source_indices.
+- ⚠️ TODOS LOS ÍNDICES DEBEN ESTAR CUBIERTOS. Si tenés 22 items (índices 0..21), todos deben aparecer en algún source_indices.
 - Items que NO se mergean con nadie quedan como grupo de 1 con source_indices=[i].
-- ⚠️ EL TOTAL Σ(quantity × unit_price_usd) DEL OUTPUT DEBE SER IGUAL AL DEL INPUT (con tolerancia <$0.50 por redondeo).
-- Antes de devolver: VERIFICÁ MENTALMENTE que cada índice aparezca exactamente 1 vez en algún grupo. Si dudás, revisá tu output.
+- Antes de devolver: VERIFICÁ MENTALMENTE que cada índice aparezca exactamente 1 vez. Si dudás, revisá tu output.
 - Devolvé SOLO JSON, sin markdown.
 
 FORMATO:
 {
   "groups": [
-    {"description": "...", "quantity": N, "unit_price_usd": N, "hs_code": "...", "source_indices": [...]}
+    {"description": "...", "hs_code": "...", "source_indices": [...]}
   ]
 }`;
 
@@ -81,18 +80,26 @@ export async function POST(req) {
       return Response.json({ ok: false, error: "invalid JSON from model", raw: text.slice(0, 500) }, { status: 500 });
     }
 
+    // CALCULAMOS quantity + unit_price_usd EN CÓDIGO desde los items originales
+    // (no confiamos en lo que devuelve la IA porque suele errar en el promedio ponderado).
+    // La IA solo decide cómo agrupar (description + hs_code + source_indices).
     const groups = Array.isArray(parsed.groups) ? parsed.groups.filter(g =>
       g && typeof g.description === "string" && g.description.trim() &&
-      typeof g.quantity === "number" && g.quantity > 0 &&
-      typeof g.unit_price_usd === "number" && g.unit_price_usd > 0 &&
-      Array.isArray(g.source_indices)
-    ).map(g => ({
-      description: g.description.trim(),
-      quantity: Math.round(g.quantity),
-      unit_price_usd: Number(g.unit_price_usd.toFixed(2)),
-      hs_code: typeof g.hs_code === "string" && g.hs_code.trim() ? g.hs_code.trim() : null,
-      source_indices: g.source_indices.filter(x => Number.isInteger(x) && x >= 0 && x < items.length),
-    })) : [];
+      Array.isArray(g.source_indices) && g.source_indices.length > 0
+    ).map(g => {
+      const validIndices = g.source_indices.filter(x => Number.isInteger(x) && x >= 0 && x < items.length);
+      const groupItems = validIndices.map(i => items[i]);
+      const totalQty = groupItems.reduce((s, it) => s + Number(it.quantity || 0), 0);
+      const totalAmount = groupItems.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price_usd || 0), 0);
+      const unit_price_usd = totalQty > 0 ? Number((totalAmount / totalQty).toFixed(4)) : 0;
+      return {
+        description: g.description.trim(),
+        quantity: totalQty,
+        unit_price_usd,
+        hs_code: typeof g.hs_code === "string" && g.hs_code.trim() ? g.hs_code.trim() : null,
+        source_indices: validIndices,
+      };
+    }).filter(g => g.quantity > 0) : [];
 
     // Nota: NO rechazamos si groups.length > maxItems — el prompt conservador puede dejar
     // más grupos que el ideal cuando los items son muy heterogéneos. Lo marcamos en warnings.
