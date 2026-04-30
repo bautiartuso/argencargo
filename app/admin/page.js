@@ -454,27 +454,42 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     }
     await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash(rest.ncm_code?`Producto guardado · NCM ${rest.ncm_code}`:"Producto guardado");autoSyncBudget();await reloadItems();};
   const addItem=async()=>{await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:"Nuevo producto",quantity:1,unit_price_usd:0}});await reloadItems();flash("Producto agregado");autoSyncBudget();};
+  // Clasificar TODOS los items: si no tienen NCM → IA. Si tienen NCM pero no tasas → llenar tasas con IA. Si tienen todo → saltear.
+  const [classifyingAll,setClassifyingAll]=useState(false);
   const autoClassifyAll=async()=>{
-    const pending=items.filter(it=>it.description&&!it.ncm_code);
-    if(pending.length===0){flash("Todos los items ya tienen NCM");return;}
-    flash(`Clasificando ${pending.length} items...`);
-    const interventions=[];
+    // Items que necesitan algo: o no tienen NCM, o no tienen tasas
+    const pending=items.filter(it=>it.description&&it.description.trim()&&(
+      !it.ncm_code||!it.import_duty_rate||!it.statistics_rate||!it.iva_rate
+    ));
+    if(pending.length===0){flash("Todos los items ya tienen NCM y tasas");return;}
+    setClassifyingAll(true);
+    flash(`Clasificando ${pending.length} items con IA…`);
+    const interventions=[];let ok=0;
     for(const it of pending){
       try{
         const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
         const d=await r.json();
         if(d?.ncm_code){
-          await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{ncm_code:d.ncm_code,import_duty_rate:d.import_duty_rate||it.import_duty_rate||35,statistics_rate:d.statistics_rate||it.statistics_rate||3,iva_rate:d.iva_rate||it.iva_rate||21}});
+          // Si el item ya tiene NCM cargado a mano (no vacío), respetarlo y solo llenar tasas
+          const finalNcm=it.ncm_code&&it.ncm_code.trim()?it.ncm_code:d.ncm_code;
+          await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{
+            ncm_code:finalNcm,
+            import_duty_rate:d.import_duty_rate||it.import_duty_rate||35,
+            statistics_rate:d.statistics_rate||it.statistics_rate||3,
+            iva_rate:d.iva_rate||it.iva_rate||21,
+          }});
+          ok++;
           if(d.intervention?.required)interventions.push(`${it.description.slice(0,30)}: ${d.intervention.types.join("/")}`);
         }
-      }catch(e){}
+      }catch(e){console.error("classify error",e);}
     }
     await reloadItems();
     autoSyncBudget();
+    setClassifyingAll(false);
     if(interventions.length>0){
-      flash(`✨ ${pending.length} clasificados · ⚠ ${interventions.length} con intervención: ${interventions.join(" | ")}`);
+      flash(`✨ ${ok}/${pending.length} clasificados · ⚠ ${interventions.length} con intervención: ${interventions.join(" | ")}`);
     } else {
-      flash(`✨ ${pending.length} items clasificados · presupuesto recalculado`);
+      flash(`✨ ${ok}/${pending.length} clasificados · DIE/TE/IVA + presupuesto rellenados`);
     }
   };
   // Clasificar UN item con preview interactivo (admin ve resultado antes de aplicar)
@@ -837,7 +852,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {!hasStoredBudget&&<div style={{display:"flex",gap:12,marginTop:12}}><Btn onClick={async()=>{setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar,shipping_cost:Number(op.shipping_cost||0),shipping_to_door:op.shipping_to_door||false,total_services:0}});setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}));flash("Presupuesto sincronizado");setSaving(false);}} disabled={saving}>{saving?"Guardando...":"Sincronizar presupuesto"}</Btn></div>}
       </Card>;})()}
 
-    {tab==="items"&&<Card title="Productos" actions={<div style={{display:"flex",gap:6}}>{items.some(it=>it.description&&!it.ncm_code)&&<Btn onClick={autoClassifyAll} small variant="secondary">✨ Auto-NCM</Btn>}<Btn onClick={addItem} small>+ Agregar producto</Btn></div>}>
+    {tab==="items"&&<Card title="Productos" actions={<div style={{display:"flex",gap:6}}>{items.some(it=>it.description&&it.description.trim()&&(!it.ncm_code||!it.import_duty_rate||!it.statistics_rate||!it.iva_rate))&&<button onClick={autoClassifyAll} disabled={classifyingAll} title="Para cada producto: clasifica NCM si falta, y rellena DIE/TE/IVA con la base arancelaria. Sincroniza presupuesto al final." style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.12)",color:"#a78bfa",cursor:classifyingAll?"wait":"pointer",opacity:classifyingAll?0.6:1}}>{classifyingAll?"⏳ Clasificando…":"✨ Clasificar todos los NCM (IA)"}</button>}<Btn onClick={addItem} small>+ Agregar producto</Btn></div>}>
       {items.map((it,i)=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);return <div key={it.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:10,gap:10,flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
@@ -845,12 +860,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             {it.ncm_code?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.25)",fontFamily:"monospace",fontWeight:700}}>NCM {it.ncm_code}</span>:it.description?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.25)",fontWeight:700}}>SIN NCM</span>:null}
           </div>
           <div style={{display:"flex",gap:6}}>
-            {isBlanco&&!isGI&&it.description&&<Btn onClick={()=>classifyOne(it)} small variant="secondary" disabled={classifying===it.id}>{classifying===it.id?"⏳…":"🔍 Clasificar NCM (IA)"}</Btn>}
             <Btn onClick={()=>saveItem(it)} small variant="secondary">Guardar</Btn>
             <Btn onClick={()=>delItem(it.id)} small variant="danger">Eliminar</Btn>
           </div>
         </div>
-        {ncmPreview[it.id]&&(()=>{const p=ncmPreview[it.id];const fobX=Number(it.unit_price_usd||0)*Number(it.quantity||1);const taxes=fobX*(p.import_duty_rate/100+p.statistics_rate/100)+fobX*(1+p.import_duty_rate/100+p.statistics_rate/100)*(p.iva_rate/100);return <div style={{marginBottom:12,padding:"12px 14px",background:"linear-gradient(135deg,rgba(167,139,250,0.10),rgba(96,165,250,0.05))",border:"1.5px solid rgba(167,139,250,0.35)",borderRadius:10}}>
+        {ncmPreview[it.id]&&(()=>{const p=ncmPreview[it.id];return <div style={{marginBottom:12,padding:"12px 14px",background:"linear-gradient(135deg,rgba(167,139,250,0.10),rgba(96,165,250,0.05))",border:"1.5px solid rgba(167,139,250,0.35)",borderRadius:10}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:6}}>
             <span style={{fontSize:11,fontWeight:800,color:"#a78bfa",textTransform:"uppercase",letterSpacing:"0.05em"}}>✨ La IA clasificó este producto</span>
             <button onClick={()=>setNcmPreview(prev=>{const n={...prev};delete n[it.id];return n;})} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:18,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
