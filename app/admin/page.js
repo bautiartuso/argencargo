@@ -4228,37 +4228,68 @@ function AgentsPanel({token}){
 function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
   const [items,setItems]=useState([]);
   const [lo,setLo]=useState(true);
-  const [filter,setFilter]=useState("pending"); // pending | received | cancelled | all
+  const [filter,setFilter]=useState("open"); // open(pending+partial) | pending | partial | received | cancelled | all
+  const [filterChannel,setFilterChannel]=useState("all"); // all | aereo | maritimo
+  const [filterOrigin,setFilterOrigin]=useState("all"); // all | china | usa
   const [search,setSearch]=useState("");
-  const [confirmAction,setConfirmAction]=useState(null); // {type: 'confirm'|'cancel', notif}
+  const [confirmAction,setConfirmAction]=useState(null); // {type, notif}
+  const [mergeAction,setMergeAction]=useState(null); // {clientId, notifs}
   const [working,setWorking]=useState(false);
-  const load=async()=>{setLo(true);const r=await dq("purchase_notifications",{token,filters:"?select=*,clients(client_code,first_name,last_name,whatsapp,auth_user_id),operations(operation_code)&order=created_at.desc"});setItems(Array.isArray(r)?r:[]);setLo(false);};
+  const load=async()=>{setLo(true);const r=await dq("purchase_notifications",{token,filters:"?select=*,trackings:purchase_notification_trackings(id,tracking_code,received_at),clients(client_code,first_name,last_name,whatsapp,auth_user_id),operations(operation_code)&order=created_at.desc"});setItems(Array.isArray(r)?r:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
-  const filteredByStatus=filter==="all"?items:items.filter(i=>i.status===filter);
-  const filtered=search?filteredByStatus.filter(n=>{const q=search.toLowerCase();return n.tracking_code?.toLowerCase().includes(q)||n.clients?.client_code?.toLowerCase().includes(q)||`${n.clients?.first_name||""} ${n.clients?.last_name||""}`.toLowerCase().includes(q)||n.description?.toLowerCase().includes(q);}):filteredByStatus;
-  const counts={pending:items.filter(i=>i.status==="pending").length,received:items.filter(i=>i.status==="received").length,cancelled:items.filter(i=>i.status==="cancelled").length,all:items.length};
+
+  // Filtros combinados
+  const filteredByStatus=filter==="open"?items.filter(i=>["pending","partial"].includes(i.status)):filter==="all"?items:items.filter(i=>i.status===filter);
+  const filteredByChannel=filterChannel==="all"?filteredByStatus:filteredByStatus.filter(i=>i.shipping_method===filterChannel);
+  const filteredByOrigin=filterOrigin==="all"?filteredByChannel:filteredByChannel.filter(i=>i.origin===filterOrigin);
+  const filtered=search?filteredByOrigin.filter(n=>{const q=search.toLowerCase();const trks=Array.isArray(n.trackings)?n.trackings.map(t=>t.tracking_code).join(" "):"";return trks.toLowerCase().includes(q)||n.tracking_code?.toLowerCase().includes(q)||n.clients?.client_code?.toLowerCase().includes(q)||`${n.clients?.first_name||""} ${n.clients?.last_name||""}`.toLowerCase().includes(q)||n.description?.toLowerCase().includes(q);}):filteredByOrigin;
+
+  const counts={pending:items.filter(i=>i.status==="pending").length,partial:items.filter(i=>i.status==="partial").length,received:items.filter(i=>i.status==="received").length,cancelled:items.filter(i=>i.status==="cancelled").length,all:items.length};
+  counts.open=counts.pending+counts.partial;
+
+  // Detectar duplicados sospechosos: mismo cliente + mismo origen + misma modalidad, en estado abierto, < 30 días
+  const dupGroups=(()=>{
+    const open=items.filter(i=>["pending","partial"].includes(i.status));
+    const groups={};
+    for(const n of open){
+      const d=new Date(n.created_at);
+      if((Date.now()-d.getTime())>30*24*60*60*1000)continue;
+      const key=`${n.client_id}|${n.origin}|${n.shipping_method}`;
+      if(!groups[key])groups[key]=[];
+      groups[key].push(n);
+    }
+    return Object.values(groups).filter(g=>g.length>=2);
+  })();
+  const dupNotifIds=new Set(dupGroups.flat().map(n=>n.id));
+
   const confirmReceipt=async(n)=>{
     setWorking(true);
     try{
+      const trks=Array.isArray(n.trackings)?n.trackings:[];
+      const trkCodes=trks.length>0?trks.map(t=>t.tracking_code):(n.tracking_code?[n.tracking_code]:[]);
       // Crear op nueva con datos del aviso pre-cargados
       const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
       const newCode=typeof rpc==="string"?rpc:null;
       if(!newCode){alert("Error generando código de op");setWorking(false);return;}
-      // Mapear shipping_method + origen al channel del sistema
-      // (este flow es para canal B/integral AC mayormente — usar aereo_negro/maritimo_negro como default razonable)
       const channel=n.shipping_method==="maritimo"?"maritimo_negro":"aereo_negro";
       const origin=n.origin==="usa"?"USA":"China";
-      const opBody={operation_code:newCode,client_id:n.client_id,channel,origin,service_type:"courier",status:"en_deposito_origen",description:n.description||null,international_tracking:n.tracking_code};
+      // international_tracking guarda los trackings concatenados (la lógica futura puede leer de la tabla hija)
+      const intTrk=trkCodes.join(", ");
+      const opBody={operation_code:newCode,client_id:n.client_id,channel,origin,service_type:"courier",status:"en_deposito_origen",description:n.description||null,international_tracking:intTrk};
       const created=await dq("operations",{method:"POST",token,body:opBody});
       const opObj=Array.isArray(created)?created[0]:created;
       if(!opObj?.id){alert("Error creando op");setWorking(false);return;}
-      // Linkear el aviso con la op + marcar received
-      await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{status:"received",operation_id:opObj.id,confirmed_at:new Date().toISOString()}});
+      // Marcar TODOS los trackings del aviso como received + linkear aviso con op
+      const now=new Date().toISOString();
+      for(const t of trks){
+        if(!t.received_at){await dq("purchase_notification_trackings",{method:"PATCH",token,filters:`?id=eq.${t.id}`,body:{received_at:now}}).catch(()=>{});}
+      }
+      await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{status:"received",operation_id:opObj.id,confirmed_at:now}});
       // Notif al cliente
       try{
         if(n.clients?.auth_user_id){
-          dq("notifications",{method:"POST",token,body:{user_id:n.clients.auth_user_id,portal:"cliente",title:`✓ Tu carga llegó al depósito`,body:`Tracking ${n.tracking_code} → operación ${newCode} creada`,link:`?op=${newCode}`}}).catch(()=>{});
-          fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:n.clients.auth_user_id,title:`✓ Tu carga llegó al depósito`,body:`${n.tracking_code} → ${newCode}`,url:`/portal?op=${newCode}`})}).catch(()=>{});
+          dq("notifications",{method:"POST",token,body:{user_id:n.clients.auth_user_id,portal:"cliente",title:`✓ Tu carga llegó al depósito`,body:`${trkCodes.length} tracking${trkCodes.length>1?"s":""} → operación ${newCode} creada`,link:`?op=${newCode}`}}).catch(()=>{});
+          fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:n.clients.auth_user_id,title:`✓ Tu carga llegó al depósito`,body:`${trkCodes.length} tracking${trkCodes.length>1?"s":""} → ${newCode}`,url:`/portal?op=${newCode}`})}).catch(()=>{});
         }
       }catch(e){}
       setConfirmAction(null);load();
@@ -4272,35 +4303,92 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
     setConfirmAction(null);load();
     setWorking(false);
   };
+
+  // Mergear avisos sospechosos en uno solo (mueve trackings del 2do/3ro al 1ro y cancela los demás)
+  const mergeNotifs=async(notifs)=>{
+    if(notifs.length<2)return;
+    setWorking(true);
+    try{
+      const target=notifs[0]; // el más antiguo (orden desc en load → invertimos)
+      const sorted=[...notifs].sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
+      const main=sorted[0];
+      const rest=sorted.slice(1);
+      // Reasignar trackings de los demás avisos al principal
+      for(const n of rest){
+        const trks=Array.isArray(n.trackings)?n.trackings:[];
+        for(const t of trks){
+          await dq("purchase_notification_trackings",{method:"PATCH",token,filters:`?id=eq.${t.id}`,body:{notification_id:main.id}}).catch(()=>{});
+        }
+        // Cancelar el aviso vacío
+        await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{status:"cancelled",cancelled_at:new Date().toISOString(),notes:`Mergeado en aviso ${main.id}`}}).catch(()=>{});
+      }
+      setMergeAction(null);load();
+    }catch(e){alert("Error mergeando: "+e.message);}
+    setWorking(false);
+  };
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:12,flexWrap:"wrap"}}>
       <div>
         <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>📦 Avisos de compra de clientes</h2>
         <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>Pre-avisos del cliente. Confirmá cuando la carga llegue al depósito y se crea la operación oficial.</p>
       </div>
-      {counts.pending>0&&<span style={{padding:"6px 14px",fontSize:12,fontWeight:700,borderRadius:8,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)"}}>⏳ {counts.pending} pendientes</span>}
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        {dupGroups.length>0&&<span style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:8,background:"rgba(251,146,60,0.15)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.4)"}}>⚠️ {dupGroups.length} grupo{dupGroups.length>1?"s":""} duplicado{dupGroups.length>1?"s":""}</span>}
+        {counts.open>0&&<span style={{padding:"6px 14px",fontSize:12,fontWeight:700,borderRadius:8,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)"}}>⏳ {counts.open} abiertos</span>}
+      </div>
     </div>
-    <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-      {[{k:"pending",l:"Pendientes",c:counts.pending},{k:"received",l:"Recibidas",c:counts.received},{k:"cancelled",l:"Canceladas",c:counts.cancelled},{k:"all",l:"Todas",c:counts.all}].map(t=><button key={t.k} onClick={()=>setFilter(t.k)} style={{padding:"6px 12px",fontSize:12,fontWeight:600,borderRadius:7,border:`1px solid ${filter===t.k?IC:"rgba(255,255,255,0.1)"}`,background:filter===t.k?"rgba(184,149,106,0.1)":"transparent",color:filter===t.k?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{t.l} ({t.c})</button>)}
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por tracking, cliente o descripción…" style={{flex:1,minWidth:240,padding:"7px 12px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
+
+    {/* Banner de duplicados sospechosos */}
+    {dupGroups.length>0&&<div style={{padding:"12px 14px",background:"rgba(251,146,60,0.06)",border:"1.5px solid rgba(251,146,60,0.3)",borderRadius:10,marginBottom:14}}>
+      <p style={{fontSize:12,fontWeight:700,color:"#fb923c",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>⚠️ Posibles duplicados detectados</p>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 10px"}}>Hay clientes con múltiples avisos abiertos del mismo origen y modalidad. Revisalos y mergealos en uno solo si corresponde.</p>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        {dupGroups.map((g,i)=>{const cl=g[0].clients;return <button key={i} onClick={()=>setMergeAction({clientId:g[0].client_id,notifs:g})} style={{padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>{cl?.client_code} — {g.length} avisos {g[0].origin==="china"?"🇨🇳":"🇺🇸"} {g[0].shipping_method==="aereo"?"✈️":"🚢"} · revisar →</button>;})}
+      </div>
+    </div>}
+
+    <div style={{display:"flex",gap:10,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
+      {[{k:"open",l:"Abiertos",c:counts.open},{k:"pending",l:"Pendientes",c:counts.pending},{k:"partial",l:"Parciales",c:counts.partial},{k:"received",l:"Recibidas",c:counts.received},{k:"cancelled",l:"Canceladas",c:counts.cancelled},{k:"all",l:"Todas",c:counts.all}].map(t=><button key={t.k} onClick={()=>setFilter(t.k)} style={{padding:"6px 12px",fontSize:12,fontWeight:600,borderRadius:7,border:`1px solid ${filter===t.k?IC:"rgba(255,255,255,0.1)"}`,background:filter===t.k?"rgba(184,149,106,0.1)":"transparent",color:filter===t.k?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{t.l} ({t.c})</button>)}
+    </div>
+    <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+      <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Modalidad:</span>
+      {[{k:"all",l:"Todas"},{k:"aereo",l:"✈️ Aéreo"},{k:"maritimo",l:"🚢 Marítimo"}].map(t=><button key={t.k} onClick={()=>setFilterChannel(t.k)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:5,border:`1px solid ${filterChannel===t.k?"#60a5fa":"rgba(255,255,255,0.08)"}`,background:filterChannel===t.k?"rgba(96,165,250,0.1)":"transparent",color:filterChannel===t.k?"#60a5fa":"rgba(255,255,255,0.5)",cursor:"pointer"}}>{t.l}</button>)}
+      <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em",marginLeft:8}}>Origen:</span>
+      {[{k:"all",l:"Todos"},{k:"china",l:"🇨🇳 China"},{k:"usa",l:"🇺🇸 USA"}].map(t=><button key={t.k} onClick={()=>setFilterOrigin(t.k)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:5,border:`1px solid ${filterOrigin===t.k?"#60a5fa":"rgba(255,255,255,0.08)"}`,background:filterOrigin===t.k?"rgba(96,165,250,0.1)":"transparent",color:filterOrigin===t.k?"#60a5fa":"rgba(255,255,255,0.5)",cursor:"pointer"}}>{t.l}</button>)}
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por tracking, cliente o descripción…" style={{flex:1,minWidth:200,padding:"7px 12px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
     </div>
     {lo?<p style={{textAlign:"center",padding:"3rem 0",color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<div style={{padding:"3rem 1rem",textAlign:"center",background:"rgba(255,255,255,0.02)",border:"1px dashed rgba(255,255,255,0.08)",borderRadius:14}}>
       <p style={{fontSize:14,color:"rgba(255,255,255,0.55)",margin:0}}>Sin avisos {filter!=="all"?filter:""}</p>
     </div>:<div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {filtered.map(n=>{const cl=n.clients;return <div key={n.id} style={{padding:"14px 16px",background:n.status==="pending"?"rgba(251,191,36,0.05)":n.status==="received"?"rgba(34,197,94,0.04)":"rgba(255,255,255,0.02)",border:`1px solid ${n.status==="pending"?"rgba(251,191,36,0.25)":n.status==="received"?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.06)"}`,borderRadius:12}}>
+      {filtered.map(n=>{
+        const cl=n.clients;
+        const trks=Array.isArray(n.trackings)&&n.trackings.length>0?n.trackings:(n.tracking_code?[{tracking_code:n.tracking_code,received_at:n.confirmed_at}]:[]);
+        const totalTrks=trks.length;
+        const recvTrks=trks.filter(t=>t.received_at).length;
+        const isDup=dupNotifIds.has(n.id);
+        const statusColor=n.status==="pending"?"#fbbf24":n.status==="partial"?"#60a5fa":n.status==="received"?"#22c55e":"#ff6b6b";
+        const statusBg=n.status==="pending"?"rgba(251,191,36,0.05)":n.status==="partial"?"rgba(96,165,250,0.05)":n.status==="received"?"rgba(34,197,94,0.04)":"rgba(255,255,255,0.02)";
+        const statusBorder=isDup?"rgba(251,146,60,0.5)":n.status==="pending"?"rgba(251,191,36,0.25)":n.status==="partial"?"rgba(96,165,250,0.3)":n.status==="received"?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.06)";
+        const statusLabel=n.status==="pending"?"⏳ PENDIENTE":n.status==="partial"?`⏳ PARCIAL (${recvTrks}/${totalTrks})`:n.status==="received"?"✓ RECIBIDA":"✕ CANCELADA";
+        const isOpen=["pending","partial"].includes(n.status);
+        return <div key={n.id} style={{padding:"14px 16px",background:statusBg,border:`1.5px solid ${statusBorder}`,borderRadius:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",gap:12,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:240}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
-              <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{n.tracking_code}</span>
+              {isDup&&<span style={{fontSize:9,fontWeight:800,padding:"3px 7px",borderRadius:4,background:"rgba(251,146,60,0.18)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.5)"}}>⚠️ DUPLICADO</span>}
               <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:n.origin==="china"?"rgba(239,68,68,0.15)":"rgba(59,130,246,0.15)",color:n.origin==="china"?"#fca5a5":"#93c5fd",border:`1px solid ${n.origin==="china"?"rgba(239,68,68,0.3)":"rgba(59,130,246,0.3)"}`}}>{n.origin==="china"?"🇨🇳 CHINA":"🇺🇸 USA"}</span>
               <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{n.shipping_method==="aereo"?"✈️ Aéreo":"🚢 Marítimo"}</span>
-              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:n.status==="pending"?"rgba(251,191,36,0.15)":n.status==="received"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:n.status==="pending"?"#fbbf24":n.status==="received"?"#22c55e":"#ff6b6b"}}>{n.status==="pending"?"⏳ PENDIENTE":n.status==="received"?"✓ RECIBIDA":"✕ CANCELADA"}</span>
+              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:`${statusColor}25`,color:statusColor}}>{statusLabel}</span>
+              <span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.5)"}}>📦 {totalTrks} tracking{totalTrks!==1?"s":""}</span>
             </div>
-            <p style={{fontSize:13,color:"#fff",margin:"0 0 4px"}}><strong style={{color:IC,fontFamily:"monospace"}}>{cl?.client_code||"?"}</strong> — {cl?.first_name} {cl?.last_name}</p>
+            <p style={{fontSize:13,color:"#fff",margin:"0 0 6px"}}><strong style={{color:IC,fontFamily:"monospace"}}>{cl?.client_code||"?"}</strong> — {cl?.first_name} {cl?.last_name}</p>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:6}}>
+              {trks.map((t,i)=><span key={i} style={{fontSize:11,fontFamily:"monospace",padding:"3px 8px",borderRadius:4,background:t.received_at?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.05)",color:t.received_at?"rgba(34,197,94,0.9)":"#fff",border:`1px solid ${t.received_at?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.1)"}`}}>{t.tracking_code}{t.received_at?" ✓":""}</span>)}
+            </div>
             {n.description&&<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 4px"}}>{n.description}</p>}
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>Avisado {formatDate(n.created_at)}{n.estimated_packages?` · ${n.estimated_packages} bultos`:""}{n.estimated_dispatch_date?` · sale ${formatDate(n.estimated_dispatch_date)}`:""}{n.status==="received"&&n.operations?.operation_code?` · op `:""}{n.status==="received"&&n.operations?.operation_code?<strong style={{color:IC,fontFamily:"monospace"}}>{n.operations.operation_code}</strong>:""}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>Avisado {formatDate(n.created_at)}{n.estimated_packages?` · ${n.estimated_packages} bultos`:""}{n.estimated_dispatch_date?` · sale ${formatDate(n.estimated_dispatch_date)}`:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?` · op `:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?<strong style={{color:IC,fontFamily:"monospace"}}>{n.operations.operation_code}</strong>:""}</p>
           </div>
-          {n.status==="pending"&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {isOpen&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             <button onClick={()=>setConfirmAction({type:"confirm",notif:n})} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:7,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>✓ Confirmar y crear op</button>
             <button onClick={()=>setConfirmAction({type:"cancel",notif:n})} style={{padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>Rechazar</button>
           </div>}
@@ -4308,21 +4396,49 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
       </div>;})}
     </div>}
 
-    {confirmAction&&(()=>{const {type,notif}=confirmAction;const cl=notif.clients;return <div onClick={()=>!working&&setConfirmAction(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${type==="confirm"?"rgba(34,197,94,0.4)":"rgba(255,80,80,0.4)"}`,borderRadius:14,padding:"22px 24px",maxWidth:480,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+    {confirmAction&&(()=>{const {type,notif}=confirmAction;const cl=notif.clients;const trks=Array.isArray(notif.trackings)&&notif.trackings.length>0?notif.trackings:(notif.tracking_code?[{tracking_code:notif.tracking_code}]:[]);return <div onClick={()=>!working&&setConfirmAction(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${type==="confirm"?"rgba(34,197,94,0.4)":"rgba(255,80,80,0.4)"}`,borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
           <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>{type==="confirm"?"✓ Confirmar recepción y crear op":"Rechazar aviso"}</h3>
           <button onClick={()=>!working&&setConfirmAction(null)} disabled={working} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:working?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
         </div>
         <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,marginBottom:14}}>
           <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"0 0 6px"}}>Cliente: <strong style={{color:"#fff"}}>{cl?.client_code} — {cl?.first_name} {cl?.last_name}</strong></p>
-          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"0 0 6px"}}>Tracking: <strong style={{color:"#fff",fontFamily:"monospace"}}>{notif.tracking_code}</strong></p>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"0 0 4px"}}>Trackings ({trks.length}):</p>
+          <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>
+            {trks.map((t,i)=><span key={i} style={{fontSize:11,fontFamily:"monospace",padding:"2px 7px",borderRadius:3,background:"rgba(255,255,255,0.06)",color:"#fff"}}>{t.tracking_code}{t.received_at?" ✓":""}</span>)}
+          </div>
           <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0}}>{notif.origin==="china"?"🇨🇳 China":"🇺🇸 USA"} · {notif.shipping_method==="aereo"?"✈️ Aéreo":"🚢 Marítimo"}{notif.description?` · ${notif.description}`:""}</p>
         </div>
-        {type==="confirm"?<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px",lineHeight:1.5}}>Se va a crear una nueva operación (canal <strong>{notif.shipping_method==="maritimo"?"Marítimo Integral AC":"Aéreo Integral AC"}</strong>) con este tracking. El cliente recibe notificación.</p>:<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px"}}>El aviso queda marcado como cancelado. El cliente puede dar otro aviso si vuelve a intentarlo.</p>}
+        {type==="confirm"?<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px",lineHeight:1.5}}>Se va a crear una nueva operación (canal <strong>{notif.shipping_method==="maritimo"?"Marítimo Integral AC":"Aéreo Integral AC"}</strong>) con <strong>los {trks.length} tracking{trks.length>1?"s":""}</strong> de este aviso. El cliente recibe notificación.</p>:<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px"}}>El aviso queda marcado como cancelado. El cliente puede dar otro aviso si vuelve a intentarlo.</p>}
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={()=>!working&&setConfirmAction(null)} disabled={working} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:working?"not-allowed":"pointer"}}>Volver</button>
           <button onClick={()=>type==="confirm"?confirmReceipt(notif):cancelNotif(notif)} disabled={working} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${type==="confirm"?"rgba(34,197,94,0.5)":"rgba(255,80,80,0.5)"}`,background:working?"rgba(255,255,255,0.05)":(type==="confirm"?"linear-gradient(135deg,#22c55e,#16a34a)":"linear-gradient(135deg,#ff6b6b,#ef4444)"),color:working?"rgba(255,255,255,0.4)":"#fff",cursor:working?"wait":"pointer"}}>{working?"Procesando…":(type==="confirm"?"✓ Sí, crear op":"Sí, rechazar")}</button>
+        </div>
+      </div>
+    </div>;})()}
+
+    {/* Modal de merge de duplicados */}
+    {mergeAction&&(()=>{const sorted=[...mergeAction.notifs].sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));const main=sorted[0];const cl=main.clients;return <div onClick={()=>!working&&setMergeAction(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(251,146,60,0.5)",borderRadius:14,padding:"22px 24px",maxWidth:560,width:"100%",maxHeight:"85vh",overflow:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:12}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>⚠️ Mergear avisos del cliente {cl?.client_code}</h3>
+          <button onClick={()=>!working&&setMergeAction(null)} disabled={working} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:"pointer"}}>×</button>
+        </div>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px",lineHeight:1.5}}>Detectamos {sorted.length} avisos de <strong style={{color:"#fff"}}>{cl?.first_name} {cl?.last_name}</strong> con misma modalidad ({main.shipping_method==="aereo"?"✈️ Aéreo":"🚢 Marítimo"}) y mismo origen ({main.origin==="china"?"🇨🇳 China":"🇺🇸 USA"}). Si son de la misma compra, mergealos en uno solo.</p>
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+          {sorted.map((n,i)=>{const trks=Array.isArray(n.trackings)?n.trackings:[];return <div key={n.id} style={{padding:"10px 12px",background:i===0?"rgba(34,197,94,0.06)":"rgba(255,255,255,0.03)",border:`1px solid ${i===0?"rgba(34,197,94,0.3)":"rgba(255,255,255,0.08)"}`,borderRadius:8}}>
+            <p style={{fontSize:11,fontWeight:700,color:i===0?"#22c55e":"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{i===0?"✓ Aviso principal (más antiguo)":"Se cancela y sus trackings van al principal"}</p>
+            <p style={{fontSize:12,color:"#fff",margin:"0 0 4px"}}>{n.description||"(sin descripción)"} · {formatDate(n.created_at)}</p>
+            <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+              {trks.map((t,j)=><span key={j} style={{fontSize:10,fontFamily:"monospace",padding:"2px 6px",borderRadius:3,background:"rgba(255,255,255,0.06)",color:"#fff"}}>{t.tracking_code}</span>)}
+            </div>
+          </div>;})}
+        </div>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",fontStyle:"italic"}}>Resultado: 1 aviso con {sorted.reduce((s,n)=>s+(Array.isArray(n.trackings)?n.trackings.length:0),0)} trackings totales.</p>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>!working&&setMergeAction(null)} disabled={working} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Cancelar</button>
+          <button onClick={()=>mergeNotifs(sorted)} disabled={working} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(251,146,60,0.5)",background:working?"rgba(255,255,255,0.05)":"linear-gradient(135deg,#fb923c,#f97316)",color:"#fff",cursor:working?"wait":"pointer"}}>{working?"Mergeando…":"✓ Sí, mergear todos en uno"}</button>
         </div>
       </div>
     </div>;})()}

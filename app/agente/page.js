@@ -1478,15 +1478,19 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
     setExistingOp(trulyOpen[0]||null);
   })();},[clientId,token]);
 
-  // Buscar aviso de compra pendiente que matchee el tracking (debounce 350ms)
+  // Buscar aviso de compra que matchee el tracking en CUALQUIERA de sus trackings (debounce 350ms)
+  // Devuelve {tracking_id, notif:{...}} si matchea
   useEffect(()=>{
     const code=tracking?.trim();
     if(!code||code.length<4){setMatchedNotif(null);return;}
     const tm=setTimeout(async()=>{
       try{
-        const r=await dq("purchase_notifications",{token,filters:`?status=eq.pending&tracking_code=ilike.${encodeURIComponent(code)}&select=id,tracking_code,origin,shipping_method,description,estimated_packages,client_id,clients(id,client_code,first_name,last_name)&limit=1`});
+        const r=await dq("purchase_notification_trackings",{token,filters:`?tracking_code=ilike.${encodeURIComponent(code)}&received_at=is.null&select=id,tracking_code,notification:notification_id(id,origin,shipping_method,description,client_id,status,operation_id,clients(id,client_code,first_name,last_name))&limit=1`});
         const found=Array.isArray(r)&&r[0]?r[0]:null;
-        setMatchedNotif(found);
+        if(!found||!found.notification){setMatchedNotif(null);return;}
+        // Filtrar avisos cancelled o received (no debería pasar por el filtro received_at=null pero por las dudas)
+        if(["cancelled","received"].includes(found.notification.status)){setMatchedNotif(null);return;}
+        setMatchedNotif({tracking_id:found.id,...found.notification});
       }catch(e){setMatchedNotif(null);}
     },350);
     return ()=>clearTimeout(tm);
@@ -1497,6 +1501,8 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
     setClientId(matchedNotif.client_id);
     setShowDrop(false);
   };
+  // Nota: matchedNotif.client_id es el client_id del notif (de purchase_notifications)
+  // Si el aviso ya tiene operation_id (status partial), reutilizamos esa op para sumar bultos.
 
   const addBulto=()=>setBultos(p=>[...p,{weight:"",length:"",width:"",height:"",photo:null,photoPreview:null}]);
   const rmBulto=(i)=>setBultos(p=>p.filter((_,j)=>j!==i));
@@ -1533,9 +1539,15 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
       }
       // Cliente registrado
       let opId;
-      if(existingOp){opId=existingOp.id;}
+      const matchedThisNotif=matchedNotif&&matchedNotif.client_id===clientId;
+      // PRIORIDAD 1: si el aviso matcheado YA tiene op (status partial), sumar a esa op
+      if(matchedThisNotif&&matchedNotif.operation_id){
+        opId=matchedNotif.operation_id;
+      }
+      // PRIORIDAD 2: si hay op abierta del cliente (consolidación normal), usarla
+      else if(existingOp){opId=existingOp.id;}
+      // PRIORIDAD 3: crear op nueva
       else {
-        // Usar función SECURITY DEFINER para obtener próximo código (agente no puede ver todas las ops por RLS)
         const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
         const newCode=typeof rpc==="string"?rpc:null;
         if(!newCode){setErr(t.err_generic);setSaving(false);return;}
@@ -1551,10 +1563,21 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
         if(b.photo){const url=await uploadPackagePhoto(b.photo,token);if(url){body.photo_url=url;body.photo_uploaded_at=new Date().toISOString();}}
         await dq("operation_packages",{method:"POST",token,body});
       }
-      // Si el tracking matchea un aviso de compra del MISMO cliente, marcarlo como received y linkear
-      if(matchedNotif&&matchedNotif.client_id===clientId){
+      // Si el tracking matchea un aviso de compra del MISMO cliente:
+      // 1) marcar ese tracking individual como received
+      // 2) actualizar status del aviso: si quedan pendientes → partial, si todos recibidos → received
+      // 3) setear operation_id del aviso si no estaba
+      if(matchedThisNotif){
         try{
-          await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${matchedNotif.id}`,body:{status:"received",operation_id:opId,confirmed_at:new Date().toISOString()}});
+          const now=new Date().toISOString();
+          await dq("purchase_notification_trackings",{method:"PATCH",token,filters:`?id=eq.${matchedNotif.tracking_id}`,body:{received_at:now}});
+          // Contar pendientes restantes del aviso
+          const pending=await dq("purchase_notification_trackings",{token,filters:`?notification_id=eq.${matchedNotif.id}&received_at=is.null&select=id`});
+          const remaining=Array.isArray(pending)?pending.length:0;
+          const newStatus=remaining===0?"received":"partial";
+          const patchBody={status:newStatus,operation_id:opId};
+          if(newStatus==="received")patchBody.confirmed_at=now;
+          await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${matchedNotif.id}`,body:patchBody});
         }catch(e){console.error("link notif error",e);}
       }
       // Notificar al admin: paquete recibido en depósito
@@ -1564,7 +1587,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
         const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
         const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
         if(adminId){
-          const matchSuffix=matchedNotif&&matchedNotif.client_id===clientId?" · ✓ aviso confirmado":"";
+          const matchSuffix=matchedThisNotif?" · ✓ aviso confirmado":"";
           await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:`📦 Paquete recibido en depósito`,body:`${clName} · Tracking: ${tracking.trim()} · ${validBultos.length} bulto${validBultos.length>1?"s":""}${matchSuffix}`,link:null}});
         }
       }catch(e){console.error("notif error",e);}

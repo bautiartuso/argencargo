@@ -1844,92 +1844,224 @@ function PurchaseNotificationsPage({token,client}){
   const [items,setItems]=useState([]);
   const [lo,setLo]=useState(true);
   const [showForm,setShowForm]=useState(false);
-  const [editing,setEditing]=useState(null); // notif being edited
-  const [form,setForm]=useState({tracking_code:"",origin:"china",shipping_method:"aereo",description:"",estimated_packages:"",estimated_dispatch_date:""});
+  const [editing,setEditing]=useState(null); // notif being edited (full edit mode)
+  const [appendTo,setAppendTo]=useState(null); // notif to which we're adding trackings only
+  const [showSuggest,setShowSuggest]=useState(false); // anti-duplicado pre-form
+  const [form,setForm]=useState({trackings:[""],origin:"china",shipping_method:"aereo",description:"",estimated_packages:"",estimated_dispatch_date:""});
   const [saving,setSaving]=useState(false);
   const [filter,setFilter]=useState("all"); // all | pending | received | cancelled
   const [confirmCancel,setConfirmCancel]=useState(null);
-  const load=async()=>{setLo(true);const r=await dq("purchase_notifications",{token,filters:`?client_id=eq.${client.id}&select=*,operations(operation_code)&order=created_at.desc`});setItems(Array.isArray(r)?r:[]);setLo(false);};
+  const load=async()=>{setLo(true);const r=await dq("purchase_notifications",{token,filters:`?client_id=eq.${client.id}&select=*,trackings:purchase_notification_trackings(id,tracking_code,received_at),operations(operation_code)&order=created_at.desc`});setItems(Array.isArray(r)?r:[]);setLo(false);};
   useEffect(()=>{if(client?.id)load();},[client?.id]);
-  const openNew=()=>{setEditing(null);setForm({tracking_code:"",origin:"china",shipping_method:"aereo",description:"",estimated_packages:"",estimated_dispatch_date:""});setShowForm(true);};
-  const openEdit=(n)=>{if(n.status!=="pending")return;setEditing(n);setForm({tracking_code:n.tracking_code||"",origin:n.origin||"china",shipping_method:n.shipping_method||"aereo",description:n.description||"",estimated_packages:n.estimated_packages?String(n.estimated_packages):"",estimated_dispatch_date:n.estimated_dispatch_date||""});setShowForm(true);};
+
+  // Avisos abiertos relevantes para sugerencia (últimos 30 días, status pending o partial)
+  const openNotifs=items.filter(n=>{
+    if(!["pending","partial"].includes(n.status))return false;
+    const d=new Date(n.created_at);
+    return (Date.now()-d.getTime())<30*24*60*60*1000;
+  });
+
+  const openNewFlow=()=>{
+    // Si hay avisos abiertos, mostrar sugerencia primero
+    if(openNotifs.length>0){setShowSuggest(true);return;}
+    openNewForm();
+  };
+  const openNewForm=()=>{setShowSuggest(false);setEditing(null);setAppendTo(null);setForm({trackings:[""],origin:"china",shipping_method:"aereo",description:"",estimated_packages:"",estimated_dispatch_date:""});setShowForm(true);};
+  const openAppend=(n)=>{setShowSuggest(false);setEditing(null);setAppendTo(n);setForm({trackings:[""],origin:n.origin,shipping_method:n.shipping_method,description:n.description||"",estimated_packages:"",estimated_dispatch_date:""});setShowForm(true);};
+  const openEdit=(n)=>{
+    if(!["pending","partial"].includes(n.status))return;
+    setShowSuggest(false);setAppendTo(null);setEditing(n);
+    const existingTrackings=Array.isArray(n.trackings)&&n.trackings.length>0?n.trackings.map(t=>t.tracking_code):(n.tracking_code?[n.tracking_code]:[""]);
+    setForm({trackings:existingTrackings.length?existingTrackings:[""],origin:n.origin||"china",shipping_method:n.shipping_method||"aereo",description:n.description||"",estimated_packages:n.estimated_packages?String(n.estimated_packages):"",estimated_dispatch_date:n.estimated_dispatch_date||""});
+    setShowForm(true);
+  };
+
+  const addTrackingRow=()=>setForm(p=>({...p,trackings:[...p.trackings,""]}));
+  const rmTrackingRow=(i)=>setForm(p=>({...p,trackings:p.trackings.filter((_,j)=>j!==i)}));
+  const chTracking=(i,v)=>setForm(p=>({...p,trackings:p.trackings.map((t,j)=>j===i?v:t)}));
+
   const save=async()=>{
-    if(!form.tracking_code.trim()){alert("Cargá el tracking de la compra");return;}
+    const validTrackings=[...new Set(form.trackings.map(t=>t.trim()).filter(Boolean))];
+    if(validTrackings.length===0){alert("Cargá al menos un tracking");return;}
     setSaving(true);
-    const body={client_id:client.id,tracking_code:form.tracking_code.trim(),origin:form.origin,shipping_method:form.shipping_method,description:form.description.trim()||null,estimated_packages:form.estimated_packages?Number(form.estimated_packages):null,estimated_dispatch_date:form.estimated_dispatch_date||null};
-    if(editing){
-      await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
-    } else {
-      await dq("purchase_notifications",{method:"POST",token,body});
-      // Notif a admin
-      try{
-        const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
-        const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
-        if(adminId){
-          dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:`📦 Nuevo aviso de compra · ${client.client_code}`,body:`${client.first_name} ${client.last_name}: tracking ${body.tracking_code} · ${body.origin.toUpperCase()} · ${body.shipping_method}`,link:""}}).catch(()=>{});
-          fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:adminId,title:`📦 Nuevo aviso de compra · ${client.client_code}`,body:`${client.first_name}: ${body.tracking_code} (${body.origin.toUpperCase()})`,url:"/admin"})}).catch(()=>{});
+    try{
+      // CASO A: agregar trackings a aviso existente
+      if(appendTo){
+        for(const tc of validTrackings){
+          await dq("purchase_notification_trackings",{method:"POST",token,body:{notification_id:appendTo.id,tracking_code:tc}}).catch(()=>{});
         }
-      }catch(e){}
-    }
-    setSaving(false);setShowForm(false);load();
+        // Notif al admin
+        try{
+          const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
+          const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
+          if(adminId){dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:`📦 +${validTrackings.length} tracking${validTrackings.length>1?"s":""} en aviso · ${client.client_code}`,body:`${client.first_name}: ${validTrackings.join(", ")}`,link:""}}).catch(()=>{});}
+        }catch(e){}
+      }
+      // CASO B: editar aviso existente (full edit)
+      else if(editing){
+        const body={origin:form.origin,shipping_method:form.shipping_method,description:form.description.trim()||null,estimated_packages:form.estimated_packages?Number(form.estimated_packages):null,estimated_dispatch_date:form.estimated_dispatch_date||null};
+        // Compat: tracking_code = primer tracking
+        body.tracking_code=validTrackings[0];
+        await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
+        // Sync trackings: agregar nuevos, borrar los que se quitaron
+        const existing=Array.isArray(editing.trackings)?editing.trackings:[];
+        const existingCodes=new Set(existing.map(t=>t.tracking_code));
+        const newCodes=new Set(validTrackings);
+        // Borrar los que ya no están (solo si no fueron recibidos)
+        for(const t of existing){
+          if(!newCodes.has(t.tracking_code)&&!t.received_at){
+            await dq("purchase_notification_trackings",{method:"DELETE",token,filters:`?id=eq.${t.id}`}).catch(()=>{});
+          }
+        }
+        // Agregar los nuevos
+        for(const tc of validTrackings){
+          if(!existingCodes.has(tc)){
+            await dq("purchase_notification_trackings",{method:"POST",token,body:{notification_id:editing.id,tracking_code:tc}}).catch(()=>{});
+          }
+        }
+      }
+      // CASO C: crear aviso nuevo
+      else {
+        const body={client_id:client.id,tracking_code:validTrackings[0],origin:form.origin,shipping_method:form.shipping_method,description:form.description.trim()||null,estimated_packages:form.estimated_packages?Number(form.estimated_packages):null,estimated_dispatch_date:form.estimated_dispatch_date||null};
+        const created=await dq("purchase_notifications",{method:"POST",token,body});
+        const createdNotif=Array.isArray(created)?created[0]:created;
+        const notifId=createdNotif?.id;
+        if(notifId){
+          for(const tc of validTrackings){
+            await dq("purchase_notification_trackings",{method:"POST",token,body:{notification_id:notifId,tracking_code:tc}}).catch(()=>{});
+          }
+        }
+        // Notif al admin
+        try{
+          const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
+          const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
+          if(adminId){
+            const trkPreview=validTrackings.length===1?validTrackings[0]:`${validTrackings.length} trackings`;
+            dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:`📦 Nuevo aviso de compra · ${client.client_code}`,body:`${client.first_name} ${client.last_name}: ${trkPreview} · ${body.origin.toUpperCase()} · ${body.shipping_method}`,link:""}}).catch(()=>{});
+            fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:adminId,title:`📦 Nuevo aviso de compra · ${client.client_code}`,body:`${client.first_name}: ${trkPreview} (${body.origin.toUpperCase()})`,url:"/admin"})}).catch(()=>{});
+          }
+        }catch(e){}
+      }
+    }catch(e){console.error("save error",e);alert("Error al guardar: "+e.message);}
+    setSaving(false);setShowForm(false);setAppendTo(null);setEditing(null);load();
   };
   const cancel=async(n)=>{
     await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{status:"cancelled",cancelled_at:new Date().toISOString()}});
     setConfirmCancel(null);load();
   };
   const filtered=filter==="all"?items:items.filter(i=>i.status===filter);
-  const counts={all:items.length,pending:items.filter(i=>i.status==="pending").length,received:items.filter(i=>i.status==="received").length,cancelled:items.filter(i=>i.status==="cancelled").length};
+  const counts={all:items.length,pending:items.filter(i=>i.status==="pending").length,partial:items.filter(i=>i.status==="partial").length,received:items.filter(i=>i.status==="received").length,cancelled:items.filter(i=>i.status==="cancelled").length};
   return <div style={{maxWidth:1100,margin:"0 auto",padding:"0 16px"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,gap:12,flexWrap:"wrap"}}>
       <div>
         <h1 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>📦 Mis compras en camino</h1>
         <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>Avisanos qué compraste y cuando lleguen al depósito creamos la operación.</p>
       </div>
-      <button onClick={openNew} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.02em"}}>+ Dar aviso de compra</button>
+      <button onClick={openNewFlow} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.02em"}}>+ Dar aviso de compra</button>
     </div>
     <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-      {[{k:"all",l:"Todas",c:counts.all},{k:"pending",l:"⏳ Pendientes",c:counts.pending},{k:"received",l:"✓ Recibidas",c:counts.received},{k:"cancelled",l:"✕ Canceladas",c:counts.cancelled}].map(t=><button key={t.k} onClick={()=>setFilter(t.k)} style={{padding:"6px 12px",fontSize:12,fontWeight:600,borderRadius:7,border:`1px solid ${filter===t.k?IC:"rgba(255,255,255,0.1)"}`,background:filter===t.k?"rgba(184,149,106,0.1)":"transparent",color:filter===t.k?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{t.l} ({t.c})</button>)}
+      {[{k:"all",l:"Todas",c:counts.all},{k:"pending",l:"⏳ Pendientes",c:counts.pending},{k:"partial",l:"⏳ Parciales",c:counts.partial},{k:"received",l:"✓ Recibidas",c:counts.received},{k:"cancelled",l:"✕ Canceladas",c:counts.cancelled}].map(t=><button key={t.k} onClick={()=>setFilter(t.k)} style={{padding:"6px 12px",fontSize:12,fontWeight:600,borderRadius:7,border:`1px solid ${filter===t.k?IC:"rgba(255,255,255,0.1)"}`,background:filter===t.k?"rgba(184,149,106,0.1)":"transparent",color:filter===t.k?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{t.l} ({t.c})</button>)}
     </div>
     {lo?<p style={{textAlign:"center",padding:"3rem 0",color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<div style={{padding:"3rem 1rem",textAlign:"center",background:"rgba(255,255,255,0.02)",border:"1px dashed rgba(255,255,255,0.08)",borderRadius:14}}>
       <p style={{fontSize:14,color:"rgba(255,255,255,0.55)",margin:"0 0 6px"}}>{filter==="all"?"Todavía no diste avisos de compras":`Sin compras ${filter==="pending"?"pendientes":filter==="received"?"recibidas":"canceladas"}`}</p>
       {filter==="all"&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Cuando hagas una compra y tengas el tracking del proveedor, dejanos el aviso acá.</p>}
     </div>:<div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {filtered.map(n=><div key={n.id} style={{padding:"14px 16px",background:n.status==="pending"?"rgba(251,191,36,0.05)":n.status==="received"?"rgba(34,197,94,0.05)":"rgba(255,255,255,0.02)",border:`1px solid ${n.status==="pending"?"rgba(251,191,36,0.25)":n.status==="received"?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.06)"}`,borderRadius:12}}>
+      {filtered.map(n=>{
+        const trks=Array.isArray(n.trackings)&&n.trackings.length>0?n.trackings:(n.tracking_code?[{tracking_code:n.tracking_code,received_at:n.confirmed_at}]:[]);
+        const totalTrks=trks.length;
+        const recvTrks=trks.filter(t=>t.received_at).length;
+        const isEditable=["pending","partial"].includes(n.status);
+        const statusColor=n.status==="pending"?"#fbbf24":n.status==="partial"?"#60a5fa":n.status==="received"?"#22c55e":"#ff6b6b";
+        const statusBg=n.status==="pending"?"rgba(251,191,36,0.05)":n.status==="partial"?"rgba(96,165,250,0.05)":n.status==="received"?"rgba(34,197,94,0.05)":"rgba(255,255,255,0.02)";
+        const statusBorder=n.status==="pending"?"rgba(251,191,36,0.25)":n.status==="partial"?"rgba(96,165,250,0.3)":n.status==="received"?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.06)";
+        const statusLabel=n.status==="pending"?"⏳ PENDIENTE":n.status==="partial"?`⏳ PARCIAL (${recvTrks}/${totalTrks})`:n.status==="received"?"✓ RECIBIDA":"✕ CANCELADA";
+        return <div key={n.id} style={{padding:"14px 16px",background:statusBg,border:`1px solid ${statusBorder}`,borderRadius:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:8,gap:10,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:200}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
-              <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{n.tracking_code}</span>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
               <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:n.origin==="china"?"rgba(239,68,68,0.15)":"rgba(59,130,246,0.15)",color:n.origin==="china"?"#fca5a5":"#93c5fd",border:`1px solid ${n.origin==="china"?"rgba(239,68,68,0.3)":"rgba(59,130,246,0.3)"}`}}>{n.origin==="china"?"🇨🇳 CHINA":"🇺🇸 USA"}</span>
               <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{n.shipping_method==="aereo"?"✈️ Aéreo":"🚢 Marítimo"}</span>
-              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:n.status==="pending"?"rgba(251,191,36,0.15)":n.status==="received"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:n.status==="pending"?"#fbbf24":n.status==="received"?"#22c55e":"#ff6b6b"}}>{n.status==="pending"?"⏳ PENDIENTE":n.status==="received"?"✓ RECIBIDA":"✕ CANCELADA"}</span>
+              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:`${statusColor}25`,color:statusColor}}>{statusLabel}</span>
+              <span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.45)"}}>📦 {totalTrks} tracking{totalTrks!==1?"s":""}</span>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:6}}>
+              {trks.map((t,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:13,fontFamily:"monospace",color:t.received_at?"rgba(34,197,94,0.85)":"#fff",textDecoration:t.received_at?"none":"none",fontWeight:600}}>{t.tracking_code}</span>
+                {t.received_at?<span style={{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:3,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>✓ recibido</span>:<span style={{fontSize:9,fontWeight:600,color:"rgba(255,255,255,0.35)"}}>en camino</span>}
+              </div>)}
             </div>
             {n.description&&<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 4px"}}>{n.description}</p>}
             <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>
               Avisado {formatDate(n.created_at)}
               {n.estimated_packages?` · ${n.estimated_packages} bultos estimados`:""}
               {n.estimated_dispatch_date?` · sale ${formatDate(n.estimated_dispatch_date)}`:""}
-              {n.status==="received"&&n.operations?.operation_code?` · operación creada: `:""}{n.status==="received"&&n.operations?.operation_code?<strong style={{color:IC,fontFamily:"monospace"}}>{n.operations.operation_code}</strong>:""}
+              {(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?` · operación: `:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?<strong style={{color:IC,fontFamily:"monospace"}}>{n.operations.operation_code}</strong>:""}
             </p>
           </div>
-          {n.status==="pending"&&<div style={{display:"flex",gap:6}}>
+          {isEditable&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             <button onClick={()=>openEdit(n)} style={{padding:"5px 12px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Editar</button>
-            <button onClick={()=>setConfirmCancel(n)} style={{padding:"5px 12px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>Cancelar</button>
+            <button onClick={()=>openAppend(n)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>+ Tracking</button>
+            {n.status==="pending"&&<button onClick={()=>setConfirmCancel(n)} style={{padding:"5px 12px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>Cancelar</button>}
           </div>}
         </div>
-      </div>)}
+      </div>;})}
+    </div>}
+
+    {/* Sugerencia anti-duplicado: si tiene avisos abiertos, ofrecer sumar a uno antes de crear nuevo */}
+    {showSuggest&&<div onClick={()=>setShowSuggest(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(184,149,106,0.4)",borderRadius:14,padding:"24px 26px",maxWidth:560,width:"100%",maxHeight:"85vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:8}}>
+          <h3 style={{fontSize:17,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>📦 ¿Es de un envío que ya avisaste?</h3>
+          <button onClick={()=>setShowSuggest(false)} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+        </div>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.65)",margin:"0 0 18px",lineHeight:1.5}}>Tenés <strong style={{color:IC}}>{openNotifs.length} aviso{openNotifs.length>1?"s":""} abierto{openNotifs.length>1?"s":""}</strong>. Si este tracking nuevo es de la misma compra, sumalo al aviso existente para que vaya todo a la misma operación.</p>
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
+          {openNotifs.map(n=>{
+            const trks=Array.isArray(n.trackings)?n.trackings:[];
+            const recv=trks.filter(t=>t.received_at).length;
+            return <button key={n.id} onClick={()=>openAppend(n)} style={{textAlign:"left",padding:"14px 16px",background:"rgba(184,149,106,0.06)",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:10,cursor:"pointer",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.12)";e.currentTarget.style.borderColor=IC;}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(184,149,106,0.06)";e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";}}>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:4,alignItems:"center"}}>
+                <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:n.origin==="china"?"rgba(239,68,68,0.18)":"rgba(59,130,246,0.18)",color:n.origin==="china"?"#fca5a5":"#93c5fd"}}>{n.origin==="china"?"🇨🇳 CHINA":"🇺🇸 USA"}</span>
+                <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.7)"}}>{n.shipping_method==="aereo"?"✈️ Aéreo":"🚢 Marítimo"}</span>
+                <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:n.status==="partial"?"rgba(96,165,250,0.18)":"rgba(251,191,36,0.18)",color:n.status==="partial"?"#60a5fa":"#fbbf24"}}>{trks.length} tracking{trks.length!==1?"s":""} {recv>0?`(${recv} recibido${recv>1?"s":""})`:""}</span>
+              </div>
+              <p style={{fontSize:13,color:"#fff",fontWeight:600,margin:"0 0 2px"}}>{n.description||"Sin descripción"}</p>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>Avisado {formatDate(n.created_at)} · clickeá para sumar tracking acá</p>
+            </button>;
+          })}
+        </div>
+        <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:14,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:0,flex:1,minWidth:200}}>¿Es un envío totalmente distinto?</p>
+          <button onClick={openNewForm} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",cursor:"pointer"}}>Crear aviso nuevo</button>
+        </div>
+      </div>
     </div>}
 
     {showForm&&<div onClick={()=>!saving&&setShowForm(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:14,padding:"22px 24px",maxWidth:540,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:14,padding:"22px 24px",maxWidth:560,width:"100%",maxHeight:"90vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>{editing?"Editar aviso":"📦 Nuevo aviso de compra"}</h3>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>{appendTo?`+ Sumar tracking a aviso existente`:editing?"Editar aviso":"📦 Nuevo aviso de compra"}</h3>
           <button onClick={()=>!saving&&setShowForm(false)} disabled={saving} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:saving?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-          <div style={{gridColumn:"1 / -1"}}>
-            <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Tracking de la compra *</label>
-            <input value={form.tracking_code} onChange={e=>setForm(p=>({...p,tracking_code:e.target.value}))} placeholder="Código que te dio el proveedor o courier" style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",fontFamily:"monospace"}}/>
+        {appendTo&&<div style={{padding:"10px 12px",background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.25)",borderRadius:8,marginBottom:12}}>
+          <p style={{fontSize:11,fontWeight:700,color:"#60a5fa",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Sumando a aviso existente</p>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:0}}>{appendTo.description||"(sin descripción)"} · {appendTo.origin==="china"?"🇨🇳 China":"🇺🇸 USA"} · {appendTo.shipping_method==="aereo"?"Aéreo":"Marítimo"}</p>
+        </div>}
+
+        {/* Trackings (1 o más) */}
+        <div style={{marginBottom:12}}>
+          <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>Tracking{form.trackings.length>1?"s":""} de la compra *</label>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {form.trackings.map((t,i)=><div key={i} style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input value={t} onChange={e=>chTracking(i,e.target.value)} placeholder={`Tracking ${i+1}`} style={{flex:1,padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",fontFamily:"monospace"}}/>
+              {form.trackings.length>1&&<button type="button" onClick={()=>rmTrackingRow(i)} style={{padding:"8px 10px",fontSize:14,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>×</button>}
+            </div>)}
           </div>
+          <button type="button" onClick={addTrackingRow} style={{marginTop:6,padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Agregar otro tracking</button>
+          {!appendTo&&form.trackings.length>1&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"6px 0 0"}}>Todos estos trackings se van a procesar como <strong style={{color:"#fff"}}>una misma operación</strong> cuando lleguen al depósito.</p>}
+        </div>
+
+        {!appendTo&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
           <div>
             <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Origen *</label>
             <select value={form.origin} onChange={e=>setForm(p=>({...p,origin:e.target.value}))} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}>
@@ -1956,11 +2088,11 @@ function PurchaseNotificationsPage({token,client}){
             <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Fecha estimada de salida (opcional)</label>
             <input type="date" value={form.estimated_dispatch_date} onChange={e=>setForm(p=>({...p,estimated_dispatch_date:e.target.value}))} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
           </div>
-        </div>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"0 0 14px",fontStyle:"italic"}}>Cuando tu carga llegue al depósito en origen, vamos a confirmar y crear la operación oficial. Te avisamos por la campanita.</p>
+        </div>}
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"0 0 14px",fontStyle:"italic"}}>{appendTo?"Estos trackings se sumarán al aviso. Cuando lleguen al depósito se asocian a la misma operación.":"Cuando tu carga llegue al depósito en origen, vamos a confirmar y crear la operación oficial. Te avisamos por la campanita."}</p>
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={()=>!saving&&setShowForm(false)} disabled={saving} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:saving?"not-allowed":"pointer"}}>Cancelar</button>
-          <button onClick={save} disabled={saving} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:saving?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:saving?"rgba(255,255,255,0.4)":"#0A1628",cursor:saving?"wait":"pointer"}}>{saving?"Guardando…":(editing?"✓ Actualizar":"✓ Enviar aviso")}</button>
+          <button onClick={save} disabled={saving} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:saving?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:saving?"rgba(255,255,255,0.4)":"#0A1628",cursor:saving?"wait":"pointer"}}>{saving?"Guardando…":appendTo?"✓ Sumar tracking":(editing?"✓ Actualizar":"✓ Enviar aviso")}</button>
         </div>
       </div>
     </div>}
@@ -1968,7 +2100,7 @@ function PurchaseNotificationsPage({token,client}){
     {confirmCancel&&<div onClick={()=>setConfirmCancel(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(255,80,80,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:420,width:"100%"}}>
         <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 8px"}}>¿Cancelar este aviso?</h3>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px"}}>Tracking <strong style={{color:"#fff",fontFamily:"monospace"}}>{confirmCancel.tracking_code}</strong>. Si cancelás, podés volver a darlo de alta más adelante.</p>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px"}}>Aviso de <strong style={{color:"#fff"}}>{confirmCancel.description||"sin descripción"}</strong>{Array.isArray(confirmCancel.trackings)&&confirmCancel.trackings.length>0?` (${confirmCancel.trackings.length} tracking${confirmCancel.trackings.length>1?"s":""})`:""}. Si cancelás, podés volver a darlo de alta más adelante.</p>
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={()=>setConfirmCancel(null)} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Volver</button>
           <button onClick={()=>cancel(confirmCancel)} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,80,80,0.5)",background:"linear-gradient(135deg,#ff6b6b,#ef4444)",color:"#fff",cursor:"pointer"}}>Sí, cancelar aviso</button>
