@@ -3136,12 +3136,18 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const [editCost,setEditCost]=useState(false);
   const [costForm,setCostForm]=useState({total_cost_usd:"",total_weight_kg:"",international_carrier:"",international_tracking:"",payment_method:""});
   const [savingCost,setSavingCost]=useState(false);
+  const [confirmCostModal,setConfirmCostModal]=useState(null); // {newCost, newWeight}
   const openEditCost=()=>{setCostForm({total_cost_usd:flight.total_cost_usd||"",total_weight_kg:flight.total_weight_kg||"",international_carrier:flight.international_carrier||"",international_tracking:flight.international_tracking||"",payment_method:flight.payment_method||""});setEditCost(true);};
+  const requestSaveCost=()=>{
+    const newCost=Number(costForm.total_cost_usd||0);
+    const newWeight=Number(costForm.total_weight_kg||0);
+    if(!newCost||!newWeight){onFlash("Cargá costo y peso (>0)");return;}
+    setConfirmCostModal({newCost,newWeight});
+  };
   const saveCost=async()=>{
     const newCost=Number(costForm.total_cost_usd||0);
     const newWeight=Number(costForm.total_weight_kg||0);
     if(!newCost||!newWeight){onFlash("Cargá costo y peso (>0)");return;}
-    if(!confirm(`¿Actualizar despacho?\n\nNuevo costo: USD ${newCost.toFixed(2)}\nNuevo peso: ${newWeight} kg\n\nSe recalculará cost_flete en cada operación del vuelo.`))return;
     setSavingCost(true);
     const newPmt=costForm.payment_method||null;
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{total_cost_usd:newCost,total_weight_kg:newWeight,international_carrier:costForm.international_carrier||null,international_tracking:costForm.international_tracking||null,payment_method:newPmt}});
@@ -3168,7 +3174,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         await dq("agent_account_movements",{method:"DELETE",token,filters:`?id=eq.${exId}`});
       }
     }catch(e){console.error("sync CC mov error",e);}
-    setSavingCost(false);setEditCost(false);
+    setSavingCost(false);setEditCost(false);setConfirmCostModal(null);
     onFlash("Despacho actualizado · cost_flete y CC agente recalculados");onReload();
   };
   // Eliminar vuelo (solo si está "preparando" — las ops vuelven al depósito)
@@ -3452,7 +3458,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         </div>
         {Number(costForm.total_cost_usd)>0&&Number(costForm.total_weight_kg)>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"0 0 10px"}}>Tarifa resultante: <strong style={{color:IC}}>{usd(Number(costForm.total_cost_usd)/Number(costForm.total_weight_kg))}/kg</strong></p>}
         <div style={{display:"flex",gap:8}}>
-          <Btn small onClick={saveCost} disabled={savingCost}>{savingCost?"Guardando…":"💾 Guardar y recalcular"}</Btn>
+          <Btn small onClick={requestSaveCost} disabled={savingCost}>{savingCost?"Guardando…":"💾 Guardar y recalcular"}</Btn>
           <Btn small variant="secondary" onClick={()=>setEditCost(false)} disabled={savingCost}>Cancelar</Btn>
         </div>
       </>}
@@ -3508,6 +3514,35 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             <button onClick={applyCompress} disabled={applying||proposed.can_apply===false} title={proposed.can_apply===false?"La IA tuvo errores críticos. Tocá Re-comprimir.":"Aplicar y sincronizar"} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${proposed.can_apply===false?"rgba(255,255,255,0.1)":IC}`,background:applying||proposed.can_apply===false?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:applying||proposed.can_apply===false?"rgba(255,255,255,0.4)":"#0A1628",cursor:applying?"wait":(proposed.can_apply===false?"not-allowed":"pointer")}}>{applying?"Aplicando…":(proposed.can_apply===false?"⛔ Bloqueado por errores":"✓ Aplicar y sincronizar")}</button>
           </div>
         </>}
+      </div>
+    </div>;})()}
+    {confirmCostModal&&(()=>{const {newCost,newWeight}=confirmCostModal;const oldCost=Number(flight.total_cost_usd||0);const oldWeight=Number(flight.total_weight_kg||0);const costDelta=newCost-oldCost;const weightDelta=newWeight-oldWeight;return <div onClick={()=>!savingCost&&setConfirmCostModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(184,149,106,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:480,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>💾 Actualizar despacho de {flight.flight_code}</h3>
+          <button onClick={()=>!savingCost&&setConfirmCostModal(null)} disabled={savingCost} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:savingCost?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+          <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase"}}>Costo total</p>
+            <p style={{fontSize:14,color:"rgba(255,255,255,0.5)",margin:0,textDecoration:"line-through"}}>USD {oldCost.toFixed(2)}</p>
+            <p style={{fontSize:18,fontWeight:700,color:IC,margin:"2px 0 0"}}>USD {newCost.toFixed(2)}</p>
+            {costDelta!==0&&<p style={{fontSize:11,color:costDelta>0?"#fbbf24":"#22c55e",margin:"2px 0 0",fontWeight:600}}>{costDelta>0?"+":""}{costDelta.toFixed(2)}</p>}
+          </div>
+          <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase"}}>Peso total</p>
+            <p style={{fontSize:14,color:"rgba(255,255,255,0.5)",margin:0,textDecoration:"line-through"}}>{oldWeight.toFixed(2)} kg</p>
+            <p style={{fontSize:18,fontWeight:700,color:IC,margin:"2px 0 0"}}>{newWeight.toFixed(2)} kg</p>
+            {weightDelta!==0&&<p style={{fontSize:11,color:"#fbbf24",margin:"2px 0 0",fontWeight:600}}>{weightDelta>0?"+":""}{weightDelta.toFixed(2)} kg</p>}
+          </div>
+        </div>
+        <div style={{padding:"10px 12px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,marginBottom:14}}>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:0,lineHeight:1.5}}>Se va a recalcular <code>cost_flete</code> en cada operación del vuelo proporcional al peso de cada una. Si el método de pago es cuenta corriente, también se actualiza el movimiento de la CC del agente.</p>
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>!savingCost&&setConfirmCostModal(null)} disabled={savingCost} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:savingCost?"not-allowed":"pointer"}}>Cancelar</button>
+          <button onClick={saveCost} disabled={savingCost} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:savingCost?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:savingCost?"rgba(255,255,255,0.4)":"#0A1628",cursor:savingCost?"wait":"pointer"}}>{savingCost?"Actualizando…":"✓ Sí, actualizar"}</button>
+        </div>
       </div>
     </div>;})()}
     {showDeleteFlightModal&&<div onClick={()=>!deletingFlight&&setShowDeleteFlightModal(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
