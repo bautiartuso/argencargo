@@ -10,6 +10,7 @@
     "lint:strict": "eslint app/ lib/ --no-eslintrc --config .eslintrc.cjs --ext .js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.88.0",
     "@sentry/nextjs": "^8.45.0",
     "next": "14.2.5",
     "react": "18.3.1",

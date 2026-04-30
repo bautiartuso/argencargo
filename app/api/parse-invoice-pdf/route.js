@@ -1,7 +1,9 @@
 // POST /api/parse-invoice-pdf
 // Body: { images: [base64...] } — array de páginas del PDF como imágenes base64
-// Devuelve: { ok, items: [{description, quantity, unit_price_usd}], raw }
-// Usa OpenAI Vision (gpt-4o-mini) para extraer items de facturas comerciales chinas/USA
+// Devuelve: { ok, items: [{description, quantity, unit_price_usd, hs_code}], count }
+// Usa Claude Vision (claude-opus-4-7) para extraer items de facturas comerciales chinas/USA.
+
+import { callClaudeVision } from "../../../lib/anthropic";
 
 export const maxDuration = 60;
 
@@ -35,9 +37,6 @@ Si no encontrás ningún item, devolvé {"items": []}.`;
 
 export async function POST(req) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return Response.json({ ok: false, error: "OpenAI key not configured" }, { status: 500 });
-
     const { images } = await req.json();
     if (!Array.isArray(images) || images.length === 0) {
       return Response.json({ ok: false, error: "missing images" }, { status: 400 });
@@ -46,43 +45,23 @@ export async function POST(req) {
       return Response.json({ ok: false, error: "max 10 pages" }, { status: 400 });
     }
 
-    // Build user content: text prompt + all images
-    const userContent = [
-      { type: "text", text: `Analizá ${images.length === 1 ? "esta factura" : `estas ${images.length} páginas de factura`} y extraé todos los items en JSON.` },
-      ...images.map(img => ({
-        type: "image_url",
-        image_url: {
-          url: img.startsWith("data:") ? img : `data:image/png;base64,${img}`,
-          detail: "high",
-        },
-      })),
-    ];
-
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        max_tokens: 4000,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userContent },
-        ],
-      }),
+    const prompt = `Analizá ${images.length === 1 ? "esta factura" : `estas ${images.length} páginas de factura`} y extraé todos los items en JSON.`;
+    const text = await callClaudeVision({
+      system: SYSTEM_PROMPT,
+      prompt,
+      images,
+      max_tokens: 4000,
+      media_type: "image/png",
     });
-    if (!r.ok) {
-      const err = await r.text();
-      console.error("OpenAI error:", err);
-      return Response.json({ ok: false, error: "OpenAI error", detail: err.slice(0, 500) }, { status: 502 });
-    }
-    const data = await r.json();
-    const text = data.choices?.[0]?.message?.content?.trim() || "{}";
+
     let parsed;
-    try { parsed = JSON.parse(text); }
-    catch (e) {
+    try {
+      const cleaned = text.replace(/```json\s*|\s*```/g, "").trim();
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
       return Response.json({ ok: false, error: "invalid JSON from model", raw: text.slice(0, 500) }, { status: 500 });
     }
+
     const items = Array.isArray(parsed.items) ? parsed.items.filter(it =>
       it && typeof it.description === "string" && it.description.trim() &&
       typeof it.quantity === "number" && it.quantity > 0 &&
@@ -93,6 +72,7 @@ export async function POST(req) {
       unit_price_usd: it.unit_price_usd,
       hs_code: typeof it.hs_code === "string" && it.hs_code.trim() ? it.hs_code.trim() : null,
     })) : [];
+
     return Response.json({ ok: true, items, count: items.length });
   } catch (e) {
     console.error("parse-invoice-pdf error:", e);
