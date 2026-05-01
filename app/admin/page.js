@@ -301,6 +301,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});  const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const [pendingRedemptions,setPendingRedemptions]=useState([]);
+  const [cancelRedemptionTarget,setCancelRedemptionTarget]=useState(null);
+  const [cancelingRedemption,setCancelingRedemption]=useState(false);
   const loadRedemptions=async()=>{if(!op.client_id)return;const r=await dq("client_reward_redemptions",{token,filters:`?client_id=eq.${op.client_id}&status=eq.pending&select=*&order=redeemed_at.asc`});setPendingRedemptions(Array.isArray(r)?r:[]);};
   const applyRedemption=async(red)=>{
     if(!confirm(`Aplicar "${red.reward_name}" a esta operación?\n\nSe va a descontar ${Number(red.value_usd||0).toFixed(2)} USD del flete y el canje quedará marcado como usado.`))return;
@@ -317,11 +319,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       loadRedemptions();
     } else flash(`❌ ${r?.error||"error"}`);
   };
-  const cancelRedemption=async(red)=>{
-    if(!confirm(`¿Cancelar el canje "${red.reward_name}" y devolverle los ${red.points_spent} puntos al cliente?`))return;
+  const cancelRedemption=(red)=>setCancelRedemptionTarget(red);
+  const confirmCancelRedemption=async()=>{
+    const red=cancelRedemptionTarget;if(!red)return;
+    setCancelingRedemption(true);
     const r=await dq("rpc/cancel_redemption",{method:"POST",token,body:{p_redemption_id:red.id}});
     if(r?.ok){flash(`Canje cancelado — ${red.points_spent} pts devueltos al cliente`);loadRedemptions();}
     else flash(`❌ ${r?.error||"error"}`);
+    setCancelingRedemption(false);setCancelRedemptionTarget(null);
   };
   useEffect(()=>{loadRedemptions();},[op.client_id]);
   // --- Reasignar cliente de la operación (caso: agente creó la op para el cliente equivocado) ---
@@ -1953,6 +1958,25 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
 
     {tab==="comms"&&<CommsLog opId={op.id} token={token}/>}
     {showCloseChecklist&&<CloseChecklistModal op={op} items={items} payments={payments} clientPayments={clientPayments} supplierPayments={supplierPayments} onCancel={()=>{setShowCloseChecklist(false);setOp(p=>({...p,status:initOp.status}));}} onConfirm={async()=>{setShowCloseChecklist(false);await executeSave();}}/>}
+
+    {cancelRedemptionTarget&&<div onClick={()=>!cancelingRedemption&&setCancelRedemptionTarget(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(255,80,80,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:460,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>↩️ Cancelar canje</h3>
+          <button onClick={()=>!cancelingRedemption&&setCancelRedemptionTarget(null)} disabled={cancelingRedemption} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+        </div>
+        <div style={{padding:"12px 14px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,marginBottom:14}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Canje</p>
+          <p style={{fontSize:14,fontWeight:600,color:"#fff",margin:"0 0 4px"}}>{cancelRedemptionTarget.reward_name}</p>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0}}>Se le devolverán <strong style={{color:IC,fontFamily:"monospace"}}>{cancelRedemptionTarget.points_spent} pts</strong> al cliente.</p>
+        </div>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.65)",margin:"0 0 14px",lineHeight:1.5}}>El canje queda anulado y los puntos vuelven al saldo del cliente para que pueda usarlos en otro beneficio.</p>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>!cancelingRedemption&&setCancelRedemptionTarget(null)} disabled={cancelingRedemption} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:cancelingRedemption?"not-allowed":"pointer"}}>Volver</button>
+          <button onClick={confirmCancelRedemption} disabled={cancelingRedemption} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,80,80,0.5)",background:cancelingRedemption?"rgba(255,255,255,0.05)":"linear-gradient(135deg,#ff6b6b,#ef4444)",color:cancelingRedemption?"rgba(255,255,255,0.4)":"#fff",cursor:cancelingRedemption?"wait":"pointer"}}>{cancelingRedemption?"Cancelando…":"✓ Sí, cancelar y devolver puntos"}</button>
+        </div>
+      </div>
+    </div>}
   </div>;
 }
 

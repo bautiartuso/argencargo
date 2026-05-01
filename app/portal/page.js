@@ -533,7 +533,15 @@ function OperationDetail({op,token,onBack}){
       <script>setTimeout(()=>window.print(),300)</script>
     </body></html>`);w.document.close();
   };
-  const loadAll=async()=>{const [it,ev,pk,pm,cp,pn]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("purchase_notifications",{token,filters:`?operation_id=eq.${op.id}&select=tracking_code,origin,shipping_method,description,created_at,confirmed_at&limit=1`})]);setItems(Array.isArray(it)?it:[]);setEvents((Array.isArray(ev)?ev:[]).filter(e=>e.source!=="internal"||!String(e.title||"").startsWith("Estado actualizado")));setPkgs(Array.isArray(pk)?pk:[]);setPmts(Array.isArray(pm)?pm:[]);setCliPmts(Array.isArray(cp)?cp:[]);setPurchaseNotif(Array.isArray(pn)&&pn[0]?pn[0]:null);setLoading(false);};
+  const loadAll=async()=>{const [it,ev,pk,pm,cp,pn]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("purchase_notifications",{token,filters:`?operation_id=eq.${op.id}&select=tracking_code,origin,shipping_method,description,created_at,confirmed_at&limit=1`})]);setItems(Array.isArray(it)?it:[]);setEvents((Array.isArray(ev)?ev:[]).filter(e=>{
+  // Filtrar eventos internos auto-generados por cambio de status (ya están en la barra de progreso)
+  if(e.source==="internal"&&String(e.title||"").startsWith("Estado actualizado"))return false;
+  // Filtrar eventos de pre-clearance aduanero de DHL: marcan location ARGENTINA aunque la carga esté en origen
+  if(e.source==="dhl"&&String(e.description||"").toLowerCase().includes("customs clearance status updated"))return false;
+  // Filtrar eventos DHL con title "SD" (Shipment Data — meta-evento sin valor real)
+  if(e.source==="dhl"&&String(e.title||"").trim()==="SD")return false;
+  return true;
+}));setPkgs(Array.isArray(pk)?pk:[]);setPmts(Array.isArray(pm)?pm:[]);setCliPmts(Array.isArray(cp)?cp:[]);setPurchaseNotif(Array.isArray(pn)&&pn[0]?pn[0]:null);setLoading(false);};
   useEffect(()=>{loadAll();let last=Date.now();const onFocus=()=>{if(document.visibilityState==="visible"&&Date.now()-last>5000){last=Date.now();loadAll();}};document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);return()=>{document.removeEventListener("visibilitychange",onFocus);window.removeEventListener("focus",onFocus);};},[op.id,token]);
   const st=SM[op.status]||{l:op.status,c:"#999"};const isA=op.channel?.includes("aereo");
   const isGI=op.service_type==="gestion_integral";
