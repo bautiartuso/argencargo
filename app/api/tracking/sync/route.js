@@ -35,10 +35,10 @@ async function triggerMail(op_id, trigger) {
 async function fetchActiveOps(operationId) {
   let url;
   if (operationId) {
-    url = `${SB_URL}/rest/v1/operations?select=id,operation_code,international_tracking,international_carrier,status&id=eq.${operationId}`;
+    url = `${SB_URL}/rest/v1/operations?select=id,operation_code,international_tracking,international_carrier,status,created_at&id=eq.${operationId}`;
   } else {
     const statuses = ACTIVE_STATUSES.map(s => `"${s}"`).join(",");
-    url = `${SB_URL}/rest/v1/operations?select=id,operation_code,international_tracking,international_carrier,status&status=in.(${statuses})&international_tracking=not.is.null&international_carrier=not.is.null`;
+    url = `${SB_URL}/rest/v1/operations?select=id,operation_code,international_tracking,international_carrier,status,created_at&status=in.(${statuses})&international_tracking=not.is.null&international_carrier=not.is.null`;
   }
   const r = await fetch(url, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
   return await r.json();
@@ -81,8 +81,17 @@ async function syncOne(op) {
   }
 
   let inserted = 0;
+  let skippedOld = 0;
   const errors = [];
+  // Cutoff: 1 día antes de la creación de la op. Cualquier evento más viejo es de un
+  // tracking number reusado por DHL/FedEx (envío anterior de otra carga).
+  const opCreatedAt = op.created_at ? new Date(op.created_at).getTime() : 0;
+  const cutoffMs = opCreatedAt ? opCreatedAt - 24 * 60 * 60 * 1000 : 0;
   for (const ev of d.events || []) {
+    if (cutoffMs && ev.occurred_at) {
+      const evTs = new Date(ev.occurred_at).getTime();
+      if (evTs && evTs < cutoffMs) { skippedOld++; continue; }
+    }
     const { ok, error } = await upsertEvent(normalizeEvent({
       operation_id: op.id,
       source: route,
@@ -92,6 +101,7 @@ async function syncOne(op) {
     if (ok) inserted++;
     else if (error && errors.length < 3) errors.push(error);
   }
+  if (skippedOld > 0) console.log(`[sync] ${op.operation_code}: skipped ${skippedOld} eventos pre-creación (tracking reusado)`);
 
   // ETA / fecha entrega real → operations.eta (y status si ya llegó al courier)
   // operations.eta es tipo DATE, así que truncamos el timestamp a YYYY-MM-DD.
