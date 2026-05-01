@@ -1102,8 +1102,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
 
     {tab==="packages"&&<Card title="Bultos" actions={<Btn onClick={addPkg} small>+ Agregar bulto</Btn>}>
       {pkgs.map((pk,i)=>{const q=Number(pk.quantity||1),l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0),gw=Number(pk.gross_weight_kg||0);const bruto=gw*q;const vw=l&&w&&h?((l*w*h)/agentVolDiv)*q:0;const cbm=l&&w&&h?((l*w*h)/1000000)*q:0;return <div key={pk.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Bulto {pk.package_number}</p>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:10,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+            <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Bulto {pk.package_number}</p>
+            {pk.created_at&&<span style={{fontSize:10,color:"rgba(255,255,255,0.45)",fontWeight:500}}>· cargado {new Date(pk.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",year:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>}
+          </div>
           <div style={{display:"flex",gap:6}}><Btn onClick={()=>savePkg(pk)} small variant="secondary">Guardar</Btn><Btn onClick={()=>movePkgToOp(pk)} small variant="secondary" title="Mover este bulto a otra operación (cliente equivocado)">↪ Mover</Btn><Btn onClick={()=>delPkg(pk.id)} small variant="danger">Eliminar</Btn></div>
         </div>
         <Inp label="Seguimiento nacional" value={pk.national_tracking} onChange={v=>chPkg(i,"national_tracking",v)} placeholder="Código de seguimiento nacional" small/>

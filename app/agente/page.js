@@ -237,7 +237,11 @@ const I18N={
     period_year:"Año",
     period_all:"Total",
     delete:"Eliminar",
+    edit:"Editar",
+    edit_package:"Editar paquete",
+    save_changes:"Guardar cambios",
     delete_success:"Paquete eliminado",
+    edit_success:"Cambios guardados",
     confirm_delete_pkg:"¿Eliminar el paquete de la operación",
     flight_waiting_msg:"Cuando el admin presente la factura de exportación, vas a poder despachar este vuelo.",
     dispatch_data:"Datos del despacho",
@@ -416,7 +420,11 @@ const I18N={
     period_year:"年",
     period_all:"全部",
     delete:"删除",
+    edit:"编辑",
+    edit_package:"编辑包裹",
+    save_changes:"保存更改",
     delete_success:"包裹已删除",
+    edit_success:"更改已保存",
     confirm_delete_pkg:"确定删除该操作的包裹",
     flight_waiting_msg:"管理员上传出口发票后，您可以发送此航班。",
     dispatch_data:"发送数据",
@@ -546,6 +554,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const [repackRequests,setRepackRequests]=useState([]);
   const [repackOpen,setRepackOpen]=useState(null); // operation_id activo en modal
   const [showForm,setShowForm]=useState(false);
+  const [editPkg,setEditPkg]=useState(null);
   const [flashMsg,setFlashMsg]=useState("");
   const [tab,setTab]=useState("deposit");
   const [selFlight,setSelFlight]=useState(null);
@@ -718,13 +727,17 @@ function Dashboard({session,onLogout,lang,setLang,t}){
             <td style={{padding:"10px 14px",color:fact>0?IC:"rgba(255,255,255,0.3)",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{fact?`${fact.toFixed(2)} kg`:"—"}</td>
             <td style={{padding:"10px 14px"}}><PackagePhotoCell pkg={p} token={token} t={t} onUpdated={reloadAll}/></td>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{new Date(p.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</td>
-            <td style={{padding:"10px 14px",textAlign:"right"}}>
+            <td style={{padding:"10px 14px",textAlign:"right",whiteSpace:"nowrap"}}>
+              <button onClick={()=>setEditPkg(p)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",marginRight:6}}>{t.edit}</button>
               <button onClick={async()=>{if(!confirm(`${t.confirm_delete_pkg} ${p.operations?.operation_code}?`))return;await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});reloadAll();flash(t.delete_success);}} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>{t.delete}</button>
             </td>
           </tr>;})}</tbody>
         </table></div>}
       </div>
     </>}
+
+    {/* Modal de edición de paquete (compartido por todos los tabs que muestren paquetes en depósito) */}
+    {editPkg&&<EditPackageModal pkg={editPkg} token={token} t={t} onClose={()=>setEditPkg(null)} onSaved={()=>{setEditPkg(null);reloadAll();flash(t.edit_success);}}/>}
 
     {/* TAB 2: Vuelos activos (preparando / despachado) */}
     {tab==="active_flights"&&!selFlight&&<>
@@ -1411,6 +1424,104 @@ function PushSetup({token,userId,signup,t}){
 
 // Celda de foto de paquete: muestra thumbnail si hay, o badge "pendiente" con upload si no.
 // Click en thumbnail abre lightbox. Click en upload selecciona file y sube + actualiza package.
+function EditPackageModal({pkg,token,t,onClose,onSaved}){
+  const [tracking,setTracking]=useState(pkg.national_tracking||"");
+  const [weight,setWeight]=useState(pkg.gross_weight_kg!=null?String(pkg.gross_weight_kg):"");
+  const [length,setLength]=useState(pkg.length_cm!=null?String(pkg.length_cm):"");
+  const [width,setWidth]=useState(pkg.width_cm!=null?String(pkg.width_cm):"");
+  const [height,setHeight]=useState(pkg.height_cm!=null?String(pkg.height_cm):"");
+  const [photoFile,setPhotoFile]=useState(null);
+  const [photoPreview,setPhotoPreview]=useState(null);
+  const [removePhoto,setRemovePhoto]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState("");
+  const table=pkg.operation_id?"operation_packages":"unassigned_packages";
+  const onPhotoChange=(file)=>{
+    setRemovePhoto(false);
+    if(!file){setPhotoFile(null);setPhotoPreview(null);return;}
+    setPhotoFile(file);
+    const reader=new FileReader();
+    reader.onload=ev=>setPhotoPreview(ev.target.result);
+    reader.readAsDataURL(file);
+  };
+  const save=async()=>{
+    setSaving(true);setErr("");
+    try{
+      const body={};
+      body.national_tracking=tracking.trim()||null;
+      body.gross_weight_kg=weight?Number(weight):null;
+      body.length_cm=length?Number(length):null;
+      body.width_cm=width?Number(width):null;
+      body.height_cm=height?Number(height):null;
+      if(removePhoto){
+        body.photo_url=null;
+        body.photo_uploaded_at=null;
+      } else if(photoFile){
+        const url=await uploadPackagePhoto(photoFile,token);
+        if(url){body.photo_url=url;body.photo_uploaded_at=new Date().toISOString();}
+        else {setErr(t.upload_failed||"Error al subir foto");setSaving(false);return;}
+      }
+      await dq(table,{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body});
+      onSaved&&onSaved();
+    }catch(e){setErr(e.message||"Error");}
+    setSaving(false);
+  };
+  const currentPhoto=removePhoto?null:(photoPreview||pkg.photo_url);
+  return <div onClick={()=>!saving&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(96,165,250,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",maxHeight:"90vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>✏️ {t.edit_package} · {pkg.operations?.operation_code||"—"}</h3>
+        <button onClick={()=>!saving&&onClose()} disabled={saving} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:saving?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
+      </div>
+      {err&&<div style={{padding:"8px 12px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:8,fontSize:12,color:"#ff6b6b",marginBottom:12}}>{err}</div>}
+      <div style={{marginBottom:12}}>
+        <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>{t.tracking}</label>
+        <input value={tracking} onChange={e=>setTracking(e.target.value)} placeholder={t.tracking_ph} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",fontFamily:"monospace"}}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:14}}>
+        <div>
+          <label style={{display:"block",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase"}}>{t.weight}</label>
+          <input type="number" value={weight} onChange={e=>setWeight(e.target.value)} placeholder="kg" style={{width:"100%",padding:"9px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+        </div>
+        <div>
+          <label style={{display:"block",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase"}}>{t.length}</label>
+          <input type="number" value={length} onChange={e=>setLength(e.target.value)} placeholder="cm" style={{width:"100%",padding:"9px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+        </div>
+        <div>
+          <label style={{display:"block",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase"}}>{t.width}</label>
+          <input type="number" value={width} onChange={e=>setWidth(e.target.value)} placeholder="cm" style={{width:"100%",padding:"9px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+        </div>
+        <div>
+          <label style={{display:"block",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase"}}>{t.height}</label>
+          <input type="number" value={height} onChange={e=>setHeight(e.target.value)} placeholder="cm" style={{width:"100%",padding:"9px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+        </div>
+      </div>
+      <div style={{marginBottom:14,padding:"12px 14px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10}}>
+        <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.05em"}}>📷 {t.photo}</label>
+        {currentPhoto?<div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+          <img src={currentPhoto} alt="" style={{width:80,height:80,objectFit:"cover",borderRadius:8,border:"2px solid rgba(34,197,94,0.4)"}}/>
+          <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
+            <p style={{fontSize:12,fontWeight:600,color:"#22c55e",margin:0}}>{photoFile?"Foto nueva lista":"Foto actual"}</p>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <input id={`edit-photo-${pkg.id}`} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)onPhotoChange(f);}} style={{display:"none"}}/>
+              <label htmlFor={`edit-photo-${pkg.id}`} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>📷 Reemplazar</label>
+              <button type="button" onClick={()=>{setPhotoFile(null);setPhotoPreview(null);setRemovePhoto(true);}} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>Quitar foto</button>
+            </div>
+          </div>
+        </div>:<div>
+          <input id={`edit-photo-${pkg.id}`} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)onPhotoChange(f);}} style={{display:"none"}}/>
+          <label htmlFor={`edit-photo-${pkg.id}`} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.06)",color:IC,cursor:"pointer"}}>📷 {t.add_photo}</label>
+          {removePhoto&&<p style={{fontSize:11,color:"rgba(255,80,80,0.7)",margin:"6px 0 0",fontStyle:"italic"}}>La foto va a quedar removida al guardar.</p>}
+        </div>}
+      </div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <button onClick={()=>!saving&&onClose()} disabled={saving} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:saving?"not-allowed":"pointer"}}>{t.cancel}</button>
+        <button onClick={save} disabled={saving} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.5)",background:saving?"rgba(255,255,255,0.05)":"linear-gradient(135deg,#60a5fa,#3b82f6)",color:saving?"rgba(255,255,255,0.4)":"#fff",cursor:saving?"wait":"pointer"}}>{saving?t.saving:`✓ ${t.save_changes}`}</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function PackagePhotoCell({pkg,token,t,onUpdated}){
   const [uploading,setUploading]=useState(false);
   const [lightbox,setLightbox]=useState(false);
