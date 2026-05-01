@@ -2,7 +2,7 @@
 // Body: { description }
 // Devuelve: { ncm_code, ncm_description, import_duty_rate, statistics_rate, iva_rate, intervention: {required, types, reason}, source }
 
-import { callClaudeText } from "../../../lib/anthropic";
+import { callClaudeText, callClaudeVision } from "../../../lib/anthropic";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -79,19 +79,52 @@ async function classifyWithClaude(description) {
     user: `Clasificá: "${description}"`,
     max_tokens: 500,
   });
-  // Parse JSON (puede venir con o sin code fences)
+  return parseClaudeResponse(text);
+}
+
+async function classifyWithClaudeVision(imageBase64, description) {
+  // Imagen en base64 (con o sin prefijo data:). Si tiene prefijo lo limpiamos.
+  const cleanB64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, "");
+  const mediaType = imageBase64.match(/^data:(image\/[a-z]+);base64,/)?.[1] || "image/jpeg";
+  const userPrompt = description?.trim()
+    ? `Analizá la foto del producto y clasificá. Descripción adicional del usuario: "${description}"`
+    : `Analizá la foto del producto y clasificá. No hay descripción adicional, basate solo en la imagen.`;
+  const text = await callClaudeVision({
+    system: SYSTEM_PROMPT_VISION,
+    prompt: userPrompt,
+    images: [cleanB64],
+    media_type: mediaType,
+    max_tokens: 600,
+  });
+  const parsed = parseClaudeResponse(text);
+  if (!parsed) return null;
+  // Vision también devuelve guess_description (descripción comercial breve)
+  return parsed;
+}
+
+function parseClaudeResponse(text) {
   let json;
   try {
     const cleaned = text.replace(/```json\s*|\s*```/g, "").trim();
     json = JSON.parse(cleaned);
   } catch (e) {
-    // Fallback: extraer NCM via regex
     const m = text.match(/\d{4}\.\d{2}\.\d{2}/);
     return m ? { ncm_code: m[0], intervention: { required: false, types: [], reason: null } } : null;
   }
   if (!json?.ncm_code || !/^\d{4}\.\d{2}\.\d{2}$/.test(json.ncm_code)) return null;
   return json;
 }
+
+// Prompt extendido para vision: pedimos también la descripción comercial detectada
+const SYSTEM_PROMPT_VISION = SYSTEM_PROMPT.replace(
+  "FORMATO DE SALIDA (JSON estricto, sin markdown):",
+  `Cuando analizás una FOTO, primero identificá el producto observando: forma, color, packaging, marca visible, etiquetas, contexto. Después clasificá según las reglas anteriores.
+
+FORMATO DE SALIDA (JSON estricto, sin markdown):`
+).replace(
+  '"ncm_code": "XXXX.XX.XX",',
+  '"ncm_code": "XXXX.XX.XX",\n  "guess_description": "descripción comercial breve del producto detectado (max 80 chars, en español)",'
+);
 
 // Manual overrides para productos que la IA suele errar
 const OVERRIDES = [
@@ -111,20 +144,25 @@ function checkOverride(description) {
 
 export async function POST(req) {
   try {
-    const { description } = await req.json();
-    if (!description) return Response.json({ error: "Description required" }, { status: 400 });
+    const { description, image } = await req.json();
+    if (!description && !image) return Response.json({ error: "Description or image required" }, { status: 400 });
 
-    const override = checkOverride(description);
-    if (override) return Response.json(override);
+    // Si NO hay imagen, primero probar overrides por descripción (rápido y barato)
+    if (!image && description) {
+      const override = checkOverride(description);
+      if (override) return Response.json(override);
+    }
 
-    const claudeResult = await classifyWithClaude(description).catch(e => {
-      console.error("Claude error:", e.message);
-      return null;
-    });
+    // Clasificar: con imagen → vision, sin imagen → texto
+    const claudeResult = image
+      ? await classifyWithClaudeVision(image, description).catch(e => { console.error("Claude vision error:", e.message); return null; })
+      : await classifyWithClaude(description).catch(e => { console.error("Claude error:", e.message); return null; });
 
     if (claudeResult?.ncm_code) {
+      // Si vino guess_description de visión, lo devolvemos para que el cliente rellene el campo
+      const extras = claudeResult.guess_description ? { guess_description: claudeResult.guess_description } : {};
       const results = await searchDB(claudeResult.ncm_code);
-      if (results.length > 0) return Response.json(pickBest(results, claudeResult.intervention));
+      if (results.length > 0) return Response.json({ ...pickBest(results, claudeResult.intervention), ...extras });
       // No match en DB pero tenemos NCM de Claude — devolver con defaults
       return Response.json({
         ncm_code: claudeResult.ncm_code,
@@ -133,7 +171,8 @@ export async function POST(req) {
         statistics_rate: 3,
         iva_rate: 21,
         intervention: claudeResult.intervention || { required: false, types: [], reason: null },
-        source: "claude",
+        source: image ? "claude-vision" : "claude",
+        ...extras,
       });
     }
 

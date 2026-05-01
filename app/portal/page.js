@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, WhatsAppFab } from "../../lib/ui";
+import DatePicker from "../components/DatePicker";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -974,6 +975,29 @@ function CalculatorPage({token,client}){
       else{setProducts(pr=>pr.map((x,j)=>j===idx?{...x,ncmLoading:false,ncmError:false,ncm:d}:x));}
     }catch{setProducts(pr=>pr.map((x,j)=>j===idx?{...x,ncmLoading:false,ncmError:true,ncm:null}:x));}};
 
+  // Clasificación por foto: convierte file a base64 y manda a /api/ncm con {image, description}
+  // No persistimos la imagen — solo se usa en memoria del request.
+  const classifyByPhoto=async(idx,file)=>{
+    if(!file)return;
+    if(file.size>5*1024*1024){alert("La imagen es muy grande. Máximo 5 MB.");return;}
+    setProducts(pr=>pr.map((x,j)=>j===idx?{...x,ncmLoading:true,ncmError:false}:x));
+    try{
+      // File → base64
+      const reader=new FileReader();
+      const base64=await new Promise((res,rej)=>{reader.onload=ev=>res(ev.target.result);reader.onerror=rej;reader.readAsDataURL(file);});
+      const currentDesc=products[idx]?.description||"";
+      const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:base64,description:currentDesc})});
+      const d=await r.json();
+      if(d.fallback||d.error){setProducts(pr=>pr.map((x,j)=>j===idx?{...x,ncmLoading:false,ncmError:true,ncm:null}:x));return;}
+      // Si vino guess_description y no había descripción, rellenamos
+      setProducts(pr=>pr.map((x,j)=>{
+        if(j!==idx)return x;
+        const newDesc=(!x.description||!x.description.trim())&&d.guess_description?d.guess_description:x.description;
+        return {...x,description:newDesc,ncmLoading:false,ncmError:false,ncm:d};
+      }));
+    }catch(e){setProducts(pr=>pr.map((x,j)=>j===idx?{...x,ncmLoading:false,ncmError:true,ncm:null}:x));}
+  };
+
   const calculateChina=()=>{
     const{totWeight,totCBM}=calcTotals();const channels=[];
     // Peso facturable = suma del max(bruto, vol) POR BULTO, no global
@@ -1202,7 +1226,18 @@ function CalculatorPage({token,client}){
       </div>}
       {products.map((p,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:IC}}>Producto {i+1}</span>{products.length>1&&<button onClick={()=>rmProduct(i)} style={{fontSize:11,padding:"4px 10px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>Eliminar</button>}</div>
-        <div style={{marginBottom:14}}><label style={{display:"block",fontSize:13,fontWeight:700,color:"#fff",marginBottom:5}}>Descripción de la mercadería</label><div style={{display:"flex",gap:8}}><input value={p.description||""} onChange={e=>chProd(i,"description",e.target.value)} placeholder="Sé específico. Ej: Auriculares inalámbricos bluetooth" style={{flex:1,padding:"11px 14px",fontSize:14,border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.1)",color:"#fff",outline:"none"}} onFocus={e=>{e.target.style.borderColor=IC;}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";}}/>{!hasBrand&&<button onClick={()=>classifyProduct(i)} disabled={p.ncmLoading||!p.description?.trim()} style={{padding:"11px 16px",fontSize:12,fontWeight:600,borderRadius:10,border:"none",cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW,whiteSpace:"nowrap",opacity:p.ncmLoading?0.6:1}}>{p.ncmLoading?"Clasificando...":"Clasificar"}</button>}</div></div>
+        <div style={{marginBottom:14}}>
+          <label style={{display:"block",fontSize:13,fontWeight:700,color:"#fff",marginBottom:5}}>Descripción de la mercadería</label>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <input value={p.description||""} onChange={e=>chProd(i,"description",e.target.value)} placeholder="Sé específico. Ej: Auriculares inalámbricos bluetooth" style={{flex:1,minWidth:180,padding:"11px 14px",fontSize:14,border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.1)",color:"#fff",outline:"none"}} onFocus={e=>{e.target.style.borderColor=IC;}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";}}/>
+            {!hasBrand&&<>
+              <button onClick={()=>classifyProduct(i)} disabled={p.ncmLoading||!p.description?.trim()} style={{padding:"11px 16px",fontSize:12,fontWeight:600,borderRadius:10,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW,whiteSpace:"nowrap",opacity:p.ncmLoading?0.6:1}}>{p.ncmLoading?"Clasificando...":"Clasificar"}</button>
+              <input id={`photo-classify-${i}`} type="file" accept="image/*" capture="environment" onChange={e=>{const f=e.target.files?.[0];if(f){classifyByPhoto(i,f);e.target.value="";}}} style={{display:"none"}}/>
+              <label htmlFor={`photo-classify-${i}`} title="Subí una foto del producto y la IA lo clasifica" style={{padding:"11px 14px",fontSize:12,fontWeight:600,borderRadius:10,cursor:p.ncmLoading?"not-allowed":"pointer",background:"rgba(96,165,250,0.1)",color:"#60a5fa",border:"1.5px solid rgba(96,165,250,0.4)",whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,opacity:p.ncmLoading?0.5:1}}>📸 Clasificar por foto</label>
+            </>}
+          </div>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"5px 0 0",fontStyle:"italic"}}>Cargá una foto del producto si no sabés cómo describirlo. La IA lo identifica y clasifica automáticamente. La foto NO se guarda en nuestros servidores.</p>
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}><div style={{marginBottom:14}}><label style={{display:"block",fontSize:13,fontWeight:700,color:"#fff",marginBottom:5}}>Precio unitario (USD)</label><input type="number" value={p.unit_price||""} onChange={e=>chProd(i,"unit_price",e.target.value)} placeholder="Ej: 3.50" style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.1)",color:"#fff",outline:"none"}} onFocus={e=>{e.target.style.borderColor=IC;}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";}}/></div><div style={{marginBottom:14}}><label style={{display:"block",fontSize:13,fontWeight:700,color:"#fff",marginBottom:5}}>Cantidad</label><input type="number" value={p.quantity||""} onChange={e=>chProd(i,"quantity",e.target.value)} placeholder="1" style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.1)",color:"#fff",outline:"none"}} onFocus={e=>{e.target.style.borderColor=IC;}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";}}/></div></div>
         {!hasBrand&&p.ncm?.ncm_code&&<div style={{background:"rgba(184,149,106,0.06)",borderRadius:10,padding:"12px 16px",marginBottom:8,border:"1px solid rgba(184,149,106,0.12)",display:"flex",alignItems:"center",gap:12}}><svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={IC} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg><div><p style={{fontSize:11,fontFamily:"monospace",color:IC,margin:"0 0 4px",fontWeight:600}}>NCM: {p.ncm.ncm_code}</p><p style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>Categoría: {p.ncm.ncm_description?.toUpperCase()||"MERCADERÍA GENERAL"}</p><div style={{display:"flex",gap:16,flexWrap:"wrap"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>DERECHOS <strong style={{color:"#fff"}}>{p.ncm.import_duty_rate}%</strong></span><span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}> T. ESTADÍSTICA <strong style={{color:"#fff"}}>{p.ncm.statistics_rate}%</strong></span><span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}> IVA <strong style={{color:"#fff"}}>{p.ncm.iva_rate}%</strong></span></div></div></div>}
         {!hasBrand&&p.ncmError&&<div style={{background:"rgba(255,80,80,0.08)",borderRadius:10,padding:"12px 16px",marginBottom:8,border:"1px solid rgba(255,80,80,0.15)"}}><p style={{fontSize:13,color:"#ff6b6b",margin:"0 0 6px",fontWeight:600}}>No pudimos detectar tu mercadería automáticamente</p>
@@ -2103,7 +2138,7 @@ function PurchaseNotificationsPage({token,client}){
           </div>
           <div>
             <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Fecha estimada de salida (opcional)</label>
-            <input type="date" value={form.estimated_dispatch_date} onChange={e=>setForm(p=>({...p,estimated_dispatch_date:e.target.value}))} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+            <DatePicker value={form.estimated_dispatch_date} onChange={v=>setForm(p=>({...p,estimated_dispatch_date:v}))} placeholder="Seleccionar fecha" small/>
           </div>
         </div>}
         <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"0 0 14px",fontStyle:"italic"}}>{appendTo?"Estos trackings se sumarán al aviso. Cuando lleguen al depósito se asocian a la misma operación.":"Cuando tu carga llegue al depósito en origen, vamos a confirmar y crear la operación oficial. Te avisamos por la campanita."}</p>
