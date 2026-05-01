@@ -3270,7 +3270,21 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     if(!newCost||!newWeight){onFlash("Cargá costo y peso (>0)");return;}
     setSavingCost(true);
     const newPmt=costForm.payment_method||null;
-    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{total_cost_usd:newCost,total_weight_kg:newWeight,international_carrier:costForm.international_carrier||null,international_tracking:costForm.international_tracking||null,payment_method:newPmt}});
+    const newCarrier=costForm.international_carrier||null;
+    const newTracking=costForm.international_tracking||null;
+    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{total_cost_usd:newCost,total_weight_kg:newWeight,international_carrier:newCarrier,international_tracking:newTracking,payment_method:newPmt}});
+    // PROPAGAR carrier + tracking a TODAS las ops del vuelo. Antes este patch solo
+    // tocaba flights.international_tracking, dejando operations.international_tracking
+    // con el valor viejo → el sync del cliente seguía usando el tracking incorrecto.
+    if(newTracking||newCarrier){
+      const opIds=flightOps.map(fo=>fo.operation_id).filter(Boolean);
+      if(opIds.length>0){
+        const opPatch={};
+        if(newTracking)opPatch.international_tracking=newTracking;
+        if(newCarrier)opPatch.international_carrier=newCarrier;
+        await dq("operations",{method:"PATCH",token,filters:`?id=in.(${opIds.join(",")})`,body:opPatch});
+      }
+    }
     // Recalcular share por peso ya guardado en flight_operations
     for(const fo of flightOps){
       const opW=Number(fo.weight_kg||0);
