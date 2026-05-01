@@ -138,6 +138,13 @@ export default function RootLayout({ children }) {
             </Script>
           </>
         )}
+        {/* Evitar que el scroll del mouse cambie valores en inputs numéricos.
+            Si el cliente escrolea con el mouse encima de un input number, el browser
+            cambiaba el valor → bug confuso (cantidades/precios cambiaban sin que se diera cuenta).
+            Solución: si el input numérico tiene foco al hacer scroll, lo deselecciono. */}
+        <Script id="prevent-number-scroll" strategy="afterInteractive">
+          {`document.addEventListener("wheel",function(e){if(document.activeElement&&document.activeElement.type==="number"){document.activeElement.blur();}},{passive:true});`}
+        </Script>
       </head>
       <body style={{ margin: 0, padding: 0, fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif", WebkitFontSmoothing: 'antialiased', MozOsxFontSmoothing: 'grayscale' }}>{children}</body>
     </html>

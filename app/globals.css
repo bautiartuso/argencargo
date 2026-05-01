@@ -8,3 +8,14 @@ body {
   padding: 0;
   -webkit-font-smoothing: antialiased;
 }
+/* Ocultar spinners de inputs numéricos (las flechitas ▲▼ que aparecen al hover).
+   Evitamos que el cliente cambie un valor sin querer al escrolear con el mouse encima. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
