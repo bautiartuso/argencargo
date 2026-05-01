@@ -1323,7 +1323,15 @@ function CalculatorPage({token,client}){
       const isAereoModal=expandedCh?.includes("aereo");
 
       const maxLen=Math.max(aereos.length,maritimos.length);const pairs=[];for(let i=0;i<maxLen;i++)pairs.push([aereos[i],maritimos[i]]);
+      // Aviso si NO aparecen marítimos: explicar por qué (cliente y admin pueden diagnosticar)
+      const noMaritimoReason=maritimos.length===0?(
+        noDims?"Marcaste 'Desconozco las medidas de las cajas' — sin dimensiones no se puede calcular envío marítimo. Volvé al paso anterior para cargarlas.":
+        results.totCBM===0?"No cargaste dimensiones de bultos — sin volumen (CBM) no se puede calcular envío marítimo.":
+        results.blockMaritimoLclRestricted?"Por nuevas regulaciones aduaneras de mayo 2026, marítimo no aplica para ropa/calzado con menos de 5 CBM.":
+        null
+      ):null;
       return <><div>{pairs.map((pair,pi)=><div key={pi} className="grid-2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"stretch",marginBottom:0}}>{pair.map(ch=>ch?renderCard(ch):<div key={"empty"+pi}/>)}</div>)}</div>
+      {noMaritimoReason&&<div style={{padding:"14px 18px",background:"rgba(96,165,250,0.07)",border:"1px solid rgba(96,165,250,0.25)",borderRadius:12,marginTop:14,display:"flex",gap:12,alignItems:"flex-start"}}><span style={{fontSize:18}}>ℹ️</span><div style={{flex:1}}><p style={{fontSize:13,fontWeight:700,color:"#60a5fa",margin:"0 0 4px"}}>No aparecen opciones de envío marítimo</p><p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:0,lineHeight:1.5}}>{noMaritimoReason}</p></div></div>}
       {modalCh&&<div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setExpandedCh(null)}>
         <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}/>
         <div style={{position:"relative",maxWidth:650,width:"90%",maxHeight:"85vh",overflow:"auto",background:"#142038",borderRadius:20,border:"1px solid rgba(255,255,255,0.06)",padding:"2rem",boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
