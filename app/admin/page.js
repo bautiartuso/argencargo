@@ -1902,7 +1902,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <Sel label="Método de pago" value={op.cost_flete_method||"cuenta_corriente"} onChange={chOp("cost_flete_method")} options={[{value:"cuenta_corriente",label:"Cuenta Corriente"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"},{value:"transferencia",label:"Transferencia Bancaria"}]}/>
           {(op.cost_flete_method||"cuenta_corriente")==="cuenta_corriente"&&<div style={{paddingTop:22}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>SALDO CC</p><p style={{fontSize:16,fontWeight:700,color:ccBalance>0?"#22c55e":"#ff6b6b",margin:0}}>USD {ccBalance.toLocaleString("en-US",{minimumFractionDigits:2})}</p></div>}
         </div>
-        <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
+        {/* Impuestos y Gasto Documental: solo para canal A (blanco). En canal B/negro no aplican. */}
+        {!op.channel?.includes("negro")&&<><div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Impuestos (ARS)</p>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
             <Sel label="Método de pago" value={op.cost_impuestos_method||"tarjeta_credito"} onChange={chOp("cost_impuestos_method")} options={[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"}]}/>
@@ -1919,11 +1920,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             {(op.cost_gasto_doc_method||"tarjeta_credito")==="tarjeta_credito"?<Inp label="Cierre de tarjeta" type="date" value={op.cost_gasto_doc_card_closing||""} onChange={chOp("cost_gasto_doc_card_closing")}/>:<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_gasto_doc_card_closing&&!isNaN(Number(op.cost_gasto_doc_card_closing))?op.cost_gasto_doc_card_closing:""} onChange={chOp("cost_gasto_doc_card_closing")} step="0.01" placeholder="Ej: 1410"/>}
           </div>
           <p style={{fontSize:11,fontWeight:600,color:Number(op.cost_gasto_documental||0)>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {Number(op.cost_gasto_documental||0)>0?`USD ${Number(op.cost_gasto_documental).toLocaleString("en-US",{minimumFractionDigits:2})}`:(op.cost_gasto_doc_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}</p>
-        </div>
+        </div></>}
         <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Otros costos (USD)</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
-            <Inp label="Seguro real" type="number" value={op.cost_seguro} onChange={chOp("cost_seguro")} step="0.01"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
             <Inp label="Flete local" type="number" value={op.cost_flete_local} onChange={chOp("cost_flete_local")} step="0.01"/>
             <Inp label="Otros costos" type="number" value={op.cost_otros} onChange={chOp("cost_otros")} step="0.01"/>
           </div>
