@@ -7,8 +7,9 @@ export const metadata = {
     title: "AC Admin",
   },
   icons: {
-    apple: [{ url: "/apple-icon-pwa.png", sizes: "512x512" }],
-    icon: [{ url: "/icon-pwa.png", sizes: "512x512" }],
+    icon: [{ url: "/icon.png", type: "image/png", sizes: "512x512" }],
+    apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "512x512" }],
+    shortcut: "/icon.png",
   },
 };
 

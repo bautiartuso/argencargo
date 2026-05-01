@@ -945,11 +945,18 @@ function CalculatorPage({token,client}){
 
   const calculateSpain=()=>{
     const{totWeight,totVol,totCBM,billable}=calcTotals();const channels=[];
-    // España: solo Aéreo Integral AC, $55/kg fijo, peso BRUTO (no volumétrico)
+    // España: solo Aéreo Integral AC, USD 55/kg, ÚNICO canal B donde se cobra
+    // peso facturable = max(bruto, volumétrico) por bulto. Divisor 5000.
     const RATE_SPAIN=55;
-    if(totWeight>0){const bw=Math.max(totWeight,1);const flete=bw*RATE_SPAIN;
-      channels.push({key:"aereo_b_spain",name:"Aéreo Integral AC",info:"5-7 días hábiles",flete,surcharge:0,surchargePct:0,total:flete,unit:`${totWeight.toFixed(1)} kg`});}
-    setResults({channels,totWeight,totVol,totCBM,billable,isRestricted});setStep(4);
+    let facturable=0;let volWeightTotal=0;
+    pkgs.forEach(pk=>{
+      const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0),gw=Number(pk.weight||0);
+      const bruto=gw*q;const vol=l&&w&&h?((l*w*h)/5000)*q:0;
+      facturable+=Math.max(bruto,vol);volWeightTotal+=vol;
+    });
+    if(facturable>0){const bw=Math.max(facturable,1);const flete=bw*RATE_SPAIN;
+      channels.push({key:"aereo_b_spain",name:"Aéreo Integral AC",info:"5-7 días hábiles",flete,surcharge:0,surchargePct:0,total:flete,pesoBruto:totWeight,pesoVol:volWeightTotal,pesoFact:facturable,unit:`${facturable.toFixed(1)} kg`});}
+    setResults({channels,totWeight,totVol,totCBM,billable:facturable,isRestricted});setStep(4);
   };
 
   const classifyProduct=async(idx)=>{const p=products[idx];if(!p.description?.trim())return;
@@ -1064,7 +1071,7 @@ function CalculatorPage({token,client}){
       <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 16px"}}>PRODUCTOS</h3>
       {products.map((p,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:IC}}>Producto {i+1}</span>{products.length>1&&<button onClick={()=>rmProduct(i)} style={{fontSize:11,padding:"4px 10px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>Eliminar</button>}</div>
-        <div style={{display:"flex",gap:12,marginBottom:12}}>{[{k:"general",l:"Carga General"},{k:"celulares",l:"Celulares"}].map(t=><div key={t.k} onClick={()=>chProd(i,"type",t.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:10,border:`1.5px solid ${p.type===t.k?IC:"rgba(255,255,255,0.08)"}`,background:p.type===t.k?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.028)",cursor:"pointer"}}><p style={{fontSize:14,fontWeight:600,color:p.type===t.k?IC:"rgba(255,255,255,0.5)",margin:0}}>{t.l}</p></div>)}</div>
+        <div style={{display:"flex",gap:12,marginBottom:12}}>{(origin==="España"?[{k:"general",l:"Carga General"}]:[{k:"general",l:"Carga General"},{k:"celulares",l:"Celulares"}]).map(t=><div key={t.k} onClick={()=>chProd(i,"type",t.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:10,border:`1.5px solid ${p.type===t.k?IC:"rgba(255,255,255,0.08)"}`,background:p.type===t.k?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.028)",cursor:"pointer"}}><p style={{fontSize:14,fontWeight:600,color:p.type===t.k?IC:"rgba(255,255,255,0.5)",margin:0}}>{t.l}</p></div>)}</div>
         {p.type==="general"&&<Inp label="Descripción de la mercadería" value={p.description} onChange={v=>chProd(i,"description",v)} placeholder="Ej: Fundas de silicona para celular"/>}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}><Inp label="Precio unitario (USD)" type="number" value={p.unit_price} onChange={v=>chProd(i,"unit_price",v)} placeholder="Ej: 3.50"/><Inp label="Cantidad" type="number" value={p.quantity} onChange={v=>chProd(i,"quantity",v)} placeholder="1"/></div>
       </div>)}
