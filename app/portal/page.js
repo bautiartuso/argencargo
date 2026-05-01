@@ -1312,12 +1312,17 @@ function CalculatorPage({token,client}){
       {(()=>{const cheapest=results.channels.reduce((a,b)=>a.total<b.total?a:b);const delivCost=getShipCost(delivery,calcTotals().totWeight);
       const aereos=results.channels.filter(c=>c.key.includes("aereo"));const maritimos=results.channels.filter(c=>c.key.includes("maritimo"));
       const renderCard=(ch)=>{const isCheapest=ch.key===cheapest.key;const isFastest=ch.key==="aereo_a_china";const isAereo=ch.key.includes("aereo");const total=ch.total+delivCost;
-      return <div key={ch.key} style={{position:"relative",background:"rgba(255,255,255,0.028)",borderRadius:16,border:`1.5px solid ${isFastest?"rgba(184,149,106,0.45)":isCheapest?"rgba(34,197,94,0.4)":"rgba(255,255,255,0.1)"}`,padding:"1.5rem",marginBottom:16,display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
-        {/* Badge flotante en esquina superior derecha — no afecta layout del header */}
-        {isFastest&&<span style={{position:"absolute",top:14,right:14,fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,background:"linear-gradient(135deg, rgba(184,149,106,0.25), rgba(212,177,122,0.18))",color:GOLD_LIGHT,border:`1px solid rgba(184,149,106,0.5)`,letterSpacing:"0.06em",textTransform:"uppercase",boxShadow:"0 2px 10px rgba(184,149,106,0.18)",whiteSpace:"nowrap"}}>⚡ Más rápido</span>}
-        {isCheapest&&!isFastest&&<span style={{position:"absolute",top:14,right:14,fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,background:"linear-gradient(135deg, rgba(34,197,94,0.25), rgba(34,197,94,0.15))",color:"#22c55e",border:"1px solid rgba(34,197,94,0.5)",letterSpacing:"0.06em",textTransform:"uppercase",boxShadow:"0 2px 10px rgba(34,197,94,0.18)",whiteSpace:"nowrap"}}>💵 Más económico</span>}
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,paddingRight:isFastest||isCheapest?100:0}}>
-          <span style={{fontSize:24}}>{isAereo?"✈️":"🚢"}</span><p className="result-card-title" style={{fontSize:24,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em",lineHeight:1.15}}>{ch.name}</p>
+      return <div key={ch.key} style={{background:"rgba(255,255,255,0.028)",borderRadius:16,border:`1.5px solid ${isFastest?"rgba(184,149,106,0.45)":isCheapest?"rgba(34,197,94,0.4)":"rgba(255,255,255,0.1)"}`,padding:"1.5rem",marginBottom:16,display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
+        {/* Slot del badge — SIEMPRE con la misma altura aunque no haya badge,
+            así las 4 cards quedan alineadas pixel-perfect */}
+        <div style={{height:24,marginBottom:10,display:"flex",justifyContent:"flex-end",alignItems:"center"}}>
+          {isFastest&&<span style={{fontSize:10,fontWeight:800,padding:"4px 12px",borderRadius:999,background:"linear-gradient(135deg, rgba(184,149,106,0.25), rgba(212,177,122,0.18))",color:GOLD_LIGHT,border:`1px solid rgba(184,149,106,0.5)`,letterSpacing:"0.06em",textTransform:"uppercase",boxShadow:"0 2px 10px rgba(184,149,106,0.18)",whiteSpace:"nowrap"}}>⚡ Más rápido</span>}
+          {isCheapest&&!isFastest&&<span style={{fontSize:10,fontWeight:800,padding:"4px 12px",borderRadius:999,background:"linear-gradient(135deg, rgba(34,197,94,0.25), rgba(34,197,94,0.15))",color:"#22c55e",border:"1px solid rgba(34,197,94,0.5)",letterSpacing:"0.06em",textTransform:"uppercase",boxShadow:"0 2px 10px rgba(34,197,94,0.18)",whiteSpace:"nowrap"}}>💵 Más económico</span>}
+        </div>
+        {/* Header título: emoji + nombre, ancho completo, una sola línea */}
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,minHeight:32}}>
+          <span style={{fontSize:24,flexShrink:0}}>{isAereo?"✈️":"🚢"}</span>
+          <p className="result-card-title" style={{fontSize:22,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em",lineHeight:1.15,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{ch.name}</p>
         </div>
         {(origin==="USA"||origin==="España")&&ch.info&&<p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:"0 0 12px"}}>{ch.info}</p>}
         <div style={{background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"20px",marginBottom:16,textAlign:"center"}}>
