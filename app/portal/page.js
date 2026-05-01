@@ -1023,8 +1023,16 @@ function CalculatorPage({token,client}){
       return{desc:p.description||"Producto",fob:itemFob,cif:itemCif,seguro:itemSeg,derechos,tasa_e,iva,totalImp,drPct:p.ncm?.import_duty_rate||0,tePct:p.ncm?.statistics_rate||0,ivaPct:p.ncm?.iva_rate||21,...extras};
     };
 
-    // Aéreo Courier Comercial (canal A) — REMOVIDO: Argencargo no ofrece despacho aéreo formal.
-    // Solo Courier (Aéreo Integral AC) y Marítimo (LCL/FCL formal + Integral AC).
+    // Aéreo Courier Comercial (canal A) — peso facturable (max bruto/vol). Omitido si hay marca.
+    // China lo ofrece siempre que NO sea marca. USA y España NO ofrecen este canal.
+    if(!hasBrand&&facturable>0){const fleteRate=getFleteRate("aereo_a_china",facturable);const flete=facturable*fleteRate;
+      const certFlete=isRI?(totWeight*certAerReal):(facturable*certAerFict);
+      const seguro=(totalFob+certFlete)*0.01;const totalCif=totalFob+certFlete+seguro;const battExtra=hasBattery?facturable*2:0;
+      const items=products.filter(p=>Number(p.unit_price)>0).map(p=>calcItemTaxes(p,certFlete,false,totalCif));
+      const totalImp=items.reduce((s,it)=>s+it.totalImp,0);const totalSvc=flete+seguro+battExtra;
+      channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles",isBlanco:true,
+        flete,seguro,battExtra,totalImp,totalSvc,total:totalImp+totalSvc,items,
+        pesoBruto:totWeight,pesoVol:volWeightTotal,pesoFact:facturable,pkgDetails,unit:`${facturable.toFixed(1)} kg`});}
 
     // Aéreo Integral AC (B) — peso bruto
     if(totWeight>0){const bw=Math.max(totWeight,1);const fleteRate=getFleteRate("aereo_b_china",bw);const flete=bw*fleteRate;const sur=getSurcharge("aereo_b_china",totalFob,bw);
