@@ -303,6 +303,46 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const [pendingRedemptions,setPendingRedemptions]=useState([]);
   const [cancelRedemptionTarget,setCancelRedemptionTarget]=useState(null);
   const [cancelingRedemption,setCancelingRedemption]=useState(false);
+  const [showAddPayment,setShowAddPayment]=useState(false);
+  const [savingAddPayment,setSavingAddPayment]=useState(false);
+  const [addPaymentForm,setAddPaymentForm]=useState({amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",payment_date:new Date().toISOString().slice(0,10),notes:""});
+  const submitAddPayment=async()=>{
+    const amtUsd=Number(addPaymentForm.amount_usd);
+    const amtArs=Number(addPaymentForm.amount_ars);
+    const rate=Number(addPaymentForm.exchange_rate);
+    let finalAmtUsd=amtUsd;
+    if(addPaymentForm.currency==="ARS"){
+      if(!amtArs||amtArs<=0||!rate||rate<=0){alert("Para pagos en ARS necesitás monto ARS y tipo de cambio");return;}
+      finalAmtUsd=amtArs/rate;
+    } else {
+      if(!amtUsd||amtUsd<=0){alert("Ingresá el monto USD");return;}
+    }
+    if(!addPaymentForm.payment_date){alert("Cargá la fecha del cobro");return;}
+    const budgetTot=Number(op.budget_total||0);
+    setSavingAddPayment(true);
+    try{
+      const body={operation_id:op.id,payment_date:addPaymentForm.payment_date,amount_usd:finalAmtUsd,currency:addPaymentForm.currency,payment_method:addPaymentForm.payment_method,notes:addPaymentForm.notes||null};
+      if(addPaymentForm.currency==="ARS"){body.amount_ars=amtArs;body.exchange_rate=rate;}
+      await dq("operation_client_payments",{method:"POST",token,body});
+      const prevTotal=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      const newTotal=prevTotal+finalAmtUsd;
+      const opUpdate={collected_amount:newTotal};
+      if(budgetTot>0&&newTotal>=budgetTot-0.01){
+        opUpdate.is_collected=true;
+        opUpdate.collection_date=addPaymentForm.payment_date;
+        opUpdate.collection_method=addPaymentForm.payment_method;
+        opUpdate.collection_currency=addPaymentForm.currency;
+        if(addPaymentForm.currency==="ARS")opUpdate.collection_exchange_rate=rate;
+      }
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
+      setOp(p=>({...p,...opUpdate}));
+      await load();
+      setMsg(newTotal>=budgetTot?`✓ Cobro registrado · op cobrada (saldo $0)`:`✓ Cobro registrado · saldo USD ${(budgetTot-newTotal).toFixed(2)}`);
+      setTimeout(()=>setMsg(""),4000);
+      setShowAddPayment(false);
+    }catch(e){alert("Error: "+e.message);}
+    setSavingAddPayment(false);
+  };
   const loadRedemptions=async()=>{if(!op.client_id)return;const r=await dq("client_reward_redemptions",{token,filters:`?client_id=eq.${op.client_id}&status=eq.pending&select=*&order=redeemed_at.asc`});setPendingRedemptions(Array.isArray(r)?r:[]);};
   const applyRedemption=async(red)=>{
     if(!confirm(`Aplicar "${red.reward_name}" a esta operación?\n\nSe va a descontar ${Number(red.value_usd||0).toFixed(2)} USD del flete y el canje quedará marcado como usado.`))return;
@@ -477,11 +517,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         if(d?.ncm_code){
           // Si el item ya tiene NCM cargado a mano (no vacío), respetarlo y solo llenar tasas
           const finalNcm=it.ncm_code&&it.ncm_code.trim()?it.ncm_code:d.ncm_code;
+          // ⚠ NO usar `||` con valores numéricos: 0 es falsy y se sobrescribiría con 35.
+          // Para NCMs como 8517.62.72 (smartwatch), DIE legítimo = 0%.
+          const numOr=(...vals)=>{for(const v of vals){if(v!=null&&v!=="")return Number(v);}return 0;};
           await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{
             ncm_code:finalNcm,
-            import_duty_rate:d.import_duty_rate||it.import_duty_rate||35,
-            statistics_rate:d.statistics_rate||it.statistics_rate||3,
-            iva_rate:d.iva_rate||it.iva_rate||21,
+            import_duty_rate:numOr(d.import_duty_rate,it.import_duty_rate),
+            statistics_rate:numOr(d.statistics_rate,it.statistics_rate),
+            iva_rate:numOr(d.iva_rate,it.iva_rate)||21,
           }});
           ok++;
           if(d.intervention?.required)interventions.push(`${it.description.slice(0,30)}: ${d.intervention.types.join("/")}`);
@@ -507,7 +550,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
       const d=await r.json();
       if(d?.ncm_code){
-        setNcmPreview(p=>({...p,[it.id]:{ncm_code:d.ncm_code,import_duty_rate:d.import_duty_rate||35,statistics_rate:d.statistics_rate||3,iva_rate:d.iva_rate||21,reasoning:d.reasoning||d.ncm_description||"",intervention:d.intervention||{required:false,types:[],reason:null}}}));
+        // numOr no afecta cuando llega 0 explícito desde la API (DIE legítimo 0%)
+        const _n=(v,fb)=>v!=null&&v!==""?Number(v):fb;
+        setNcmPreview(p=>({...p,[it.id]:{ncm_code:d.ncm_code,import_duty_rate:_n(d.import_duty_rate,0),statistics_rate:_n(d.statistics_rate,0),iva_rate:_n(d.iva_rate,21),reasoning:d.reasoning||d.ncm_description||"",intervention:d.intervention||{required:false,types:[],reason:null}}}));
       } else flash("❌ La IA no pudo clasificar — cargá manual");
     }catch(e){flash(`❌ ${e.message}`);}
     setClassifying(null);
@@ -1717,7 +1762,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const fresh=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=account_balance_usd`});
           if(Array.isArray(fresh)&&fresh[0])setOpClient(p=>({...p,account_balance_usd:fresh[0].account_balance_usd}));
         };
-        return <Card title="Cobro" actions={<Btn onClick={saveCobro} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
+        const totalParciales=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+        const saldoParciales=budgetTot-totalParciales;
+        return <Card title="Cobro" actions={<div style={{display:"flex",gap:6}}><Btn small variant="secondary" onClick={()=>{setAddPaymentForm({amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",payment_date:new Date().toISOString().slice(0,10),notes:""});setShowAddPayment(true);}}>+ Cobro adicional</Btn><Btn onClick={saveCobro} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
         {/* Banner: cliente con saldo a favor */}
         {creditBal>0.01&&!op.is_collected&&budgetTot>0&&<div style={{marginBottom:12,padding:"12px 16px",background:"linear-gradient(90deg, rgba(34,197,94,0.1), rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div>
@@ -1742,6 +1789,22 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           if(diff>0)return <div style={{padding:"9px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:8,fontSize:12,color:"#22c55e",marginBottom:8}}>Pagó <strong>USD {diff.toFixed(2)} de más</strong>. Al marcar cobrada se registra como saldo a favor.</div>;
           return <div style={{padding:"9px 14px",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.22)",borderRadius:8,fontSize:12,color:"#fbbf24",marginBottom:8}}>Faltan <strong>USD {Math.abs(diff).toFixed(2)}</strong>. Al marcar cobrada elegís: descuento o deuda.</div>;
         })()}
+        {/* Mini-tabla de cobros parciales — solo si hay >=1 pagos parciales registrados */}
+        {clientPayments.length>0&&<div style={{background:"rgba(34,197,94,0.04)",border:"1px solid rgba(34,197,94,0.18)",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+            <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>📋 Cobros parciales registrados ({clientPayments.length})</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.6)",margin:0}}>Total: <strong style={{color:"#fff"}}>USD {totalParciales.toFixed(2)}</strong>{budgetTot>0?` · Saldo ${saldoParciales>0.01?`USD ${saldoParciales.toFixed(2)}`:saldoParciales<-0.01?`+USD ${Math.abs(saldoParciales).toFixed(2)} (sobrante)`:`$0 ✓`}`:""}</p>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            {clientPayments.map(p=>{const isArs=p.currency==="ARS";return <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",background:"rgba(0,0,0,0.18)",borderRadius:6,fontSize:12}}>
+              <span style={{color:"rgba(255,255,255,0.65)"}}>{formatDate(p.payment_date)} · {p.payment_method||"—"}{p.notes?` · ${p.notes}`:""}</span>
+              <span style={{display:"flex",gap:8,alignItems:"center"}}>
+                <span style={{fontFamily:"monospace",color:"#fff",fontWeight:600}}>USD {Number(p.amount_usd).toFixed(2)}{isArs?` (ARS ${Number(p.amount_ars||0).toLocaleString("es-AR")} @ ${p.exchange_rate})`:""}</span>
+                <button onClick={async()=>{if(!confirm("¿Eliminar este cobro parcial?"))return;await dq("operation_client_payments",{method:"DELETE",token,filters:`?id=eq.${p.id}`});const newTot=clientPayments.filter(x=>x.id!==p.id).reduce((s,x)=>s+Number(x.amount_usd||0),0);const upd={collected_amount:newTot};if(newTot<budgetTot)upd.is_collected=false;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});setOp(prev=>({...prev,...upd}));await load();flash("Cobro eliminado");}} title="Eliminar este cobro" style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.7)",cursor:"pointer",fontSize:14,padding:"0 4px"}}>×</button>
+              </span>
+            </div>;})}
+          </div>
+        </div>}
         {payments.length>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.12)",borderRadius:10,padding:"12px 16px",marginBottom:12}}><p style={{fontSize:12,fontWeight:600,color:IC,margin:"0 0 2px"}}>Esta operación tiene gestión de pagos internacionales (servicio aparte)</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>El cobro de esta operación es independiente. Ver detalles en tab "Pagos".</p></div>}
         {/* Toggle switch "cobrada" — estilo moderno */}
         <div style={{marginTop:6,marginBottom:2,padding:"12px 16px",background:op.is_collected?"linear-gradient(90deg, rgba(34,197,94,0.12), rgba(34,197,94,0.02))":"rgba(255,255,255,0.028)",border:`1px solid ${op.is_collected?"rgba(34,197,94,0.35)":"rgba(255,255,255,0.08)"}`,borderRadius:12,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,transition:"all 180ms"}}>
@@ -1958,6 +2021,38 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
 
     {tab==="comms"&&<CommsLog opId={op.id} token={token}/>}
     {showCloseChecklist&&<CloseChecklistModal op={op} items={items} payments={payments} clientPayments={clientPayments} supplierPayments={supplierPayments} onCancel={()=>{setShowCloseChecklist(false);setOp(p=>({...p,status:initOp.status}));}} onConfirm={async()=>{setShowCloseChecklist(false);await executeSave();}}/>}
+
+    {showAddPayment&&<div onClick={()=>!savingAddPayment&&setShowAddPayment(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(34,197,94,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>+ Registrar cobro adicional</h3>
+          <button onClick={()=>!savingAddPayment&&setShowAddPayment(false)} disabled={savingAddPayment} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+        </div>
+        <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,marginBottom:14}}>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.05em",fontWeight:700}}>Operación</p>
+          <p style={{fontSize:13,color:"#fff",margin:0}}><strong style={{color:IC,fontFamily:"monospace"}}>{op.operation_code}</strong> · presupuesto <strong>USD {Number(op.budget_total||0).toFixed(2)}</strong></p>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px",marginBottom:8}}>
+          <Sel label="Moneda" value={addPaymentForm.currency} onChange={v=>setAddPaymentForm(p=>({...p,currency:v}))} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]} small/>
+          <Sel label="Método" value={addPaymentForm.payment_method} onChange={v=>setAddPaymentForm(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Efectivo"},{value:"cripto",label:"Cripto"}]} small/>
+        </div>
+        {addPaymentForm.currency==="USD"?<div style={{marginBottom:8}}>
+          <Inp label="Monto USD *" type="number" value={addPaymentForm.amount_usd} onChange={v=>setAddPaymentForm(p=>({...p,amount_usd:v}))} step="0.01" placeholder="Ej: 100.00" small/>
+        </div>:<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px",marginBottom:8}}>
+          <Inp label="Monto ARS *" type="number" value={addPaymentForm.amount_ars} onChange={v=>setAddPaymentForm(p=>({...p,amount_ars:v}))} step="0.01" small/>
+          <Inp label="TC ARS/USD *" type="number" value={addPaymentForm.exchange_rate} onChange={v=>setAddPaymentForm(p=>({...p,exchange_rate:v}))} step="0.01" placeholder="Ej: 1410" small/>
+        </div>}
+        <div style={{marginBottom:14}}>
+          <Inp label="Fecha del cobro *" type="date" value={addPaymentForm.payment_date} onChange={v=>setAddPaymentForm(p=>({...p,payment_date:v}))} small/>
+          <Inp label="Notas (opcional)" value={addPaymentForm.notes} onChange={v=>setAddPaymentForm(p=>({...p,notes:v}))} placeholder='Ej: "Anticipo, falta flete local"' small/>
+        </div>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"0 0 12px",fontStyle:"italic"}}>Este cobro se suma al total cobrado de la op. Si después se ajusta el presupuesto y queda saldo, podés registrar otro cobro adicional.</p>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>!savingAddPayment&&setShowAddPayment(false)} disabled={savingAddPayment} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:savingAddPayment?"not-allowed":"pointer"}}>Cancelar</button>
+          <button onClick={submitAddPayment} disabled={savingAddPayment} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.5)",background:savingAddPayment?"rgba(255,255,255,0.05)":"linear-gradient(135deg,#22c55e,#16a34a)",color:savingAddPayment?"rgba(255,255,255,0.4)":"#fff",cursor:savingAddPayment?"wait":"pointer"}}>{savingAddPayment?"Guardando…":"✓ Registrar cobro"}</button>
+        </div>
+      </div>
+    </div>}
 
     {cancelRedemptionTarget&&<div onClick={()=>!cancelingRedemption&&setCancelRedemptionTarget(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(255,80,80,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:460,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
