@@ -2,7 +2,9 @@
 // Wrapper de react-day-picker estilizado con la paleta navy/gold del sistema.
 // Uso: <DatePicker value="2026-04-21" onChange={iso => ...} />
 // El value es un string ISO YYYY-MM-DD (compatible con <input type="date">).
+// Usa createPortal para escapar de overflow:hidden de cualquier parent (Cards, modals, etc).
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { DayPicker } from "react-day-picker";
 import { es } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
@@ -36,18 +38,43 @@ function fromIso(iso) {
 export default function DatePicker({ value, onChange, placeholder = "Seleccionar fecha", small = false, disabled = false }) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(fromIso(value));
+  const [popupPos, setPopupPos] = useState({ top: 0, left: 0, openUp: false });
   const wrapRef = useRef(null);
+  const triggerRef = useRef(null);
+  const popupRef = useRef(null);
 
   useEffect(() => { setSelected(fromIso(value)); }, [value]);
 
-  // Cerrar al hacer click afuera
+  // Calcular posición del popup (arriba o abajo del trigger según espacio)
+  useEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const popupHeight = 360; // alto estimado del calendario
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUp = spaceBelow < popupHeight && rect.top > popupHeight;
+    setPopupPos({
+      top: openUp ? rect.top - popupHeight - 6 : rect.bottom + 6,
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - 320)),
+      openUp,
+    });
+  }, [open]);
+
+  // Cerrar al hacer click afuera (también del popup montado en portal)
   useEffect(() => {
     if (!open) return;
     const onDocClick = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+      if (wrapRef.current?.contains(e.target)) return;
+      if (popupRef.current?.contains(e.target)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
+    // Cerrar también si el usuario scrollea
+    const onScroll = () => setOpen(false);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      window.removeEventListener("scroll", onScroll, true);
+    };
   }, [open]);
 
   const handleSelect = (date) => {
@@ -77,7 +104,7 @@ export default function DatePicker({ value, onChange, placeholder = "Seleccionar
 
   return (
     <div ref={wrapRef} style={{ position: "relative", width: "100%" }}>
-      <button type="button" onClick={() => !disabled && setOpen((o) => !o)} disabled={disabled} style={triggerStyle}>
+      <button ref={triggerRef} type="button" onClick={() => !disabled && setOpen((o) => !o)} disabled={disabled} style={triggerStyle}>
         <span>{selected ? formatDisplay(selected) : placeholder}</span>
         <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={open ? GOLD_LIGHT : "rgba(255,255,255,0.5)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -87,8 +114,8 @@ export default function DatePicker({ value, onChange, placeholder = "Seleccionar
         </svg>
       </button>
 
-      {open && (
-        <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 1000, background: NAVY, border: `1.5px solid ${GOLD}55`, borderRadius: 12, padding: 10, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
+      {open && typeof document !== "undefined" && createPortal(
+        <div ref={popupRef} style={{ position: "fixed", top: popupPos.top, left: popupPos.left, zIndex: 9999, background: NAVY, border: `1.5px solid ${GOLD}55`, borderRadius: 12, padding: 10, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
           <DayPicker
             mode="single"
             selected={selected}
@@ -182,7 +209,8 @@ export default function DatePicker({ value, onChange, placeholder = "Seleccionar
               padding: 4px 8px;
             }
           `}</style>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
