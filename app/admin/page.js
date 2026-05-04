@@ -721,6 +721,54 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
       </div>
     </div>
+
+    {/* Asistente "¿qué falta?" — checklist dinámica de bloqueos para que la op avance */}
+    {(()=>{
+      if(["operacion_cerrada","cancelada"].includes(op.status))return null;
+      const issues=[];
+      const isB=op.channel?.includes("negro");
+      const isAereo=op.channel?.includes("aereo");
+      // Items declarados (canal A blanco aéreo: requeridos para avanzar a tránsito)
+      if(!isB&&op.channel==="aereo_blanco"&&items.length===0&&op.status==="en_preparacion")issues.push({txt:"Cliente debe declarar productos antes de avanzar",action:"Ir a tab Productos",tab:"items",priority:"high"});
+      // Bultos (todas las ops aéreas requieren peso al menos)
+      if(isAereo&&pkgs.length===0&&!["pendiente","cancelada"].includes(op.status))issues.push({txt:"Cargar bultos con peso/dimensiones",action:"Ir a tab Bultos",tab:"packages",priority:"high"});
+      // Presupuesto sin cargar
+      if(Number(op.budget_total||0)<=0&&!["pendiente","cancelada"].includes(op.status))issues.push({txt:"Falta cargar/sincronizar presupuesto",action:"Ir a tab Presupuesto",tab:"budget",priority:"high"});
+      // Tracking internacional cuando ya está en tránsito
+      if(["en_transito","arribo_argentina"].includes(op.status)&&!op.international_tracking)issues.push({txt:"Falta tracking internacional + carrier",action:"Ir a tab General",tab:"general",priority:"medium"});
+      // ETA sin definir
+      if(["en_transito","arribo_argentina"].includes(op.status)&&!op.eta)issues.push({txt:"Falta ETA estimada",action:"Ir a tab General",tab:"general",priority:"medium"});
+      // Cobranza pendiente cuando ya entregada
+      if(op.status==="entregada"&&!op.is_collected)issues.push({txt:"Cobrar al cliente para cerrar la operación",action:"Ir a tab Finanzas",tab:"finance",priority:"high"});
+      // Costos reales sin cargar (canal A formal)
+      if(!isB&&op.is_collected&&Number(op.cost_flete||0)<=0)issues.push({txt:"Cargar costos reales para calcular ganancia",action:"Ir a tab Finanzas",tab:"finance",priority:"medium"});
+      // Cliente no notificó arribo a depósito
+      if(op.status==="en_deposito_origen"&&!op.consolidation_confirmed&&op.channel==="aereo_blanco")issues.push({txt:"Esperando que el cliente confirme '¿es el único paquete?'",action:"Esperar al cliente",tab:null,priority:"low"});
+      // Documentos faltantes (canal A) — invoice presented
+      if(!isB&&op.channel?.includes("aereo")&&op.status==="en_preparacion"&&items.length>0&&Number(op.budget_total||0)>0)issues.push({txt:"Op lista para despachar — armar vuelo desde Agentes",action:"Ir a Agentes y Vuelos",tab:null,priority:"medium"});
+      if(issues.length===0)return null;
+      const colors={high:{bg:"rgba(239,68,68,0.08)",border:"rgba(239,68,68,0.4)",fg:"#ef4444",icon:"⚠️"},medium:{bg:"rgba(251,191,36,0.08)",border:"rgba(251,191,36,0.4)",fg:"#fbbf24",icon:"📋"},low:{bg:"rgba(96,165,250,0.06)",border:"rgba(96,165,250,0.3)",fg:"#60a5fa",icon:"⏳"}};
+      const sortedIssues=[...issues].sort((a,b)=>({high:0,medium:1,low:2})[a.priority]-({high:0,medium:1,low:2})[b.priority]);
+      const top=sortedIssues[0];const c=colors[top.priority];
+      return <div style={{marginBottom:16,padding:"14px 18px",background:`linear-gradient(90deg, ${c.bg}, ${c.bg.replace("0.08","0.02").replace("0.06","0.02")})`,border:`1.5px solid ${c.border}`,borderRadius:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:issues.length>1?10:0}}>
+          <span style={{fontSize:18}}>{c.icon}</span>
+          <div style={{flex:1}}>
+            <p style={{fontSize:11,fontWeight:800,color:c.fg,margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>¿Qué falta para avanzar?</p>
+            <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{top.txt}</p>
+          </div>
+          {top.tab&&<button onClick={()=>setTab(top.tab)} style={{padding:"7px 14px",fontSize:11,fontWeight:700,borderRadius:7,border:`1px solid ${c.border}`,background:c.bg,color:c.fg,cursor:"pointer",whiteSpace:"nowrap"}}>{top.action}</button>}
+        </div>
+        {issues.length>1&&<div style={{paddingLeft:28,display:"flex",flexDirection:"column",gap:5,marginTop:6,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          {sortedIssues.slice(1).map((iss,i)=>{const c2=colors[iss.priority];return <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:12}}>
+            <span style={{color:c2.fg,fontSize:10}}>•</span>
+            <span style={{color:"rgba(255,255,255,0.7)",flex:1}}>{iss.txt}</span>
+            {iss.tab&&<button onClick={()=>setTab(iss.tab)} style={{fontSize:10,fontWeight:600,color:c2.fg,background:"transparent",border:"none",cursor:"pointer",textDecoration:"underline"}}>{iss.action}</button>}
+          </div>;})}
+        </div>}
+      </div>;
+    })()}
+
     {showReassign&&<div style={{marginBottom:16,padding:"14px 16px",background:"rgba(184,149,106,0.06)",border:"1.5px solid rgba(184,149,106,0.25)",borderRadius:10}}>
       <p style={{fontSize:12,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Reasignar cliente</p>
       <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 10px"}}>Cliente actual: <strong style={{color:"#fff"}}>{opClient?`${opClient.client_code} — ${opClient.first_name} ${opClient.last_name}`:"(sin cliente)"}</strong></p>
