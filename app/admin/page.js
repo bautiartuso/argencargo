@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, Fragment } from "react";
 import { calcOpBudget } from "../../lib/calc";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
-import { printQuotePdf, printReceiptPdf, printClosingPdf } from "../../lib/pdf-templates";
+import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels } from "../../lib/pdf-templates";
 import TrackingDuplicateWarning from "../components/TrackingDuplicateWarning";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -1153,7 +1153,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </Card>;
     })()}
 
-    {tab==="packages"&&<Card title="Bultos" actions={<Btn onClick={addPkg} small>+ Agregar bulto</Btn>}>
+    {tab==="packages"&&<Card title="Bultos" actions={<div style={{display:"flex",gap:6}}>{pkgs.length>0&&<Btn small variant="secondary" onClick={()=>printPackageLabels({op,packages:pkgs,items,client:opClient})}>🏷️ Imprimir etiquetas</Btn>}<Btn onClick={addPkg} small>+ Agregar bulto</Btn></div>}>
       {pkgs.map((pk,i)=>{const q=Number(pk.quantity||1),l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0),gw=Number(pk.gross_weight_kg||0);const bruto=gw*q;const vw=l&&w&&h?((l*w*h)/agentVolDiv)*q:0;const cbm=l&&w&&h?((l*w*h)/1000000)*q:0;return <div key={pk.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:10,flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
