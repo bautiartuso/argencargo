@@ -758,25 +758,111 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     {(tab==="active_flights"||tab==="history")&&selFlight&&(()=>{const f=flights.find(x=>x.id===selFlight);if(!f)return null;const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <FlightDetail token={token} flight={f} flightOps={ops} packages={packages} t={t} onBack={()=>setSelFlight(null)} onDispatched={()=>{reloadAll();setSelFlight(null);flash(t.success);}}/>;})()}
 
     {/* TAB 4: Estadísticas */}
-    {tab==="stats"&&<>
-      <div style={{display:"flex",gap:8,marginBottom:18,alignItems:"center",flexWrap:"wrap"}}>
-        <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t.period||"Período"}:</span>
-        {[{k:"week",l:t.period_week||"Semana"},{k:"month",l:t.period_month||"Mes"},{k:"year",l:t.period_year||"Año"},{k:"all",l:t.period_all||"Total"}].map(p=><button key={p.k} onClick={()=>setStatsPeriod(p.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:statsPeriod===p.k?`1.5px solid ${GOLD}`:"1.5px solid rgba(255,255,255,0.08)",background:statsPeriod===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:statsPeriod===p.k?GOLD_LIGHT:"rgba(255,255,255,0.4)",cursor:"pointer",letterSpacing:"0.04em",textTransform:"uppercase"}}>{p.l}</button>)}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>
-      {[
-        {label:t.stats_current_deposit,value:depositPkgs.length,icon:"📦",color:"#60a5fa"},
-        {label:t.stats_total_pkgs,value:statTotalPkgs,icon:"📬",color:"#a78bfa"},
-        {label:t.stats_flights_completed,value:statFlightsCompleted,icon:"✈️",color:"#22c55e"},
-        {label:t.stats_total_kg,value:`${statTotalKg.toFixed(1)} kg`,icon:"⚖️",color:"#fbbf24"},
-        {label:t.stats_total_usd,value:usdF(statTotalUsd),icon:"💵",color:"#34d399"}
-      ].map(s=><div key={s.label} style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"20px 24px"}}>
-        <p style={{fontSize:28,margin:"0 0 4px"}}>{s.icon}</p>
-        <p style={{fontSize:28,fontWeight:700,color:s.color,margin:"0 0 6px"}}>{s.value}</p>
-        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textTransform:"uppercase"}}>{s.label}</p>
-      </div>)}
-      </div>
-    </>}
+    {tab==="stats"&&(()=>{
+      // Stats enriquecidas: today, comparativa vs período anterior, mini chart, hitos
+      const today=new Date();today.setHours(0,0,0,0);
+      const todayMs=today.getTime();
+      const allPkgs=[...depositPkgsAll,...packages];
+      // Paquetes de hoy
+      const todayPkgs=allPkgs.filter(p=>{const d=new Date(p.created_at).getTime();return d>=todayMs;});
+      // Paquetes de los últimos 7 días para gráfico
+      const last7=Array.from({length:7},(_,i)=>{const d=new Date(today);d.setDate(d.getDate()-(6-i));const ms=d.getTime();const next=ms+86400000;return {date:d,count:allPkgs.filter(p=>{const t=new Date(p.created_at).getTime();return t>=ms&&t<next;}).length};});
+      const max7=Math.max(...last7.map(d=>d.count),1);
+      // Comparativa: período actual vs anterior
+      const periodMs={week:7,month:30,year:365,all:9999}[statsPeriod]*86400000;
+      const prevPeriodStart=Date.now()-periodMs*2;
+      const currPeriodStart=Date.now()-periodMs;
+      const prevPeriodPkgs=allPkgs.filter(p=>{const t=new Date(p.created_at).getTime();return t>=prevPeriodStart&&t<currPeriodStart;}).length;
+      const currPeriodPkgs=allPkgs.filter(p=>new Date(p.created_at).getTime()>=currPeriodStart).length;
+      const deltaPkgs=prevPeriodPkgs>0?((currPeriodPkgs-prevPeriodPkgs)/prevPeriodPkgs)*100:null;
+      // Hitos / logros
+      const totalKgAll=allPkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);
+      const milestones=[
+        {threshold:10,label:"10 paquetes recibidos",icon:"📦"},
+        {threshold:50,label:"50 paquetes recibidos",icon:"📬"},
+        {threshold:100,label:"100 paquetes",icon:"💯"},
+        {threshold:500,label:"500 paquetes",icon:"🌟"},
+        {threshold:1000,label:"1000 paquetes",icon:"🏆"},
+      ].filter(m=>allPkgs.length>=m.threshold);
+      const nextMilestone=[10,50,100,500,1000,2000,5000].find(m=>allPkgs.length<m);
+      // Saludo dinámico
+      const hour=new Date().getHours();
+      const greeting=hour<12?"Buenos días":hour<19?"Buenas tardes":"Buenas noches";
+      const agentName=signup?.first_name||"";
+      return <>
+        <div style={{marginBottom:18}}>
+          <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.02em"}}>👋 {greeting}, {agentName}</h2>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0}}>Tu actividad en el depósito</p>
+        </div>
+
+        {/* Stats de HOY destacadas */}
+        <div style={{background:`linear-gradient(135deg, rgba(184,149,106,0.18), rgba(212,177,122,0.06))`,border:`1.5px solid rgba(184,149,106,0.4)`,borderRadius:16,padding:"20px 24px",marginBottom:18,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+          <div>
+            <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Hoy</p>
+            <p style={{fontSize:36,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{todayPkgs.length} <span style={{fontSize:14,fontWeight:600,color:"rgba(255,255,255,0.5)"}}>paquete{todayPkgs.length!==1?"s":""}</span></p>
+            <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"4px 0 0"}}>{todayPkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0).toFixed(1)} kg procesados</p>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <p style={{fontSize:48,margin:0,lineHeight:1}}>{todayPkgs.length===0?"☕":todayPkgs.length<5?"💪":todayPkgs.length<15?"🔥":"🚀"}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",fontStyle:"italic"}}>{todayPkgs.length===0?"¡Día tranquilo!":todayPkgs.length<5?"Buen ritmo":todayPkgs.length<15?"En llamas":"Imparable"}</p>
+          </div>
+        </div>
+
+        {/* Mini chart últimos 7 días */}
+        <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 22px",marginBottom:18}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>📊 Últimos 7 días</p>
+          <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:6,height:100,marginBottom:10}}>
+            {last7.map((d,i)=>{const h=(d.count/max7)*100;const isToday=i===6;return <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+              <div style={{width:"100%",height:`${Math.max(h,4)}%`,background:isToday?`linear-gradient(180deg,${GOLD_LIGHT},${GOLD})`:"rgba(96,165,250,0.4)",borderRadius:"4px 4px 0 0",transition:"height 300ms",position:"relative"}}>
+                {d.count>0&&<span style={{position:"absolute",top:-18,left:"50%",transform:"translateX(-50%)",fontSize:10,fontWeight:700,color:isToday?GOLD_LIGHT:"#fff"}}>{d.count}</span>}
+              </div>
+            </div>;})}
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",gap:6}}>
+            {last7.map((d,i)=><span key={i} style={{flex:1,fontSize:10,color:"rgba(255,255,255,0.4)",textAlign:"center",fontWeight:i===6?700:500}}>{d.date.toLocaleDateString("es-AR",{weekday:"short"}).slice(0,3)}</span>)}
+          </div>
+        </div>
+
+        {/* Selector de período */}
+        <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t.period||"Período"}:</span>
+          {[{k:"week",l:t.period_week||"Semana"},{k:"month",l:t.period_month||"Mes"},{k:"year",l:t.period_year||"Año"},{k:"all",l:t.period_all||"Total"}].map(p=><button key={p.k} onClick={()=>setStatsPeriod(p.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:statsPeriod===p.k?`1.5px solid ${GOLD}`:"1.5px solid rgba(255,255,255,0.08)",background:statsPeriod===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:statsPeriod===p.k?GOLD_LIGHT:"rgba(255,255,255,0.4)",cursor:"pointer",letterSpacing:"0.04em",textTransform:"uppercase"}}>{p.l}</button>)}
+          {deltaPkgs!==null&&statsPeriod!=="all"&&<span style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:5,background:deltaPkgs>=0?"rgba(34,197,94,0.12)":"rgba(255,80,80,0.12)",color:deltaPkgs>=0?"#22c55e":"#ff6b6b",letterSpacing:"0.04em"}}>{deltaPkgs>=0?"▲":"▼"} {Math.abs(deltaPkgs).toFixed(0)}% vs anterior</span>}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14,marginBottom:18}}>
+        {[
+          {label:t.stats_current_deposit,value:depositPkgs.length,icon:"📦",color:"#60a5fa"},
+          {label:t.stats_total_pkgs,value:statTotalPkgs,icon:"📬",color:"#a78bfa"},
+          {label:t.stats_flights_completed,value:statFlightsCompleted,icon:"✈️",color:"#22c55e"},
+          {label:t.stats_total_kg,value:`${statTotalKg.toFixed(1)} kg`,icon:"⚖️",color:"#fbbf24"},
+          {label:t.stats_total_usd,value:usdF(statTotalUsd),icon:"💵",color:"#34d399"}
+        ].map(s=><div key={s.label} style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"16px 20px"}}>
+          <p style={{fontSize:22,margin:"0 0 2px"}}>{s.icon}</p>
+          <p style={{fontSize:22,fontWeight:800,color:s.color,margin:"0 0 4px",letterSpacing:"-0.01em"}}>{s.value}</p>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>{s.label}</p>
+        </div>)}
+        </div>
+
+        {/* Logros */}
+        <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 22px"}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.06em"}}>🏆 Logros desbloqueados ({milestones.length})</p>
+          {milestones.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic"}}>Cuando llegues a 10 paquetes desbloqueás tu primer logro 💪</p>:<div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {milestones.map(m=><div key={m.threshold} style={{padding:"8px 14px",background:"linear-gradient(135deg, rgba(184,149,106,0.2), rgba(212,177,122,0.08))",border:`1px solid rgba(184,149,106,0.4)`,borderRadius:999,display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,color:GOLD_LIGHT}}>
+              <span>{m.icon}</span> {m.label}
+            </div>)}
+          </div>}
+          {nextMilestone&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(255,255,255,0.55)",marginBottom:4}}>
+              <span>Próximo logro: <strong style={{color:"#fff"}}>{nextMilestone} paquetes</strong></span>
+              <span style={{color:GOLD_LIGHT,fontWeight:700}}>{allPkgs.length} / {nextMilestone}</span>
+            </div>
+            <div style={{height:6,background:"rgba(255,255,255,0.06)",borderRadius:3,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${Math.min(100,(allPkgs.length/nextMilestone)*100)}%`,background:`linear-gradient(90deg,${GOLD},${GOLD_LIGHT})`,transition:"width 300ms"}}/>
+            </div>
+          </div>}
+        </div>
+      </>;
+    })()}
 
     {/* TAB 5: Cuenta corriente */}
     {tab==="account"&&<div>
