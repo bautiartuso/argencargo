@@ -2712,6 +2712,69 @@ function AuditLogCard({token}){
   </Card>;
 }
 
+// Gestión de feriados China/USA (calendario preventivo para clientes)
+function HolidaysCard({token}){
+  const [holidays,setHolidays]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [showForm,setShowForm]=useState(false);
+  const [form,setForm]=useState({country:"china",name:"",start_date:"",end_date:"",description:"",alert_days_before:14});
+  const [saving,setSaving]=useState(false);
+  const load=async()=>{setLo(true);const r=await dq("holidays_calendar",{token,filters:"?select=*&order=start_date.asc"});setHolidays(Array.isArray(r)?r:[]);setLo(false);};
+  useEffect(()=>{load();},[token]);
+  const save=async()=>{
+    if(!form.name||!form.start_date||!form.end_date){alert("Completá nombre y fechas");return;}
+    setSaving(true);
+    await dq("holidays_calendar",{method:"POST",token,body:{country:form.country,name:form.name,start_date:form.start_date,end_date:form.end_date,description:form.description||null,alert_days_before:Number(form.alert_days_before)||14}});
+    setShowForm(false);setForm({country:"china",name:"",start_date:"",end_date:"",description:"",alert_days_before:14});
+    setSaving(false);load();
+  };
+  const del=async(id)=>{if(!confirm("¿Eliminar este feriado?"))return;await dq("holidays_calendar",{method:"DELETE",token,filters:`?id=eq.${id}`});load();};
+  const todayISO=new Date().toISOString().slice(0,10);
+  const upcoming=holidays.filter(h=>h.end_date>=todayISO);
+  const past=holidays.filter(h=>h.end_date<todayISO);
+  return <Card title="🌍 Calendario de feriados (China / USA / España)" actions={<Btn small onClick={()=>setShowForm(true)}>+ Nuevo feriado</Btn>}>
+    <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Banner preventivo en el portal cliente. Le avisa al cliente sobre feriados próximos del país de origen para que planifique sus envíos. La alerta aparece N días antes según configures.</p>
+    {showForm&&<div style={{padding:"14px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.25)",borderRadius:10,marginBottom:14}}>
+      <h4 style={{fontSize:12,fontWeight:700,color:"#60a5fa",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Nuevo feriado</h4>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+        <Sel label="País" value={form.country} onChange={v=>setForm(p=>({...p,country:v}))} options={[{value:"china",label:"🇨🇳 China"},{value:"usa",label:"🇺🇸 USA"},{value:"spain",label:"🇪🇸 España"}]} small/>
+        <Inp label="Nombre" value={form.name} onChange={v=>setForm(p=>({...p,name:v}))} placeholder="Ej: Año Nuevo Chino" small/>
+        <Inp label="Fecha inicio" type="date" value={form.start_date} onChange={v=>setForm(p=>({...p,start_date:v}))} small/>
+        <Inp label="Fecha fin" type="date" value={form.end_date} onChange={v=>setForm(p=>({...p,end_date:v}))} small/>
+        <Inp label="Avisar X días antes" type="number" value={form.alert_days_before} onChange={v=>setForm(p=>({...p,alert_days_before:v}))} small/>
+      </div>
+      <div style={{marginTop:8}}><Inp label="Descripción (opcional)" value={form.description} onChange={v=>setForm(p=>({...p,description:v}))} placeholder="Las fábricas no operan, planificar envíos..." small/></div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:8}}>
+        <Btn small variant="secondary" onClick={()=>setShowForm(false)}>Cancelar</Btn>
+        <Btn small onClick={save} disabled={saving}>{saving?"Guardando...":"Guardar"}</Btn>
+      </div>
+    </div>}
+    {lo?<p style={{color:"rgba(255,255,255,0.4)",margin:"1rem 0"}}>Cargando…</p>:<>
+      {upcoming.length>0&&<>
+        <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Próximos / activos ({upcoming.length})</p>
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:18}}>
+          {upcoming.map(h=>{const flag={china:"🇨🇳",usa:"🇺🇸",spain:"🇪🇸"}[h.country]||"🌍";return <div key={h.id} style={{padding:"10px 12px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+            <div style={{flex:1,minWidth:0}}>
+              <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"0 0 3px"}}>{flag} {h.name}</p>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:0}}>{formatDate(h.start_date)} → {formatDate(h.end_date)} · alerta {h.alert_days_before}d antes</p>
+            </div>
+            <button onClick={()=>del(h.id)} style={{background:"transparent",border:"1px solid rgba(255,80,80,0.25)",color:"#ff6b6b",cursor:"pointer",fontSize:11,padding:"4px 10px",borderRadius:5,fontWeight:600}}>Eliminar</button>
+          </div>;})}
+        </div>
+      </>}
+      {past.length>0&&<details style={{marginTop:8}}>
+        <summary style={{cursor:"pointer",fontSize:11,color:"rgba(255,255,255,0.4)",fontWeight:600,letterSpacing:"0.05em"}}>Pasados ({past.length}) ▸</summary>
+        <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:8}}>
+          {past.map(h=>{const flag={china:"🇨🇳",usa:"🇺🇸",spain:"🇪🇸"}[h.country]||"🌍";return <div key={h.id} style={{padding:"6px 10px",fontSize:11,color:"rgba(255,255,255,0.45)",display:"flex",justifyContent:"space-between"}}>
+            <span>{flag} {h.name} · {formatDate(h.start_date)}</span>
+            <button onClick={()=>del(h.id)} style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.5)",cursor:"pointer",fontSize:10}}>×</button>
+          </div>;})}
+        </div>
+      </details>}
+    </>}
+  </Card>;
+}
+
 function MarketingCampaignCard({token}){
   const [stats,setStats]=useState(null);
   const [testEmail,setTestEmail]=useState("");
@@ -2842,6 +2905,7 @@ function AdminSettings({token,session}){
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>ROL</p><p style={{fontSize:14,color:IC,margin:0,fontWeight:600}}>Administrador</p></div>
       </div>
     </Card>
+    <HolidaysCard token={token}/>
     <MarketingCampaignCard token={token}/>
     <AuditLogCard token={token}/>
     <Card title="Retención de fotos de bultos">
