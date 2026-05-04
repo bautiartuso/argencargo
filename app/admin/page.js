@@ -360,6 +360,83 @@ function NewOperation({token,clients,onBack,onCreated}){
   </div>;
 }
 
+// Notas internas + recordatorios por op (admin only)
+function OperationNotesPanel({opId,token}){
+  const [notes,setNotes]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [showForm,setShowForm]=useState(false);
+  const [body,setBody]=useState("");
+  const [remindAt,setRemindAt]=useState("");
+  const [saving,setSaving]=useState(false);
+  const load=async()=>{setLo(true);const r=await dq("operation_notes",{token,filters:`?operation_id=eq.${opId}&select=*&order=created_at.desc`});setNotes(Array.isArray(r)?r:[]);setLo(false);};
+  useEffect(()=>{load();},[opId,token]);
+  const save=async()=>{
+    if(!body.trim()){alert("Cargá el texto de la nota");return;}
+    setSaving(true);
+    const payload={operation_id:opId,body:body.trim()};
+    if(remindAt)payload.remind_at=new Date(remindAt+":00").toISOString();
+    await dq("operation_notes",{method:"POST",token,body:payload});
+    setBody("");setRemindAt("");setShowForm(false);
+    setSaving(false);load();
+  };
+  const del=async(id)=>{if(!confirm("¿Eliminar esta nota?"))return;await dq("operation_notes",{method:"DELETE",token,filters:`?id=eq.${id}`});load();};
+  const toggleDone=async(n)=>{await dq("operation_notes",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{done_at:n.done_at?null:new Date().toISOString()}});load();};
+  // Separar: recordatorios pendientes / vencidos / notas simples / hechas
+  const now=Date.now();
+  const overdueReminders=notes.filter(n=>n.remind_at&&!n.done_at&&new Date(n.remind_at).getTime()<=now);
+  const upcomingReminders=notes.filter(n=>n.remind_at&&!n.done_at&&new Date(n.remind_at).getTime()>now);
+  const plainNotes=notes.filter(n=>!n.remind_at&&!n.done_at);
+  const doneNotes=notes.filter(n=>n.done_at);
+  const fmtRem=(d)=>{const ms=new Date(d).getTime()-now;const days=Math.round(ms/86400000);if(days<0)return `vencido hace ${Math.abs(days)}d`;if(days===0)return `hoy`;if(days===1)return `mañana`;return `en ${days} días`;};
+
+  if(lo)return null;
+  return <div style={{marginBottom:16,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"14px 18px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:notes.length>0?10:0,gap:8,flexWrap:"wrap"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>📝 Notas internas {notes.length>0&&<span style={{color:GOLD_LIGHT,marginLeft:4}}>({notes.length-doneNotes.length})</span>}</p>
+        {overdueReminders.length>0&&<span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:5,background:"rgba(239,68,68,0.18)",color:"#ef4444",letterSpacing:"0.04em"}}>⏰ {overdueReminders.length} vencido{overdueReminders.length>1?"s":""}</span>}
+      </div>
+      <button onClick={()=>setShowForm(!showForm)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.1)",color:GOLD_LIGHT,cursor:"pointer"}}>{showForm?"Cancelar":"+ Nueva nota"}</button>
+    </div>
+
+    {showForm&&<div style={{padding:"10px 12px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.25)",borderRadius:8,marginBottom:notes.length>0?10:0}}>
+      <textarea value={body} onChange={e=>setBody(e.target.value)} placeholder='Ej: "Cliente difícil, llamar antes de mover" o "Negociar descuento por volumen"' rows={2} style={{width:"100%",padding:"8px 10px",fontSize:12,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",resize:"vertical",fontFamily:"inherit",marginBottom:8}}/>
+      <div style={{display:"flex",gap:8,alignItems:"end",flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:200}}>
+          <label style={{display:"block",fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.5)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.04em"}}>Recordame el (opcional)</label>
+          <input type="datetime-local" value={remindAt} onChange={e=>setRemindAt(e.target.value)} style={{width:"100%",padding:"6px 10px",fontSize:12,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",colorScheme:"dark"}}/>
+        </div>
+        <button onClick={save} disabled={saving||!body.trim()} style={{padding:"7px 16px",fontSize:12,fontWeight:700,borderRadius:6,border:"none",background:saving?"rgba(255,255,255,0.05)":"linear-gradient(135deg,#60a5fa,#3b82f6)",color:saving?"rgba(255,255,255,0.5)":"#fff",cursor:saving||!body.trim()?"not-allowed":"pointer"}}>{saving?"…":"Guardar"}</button>
+      </div>
+    </div>}
+
+    {notes.length>0&&<div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {[...overdueReminders,...upcomingReminders,...plainNotes].map(n=>{const isReminder=!!n.remind_at;const isOverdue=isReminder&&new Date(n.remind_at).getTime()<=now;const c=isOverdue?"#ef4444":isReminder?"#fbbf24":"rgba(255,255,255,0.5)";return <div key={n.id} style={{padding:"8px 12px",background:"rgba(255,255,255,0.03)",border:`1px solid ${isOverdue?"rgba(239,68,68,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:7,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:200}}>
+          <p style={{fontSize:13,color:"#fff",margin:0,lineHeight:1.5}}>{n.body}</p>
+          <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"3px 0 0"}}>{formatDate(n.created_at)}{isReminder&&<span style={{color:c,marginLeft:8,fontWeight:700}}>⏰ {fmtRem(n.remind_at)}</span>}</p>
+        </div>
+        <div style={{display:"flex",gap:4}}>
+          {isReminder&&<button onClick={()=>toggleDone(n)} title="Marcar como hecho" style={{padding:"3px 8px",fontSize:11,borderRadius:5,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",fontWeight:700}}>✓</button>}
+          <button onClick={()=>del(n.id)} title="Eliminar" style={{padding:"3px 8px",fontSize:11,borderRadius:5,border:"1px solid rgba(255,80,80,0.25)",background:"transparent",color:"rgba(255,80,80,0.6)",cursor:"pointer"}}>×</button>
+        </div>
+      </div>;})}
+      {doneNotes.length>0&&<details style={{marginTop:4}}>
+        <summary style={{cursor:"pointer",fontSize:10,color:"rgba(255,255,255,0.4)",fontWeight:600,letterSpacing:"0.05em",padding:"4px 0"}}>Hechas ({doneNotes.length}) ▸</summary>
+        <div style={{display:"flex",flexDirection:"column",gap:3,marginTop:4}}>
+          {doneNotes.map(n=><div key={n.id} style={{padding:"5px 10px",fontSize:11,color:"rgba(255,255,255,0.45)",display:"flex",justifyContent:"space-between",gap:6,background:"rgba(255,255,255,0.02)",borderRadius:5}}>
+            <span style={{textDecoration:"line-through"}}>{n.body}</span>
+            <span style={{display:"flex",gap:4}}>
+              <button onClick={()=>toggleDone(n)} title="Reactivar" style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.4)",cursor:"pointer",fontSize:11}}>↺</button>
+              <button onClick={()=>del(n.id)} style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.5)",cursor:"pointer",fontSize:11}}>×</button>
+            </span>
+          </div>)}
+        </div>
+      </details>}
+    </div>}
+  </div>;
+}
+
 function OperationEditor({op:initOp,token,onBack,onDelete}){
   const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});  const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
@@ -722,6 +799,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
       </div>
     </div>
+
+    <OperationNotesPanel opId={op.id} token={token}/>
 
     {/* Asistente "¿qué falta?" — checklist dinámica de bloqueos para que la op avance */}
     {(()=>{
