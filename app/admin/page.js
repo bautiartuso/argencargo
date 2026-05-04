@@ -5088,6 +5088,147 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
   </div>;
 }
 
+// Análisis de retención + LTV — vista de salud comercial del negocio
+function RetentionLTVCard({token}){
+  const [data,setData]=useState(null);
+  const [lo,setLo]=useState(true);
+  useEffect(()=>{(async()=>{
+    setLo(true);
+    const [clients,ops,payments]=await Promise.all([
+      dq("clients",{token,filters:"?select=id,client_code,first_name,last_name,created_at,tier,whatsapp"}),
+      dq("operations",{token,filters:"?select=id,client_id,created_at,closed_at,delivered_at,is_collected,collected_amount,budget_total,status&order=created_at.asc"}),
+      dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd,payment_date"}),
+    ]);
+    const opsArr=Array.isArray(ops)?ops:[];
+    const clientsArr=Array.isArray(clients)?clients:[];
+    const pmtsArr=Array.isArray(payments)?payments:[];
+    // LTV por cliente: suma de cobros reales (operation_client_payments) + collected_amount de ops cerradas sin GI
+    const pmtByOp={};pmtsArr.forEach(p=>{pmtByOp[p.operation_id]=(pmtByOp[p.operation_id]||0)+Number(p.amount_usd||0);});
+    const ltvByClient={};
+    for(const op of opsArr){
+      const cli=op.client_id;if(!cli)continue;
+      let revenue=pmtByOp[op.id]||0;
+      if(revenue===0&&op.is_collected)revenue=Number(op.collected_amount||op.budget_total||0);
+      if(!ltvByClient[cli])ltvByClient[cli]={ltv:0,ops:0,firstOp:null,lastOp:null};
+      ltvByClient[cli].ltv+=revenue;
+      ltvByClient[cli].ops++;
+      const created=op.created_at;
+      if(!ltvByClient[cli].firstOp||created<ltvByClient[cli].firstOp)ltvByClient[cli].firstOp=created;
+      if(!ltvByClient[cli].lastOp||created>ltvByClient[cli].lastOp)ltvByClient[cli].lastOp=created;
+    }
+    // Top 10 clientes por LTV
+    const topClients=clientsArr.map(c=>{const x=ltvByClient[c.id]||{ltv:0,ops:0};return {...c,ltv:x.ltv,ops:x.ops,firstOp:x.firstOp,lastOp:x.lastOp};}).filter(c=>c.ltv>0).sort((a,b)=>b.ltv-a.ltv).slice(0,10);
+    // Análisis de retención por cohorte mensual
+    const cohorts={};
+    for(const c of clientsArr){
+      const cm=String(c.created_at||"").slice(0,7);
+      if(!cohorts[cm])cohorts[cm]={signed:0,activated:0,returned30:0,returned90:0,returned180:0};
+      cohorts[cm].signed++;
+      const x=ltvByClient[c.id];
+      if(!x||x.ops===0)continue;
+      cohorts[cm].activated++;
+      const firstMs=new Date(x.firstOp).getTime();
+      const lastMs=new Date(x.lastOp).getTime();
+      const sinceFirst=(lastMs-firstMs)/86400000;
+      if(x.ops>1&&sinceFirst<=30)cohorts[cm].returned30++;
+      if(x.ops>1&&sinceFirst<=90)cohorts[cm].returned90++;
+      if(x.ops>1&&sinceFirst<=180)cohorts[cm].returned180++;
+    }
+    // Métricas globales
+    const ltvAll=Object.values(ltvByClient).map(x=>x.ltv).filter(v=>v>0);
+    const ltvAvg=ltvAll.length>0?ltvAll.reduce((s,v)=>s+v,0)/ltvAll.length:0;
+    const ltvMedian=ltvAll.length>0?[...ltvAll].sort((a,b)=>a-b)[Math.floor(ltvAll.length/2)]:0;
+    const totalActivated=Object.values(ltvByClient).filter(x=>x.ops>0).length;
+    const repeatCustomers=Object.values(ltvByClient).filter(x=>x.ops>=2).length;
+    const repeatRate=totalActivated>0?(repeatCustomers/totalActivated)*100:0;
+    // Inactivos: clientes activados que hace +60d no operan
+    const d60agoMs=Date.now()-60*86400000;
+    const inactiveClients=clientsArr.filter(c=>{const x=ltvByClient[c.id];return x&&x.ops>0&&new Date(x.lastOp).getTime()<d60agoMs;}).map(c=>{const x=ltvByClient[c.id];return {...c,ltv:x.ltv,ops:x.ops,lastOp:x.lastOp,daysInactive:Math.floor((Date.now()-new Date(x.lastOp).getTime())/86400000)};}).sort((a,b)=>b.ltv-a.ltv).slice(0,15);
+
+    setData({topClients,cohorts:Object.entries(cohorts).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,8),ltvAvg,ltvMedian,totalActivated,repeatCustomers,repeatRate,inactiveClients});
+    setLo(false);
+  })();},[token]);
+  if(lo||!data)return <div style={{padding:"3rem",textAlign:"center",color:"rgba(255,255,255,0.4)"}}>Calculando análisis…</div>;
+  const usdF=v=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0})}`;
+  return <>
+    <h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:"0 0 14px",letterSpacing:"-0.01em"}}>📈 Retención & LTV</h2>
+
+    {/* Métricas globales */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:18}}>
+      <div style={{padding:"14px 18px",background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.18)",borderRadius:12}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase"}}>LTV promedio</p>
+        <p style={{fontSize:22,fontWeight:800,color:"#22c55e",margin:"4px 0 0",fontVariantNumeric:"tabular-nums"}}>{usdF(data.ltvAvg)}</p>
+        <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"3px 0 0"}}>Mediana: {usdF(data.ltvMedian)}</p>
+      </div>
+      <div style={{padding:"14px 18px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:12}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase"}}>Tasa de recompra</p>
+        <p style={{fontSize:22,fontWeight:800,color:"#60a5fa",margin:"4px 0 0",fontVariantNumeric:"tabular-nums"}}>{data.repeatRate.toFixed(0)}%</p>
+        <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"3px 0 0"}}>{data.repeatCustomers} de {data.totalActivated} activados</p>
+      </div>
+      <div style={{padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:12}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase"}}>Clientes activados</p>
+        <p style={{fontSize:22,fontWeight:800,color:GOLD_LIGHT,margin:"4px 0 0",fontVariantNumeric:"tabular-nums"}}>{data.totalActivated}</p>
+        <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"3px 0 0"}}>al menos 1 operación</p>
+      </div>
+      <div style={{padding:"14px 18px",background:"rgba(239,68,68,0.06)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:12}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase"}}>Inactivos +60d</p>
+        <p style={{fontSize:22,fontWeight:800,color:"#ef4444",margin:"4px 0 0",fontVariantNumeric:"tabular-nums"}}>{data.inactiveClients.length}</p>
+        <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"3px 0 0"}}>candidatos a reactivar</p>
+      </div>
+    </div>
+
+    {/* Top 10 clientes por LTV */}
+    <Card title="🏆 Top 10 clientes por LTV (lifetime value)">
+      {data.topClients.length===0?<p style={{color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin datos suficientes</p>:<div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {data.topClients.map((c,i)=><div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:i<3?"rgba(184,149,106,0.06)":"rgba(255,255,255,0.025)",border:`1px solid ${i<3?"rgba(184,149,106,0.2)":"rgba(255,255,255,0.06)"}`,borderRadius:8,gap:10,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:200}}>
+            <span style={{fontSize:14,fontWeight:800,color:i<3?GOLD_LIGHT:"rgba(255,255,255,0.5)",minWidth:24}}>{i+1}.</span>
+            <div>
+              <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}><strong style={{color:GOLD_LIGHT,fontFamily:"monospace",fontSize:11,marginRight:8}}>{c.client_code}</strong>{c.first_name} {c.last_name||""}</p>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{c.ops} op{c.ops!==1?"s":""} · ticket prom. {usdF(c.ltv/c.ops)}{c.tier&&c.tier!=="standard"?` · ${c.tier}`:""}</p>
+            </div>
+          </div>
+          <span style={{fontSize:16,fontWeight:800,color:"#22c55e",fontVariantNumeric:"tabular-nums"}}>{usdF(c.ltv)}</span>
+        </div>)}
+      </div>}
+    </Card>
+
+    {/* Cohortes de retención */}
+    <Card title="📊 Análisis de cohortes (clientes nuevos por mes)">
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"0 0 12px"}}>De los clientes que se registraron cada mes, cuántos hicieron 1+ operación y cuántos volvieron a comprar.</p>
+      {data.cohorts.length===0?<p style={{color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin datos</p>:<div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+            {["Mes","Registrados","Activados","%","Volvieron a 30d","Volvieron a 90d","Volvieron a 180d"].map((h,i)=><th key={i} style={{padding:"8px 10px",textAlign:i===0?"left":"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase"}}>{h}</th>)}
+          </tr></thead>
+          <tbody>{data.cohorts.map(([month,c])=>{const actPct=c.signed>0?(c.activated/c.signed)*100:0;return <tr key={month} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{padding:"8px 10px",color:"#fff",fontWeight:600}}>{month}</td>
+            <td style={{padding:"8px 10px",textAlign:"center",color:"rgba(255,255,255,0.7)"}}>{c.signed}</td>
+            <td style={{padding:"8px 10px",textAlign:"center",color:"rgba(255,255,255,0.85)",fontWeight:600}}>{c.activated}</td>
+            <td style={{padding:"8px 10px",textAlign:"center",color:actPct>=50?"#22c55e":actPct>=25?"#fbbf24":"#ef4444",fontWeight:700}}>{actPct.toFixed(0)}%</td>
+            <td style={{padding:"8px 10px",textAlign:"center",color:"rgba(255,255,255,0.6)"}}>{c.returned30}</td>
+            <td style={{padding:"8px 10px",textAlign:"center",color:"rgba(255,255,255,0.6)"}}>{c.returned90}</td>
+            <td style={{padding:"8px 10px",textAlign:"center",color:"rgba(255,255,255,0.6)"}}>{c.returned180}</td>
+          </tr>;})}</tbody>
+        </table>
+      </div>}
+    </Card>
+
+    {/* Inactivos a reactivar */}
+    <Card title="⚠ Clientes inactivos +60 días — candidatos a reactivar">
+      {data.inactiveClients.length===0?<p style={{color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>No hay clientes inactivos 🎉</p>:<div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {data.inactiveClients.map(c=>{const wa=c.whatsapp?String(c.whatsapp).replace(/[^0-9]/g,""):"";const msg=encodeURIComponent(`Hola ${c.first_name}! ¿Cómo va? Te escribo para saber si tenés algún proyecto de importación en mente. Hace tiempo que no charlamos. Avisame si necesitás cotizar algo, dale!`);return <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,gap:10,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:200}}>
+            <p style={{fontSize:13,color:"#fff",margin:0}}><strong style={{color:GOLD_LIGHT,fontFamily:"monospace",fontSize:11,marginRight:8}}>{c.client_code}</strong>{c.first_name} {c.last_name||""}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{c.ops} op{c.ops!==1?"s":""} · LTV {usdF(c.ltv)} · sin operar hace <strong style={{color:"#fb923c"}}>{c.daysInactive} días</strong></p>
+          </div>
+          {wa&&<a href={`https://wa.me/${wa}?text=${msg}`} target="_blank" rel="noopener noreferrer" style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,background:"#25D366",color:"#fff",textDecoration:"none",whiteSpace:"nowrap"}}>📱 WhatsApp</a>}
+        </div>;})}
+      </div>}
+    </Card>
+  </>;
+}
+
 function DashboardKPIs({token}){
   const [data,setData]=useState(null);const [lo,setLo]=useState(true);
   useEffect(()=>{(async()=>{
@@ -6702,7 +6843,7 @@ function AdminDashboard({session,onLogout}){
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
       {page==="tasks"&&<AdminTasks token={token}/>}
       {page==="comms"&&<ComunicacionesPanel token={token}/>}
-      {page==="dashboard"&&<><FinanceDashboard token={token}/><OperationalAnalytics token={token}/><DashboardKPIs token={token}/></>}
+      {page==="dashboard"&&<><FinanceDashboard token={token}/><OperationalAnalytics token={token}/><DashboardKPIs token={token}/><RetentionLTVCard token={token}/></>}
       {page==="shipments"&&<ShipmentsTracking token={token} onSelectOp={op=>{setPage("operations");setSelOp(op);}}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="purchase_notifs"&&<PurchaseNotificationsAdmin token={token} allClients={allClients} onCreateOp={op=>{setPage("operations");setSelOp(op);}}/>}
