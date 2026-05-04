@@ -4694,6 +4694,149 @@ function ShipmentsTracking({token,onSelectOp}){
   </div>;
 }
 
+// "Modo Hoy" — Dashboard ejecutivo con TODAS las tareas pendientes que requieren acción del admin.
+// Cards clickeables que navegan a la sección correspondiente.
+function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
+  const [data,setData]=useState(null);
+  const [lo,setLo]=useState(true);
+  const load=async()=>{
+    setLo(true);
+    const todayISO=new Date().toISOString().slice(0,10);
+    const d3agoISO=new Date(Date.now()-3*24*60*60*1000).toISOString();
+    const d5agoISO=new Date(Date.now()-5*24*60*60*1000).toISOString();
+    const d1agoISO=new Date(Date.now()-24*60*60*1000).toISOString();
+    const d7agoISO=new Date(Date.now()-7*24*60*60*1000).toISOString();
+    const in7daysISO=new Date(Date.now()+7*24*60*60*1000).toISOString().slice(0,10);
+    const [opsAll,flights,supPmts,purchaseNotifs,repackReqs]=await Promise.all([
+      dq("operations",{token,filters:`?select=id,operation_code,status,is_collected,collected_amount,budget_total,delivered_at,client_id,description,created_at,channel,clients(client_code,first_name,last_name,whatsapp)&order=created_at.desc&limit=500`}),
+      dq("flights",{token,filters:`?select=id,flight_code,status,invoice_presented_at,created_at,total_cost_usd,total_weight_kg&status=eq.preparando&invoice_presented_at=not.is.null&order=invoice_presented_at.desc`}),
+      dq("operation_supplier_payments",{token,filters:`?select=id,operation_id,amount_usd,payment_date,is_paid,reference,operations(operation_code)&is_paid=eq.false&payment_date=lte.${todayISO}&order=payment_date.asc`}),
+      dq("purchase_notifications",{token,filters:`?select=id,client_id,description,origin,shipping_method,created_at,clients(client_code,first_name)&status=eq.pending&created_at=lt.${d1agoISO}&order=created_at.asc`}),
+      dq("repack_requests",{token,filters:`?select=id,operation_id,requested_at,operations(operation_code,clients(client_code,first_name))&status=eq.pending&order=requested_at.asc`})
+    ]);
+    const opsArr=Array.isArray(opsAll)?opsAll:[];
+    // 1. Cobranzas vencidas (entregada/cerrada >3d sin cobrar)
+    const cobranzasVencidas=opsArr.filter(o=>!o.is_collected&&["entregada","operacion_cerrada"].includes(o.status)&&o.delivered_at&&o.delivered_at<d3agoISO);
+    // 2. Documentación pendiente cliente +5 días (canal A blanco en preparación sin items)
+    // Para esto necesitamos saber qué ops tienen 0 items
+    const aBlancoEnPrep=opsArr.filter(o=>o.channel==="aereo_blanco"&&o.status==="en_preparacion"&&o.created_at<d5agoISO);
+    const idsToCheck=aBlancoEnPrep.map(o=>o.id);
+    let docsPendientes=[];
+    if(idsToCheck.length>0){
+      const items=await dq("operation_items",{token,filters:`?operation_id=in.(${idsToCheck.join(",")})&select=operation_id`});
+      const opsConItems=new Set((Array.isArray(items)?items:[]).map(i=>i.operation_id));
+      docsPendientes=aBlancoEnPrep.filter(o=>!opsConItems.has(o.id));
+    }
+    // 3. Cotizaciones sin avanzar +7 días (saved_quotes sin op asociada o sin actividad)
+    const quotes=await dq("saved_quotes",{token,filters:`?select=id,client_id,client_name,channel_name,total_cost,created_at,clients(client_code,first_name,whatsapp)&created_at=lt.${d7agoISO}&order=created_at.desc&limit=50`}).catch(()=>[]);
+    // Sólo las que NO matchean con ninguna op del cliente creada DESPUÉS de la cotización
+    const quotesArr=Array.isArray(quotes)?quotes:[];
+    const cotizacionesPerdidas=quotesArr.filter(q=>{
+      if(!q.client_id)return false;
+      const opsDelCliente=opsArr.filter(o=>o.client_id===q.client_id&&o.created_at>q.created_at);
+      return opsDelCliente.length===0;
+    }).slice(0,10);
+    setData({
+      cobranzasVencidas,
+      vuelosListos:Array.isArray(flights)?flights:[],
+      pagosProveedor:Array.isArray(supPmts)?supPmts:[],
+      avisosPendientes:Array.isArray(purchaseNotifs)?purchaseNotifs:[],
+      docsPendientes,
+      cotizacionesPerdidas,
+      reempaques:Array.isArray(repackReqs)?repackReqs:[],
+    });
+    setLo(false);
+  };
+  useEffect(()=>{load();},[token]);
+  if(lo||!data)return <p style={{padding:"3rem",textAlign:"center",color:"rgba(255,255,255,0.4)"}}>Cargando tareas pendientes…</p>;
+
+  const totalTareas=data.cobranzasVencidas.length+data.vuelosListos.length+data.pagosProveedor.length+data.avisosPendientes.length+data.docsPendientes.length+data.cotizacionesPerdidas.length+data.reempaques.length;
+
+  const Card=({title,emoji,count,color,items,renderItem,onClickAll,emptyMsg})=>{
+    return <div style={{background:"rgba(255,255,255,0.028)",border:`1px solid ${count>0?color+"55":"rgba(255,255,255,0.06)"}`,borderRadius:14,padding:"16px 18px",display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+        <div style={{flex:1}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{emoji} {title}</p>
+          <p style={{fontSize:28,fontWeight:800,color:count>0?color:"rgba(255,255,255,0.3)",margin:0,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{count}</p>
+        </div>
+        {count>0&&onClickAll&&<button onClick={onClickAll} style={{padding:"6px 10px",fontSize:10,fontWeight:700,borderRadius:6,border:`1px solid ${color}66`,background:`${color}15`,color:color,cursor:"pointer",whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:"0.04em"}}>Ver todo →</button>}
+      </div>
+      {count===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:0,fontStyle:"italic"}}>{emptyMsg||"Todo al día ✓"}</p>:<div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:160,overflow:"auto"}}>
+        {items.slice(0,4).map((it,i)=>renderItem(it,i))}
+        {items.length>4&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",textAlign:"center",fontStyle:"italic"}}>+{items.length-4} más</p>}
+      </div>}
+    </div>;
+  };
+
+  const itemRowStyle={padding:"6px 8px",background:"rgba(0,0,0,0.18)",borderRadius:5,fontSize:11,color:"rgba(255,255,255,0.75)",cursor:"pointer",transition:"background 120ms",border:"1px solid transparent"};
+  const itemHover=e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";e.currentTarget.style.borderColor="rgba(255,255,255,0.1)";};
+  const itemLeave=e=>{e.currentTarget.style.background="rgba(0,0,0,0.18)";e.currentTarget.style.borderColor="transparent";};
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:18,gap:12,flexWrap:"wrap"}}>
+      <div>
+        <h2 style={{fontSize:24,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>👋 Hola Bautista — Lo que tenés que hacer hoy</h2>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>{totalTareas===0?"🎉 ¡Todo al día! No hay tareas pendientes urgentes.":`${totalTareas} tarea${totalTareas>1?"s":""} pendiente${totalTareas>1?"s":""} en total`}</p>
+      </div>
+      <button onClick={load} style={{padding:"7px 14px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.03)",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>↻ Refrescar</button>
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:14}}>
+
+      <Card title="Cobranzas vencidas" emoji="💰" count={data.cobranzasVencidas.length} color="#ef4444"
+        items={data.cobranzasVencidas} onClickAll={()=>onNav&&onNav("operations")}
+        emptyMsg="Ningún cliente debe (>3 días)"
+        renderItem={(o,i)=><div key={i} onClick={()=>onSelectOp&&onSelectOp(o)} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
+          <strong style={{color:"#fff",fontFamily:"monospace"}}>{o.operation_code}</strong> · {o.clients?.client_code} · USD {Number(o.budget_total||0).toFixed(0)} · {Math.floor((Date.now()-new Date(o.delivered_at).getTime())/86400000)}d
+        </div>}/>
+
+      <Card title="Vuelos listos para despachar" emoji="✈️" count={data.vuelosListos.length} color="#22c55e"
+        items={data.vuelosListos} onClickAll={()=>onNav&&onNav("agents")}
+        emptyMsg="Ningún vuelo esperando despacho"
+        renderItem={(f,i)=><div key={i} onClick={()=>onSelectFlight&&onSelectFlight(f)} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
+          <strong style={{color:"#fff",fontFamily:"monospace"}}>{f.flight_code}</strong> · factura presentada {formatDate(f.invoice_presented_at)}
+        </div>}/>
+
+      <Card title="Pagos a proveedor pendientes" emoji="💳" count={data.pagosProveedor.length} color="#f97316"
+        items={data.pagosProveedor} onClickAll={()=>onNav&&onNav("operations")}
+        emptyMsg="Ningún pago vencido"
+        renderItem={(p,i)=><div key={i} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
+          <strong style={{color:"#fff",fontFamily:"monospace"}}>{p.operations?.operation_code||"—"}</strong> · USD {Number(p.amount_usd||0).toFixed(2)} · vence {formatDate(p.payment_date)}
+        </div>}/>
+
+      <Card title="Avisos compra sin confirmar +24h" emoji="📦" count={data.avisosPendientes.length} color="#fbbf24"
+        items={data.avisosPendientes} onClickAll={()=>onNav&&onNav("purchase_notifs")}
+        emptyMsg="Todos los avisos atendidos"
+        renderItem={(n,i)=><div key={i} onClick={()=>onNav&&onNav("purchase_notifs")} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
+          <strong style={{color:"#fff",fontFamily:"monospace"}}>{n.clients?.client_code}</strong> · {n.description||"sin descripción"} · {n.origin?.toUpperCase()} {n.shipping_method}
+        </div>}/>
+
+      <Card title="Documentación pendiente cliente +5d" emoji="📋" count={data.docsPendientes.length} color="#a78bfa"
+        items={data.docsPendientes} onClickAll={()=>onNav&&onNav("operations")}
+        emptyMsg="Todos los clientes documentaron"
+        renderItem={(o,i)=><div key={i} onClick={()=>onSelectOp&&onSelectOp(o)} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
+          <strong style={{color:"#fff",fontFamily:"monospace"}}>{o.operation_code}</strong> · {o.clients?.client_code} · creada hace {Math.floor((Date.now()-new Date(o.created_at).getTime())/86400000)}d
+        </div>}/>
+
+      <Card title="Cotizaciones sin respuesta +7d" emoji="💬" count={data.cotizacionesPerdidas.length} color="#60a5fa"
+        items={data.cotizacionesPerdidas} onClickAll={()=>onNav&&onNav("quotes")}
+        emptyMsg="Todas las cotizaciones convertidas o nuevas"
+        renderItem={(q,i)=>{const wa=q.clients?.whatsapp?String(q.clients.whatsapp).replace(/[^0-9]/g,""):"";return <div key={i} style={{...itemRowStyle,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
+          <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><strong style={{color:"#fff",fontFamily:"monospace"}}>{q.clients?.client_code||"—"}</strong> · {q.channel_name||"—"} · USD {Number(q.total_cost||0).toFixed(0)}</span>
+          {wa&&<a href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{padding:"2px 8px",fontSize:9,fontWeight:700,borderRadius:4,background:"#25D366",color:"#fff",textDecoration:"none",whiteSpace:"nowrap"}}>WA</a>}
+        </div>;}}/>
+
+      <Card title="Reempaques pendientes" emoji="🔄" count={data.reempaques.length} color="#fb923c"
+        items={data.reempaques} onClickAll={()=>onNav&&onNav("agents")}
+        emptyMsg="Sin pedidos de reempaque"
+        renderItem={(r,i)=><div key={i} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
+          <strong style={{color:"#fff",fontFamily:"monospace"}}>{r.operations?.operation_code||"—"}</strong> · {r.operations?.clients?.client_code||"—"} · pedido {formatDate(r.requested_at)}
+        </div>}/>
+
+    </div>
+  </div>;
+}
+
 function DashboardKPIs({token}){
   const [data,setData]=useState(null);const [lo,setLo]=useState(true);
   useEffect(()=>{(async()=>{
@@ -6241,10 +6384,10 @@ function CmdK({token,onNavigate,allClients}){
 }
 
 function AdminDashboard({session,onLogout}){
-  const [page,setPage]=useState("operations");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);const [mobOpen,setMobOpen]=useState(false);
+  const [page,setPage]=useState("today");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);const [mobOpen,setMobOpen]=useState(false);
   const token=session.token;
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
-  const nav=[{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"agents",label:"AGENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},{key:"tasks",label:"TAREAS",p:["M9 11l3 3 8-8","M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"finance",label:"FINANZAS",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"shipments",label:"SEGUIMIENTOS",p:["M16 3h5v5","M21 3l-7 7","M8 21H3v-5","M3 21l7-7","M21 16v5h-5","M21 21l-7-7","M3 8V3h5","M3 3l7 7"]},{key:"purchase_notifs",label:"AVISOS COMPRA",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},{key:"comms",label:"COMUNICACIONES",p:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
+  const nav=[{key:"today",label:"HOY",p:["M12 2L3 7l9 5 9-5-9-5z","M3 17l9 5 9-5","M3 12l9 5 9-5"]},{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"agents",label:"AGENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},{key:"tasks",label:"TAREAS",p:["M9 11l3 3 8-8","M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"finance",label:"FINANZAS",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"shipments",label:"SEGUIMIENTOS",p:["M16 3h5v5","M21 3l-7 7","M8 21H3v-5","M3 21l7-7","M21 16v5h-5","M21 21l-7-7","M3 8V3h5","M3 3l7 7"]},{key:"purchase_notifs",label:"AVISOS COMPRA",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},{key:"comms",label:"COMUNICACIONES",p:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
   const [pendingTasks,setPendingTasks]=useState(0);
   useEffect(()=>{let mounted=true;const load=async()=>{const r=await dq("admin_tasks",{token,filters:"?select=id&done=eq.false"});if(mounted&&Array.isArray(r))setPendingTasks(r.length);};load();const iv=setInterval(load,30000);return()=>{mounted=false;clearInterval(iv);};},[token,page]);
   const sidebarContent=<>
@@ -6300,6 +6443,7 @@ function AdminDashboard({session,onLogout}){
         <button onClick={()=>{const e=new KeyboardEvent("keydown",{key:"k",metaKey:true});window.dispatchEvent(e);}} title="Buscar (⌘K)" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"6px 12px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.6)",cursor:"pointer"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Buscar<kbd style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.08)",padding:"1px 5px",borderRadius:3,fontSize:10,fontFamily:"monospace"}}>⌘K</kbd></button>
         <NotifBell token={token}/></div>
       <div className="ac-admin-main-inner" style={{maxWidth:1400,margin:"0 auto",padding:"28px 32px"}}>
+      {page==="today"&&<TodayDashboard token={token} onNav={setPage} onSelectOp={op=>{setPage("operations");setSelOp(op);}} onSelectFlight={f=>{setPage("agents");}}/>}
       {page==="operations"&&!selOp&&!newOp&&<OperationsList token={token} onSelect={setSelOp} onNew={()=>setNewOp(true)}/>}
       {page==="operations"&&selOp&&<OperationEditor op={selOp} token={token} onBack={()=>setSelOp(null)} onDelete={()=>setSelOp(null)}/>}
       {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}
