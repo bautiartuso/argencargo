@@ -252,6 +252,63 @@ const I18N={
     no_notifs:"Sin notificaciones",
     upload_failed:"Error al subir foto. Intentá de nuevo.",
     photo_uploaded:"Foto subida ✓",
+    // Stats / saludo
+    greet_morning:"Buenos días",
+    greet_afternoon:"Buenas tardes",
+    greet_night:"Buenas noches",
+    stats_subtitle:"Tu actividad en el depósito",
+    stats_today:"Hoy",
+    stats_pkg:"paquete",
+    stats_pkgs:"paquetes",
+    stats_kg_today:"kg procesados",
+    mood_chill:"¡Día tranquilo!",
+    mood_good:"Buen ritmo",
+    mood_fire:"En llamas",
+    mood_unstoppable:"Imparable",
+    last_7_days:"Últimos 7 días",
+    vs_previous:"vs anterior",
+    achievements:"Logros desbloqueados",
+    no_achievements:"Cuando llegues a 10 paquetes desbloqueás tu primer logro 💪",
+    next_achievement:"Próximo logro",
+    achievement_10:"10 paquetes recibidos",
+    achievement_50:"50 paquetes recibidos",
+    achievement_100:"100 paquetes",
+    achievement_500:"500 paquetes",
+    achievement_1000:"1000 paquetes",
+    // Edit modal
+    edit_pkg_tracking:"Tracking",
+    replace:"Reemplazar",
+    remove_photo:"Quitar foto",
+    new_photo_ready:"Foto nueva lista",
+    current_photo:"Foto actual",
+    photo_will_remove:"La foto va a quedar removida al guardar.",
+    // Offline
+    offline_no_conn:"Sin conexión",
+    offline_pending:"pendientes de sincronizar",
+    offline_keep_loading:"podés seguir cargando paquetes",
+    offline_pending_short:"paquete{n} pendiente{n} de sincronizar",
+    offline_synced:"Sincronizado",
+    offline_uploaded:"subido",
+    offline_uploaded_pl:"subidos",
+    offline_sync_now:"Sincronizar ahora",
+    offline_syncing:"Sincronizando…",
+    offline_view_detail:"Ver detalle",
+    offline_hide_detail:"Ocultar",
+    offline_in_queue:"Pendientes en cola",
+    offline_clear:"Limpiar todo",
+    offline_clear_confirm:"¿Borrar TODA la cola pendiente sin enviar? Esto NO se puede deshacer.",
+    offline_no_queue:"Sin pendientes",
+    offline_attempts:"intento",
+    offline_attempts_pl:"intentos",
+    // Tracking duplicate warning
+    dup_title:"Tracking duplicado",
+    dup_match:"coincidencia",
+    dup_matches:"coincidencias",
+    dup_already_in:"Este código ya existe en el sistema:",
+    // Cargando + común
+    loading_dots:"Cargando...",
+    loading_short:"…",
+    processing:"Procesando…",
   },
   zh:{
     login_title:"代理门户",
@@ -435,6 +492,63 @@ const I18N={
     no_notifs:"无通知",
     upload_failed:"上传失败，请重试。",
     photo_uploaded:"照片已上传 ✓",
+    // Stats / saludo
+    greet_morning:"早上好",
+    greet_afternoon:"下午好",
+    greet_night:"晚上好",
+    stats_subtitle:"您在仓库的活动",
+    stats_today:"今天",
+    stats_pkg:"包裹",
+    stats_pkgs:"包裹",
+    stats_kg_today:"已处理公斤",
+    mood_chill:"轻松的一天！",
+    mood_good:"节奏不错",
+    mood_fire:"火力全开",
+    mood_unstoppable:"势不可挡",
+    last_7_days:"最近7天",
+    vs_previous:"对比上期",
+    achievements:"已解锁成就",
+    no_achievements:"达到10个包裹时，您将解锁第一个成就 💪",
+    next_achievement:"下一个成就",
+    achievement_10:"已收10个包裹",
+    achievement_50:"已收50个包裹",
+    achievement_100:"100个包裹",
+    achievement_500:"500个包裹",
+    achievement_1000:"1000个包裹",
+    // Edit modal
+    edit_pkg_tracking:"快递单号",
+    replace:"替换",
+    remove_photo:"删除照片",
+    new_photo_ready:"新照片已准备",
+    current_photo:"当前照片",
+    photo_will_remove:"保存时照片将被删除。",
+    // Offline
+    offline_no_conn:"离线",
+    offline_pending:"待同步",
+    offline_keep_loading:"您可以继续登记包裹",
+    offline_pending_short:"包裹待同步",
+    offline_synced:"已同步",
+    offline_uploaded:"已上传",
+    offline_uploaded_pl:"已上传",
+    offline_sync_now:"立即同步",
+    offline_syncing:"同步中…",
+    offline_view_detail:"查看详情",
+    offline_hide_detail:"隐藏",
+    offline_in_queue:"队列中待处理",
+    offline_clear:"全部清除",
+    offline_clear_confirm:"确定要清除所有未发送的队列吗？此操作无法撤销。",
+    offline_no_queue:"无待处理",
+    offline_attempts:"次尝试",
+    offline_attempts_pl:"次尝试",
+    // Tracking duplicate warning
+    dup_title:"重复的快递单号",
+    dup_match:"个匹配",
+    dup_matches:"个匹配",
+    dup_already_in:"该单号已存在于系统中：",
+    // Cargando + común
+    loading_dots:"加载中...",
+    loading_short:"…",
+    processing:"处理中…",
   }
 };
 
@@ -463,7 +577,7 @@ export default function AgentePortal(){
     if(typeof window!=="undefined"&&"serviceWorker"in navigator){navigator.serviceWorker.register("/sw-agente.js",{scope:"/agente"}).catch(()=>{});}
   },[]);
   useEffect(()=>{try{localStorage.setItem("ac_agent_lang",lang);}catch(e){}},[lang]);
-  if(loading)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:BG,color:"rgba(255,255,255,0.4)"}}>Cargando...</div>;
+  if(loading)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:BG,color:"rgba(255,255,255,0.4)"}}>{t.loading_dots}</div>;
   if(!session)return <><ToastStack/><AuthScreen onLogin={setSession} lang={lang} setLang={setLang} t={t}/></>;
   return <><ToastStack/><Dashboard session={session} onLogout={()=>{clearSession();setSession(null);}} lang={lang} setLang={setLang} t={t}/></>;
 }
@@ -778,39 +892,39 @@ function Dashboard({session,onLogout,lang,setLang,t}){
       // Hitos / logros
       const totalKgAll=allPkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);
       const milestones=[
-        {threshold:10,label:"10 paquetes recibidos",icon:"📦"},
-        {threshold:50,label:"50 paquetes recibidos",icon:"📬"},
-        {threshold:100,label:"100 paquetes",icon:"💯"},
-        {threshold:500,label:"500 paquetes",icon:"🌟"},
-        {threshold:1000,label:"1000 paquetes",icon:"🏆"},
+        {threshold:10,label:t.achievement_10,icon:"📦"},
+        {threshold:50,label:t.achievement_50,icon:"📬"},
+        {threshold:100,label:t.achievement_100,icon:"💯"},
+        {threshold:500,label:t.achievement_500,icon:"🌟"},
+        {threshold:1000,label:t.achievement_1000,icon:"🏆"},
       ].filter(m=>allPkgs.length>=m.threshold);
       const nextMilestone=[10,50,100,500,1000,2000,5000].find(m=>allPkgs.length<m);
       // Saludo dinámico
       const hour=new Date().getHours();
-      const greeting=hour<12?"Buenos días":hour<19?"Buenas tardes":"Buenas noches";
+      const greeting=hour<12?t.greet_morning:hour<19?t.greet_afternoon:t.greet_night;
       const agentName=signup?.first_name||"";
       return <>
         <div style={{marginBottom:18}}>
           <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.02em"}}>👋 {greeting}, {agentName}</h2>
-          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0}}>Tu actividad en el depósito</p>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0}}>{t.stats_subtitle}</p>
         </div>
 
         {/* Stats de HOY destacadas */}
         <div style={{background:`linear-gradient(135deg, rgba(184,149,106,0.18), rgba(212,177,122,0.06))`,border:`1.5px solid rgba(184,149,106,0.4)`,borderRadius:16,padding:"20px 24px",marginBottom:18,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
           <div>
-            <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Hoy</p>
-            <p style={{fontSize:36,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{todayPkgs.length} <span style={{fontSize:14,fontWeight:600,color:"rgba(255,255,255,0.5)"}}>paquete{todayPkgs.length!==1?"s":""}</span></p>
-            <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"4px 0 0"}}>{todayPkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0).toFixed(1)} kg procesados</p>
+            <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t.stats_today}</p>
+            <p style={{fontSize:36,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{todayPkgs.length} <span style={{fontSize:14,fontWeight:600,color:"rgba(255,255,255,0.5)"}}>{todayPkgs.length!==1?t.stats_pkgs:t.stats_pkg}</span></p>
+            <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"4px 0 0"}}>{todayPkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0).toFixed(1)} {t.stats_kg_today}</p>
           </div>
           <div style={{textAlign:"right"}}>
             <p style={{fontSize:48,margin:0,lineHeight:1}}>{todayPkgs.length===0?"☕":todayPkgs.length<5?"💪":todayPkgs.length<15?"🔥":"🚀"}</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",fontStyle:"italic"}}>{todayPkgs.length===0?"¡Día tranquilo!":todayPkgs.length<5?"Buen ritmo":todayPkgs.length<15?"En llamas":"Imparable"}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",fontStyle:"italic"}}>{todayPkgs.length===0?t.mood_chill:todayPkgs.length<5?t.mood_good:todayPkgs.length<15?t.mood_fire:t.mood_unstoppable}</p>
           </div>
         </div>
 
         {/* Mini chart últimos 7 días */}
         <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 22px",marginBottom:18}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>📊 Últimos 7 días</p>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>📊 {t.last_7_days}</p>
           <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:6,height:100,marginBottom:10}}>
             {last7.map((d,i)=>{const h=(d.count/max7)*100;const isToday=i===6;return <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
               <div style={{width:"100%",height:`${Math.max(h,4)}%`,background:isToday?`linear-gradient(180deg,${GOLD_LIGHT},${GOLD})`:"rgba(96,165,250,0.4)",borderRadius:"4px 4px 0 0",transition:"height 300ms",position:"relative"}}>
@@ -827,7 +941,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
         <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t.period||"Período"}:</span>
           {[{k:"week",l:t.period_week||"Semana"},{k:"month",l:t.period_month||"Mes"},{k:"year",l:t.period_year||"Año"},{k:"all",l:t.period_all||"Total"}].map(p=><button key={p.k} onClick={()=>setStatsPeriod(p.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:statsPeriod===p.k?`1.5px solid ${GOLD}`:"1.5px solid rgba(255,255,255,0.08)",background:statsPeriod===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:statsPeriod===p.k?GOLD_LIGHT:"rgba(255,255,255,0.4)",cursor:"pointer",letterSpacing:"0.04em",textTransform:"uppercase"}}>{p.l}</button>)}
-          {deltaPkgs!==null&&statsPeriod!=="all"&&<span style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:5,background:deltaPkgs>=0?"rgba(34,197,94,0.12)":"rgba(255,80,80,0.12)",color:deltaPkgs>=0?"#22c55e":"#ff6b6b",letterSpacing:"0.04em"}}>{deltaPkgs>=0?"▲":"▼"} {Math.abs(deltaPkgs).toFixed(0)}% vs anterior</span>}
+          {deltaPkgs!==null&&statsPeriod!=="all"&&<span style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:5,background:deltaPkgs>=0?"rgba(34,197,94,0.12)":"rgba(255,80,80,0.12)",color:deltaPkgs>=0?"#22c55e":"#ff6b6b",letterSpacing:"0.04em"}}>{deltaPkgs>=0?"▲":"▼"} {Math.abs(deltaPkgs).toFixed(0)}% {t.vs_previous}</span>}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14,marginBottom:18}}>
         {[
@@ -845,15 +959,15 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
         {/* Logros */}
         <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 22px"}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.06em"}}>🏆 Logros desbloqueados ({milestones.length})</p>
-          {milestones.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic"}}>Cuando llegues a 10 paquetes desbloqueás tu primer logro 💪</p>:<div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.06em"}}>🏆 {t.achievements} ({milestones.length})</p>
+          {milestones.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic"}}>{t.no_achievements}</p>:<div style={{display:"flex",flexWrap:"wrap",gap:8}}>
             {milestones.map(m=><div key={m.threshold} style={{padding:"8px 14px",background:"linear-gradient(135deg, rgba(184,149,106,0.2), rgba(212,177,122,0.08))",border:`1px solid rgba(184,149,106,0.4)`,borderRadius:999,display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,color:GOLD_LIGHT}}>
               <span>{m.icon}</span> {m.label}
             </div>)}
           </div>}
           {nextMilestone&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
             <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(255,255,255,0.55)",marginBottom:4}}>
-              <span>Próximo logro: <strong style={{color:"#fff"}}>{nextMilestone} paquetes</strong></span>
+              <span>{t.next_achievement}: <strong style={{color:"#fff"}}>{nextMilestone} {t.stats_pkgs}</strong></span>
               <span style={{color:GOLD_LIGHT,fontWeight:700}}>{allPkgs.length} / {nextMilestone}</span>
             </div>
             <div style={{height:6,background:"rgba(255,255,255,0.06)",borderRadius:3,overflow:"hidden"}}>
@@ -1165,7 +1279,7 @@ function NotifBell({token,t}){
 
 function SimpleShell({children,lang,setLang,t,onLogout,token}){
   return <div style={{minHeight:"100vh",background:BG,fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif"}}>
-    <OfflineStatusBar token={token}/>
+    <OfflineStatusBar token={token} lang={lang}/>
     <style dangerouslySetInnerHTML={{__html:`
       @media(max-width:768px){
         .ac-agente-header{padding:14px 16px!important;gap:8px!important}
@@ -1591,17 +1705,17 @@ function EditPackageModal({pkg,token,t,onClose,onSaved}){
         {currentPhoto?<div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
           <img src={currentPhoto} alt="" style={{width:80,height:80,objectFit:"cover",borderRadius:8,border:"2px solid rgba(34,197,94,0.4)"}}/>
           <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
-            <p style={{fontSize:12,fontWeight:600,color:"#22c55e",margin:0}}>{photoFile?"Foto nueva lista":"Foto actual"}</p>
+            <p style={{fontSize:12,fontWeight:600,color:"#22c55e",margin:0}}>{photoFile?t.new_photo_ready:t.current_photo}</p>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               <input id={`edit-photo-${pkg.id}`} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)onPhotoChange(f);}} style={{display:"none"}}/>
-              <label htmlFor={`edit-photo-${pkg.id}`} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>📷 Reemplazar</label>
-              <button type="button" onClick={()=>{setPhotoFile(null);setPhotoPreview(null);setRemovePhoto(true);}} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>Quitar foto</button>
+              <label htmlFor={`edit-photo-${pkg.id}`} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>📷 {t.replace}</label>
+              <button type="button" onClick={()=>{setPhotoFile(null);setPhotoPreview(null);setRemovePhoto(true);}} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>{t.remove_photo}</button>
             </div>
           </div>
         </div>:<div>
           <input id={`edit-photo-${pkg.id}`} type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)onPhotoChange(f);}} style={{display:"none"}}/>
           <label htmlFor={`edit-photo-${pkg.id}`} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.06)",color:IC,cursor:"pointer"}}>📷 {t.add_photo}</label>
-          {removePhoto&&<p style={{fontSize:11,color:"rgba(255,80,80,0.7)",margin:"6px 0 0",fontStyle:"italic"}}>La foto va a quedar removida al guardar.</p>}
+          {removePhoto&&<p style={{fontSize:11,color:"rgba(255,80,80,0.7)",margin:"6px 0 0",fontStyle:"italic"}}>{t.photo_will_remove}</p>}
         </div>}
       </div>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
@@ -1860,7 +1974,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
       <div style={{flex:1}}><Inp label={t.tracking} value={tracking} onChange={setTracking} placeholder={t.tracking_ph} req/></div>
       <TrackingScanButton onDetected={setTracking} t={t}/>
     </div>
-    <TrackingDuplicateWarning trackingCode={tracking} excludeOpId={existingOp?.id} token={token}/>
+    <TrackingDuplicateWarning trackingCode={tracking} excludeOpId={existingOp?.id} token={token} lang={lang}/>
 
     {matchedNotif&&matchedNotif.client_id!==clientId&&<div style={{padding:"12px 14px",background:"rgba(34,197,94,0.08)",border:"1.5px solid rgba(34,197,94,0.35)",borderRadius:10,marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
       <div style={{flex:1,minWidth:200}}>

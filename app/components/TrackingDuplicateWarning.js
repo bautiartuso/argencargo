@@ -7,7 +7,13 @@
 
 import { useState, useEffect } from "react";
 
-export default function TrackingDuplicateWarning({ trackingCode, excludeOpId, token, onResult }) {
+const I18N_DUP = {
+  es: { title: "Tracking duplicado", match: "coincidencia", matches: "coincidencias", already: "Este código ya existe en el sistema:", more: "más" },
+  zh: { title: "重复的快递单号", match: "个匹配", matches: "个匹配", already: "该单号已存在于系统中：", more: "更多" },
+};
+
+export default function TrackingDuplicateWarning({ trackingCode, excludeOpId, token, onResult, lang = "es" }) {
+  const tx = I18N_DUP[lang] || I18N_DUP.es;
   const [duplicates, setDuplicates] = useState([]);
   const [checking, setChecking] = useState(false);
 
@@ -60,11 +66,11 @@ export default function TrackingDuplicateWarning({ trackingCode, excludeOpId, to
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
         <span style={{ fontSize: 16 }}>⚠️</span>
         <strong style={{ color: "#fb923c", fontSize: 12, letterSpacing: "0.04em", textTransform: "uppercase", fontWeight: 800 }}>
-          Tracking duplicado · {duplicates.length} coincidencia{duplicates.length > 1 ? "s" : ""}
+          {tx.title} · {duplicates.length} {duplicates.length > 1 ? tx.matches : tx.match}
         </strong>
       </div>
       <p style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", margin: "0 0 6px" }}>
-        Este código ya existe en el sistema:
+        {tx.already}
       </p>
       <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11.5, color: "rgba(255,255,255,0.85)" }}>
         {duplicates.slice(0, 5).map((d, i) => (
@@ -74,7 +80,7 @@ export default function TrackingDuplicateWarning({ trackingCode, excludeOpId, to
             {d.client && <span style={{ marginLeft: 6, color: "rgba(255,255,255,0.65)" }}>· {d.client}</span>}
           </li>
         ))}
-        {duplicates.length > 5 && <li style={{ color: "rgba(255,255,255,0.5)", fontStyle: "italic" }}>+{duplicates.length - 5} más</li>}
+        {duplicates.length > 5 && <li style={{ color: "rgba(255,255,255,0.5)", fontStyle: "italic" }}>+{duplicates.length - 5} {tx.more}</li>}
       </ul>
     </div>
   );
