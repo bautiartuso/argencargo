@@ -2634,6 +2634,79 @@ function Calculator({token,clients}){
   </div>;
 }
 
+// Audit Log: visualizador del histórico de cambios en el sistema
+function AuditLogCard({token}){
+  const [logs,setLogs]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [filterEntity,setFilterEntity]=useState("all");
+  const [filterAction,setFilterAction]=useState("all");
+  const [search,setSearch]=useState("");
+  const [expandedId,setExpandedId]=useState(null);
+  const [limit,setLimit]=useState(100);
+  const load=async()=>{
+    setLo(true);
+    let filters=`?select=*&order=created_at.desc&limit=${limit}`;
+    if(filterEntity!=="all")filters+=`&entity_type=eq.${filterEntity}`;
+    if(filterAction!=="all")filters+=`&action=eq.${filterAction}`;
+    const r=await dq("audit_log",{token,filters});
+    setLogs(Array.isArray(r)?r:[]);
+    setLo(false);
+  };
+  useEffect(()=>{load();},[token,filterEntity,filterAction,limit]);
+  const filtered=search?logs.filter(l=>{const q=search.toLowerCase();return l.entity_code?.toLowerCase().includes(q)||l.user_email?.toLowerCase().includes(q)||l.entity_type?.toLowerCase().includes(q);}):logs;
+  const entityLabels={operation:"Operación",flight:"Vuelo",payment_management:"Gestión Pago",client_payment:"Cobro Cliente",supplier_payment:"Pago Proveedor",finance_entry:"Asiento Finanzas",client:"Cliente",tariff:"Tarifa"};
+  const actionColors={INSERT:{bg:"rgba(34,197,94,0.12)",fg:"#22c55e",label:"CREÓ"},UPDATE:{bg:"rgba(96,165,250,0.12)",fg:"#60a5fa",label:"EDITÓ"},DELETE:{bg:"rgba(239,68,68,0.12)",fg:"#ef4444",label:"BORRÓ"}};
+  const renderChange=(key,val)=>{
+    if(val&&typeof val==="object"&&val.from!==undefined){
+      const fmt=(v)=>v===null?<em style={{color:"rgba(255,255,255,0.3)"}}>vacío</em>:typeof v==="object"?JSON.stringify(v):String(v);
+      return <div key={key} style={{display:"flex",gap:8,padding:"4px 0",fontSize:11,fontFamily:"monospace",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+        <span style={{color:IC,fontWeight:600,minWidth:140}}>{key}:</span>
+        <span style={{color:"#ff6b6b",textDecoration:"line-through",opacity:0.7}}>{fmt(val.from)}</span>
+        <span style={{color:"rgba(255,255,255,0.3)"}}>→</span>
+        <span style={{color:"#22c55e"}}>{fmt(val.to)}</span>
+      </div>;
+    }
+    return <div key={key} style={{display:"flex",gap:8,padding:"4px 0",fontSize:11,fontFamily:"monospace"}}>
+      <span style={{color:IC,fontWeight:600,minWidth:140}}>{key}:</span>
+      <span style={{color:"rgba(255,255,255,0.7)"}}>{val===null?"vacío":typeof val==="object"?JSON.stringify(val):String(val)}</span>
+    </div>;
+  };
+  return <Card title={`📜 Histórico de cambios (${filtered.length})`}>
+    <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Registro automático de todos los cambios en operaciones, vuelos, pagos, clientes, tarifas y finanzas. Útil para debugging y rastrear quién hizo qué cuándo.</p>
+
+    <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+      <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>Tipo:</span>
+      {[{k:"all",l:"Todo"},{k:"operation",l:"Op"},{k:"flight",l:"Vuelo"},{k:"client_payment",l:"Cobro"},{k:"supplier_payment",l:"Pago Prov"},{k:"client",l:"Cliente"},{k:"tariff",l:"Tarifa"},{k:"finance_entry",l:"Finanzas"}].map(t=><button key={t.k} onClick={()=>setFilterEntity(t.k)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:5,border:`1px solid ${filterEntity===t.k?IC:"rgba(255,255,255,0.08)"}`,background:filterEntity===t.k?"rgba(184,149,106,0.1)":"transparent",color:filterEntity===t.k?IC:"rgba(255,255,255,0.5)",cursor:"pointer"}}>{t.l}</button>)}
+    </div>
+    <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+      <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>Acción:</span>
+      {[{k:"all",l:"Todas"},{k:"INSERT",l:"Creaciones"},{k:"UPDATE",l:"Ediciones"},{k:"DELETE",l:"Borrados"}].map(t=><button key={t.k} onClick={()=>setFilterAction(t.k)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:5,border:`1px solid ${filterAction===t.k?"#60a5fa":"rgba(255,255,255,0.08)"}`,background:filterAction===t.k?"rgba(96,165,250,0.1)":"transparent",color:filterAction===t.k?"#60a5fa":"rgba(255,255,255,0.5)",cursor:"pointer"}}>{t.l}</button>)}
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por código, usuario…" style={{flex:1,minWidth:200,padding:"5px 10px",fontSize:11,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.03)",color:"#fff",outline:"none"}}/>
+    </div>
+
+    {lo?<p style={{textAlign:"center",padding:"2rem 0",color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<p style={{textAlign:"center",padding:"2rem 0",color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin registros que coincidan con los filtros</p>:<div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:600,overflow:"auto"}}>
+      {filtered.map(l=>{const ac=actionColors[l.action]||{bg:"rgba(255,255,255,0.05)",fg:"rgba(255,255,255,0.5)",label:l.action};const isExp=expandedId===l.id;const changeKeys=l.changes?Object.keys(l.changes):[];return <div key={l.id} style={{padding:"10px 12px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8}}>
+        <div onClick={()=>setExpandedId(isExp?null:l.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,cursor:changeKeys.length>0?"pointer":"default",flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",flex:1,minWidth:200}}>
+            <span style={{fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:4,background:ac.bg,color:ac.fg,letterSpacing:"0.04em"}}>{ac.label}</span>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{entityLabels[l.entity_type]||l.entity_type}</span>
+            {l.entity_code&&<span style={{fontSize:11,fontFamily:"monospace",fontWeight:700,color:"#fff"}}>{l.entity_code}</span>}
+            <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>· por <strong style={{color:"rgba(255,255,255,0.65)"}}>{l.user_email||"sistema"}</strong></span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{new Date(l.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span>
+            {changeKeys.length>0&&<span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{isExp?"▾":"▸"} {changeKeys.length} {l.action==="UPDATE"?"cambio"+(changeKeys.length>1?"s":""):"campos"}</span>}
+          </div>
+        </div>
+        {isExp&&changeKeys.length>0&&<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.18)",padding:"10px 12px",borderRadius:6}}>
+          {changeKeys.map(k=>renderChange(k,l.changes[k]))}
+        </div>}
+      </div>;})}
+      {filtered.length>=limit&&<button onClick={()=>setLimit(p=>p+100)} style={{padding:"8px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px dashed rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.5)",cursor:"pointer",marginTop:6}}>Cargar 100 más…</button>}
+    </div>}
+  </Card>;
+}
+
 function MarketingCampaignCard({token}){
   const [stats,setStats]=useState(null);
   const [testEmail,setTestEmail]=useState("");
@@ -2765,6 +2838,7 @@ function AdminSettings({token,session}){
       </div>
     </Card>
     <MarketingCampaignCard token={token}/>
+    <AuditLogCard token={token}/>
     <Card title="Retención de fotos de bultos">
       <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Las fotos cargadas por los agentes ocupan espacio en Storage. Se borran automáticamente <strong style={{color:"#fff"}}>N días después</strong> de cerrarse la operación. La limpieza corre todos los días a las 3am.</p>
       <div style={{display:"flex",gap:10,alignItems:"end",flexWrap:"wrap",maxWidth:520}}>
