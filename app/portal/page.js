@@ -70,7 +70,7 @@ const OS=[{k:"proveedor",l:"Proveedor"},{k:"warehouse",l:"Warehouse\nArgencargo"
 const S2S={pendiente:0,en_deposito_origen:1,en_preparacion:2,en_transito:3,arribo_argentina:4,en_aduana:5,entregada:6,operacion_cerrada:7,cancelada:-1};
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},entregada:{l:"LISTA PARA RETIRAR",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
 const CM={aereo_blanco:"Aéreo Courier Comercial",aereo_negro:"Aéreo Integral AC",maritimo_blanco:"Marítimo Carga LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
-const CN=[{key:"imports",label:"IMPORTACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"]},{key:"purchases",label:"COMPRAS EN CAMINO",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8","M10 9H8"]},{key:"payments",label:"PAGOS INTERNACIONALES",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"account",label:"CUENTA CORRIENTE",p:["M3 3h18v18H3z","M3 9h18","M9 21V9"]},{key:"points",label:"PUNTOS",p:["M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"]},{key:"services",label:"SERVICIOS",p:["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"]},{key:"profile",label:"MI PERFIL",p:["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
+const CN=[{key:"imports",label:"IMPORTACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"]},{key:"purchases",label:"COMPRAS EN CAMINO",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},{key:"calculator",label:"CALCULADORA",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8","M10 9H8"]},{key:"payments",label:"PAGOS INTERNACIONALES",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"account",label:"CUENTA CORRIENTE",p:["M3 3h18v18H3z","M3 9h18","M9 21V9"]},{key:"points",label:"PUNTOS",p:["M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"]},{key:"referrals",label:"REFERIDOS",p:["M17 11l2 2 4-4","M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]},{key:"services",label:"SERVICIOS",p:["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"]},{key:"profile",label:"MI PERFIL",p:["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
 function WorldMap(){const d=[[120,80],[135,85],[150,78],[165,90],[180,85],[200,95],[215,88],[230,92],[250,100],[265,95],[280,105],[300,98],[320,110],[335,105],[350,115],[370,108],[390,120],[410,112],[430,125],[450,118],[470,130],[490,122],[510,135],[530,128],[550,140],[570,132],[590,145],[610,138],[630,150],[140,120],[160,130],[180,125],[200,140],[220,135],[240,145],[260,138],[280,150],[300,142],[320,155],[340,148],[360,158],[380,152],[400,162],[420,155],[440,165],[460,158],[480,170],[500,162],[520,175],[540,168],[560,180],[580,172],[600,185],[620,178]];const l=[[200,95,450,118],[300,98,520,135],[180,125,400,162],[280,150,500,208],[350,115,570,132]];return <svg width="100%" height="100%" viewBox="0 0 750 320" preserveAspectRatio="xMidYMid slice" style={{position:"absolute",inset:0,opacity:0.05,pointerEvents:"none"}}>{l.map((v,i)=><line key={i} x1={v[0]} y1={v[1]} x2={v[2]} y2={v[3]} stroke="#4A90D9" strokeWidth="0.5" opacity="0.4"/>)}{d.map((v,i)=><circle key={i} cx={v[0]} cy={v[1]} r={1.5} fill="#4A90D9" opacity="0.5"/>)}</svg>;}
 function Inp({label,type="text",value,onChange,placeholder,req,error}){return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label><input type={type} value={value||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:`1px solid ${error?"#ff6b6b":"rgba(255,255,255,0.12)"}`,borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",transition:"all 180ms"}} onFocus={e=>{if(!error){e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";e.target.style.background="rgba(255,255,255,0.09)";}}} onBlur={e=>{e.target.style.borderColor=error?"#ff6b6b":"rgba(255,255,255,0.12)";e.target.style.boxShadow="none";e.target.style.background="rgba(255,255,255,0.06)";}}/>{error&&<p style={{fontSize:11,color:"#ff6b6b",margin:"4px 0 0"}}>{error}</p>}</div>;}
 function Sel({label,value,onChange,options,req,ph}){return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label><select value={value} onChange={e=>onChange(e.target.value)} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";e.target.style.boxShadow="none";}} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:value?"#fff":"rgba(255,255,255,0.45)",outline:"none",transition:"all 180ms",cursor:"pointer"}}>{ph&&<option value="" style={{background:"#0F1F3A"}}>{ph}</option>}{options.map(o=><option key={typeof o==="string"?o:o.value} value={typeof o==="string"?o:o.value} style={{background:"#0F1F3A",color:"#fff"}}>{typeof o==="string"?o:o.label}</option>)}</select></div>;}
@@ -2190,6 +2190,91 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
     <WhatsAppFab message={`Hola Argencargo! 👋 Soy ${client?.first_name||""} ${client?.last_name||""}${client?.client_code?` (${client.client_code})`:""}, tengo una consulta.`}/>
   </div>;
 }
+function ReferralsPage({token,client}){
+  const [referrals,setReferrals]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [copied,setCopied]=useState(false);
+  const [movements,setMovements]=useState([]);
+  useEffect(()=>{(async()=>{
+    if(!client?.id){setLo(false);return;}
+    const [refs,movs]=await Promise.all([
+      dq("clients",{token,filters:`?referred_by_client_id=eq.${client.id}&select=client_code,first_name,last_name,referral_credited_at,created_at&order=created_at.desc`}),
+      dq("client_account_movements",{token,filters:`?client_id=eq.${client.id}&description=ilike.*referido*&select=*&order=created_at.desc`}),
+    ]);
+    setReferrals(Array.isArray(refs)?refs:[]);
+    setMovements(Array.isArray(movs)?movs:[]);
+    setLo(false);
+  })();},[client?.id,token]);
+  const refLink=typeof window!=="undefined"?`${window.location.origin}/portal?ref=${client?.client_code||""}`:"";
+  const totalGanado=movements.filter(m=>Number(m.amount_usd)>0).reduce((s,m)=>s+Number(m.amount_usd),0);
+  const acreditados=referrals.filter(r=>r.referral_credited_at).length;
+  const pendientes=referrals.length-acreditados;
+  const copy=async()=>{try{await navigator.clipboard.writeText(refLink);setCopied(true);setTimeout(()=>setCopied(false),2500);}catch{prompt("Copiá tu link:",refLink);}};
+  const shareWA=()=>{const msg=encodeURIComponent(`Hola! Te recomiendo Argencargo para importar desde China/USA/España. Si te registrás con mi link recibís USD 50 de descuento en tu primera importación 🚀\n\n${refLink}`);window.open(`https://wa.me/?text=${msg}`,"_blank");};
+  return <div>
+    <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 8px",letterSpacing:"-0.02em"}}>Programa de referidos</h2>
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"0 0 24px"}}>Compartí tu link y ganá USD 50 por cada amigo que importe con Argencargo.</p>
+
+    {/* Cards de stats */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:14,marginBottom:24}}>
+      <div style={{background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:14,padding:"16px 20px"}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Ganado</p>
+        <p style={{fontSize:24,fontWeight:800,color:"#22c55e",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalGanado.toFixed(0)}</p>
+      </div>
+      <div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:14,padding:"16px 20px"}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Referidos acreditados</p>
+        <p style={{fontSize:24,fontWeight:800,color:GOLD_LIGHT,margin:0,fontVariantNumeric:"tabular-nums"}}>{acreditados}</p>
+      </div>
+      <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"16px 20px"}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Pendientes</p>
+        <p style={{fontSize:24,fontWeight:800,color:"rgba(255,255,255,0.7)",margin:0,fontVariantNumeric:"tabular-nums"}}>{pendientes}</p>
+      </div>
+    </div>
+
+    {/* Link a compartir */}
+    <div style={{background:"linear-gradient(135deg, rgba(184,149,106,0.12), rgba(212,177,122,0.06))",border:`1.5px solid rgba(184,149,106,0.4)`,borderRadius:16,padding:"22px 26px",marginBottom:24}}>
+      <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>🔗 Tu link único</p>
+      <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 12px"}}>Compartilo con quien quieras</h3>
+      <div style={{display:"flex",gap:8,alignItems:"center",padding:"10px 14px",background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,marginBottom:14,flexWrap:"wrap"}}>
+        <code style={{flex:1,minWidth:200,fontSize:12.5,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{refLink}</code>
+        <button onClick={copy} style={{padding:"7px 14px",fontSize:11,fontWeight:700,borderRadius:7,border:"none",cursor:"pointer",background:copied?"#22c55e":"linear-gradient(135deg,#B8956A,#D4B17A)",color:copied?"#fff":"#0A1628",whiteSpace:"nowrap",transition:"all 200ms"}}>{copied?"✓ Copiado":"📋 Copiar"}</button>
+      </div>
+      <button onClick={shareWA} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:"#25D366",color:"#fff"}}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M.057 24l1.687-6.163a11.867 11.867 0 0 1-1.587-5.946C.16 5.335 5.495 0 12.05 0a11.817 11.817 0 0 1 8.413 3.488 11.824 11.824 0 0 1 3.48 8.414c-.003 6.557-5.338 11.892-11.893 11.892a11.9 11.9 0 0 1-5.688-1.448L.057 24z"/></svg>
+        Compartir por WhatsApp
+      </button>
+    </div>
+
+    {/* Cómo funciona */}
+    <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 24px",marginBottom:24}}>
+      <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Cómo funciona</h3>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {[
+          {n:1,t:"Compartí tu link",d:"Mandalo por WhatsApp, redes o como quieras."},
+          {n:2,t:"Tu referido se registra",d:"Tiene que entrar al portal usando tu link y crear su cuenta."},
+          {n:3,t:"Hace su primera importación",d:"Cuando complete y pague su primera operación..."},
+          {n:4,t:"Ambos ganan USD 50",d:"A vos te acreditamos USD 50 en tu cuenta corriente. A él, USD 50 de descuento para su próxima importación."},
+        ].map(s=><div key={s.n} style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+          <div style={{flexShrink:0,width:28,height:28,borderRadius:"50%",background:`linear-gradient(135deg,${GOLD},${GOLD_LIGHT})`,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,color:"#0A1628",fontSize:13}}>{s.n}</div>
+          <div><p style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 2px"}}>{s.t}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0,lineHeight:1.5}}>{s.d}</p></div>
+        </div>)}
+      </div>
+    </div>
+
+    {/* Lista de referidos */}
+    <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Mis referidos ({referrals.length})</h3>
+    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:referrals.length===0?<div style={{padding:"2rem",background:"rgba(255,255,255,0.02)",border:"1px dashed rgba(255,255,255,0.08)",borderRadius:12,textAlign:"center"}}><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Todavía no referiste a nadie. ¡Compartí tu link!</p></div>:<div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {referrals.map(r=>{const credited=!!r.referral_credited_at;return <div key={r.client_code} style={{padding:"12px 16px",background:credited?"rgba(34,197,94,0.06)":"rgba(255,255,255,0.025)",border:`1px solid ${credited?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.06)"}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:180}}>
+          <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"0 0 2px"}}>{r.first_name} {r.last_name||""} <span style={{color:GOLD_LIGHT,fontFamily:"monospace",fontSize:11,marginLeft:6}}>{r.client_code}</span></p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>Se registró {formatDate(r.created_at)}{credited?` · Acreditado ${formatDate(r.referral_credited_at)}`:""}</p>
+        </div>
+        <span style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:5,background:credited?"rgba(34,197,94,0.18)":"rgba(255,255,255,0.06)",color:credited?"#22c55e":"rgba(255,255,255,0.55)",letterSpacing:"0.05em"}}>{credited?"✓ +USD 50":"⏳ Pendiente 1ra op"}</span>
+      </div>;})}
+    </div>}
+  </div>;
+}
+
 function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
   const [page,setPage]=useState("imports");const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);const [pendingVouchersCount,setPendingVouchersCount]=useState(0);
   const loadOps=async()=>{setLo(true);
@@ -2223,6 +2308,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     {page==="services"&&<ServicesPage client={client}/>}
     {page==="quotes"&&<QuotesPage token={token} client={client}/>}
     {page==="points"&&<PointsPage token={token} client={client}/>}
+    {page==="referrals"&&<ReferralsPage token={token} client={client}/>}
     {page==="payments"&&<InternationalPaymentsPage client={client}/>}
     {page==="account"&&<AccountPage token={token} client={client} onRestartTutorial={onRestartTutorial}/>}
     {!["imports","profile","rates","calculator","services","quotes","points","payments","account"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.4)"}}>Sección en desarrollo</p></div>}
@@ -2345,6 +2431,16 @@ export default function Page(){
   const [adminPreview,setAdminPreview]=useState(false); // flag para mostrar banner "modo preview"
   const [showTutorial,setShowTutorial]=useState(false);
   useEffect(()=>{const r=async()=>{
+    // Capturar referral code (?ref=ABCDEF) y guardarlo para el momento del registro
+    if(typeof window!=="undefined"){
+      const params0=new URLSearchParams(window.location.search);
+      const refCode=params0.get("ref");
+      if(refCode&&/^[A-Z0-9]{3,12}$/i.test(refCode.trim())){
+        try{localStorage.setItem("ac_ref_code",refCode.trim().toUpperCase());}catch{}
+        // Si vino con ?ref → forzar vista de registro
+        setView("register");
+      }
+    }
     // Admin preview mode: /portal?admin_preview=<client_id>
     // Usa la session del admin (ac_admin localStorage) para cargar el portal
     // como si fuera ese cliente — solo lectura, no se puede operar.
@@ -2377,7 +2473,24 @@ export default function Page(){
   const ch=f=>v=>{setForm(p=>({...p,[f]:v}));setErrors(p=>({...p,[f]:undefined}));setGErr("");};
   const val=s=>{const e={};if(s===0){if(!form.first_name.trim())e.first_name="Requerido";if(!form.last_name.trim())e.last_name="Requerido";if(!form.whatsapp.trim())e.whatsapp="Requerido";else if(form.whatsapp.replace(/\D/g,"").length<10)e.whatsapp="Número inválido (mínimo 10 dígitos)";if(!form.email.trim())e.email="Requerido";else if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))e.email="Email inválido";if(!form.password)e.password="Requerido";else if(form.password.length<6)e.password="Mínimo 6 caracteres";if(form.password!==form.confirm_password)e.confirm_password="No coinciden";}if(s===1){if(!form.street.trim())e.street="Requerido";if(!form.postal_code.trim())e.postal_code="Requerido";if(!form.city.trim())e.city="Requerido";if(!form.province)e.province="Requerido";}if(s===2&&form.tax_condition==="responsable_inscripto"){if(!form.company_name.trim())e.company_name="Requerido";if(!form.cuit.trim())e.cuit="Requerido";else if(form.cuit.replace(/\D/g,"").length!==11)e.cuit="CUIT inválido (debe tener 11 dígitos)";}setErrors(e);return !Object.keys(e).length;};
   const gc=(fn,ln)=>(fn.substring(0,3)+ln.substring(0,3)).toUpperCase();
-  const createClient=async(token,uid)=>{const code=gc(form.first_name.trim(),form.last_name.trim());return dq("clients",{method:"POST",token,body:{auth_user_id:uid,first_name:form.first_name.trim(),last_name:form.last_name.trim(),whatsapp:form.whatsapp.trim(),email:form.email.trim(),tax_condition:form.tax_condition,company_name:form.tax_condition==="responsable_inscripto"?form.company_name.trim():null,cuit:form.tax_condition==="responsable_inscripto"?form.cuit.trim():null,street:form.street.trim(),floor_apt:form.floor_apt.trim()||null,postal_code:form.postal_code.trim(),city:form.city.trim(),province:form.province,client_code:code}});};
+  const createClient=async(token,uid)=>{
+    const code=gc(form.first_name.trim(),form.last_name.trim());
+    // Si vino con ?ref=CODE en la URL, buscar el referidor por client_code
+    let referredById=null;
+    try{
+      const refCode=(typeof window!=="undefined")?(localStorage.getItem("ac_ref_code")||""):"";
+      if(refCode){
+        const r=await dq("clients",{token,filters:`?client_code=eq.${encodeURIComponent(refCode.toUpperCase())}&select=id&limit=1`});
+        if(Array.isArray(r)&&r[0])referredById=r[0].id;
+      }
+    }catch{}
+    const body={auth_user_id:uid,first_name:form.first_name.trim(),last_name:form.last_name.trim(),whatsapp:form.whatsapp.trim(),email:form.email.trim(),tax_condition:form.tax_condition,company_name:form.tax_condition==="responsable_inscripto"?form.company_name.trim():null,cuit:form.tax_condition==="responsable_inscripto"?form.cuit.trim():null,street:form.street.trim(),floor_apt:form.floor_apt.trim()||null,postal_code:form.postal_code.trim(),city:form.city.trim(),province:form.province,client_code:code};
+    if(referredById)body.referred_by_client_id=referredById;
+    const result=await dq("clients",{method:"POST",token,body});
+    // Limpiar el ref code del localStorage post-registro
+    if(referredById){try{localStorage.removeItem("ac_ref_code");}catch{}}
+    return result;
+  };
   const doReg=async()=>{if(!val(2))return;setLoading(true);setGErr("");try{const a=await ac("signup",{email:form.email,password:form.password,data:{role:"cliente",first_name:form.first_name.trim(),last_name:form.last_name.trim(),whatsapp:form.whatsapp.trim(),tax_condition:form.tax_condition,company_name:form.company_name.trim(),cuit:form.cuit.trim(),street:form.street.trim(),floor_apt:form.floor_apt.trim(),postal_code:form.postal_code.trim(),city:form.city.trim(),province:form.province}});if(a.error){setGErr(a.error.message||"Error");setLoading(false);return;}if(!a.access_token){setOkMsg("Te enviamos un email de confirmación. Una vez confirmado, ingresá con tu email y contraseña.");setLoading(false);return;}const c=await createClient(a.access_token,a.user.id);if(c?.error||!c){setGErr("Error guardando datos.");setLoading(false);return;}const ss={token:a.access_token,refresh_token:a.refresh_token,user:a.user};saveSession(ss);setSession(ss);const cliente=Array.isArray(c)?c[0]:c;setClient(cliente);setProfile({role:"cliente"});
     // Welcome email (fire-and-forget, no bloqueamos si falla)
     try{if(cliente?.id){fetch("/api/notify/welcome",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${a.access_token}`},body:JSON.stringify({client_id:cliente.id})}).catch(()=>{});}}catch{}
