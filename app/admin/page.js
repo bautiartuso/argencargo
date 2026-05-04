@@ -143,6 +143,39 @@ function AdminLogin({onLogin}){
 
 function OperationsList({token,onSelect,onNew}){
   const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fStatuses,setFStatuses]=useState([]);const [fChannel,setFChannel]=useState("");const [sortCol,setSortCol]=useState("smart");const [sortDir,setSortDir]=useState("asc");const [showStatusDrop,setShowStatusDrop]=useState(false);const [pageClosed,setPageClosed]=useState(1);const CLOSED_PER_PAGE=25;
+  const [selectedIds,setSelectedIds]=useState(new Set());
+  const [bulkAction,setBulkAction]=useState(null); // {action:"setStatus"|"delete"|"markCollected", value?}
+  const [bulkRunning,setBulkRunning]=useState(false);
+  const toggleSelected=(id)=>setSelectedIds(p=>{const n=new Set(p);n.has(id)?n.delete(id):n.add(id);return n;});
+  const clearSelection=()=>setSelectedIds(new Set());
+  const selectAll=(rows)=>setSelectedIds(new Set(rows.map(o=>o.id)));
+  const exportCSV=(rows)=>{
+    const headers=["Código","Cliente","Descripción","Canal","Estado","ETA","Presupuesto","Cobrado","Cobrada","Ganancia"];
+    const csv=[headers.join(",")].concat(rows.map(o=>{const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"";const gan=calcGan(o);return [o.operation_code,`"${cn.replace(/"/g,'""')}"`,`"${(o.description||"").replace(/"/g,'""')}"`,o.channel||"",o.status||"",o.eta||"",Number(o.budget_total||0).toFixed(2),Number(o.collected_amount||0).toFixed(2),o.is_collected?"Sí":"No",gan.toFixed(2)].join(",");})).join("\n");
+    const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download=`operaciones_${new Date().toISOString().slice(0,10)}.csv`;a.click();
+    URL.revokeObjectURL(url);
+  };
+  const runBulk=async()=>{
+    if(!bulkAction||selectedIds.size===0)return;
+    setBulkRunning(true);
+    const ids=Array.from(selectedIds);
+    try{
+      if(bulkAction.action==="setStatus"){
+        await dq("operations",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{status:bulkAction.value}});
+      } else if(bulkAction.action==="markCollected"){
+        await dq("operations",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{is_collected:true,collection_date:new Date().toISOString().slice(0,10)}});
+      } else if(bulkAction.action==="delete"){
+        await dq("operations",{method:"DELETE",token,filters:`?id=in.(${ids.join(",")})`});
+      }
+      // Recargar
+      const o=await dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"});
+      setOps(Array.isArray(o)?o:[]);
+      clearSelection();setBulkAction(null);
+    }catch(e){alert("Error: "+e.message);}
+    setBulkRunning(false);
+  };
   // Peso por estado: mayor valor = más cerca de entrega (aparece arriba)
   const STATUS_WEIGHT={entregada:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
   useEffect(()=>{(async()=>{const [o,pm,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd"})]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setLo(false);})();},[token]);
@@ -223,6 +256,18 @@ function OperationsList({token,onSelect,onNew}){
         <Btn variant="gold" onClick={onNew}>+ Nueva operación</Btn>
       </div>
     </div>
+    {selectedIds.size>0&&<div style={{display:"flex",gap:10,marginBottom:14,padding:"12px 16px",background:`linear-gradient(90deg, rgba(184,149,106,0.18), rgba(184,149,106,0.06))`,border:`1.5px solid ${GOLD}`,borderRadius:12,alignItems:"center",flexWrap:"wrap"}}>
+      <span style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,letterSpacing:"0.02em"}}>{selectedIds.size} seleccionada{selectedIds.size>1?"s":""}</span>
+      <button onClick={clearSelection} style={{fontSize:11,padding:"4px 10px",border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.6)",borderRadius:6,cursor:"pointer",fontWeight:600}}>Deseleccionar</button>
+      <span style={{flex:1}}/>
+      <button onClick={()=>exportCSV(ops.filter(o=>selectedIds.has(o.id)))} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#60a5fa",cursor:"pointer"}}>📥 Exportar CSV</button>
+      <select onChange={e=>{if(e.target.value){setBulkAction({action:"setStatus",value:e.target.value});e.target.value="";}}} defaultValue="" style={{padding:"7px 12px",fontSize:11.5,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>
+        <option value="" style={{background:"#142038"}}>↻ Cambiar estado…</option>
+        {STATUSES.map(s=><option key={s} value={s} style={{background:"#142038"}}>{SM[s].l}</option>)}
+      </select>
+      <button onClick={()=>setBulkAction({action:"markCollected"})} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>💰 Marcar cobradas</button>
+      <button onClick={()=>setBulkAction({action:"delete"})} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1px solid rgba(255,80,80,0.4)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>🗑 Eliminar</button>
+    </div>}
     {attentionTotal>0&&<div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
       <AttCard n={staleOps.length} label="Estancadas" color="#f87171" onClick={()=>{if(staleOps[0])onSelect(staleOps[0]);}}/>
       <AttCard n={noBudgetOps.length} label="Sin presupuesto" color="#fbbf24" onClick={()=>{if(noBudgetOps[0])onSelect(noBudgetOps[0]);}}/>
@@ -244,10 +289,12 @@ function OperationsList({token,onSelect,onNew}){
     const renderTable=(rows,showGanancia)=><div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
+          <th style={{padding:"14px 12px",width:36}}><input type="checkbox" checked={rows.length>0&&rows.every(o=>selectedIds.has(o.id))} onChange={()=>{if(rows.every(o=>selectedIds.has(o.id))){setSelectedIds(p=>{const n=new Set(p);rows.forEach(o=>n.delete(o.id));return n;});}else{setSelectedIds(p=>{const n=new Set(p);rows.forEach(o=>n.add(o.id));return n;});}}} title="Seleccionar todas las visibles" style={{cursor:"pointer",accentColor:GOLD}}/></th>
           <SH label="Código" col="operation_code"/><SH label="Cliente" col="client"/><SH label="Descripción" col="description"/><SH label="Canal" col="channel"/><SH label="Estado" col="status"/>{showGanancia?<SH label="Cobrada" col="collection_date"/>:<><SH label="ETA" col="eta"/><SH label="Saldo" col="saldo"/></>}{showGanancia&&<SH label="Ganancia" col="ganancia"/>}
         </tr></thead>
-        <tbody>{rows.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const gan=calcGan(op);const saldo=showGanancia?null:calcSaldo(op);
-        return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onClick={()=>onSelect(op)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+        <tbody>{rows.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name} ${op.clients.last_name}`:"—";const gan=calcGan(op);const saldo=showGanancia?null:calcSaldo(op);const isSel=selectedIds.has(op.id);
+        return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms",background:isSel?"rgba(184,149,106,0.08)":"transparent"}} onClick={()=>onSelect(op)} onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background=isSel?"rgba(184,149,106,0.08)":"transparent";}}>
+          <td style={{padding:"14px 12px",width:36}} onClick={e=>{e.stopPropagation();toggleSelected(op.id);}}><input type="checkbox" checked={isSel} onChange={()=>{}} style={{cursor:"pointer",accentColor:GOLD}}/></td>
           <td style={{padding:"14px 16px",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:"#fff",whiteSpace:"nowrap",fontSize:12.5,letterSpacing:"0.04em"}}>{op.operation_code}{op.service_type==="gestion_integral"&&<span title="Gestión Integral" style={{marginLeft:8,fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.12em",textTransform:"uppercase",border:`1.5px solid ${GOLD_DEEP}`,boxShadow:`${GOLD_GLOW}, inset 0 1px 0 rgba(255,255,255,0.4)`,animation:"acGiPulse 2.4s ease-in-out infinite",fontFamily:"'Inter','Segoe UI',sans-serif",verticalAlign:"middle"}}>GI</span>}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.78)",whiteSpace:"nowrap",fontSize:13}}>{cn}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12.5}}>{op.description||"—"}</td>
@@ -273,6 +320,19 @@ function OperationsList({token,onSelect,onNew}){
     return <>{active.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones activas <span style={{color:GOLD_LIGHT,marginLeft:4}}>({active.length})</span></h3>{renderTable(active,false)}</>}
     {closed.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"32px 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones cerradas <span style={{color:"rgba(255,255,255,0.55)",marginLeft:4}}>({closed.length})</span> {totalGanancia!==0&&<span style={{fontSize:12,fontWeight:700,color:totalGanancia>0?"#22c55e":"#ff6b6b",marginLeft:12,letterSpacing:"0.04em"}}>Ganancia total: USD {totalGanancia.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}</h3>{renderTable(closedPaged,true)}{renderPagination()}</>}
     {active.length===0&&closed.length===0&&<EmptyState icon="box" title={search||fStatuses.length>0||fChannel?"Sin resultados":"No hay operaciones"} description={search||fStatuses.length>0||fChannel?"Ninguna operación coincide con los filtros activos.":"Creá tu primera operación para comenzar."} cta={search||fStatuses.length>0||fChannel?null:"+ Nueva operación"} ctaOnClick={search||fStatuses.length>0||fChannel?null:onNew}/>}</>;})()}
+
+    {bulkAction&&<div onClick={()=>!bulkRunning&&setBulkAction(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${bulkAction.action==="delete"?"rgba(255,80,80,0.5)":bulkAction.action==="markCollected"?"rgba(34,197,94,0.5)":"rgba(184,149,106,0.5)"}`,borderRadius:14,padding:"22px 24px",maxWidth:480,width:"100%"}}>
+        <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>
+          {bulkAction.action==="delete"?"⚠️ Eliminar operaciones":bulkAction.action==="markCollected"?"💰 Marcar como cobradas":`↻ Cambiar estado a "${SM[bulkAction.value]?.l||bulkAction.value}"`}
+        </h3>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:"0 0 16px",lineHeight:1.5}}>Vas a {bulkAction.action==="delete"?<><strong style={{color:"#ff6b6b"}}>BORRAR</strong> permanentemente</>:bulkAction.action==="markCollected"?"marcar como cobradas con fecha de hoy":"cambiar el estado de"} <strong style={{color:GOLD_LIGHT}}>{selectedIds.size} operación{selectedIds.size>1?"es":""}</strong>.{bulkAction.action==="delete"?<><br/><br/>Esta acción <strong>no se puede deshacer</strong>. ¿Estás seguro?</>:""}</p>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>!bulkRunning&&setBulkAction(null)} disabled={bulkRunning} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:bulkRunning?"not-allowed":"pointer"}}>Cancelar</button>
+          <button onClick={runBulk} disabled={bulkRunning} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"none",background:bulkAction.action==="delete"?"linear-gradient(135deg,#ff6b6b,#ef4444)":bulkAction.action==="markCollected"?"linear-gradient(135deg,#22c55e,#16a34a)":GOLD_GRADIENT,color:bulkAction.action==="delete"||bulkAction.action==="markCollected"?"#fff":"#0A1628",cursor:bulkRunning?"wait":"pointer"}}>{bulkRunning?"Procesando…":"Sí, confirmar"}</button>
+        </div>
+      </div>
+    </div>}
   </div>;
 }
 
