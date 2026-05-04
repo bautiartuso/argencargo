@@ -1632,10 +1632,38 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
     if(!clientId){setErr(t.err_client);return;}
     if(!tracking?.trim()){setErr(t.err_tracking);return;}
     setErr("");setSaving(true);
+    // OFFLINE MODE: si no hay conexión, encolar en IndexedDB.
+    // Limitaciones offline: solo se puede encolar si es "unregistered" (no requiere opId)
+    // o si hay una op abierta del cliente (existingOp). Crear op nueva requiere conexión.
+    const isOffline = typeof navigator!=="undefined" && !navigator.onLine;
     try {
-      const validBultos=bultos.filter(b=>b.weight||b.length||b.width||b.height||true); // todos cuentan, opcional
+      const validBultos=bultos.filter(b=>b.weight||b.length||b.width||b.height||true);
+      if(isOffline){
+        if(clientId!=="unregistered"&&!existingOp){
+          setErr("Sin conexión: no se pueden crear operaciones nuevas. Conectate o seleccioná un cliente con op abierta.");
+          setSaving(false);return;
+        }
+        // Encolar bultos en IndexedDB
+        for(let i=0;i<validBultos.length;i++){const b=validBultos[i];
+          let body, table;
+          if(clientId==="unregistered"){
+            table="unassigned_packages";
+            body={national_tracking:tracking.trim(),package_number:i+1,quantity:1,registered_by_agent_id:agentId};
+          } else {
+            table="operation_packages";
+            body={operation_id:existingOp.id,package_number:Date.now()+i,quantity:1,national_tracking:tracking.trim()};
+          }
+          if(b.weight)body.gross_weight_kg=Number(b.weight);
+          if(b.length)body.length_cm=Number(b.length);
+          if(b.width)body.width_cm=Number(b.width);
+          if(b.height)body.height_cm=Number(b.height);
+          await enqueuePackage({table,body,photoBlob:b.photo||null,photoFileName:b.photo?.name||null});
+        }
+        flash&&flash("Sin conexión — guardado localmente, se sincroniza al volver online");
+        if(typeof window!=="undefined"){window.dispatchEvent(new Event("ac-queue-changed"));}
+        onSaved();return;
+      }
       if(clientId==="unregistered"){
-        // Insertar en unassigned_packages, una entry por bulto. Subir foto antes (si hay).
         for(let i=0;i<validBultos.length;i++){const b=validBultos[i];const body={national_tracking:tracking.trim(),package_number:i+1,quantity:1,registered_by_agent_id:agentId};
           if(b.weight)body.gross_weight_kg=Number(b.weight);if(b.length)body.length_cm=Number(b.length);if(b.width)body.width_cm=Number(b.width);if(b.height)body.height_cm=Number(b.height);
           if(b.photo){const url=await uploadPackagePhoto(b.photo,token);if(url){body.photo_url=url;body.photo_uploaded_at=new Date().toISOString();}}
