@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, SkeletonTable, EmptyState } from "../../lib/ui";
+import OfflineStatusBar from "../components/OfflineStatusBar";
+import { enqueuePackage, getPendingCount } from "../../lib/offline-queue";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -1076,6 +1078,7 @@ function NotifBell({token,t}){
 
 function SimpleShell({children,lang,setLang,t,onLogout,token}){
   return <div style={{minHeight:"100vh",background:BG,fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif"}}>
+    <OfflineStatusBar token={token}/>
     <style dangerouslySetInnerHTML={{__html:`
       @media(max-width:768px){
         .ac-agente-header{padding:14px 16px!important;gap:8px!important}
