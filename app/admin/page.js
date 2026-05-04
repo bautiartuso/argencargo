@@ -561,7 +561,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     flash(`✓ Bulto movido a ${dest.operation_code}`);
     autoSyncBudget();
   };
-  const loadCCBalance=async()=>{const mvs=await dq("supplier_account_movements",{token,filters:"?select=type,amount_usd"});if(Array.isArray(mvs)){const bal=mvs.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):(-Number(m.amount_usd))),0);setCcBalance(bal);}};
+  // CC balance del agente asignado a esta op (mismo número que ve el panel Agentes)
+  const loadCCBalance=async()=>{const ag=op.created_by_agent_id;if(!ag){setCcBalance(0);return;}const mvs=await dq("agent_account_movements",{token,filters:`?agent_id=eq.${ag}&select=type,amount_usd`});if(Array.isArray(mvs)){const bal=mvs.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):(-Number(m.amount_usd))),0);setCcBalance(bal);}};
   // Divisor volumétrico del agente que creó la op (default 5000 si no hay agente o no está set)
   const [agentVolDiv,setAgentVolDiv]=useState(5000);
   useEffect(()=>{(async()=>{if(!op.created_by_agent_id){setAgentVolDiv(5000);return;}const r=await dq("agent_signups",{token,filters:`?auth_user_id=eq.${op.created_by_agent_id}&select=volumetric_divisor`});const d=Array.isArray(r)&&r[0]?Number(r[0].volumetric_divisor):5000;setAgentVolDiv(d||5000);})();},[op.created_by_agent_id,token]);
@@ -2033,10 +2034,21 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         const{id,clients,...rest}=op;delete rest.created_at;delete rest.updated_at;
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
         // CC deduction for flete if new
-        if(fleteMethod==="cuenta_corriente"&&fleteAmt>0){
-          const existing=await dq("supplier_account_movements",{token,filters:`?operation_id=eq.${id}&type=eq.deduccion&select=id`});
+        if(fleteMethod==="cuenta_corriente"&&fleteAmt>0&&op.created_by_agent_id){
+          // Deducción en la CC del agente asignado a esta op (alineado con panel Agentes)
+          const existing=await dq("agent_account_movements",{token,filters:`?operation_id=eq.${id}&type=eq.deduccion&select=id,amount_usd`});
           if(!Array.isArray(existing)||existing.length===0){
-            await dq("supplier_account_movements",{method:"POST",token,body:{type:"deduccion",amount_usd:fleteAmt,description:`Flete ${op.operation_code}`,operation_id:id,date:new Date().toISOString().slice(0,10)}});
+            await dq("agent_account_movements",{method:"POST",token,body:{agent_id:op.created_by_agent_id,type:"deduccion",amount_usd:fleteAmt,description:`Flete ${op.operation_code}`,operation_id:id,date:new Date().toISOString().slice(0,10)}});
+          } else if(Number(existing[0].amount_usd)!==fleteAmt){
+            // Si cambió el monto del flete, actualizar la deducción existente
+            await dq("agent_account_movements",{method:"PATCH",token,filters:`?id=eq.${existing[0].id}`,body:{amount_usd:fleteAmt,description:`Flete ${op.operation_code}`}});
+          }
+          await loadCCBalance();
+        } else if(fleteMethod!=="cuenta_corriente"){
+          // Si cambió de CC a otro método, eliminar deducción huérfana
+          const existing=await dq("agent_account_movements",{token,filters:`?operation_id=eq.${id}&type=eq.deduccion&select=id`});
+          if(Array.isArray(existing)&&existing.length>0){
+            await dq("agent_account_movements",{method:"DELETE",token,filters:`?id=eq.${existing[0].id}`});
             await loadCCBalance();
           }
         }
@@ -2165,10 +2177,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px",marginBottom:16}}>
           <Inp label="Costo flete (USD)" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>
           <Sel label="Método de pago" value={op.cost_flete_method||"cuenta_corriente"} onChange={chOp("cost_flete_method")} options={[{value:"cuenta_corriente",label:"Cuenta Corriente"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"},{value:"transferencia",label:"Transferencia Bancaria"}]}/>
-          {(op.cost_flete_method||"cuenta_corriente")==="cuenta_corriente"&&<div style={{paddingTop:22}} title="Cuenta Corriente con el agente del flete: anticipos suman, fletes en CC restan. Negativo (rojo) = le debés al agente.">
+          {(op.cost_flete_method||"cuenta_corriente")==="cuenta_corriente"&&<div style={{paddingTop:22}} title="Cuenta Corriente con el agente asignado a esta op: anticipos suman, fletes en CC restan. Negativo (rojo) = le debés al agente.">
             <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>SALDO AGENTE (CC)</p>
-            <p style={{fontSize:16,fontWeight:700,color:ccBalance>0?"#22c55e":"#ff6b6b",margin:0}}>USD {ccBalance.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-            <p style={{fontSize:9,color:"rgba(255,255,255,0.35)",margin:"2px 0 0",fontStyle:"italic"}}>{ccBalance>=0?"crédito disponible":"deuda con agente"}</p>
+            {op.created_by_agent_id?<>
+              <p style={{fontSize:16,fontWeight:700,color:ccBalance>0?"#22c55e":"#ff6b6b",margin:0}}>USD {ccBalance.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+              <p style={{fontSize:9,color:"rgba(255,255,255,0.35)",margin:"2px 0 0",fontStyle:"italic"}}>{ccBalance>=0?"crédito disponible":"deuda con agente"}</p>
+            </>:<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:0,fontStyle:"italic"}}>op sin agente asignado</p>}
           </div>}
         </div>
         {/* Impuestos y Gasto Documental: solo para canal A (blanco). En canal B/negro no aplican. */}
