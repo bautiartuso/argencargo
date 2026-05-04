@@ -778,7 +778,82 @@ function OperationDetail({op,token,onBack}){
     </div>}
   </div>;
 }
-function ProfilePage({client}){if(!client)return null;const f=[{l:"Nombre",v:`${client.first_name} ${client.last_name}`},{l:"Código",v:client.client_code,m:true},{l:"Email",v:client.email},{l:"WhatsApp",v:client.whatsapp},{l:"Dirección",v:`${client.street}${client.floor_apt?`, ${client.floor_apt}`:""}`},{l:"Localidad",v:`${client.city}, ${client.province}`},{l:"CP",v:client.postal_code},{l:"IVA",v:client.tax_condition==="responsable_inscripto"?"Resp. Inscripto":client.tax_condition==="monotributista"?"Monotributista":"Consumidor final"}];return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 24px",letterSpacing:"-0.02em"}}>Mi perfil</h2><div style={{background:"rgba(255,255,255,0.025)",borderRadius:16,border:"1px solid rgba(255,255,255,0.06)",padding:"1.75rem 2rem"}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"24px 28px"}}>{f.map((x,i)=><div key={i}><p style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{x.l}</p><p style={{fontSize:15,color:"#fff",margin:0,fontWeight:500,...(x.m?{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:18,color:GOLD_LIGHT,letterSpacing:"0.04em"}:{})}}>{x.v||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</p></div>)}</div></div><div style={{background:"rgba(184,149,106,0.06)",borderRadius:12,border:"1px solid rgba(184,149,106,0.18)",padding:"14px 20px",marginTop:16,display:"flex",alignItems:"center",gap:12}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={GOLD_LIGHT} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg><p style={{fontSize:13,color:"rgba(255,255,255,0.65)",margin:0,lineHeight:1.5}}>Tu código es <strong style={{color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.04em"}}>{client.client_code}</strong>. Incluilo en todos los paquetes que envíes.</p></div></div>;}
+function ProfilePage({client,token}){
+  if(!client)return null;
+  const f=[{l:"Nombre",v:`${client.first_name} ${client.last_name}`},{l:"Código",v:client.client_code,m:true},{l:"Email",v:client.email},{l:"WhatsApp",v:client.whatsapp},{l:"Dirección",v:`${client.street}${client.floor_apt?`, ${client.floor_apt}`:""}`},{l:"Localidad",v:`${client.city}, ${client.province}`},{l:"CP",v:client.postal_code},{l:"IVA",v:client.tax_condition==="responsable_inscripto"?"Resp. Inscripto":client.tax_condition==="monotributista"?"Monotributista":"Consumidor final"}];
+  const [exporting,setExporting]=useState(false);
+  const exportHistory=async(format)=>{
+    setExporting(true);
+    try{
+      const ops=await dq("operations",{token,filters:`?client_id=eq.${client.id}&select=operation_code,description,channel,origin,status,budget_total,collected_amount,is_collected,created_at,closed_at,delivered_at,eta,international_tracking,international_carrier&order=created_at.desc`});
+      const opsArr=Array.isArray(ops)?ops:[];
+      if(opsArr.length===0){alert("No tenés importaciones para exportar todavía.");setExporting(false);return;}
+      const chLbl={aereo_blanco:"Aéreo Courier Comercial",aereo_negro:"Aéreo Integral AC",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
+      const stLbl={pendiente:"Pendiente",en_deposito_origen:"En depósito",en_preparacion:"En preparación",en_transito:"En tránsito",arribo_argentina:"Arribó",en_aduana:"En aduana",entregada:"Entregada",operacion_cerrada:"Cerrada",cancelada:"Cancelada"};
+      if(format==="csv"){
+        const headers=["Código","Descripción","Origen","Canal","Estado","Tracking","Carrier","Fecha creación","Fecha entrega","Presupuesto USD","Cobrado USD","Cobrada"];
+        const rows=opsArr.map(o=>[o.operation_code,`"${(o.description||"").replace(/"/g,'""')}"`,o.origin||"",chLbl[o.channel]||o.channel||"",stLbl[o.status]||o.status||"",o.international_tracking||"",o.international_carrier||"",o.created_at?o.created_at.slice(0,10):"",o.delivered_at?o.delivered_at.slice(0,10):"",Number(o.budget_total||0).toFixed(2),Number(o.collected_amount||0).toFixed(2),o.is_collected?"Sí":"No"].join(","));
+        const csv=[headers.join(","),...rows].join("\n");
+        const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
+        const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`mis-importaciones-${client.client_code}-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(url);
+      } else {
+        // PDF: imprimir HTML simple
+        const total=opsArr.reduce((s,o)=>s+Number(o.budget_total||0),0);
+        const cobrado=opsArr.reduce((s,o)=>s+Number(o.collected_amount||0),0);
+        const w=window.open("","_blank");if(!w){alert("Permití pop-ups para descargar el PDF");setExporting(false);return;}
+        const tbl=opsArr.map(o=>`<tr><td><strong>${o.operation_code}</strong></td><td>${o.description||"—"}</td><td>${o.origin||""}</td><td>${chLbl[o.channel]||""}</td><td><span class="badge">${stLbl[o.status]||""}</span></td><td>${o.created_at?o.created_at.slice(0,10):""}</td><td class="r">USD ${Number(o.budget_total||0).toFixed(2)}</td><td class="c">${o.is_collected?"✓":"—"}</td></tr>`).join("");
+        w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Histórico ${client.client_code}</title><style>
+          *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact}
+          @page{size:A4;margin:1.5cm}
+          body{font-family:'Helvetica Neue',Arial,sans-serif;color:#1a1a1a;font-size:11px;line-height:1.5;padding:20px}
+          .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1B4F8A;padding-bottom:14px;margin-bottom:20px}
+          .header img{max-width:160px;height:auto}
+          .header .meta{text-align:right;font-size:10px;color:#666}
+          .header .meta .code{color:#1B4F8A;font-size:13px;font-weight:700;font-family:monospace;display:block;margin-bottom:4px}
+          h1{font-size:20px;color:#1B4F8A;margin:0 0 6px}
+          .sub{color:#666;margin-bottom:18px}
+          .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
+          .stats div{padding:12px;background:#f5f7fa;border-radius:6px}
+          .stats b{display:block;color:#1B4F8A;font-size:16px;margin-top:2px}
+          .stats span{font-size:9px;color:#666;text-transform:uppercase;letter-spacing:0.05em;font-weight:700}
+          table{width:100%;border-collapse:collapse;font-size:10px}
+          th,td{padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:left}
+          th{background:#1B4F8A;color:#fff;font-size:9px;text-transform:uppercase;letter-spacing:0.05em}
+          td.c{text-align:center}td.r{text-align:right}
+          .badge{display:inline-block;padding:2px 8px;background:#e0e7ff;color:#1e40af;border-radius:4px;font-size:9px;font-weight:600}
+          tr:nth-child(even) td{background:#fafbfc}
+          .footer{margin-top:24px;padding:14px;background:#152D54;color:#fff;border-radius:8px;text-align:center;font-size:10px}
+        </style></head><body>
+          <div class="header"><img src="https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png" alt="Argencargo"/><div class="meta"><span class="code">${client.client_code}</span>${client.first_name} ${client.last_name}<br/>Generado ${new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})}</div></div>
+          <h1>Histórico de importaciones</h1>
+          <p class="sub">Listado completo de tus operaciones con Argencargo</p>
+          <div class="stats">
+            <div><span>Total ops</span><b>${opsArr.length}</b></div>
+            <div><span>Cerradas</span><b>${opsArr.filter(o=>o.is_collected).length}</b></div>
+            <div><span>USD facturado</span><b>USD ${total.toFixed(2)}</b></div>
+            <div><span>USD pagado</span><b>USD ${cobrado.toFixed(2)}</b></div>
+          </div>
+          <table><thead><tr><th>Código</th><th>Mercadería</th><th>Origen</th><th>Canal</th><th>Estado</th><th>Fecha</th><th class="r">Monto</th><th class="c">Pagada</th></tr></thead><tbody>${tbl}</tbody></table>
+          <div class="footer"><strong>ARGENCARGO</strong> · +54 9 11 2508-8580 · info@argencargo.com.ar · Av Callao 1137, Recoleta CABA</div>
+          <script>setTimeout(()=>window.print(),400)</script>
+        </body></html>`);w.document.close();
+      }
+    }catch(e){alert("Error: "+e.message);}
+    setExporting(false);
+  };
+  return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 24px",letterSpacing:"-0.02em"}}>Mi perfil</h2><div style={{background:"rgba(255,255,255,0.025)",borderRadius:16,border:"1px solid rgba(255,255,255,0.06)",padding:"1.75rem 2rem"}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"24px 28px"}}>{f.map((x,i)=><div key={i}><p style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{x.l}</p><p style={{fontSize:15,color:"#fff",margin:0,fontWeight:500,...(x.m?{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:18,color:GOLD_LIGHT,letterSpacing:"0.04em"}:{})}}>{x.v||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</p></div>)}</div></div>
+    <div style={{background:"rgba(184,149,106,0.06)",borderRadius:12,border:"1px solid rgba(184,149,106,0.18)",padding:"14px 20px",marginTop:16,display:"flex",alignItems:"center",gap:12}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={GOLD_LIGHT} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg><p style={{fontSize:13,color:"rgba(255,255,255,0.65)",margin:0,lineHeight:1.5}}>Tu código es <strong style={{color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.04em"}}>{client.client_code}</strong>. Incluilo en todos los paquetes que envíes.</p></div>
+    {/* Exportar histórico */}
+    <div style={{background:"rgba(255,255,255,0.025)",borderRadius:16,border:"1px solid rgba(255,255,255,0.06)",padding:"1.5rem 2rem",marginTop:16}}>
+      <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>📥 Exportar mi histórico</h3>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",lineHeight:1.5}}>Descargá todas tus importaciones con Argencargo. Útil para tu contador, balance personal o registros propios.</p>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button onClick={()=>exportHistory("pdf")} disabled={exporting} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:exporting?"wait":"pointer",opacity:exporting?0.5:1}}>📄 Descargar PDF</button>
+        <button onClick={()=>exportHistory("csv")} disabled={exporting} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:exporting?"wait":"pointer",opacity:exporting?0.5:1}}>📊 Descargar Excel (CSV)</button>
+      </div>
+    </div>
+  </div>;
+}
 const SERVICES_C=[{key:"aereo_a_china",label:"Aéreo Courier Comercial — China",info:"Demora 7-10 días hábiles",unit:"kg"},{key:"aereo_b_usa",label:"Aéreo Integral AC — USA",info:"Demora 48-72 hs hábiles",unit:"kg"},{key:"aereo_b_china",label:"Aéreo Integral AC — China",info:"Demora 10-15 días hábiles",unit:"kg"},{key:"maritimo_a_china",label:"Marítimo Carga LCL/FCL — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo Integral AC",unit:"cbm",info:""}];
 function RatesPage({token,client}){
   const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [lo,setLo]=useState(true);
@@ -2308,7 +2383,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
   return <DashShell page={page} setPage={p=>{setPage(p);setSelOp(null);}} role="cliente" client={client} user={user} onLogout={onLogout} token={token}>
     {page==="imports"&&!selOp&&<><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp}/>}</>}
     {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} onBack={()=>setSelOp(null)}/>}
-    {page==="profile"&&<ProfilePage client={client}/>}
+    {page==="profile"&&<ProfilePage client={client} token={token}/>}
     {page==="purchases"&&<PurchaseNotificationsPage token={token} client={client}/>}
     {page==="rates"&&<RatesPage token={token} client={client}/>}
     {page==="calculator"&&<CalculatorPage token={token} client={client}/>}
