@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, WhatsAppFab } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
+import { printQuotePdf, printClosingPdf } from "../../lib/pdf-templates";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -449,91 +450,8 @@ function OperationDetail({op,token,onBack}){
     setShowDocPanel(false);setDocItems([]);await loadAll();setSavingDocs(false);
   };
   const toggleSection=(s)=>setOpenSections(p=>({...p,[s]:!p[s]}));
-  const downloadPdf=()=>{
-    const w=window.open("","_blank");if(!w)return;
-    const bt=Number(op.budget_total||0);const bTax=Number(op.budget_taxes||0);const bFlete=Number(op.budget_flete||0);const bSeg=Number(op.budget_seguro||0);const shipC=op.shipping_to_door?Number(op.shipping_cost||0):0;
-    const isB=op.channel?.includes("negro");
-    const chLbl=({aereo_blanco:"Aéreo Courier Comercial",aereo_negro:"Aéreo Integral AC",maritimo_blanco:"Marítimo Carga LCL/FCL",maritimo_negro:"Marítimo Integral AC"})[op.channel]||op.channel;
-    const totFob=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
-    const prodRows=items.map(it=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);return `<tr><td>${it.description||""}</td><td class="c">${it.quantity||1}</td><td class="r">USD ${Number(it.unit_price_usd||0).toFixed(2)}</td><td class="r">USD ${fob.toFixed(2)}</td>${!isB?`<td class="c mono">${it.ncm_code||"—"}</td><td class="c">${it.import_duty_rate||0}%</td><td class="c">${it.statistics_rate||0}%</td><td class="c">${it.iva_rate||21}%</td>`:""}</tr>`;}).join("");
-    const pkgRows=pkgs.map((p,i)=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),wd=Number(p.width_cm||0),h=Number(p.height_cm||0);const cbm=l&&wd&&h?((l*wd*h)/1000000)*q:0;return `<tr><td class="c">${i+1}</td><td class="c">${q}</td><td class="c">${l?`${l}×${wd}×${h} cm`:"—"}</td><td class="r">${gw?`${gw.toFixed(2)} kg`:"—"}</td><td class="r">${cbm?cbm.toFixed(4)+" m³":"—"}</td></tr>`;}).join("");
-    const pmtTotal=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
-    const pmtAnt=Number(op.total_anticipos||0);
-    const pmtPend=Math.max(0,pmtTotal-pmtAnt);
-    const totalAbonar=bt+pmtPend;
-    const cliPaid=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);
-    const saldoReal=Math.max(0,totalAbonar-cliPaid);
-    const pagosRows=cliPmts.map(p=>`<tr><td>${new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}</td><td class="r">USD ${Number(p.amount_usd).toFixed(2)}${p.currency==="ARS"?`<br/><span class="sm">ARS ${Number(p.amount_ars).toLocaleString("es-AR")} @ ${p.exchange_rate}</span>`:""}</td><td>${p.payment_method||"—"}</td><td>${p.notes||"—"}</td></tr>`).join("");
-    const statusLbl={pendiente:"Pendiente",en_deposito_origen:"En depósito origen",en_preparacion:"En preparación",en_transito:"En tránsito",arribo_argentina:"Arribó a Argentina",en_aduana:"En aduana",entregada:"Lista para retirar",operacion_cerrada:"Operación cerrada",cancelada:"Cancelada"}[op.status]||op.status;
-    const LOGO_COLOR="https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png";
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Presupuesto ${op.operation_code}</title><style>
-      *{box-sizing:border-box}body{font-family:'Helvetica Neue',Arial,sans-serif;padding:32px;color:#111;max-width:900px;margin:0 auto}
-      .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1B4F8A;padding-bottom:16px;margin-bottom:20px}
-      .header img{max-width:180px;height:auto}
-      .header .meta{text-align:right;font-size:10px;color:#666;line-height:1.5}
-      .header .meta b{color:#1B4F8A;font-size:13px;display:block;margin-bottom:2px;font-family:monospace}
-      h1{font-size:22px;margin:0 0 4px;color:#1B4F8A}.sub{color:#666;font-size:12px;margin-bottom:24px}
-      .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;padding:14px;background:#f5f7fa;border-radius:8px}
-      .grid div{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.05em}.grid b{font-size:13px;color:#111;display:block;margin-top:2px;text-transform:none;letter-spacing:0}
-      h3{margin:22px 0 6px;font-size:13px;color:#1B4F8A;text-transform:uppercase;letter-spacing:0.08em}
-      table{width:100%;border-collapse:collapse;margin-top:6px;font-size:11px}
-      th,td{padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:left}
-      th{background:#1B4F8A;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:0.05em}
-      td.c{text-align:center}td.r{text-align:right}td.mono{font-family:monospace;font-size:10px}.sm{font-size:9px;color:#666}
-      tr:nth-child(even) td{background:#fafbfc}
-      .totals{margin-top:18px;padding:16px;background:linear-gradient(135deg,#152D54,#3B7DD8);color:#fff;border-radius:8px}
-      .totals .row{display:flex;justify-content:space-between;padding:4px 0}
-      .totals .row.big{border-top:1px solid rgba(255,255,255,0.25);margin-top:6px;padding-top:10px;font-size:15px;font-weight:700}
-      .totals .lbl{opacity:0.8}
-      .foot{margin-top:28px;padding:18px 20px;background:#152D54;color:#fff;border-radius:8px;display:flex;align-items:center;gap:18px}
-      .foot img{max-width:80px;height:auto}
-      .foot .info{font-size:11px;line-height:1.7;flex:1}
-      .foot .info b{display:block;font-size:13px;letter-spacing:0.03em;margin-bottom:3px}
-      .foot .lbl{color:#8ea3c4;margin-right:4px}
-      .foot a{color:#8fb8ff;text-decoration:none}
-      .disclaimer{margin-top:14px;font-size:9px;color:#999;line-height:1.5;text-align:center}
-      .badge{display:inline-block;padding:3px 10px;border-radius:4px;background:#3B7DD8;color:#fff;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em}
-    </style></head><body>
-      <div class="header">
-        <img src="${LOGO_COLOR}" alt="Argencargo"/>
-        <div class="meta">
-          <b>${op.operation_code}</b>
-          <div>Emitido ${new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})}</div>
-          <div>Presupuesto de importación</div>
-        </div>
-      </div>
-      <div class="grid">
-        <div>Mercadería<b>${op.description||"—"}</b></div>
-        <div>Canal<b>${chLbl}</b></div>
-        <div>Origen<b>${op.origin||"—"}</b></div>
-        <div>Estado<b>${statusLbl}</b></div>
-      </div>
-      ${items.length>0?`<h3>Productos</h3><table><thead><tr><th>Descripción</th><th>Cant</th><th>Unit.</th><th>FOB</th>${!isB?"<th>NCM</th><th>Derechos</th><th>TE</th><th>IVA</th>":""}</tr></thead><tbody>${prodRows}</tbody></table><div style="text-align:right;font-size:11px;color:#666;margin-top:6px">Valor FOB total: <b style="color:#111;font-size:13px">USD ${totFob.toFixed(2)}</b></div>`:""}
-      ${pkgs.length>0?`<h3>Bultos</h3><table><thead><tr><th class="c">#</th><th class="c">Cant</th><th class="c">Dimensiones</th><th class="r">Peso</th><th class="r">CBM</th></tr></thead><tbody>${pkgRows}</tbody></table>`:""}
-      <h3>Costos</h3>
-      <div class="totals">
-        ${!isB&&bTax>0?`<div class="row"><span class="lbl">Total Impuestos</span><span>USD ${bTax.toFixed(2)}</span></div>`:""}
-        ${bFlete>0?`<div class="row"><span class="lbl">${isB?"Servicio Integral ARGENCARGO":"Flete internacional"}</span><span>USD ${bFlete.toFixed(2)}</span></div>`:""}
-        ${!isB&&bSeg>0?`<div class="row"><span class="lbl">Seguro de carga</span><span>USD ${bSeg.toFixed(2)}</span></div>`:""}
-        ${shipC>0?`<div class="row"><span class="lbl">Envío a domicilio</span><span>USD ${shipC.toFixed(2)}</span></div>`:""}
-        ${pmtTotal>0?`<div class="row"><span class="lbl">Gestión de pagos (saldo pendiente)</span><span>USD ${pmtPend.toFixed(2)}</span></div>`:""}
-        <div class="row big"><span>TOTAL A ABONAR</span><span>USD ${totalAbonar.toFixed(2)}</span></div>
-        ${cliPaid>0?`<div class="row" style="margin-top:8px"><span class="lbl">Ya pagado</span><span>USD ${cliPaid.toFixed(2)}</span></div><div class="row" style="font-weight:700"><span>Saldo</span><span>${saldoReal>0.01?`USD ${saldoReal.toFixed(2)}`:"PAGADO EN SU TOTALIDAD ✓"}</span></div>`:""}
-      </div>
-      ${cliPmts.length>0?`<h3>Pagos realizados</h3><table><thead><tr><th>Fecha</th><th class="r">Monto</th><th>Método</th><th>Detalle</th></tr></thead><tbody>${pagosRows}</tbody></table>`:""}
-      <div class="foot">
-        <img src="${LOGO_COLOR}" alt="Argencargo"/>
-        <div class="info">
-          <b>ARGENCARGO</b>
-          <div><span class="lbl">T.</span>+54 9 11 2508-8580</div>
-          <div><span class="lbl">E-mail:</span><a href="mailto:info@argencargo.com.ar">info@argencargo.com.ar</a></div>
-          <div>Av Callao 1137 — Recoleta, CABA</div>
-        </div>
-      </div>
-      <div class="disclaimer">Este presupuesto incluye flete internacional, seguro y gestión aduanera${shipC>0?", más envío a domicilio":""}. Los valores pueden variar según tipo de cambio, volumen final despachado y gastos documentales reales al momento del cierre de la operación.</div>
-      <script>setTimeout(()=>window.print(),300)</script>
-    </body></html>`);w.document.close();
-  };
+  const downloadPdf=()=>printQuotePdf({op,items,pkgs,payments:pmts,cliPmts});
+  const downloadClosingPdf=()=>printClosingPdf({op,items,pkgs,cliPmts,events});
   const loadAll=async()=>{const [it,ev,pk,pm,cp,pn]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("purchase_notifications",{token,filters:`?operation_id=eq.${op.id}&select=tracking_code,origin,shipping_method,description,created_at,confirmed_at&limit=1`})]);setItems(Array.isArray(it)?it:[]);setEvents((Array.isArray(ev)?ev:[]).filter(e=>{
   // Filtrar eventos internos auto-generados por cambio de status (ya están en la barra de progreso)
   if(e.source==="internal"&&String(e.title||"").startsWith("Estado actualizado"))return false;
@@ -693,7 +611,8 @@ function OperationDetail({op,token,onBack}){
       return <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:openSections.budget?14:0,gap:10,flexWrap:"wrap"}}>
         <button onClick={()=>toggleSection("budget")} style={{flex:1,minWidth:200,display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",padding:0}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>PRESUPUESTO</h3><span style={{color:"rgba(255,255,255,0.4)",fontSize:14}}>{openSections.budget?"▲":"▼"}</span></button>
-        {hasBudget&&!isGI&&<button onClick={downloadPdf} style={{fontSize:11,fontWeight:700,padding:"6px 12px",borderRadius:8,border:"1.5px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",whiteSpace:"nowrap"}}>📄 Descargar PDF</button>}
+        {hasBudget&&!isGI&&<button onClick={downloadPdf} style={{fontSize:11,fontWeight:700,padding:"6px 12px",borderRadius:8,border:"1.5px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",whiteSpace:"nowrap"}}>📄 Presupuesto</button>}
+        {!isGI&&["entregada","operacion_cerrada"].includes(op.status)&&<button onClick={downloadClosingPdf} style={{fontSize:11,fontWeight:700,padding:"6px 12px",borderRadius:8,border:"1.5px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>📋 Resumen final</button>}
       </div>
       {openSections.budget&&hasBudget?<div>
         {isGI&&<>

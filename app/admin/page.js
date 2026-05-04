@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, Fragment } from "react";
 import { calcOpBudget } from "../../lib/calc";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
+import { printQuotePdf, printReceiptPdf, printClosingPdf } from "../../lib/pdf-templates";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -1801,6 +1802,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               <span style={{color:"rgba(255,255,255,0.65)"}}>{formatDate(p.payment_date)} · {p.payment_method||"—"}{p.notes?` · ${p.notes}`:""}</span>
               <span style={{display:"flex",gap:8,alignItems:"center"}}>
                 <span style={{fontFamily:"monospace",color:"#fff",fontWeight:600}}>USD {Number(p.amount_usd).toFixed(2)}{isArs?` (ARS ${Number(p.amount_ars||0).toLocaleString("es-AR")} @ ${p.exchange_rate})`:""}</span>
+                <button onClick={()=>printReceiptPdf({op,payment:p,client:opClient})} title="Generar recibo PDF para enviar al cliente" style={{background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.3)",color:"#60a5fa",cursor:"pointer",fontSize:10,padding:"3px 8px",borderRadius:4,fontWeight:700}}>📄 Recibo</button>
                 <button onClick={async()=>{if(!confirm("¿Eliminar este cobro parcial?"))return;await dq("operation_client_payments",{method:"DELETE",token,filters:`?id=eq.${p.id}`});const newTot=clientPayments.filter(x=>x.id!==p.id).reduce((s,x)=>s+Number(x.amount_usd||0),0);const upd={collected_amount:newTot};if(newTot<budgetTot)upd.is_collected=false;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});setOp(prev=>({...prev,...upd}));await load();flash("Cobro eliminado");}} title="Eliminar este cobro" style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.7)",cursor:"pointer",fontSize:14,padding:"0 4px"}}>×</button>
               </span>
             </div>;})}
