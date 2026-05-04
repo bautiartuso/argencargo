@@ -4105,7 +4105,16 @@ function AgentsPanel({token}){
                 </label>;})():<span style={{color:"rgba(255,255,255,0.3)",fontSize:14}}>{isExpanded?"▾":"▸"}</span>}</td>
                 <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12}}>{o.operation_code}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)"}}>{o.clients?<span style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{`${o.clients.client_code} - ${o.clients.first_name}`}{o.clients.tax_condition==="responsable_inscripto"&&<span title="Cliente Responsable Inscripto" style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.18)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.05em"}}>RI</span>}</span>:"—"}</td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.description||"—"}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",maxWidth:240}}>{(()=>{
+                  // Si la op tiene description manual, usala. Si no, usar items declarados por el cliente.
+                  if(o.description&&o.description.trim())return <span title={o.description} style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.description}</span>;
+                  const opItems=depositItems.filter(i=>i.operation_id===o.id);
+                  if(opItems.length===0)return <span style={{color:"rgba(255,255,255,0.3)",fontStyle:"italic"}}>Sin productos</span>;
+                  const first=opItems[0].description||"Producto";
+                  const more=opItems.length-1;
+                  const fullList=opItems.map(it=>it.description||"—").join(" · ");
+                  return <span title={fullList} style={{display:"block"}}><span style={{display:"inline-block",maxWidth:more>0?160:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",verticalAlign:"middle"}}>{first}</span>{more>0&&<span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,marginLeft:6,verticalAlign:"middle"}}>+{more}</span>}</span>;
+                })()}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",lineHeight:1.3}}>
                   {pkgsCount}
                   {lastPkgAt>0&&<><br/><span title="Fecha del último bulto cargado en depósito" style={{fontSize:10,color:"rgba(255,255,255,0.35)",fontWeight:500}}>{new Date(lastPkgAt).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span></>}
@@ -4224,7 +4233,7 @@ function AgentsPanel({token}){
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{ops.length}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_weight_kg?`${Number(f.total_weight_kg).toFixed(2)} kg`:"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_cost_usd?usd(f.total_cost_usd):"—"}</td>
-            <td style={{padding:"12px 14px",fontFamily:"monospace",fontSize:11,color:"rgba(255,255,255,0.5)"}}>{f.international_tracking||"—"}</td>
+            <td style={{padding:"12px 14px",fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.35}}>{f.international_tracking?<><span style={{fontFamily:"monospace"}}>{f.international_tracking}</span>{f.international_carrier&&<><br/><span style={{fontSize:9,fontWeight:700,color:IC,letterSpacing:"0.04em",textTransform:"uppercase"}}>{f.international_carrier}</span></>}</>:"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{formatDate(f.created_at)}</td>
             <td style={{padding:"12px 14px"}}><button onClick={()=>setSelFlight(f.id)} style={{color:IC,fontSize:11,fontWeight:600,background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:6,padding:"5px 10px",cursor:"pointer"}}>Ver →</button></td>
           </tr>;})}</tbody>
