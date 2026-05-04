@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, SkeletonTable, EmptyState } from "../../lib/ui";
 import OfflineStatusBar from "../components/OfflineStatusBar";
 import { enqueuePackage, getPendingCount } from "../../lib/offline-queue";
+import TrackingDuplicateWarning from "../components/TrackingDuplicateWarning";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -1773,6 +1774,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
       <div style={{flex:1}}><Inp label={t.tracking} value={tracking} onChange={setTracking} placeholder={t.tracking_ph} req/></div>
       <TrackingScanButton onDetected={setTracking} t={t}/>
     </div>
+    <TrackingDuplicateWarning trackingCode={tracking} excludeOpId={existingOp?.id} token={token}/>
 
     {matchedNotif&&matchedNotif.client_id!==clientId&&<div style={{padding:"12px 14px",background:"rgba(34,197,94,0.08)",border:"1.5px solid rgba(34,197,94,0.35)",borderRadius:10,marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
       <div style={{flex:1,minWidth:200}}>

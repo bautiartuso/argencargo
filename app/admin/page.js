@@ -4,6 +4,7 @@ import { calcOpBudget } from "../../lib/calc";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { printQuotePdf, printReceiptPdf, printClosingPdf } from "../../lib/pdf-templates";
+import TrackingDuplicateWarning from "../components/TrackingDuplicateWarning";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -1162,6 +1163,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <div style={{display:"flex",gap:6}}><Btn onClick={()=>savePkg(pk)} small variant="secondary">Guardar</Btn><Btn onClick={()=>movePkgToOp(pk)} small variant="secondary" title="Mover este bulto a otra operación (cliente equivocado)">↪ Mover</Btn><Btn onClick={()=>delPkg(pk.id)} small variant="danger">Eliminar</Btn></div>
         </div>
         <Inp label="Seguimiento nacional" value={pk.national_tracking} onChange={v=>chPkg(i,"national_tracking",v)} placeholder="Código de seguimiento nacional" small/>
+        <TrackingDuplicateWarning trackingCode={pk.national_tracking} excludeOpId={op.id} token={token}/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 12px"}}>
           <Inp label="Cantidad" type="number" value={pk.quantity} onChange={v=>chPkg(i,"quantity",v?parseInt(v):1)} small/>
           <Inp label="Largo cm" type="number" value={pk.length_cm} onChange={v=>chPkg(i,"length_cm",v)} step="0.1" small/>
@@ -1215,6 +1217,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         <Inp label="Tracking Internacional" value={op.international_tracking} onChange={chOp("international_tracking")} placeholder="Número de seguimiento"/>
         <Inp label="ETA" type="date" value={formatDateInput(op.eta)} onChange={chOp("eta")}/>
       </div>
+      <TrackingDuplicateWarning trackingCode={op.international_tracking} excludeOpId={op.id} token={token}/>
       <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"4px 0 0"}}>Las actualizaciones de DHL/FedEx/UPS se sincronizan automáticamente cada 6h (cron). Podés forzar ahora con el botón ↻.</p>
     </Card>
     <Card title="Eventos de seguimiento" actions={<Btn onClick={addEvt} small>+ Agregar evento</Btn>}>
