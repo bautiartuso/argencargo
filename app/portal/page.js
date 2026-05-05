@@ -429,6 +429,7 @@ function EditableItemRow({item,editable,token,onChange}){
 }
 
 function OperationDetail({op,token,onBack}){
+  const {t}=useT();
   const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [purchaseNotif,setPurchaseNotif]=useState(null);
   const [docInputMode,setDocInputMode]=useState(null); // 'pdf' | 'manual'
   const [localConfirmed,setLocalConfirmed]=useState(false);
@@ -475,13 +476,13 @@ function OperationDetail({op,token,onBack}){
   const st=SM[op.status]||{l:op.status,c:"#999"};const isA=op.channel?.includes("aereo");
   const isGI=op.service_type==="gestion_integral";
   return <div>
-    <button onClick={onBack} style={{fontSize:12,color:"rgba(255,255,255,0.55)",background:"transparent",border:"1px solid rgba(255,255,255,0.08)",cursor:"pointer",fontWeight:600,marginBottom:20,padding:"6px 12px",borderRadius:8,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.color=GOLD_LIGHT;e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";}} onMouseLeave={e=>{e.currentTarget.style.color="rgba(255,255,255,0.55)";e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";}}>← Volver</button>
+    <button onClick={onBack} style={{fontSize:12,color:"rgba(255,255,255,0.55)",background:"transparent",border:"1px solid rgba(255,255,255,0.08)",cursor:"pointer",fontWeight:600,marginBottom:20,padding:"6px 12px",borderRadius:8,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.color=GOLD_LIGHT;e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";}} onMouseLeave={e=>{e.currentTarget.style.color="rgba(255,255,255,0.55)";e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";}}>← {t("common.back")}</button>
     <div style={{background:"rgba(255,255,255,0.025)",borderRadius:16,border:"1px solid rgba(255,255,255,0.06)",padding:"1.75rem 2rem",marginBottom:16}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
         <span style={{fontSize:18,fontWeight:700,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{op.operation_code}</span>
         <span style={{width:1,height:16,background:"rgba(255,255,255,0.12)"}}/>
-        {isGI&&<span className="ac-gi-pulse" style={{fontSize:11,fontWeight:800,padding:"7px 16px",borderRadius:8,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.15em",textTransform:"uppercase",border:`1.5px solid ${GOLD_DEEP}`,boxShadow:`${GOLD_GLOW}, inset 0 1px 0 rgba(255,255,255,0.4)`}}>Gestión Integral</span>}
-        {(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,border:`1px solid ${st.c}40`,background:`${st.c}14`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px ${st.c}`:"none"}}/>{st.l}</span>;})()}
+        {isGI&&<span className="ac-gi-pulse" style={{fontSize:11,fontWeight:800,padding:"7px 16px",borderRadius:8,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.15em",textTransform:"uppercase",border:`1.5px solid ${GOLD_DEEP}`,boxShadow:`${GOLD_GLOW}, inset 0 1px 0 rgba(255,255,255,0.4)`}}>{t("acc.gi")}</span>}
+        {(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,border:`1px solid ${st.c}40`,background:`${st.c}14`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px ${st.c}`:"none"}}/>{t("opStatus."+op.status)}</span>;})()}
         {op.eta&&op.status!=="entregada"&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.55)",letterSpacing:"0.02em",marginLeft:"auto"}}>ETA · <span style={{color:"#fff",fontWeight:600}}>{formatDate(op.eta)}</span></span>}
       </div>
       <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 12px",textTransform:"uppercase"}}>{op.description}</h2>
@@ -489,16 +490,16 @@ function OperationDetail({op,token,onBack}){
       {(()=>{const totGW=pkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);const totCBM=pkgs.reduce((s,p)=>{const q=Number(p.quantity||1),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);return s+(l&&w&&h?((l*w*h)/1000000)*q:0);},0);let pf=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const vw=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(gw*q,vw);});
       // Para GI: mostrar SOLO Origen + Canal. Sin bultos/peso/CBM/total (toda esa info se ve abajo en Presupuesto).
       const giFields=[
-        {l:"Origen",v:op.origin||"China"},
-        {l:"Canal",v:CM[op.channel]||"—"}
+        {l:t("imports.origin"),v:t("origin."+(op.origin||"china").toLowerCase())||op.origin||"China"},
+        {l:t("imports.channel"),v:op.channel?t("channel."+op.channel):"—"}
       ];
       // Para op normal: lo de siempre
       const normalFields=[
-        {l:"Bultos",v:pkgs.length>0?pkgs.reduce((s,p)=>s+Number(p.quantity||1),0):op.total_quantity||"—"},
-        {l:"Origen",v:op.origin||"China"},
-        {l:"Canal",v:CM[op.channel]||"—"},
-        ...(isA?[{l:"Peso Bruto",v:totGW?`${totGW.toFixed(1)} kg`:"—"},{l:"Peso Facturable",v:pf?`${pf.toFixed(1)} kg`:"—",a:true}]:[{l:"CBM",v:totCBM?`${totCBM.toFixed(4)} m³`:"—",a:true}]),
-        {l:"Total a abonar",v:(()=>{const bt=Number(op.budget_total||0);if(bt<=0)return"Pendiente";const pmtTotal=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtAnt=Number(op.total_anticipos||0);const cliPaid=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);const saldo=Math.max(0,bt-cliPaid+Math.max(0,pmtTotal-pmtAnt));return `USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;})(),a:true}
+        {l:t("imports.bultos"),v:pkgs.length>0?pkgs.reduce((s,p)=>s+Number(p.quantity||1),0):op.total_quantity||"—"},
+        {l:t("imports.origin"),v:t("origin."+(op.origin||"china").toLowerCase())||op.origin||"China"},
+        {l:t("imports.channel"),v:op.channel?t("channel."+op.channel):"—"},
+        ...(isA?[{l:t("imports.grossWeight"),v:totGW?`${totGW.toFixed(1)} kg`:"—"},{l:t("imports.billableWeight"),v:pf?`${pf.toFixed(1)} kg`:"—",a:true}]:[{l:"CBM",v:totCBM?`${totCBM.toFixed(4)} m³`:"—",a:true}]),
+        {l:t("imports.totalToPay"),v:(()=>{const bt=Number(op.budget_total||0);if(bt<=0)return t("common.pending");const pmtTotal=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtAnt=Number(op.total_anticipos||0);const cliPaid=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);const saldo=Math.max(0,bt-cliPaid+Math.max(0,pmtTotal-pmtAnt));return `USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;})(),a:true}
       ];
       return <div className="op-info" style={{display:"flex",gap:28,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:14,marginTop:4,flexWrap:"wrap"}}>
         {(isGI?giFields:normalFields).map((x,i)=><div key={i}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{x.l}</span><p style={{fontSize:13,fontWeight:600,color:x.a?IC:"#fff",margin:"2px 0 0"}}>{x.v}</p></div>)}
@@ -507,16 +508,16 @@ function OperationDetail({op,token,onBack}){
     {purchaseNotif&&<div style={{background:"linear-gradient(135deg,rgba(34,197,94,0.08),rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.25)",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <div style={{width:32,height:32,borderRadius:"50%",background:"rgba(34,197,94,0.15)",border:"1px solid rgba(34,197,94,0.4)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>0️⃣</div>
       <div style={{flex:1,minWidth:200}}>
-        <p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:"0 0 2px",letterSpacing:"0.04em",textTransform:"uppercase"}}>Iniciada desde tu aviso de compra</p>
-        <p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:0}}>Avisaste el {formatDate(purchaseNotif.created_at)} con tracking <strong style={{color:"#fff",fontFamily:"monospace"}}>{purchaseNotif.tracking_code}</strong>{purchaseNotif.confirmed_at?` · confirmada en depósito el ${formatDate(purchaseNotif.confirmed_at)}`:""}</p>
+        <p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:"0 0 2px",letterSpacing:"0.04em",textTransform:"uppercase"}}>{t("imports.fromNotice")}</p>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:0}}>{t("imports.noticeOn",{date:formatDate(purchaseNotif.created_at),trk:purchaseNotif.tracking_code})}{purchaseNotif.confirmed_at?` · ${t("imports.confirmedOn",{date:formatDate(purchaseNotif.confirmed_at)})}`:""}</p>
       </div>
     </div>}
     {!loading&&op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&!op.consolidation_confirmed&&!localConfirmed&&<div style={{background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
-      <h3 style={{fontSize:15,fontWeight:700,color:"#fbbf24",margin:"0 0 6px"}}>📦 Tu paquete ya está en nuestro depósito</h3>
-      <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>¿Este es el único paquete que vas a enviar, o tenés más paquetes por llegar al depósito? Si es el único, confirmalo y empezamos a preparar tu envío.</p>
+      <h3 style={{fontSize:15,fontWeight:700,color:"#fbbf24",margin:"0 0 6px"}}>📦 {t("imports.atWarehouse")}</h3>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>{t("imports.atWarehouseDesc")}</p>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-        <button onClick={()=>{setLocalConfirmed(true);setShowDocPanel(true);setDocInputMode(null);setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}}).then(()=>loadAll());}} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW}}>✅ Es el único, pueden enviarlo</button>
-        <button style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",cursor:"default"}}>⏳ Tengo más paquetes por llegar</button>
+        <button onClick={()=>{setLocalConfirmed(true);setShowDocPanel(true);setDocInputMode(null);setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}}).then(()=>loadAll());}} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW}}>✅ {t("imports.onlyOne")}</button>
+        <button style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",cursor:"default"}}>⏳ {t("imports.morePackages")}</button>
       </div>
     </div>}
     {(()=>{
@@ -524,24 +525,24 @@ function OperationDetail({op,token,onBack}){
       const isEditable=op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&items.length>0;
       return !loading&&!isGI&&items.length>0&&<div style={{background:isEditable?"linear-gradient(135deg,rgba(96,165,250,0.10),rgba(96,165,250,0.03))":"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:`1.5px solid ${isEditable?"rgba(96,165,250,0.35)":"rgba(184,149,106,0.3)"}`,borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
-        <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>📋 Productos declarados {isEditable&&<span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.2)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8}}>✏️ Editable</span>}</h3>
+        <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>📋 {t("imports.declaredProducts")} {isEditable&&<span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.2)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8}}>✏️ {t("imports.editable")}</span>}</h3>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          {isEditable&&items.some(it=>it.description&&it.description.trim()&&(!it.ncm_code||!it.ncm_code.trim()))&&<button onClick={autoClassifyHs} disabled={classifyingHs} title="Completar HS Code automáticamente con IA para los productos que no lo tengan" style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.12)",color:"#a78bfa",cursor:classifyingHs?"wait":"pointer",opacity:classifyingHs?0.6:1}}>{classifyingHs?"Clasificando…":"✨ Auto-completar HS Code (IA)"}</button>}
-          {isEditable&&<button onClick={()=>{setShowDocPanel(true);setDocInputMode(null);if(docItems.length===0)setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);setTimeout(()=>{const el=document.getElementById("ac-doc-panel");if(el)el.scrollIntoView({behavior:"smooth"});},100);}} style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer"}}>+ Agregar más</button>}
+          {isEditable&&items.some(it=>it.description&&it.description.trim()&&(!it.ncm_code||!it.ncm_code.trim()))&&<button onClick={autoClassifyHs} disabled={classifyingHs} style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.12)",color:"#a78bfa",cursor:classifyingHs?"wait":"pointer",opacity:classifyingHs?0.6:1}}>{classifyingHs?t("imports.classifying"):"✨ "+t("imports.autoHs")}</button>}
+          {isEditable&&<button onClick={()=>{setShowDocPanel(true);setDocInputMode(null);if(docItems.length===0)setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);setTimeout(()=>{const el=document.getElementById("ac-doc-panel");if(el)el.scrollIntoView({behavior:"smooth"});},100);}} style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer"}}>+ {t("imports.addMore")}</button>}
         </div>
       </div>
-      {isEditable&&<p style={{fontSize:11,color:"#60a5fa",margin:"0 0 12px",lineHeight:1.4}}>✏️ Podés modificar descripción, HS Code, cantidad y precio, eliminar productos o agregar nuevos (con PDF de la factura o a mano). Los cambios se guardan al instante.</p>}
+      {isEditable&&<p style={{fontSize:11,color:"#60a5fa",margin:"0 0 12px",lineHeight:1.4}}>✏️ {t("imports.editableNote")}</p>}
       <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,overflow:"hidden"}}>
         <div style={{display:"grid",gridTemplateColumns:isEditable?"3fr 0.9fr 0.7fr 1fr 1fr 36px":"3fr 0.9fr 0.7fr 1fr 1fr",gap:8,padding:"8px 12px",borderBottom:"1px solid rgba(255,255,255,0.08)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
-          <span>Descripción</span><span>HS Code</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Precio unit.</span><span style={{textAlign:"right"}}>Subtotal</span>{isEditable&&<span/>}
+          <span>{t("imports.colDesc")}</span><span>{t("imports.colHs")}</span><span style={{textAlign:"right"}}>{t("imports.colQty")}</span><span style={{textAlign:"right"}}>{t("imports.colUnit")}</span><span style={{textAlign:"right"}}>{t("imports.colSubtotal")}</span>{isEditable&&<span/>}
         </div>
         {items.map(it=><EditableItemRow key={it.id} item={it} editable={isEditable} token={token} onChange={loadAll}/>)}
         <div style={{display:"flex",justifyContent:"space-between",padding:"10px 12px",borderTop:"1px solid rgba(184,149,106,0.3)"}}>
-          <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>TOTAL</span>
+          <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>{t("common.total").toUpperCase()}</span>
           <span style={{fontSize:14,fontWeight:700,color:IC}}>USD {items.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_usd||0),0).toFixed(2)}</span>
         </div>
       </div>
-      {!isEditable&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>¿Necesitás modificar algo? Contactá a tu asesor de Argencargo.</p>}
+      {!isEditable&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>{t("imports.contactAdvisor")}</p>}
     </div>;})()}
     {/* Detalle original (si admin comprimió los items con IA) */}
     {Array.isArray(op.items_backup_json)&&op.items_backup_json.length>0&&!loading&&!isGI&&<details style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"10px 14px",marginBottom:16}}>
@@ -1975,6 +1976,7 @@ function TrackingDupAlert({code,excludeNotifId,token}){
 }
 
 function PurchaseNotificationsPage({token,client}){
+  const {t}=useT();
   const [items,setItems]=useState([]);
   const [lo,setLo]=useState(true);
   const [showForm,setShowForm]=useState(false);
@@ -2016,7 +2018,7 @@ function PurchaseNotificationsPage({token,client}){
 
   const save=async()=>{
     const validTrackings=[...new Set(form.trackings.map(t=>t.trim()).filter(Boolean))];
-    if(validTrackings.length===0){alert("Cargá al menos un tracking");return;}
+    if(validTrackings.length===0){alert(t("pnotif.atLeastOne"));return;}
     setSaving(true);
     try{
       // CASO A: agregar trackings a aviso existente
@@ -2088,17 +2090,17 @@ function PurchaseNotificationsPage({token,client}){
   return <div style={{maxWidth:1100,margin:"0 auto",padding:"0 16px"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,gap:12,flexWrap:"wrap"}}>
       <div>
-        <h1 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>📦 Mis compras en camino</h1>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>Avisanos qué compraste y cuando lleguen al depósito creamos la operación.</p>
+        <h1 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>📦 {t("pnotif.title")}</h1>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>{t("pnotif.subtitle")}</p>
       </div>
-      <button onClick={openNewFlow} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.02em"}}>+ Dar aviso de compra</button>
+      <button onClick={openNewFlow} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.02em"}}>+ {t("pnotif.giveNotice")}</button>
     </div>
     <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-      {[{k:"all",l:"Todas",c:counts.all},{k:"pending",l:"⏳ Pendientes",c:counts.pending},{k:"partial",l:"⏳ Parciales",c:counts.partial},{k:"received",l:"✓ Recibidas",c:counts.received},{k:"cancelled",l:"✕ Canceladas",c:counts.cancelled}].map(t=><button key={t.k} onClick={()=>setFilter(t.k)} style={{padding:"6px 12px",fontSize:12,fontWeight:600,borderRadius:7,border:`1px solid ${filter===t.k?IC:"rgba(255,255,255,0.1)"}`,background:filter===t.k?"rgba(184,149,106,0.1)":"transparent",color:filter===t.k?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{t.l} ({t.c})</button>)}
+      {[{k:"all",l:t("pnotif.tabAll"),c:counts.all},{k:"pending",l:`⏳ ${t("pnotif.tabPending")}`,c:counts.pending},{k:"partial",l:`⏳ ${t("pnotif.tabPartial")}`,c:counts.partial},{k:"received",l:`✓ ${t("pnotif.tabReceived")}`,c:counts.received},{k:"cancelled",l:`✕ ${t("pnotif.tabCancelled")}`,c:counts.cancelled}].map(tb=><button key={tb.k} onClick={()=>setFilter(tb.k)} style={{padding:"6px 12px",fontSize:12,fontWeight:600,borderRadius:7,border:`1px solid ${filter===tb.k?IC:"rgba(255,255,255,0.1)"}`,background:filter===tb.k?"rgba(184,149,106,0.1)":"transparent",color:filter===tb.k?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{tb.l} ({tb.c})</button>)}
     </div>
-    {lo?<p style={{textAlign:"center",padding:"3rem 0",color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<div style={{padding:"3rem 1rem",textAlign:"center",background:"rgba(255,255,255,0.02)",border:"1px dashed rgba(255,255,255,0.08)",borderRadius:14}}>
-      <p style={{fontSize:14,color:"rgba(255,255,255,0.55)",margin:"0 0 6px"}}>{filter==="all"?"Todavía no diste avisos de compras":`Sin compras ${filter==="pending"?"pendientes":filter==="received"?"recibidas":"canceladas"}`}</p>
-      {filter==="all"&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Cuando hagas una compra y tengas el tracking del proveedor, dejanos el aviso acá.</p>}
+    {lo?<p style={{textAlign:"center",padding:"3rem 0",color:"rgba(255,255,255,0.4)"}}>{t("common.loading")}</p>:filtered.length===0?<div style={{padding:"3rem 1rem",textAlign:"center",background:"rgba(255,255,255,0.02)",border:"1px dashed rgba(255,255,255,0.08)",borderRadius:14}}>
+      <p style={{fontSize:14,color:"rgba(255,255,255,0.55)",margin:"0 0 6px"}}>{filter==="all"?t("pnotif.emptyAll"):`— ${t("pnotif.tab"+filter[0].toUpperCase()+filter.slice(1))}`}</p>
+      {filter==="all"&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>{t("pnotif.emptyHint")}</p>}
     </div>:<div style={{display:"flex",flexDirection:"column",gap:10}}>
       {filtered.map(n=>{
         const trks=Array.isArray(n.trackings)&&n.trackings.length>0?n.trackings:(n.tracking_code?[{tracking_code:n.tracking_code,received_at:n.confirmed_at}]:[]);
@@ -2119,9 +2121,9 @@ function PurchaseNotificationsPage({token,client}){
               <span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.45)"}}>📦 {totalTrks} tracking{totalTrks!==1?"s":""}</span>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:6}}>
-              {trks.map((t,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:13,fontFamily:"monospace",color:t.received_at?"rgba(34,197,94,0.85)":"#fff",textDecoration:t.received_at?"none":"none",fontWeight:600}}>{t.tracking_code}</span>
-                {t.received_at?<span style={{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:3,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>✓ recibido</span>:<span style={{fontSize:9,fontWeight:600,color:"rgba(255,255,255,0.35)"}}>en camino</span>}
+              {trks.map((trk,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:13,fontFamily:"monospace",color:trk.received_at?"rgba(34,197,94,0.85)":"#fff",fontWeight:600}}>{trk.tracking_code}</span>
+                {trk.received_at?<span style={{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:3,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>✓ {t("pnotif.received")}</span>:<span style={{fontSize:9,fontWeight:600,color:"rgba(255,255,255,0.35)"}}>{t("pnotif.onTheWay")}</span>}
               </div>)}
             </div>
             {n.description&&<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 4px"}}>{n.description}</p>}
@@ -2133,9 +2135,9 @@ function PurchaseNotificationsPage({token,client}){
             </p>
           </div>
           {isEditable&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            <button onClick={()=>openEdit(n)} style={{padding:"5px 12px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Editar</button>
-            <button onClick={()=>openAppend(n)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>+ Tracking</button>
-            {n.status==="pending"&&<button onClick={()=>setConfirmCancel(n)} style={{padding:"5px 12px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>Cancelar</button>}
+            <button onClick={()=>openEdit(n)} style={{padding:"5px 12px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>{t("pnotif.btnEdit")}</button>
+            <button onClick={()=>openAppend(n)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>{t("pnotif.btnAddTrk")}</button>
+            {n.status==="pending"&&<button onClick={()=>setConfirmCancel(n)} style={{padding:"5px 12px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>{t("pnotif.btnCancel")}</button>}
           </div>}
         </div>
       </div>;})}
