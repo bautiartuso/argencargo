@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Argencargo · Portal Cliente — Mockup</title>
+<link rel="preconnect" href="https://rsms.me/"/>
+<link rel="stylesheet" href="https://rsms.me/inter/inter.css"/>
+<style>
+:root{
+  --bg-1:#0A1628; --bg-2:#142849; --bg-3:#1B3A6B;
+  --surface:rgba(255,255,255,0.035); --surface-2:rgba(255,255,255,0.06);
+  --border:rgba(255,255,255,0.07); --border-2:rgba(255,255,255,0.12);
+  --fg:#fff; --fg-2:rgba(255,255,255,0.72); --fg-3:rgba(255,255,255,0.5); --fg-4:rgba(255,255,255,0.3);
+  --gold:#B8956A; --gold-light:#E8D098; --gold-deep:#A68456;
+  --gold-grad:linear-gradient(135deg,#B8956A 0%,#E8D098 50%,#B8956A 100%);
+  --good:#22c55e; --warn:#fbbf24; --bad:#ef4444; --info:#60a5fa; --orange:#fb923c;
+  --shadow-md:0 8px 24px rgba(0,0,0,0.35);
+  --shadow-glow:0 0 22px rgba(184,149,106,0.25);
+  --t-fast:120ms cubic-bezier(.4,0,.2,1);
+  --t:200ms cubic-bezier(.4,0,.2,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg-1);color:var(--fg);font-family:'Inter',system-ui,sans-serif;font-feature-settings:"cv11","ss01";letter-spacing:-0.01em;-webkit-font-smoothing:antialiased}
+body{background:
+  radial-gradient(1100px 600px at 80% -5%, rgba(184,149,106,0.10), transparent 55%),
+  radial-gradient(900px 700px at -10% 105%, rgba(74,144,217,0.08), transparent 50%),
+  var(--bg-1);
+  min-height:100vh;
+}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+a{color:inherit;text-decoration:none}
+
+/* ── LAYOUT ─────────────────────────────────────── */
+.app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+
+.sidebar{background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent 30%);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.brand{padding:24px 22px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:center}
+.brand img{width:auto;height:32px;object-fit:contain;filter:drop-shadow(0 2px 8px rgba(184,149,106,0.2))}
+.client-code{padding:14px 22px 6px;border-bottom:1px solid var(--border)}
+.client-code-label{font-size:9.5px;font-weight:700;color:var(--fg-4);text-transform:uppercase;letter-spacing:0.14em}
+.client-code-value{font-family:'SF Mono','JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--gold-light);letter-spacing:0.04em;margin-top:3px}
+
+.nav{flex:1;padding:10px;overflow:auto}
+.nav-section{margin-top:16px}
+.nav-section:first-child{margin-top:8px}
+.nav-section-label{font-size:9.5px;font-weight:700;color:var(--fg-4);text-transform:uppercase;letter-spacing:0.14em;padding:0 14px 6px}
+.nav-item{display:flex;align-items:center;gap:11px;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:500;color:var(--fg-3);transition:all var(--t-fast);cursor:pointer;position:relative;letter-spacing:-0.005em}
+.nav-item:hover{background:var(--surface);color:var(--fg)}
+.nav-item.active{background:linear-gradient(90deg,rgba(184,149,106,0.10),rgba(184,149,106,0.02));color:var(--fg);font-weight:700}
+.nav-item.active::before{content:"";position:absolute;left:-10px;top:6px;bottom:6px;width:3px;border-radius:0 3px 3px 0;background:var(--gold-grad)}
+.nav-item.active svg{color:var(--gold-light)}
+.nav-item svg{width:16px;height:16px;stroke-width:1.7;flex-shrink:0;opacity:0.85}
+.nav-badge{margin-left:auto;font-size:9.5px;font-weight:800;background:var(--gold-grad);color:#0A1628;padding:2px 7px;border-radius:8px;letter-spacing:0;text-transform:none}
+
+.user{padding:14px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.user-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,rgba(184,149,106,0.25),rgba(184,149,106,0.08));border:1px solid rgba(184,149,106,0.3);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:var(--gold-light)}
+.user-info{flex:1;min-width:0}
+.user-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.user-tier{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--fg-3);margin-top:1px}
+.user-tier b{color:var(--gold-light);font-weight:700}
+.langs{display:flex;gap:3px;margin-top:10px}
+.langs button{flex:1;padding:5px 0;font-size:14px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:6px;cursor:pointer}
+.langs button.on{background:rgba(184,149,106,0.18);border-color:rgba(184,149,106,0.4)}
+.logout{width:100%;padding:8px 10px;font-size:11.5px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--fg-3);cursor:pointer;margin-top:10px;font-weight:600;letter-spacing:0.04em;transition:all var(--t-fast)}
+.logout:hover{border-color:rgba(184,149,106,0.4);color:var(--gold-light)}
+
+/* ── MAIN ─────────────────────────────────────── */
+.main{display:flex;flex-direction:column;min-width:0}
+.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;padding:12px 32px;background:rgba(10,22,40,0.65);backdrop-filter:blur(16px);border-bottom:1px solid var(--border)}
+.greeting{flex:1}
+.greeting h1{font-size:13px;font-weight:600;color:var(--fg-2)}
+.greeting h1 b{color:var(--fg)}
+.greeting p{font-size:11px;color:var(--fg-3);margin-top:1px}
+.icon-btn{width:34px;height:34px;border-radius:9px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--fg-3);transition:all var(--t-fast);position:relative}
+.icon-btn:hover{border-color:var(--border-2);color:var(--fg)}
+.icon-btn .dot{position:absolute;top:7px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--bad);box-shadow:0 0 0 2px var(--bg-1);animation:pulse 1.8s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.55;transform:scale(1.3)}}
+
+.page{padding:30px 32px;max-width:1200px;width:100%;margin:0 auto}
+
+/* ── HERO TIER + PROGRESS ─────────────────────────────────────── */
+.hero-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:14px;margin-bottom:24px}
+.hero-card{background:linear-gradient(135deg,rgba(184,149,106,0.10),rgba(184,149,106,0.02) 60%);border:1px solid rgba(184,149,106,0.30);border-radius:16px;padding:22px 26px;position:relative;overflow:hidden;box-shadow:0 0 32px rgba(184,149,106,0.06)}
+.hero-card::before{content:"";position:absolute;top:-50px;right:-50px;width:200px;height:200px;background:radial-gradient(circle,rgba(232,208,152,0.18) 0%,transparent 70%);pointer-events:none}
+.hero-tier{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.hero-tier .icon{font-size:28px;line-height:1}
+.hero-tier .label{font-size:11px;font-weight:700;color:var(--gold-light);text-transform:uppercase;letter-spacing:0.14em}
+.hero-tier .name{font-size:24px;font-weight:800;color:#fff;letter-spacing:-0.025em;line-height:1}
+.hero-bar{margin-top:14px}
+.hero-bar-info{display:flex;justify-content:space-between;font-size:11px;color:var(--fg-3);margin-bottom:6px}
+.hero-bar-info b{color:var(--gold-light);font-weight:700}
+.hero-bar-track{height:8px;background:rgba(255,255,255,0.06);border-radius:6px;overflow:hidden}
+.hero-bar-fill{height:100%;background:var(--gold-grad);border-radius:6px;width:62%;box-shadow:0 0 14px rgba(184,149,106,0.4)}
+
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;justify-content:space-between;min-height:130px;position:relative;overflow:hidden;transition:all var(--t)}
+.stat-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);border-color:rgba(184,149,106,0.18)}
+.stat-card .label{font-size:10.5px;font-weight:700;color:var(--fg-3);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.stat-card .label .ico{font-size:14px;opacity:0.7}
+.stat-card .value{font-size:36px;font-weight:800;color:#fff;letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums}
+.stat-card .value.gold{background:linear-gradient(135deg,#fff 30%,#E8D098 95%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.stat-card .sub{font-size:11.5px;color:var(--fg-3);margin-top:8px}
+.stat-card .sub b{color:var(--gold-light);font-weight:600}
+
+/* ── OPS LIST ─────────────────────────────────────── */
+.section-h{display:flex;justify-content:space-between;align-items:center;margin:28px 0 14px}
+.section-h h2{font-size:13px;font-weight:700;color:var(--fg-2);text-transform:uppercase;letter-spacing:0.08em}
+.section-h .count{color:var(--gold-light);font-weight:600}
+.section-h button{padding:6px 12px;font-size:11px;font-weight:600;color:var(--fg-3);border:1px solid var(--border);border-radius:7px;background:transparent;cursor:pointer}
+.section-h button:hover{color:var(--fg);border-color:var(--border-2)}
+
+.op-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:12px;transition:all var(--t);cursor:pointer;position:relative;overflow:hidden}
+.op-card:hover{border-color:rgba(184,149,106,0.22);background:var(--surface-2);transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.op-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.op-head-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.op-code{font-size:13px;font-weight:700;font-family:'SF Mono','JetBrains Mono',monospace;color:#fff;letter-spacing:0.04em}
+.op-divider{width:1px;height:14px;background:var(--border-2)}
+.op-eta{font-size:11.5px;color:var(--fg-3)}
+.op-eta b{color:var(--fg);font-weight:600}
+.op-desc{font-size:16px;font-weight:600;color:#fff;letter-spacing:-0.01em;margin-bottom:14px}
+.op-progress{display:flex;align-items:center;gap:0;margin-bottom:14px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:12px 0}
+.op-step{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;position:relative}
+.op-step::after{content:"";position:absolute;left:50%;right:-50%;top:14px;height:2px;background:var(--border)}
+.op-step:last-child::after{display:none}
+.op-step.done::after{background:var(--gold)}
+.op-step .dot{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,0.04);border:2px solid var(--border-2);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--fg-4);position:relative;z-index:1;transition:all var(--t)}
+.op-step.done .dot{background:var(--gold);border-color:var(--gold);color:transparent;position:relative}
+.op-step.done .dot::after{content:"";position:absolute;width:8px;height:8px;border-radius:50%;background:#0A1628}
+.op-step.current .dot{background:var(--gold-grad);border-color:var(--gold-light);box-shadow:0 0 16px rgba(232,208,152,0.5);animation:pulse 1.8s infinite}
+.op-step.current .dot::after{content:"";position:absolute;width:10px;height:10px;border-radius:50%;background:#0A1628;animation:pulse 1.8s infinite}
+.op-step .lbl{font-size:9.5px;font-weight:600;color:var(--fg-3);text-transform:uppercase;letter-spacing:0.04em;text-align:center;line-height:1.2;white-space:nowrap}
+.op-step.current .lbl{color:var(--gold-light);font-weight:700}
+.op-foot{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.op-foot-item{display:flex;flex-direction:column;gap:2px}
+.op-foot-item .l{font-size:9.5px;font-weight:700;color:var(--fg-4);text-transform:uppercase;letter-spacing:0.08em}
+.op-foot-item .v{font-size:13px;font-weight:600;color:#fff}
+.op-foot-item .v.gold{color:var(--gold-light);font-weight:700}
+.op-foot button{margin-left:auto;padding:8px 16px;font-size:12px;font-weight:600;color:var(--gold-light);border:1px solid rgba(184,149,106,0.3);border-radius:8px;background:transparent;cursor:pointer;transition:all var(--t-fast)}
+.op-foot button:hover{background:rgba(184,149,106,0.10);border-color:rgba(184,149,106,0.5)}
+
+/* Status pill */
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;padding:4px 10px 4px 8px;border-radius:999px;letter-spacing:0.05em;text-transform:uppercase;border:1px solid}
+.pill .pdot{width:5px;height:5px;border-radius:50%;display:inline-block;animation:pulse 1.8s infinite}
+.pill.warn{color:var(--warn);background:rgba(251,191,36,0.10);border-color:rgba(251,191,36,0.4)}
+.pill.warn .pdot{background:var(--warn);box-shadow:0 0 6px rgba(251,191,36,0.7)}
+.pill.good{color:var(--good);background:rgba(34,197,94,0.10);border-color:rgba(34,197,94,0.4)}
+.pill.good .pdot{background:var(--good);box-shadow:0 0 6px rgba(34,197,94,0.7)}
+.pill.info{color:var(--info);background:rgba(96,165,250,0.10);border-color:rgba(96,165,250,0.4)}
+.pill.info .pdot{background:var(--info);box-shadow:0 0 6px rgba(96,165,250,0.7)}
+.pill.orange{color:var(--orange);background:rgba(251,146,60,0.10);border-color:rgba(251,146,60,0.4)}
+.pill.orange .pdot{background:var(--orange);box-shadow:0 0 6px rgba(251,146,60,0.7)}
+
+/* WhatsApp FAB */
+.wa-fab{position:fixed;bottom:24px;right:24px;width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#25D366,#128C7E);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(0,0,0,0.3),0 0 0 0 rgba(37,211,102,0.5);z-index:30;animation:waPulse 2.4s infinite;cursor:pointer}
+@keyframes waPulse{0%{box-shadow:0 8px 24px rgba(0,0,0,0.3),0 0 0 0 rgba(37,211,102,0.5)}70%{box-shadow:0 8px 24px rgba(0,0,0,0.3),0 0 0 16px rgba(37,211,102,0)}100%{box-shadow:0 8px 24px rgba(0,0,0,0.3),0 0 0 0 rgba(37,211,102,0)}}
+
+@media(max-width:1024px){
+  .app{grid-template-columns:1fr}
+  .sidebar{display:none}
+  .hero-grid{grid-template-columns:1fr 1fr}
+  .hero-card{grid-column:1 / -1}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ─────────── SIDEBAR ─────────── -->
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png" alt="Argencargo"/>
+    </div>
+    <div class="client-code">
+      <div class="client-code-label">Cliente</div>
+      <div class="client-code-value">DANSU</div>
+    </div>
+    <nav class="nav">
+      <div class="nav-section">
+        <p class="nav-section-label">Principal</p>
+        <div class="nav-item active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          Importaciones
+        </div>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1"/><path d="M21 12H8"/></svg>
+          Compras en camino
+        </div>
+      </div>
+
+      <div class="nav-section">
+        <p class="nav-section-label">Herramientas</p>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 8h16M8 4v16"/></svg>
+          Calculadora
+        </div>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          Cotizaciones
+        </div>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 1 0 7H6"/></svg>
+          Pagos internacionales
+        </div>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8A8.5 8.5 0 0 1 8.7 3.9a8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"/></svg>
+          Soporte
+          <span class="nav-badge">1</span>
+        </div>
+      </div>
+
+      <div class="nav-section">
+        <p class="nav-section-label">Mi cuenta</p>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18M9 21V9"/></svg>
+          Cuenta corriente
+        </div>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          Puntos
+          <span class="nav-badge">450</span>
+        </div>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11l-3-3M22 8l-3 3"/></svg>
+          Referidos
+        </div>
+        <div class="nav-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M3 21v-1a7 7 0 0 1 18 0v1"/></svg>
+          Mi perfil
+        </div>
+      </div>
+    </nav>
+    <div class="user">
+      <div class="user-avatar">DS</div>
+      <div class="user-info">
+        <div class="user-name">Dana Suárez</div>
+        <div class="user-tier">★ <b>Silver</b></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ─────────── MAIN ─────────── -->
+  <main class="main">
+    <div class="topbar">
+      <div class="greeting">
+        <h1>👋 <b>Hola Dana</b></h1>
+        <p>Tu panel de importaciones · jueves 4 de mayo</p>
+      </div>
+      <button class="icon-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        <span class="dot"></span>
+      </button>
+    </div>
+
+    <div class="page">
+      <!-- ─────────── HERO TIER + STATS ─────────── -->
+      <div class="hero-grid">
+        <!-- Tier card -->
+        <div class="hero-card">
+          <div class="hero-tier">
+            <span class="icon">🥈</span>
+            <div>
+              <div class="label">Tu categoría</div>
+              <div class="name">Silver</div>
+            </div>
+          </div>
+          <p style="font-size:12.5px;color:rgba(255,255,255,0.65);margin-top:6px">Tenés <b style="color:#E8D098">+2% bonus</b> en puntos y <b style="color:#E8D098">10% off</b> en flete</p>
+          <div class="hero-bar">
+            <div class="hero-bar-info"><span>En <b>180 pts</b> llegás a <b>Gold 🥇</b></span><span>62%</span></div>
+            <div class="hero-bar-track"><div class="hero-bar-fill"></div></div>
+          </div>
+        </div>
+
+        <!-- Saldo CC -->
+        <div class="stat-card">
+          <div>
+            <div class="label"><span class="ico">💳</span>Saldo a favor</div>
+            <p class="value gold">USD 142</p>
+          </div>
+          <p class="sub">Se aplica a tu próxima op</p>
+        </div>
+
+        <!-- Importaciones activas -->
+        <div class="stat-card">
+          <div>
+            <div class="label"><span class="ico">📦</span>En curso</div>
+            <p class="value">3</p>
+          </div>
+          <p class="sub">de <b>12</b> totales · 9 cerradas</p>
+        </div>
+      </div>
+
+      <!-- ─────────── OPS ACTIVAS ─────────── -->
+      <div class="section-h">
+        <h2>En curso <span class="count">(3)</span></h2>
+        <button>Ver histórico →</button>
+      </div>
+
+      <div class="op-card">
+        <div class="op-head">
+          <div class="op-head-left">
+            <span class="op-code">AC-0103</span>
+            <span class="op-divider"></span>
+            <span class="pill orange"><span class="pdot"></span>Gestión Aduanera</span>
+          </div>
+          <span class="op-eta">ETA · <b>04 may 2026</b></span>
+        </div>
+        <p class="op-desc">Vestidos de mujer</p>
+        <div class="op-progress">
+          <div class="op-step done"><div class="dot"></div><div class="lbl">Proveedor</div></div>
+          <div class="op-step done"><div class="dot"></div><div class="lbl">Depósito</div></div>
+          <div class="op-step done"><div class="dot"></div><div class="lbl">Documentación</div></div>
+          <div class="op-step done"><div class="dot"></div><div class="lbl">En tránsito</div></div>
+          <div class="op-step current"><div class="dot"></div><div class="lbl">Aduana</div></div>
+          <div class="op-step"><div class="dot"></div><div class="lbl">A retirar</div></div>
+          <div class="op-step"><div class="dot"></div><div class="lbl">Cerrada</div></div>
+        </div>
+        <div class="op-foot">
+          <div class="op-foot-item"><span class="l">Origen</span><span class="v">🇨🇳 China</span></div>
+          <div class="op-foot-item"><span class="l">Canal</span><span class="v">Aéreo Courier</span></div>
+          <div class="op-foot-item"><span class="l">A abonar</span><span class="v gold">USD 657.53</span></div>
+          <button>Ver detalle →</button>
+        </div>
+      </div>
+
+      <div class="op-card">
+        <div class="op-head">
+          <div class="op-head-left">
+            <span class="op-code">AC-0029</span>
+            <span class="op-divider"></span>
+            <span class="pill good"><span class="pdot"></span>Lista para retirar</span>
+          </div>
+          <span class="op-eta">ETA · <b>06 may 2026</b></span>
+        </div>
+        <p class="op-desc">Consolidado · 4 bultos</p>
+        <div class="op-progress">
+          <div class="op-step done"><div class="dot"></div><div class="lbl">Proveedor</div></div>
+          <div class="op-step done"><div class="dot"></div><div class="lbl">Depósito</div></div>
+          <div class="op-step done"><div class="dot"></div><div class="lbl">Documentación</div></div>
+          <div class="op-step done"><div class="dot"></div><div class="lbl">En tránsito</div></div>
+          <div class="op-step done"><div class="dot"></div><div class="lbl">Aduana</div></div>
+          <div class="op-step current"><div class="dot"></div><div class="lbl">A retirar</div></div>
+          <div class="op-step"><div class="dot"></div><div class="lbl">Cerrada</div></div>
+        </div>
+        <div class="op-foot">
+          <div class="op-foot-item"><span class="l">Origen</span><span class="v">🇨🇳 China</span></div>
+          <div class="op-foot-item"><span class="l">Canal</span><span class="v">Aéreo Courier</span></div>
+          <div class="op-foot-item"><span class="l">A abonar</span><span class="v" style="color:#22c55e">PAGADO ✓</span></div>
+          <button>Ver detalle →</button>
+        </div>
+      </div>
+
+      <div class="op-card">
+        <div class="op-head">
+          <div class="op-head-left">
+            <span class="op-code">AC-0026</span>
+            <span class="op-divider"></span>
+            <span class="pill info"><span class="pdot"></span>En tránsito</span>
+          </div>
+          <span class="op-eta">ETA · <b>14 may 2026</b></span>
+        </div>
+        <p class="op-desc">Bombas peneanas</p>
+        <div class="op-progress">
+          <div class="op-step done"><div class="dot"></div><div class="lbl">Proveedor</div></div>
+          <div class="op-step done"><div class="dot"></div><div class="lbl">Depósito</div></div>
+          <div class="op-step done"><div class="dot"></div><div class="lbl">Documentación</div></div>
+          <div class="op-step current"><div class="dot"></div><div class="lbl">En tránsito</div></div>
+          <div class="op-step"><div class="dot"></div><div class="lbl">Aduana</div></div>
+          <div class="op-step"><div class="dot"></div><div class="lbl">A retirar</div></div>
+          <div class="op-step"><div class="dot"></div><div class="lbl">Cerrada</div></div>
+        </div>
+        <div class="op-foot">
+          <div class="op-foot-item"><span class="l">Origen</span><span class="v">🇨🇳 China</span></div>
+          <div class="op-foot-item"><span class="l">Canal</span><span class="v">Aéreo Courier</span></div>
+          <div class="op-foot-item"><span class="l">A abonar</span><span class="v gold">USD 544.43</span></div>
+          <button>Ver detalle →</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<a class="wa-fab" href="#" title="Chat WhatsApp">
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+</a>
+
+</body>
+</html>
