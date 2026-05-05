@@ -2332,7 +2332,7 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
     {/* Desktop sidebar */}
     <div className="sidebar-desktop" style={{width:220,position:"fixed",top:0,left:0,bottom:0,background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",borderRight:"1px solid rgba(255,255,255,0.08)",display:"flex",flexDirection:"column",zIndex:10,overflow:"auto"}}>{sidebarContent}</div>
     <div className="main-content" style={{marginLeft:220,minHeight:"100vh",position:"relative",zIndex:1}}>
-      <div className="desktop-notif-bar" style={{display:"flex",alignItems:"center",justifyContent:"flex-end",padding:"12px 32px 0",gap:12}}>{token&&<NotifBell token={token}/>}</div>
+      <div className="desktop-notif-bar" style={{position:"sticky",top:0,zIndex:20,display:"flex",alignItems:"center",justifyContent:"flex-end",padding:"12px 32px",gap:12,background:"rgba(10,22,40,0.65)",backdropFilter:"blur(16px)",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>{token&&<NotifBell token={token}/>}</div>
       <div className="main-inner" style={{maxWidth:1000,margin:"0 auto",padding:"28px 32px"}}>{children}</div></div>
     <WhatsAppFab message={`Hola Argencargo! 👋 Soy ${client?.first_name||""} ${client?.last_name||""}${client?.client_code?` (${client.client_code})`:""}, tengo una consulta.`}/>
   </div>;

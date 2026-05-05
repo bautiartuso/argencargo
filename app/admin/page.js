@@ -7134,9 +7134,15 @@ function AdminDashboard({session,onLogout}){
     <div className="ac-admin-sidebar-desktop" style={{width:220,flexShrink:0,background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",borderRight:"1px solid rgba(255,255,255,0.06)",display:"flex",flexDirection:"column",height:"100vh",position:"sticky",top:0}}>{sidebarContent}</div>
     <div className="ac-admin-main" style={{flex:1,overflow:"auto"}}>
       <CmdK token={token} allClients={allClients} onNavigate={(target)=>{if(target.type==="operation"){setPage("operations");setSelOp(target.op);setSelClient(null);setNewOp(false);}else if(target.type==="client"){setPage("clients");setSelClient(target.client);setSelOp(null);setNewOp(false);}else if(target.type==="flight"){setPage("agents");setSelOp(null);setSelClient(null);setNewOp(false);}}}/>
-      <div className="ac-admin-top-notif" style={{display:"flex",alignItems:"center",justifyContent:"flex-end",padding:"12px 32px 0",gap:12}}>
-        <button onClick={()=>{const e=new KeyboardEvent("keydown",{key:"k",metaKey:true});window.dispatchEvent(e);}} title="Buscar (⌘K)" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"6px 12px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.6)",cursor:"pointer"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Buscar<kbd style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.08)",padding:"1px 5px",borderRadius:3,fontSize:10,fontFamily:"monospace"}}>⌘K</kbd></button>
-        <NotifBell token={token}/></div>
+      {/* TopBar moderno estilo Linear/Vercel: sticky con backdrop blur, search prominente, bell */}
+      <div className="ac-admin-top-notif" style={{position:"sticky",top:0,zIndex:20,display:"flex",alignItems:"center",gap:12,padding:"12px 32px",background:"rgba(10,22,40,0.65)",backdropFilter:"blur(16px)",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+        <button onClick={()=>{const e=new KeyboardEvent("keydown",{key:"k",metaKey:true});window.dispatchEvent(e);}} title="Buscar (⌘K)" style={{flex:1,maxWidth:520,display:"inline-flex",alignItems:"center",gap:10,padding:"8px 14px",fontSize:13,background:"rgba(255,255,255,0.035)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,color:"rgba(255,255,255,0.55)",cursor:"pointer",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.12)";e.currentTarget.style.color="rgba(255,255,255,0.8)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.07)";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          Buscar operaciones, clientes, agentes…
+          <kbd style={{marginLeft:"auto",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.08)",padding:"2px 7px",borderRadius:5,fontSize:10.5,fontFamily:"'SF Mono','JetBrains Mono',monospace",color:"rgba(255,255,255,0.5)"}}>⌘K</kbd>
+        </button>
+        <NotifBell token={token}/>
+      </div>
       <div className="ac-admin-main-inner" style={{maxWidth:1400,margin:"0 auto",padding:"28px 32px"}}>
       {page==="today"&&<TodayDashboard token={token} onNav={setPage} onSelectOp={op=>{setPage("operations");setSelOp(op);}} onSelectFlight={f=>{setPage("agents");}}/>}
       {page==="operations"&&!selOp&&!newOp&&<OperationsList token={token} onSelect={setSelOp} onNew={()=>setNewOp(true)}/>}
