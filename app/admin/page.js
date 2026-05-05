@@ -5132,19 +5132,48 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
 
   const totalTareas=data.avisosPendientes.length+data.docsPendientes.length+data.cotizacionesPerdidas.length+data.reempaques.length+data.ticketsOpen.length+data.stuckAduana.length;
 
-  const Card=({title,emoji,count,color,items,renderItem,onClickAll,emptyMsg})=>{
-    return <div className="ac-hover-card" style={{background:"rgba(255,255,255,0.028)",border:`1px solid ${count>0?color+"55":"rgba(255,255,255,0.06)"}`,borderRadius:14,padding:"16px 18px",display:"flex",flexDirection:"column",gap:10}}>
+  const Card=({title,emoji,count,color,items,renderItem,onClickAll,emptyMsg,span=4})=>{
+    return <div className="ac-hover-card ac-bento-cell" data-span={span} style={{background:"rgba(255,255,255,0.028)",border:`1px solid ${count>0?color+"55":"rgba(255,255,255,0.06)"}`,borderRadius:14,padding:"18px 20px",display:"flex",flexDirection:"column",gap:12,gridColumn:`span ${span}`,position:"relative",overflow:"hidden"}}>
+      {count>0&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,${color},transparent)`,opacity:0.7}}/>}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
-        <div style={{flex:1}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{emoji} {title}</p>
-          <p style={{fontSize:28,fontWeight:800,color:count>0?color:"rgba(255,255,255,0.3)",margin:0,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}><AnimNum value={count}/></p>
+        <div style={{flex:1,minWidth:0}}>
+          <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{emoji} {title}</p>
+          <p style={{fontSize:32,fontWeight:800,color:count>0?color:"rgba(255,255,255,0.25)",margin:0,letterSpacing:"-0.025em",fontVariantNumeric:"tabular-nums",lineHeight:1}}><AnimNum value={count}/></p>
         </div>
-        {count>0&&onClickAll&&<button onClick={onClickAll} style={{padding:"6px 10px",fontSize:10,fontWeight:700,borderRadius:6,border:`1px solid ${color}66`,background:`${color}15`,color:color,cursor:"pointer",whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:"0.04em"}}>Ver todo →</button>}
+        {count>0&&onClickAll&&<button onClick={onClickAll} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:6,border:`1px solid ${color}55`,background:`${color}12`,color:color,cursor:"pointer",whiteSpace:"nowrap",textTransform:"uppercase",letterSpacing:"0.04em"}}>Ver →</button>}
       </div>
-      {count===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:0,fontStyle:"italic"}}>{emptyMsg||"Todo al día ✓"}</p>:<div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:160,overflow:"auto"}}>
-        {items.slice(0,4).map((it,i)=>renderItem(it,i))}
-        {items.length>4&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",textAlign:"center",fontStyle:"italic"}}>+{items.length-4} más</p>}
+      {count===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:0,fontStyle:"italic"}}>{emptyMsg||"Todo al día ✓"}</p>:<div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:span>=6?220:160,overflow:"auto"}}>
+        {items.slice(0,span>=6?6:4).map((it,i)=>renderItem(it,i))}
+        {items.length>(span>=6?6:4)&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",textAlign:"center",fontStyle:"italic"}}>+{items.length-(span>=6?6:4)} más</p>}
       </div>}
+    </div>;
+  };
+
+  // Hero summary card — el más grande arriba a la izquierda
+  const Hero=()=>{
+    const urgent=data.stuckAduana.length+data.ticketsOpen.filter(t=>t.priority==="urgent"||t.priority==="high").length;
+    const greeting=(()=>{const h=new Date().getHours();return h<12?"Buen día":h<19?"Buenas tardes":"Buenas noches";})();
+    return <div className="ac-hover-card" style={{gridColumn:"span 6",gridRow:"span 2",background:"linear-gradient(135deg,rgba(184,149,106,0.12) 0%,rgba(184,149,106,0.02) 60%)",border:`1.5px solid rgba(184,149,106,0.3)`,borderRadius:16,padding:"24px 28px",display:"flex",flexDirection:"column",justifyContent:"space-between",position:"relative",overflow:"hidden",boxShadow:"0 0 32px rgba(184,149,106,0.08)"}}>
+      <div style={{position:"absolute",top:-60,right:-60,width:240,height:240,background:"radial-gradient(circle,rgba(232,208,152,0.18) 0%,transparent 70%)",pointerEvents:"none"}}/>
+      <div style={{position:"relative"}}>
+        <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{greeting}, Bautista</p>
+        <h2 style={{fontSize:34,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.03em",lineHeight:1.05,background:"linear-gradient(135deg,#fff 30%,#E8D098 95%)",WebkitBackgroundClip:"text",backgroundClip:"text",WebkitTextFillColor:"transparent"}}>
+          {totalTareas===0?"Todo al día ✓":`${totalTareas} ${totalTareas===1?"tarea":"tareas"} pendientes`}
+        </h2>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"10px 0 0",lineHeight:1.5}}>
+          {totalTareas===0?"No tenés nada urgente. Aprovechá para revisar pendientes a futuro o hacer prospección.":urgent>0?`Tenés ${urgent} ítem${urgent>1?"s":""} de prioridad alta. Atendelos primero.`:"Avanzás bien. Empezá por los avisos de compra para no acumular pedidos."}
+        </p>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,position:"relative"}}>
+        {[
+          {l:"Avisos sin confirmar",v:data.avisosPendientes.length,c:"#fbbf24"},
+          {l:"Tickets abiertos",v:data.ticketsOpen.length,c:"#22c55e"},
+          {l:"Trabadas en aduana",v:data.stuckAduana.length,c:"#ef4444"},
+        ].map((x,i)=><div key={i} style={{padding:"10px 12px",background:"rgba(0,0,0,0.18)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
+          <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{x.l}</p>
+          <p style={{fontSize:22,fontWeight:800,color:x.v>0?x.c:"rgba(255,255,255,0.3)",margin:0,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",lineHeight:1}}><AnimNum value={x.v}/></p>
+        </div>)}
+      </div>
     </div>;
   };
 
@@ -5153,60 +5182,60 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
   const itemLeave=e=>{e.currentTarget.style.background="rgba(0,0,0,0.18)";e.currentTarget.style.borderColor="transparent";};
 
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:18,gap:12,flexWrap:"wrap"}}>
-      <div>
-        <h2 style={{fontSize:24,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>👋 Hola Bautista — Lo que tenés que hacer hoy</h2>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>{totalTareas===0?"🎉 ¡Todo al día! No hay tareas pendientes urgentes.":`${totalTareas} tarea${totalTareas>1?"s":""} pendiente${totalTareas>1?"s":""} en total`}</p>
-      </div>
-      <button onClick={load} style={{padding:"7px 14px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.03)",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>↻ Refrescar</button>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:20,gap:12,flexWrap:"wrap"}}>
+      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textTransform:"uppercase",letterSpacing:"0.14em"}}>Panel del día · {new Date().toLocaleDateString("es-AR",{weekday:"long",day:"2-digit",month:"long"})}</p>
+      <button onClick={load} style={{padding:"6px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.03)",color:"rgba(255,255,255,0.6)",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6}}>↻ Refrescar</button>
     </div>
 
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:14}}>
+    <div className="ac-bento" style={{display:"grid",gridTemplateColumns:"repeat(12,1fr)",gridAutoRows:"minmax(100px,auto)",gap:12,marginBottom:20}}>
+      <Hero/>
 
-      <Card title="Avisos compra sin confirmar +24h" emoji="📦" count={data.avisosPendientes.length} color="#fbbf24"
+      {/* Right column 1 — top: avisos (3 cols) + tickets (3 cols) */}
+      <Card span={3} title="Avisos +24h" emoji="📦" count={data.avisosPendientes.length} color="#fbbf24"
         items={data.avisosPendientes} onClickAll={()=>onNav&&onNav("purchase_notifs")}
-        emptyMsg="Todos los avisos atendidos"
+        emptyMsg="Todos atendidos"
         renderItem={(n,i)=><div key={i} onClick={()=>onNav&&onNav("purchase_notifs")} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
-          <strong style={{color:"#fff",fontFamily:"monospace"}}>{n.clients?.client_code}</strong> · {n.description||"sin descripción"} · {n.origin?.toUpperCase()} {n.shipping_method}
+          <strong style={{color:"#fff",fontFamily:"monospace"}}>{n.clients?.client_code}</strong> · {n.description||"sin desc."}
         </div>}/>
 
-      <Card title="Documentación pendiente cliente +5d" emoji="📋" count={data.docsPendientes.length} color="#a78bfa"
-        items={data.docsPendientes} onClickAll={()=>onNav&&onNav("operations")}
-        emptyMsg="Todos los clientes documentaron"
+      <Card span={3} title="Tickets" emoji="🎫" count={data.ticketsOpen.length} color="#22c55e"
+        items={data.ticketsOpen} onClickAll={()=>onNav&&onNav("tickets")}
+        emptyMsg="Sin tickets"
+        renderItem={(t,i)=><div key={i} onClick={()=>onNav&&onNav("tickets")} style={{...itemRowStyle,display:"flex",justifyContent:"space-between",gap:6}} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
+          <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><strong style={{color:"#fff"}}>{t.subject}</strong></span>
+          <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:t.priority==="urgent"?"#ef444433":t.priority==="high"?"#fbbf2433":"#94a3b833",color:t.priority==="urgent"?"#ef4444":t.priority==="high"?"#fbbf24":"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em"}}>{t.priority}</span>
+        </div>}/>
+
+      {/* Right column 2 — bottom: aduana (3) + doc pendiente (3) */}
+      <Card span={3} title="Aduana +7d" emoji="🛂" count={data.stuckAduana.length} color="#ef4444"
+        items={data.stuckAduana} onClickAll={()=>onNav&&onNav("operations")}
+        emptyMsg="Nada atascado"
         renderItem={(o,i)=><div key={i} onClick={()=>onSelectOp&&onSelectOp(o)} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
-          <strong style={{color:"#fff",fontFamily:"monospace"}}>{o.operation_code}</strong> · {o.clients?.client_code} · creada hace {Math.floor((Date.now()-new Date(o.created_at).getTime())/86400000)}d
+          <strong style={{color:"#fff",fontFamily:"monospace"}}>{o.operation_code}</strong> · {Math.floor((Date.now()-new Date(o.created_at).getTime())/86400000)}d
         </div>}/>
 
-      <Card title="Cotizaciones sin respuesta +7d" emoji="💬" count={data.cotizacionesPerdidas.length} color="#60a5fa"
+      <Card span={3} title="Doc pendiente +5d" emoji="📋" count={data.docsPendientes.length} color="#a78bfa"
+        items={data.docsPendientes} onClickAll={()=>onNav&&onNav("operations")}
+        emptyMsg="Todo documentado"
+        renderItem={(o,i)=><div key={i} onClick={()=>onSelectOp&&onSelectOp(o)} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
+          <strong style={{color:"#fff",fontFamily:"monospace"}}>{o.operation_code}</strong> · {o.clients?.client_code}
+        </div>}/>
+
+      {/* Bottom row — wider cards */}
+      <Card span={7} title="Cotizaciones sin respuesta +7d" emoji="💬" count={data.cotizacionesPerdidas.length} color="#60a5fa"
         items={data.cotizacionesPerdidas} onClickAll={()=>onNav&&onNav("quotes")}
-        emptyMsg="Todas las cotizaciones convertidas o nuevas"
+        emptyMsg="Todas convertidas o nuevas"
         renderItem={(q,i)=>{const wa=q.clients?.whatsapp?String(q.clients.whatsapp).replace(/[^0-9]/g,""):"";return <div key={i} style={{...itemRowStyle,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
           <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><strong style={{color:"#fff",fontFamily:"monospace"}}>{q.clients?.client_code||"—"}</strong> · {q.channel_name||"—"} · USD {Number(q.total_cost||0).toFixed(0)}</span>
           {wa&&<a href={`https://wa.me/${wa}`} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{padding:"2px 8px",fontSize:9,fontWeight:700,borderRadius:4,background:"#25D366",color:"#fff",textDecoration:"none",whiteSpace:"nowrap"}}>WA</a>}
         </div>;}}/>
 
-      <Card title="Tickets abiertos sin responder" emoji="🎫" count={data.ticketsOpen.length} color="#22c55e"
-        items={data.ticketsOpen} onClickAll={()=>onNav&&onNav("tickets")}
-        emptyMsg="Ningún ticket esperando respuesta"
-        renderItem={(t,i)=><div key={i} onClick={()=>onNav&&onNav("tickets")} style={{...itemRowStyle,display:"flex",justifyContent:"space-between",gap:6}} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
-          <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><strong style={{color:"#fff"}}>{t.subject}</strong> · {t.clients?.client_code||"—"}</span>
-          <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:t.priority==="urgent"?"#ef444433":t.priority==="high"?"#fbbf2433":"#94a3b833",color:t.priority==="urgent"?"#ef4444":t.priority==="high"?"#fbbf24":"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em"}}>{t.priority}</span>
-        </div>}/>
-
-      <Card title="Ops trabadas en aduana +7d" emoji="🛂" count={data.stuckAduana.length} color="#ef4444"
-        items={data.stuckAduana} onClickAll={()=>onNav&&onNav("operations")}
-        emptyMsg="Ninguna op atascada en aduana"
-        renderItem={(o,i)=><div key={i} onClick={()=>onSelectOp&&onSelectOp(o)} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
-          <strong style={{color:"#fff",fontFamily:"monospace"}}>{o.operation_code}</strong> · {o.clients?.client_code} · {Math.floor((Date.now()-new Date(o.created_at).getTime())/86400000)}d
-        </div>}/>
-
-      <Card title="Reempaques pendientes" emoji="🔄" count={data.reempaques.length} color="#fb923c"
+      <Card span={5} title="Reempaques" emoji="🔄" count={data.reempaques.length} color="#fb923c"
         items={data.reempaques} onClickAll={()=>onNav&&onNav("agents")}
-        emptyMsg="Sin pedidos de reempaque"
+        emptyMsg="Sin pedidos"
         renderItem={(r,i)=><div key={i} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
-          <strong style={{color:"#fff",fontFamily:"monospace"}}>{r.operations?.operation_code||"—"}</strong> · {r.operations?.clients?.client_code||"—"} · pedido {formatDate(r.requested_at)}
+          <strong style={{color:"#fff",fontFamily:"monospace"}}>{r.operations?.operation_code||"—"}</strong> · {r.operations?.clients?.client_code||"—"} · {formatDate(r.requested_at)}
         </div>}/>
-
     </div>
   </div>;
 }
