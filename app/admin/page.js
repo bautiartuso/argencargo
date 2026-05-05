@@ -11,8 +11,8 @@ const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 const LOGO=`${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
 const B={primary:"#1B4F8A",accent:"#4A90D9"};
-// Navy Argencargo + radiales sutiles dorado/azul para profundidad
-const DARK_BG="radial-gradient(1200px 700px at 85% -5%, rgba(184,149,106,0.12), transparent 55%), radial-gradient(900px 800px at -10% 105%, rgba(74,144,217,0.10), transparent 50%), linear-gradient(165deg,#0A1628 0%,#142849 45%,#0F1E3D 100%)";
+// Navy Argencargo SÓLIDO + radiales sutiles (idéntico al mockup que aprobó el usuario)
+const DARK_BG="radial-gradient(1200px 600px at 80% -10%, rgba(184,149,106,0.10), transparent 60%), radial-gradient(900px 700px at -10% 100%, rgba(96,165,250,0.06), transparent 50%), #0A1628";
 // Dorado secundario (accent metálico)
 const GOLD="#B8956A", GOLD_LIGHT="#E8D098", GOLD_DEEP="#A68456";
 const IC=GOLD_LIGHT; // Accent color alias al oro claro (unificado)
@@ -5283,12 +5283,13 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
   };
 
   // Stat card simple (avisos / tickets / FOB / margen)
+  // Stat card — sizing exacto al mockup (padding 20×22, value 42px)
   const StatCard=({label,value,sub,color,trend,span=3,format=v=>v})=>{
-    return <div className="ac-hover-card ac-bento-cell" data-span={span} style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 20px",display:"flex",flexDirection:"column",gridColumn:`span ${span}`,position:"relative",overflow:"hidden",minHeight:110}}>
-      <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{label}</p>
-      <p style={{fontSize:32,fontWeight:800,color:color||"#fff",margin:0,letterSpacing:"-0.025em",lineHeight:1,fontVariantNumeric:"tabular-nums"}}><AnimNum value={typeof value==="number"?value:0} format={format}/></p>
-      {sub&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"8px 0 0"}}>{sub}</p>}
-      {trend!==undefined&&trend!==null&&<span style={{display:"inline-flex",alignSelf:"flex-start",alignItems:"center",gap:4,fontSize:10.5,fontWeight:600,color:trend>=0?"#22c55e":"#ef4444",marginTop:6,padding:"2px 7px",borderRadius:5,background:trend>=0?"rgba(34,197,94,0.10)":"rgba(239,68,68,0.10)",border:`1px solid ${trend>=0?"rgba(34,197,94,0.25)":"rgba(239,68,68,0.25)"}`}}>{trend>=0?"↑":"↓"} {Math.abs(trend)}% vs mes</span>}
+    return <div className="ac-hover-card ac-bento-cell" data-span={span} style={{background:"rgba(255,255,255,0.035)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"20px 22px",display:"flex",flexDirection:"column",gridColumn:`span ${span}`,position:"relative",overflow:"hidden",minHeight:110}}>
+      <p style={{fontSize:10.5,fontWeight:600,color:"rgba(255,255,255,0.5)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.1em",display:"flex",alignItems:"center",gap:6}}>{label}</p>
+      <p style={{fontSize:42,fontWeight:700,color:color||"#fff",margin:0,letterSpacing:"-0.035em",lineHeight:1,fontVariantNumeric:"tabular-nums"}}><AnimNum value={typeof value==="number"?value:0} format={format}/></p>
+      {sub&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.5)",margin:"8px 0 0"}}>{sub}</p>}
+      {trend!==undefined&&trend!==null&&<span style={{display:"inline-flex",alignSelf:"flex-start",alignItems:"center",gap:4,fontSize:11,fontWeight:600,color:trend>=0?"#22c55e":"#ef4444",marginTop:6,padding:"2px 7px",borderRadius:5,background:trend>=0?"rgba(34,197,94,0.10)":"rgba(239,68,68,0.10)",border:`1px solid ${trend>=0?"rgba(34,197,94,0.25)":"rgba(239,68,68,0.25)"}`}}>{trend>=0?"↑":"↓"} {Math.abs(trend)}% vs mes</span>}
     </div>;
   };
 

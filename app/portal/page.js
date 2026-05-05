@@ -11,8 +11,8 @@ const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 const LOGO=`${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
 const B={primary:"#1B4F8A",accent:"#4A90D9"};
-// Navy Argencargo + radiales sutiles dorado/azul para profundidad
-const DARK_BG="radial-gradient(1200px 700px at 85% -5%, rgba(184,149,106,0.12), transparent 55%), radial-gradient(900px 800px at -10% 105%, rgba(74,144,217,0.10), transparent 50%), linear-gradient(165deg,#0A1628 0%,#142849 45%,#0F1E3D 100%)";
+// Navy Argencargo SÓLIDO + radiales sutiles (idéntico al mockup)
+const DARK_BG="radial-gradient(1200px 600px at 80% -10%, rgba(184,149,106,0.10), transparent 60%), radial-gradient(900px 700px at -10% 100%, rgba(96,165,250,0.06), transparent 50%), #0A1628";
 const GOLD="#B8956A", GOLD_LIGHT="#E8D098", GOLD_DEEP="#A68456";
 const GOLD_GRADIENT="linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 100%)";
 const GOLD_GLOW="0 0 20px rgba(184,149,106,0.25)";
