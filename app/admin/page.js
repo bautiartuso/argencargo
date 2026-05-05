@@ -5087,11 +5087,17 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
     const d5agoISO=new Date(Date.now()-5*24*60*60*1000).toISOString();
     const d1agoISO=new Date(Date.now()-24*60*60*1000).toISOString();
     const d7agoISO=new Date(Date.now()-7*24*60*60*1000).toISOString();
-    const [opsAll,purchaseNotifs,repackReqs,ticketsOpen]=await Promise.all([
-      dq("operations",{token,filters:`?select=id,operation_code,status,client_id,description,created_at,channel,clients(client_code,first_name,last_name,whatsapp)&order=created_at.desc&limit=500`}),
+    const monthStartISO=new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString();
+    const lastMonthStartISO=new Date(new Date().getFullYear(),new Date().getMonth()-1,1).toISOString();
+    const [opsAll,purchaseNotifs,repackReqs,ticketsOpen,recentEvents,recentPmts]=await Promise.all([
+      dq("operations",{token,filters:`?select=id,operation_code,status,client_id,description,created_at,eta,channel,budget_total,clients(client_code,first_name,last_name,whatsapp)&order=created_at.desc&limit=500`}),
       dq("purchase_notifications",{token,filters:`?select=id,client_id,description,origin,shipping_method,created_at,clients(client_code,first_name)&status=eq.pending&created_at=lt.${d1agoISO}&order=created_at.asc`}),
       dq("repack_requests",{token,filters:`?select=id,operation_id,requested_at,operations(operation_code,clients(client_code,first_name))&status=eq.pending&order=requested_at.asc`}),
       dq("support_tickets",{token,filters:`?select=id,subject,status,priority,created_at,updated_at,clients(client_code,first_name)&status=in.(open,waiting_client)&order=updated_at.asc&limit=50`}).catch(()=>[]),
+      // Eventos recientes para activity feed (últimos 30, internos + carriers)
+      dq("tracking_events",{token,filters:`?select=id,operation_id,title,description,occurred_at,source,operations(operation_code,clients(client_code,first_name))&order=occurred_at.desc&limit=30`}).catch(()=>[]),
+      // Pagos recientes para activity feed
+      dq("operation_client_payments",{token,filters:`?select=id,operation_id,amount_usd,payment_date,payment_method,operations(operation_code,clients(client_code,first_name))&order=payment_date.desc&limit=10`}).catch(()=>[]),
     ]);
     const opsArr=Array.isArray(opsAll)?opsAll:[];
     // Documentación pendiente cliente +5 días (canal A blanco en preparación sin items)
@@ -5117,6 +5123,46 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
       const opsDelCliente=opsArr.filter(o=>o.client_id===q.client_id&&o.created_at>q.created_at);
       return opsDelCliente.length===0;
     }).slice(0,10);
+    // Operaciones activas (no cerradas/canceladas)
+    const opsActive=opsArr.filter(o=>!["operacion_cerrada","cancelada"].includes(o.status));
+    // FOB del mes (suma budget_total ops creadas este mes)
+    const opsThisMonth=opsArr.filter(o=>o.created_at>=monthStartISO);
+    const opsLastMonth=opsArr.filter(o=>o.created_at>=lastMonthStartISO&&o.created_at<monthStartISO);
+    const fobThisMonth=opsThisMonth.reduce((s,o)=>s+Number(o.budget_total||0),0);
+    const fobLastMonth=opsLastMonth.reduce((s,o)=>s+Number(o.budget_total||0),0);
+    const fobTrend=fobLastMonth>0?Math.round(((fobThisMonth-fobLastMonth)/fobLastMonth)*100):null;
+    // Próximas entregas: ops con ETA en próximos 7 días, agrupadas por día
+    const today=new Date();today.setHours(0,0,0,0);
+    const nextDays=[];
+    for(let i=0;i<7;i++){const d=new Date(today.getTime()+i*86400000);nextDays.push({date:d.toISOString().slice(0,10),label:d.toLocaleDateString("es-AR",{weekday:"short"}).replace(".",""),count:0,opCodes:[]});}
+    opsActive.forEach(o=>{if(!o.eta)return;const eta=String(o.eta).slice(0,10);const day=nextDays.find(d=>d.date===eta);if(day){day.count++;day.opCodes.push(o.operation_code);}});
+    const maxDayCount=Math.max(1,...nextDays.map(d=>d.count));
+    // Activity feed: combinar eventos + pagos + tickets recientes, ordenar por fecha
+    const evArr=Array.isArray(recentEvents)?recentEvents:[];
+    const pmtArr=Array.isArray(recentPmts)?recentPmts:[];
+    const tkArr=Array.isArray(ticketsOpen)?ticketsOpen:[];
+    const activity=[
+      ...evArr.filter(e=>e.source!=="internal"||!String(e.title||"").startsWith("Estado actualizado")).map(e=>({
+        kind:"event",icon:e.source==="dhl"||e.source==="fedex"||e.source==="ups"?"info":"good",
+        emoji:e.source==="internal"?"📍":"✈️",
+        title:`${e.title||"Evento"} · ${e.operations?.operation_code||""}`,
+        sub:(e.operations?.clients?.client_code||"")+(e.description?` — ${String(e.description).slice(0,60)}`:""),
+        date:e.occurred_at,
+      })),
+      ...pmtArr.map(p=>({
+        kind:"pmt",icon:"info",emoji:"💳",
+        title:`Pago recibido USD ${Number(p.amount_usd||0).toFixed(2)} — ${p.operations?.operation_code||""}`,
+        sub:p.operations?.clients?.client_code||"",
+        date:p.payment_date,
+      })),
+      ...tkArr.slice(0,5).map(t=>({
+        kind:"ticket",icon:t.priority==="urgent"||t.priority==="high"?"warn":"info",emoji:"🎫",
+        title:`Ticket: ${t.subject}${t.priority==="urgent"||t.priority==="high"?` · ${t.priority}`:""}`,
+        sub:t.clients?.client_code||"",
+        date:t.updated_at||t.created_at,
+      })),
+    ].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).slice(0,8);
+
     setData({
       avisosPendientes:Array.isArray(purchaseNotifs)?purchaseNotifs:[],
       docsPendientes,
@@ -5124,6 +5170,10 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
       reempaques:Array.isArray(repackReqs)?repackReqs:[],
       ticketsOpen:Array.isArray(ticketsOpen)?ticketsOpen:[],
       stuckAduana,
+      opsActive,opsAll:opsArr,
+      fobThisMonth,fobTrend,opsThisMonthCount:opsThisMonth.length,
+      nextDays,maxDayCount,
+      activity,
     });
     setLo(false);
   };
@@ -5149,30 +5199,96 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
     </div>;
   };
 
-  // Hero summary card — el más grande arriba a la izquierda
+  // Hero "Operaciones activas" — número grande gradient + lista de las 3 más recientes activas
   const Hero=()=>{
-    const urgent=data.stuckAduana.length+data.ticketsOpen.filter(t=>t.priority==="urgent"||t.priority==="high").length;
-    const greeting=(()=>{const h=new Date().getHours();return h<12?"Buen día":h<19?"Buenas tardes":"Buenas noches";})();
-    return <div className="ac-hover-card" style={{gridColumn:"span 6",gridRow:"span 2",background:"linear-gradient(135deg,rgba(184,149,106,0.12) 0%,rgba(184,149,106,0.02) 60%)",border:`1.5px solid rgba(184,149,106,0.3)`,borderRadius:16,padding:"24px 28px",display:"flex",flexDirection:"column",justifyContent:"space-between",position:"relative",overflow:"hidden",boxShadow:"0 0 32px rgba(184,149,106,0.08)"}}>
-      <div style={{position:"absolute",top:-60,right:-60,width:240,height:240,background:"radial-gradient(circle,rgba(232,208,152,0.18) 0%,transparent 70%)",pointerEvents:"none"}}/>
+    const top3=data.opsActive.slice(0,3);
+    const trend=data.fobTrend;
+    return <div className="ac-hover-card" style={{gridColumn:"span 5",gridRow:"span 2",background:"linear-gradient(135deg,rgba(184,149,106,0.12) 0%,rgba(184,149,106,0.02) 60%)",border:`1.5px solid rgba(184,149,106,0.3)`,borderRadius:16,padding:"22px 26px",display:"flex",flexDirection:"column",justifyContent:"space-between",position:"relative",overflow:"hidden",boxShadow:"0 0 32px rgba(184,149,106,0.08)"}}>
+      <div style={{position:"absolute",top:-60,right:-60,width:240,height:240,background:"radial-gradient(circle,rgba(232,208,152,0.16) 0%,transparent 70%)",pointerEvents:"none"}}/>
       <div style={{position:"relative"}}>
-        <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{greeting}, Bautista</p>
-        <h2 style={{fontSize:34,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.03em",lineHeight:1.05,background:"linear-gradient(135deg,#fff 30%,#E8D098 95%)",WebkitBackgroundClip:"text",backgroundClip:"text",WebkitTextFillColor:"transparent"}}>
-          {totalTareas===0?"Todo al día ✓":`${totalTareas} ${totalTareas===1?"tarea":"tareas"} pendientes`}
-        </h2>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"10px 0 0",lineHeight:1.5}}>
-          {totalTareas===0?"No tenés nada urgente. Aprovechá para revisar pendientes a futuro o hacer prospección.":urgent>0?`Tenés ${urgent} ítem${urgent>1?"s":""} de prioridad alta. Atendelos primero.`:"Avanzás bien. Empezá por los avisos de compra para no acumular pedidos."}
+        <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.14em",display:"flex",alignItems:"center",gap:7}}><span style={{width:7,height:7,borderRadius:"50%",background:GOLD,boxShadow:`0 0 8px ${GOLD}`}}/>Operaciones activas</p>
+        <p style={{fontSize:64,fontWeight:800,margin:0,letterSpacing:"-0.04em",lineHeight:1,background:"linear-gradient(135deg,#fff 30%,#E8D098 95%)",WebkitBackgroundClip:"text",backgroundClip:"text",WebkitTextFillColor:"transparent",fontVariantNumeric:"tabular-nums"}}>
+          <AnimNum value={data.opsActive.length}/>
         </p>
+        {trend!==null&&<span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:600,color:trend>=0?"#22c55e":"#ef4444",marginTop:10,padding:"3px 9px",borderRadius:6,background:trend>=0?"rgba(34,197,94,0.10)":"rgba(239,68,68,0.10)",border:`1px solid ${trend>=0?"rgba(34,197,94,0.3)":"rgba(239,68,68,0.3)"}`}}>{trend>=0?"↑":"↓"} {Math.abs(trend)}% vs mes pasado</span>}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,position:"relative"}}>
-        {[
-          {l:"Avisos sin confirmar",v:data.avisosPendientes.length,c:"#fbbf24"},
-          {l:"Tickets abiertos",v:data.ticketsOpen.length,c:"#22c55e"},
-          {l:"Trabadas en aduana",v:data.stuckAduana.length,c:"#ef4444"},
-        ].map((x,i)=><div key={i} style={{padding:"10px 12px",background:"rgba(0,0,0,0.18)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
-          <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{x.l}</p>
-          <p style={{fontSize:22,fontWeight:800,color:x.v>0?x.c:"rgba(255,255,255,0.3)",margin:0,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",lineHeight:1}}><AnimNum value={x.v}/></p>
+      <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:14,position:"relative"}}>
+        {top3.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin operaciones activas</p>:top3.map(o=>{const st=SM[o.status]||{l:o.status,c:"#999"};return <div key={o.id} onClick={()=>onSelectOp&&onSelectOp(o)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"rgba(0,0,0,0.20)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:9,cursor:"pointer",transition:"all 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(0,0,0,0.20)";}}>
+          <span style={{fontSize:12,color:"rgba(255,255,255,0.85)"}}><code style={{color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",fontWeight:600,marginRight:8}}>{o.operation_code}</code>{o.clients?`${o.clients.first_name||""}${o.clients.last_name?" "+o.clients.last_name:""}`.slice(0,28):"—"}</span>
+          <span style={{fontSize:9.5,fontWeight:700,padding:"3px 8px 3px 7px",borderRadius:999,color:st.c,border:`1px solid ${st.c}40`,background:`${st.c}14`,display:"inline-flex",alignItems:"center",gap:5,letterSpacing:"0.04em",textTransform:"uppercase",whiteSpace:"nowrap"}}><span className="ac-live-dot" style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:st.c}}/>{st.l}</span>
+        </div>;})}
+      </div>
+    </div>;
+  };
+
+  // Stat card simple (avisos / tickets / FOB / margen)
+  const StatCard=({label,value,sub,color,trend,span=3,format=v=>v})=>{
+    return <div className="ac-hover-card ac-bento-cell" data-span={span} style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 20px",display:"flex",flexDirection:"column",gridColumn:`span ${span}`,position:"relative",overflow:"hidden",minHeight:110}}>
+      <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{label}</p>
+      <p style={{fontSize:32,fontWeight:800,color:color||"#fff",margin:0,letterSpacing:"-0.025em",lineHeight:1,fontVariantNumeric:"tabular-nums"}}><AnimNum value={typeof value==="number"?value:0} format={format}/></p>
+      {sub&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"8px 0 0"}}>{sub}</p>}
+      {trend!==undefined&&trend!==null&&<span style={{display:"inline-flex",alignSelf:"flex-start",alignItems:"center",gap:4,fontSize:10.5,fontWeight:600,color:trend>=0?"#22c55e":"#ef4444",marginTop:6,padding:"2px 7px",borderRadius:5,background:trend>=0?"rgba(34,197,94,0.10)":"rgba(239,68,68,0.10)",border:`1px solid ${trend>=0?"rgba(34,197,94,0.25)":"rgba(239,68,68,0.25)"}`}}>{trend>=0?"↑":"↓"} {Math.abs(trend)}% vs mes</span>}
+    </div>;
+  };
+
+  // Activity feed (eventos + pagos + tickets en tiempo real)
+  const ActivityFeed=()=>{
+    const fmtAgo=(d)=>{if(!d)return"";const ms=Date.now()-new Date(d).getTime();const m=Math.floor(ms/60000);if(m<1)return"hace un momento";if(m<60)return`hace ${m} min`;const h=Math.floor(m/60);if(h<24)return`hace ${h}h`;const d2=Math.floor(h/24);return`hace ${d2}d`;};
+    const iconBg={good:"rgba(34,197,94,0.14)",warn:"rgba(251,191,36,0.14)",info:"rgba(74,144,217,0.14)",gold:"rgba(184,149,106,0.14)"};
+    const iconCol={good:"#22c55e",warn:"#fbbf24",info:"#60a5fa",gold:GOLD_LIGHT};
+    return <div className="ac-hover-card ac-bento-cell" data-span={6} style={{gridColumn:"span 6",gridRow:"span 2",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{padding:"16px 20px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+        <p style={{fontSize:12,fontWeight:700,color:"#fff",margin:0,letterSpacing:"0.04em"}}>Actividad en tiempo real</p>
+        <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,padding:"3px 9px 3px 7px",borderRadius:999,color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.10)",letterSpacing:"0.06em",textTransform:"uppercase"}}><span className="ac-live-dot" style={{width:5,height:5,borderRadius:"50%",background:"#22c55e"}}/>Live</span>
+      </div>
+      <div style={{padding:8,display:"flex",flexDirection:"column",gap:1,flex:1,overflow:"auto",maxHeight:380}}>
+        {data.activity.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0",fontStyle:"italic"}}>Sin actividad reciente</p>:data.activity.map((a,i)=><div key={i} style={{display:"flex",gap:11,padding:"11px 13px",borderRadius:9,transition:"background 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+          <div style={{width:30,height:30,borderRadius:9,background:iconBg[a.icon]||iconBg.info,color:iconCol[a.icon]||iconCol.info,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:13}}>{a.emoji}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontSize:12.5,fontWeight:500,color:"rgba(255,255,255,0.92)",margin:0,lineHeight:1.4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.title}</p>
+            <p style={{fontSize:10.5,color:"rgba(255,255,255,0.42)",margin:"2px 0 0"}}>{fmtAgo(a.date)}{a.sub?` · ${a.sub}`:""}</p>
+          </div>
         </div>)}
+      </div>
+    </div>;
+  };
+
+  // Próximas entregas chart (bar chart simple por día, próximos 7 días)
+  const NextDeliveriesChart=()=>{
+    return <div className="ac-hover-card ac-bento-cell" data-span={6} style={{gridColumn:"span 6",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 20px",position:"relative",overflow:"hidden"}}>
+      <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>📅 Próximas entregas (7 días)</p>
+      <div style={{display:"flex",alignItems:"flex-end",gap:8,height:80,marginTop:18}}>
+        {data.nextDays.map((d,i)=>{const pct=Math.max(8,(d.count/data.maxDayCount)*100);const isMax=d.count===data.maxDayCount&&d.count>0;return <div key={i} title={d.opCodes.length?d.opCodes.join(", "):"sin entregas"} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6,position:"relative"}}>
+          {d.count>0&&<span style={{position:"absolute",top:`${100-pct}%`,marginTop:-22,fontSize:11,fontWeight:700,color:isMax?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums"}}>{d.count}</span>}
+          <div style={{width:"100%",height:`${pct}%`,minHeight:4,borderRadius:6,background:d.count>0?(isMax?"linear-gradient(to top,#E8D098,rgba(232,208,152,0.25))":"linear-gradient(to top,#B8956A,rgba(184,149,106,0.18))"):"rgba(255,255,255,0.06)",boxShadow:isMax?"0 0 16px rgba(232,208,152,0.35)":"none",transition:"all 200ms"}}/>
+          <span style={{fontSize:10,color:isMax?GOLD_LIGHT:"rgba(255,255,255,0.45)",fontWeight:isMax?700:500,textTransform:"uppercase",letterSpacing:"0.04em"}}>{d.label}</span>
+        </div>;})}
+      </div>
+    </div>;
+  };
+
+  // Tabla compacta de operaciones activas (top 6)
+  const OpsTable=()=>{
+    const top=data.opsActive.slice(0,6);
+    if(top.length===0)return null;
+    const usd=v=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    return <div style={{marginTop:24}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones activas</p>
+        <button onClick={()=>onNav&&onNav("operations")} style={{padding:"5px 11px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.03)",color:"rgba(255,255,255,0.7)",cursor:"pointer"}}>Ver todas →</button>
+      </div>
+      <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"90px 1.4fr 1.2fr 0.9fr 1fr 36px",gap:14,padding:"10px 22px",background:"rgba(255,255,255,0.025)",fontSize:10,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+          <span>Código</span><span>Descripción</span><span>Cliente</span><span>Canal</span><span>Estado</span><span/>
+        </div>
+        {top.map(o=>{const st=SM[o.status]||{l:o.status,c:"#999"};return <div key={o.id} onClick={()=>onSelectOp&&onSelectOp(o)} style={{display:"grid",gridTemplateColumns:"90px 1.4fr 1.2fr 0.9fr 1fr 36px",gap:14,padding:"12px 22px",alignItems:"center",fontSize:13,borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.03)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+          <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:GOLD_LIGHT,fontSize:12.5,letterSpacing:"0.04em"}}>{o.operation_code}</span>
+          <span style={{color:"#fff",fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.description||"—"}</span>
+          <span style={{color:"rgba(255,255,255,0.65)",fontSize:12.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""} · ${o.clients.client_code}`:"—"}</span>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.5)",padding:"3px 8px",borderRadius:5,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.06)",justifySelf:"start"}}>{(CM[o.channel]||"").replace(" Comercial","").replace(" LCL/FCL","")}</span>
+          <span style={{fontSize:9.5,fontWeight:700,padding:"3px 9px 3px 7px",borderRadius:999,color:st.c,border:`1px solid ${st.c}40`,background:`${st.c}14`,display:"inline-flex",alignItems:"center",gap:5,letterSpacing:"0.04em",textTransform:"uppercase",justifySelf:"start"}}><span className="ac-live-dot" style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:st.c}}/>{st.l}</span>
+          <span style={{color:"rgba(255,255,255,0.4)",textAlign:"right",fontSize:14}}>›</span>
+        </div>;})}
       </div>
     </div>;
   };
@@ -5181,47 +5297,48 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
   const itemHover=e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";e.currentTarget.style.borderColor="rgba(255,255,255,0.1)";};
   const itemLeave=e=>{e.currentTarget.style.background="rgba(0,0,0,0.18)";e.currentTarget.style.borderColor="transparent";};
 
+  const greeting=(()=>{const h=new Date().getHours();return h<12?"Buen día":h<19?"Buenas tardes":"Buenas noches";})();
+
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:20,gap:12,flexWrap:"wrap"}}>
-      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textTransform:"uppercase",letterSpacing:"0.14em"}}>Panel del día · {new Date().toLocaleDateString("es-AR",{weekday:"long",day:"2-digit",month:"long"})}</p>
-      <button onClick={load} style={{padding:"6px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.03)",color:"rgba(255,255,255,0.6)",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:6}}>↻ Refrescar</button>
+    {/* Header */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:22,gap:14,flexWrap:"wrap"}}>
+      <div>
+        <h1 style={{fontSize:28,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.025em"}}>👋 {greeting}, Bautista</h1>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>Panel del día · <strong style={{color:GOLD_LIGHT,fontWeight:600}}>{new Date().toLocaleDateString("es-AR",{weekday:"long",day:"2-digit",month:"long"})}</strong> · {totalTareas} tarea{totalTareas!==1?"s":""} pendiente{totalTareas!==1?"s":""}</p>
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={load} style={{padding:"9px 16px",fontSize:13,fontWeight:600,borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.03)",color:"rgba(255,255,255,0.7)",cursor:"pointer"}}>↻ Refrescar</button>
+        <button onClick={()=>{onNav&&onNav("operations");setTimeout(()=>window.dispatchEvent(new CustomEvent("ac_new_op")),50);}} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",boxShadow:GOLD_GLOW}}>+ Nueva operación</button>
+      </div>
     </div>
 
-    <div className="ac-bento" style={{display:"grid",gridTemplateColumns:"repeat(12,1fr)",gridAutoRows:"minmax(100px,auto)",gap:12,marginBottom:20}}>
+    {/* Bento grid principal */}
+    <div className="ac-bento" style={{display:"grid",gridTemplateColumns:"repeat(12,1fr)",gridAutoRows:"minmax(100px,auto)",gap:12,marginBottom:18}}>
       <Hero/>
 
-      {/* Right column 1 — top: avisos (3 cols) + tickets (3 cols) */}
-      <Card span={3} title="Avisos +24h" emoji="📦" count={data.avisosPendientes.length} color="#fbbf24"
-        items={data.avisosPendientes} onClickAll={()=>onNav&&onNav("purchase_notifs")}
-        emptyMsg="Todos atendidos"
-        renderItem={(n,i)=><div key={i} onClick={()=>onNav&&onNav("purchase_notifs")} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
-          <strong style={{color:"#fff",fontFamily:"monospace"}}>{n.clients?.client_code}</strong> · {n.description||"sin desc."}
-        </div>}/>
+      {/* Right cluster */}
+      <StatCard span={4} label="📦 Avisos +24h" value={data.avisosPendientes.length} color={data.avisosPendientes.length>0?"#fbbf24":undefined}
+        sub={data.avisosPendientes.length>0?data.avisosPendientes.slice(0,4).map(a=>a.clients?.client_code).filter(Boolean).join(" · "):"Todos atendidos"}/>
+      <StatCard span={3} label="🎫 Tickets abiertos" value={data.ticketsOpen.length} color={data.ticketsOpen.length>0?"#22c55e":undefined}
+        sub={data.ticketsOpen.length===0?"Sin tickets":data.ticketsOpen.filter(t=>t.priority==="urgent"||t.priority==="high").length>0?`${data.ticketsOpen.filter(t=>t.priority==="urgent"||t.priority==="high").length} prioridad alta`:"Sin urgencias"}/>
 
-      <Card span={3} title="Tickets" emoji="🎫" count={data.ticketsOpen.length} color="#22c55e"
-        items={data.ticketsOpen} onClickAll={()=>onNav&&onNav("tickets")}
-        emptyMsg="Sin tickets"
-        renderItem={(t,i)=><div key={i} onClick={()=>onNav&&onNav("tickets")} style={{...itemRowStyle,display:"flex",justifyContent:"space-between",gap:6}} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
-          <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><strong style={{color:"#fff"}}>{t.subject}</strong></span>
-          <span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:t.priority==="urgent"?"#ef444433":t.priority==="high"?"#fbbf2433":"#94a3b833",color:t.priority==="urgent"?"#ef4444":t.priority==="high"?"#fbbf24":"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.04em"}}>{t.priority}</span>
-        </div>}/>
+      <StatCard span={4} label="💵 FOB del mes" value={Math.round(data.fobThisMonth)} color={GOLD_LIGHT}
+        format={v=>v.toLocaleString("en-US")}
+        sub={`USD · ${data.opsThisMonthCount} ${data.opsThisMonthCount===1?"operación":"operaciones"}`} trend={data.fobTrend}/>
+      <StatCard span={3} label="🛂 Aduana +7d" value={data.stuckAduana.length} color={data.stuckAduana.length>0?"#ef4444":undefined}
+        sub={data.stuckAduana.length===0?"Nada atascado":`${data.stuckAduana.length} op${data.stuckAduana.length>1?"s":""} con +7 días`}/>
 
-      {/* Right column 2 — bottom: aduana (3) + doc pendiente (3) */}
-      <Card span={3} title="Aduana +7d" emoji="🛂" count={data.stuckAduana.length} color="#ef4444"
-        items={data.stuckAduana} onClickAll={()=>onNav&&onNav("operations")}
-        emptyMsg="Nada atascado"
-        renderItem={(o,i)=><div key={i} onClick={()=>onSelectOp&&onSelectOp(o)} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
-          <strong style={{color:"#fff",fontFamily:"monospace"}}>{o.operation_code}</strong> · {Math.floor((Date.now()-new Date(o.created_at).getTime())/86400000)}d
-        </div>}/>
-
-      <Card span={3} title="Doc pendiente +5d" emoji="📋" count={data.docsPendientes.length} color="#a78bfa"
+      {/* Activity feed (6×2) + Próximas entregas (6×1) + Doc pendiente (6×1) */}
+      <ActivityFeed/>
+      <NextDeliveriesChart/>
+      <Card span={6} title="Documentación pendiente +5d" emoji="📋" count={data.docsPendientes.length} color="#a78bfa"
         items={data.docsPendientes} onClickAll={()=>onNav&&onNav("operations")}
-        emptyMsg="Todo documentado"
+        emptyMsg="Todos los clientes documentaron"
         renderItem={(o,i)=><div key={i} onClick={()=>onSelectOp&&onSelectOp(o)} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
-          <strong style={{color:"#fff",fontFamily:"monospace"}}>{o.operation_code}</strong> · {o.clients?.client_code}
+          <strong style={{color:"#fff",fontFamily:"monospace"}}>{o.operation_code}</strong> · {o.clients?.client_code} · creada hace {Math.floor((Date.now()-new Date(o.created_at).getTime())/86400000)}d
         </div>}/>
 
-      {/* Bottom row — wider cards */}
+      {/* Bottom row */}
       <Card span={7} title="Cotizaciones sin respuesta +7d" emoji="💬" count={data.cotizacionesPerdidas.length} color="#60a5fa"
         items={data.cotizacionesPerdidas} onClickAll={()=>onNav&&onNav("quotes")}
         emptyMsg="Todas convertidas o nuevas"
@@ -5232,10 +5349,19 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
 
       <Card span={5} title="Reempaques" emoji="🔄" count={data.reempaques.length} color="#fb923c"
         items={data.reempaques} onClickAll={()=>onNav&&onNav("agents")}
-        emptyMsg="Sin pedidos"
+        emptyMsg="Sin pedidos de reempaque"
         renderItem={(r,i)=><div key={i} style={itemRowStyle} onMouseEnter={itemHover} onMouseLeave={itemLeave}>
           <strong style={{color:"#fff",fontFamily:"monospace"}}>{r.operations?.operation_code||"—"}</strong> · {r.operations?.clients?.client_code||"—"} · {formatDate(r.requested_at)}
         </div>}/>
+    </div>
+
+    {/* Tabla de operaciones activas (estilo Linear) */}
+    <OpsTable/>
+
+    {/* Bottom hints flotantes (atajos de teclado) */}
+    <div style={{position:"fixed",bottom:18,left:"50%",transform:"translateX(-50%)",display:"flex",gap:6,flexWrap:"wrap",zIndex:30,fontSize:11,color:"rgba(255,255,255,0.55)",pointerEvents:"none"}}>
+      <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 10px",background:"rgba(15,30,61,0.8)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,backdropFilter:"blur(10px)"}}><kbd style={{fontFamily:"'SF Mono',monospace",fontSize:10,padding:"1px 5px",borderRadius:4,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.08)"}}>⌘K</kbd> Buscar</span>
+      <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 10px",background:"rgba(15,30,61,0.8)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,backdropFilter:"blur(10px)"}}><kbd style={{fontFamily:"'SF Mono',monospace",fontSize:10,padding:"1px 5px",borderRadius:4,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.08)"}}>esc</kbd> Cerrar</span>
     </div>
   </div>;
 }
@@ -6934,6 +7060,8 @@ function AdminDashboard({session,onLogout}){
   const nav=[{key:"today",label:"HOY",p:["M12 2L3 7l9 5 9-5-9-5z","M3 17l9 5 9-5","M3 12l9 5 9-5"]},{key:"operations",label:"OPERACIONES",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},{key:"agents",label:"AGENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},{key:"tasks",label:"TAREAS",p:["M9 11l3 3 8-8","M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"]},{key:"dashboard",label:"DASHBOARD",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},{key:"finance",label:"FINANZAS",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},{key:"purchase_notifs",label:"AVISOS COMPRA",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},{key:"intel",label:"INTELIGENCIA",p:["M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"]},{key:"tickets",label:"TICKETS",p:["M21 13V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v5a3 3 0 0 1 0 6v-1a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1a3 3 0 0 1 0-6z"]},{key:"comms",label:"COMUNICACIONES",p:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},{key:"quotes",label:"COTIZACIONES",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},{key:"clients",label:"CLIENTES",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},{key:"tariffs",label:"TARIFAS",p:["M18 20V10","M12 20V4","M6 20v-6"]},{key:"settings",label:"CONFIGURACIÓN",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]}];
   const [pendingTasks,setPendingTasks]=useState(0);
   useEffect(()=>{let mounted=true;const load=async()=>{const r=await dq("admin_tasks",{token,filters:"?select=id&done=eq.false"});if(mounted&&Array.isArray(r))setPendingTasks(r.length);};load();const iv=setInterval(load,30000);return()=>{mounted=false;clearInterval(iv);};},[token,page]);
+  // Listener para "+ Nueva operación" desde el HOY dashboard (custom event)
+  useEffect(()=>{const h=()=>{setPage("operations");setSelOp(null);setSelClient(null);setNewOp(true);};window.addEventListener("ac_new_op",h);return()=>window.removeEventListener("ac_new_op",h);},[]);
   const sidebarContent=<>
     <div style={{padding:"24px 20px 20px",borderBottom:"1px solid rgba(255,255,255,0.06)",display:"flex",justifyContent:"center",alignItems:"center",position:"relative"}}>
       <img src={LOGO} alt="AC" style={{width:"100%",height:"auto",maxHeight:50,objectFit:"contain"}}/>
