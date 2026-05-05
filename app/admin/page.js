@@ -4765,6 +4765,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
   const [filterOrigin,setFilterOrigin]=useState("all"); // all | china | usa
   const [search,setSearch]=useState("");
   const [confirmAction,setConfirmAction]=useState(null); // {type, notif}
+  const [confirmChannel,setConfirmChannel]=useState(null); // canal elegido por admin para crear la op
   const [mergeAction,setMergeAction]=useState(null); // {clientId, notifs}
   const [working,setWorking]=useState(false);
   const load=async()=>{setLo(true);const r=await dq("purchase_notifications",{token,filters:"?select=*,trackings:purchase_notification_trackings(id,tracking_code,received_at),clients(client_code,first_name,last_name,whatsapp,auth_user_id),operations(operation_code)&order=created_at.desc"});setItems(Array.isArray(r)?r:[]);setLo(false);};
@@ -4803,7 +4804,8 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
       const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
       const newCode=typeof rpc==="string"?rpc:null;
       if(!newCode){alert("Error generando código de op");setWorking(false);return;}
-      const channel=n.shipping_method==="maritimo"?"maritimo_negro":"aereo_negro";
+      // Canal: admin puede haber elegido en el modal. Default = negro (Integral AC) si no eligió
+      const channel=confirmChannel||(n.shipping_method==="maritimo"?"maritimo_negro":"aereo_negro");
       const origin=n.origin==="usa"?"USA":"China";
       // international_tracking guarda los trackings concatenados (la lógica futura puede leer de la tabla hija)
       const intTrk=trkCodes.join(", ");
@@ -4928,11 +4930,18 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
       </div>;})}
     </div>}
 
-    {confirmAction&&(()=>{const {type,notif}=confirmAction;const cl=notif.clients;const trks=Array.isArray(notif.trackings)&&notif.trackings.length>0?notif.trackings:(notif.tracking_code?[{tracking_code:notif.tracking_code}]:[]);return <div onClick={()=>!working&&setConfirmAction(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${type==="confirm"?"rgba(34,197,94,0.4)":"rgba(255,80,80,0.4)"}`,borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+    {confirmAction&&(()=>{const {type,notif}=confirmAction;const cl=notif.clients;const trks=Array.isArray(notif.trackings)&&notif.trackings.length>0?notif.trackings:(notif.tracking_code?[{tracking_code:notif.tracking_code}]:[]);
+      const isAereo=notif.shipping_method!=="maritimo";
+      // Opciones de canal según modalidad. Default seleccionado = negro (Integral AC, comportamiento previo)
+      const channelOpts=isAereo
+        ?[{k:"aereo_negro",l:"Aéreo Integral AC",sub:"Sin factura · canal B",icon:"📦"},{k:"aereo_blanco",l:"Aéreo Courier Comercial",sub:"Con factura · canal A",icon:"🏢"}]
+        :[{k:"maritimo_negro",l:"Marítimo Integral AC",sub:"Sin factura · canal B",icon:"📦"},{k:"maritimo_blanco",l:"Marítimo LCL/FCL",sub:"Con factura · canal A",icon:"🏢"}];
+      const selChannel=confirmChannel||channelOpts[0].k;
+      return <div onClick={()=>!working&&(setConfirmAction(null),setConfirmChannel(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${type==="confirm"?"rgba(34,197,94,0.4)":"rgba(255,80,80,0.4)"}`,borderRadius:14,padding:"22px 24px",maxWidth:560,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
           <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>{type==="confirm"?"✓ Confirmar recepción y crear op":"Rechazar aviso"}</h3>
-          <button onClick={()=>!working&&setConfirmAction(null)} disabled={working} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:working?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
+          <button onClick={()=>!working&&(setConfirmAction(null),setConfirmChannel(null))} disabled={working} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:working?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
         </div>
         <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,marginBottom:14}}>
           <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"0 0 6px"}}>Cliente: <strong style={{color:"#fff"}}>{cl?.client_code} — {cl?.first_name} {cl?.last_name}</strong></p>
@@ -4940,12 +4949,26 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
           <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>
             {trks.map((t,i)=><span key={i} style={{fontSize:11,fontFamily:"monospace",padding:"2px 7px",borderRadius:3,background:"rgba(255,255,255,0.06)",color:"#fff"}}>{t.tracking_code}{t.received_at?" ✓":""}</span>)}
           </div>
-          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0}}>{notif.origin==="china"?"🇨🇳 China":"🇺🇸 USA"} · {notif.shipping_method==="aereo"?"✈️ Aéreo":"🚢 Marítimo"}{notif.description?` · ${notif.description}`:""}</p>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0}}>{notif.origin==="china"?"🇨🇳 China":"🇺🇸 USA"} · {isAereo?"✈️ Aéreo":"🚢 Marítimo"}{notif.description?` · ${notif.description}`:""}</p>
         </div>
-        {type==="confirm"?<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px",lineHeight:1.5}}>Se va a crear una nueva operación (canal <strong>{notif.shipping_method==="maritimo"?"Marítimo Integral AC":"Aéreo Integral AC"}</strong>) con <strong>los {trks.length} tracking{trks.length>1?"s":""}</strong> de este aviso. El cliente recibe notificación.</p>:<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px"}}>El aviso queda marcado como cancelado. El cliente puede dar otro aviso si vuelve a intentarlo.</p>}
+        {type==="confirm"?<>
+          {/* Selector de canal — solo China tiene 2 opciones; USA solo negro */}
+          {notif.origin==="china"?<div style={{marginBottom:14}}>
+            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Canal de la operación</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {channelOpts.map(o=>{const sel=selChannel===o.k;return <div key={o.k} onClick={()=>setConfirmChannel(o.k)} style={{padding:"11px 12px",border:`1.5px solid ${sel?GOLD_DEEP:"rgba(255,255,255,0.08)"}`,borderRadius:10,cursor:"pointer",background:sel?"rgba(184,149,106,0.10)":"rgba(0,0,0,0.2)",transition:"all 150ms",boxShadow:sel?"0 0 12px rgba(184,149,106,0.18)":"none"}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                  <span style={{fontSize:16}}>{o.icon}</span>
+                  <span style={{fontSize:12.5,fontWeight:700,color:sel?GOLD_LIGHT:"#fff"}}>{o.l}</span>
+                </div>
+                <p style={{fontSize:10.5,color:"rgba(255,255,255,0.5)",margin:0}}>{o.sub}</p>
+              </div>;})}
+            </div>
+          </div>:<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px",lineHeight:1.5}}>Se va a crear una nueva operación (canal <strong>{isAereo?"Aéreo Integral AC":"Marítimo Integral AC"}</strong>) con <strong>los {trks.length} tracking{trks.length>1?"s":""}</strong>.</p>}
+        </>:<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px"}}>El aviso queda marcado como cancelado. El cliente puede dar otro aviso si vuelve a intentarlo.</p>}
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-          <button onClick={()=>!working&&setConfirmAction(null)} disabled={working} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:working?"not-allowed":"pointer"}}>Volver</button>
-          <button onClick={()=>type==="confirm"?confirmReceipt(notif):cancelNotif(notif)} disabled={working} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${type==="confirm"?"rgba(34,197,94,0.5)":"rgba(255,80,80,0.5)"}`,background:working?"rgba(255,255,255,0.05)":(type==="confirm"?"linear-gradient(135deg,#22c55e,#16a34a)":"linear-gradient(135deg,#ff6b6b,#ef4444)"),color:working?"rgba(255,255,255,0.4)":"#fff",cursor:working?"wait":"pointer"}}>{working?"Procesando…":(type==="confirm"?"✓ Sí, crear op":"Sí, rechazar")}</button>
+          <button onClick={()=>!working&&(setConfirmAction(null),setConfirmChannel(null))} disabled={working} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:working?"not-allowed":"pointer"}}>Volver</button>
+          <button onClick={async()=>{if(type==="confirm"){await confirmReceipt(notif);setConfirmChannel(null);}else{await cancelNotif(notif);}}} disabled={working} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${type==="confirm"?"rgba(34,197,94,0.5)":"rgba(255,80,80,0.5)"}`,background:working?"rgba(255,255,255,0.05)":(type==="confirm"?"linear-gradient(135deg,#22c55e,#16a34a)":"linear-gradient(135deg,#ff6b6b,#ef4444)"),color:working?"rgba(255,255,255,0.4)":"#fff",cursor:working?"wait":"pointer"}}>{working?"Procesando…":(type==="confirm"?"✓ Sí, crear op":"Sí, rechazar")}</button>
         </div>
       </div>
     </div>;})()}

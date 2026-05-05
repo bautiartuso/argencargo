@@ -91,8 +91,8 @@ function AuthPage({children}){
   <style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/>
   <div style={{position:"absolute",inset:0,background:DARK_BG}}/>
   <div style={{position:"absolute",inset:0}}><WorldMap/></div>
-  {/* Selector de idioma flotante */}
-  <div style={{position:"absolute",top:18,right:18,zIndex:10,display:"flex",gap:6,background:"rgba(10,22,40,0.7)",backdropFilter:"blur(12px)",padding:"6px 8px",borderRadius:10,border:"1px solid rgba(255,255,255,0.08)"}}>
+  {/* Selector de idioma flotante — desktop top-right, mobile bottom centered */}
+  <div className="ac-lang-switcher" style={{position:"absolute",top:18,right:18,zIndex:10,display:"flex",gap:6,background:"rgba(10,22,40,0.75)",backdropFilter:"blur(14px)",padding:"6px 8px",borderRadius:10,border:"1px solid rgba(255,255,255,0.08)"}}>
     {LANGS.map(L=><button key={L.code} onClick={()=>setLang(L.code)} title={L.label} style={{padding:"4px 8px",fontSize:14,background:lang===L.code?"rgba(184,149,106,0.25)":"transparent",border:"none",borderRadius:6,cursor:"pointer"}}>{L.flag}</button>)}
   </div>
   {/* Glows decorativos */}
@@ -1984,7 +1984,7 @@ function PurchaseNotificationsPage({token,client}){
   const [editing,setEditing]=useState(null); // notif being edited (full edit mode)
   const [appendTo,setAppendTo]=useState(null); // notif to which we're adding trackings only
   const [showSuggest,setShowSuggest]=useState(false); // anti-duplicado pre-form
-  const [form,setForm]=useState({trackings:[""],origin:"china",shipping_method:"aereo",description:"",estimated_packages:"",estimated_dispatch_date:""});
+  const [form,setForm]=useState({trackings:[""],origin:"china",shipping_method:"aereo",preferred_service_type:"undecided",description:"",estimated_packages:"",estimated_dispatch_date:""});
   const [saving,setSaving]=useState(false);
   const [filter,setFilter]=useState("all"); // all | pending | received | cancelled
   const [confirmCancel,setConfirmCancel]=useState(null);
@@ -2003,13 +2003,13 @@ function PurchaseNotificationsPage({token,client}){
     if(openNotifs.length>0){setShowSuggest(true);return;}
     openNewForm();
   };
-  const openNewForm=()=>{setShowSuggest(false);setEditing(null);setAppendTo(null);setForm({trackings:[""],origin:"china",shipping_method:"aereo",description:"",estimated_packages:"",estimated_dispatch_date:""});setShowForm(true);};
+  const openNewForm=()=>{setShowSuggest(false);setEditing(null);setAppendTo(null);setForm({trackings:[""],origin:"china",shipping_method:"aereo",preferred_service_type:"undecided",description:"",estimated_packages:"",estimated_dispatch_date:""});setShowForm(true);};
   const openAppend=(n)=>{setShowSuggest(false);setEditing(null);setAppendTo(n);setForm({trackings:[""],origin:n.origin,shipping_method:n.shipping_method,description:n.description||"",estimated_packages:"",estimated_dispatch_date:""});setShowForm(true);};
   const openEdit=(n)=>{
     if(!["pending","partial"].includes(n.status))return;
     setShowSuggest(false);setAppendTo(null);setEditing(n);
     const existingTrackings=Array.isArray(n.trackings)&&n.trackings.length>0?n.trackings.map(t=>t.tracking_code):(n.tracking_code?[n.tracking_code]:[""]);
-    setForm({trackings:existingTrackings.length?existingTrackings:[""],origin:n.origin||"china",shipping_method:n.shipping_method||"aereo",description:n.description||"",estimated_packages:n.estimated_packages?String(n.estimated_packages):"",estimated_dispatch_date:n.estimated_dispatch_date||""});
+    setForm({trackings:existingTrackings.length?existingTrackings:[""],origin:n.origin||"china",shipping_method:n.shipping_method||"aereo",preferred_service_type:n.preferred_service_type||"undecided",description:n.description||"",estimated_packages:n.estimated_packages?String(n.estimated_packages):"",estimated_dispatch_date:n.estimated_dispatch_date||""});
     setShowForm(true);
   };
 
@@ -2649,6 +2649,60 @@ export default function Page(){
       if(!cl&&r.user?.user_metadata){const m=r.user.user_metadata;if(m.first_name){const code=(m.first_name.substring(0,3)+m.last_name.substring(0,3)).toUpperCase();const nc=await dq("clients",{method:"POST",token,body:{auth_user_id:uid,first_name:m.first_name,last_name:m.last_name,whatsapp:m.whatsapp||"",email:r.user.email,tax_condition:m.tax_condition||"ninguna",company_name:m.company_name||null,cuit:m.cuit||null,street:m.street||"",floor_apt:m.floor_apt||null,postal_code:m.postal_code||"",city:m.city||"",province:m.province||"",client_code:code}});cl=Array.isArray(nc)?nc[0]:nc;}}
       setClient(cl);}const ss={token,refresh_token:r.refresh_token,user:r.user};saveSession(ss);setSession(ss);setProfile(prof);}catch{setGErr("Email o contraseña incorrectos. Verificá tus datos e intentá de nuevo.");}setLoading(false);};
   const logout=()=>{clearSession();setSession(null);setClient(null);setProfile(null);setForm(INIT);setStep(0);setView("login");setGErr("");setOkMsg("");};
+
+  // Forgot password — envía email con link de recuperación a través de Supabase
+  const [forgotEmail,setForgotEmail]=useState("");
+  const [forgotSent,setForgotSent]=useState(false);
+  const doForgot=async()=>{
+    const email=(forgotEmail||form.email||"").trim();
+    if(!email||!email.includes("@")){setGErr(t("auth.email"));return;}
+    setLoading(true);setGErr("");
+    try{
+      const redirectTo=(typeof window!=="undefined"?window.location.origin:"https://www.argencargo.com.ar")+"/portal";
+      const r=await ac("recover",{email,gotrue_meta_security:{},data:{redirect_to:redirectTo}});
+      // Supabase devuelve {} en éxito; si hay error trae error_code o msg
+      if(r?.error||r?.msg||r?.error_description){setGErr(r.msg||r.error_description||"Error");setLoading(false);return;}
+      setForgotSent(true);
+    }catch(e){setGErr("Error de conexión");}
+    setLoading(false);
+  };
+
+  // Reset password — al volver del email, supabase pone access_token en hash (#access_token=...&type=recovery)
+  const [resetPwd,setResetPwd]=useState("");
+  const [resetPwd2,setResetPwd2]=useState("");
+  const [resetToken,setResetToken]=useState(null);
+  const [resetDone,setResetDone]=useState(false);
+  useEffect(()=>{
+    if(typeof window==="undefined")return;
+    const h=window.location.hash||"";
+    if(!h.includes("type=recovery"))return;
+    const params=new URLSearchParams(h.slice(1));
+    const tok=params.get("access_token");
+    if(tok){setResetToken(tok);setView("reset");
+      // limpiar hash para que no quede expuesto
+      try{history.replaceState(null,"",window.location.pathname+window.location.search);}catch(e){}
+    }
+  },[]);
+  const doReset=async()=>{
+    if(!resetPwd||resetPwd.length<6){setGErr("Mínimo 6 caracteres");return;}
+    if(resetPwd!==resetPwd2){setGErr(t("auth.reset.passwordsDontMatch"));return;}
+    setLoading(true);setGErr("");
+    try{
+      // Usamos el token de recovery para hacer PATCH /auth/v1/user con la nueva contraseña
+      const r=await fetch(`${SB_URL}/auth/v1/user`,{
+        method:"PUT",
+        headers:{apikey:SB_KEY,Authorization:`Bearer ${resetToken}`,"Content-Type":"application/json"},
+        body:JSON.stringify({password:resetPwd}),
+      }).then(x=>x.json());
+      if(r?.error||r?.msg||r?.error_description){setGErr(r.msg||r.error_description||t("auth.reset.invalid"));setLoading(false);return;}
+      setResetDone(true);
+      // Auto-login con el token recibido (ya es access_token válido)
+      // Pero mejor: hacemos login limpio con email+pwd para tener refresh_token fresco.
+      // Más simple: avisamos y mandamos a login manualmente
+      setTimeout(()=>{setView("login");setResetToken(null);setResetDone(false);setResetPwd("");setResetPwd2("");setOkMsg("Contraseña actualizada. Ingresá con tu nueva contraseña.");},1500);
+    }catch(e){setGErr("Error de conexión");}
+    setLoading(false);
+  };
   if(restoring)return <><ToastStack/><div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG}}><p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p></div></>;
   if(session&&profile)return <><ToastStack/>
     {adminPreview&&<div style={{position:"fixed",top:0,left:0,right:0,zIndex:9999,background:"linear-gradient(90deg, rgba(184,149,106,0.95), rgba(232,208,152,0.95))",color:"#0A1628",padding:"10px 18px",display:"flex",alignItems:"center",justifyContent:"center",gap:12,fontSize:12,fontWeight:700,letterSpacing:"0.04em",boxShadow:"0 2px 12px rgba(0,0,0,0.3)"}}>
@@ -2662,11 +2716,44 @@ export default function Page(){
   if(okMsg)return <><ToastStack/><AuthPage><div style={{textAlign:"center"}}><p style={{fontSize:15,color:"rgba(255,255,255,0.65)",margin:"0 0 24px"}}>{okMsg}</p><PBtn onClick={()=>{setOkMsg("");setView("login");setForm(INIT);setStep(0);}}>{t("auth.login.cta")} →</PBtn></div></AuthPage></>;
   const ST=[t("profile.personalData"),t("profile.shippingData"),t("auth.taxCondition")];
   return <><ToastStack/><AuthPage>
-    {view==="login"?<>
+    {view==="forgot"?<>
+      <div style={{textAlign:"center",marginBottom:20}}>
+        <h2 style={{fontSize:22,fontWeight:600,color:"#fff",margin:"0 0 6px"}}>{t("auth.forgot.title")}</h2>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0,lineHeight:1.5}}>{t("auth.forgot.subtitle")}</p>
+      </div>
+      <ErrBox msg={gErr}/>
+      {forgotSent?<div style={{padding:18,background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:12,textAlign:"center"}}>
+        <p style={{fontSize:32,margin:"0 0 8px"}}>📧</p>
+        <p style={{fontSize:13,color:"#22c55e",margin:0,lineHeight:1.5,fontWeight:600}}>{t("auth.forgot.sent")}</p>
+      </div>:<>
+        <Inp label={t("auth.email")} type="email" value={forgotEmail} onChange={setForgotEmail} placeholder="tuemail@dominio.com" req/>
+        <div style={{marginTop:16}}><PBtn onClick={doForgot} disabled={loading}>{loading?t("auth.forgot.sending"):`${t("auth.forgot.send")} →`}</PBtn></div>
+      </>}
+      <p style={{textAlign:"center",fontSize:13,color:"rgba(255,255,255,0.4)",marginTop:18,marginBottom:0}}>
+        <span onClick={()=>{setView("login");setGErr("");setForgotSent(false);setForgotEmail("");}} style={{color:B.accent,cursor:"pointer",fontWeight:600}}>← {t("auth.forgot.back")}</span>
+      </p>
+    </>:view==="reset"?<>
+      <div style={{textAlign:"center",marginBottom:20}}>
+        <h2 style={{fontSize:22,fontWeight:600,color:"#fff",margin:"0 0 6px"}}>{t("auth.reset.title")}</h2>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0,lineHeight:1.5}}>{t("auth.reset.subtitle")}</p>
+      </div>
+      <ErrBox msg={gErr}/>
+      {resetDone?<div style={{padding:18,background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:12,textAlign:"center"}}>
+        <p style={{fontSize:32,margin:"0 0 8px"}}>✓</p>
+        <p style={{fontSize:13,color:"#22c55e",margin:0,fontWeight:600}}>{t("auth.reset.success")}</p>
+      </div>:<>
+        <Inp label={t("auth.password")} type="password" value={resetPwd} onChange={setResetPwd} placeholder="Mínimo 6 caracteres" req/>
+        <Inp label={t("auth.passwordConfirm")} type="password" value={resetPwd2} onChange={setResetPwd2} placeholder="••••••••" req/>
+        <div style={{marginTop:16}}><PBtn onClick={doReset} disabled={loading}>{loading?t("common.saving"):`${t("auth.reset.save")} →`}</PBtn></div>
+      </>}
+    </>:view==="login"?<>
       <div style={{textAlign:"center",marginBottom:24}}><h2 style={{fontSize:22,fontWeight:600,color:"#fff",margin:"0 0 6px"}}>{t("auth.login.subtitle")}</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:0}}>{t("auth.login.title")}</p></div><ErrBox msg={gErr}/>
       <Inp label={t("auth.email")} type="email" value={form.email} onChange={ch("email")} placeholder="tuemail@dominio.com" req/>
       <Inp label={t("auth.password")} type="password" value={form.password} onChange={ch("password")} placeholder="••••••••" req/>
-      <div style={{marginTop:20}}><PBtn onClick={doLogin} disabled={loading}>{loading?t("auth.login.loading"):`${t("auth.login.button")} →`}</PBtn></div>
+      <div style={{display:"flex",justifyContent:"flex-end",marginTop:6,marginBottom:14}}>
+        <span onClick={()=>{setView("forgot");setGErr("");setForgotEmail(form.email||"");}} style={{fontSize:12,color:B.accent,cursor:"pointer",fontWeight:500}}>{t("auth.forgotPassword")}</span>
+      </div>
+      <PBtn onClick={doLogin} disabled={loading}>{loading?t("auth.login.loading"):`${t("auth.login.button")} →`}</PBtn>
       <p style={{textAlign:"center",fontSize:13,color:"rgba(255,255,255,0.4)",marginTop:20,marginBottom:0}}>{t("auth.noAccount")} <span onClick={()=>{setView("register");setGErr("");}} style={{color:B.accent,cursor:"pointer",fontWeight:600}}>{t("auth.register.cta")}</span></p>
     </>:<>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><h2 style={{fontSize:20,fontWeight:600,color:"#fff",margin:0}}>{t("auth.register.title")}</h2><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{step+1}/3</span></div>
