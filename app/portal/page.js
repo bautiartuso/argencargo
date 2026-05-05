@@ -1921,6 +1921,44 @@ function InternationalPaymentsPage({client}){
 }
 
 // PurchaseNotificationsPage — cliente carga avisos de compras en camino antes de que lleguen al depósito
+// Componente: alerta de tracking duplicado (revisa avisos previos del mismo cliente y ops existentes)
+function TrackingDupAlert({code,excludeNotifId,token}){
+  const [dup,setDup]=useState(null);
+  useEffect(()=>{
+    const c=(code||"").trim();
+    if(c.length<5){setDup(null);return;}
+    let cancelled=false;
+    const timer=setTimeout(async()=>{
+      try{
+        const [notifs,ops]=await Promise.all([
+          dq("purchase_notification_trackings",{token,filters:`?tracking_code=eq.${encodeURIComponent(c)}&select=id,notification_id,purchase_notifications(id,client_id,description,created_at,clients(client_code))&limit=5`}).catch(()=>[]),
+          dq("operations",{token,filters:`?or=(international_tracking.eq.${encodeURIComponent(c)})&select=id,operation_code,status&limit=3`}).catch(()=>[]),
+        ]);
+        if(cancelled)return;
+        const notifsArr=Array.isArray(notifs)?notifs.filter(n=>n.notification_id!==excludeNotifId&&n.purchase_notifications):[];
+        const opsArr=Array.isArray(ops)?ops:[];
+        if(notifsArr.length>0||opsArr.length>0){
+          setDup({notifs:notifsArr,ops:opsArr});
+        }else{
+          setDup(null);
+        }
+      }catch{setDup(null);}
+    },500);
+    return()=>{cancelled=true;clearTimeout(timer);};
+  },[code,excludeNotifId,token]);
+  if(!dup)return null;
+  return <div style={{marginTop:6,padding:"8px 10px",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.3)",borderRadius:6,fontSize:11,color:"#fbbf24",display:"flex",alignItems:"flex-start",gap:6}}>
+    <span style={{fontSize:14}}>⚠️</span>
+    <div>
+      <strong>Tracking duplicado:</strong> ya existe en
+      {dup.notifs.length>0&&` ${dup.notifs.length} aviso${dup.notifs.length>1?"s":""} previo${dup.notifs.length>1?"s":""}`}
+      {dup.notifs.length>0&&dup.ops.length>0&&" y"}
+      {dup.ops.length>0&&` ${dup.ops.length} operación${dup.ops.length>1?"es":""} (${dup.ops.map(o=>o.operation_code).join(", ")})`}
+      . Revisá antes de confirmar.
+    </div>
+  </div>;
+}
+
 function PurchaseNotificationsPage({token,client}){
   const [items,setItems]=useState([]);
   const [lo,setLo]=useState(true);
@@ -2133,9 +2171,12 @@ function PurchaseNotificationsPage({token,client}){
         <div style={{marginBottom:12}}>
           <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>Tracking{form.trackings.length>1?"s":""} de la compra *</label>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {form.trackings.map((t,i)=><div key={i} style={{display:"flex",gap:6,alignItems:"center"}}>
-              <input value={t} onChange={e=>chTracking(i,e.target.value)} placeholder={`Tracking ${i+1}`} style={{flex:1,padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",fontFamily:"monospace"}}/>
-              {form.trackings.length>1&&<button type="button" onClick={()=>rmTrackingRow(i)} style={{padding:"8px 10px",fontSize:14,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>×</button>}
+            {form.trackings.map((t,i)=><div key={i}>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <input value={t} onChange={e=>chTracking(i,e.target.value)} placeholder={`Tracking ${i+1}`} style={{flex:1,padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",fontFamily:"monospace"}}/>
+                {form.trackings.length>1&&<button type="button" onClick={()=>rmTrackingRow(i)} style={{padding:"8px 10px",fontSize:14,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>×</button>}
+              </div>
+              <TrackingDupAlert code={t} excludeNotifId={editing?.id||appendTo?.id} token={token}/>
             </div>)}
           </div>
           <button type="button" onClick={addTrackingRow} style={{marginTop:6,padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Agregar otro tracking</button>
@@ -2196,8 +2237,9 @@ function NotifBell({token}){
   const load=async()=>{const r=await dq("notifications",{token,filters:"?select=*&order=created_at.desc&limit=20"});const list=Array.isArray(r)?r:[];setNotifs(list);setUnread(list.filter(n=>!n.read).length);};
   useEffect(()=>{load();const iv=setInterval(load,60000);return()=>clearInterval(iv);},[token]);
   const markRead=async(id)=>{await dq("notifications",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{read:true}});setNotifs(p=>p.map(n=>n.id===id?{...n,read:true}:n));setUnread(p=>Math.max(0,p-1));};
+  const markAllRead=async()=>{const ids=notifs.filter(n=>!n.read).map(n=>n.id);if(ids.length===0)return;await dq("notifications",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{read:true}});setNotifs(p=>p.map(n=>({...n,read:true})));setUnread(0);};
   return <div style={{position:"relative"}}><button onClick={()=>setOpen(p=>!p)} style={{background:"none",border:"none",cursor:"pointer",padding:4,position:"relative"}}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>{unread>0&&<span style={{position:"absolute",top:0,right:0,width:16,height:16,borderRadius:"50%",background:"#ef4444",color:"#fff",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>{unread}</span>}</button>
-  {open&&<><div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setOpen(false)}/><div style={{position:"fixed",right:16,top:60,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflowY:"auto",background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",zIndex:1000}}><div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:13,fontWeight:700,color:"#fff"}}>Notificaciones</span>{unread>0&&<span style={{fontSize:11,color:IC}}>{unread} nuevas</span>}</div>{notifs.length===0?<p style={{padding:"20px 16px",fontSize:13,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>Sin notificaciones</p>:notifs.map(n=><div key={n.id} onClick={()=>!n.read&&markRead(n.id)} style={{padding:"10px 16px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:n.read?"default":"pointer",background:n.read?"transparent":"rgba(184,149,106,0.06)"}}><p style={{fontSize:12,fontWeight:n.read?400:600,color:n.read?"rgba(255,255,255,0.5)":"#fff",margin:0}}>{n.title||"Notificación"}</p>{n.body&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{n.body}</p>}<p style={{fontSize:10,color:"rgba(255,255,255,0.25)",margin:"4px 0 0"}}>{formatDate(n.created_at)}</p></div>)}</div></>}
+  {open&&<><div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setOpen(false)}/><div style={{position:"fixed",right:16,top:60,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflowY:"auto",background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",zIndex:1000}}><div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:"#fff"}}>Notificaciones</span>{unread>0&&<button onClick={markAllRead} style={{fontSize:10,color:IC,background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:5,padding:"3px 8px",cursor:"pointer",fontWeight:700}}>Marcar todas leídas</button>}</div>{notifs.length===0?<p style={{padding:"20px 16px",fontSize:13,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>Sin notificaciones</p>:notifs.map(n=><div key={n.id} onClick={()=>!n.read&&markRead(n.id)} style={{padding:"10px 16px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:n.read?"default":"pointer",background:n.read?"transparent":"rgba(184,149,106,0.06)"}}><p style={{fontSize:12,fontWeight:n.read?400:600,color:n.read?"rgba(255,255,255,0.5)":"#fff",margin:0}}>{n.title||"Notificación"}</p>{n.body&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{n.body}</p>}<p style={{fontSize:10,color:"rgba(255,255,255,0.25)",margin:"4px 0 0"}}>{formatDate(n.created_at)}</p></div>)}</div></>}
   </div>;
 }
 

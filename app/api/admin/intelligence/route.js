@@ -1,7 +1,7 @@
 // /api/admin/intelligence?mode=client&clientId=UUID  -> análisis 360 del cliente
 // /api/admin/intelligence?mode=trends&months=6       -> tendencias globales mercadería
 // Combina #10 Importaciones similares + #11 Predicción próxima importación + #13 Tendencias mercadería
-import { callClaudeText } from "../../../../lib/anthropic";
+// 100% determinístico — no consume API de IA
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB = process.env.SUPABASE_SERVICE_ROLE;
@@ -150,32 +150,23 @@ export async function GET(req) {
   const byChannel = topByKey(opsArr, "channel", 5);
   const byOrigin = topByKey(opsArr, "origin", 5);
 
-  // Resumen narrativo via Claude (opcional, sólo si hay >= 2 ops)
+  // Resumen narrativo determinístico (sin IA) — bullets generados por reglas
   let narrative = null;
-  if (opsArr.length >= 2 && process.env.ANTHROPIC_API_KEY) {
-    try {
-      const summary = {
-        cliente: `${cl.first_name} ${cl.last_name} (${cl.client_code}, tier ${cl.tier || "standard"})`,
-        ops_total: opsArr.length,
-        ops_cerradas: closed.length,
-        ticket_promedio_usd: Math.round(avgTicket),
-        canales_preferidos: byChannel.slice(0, 3).map(c => c.key),
-        origenes: byOrigin.slice(0, 3).map(o => o.key),
-        productos_repetidos: topItems.slice(0, 5).map(t => t.description),
-        ncm_repetidos: ncmStats.slice(0, 5).map(n => n.key),
-        cadencia_dias: prediction?.median_interval_days,
-        dias_desde_ultima: daysSinceLast,
-        proxima_estimada: prediction?.next_estimated_date,
-      };
-      const out = await callClaudeText({
-        system: "Sos un analista de datos de Argencargo (logística e importación). Generás resúmenes ejecutivos breves y accionables sobre clientes para ayudar al equipo de ventas. Tono profesional, en español rioplatense, máximo 4 bullets concisos.",
-        user: `Analizá este cliente y devolveme: 1) patrón de compra (qué importa, con qué frecuencia, por qué canal), 2) momento óptimo para contactarlo, 3) oportunidad de upsell concreta, 4) un riesgo a vigilar. Datos:\n${JSON.stringify(summary, null, 2)}`,
-        max_tokens: 600,
-      });
-      narrative = out;
-    } catch (e) {
-      narrative = null;
+  if (opsArr.length >= 2) {
+    const bullets = [];
+    if (prediction?.next_estimated_date) {
+      const daysToNext = Math.round((new Date(prediction.next_estimated_date).getTime() - Date.now()) / 86400000);
+      if (daysToNext < 0) bullets.push(`📅 Está atrasado vs su patrón (debería haber importado hace ${Math.abs(daysToNext)} días). Buen momento para contactarlo.`);
+      else if (daysToNext <= 14) bullets.push(`📅 Próxima importación estimada en ${daysToNext} días — armá presupuesto preventivo.`);
+      else bullets.push(`📅 Próxima importación en ~${daysToNext} días, cadencia ${prediction.median_interval_days} días (confianza ${prediction.confidence}).`);
     }
+    if (byChannel[0]) bullets.push(`📦 Canal preferido: ${byChannel[0].key} (${byChannel[0].count}/${opsArr.length} ops).`);
+    if (topItems[0] && topItems[0].count >= 2) bullets.push(`🔁 Producto recurrente: "${topItems[0].description}" (${topItems[0].count}× · USD ${Math.round(topItems[0].total_fob)}).`);
+    if (avgTicket > 0) bullets.push(`💵 Ticket promedio USD ${Math.round(avgTicket).toLocaleString("en-US")} · ${closed.length} ops cerradas de ${opsArr.length}.`);
+    if (daysSinceLast !== null && prediction?.median_interval_days && daysSinceLast > prediction.median_interval_days * 1.5) {
+      bullets.push(`⚠️ Pasaron ${daysSinceLast} días desde su última op (50% más que su cadencia) — posible churn, contactar ya.`);
+    }
+    narrative = bullets.join("\n");
   }
 
   return j({
