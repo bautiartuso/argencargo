@@ -1654,11 +1654,12 @@ function ServicesPage({client}){
   </div>;
 }
 function AccountPage({token,client,onRestartTutorial}){
+  const {t}=useT();
   const [timeline,setTimeline]=useState([]);
   const [balance,setBalance]=useState(Number(client?.account_balance_usd||0));
   const [pendingOps,setPendingOps]=useState([]);
   const [loading,setLoading]=useState(true);
-  const MOV_LABELS={overpayment:"Pago de más",applied:"Aplicado a op",adjustment:"Ajuste",refund:"Reintegro",debt:"Pago de menos",op_cobro:"Cobro de op",op_anticipo:"Anticipo de op",gpi_cobro:"Gestión pagos internac."};
+  const MOV_LABELS={overpayment:t("acc.movOverpayment"),applied:t("acc.movApplied"),adjustment:t("acc.movAdjustment"),refund:t("acc.movRefund"),debt:t("acc.movDebt"),op_cobro:t("acc.movOpCobro"),op_anticipo:t("acc.movOpAnticipo"),gpi_cobro:t("acc.movGpiCobro")};
   const MOV_COLORS={overpayment:"#22c55e",applied:GOLD_LIGHT,adjustment:"#a78bfa",refund:"#60a5fa",debt:"#ef4444",op_cobro:"#22c55e",op_anticipo:"#60a5fa",gpi_cobro:"#10b981"};
   useEffect(()=>{if(!client?.id){setLoading(false);return;}(async()=>{
     const[m,cl,ops,pm,pg,giOps,giItems,giCliPmts,entregadaOps,entregadaCliPmts,entregadaPmtMgmt]=await Promise.all([
@@ -1726,37 +1727,37 @@ function AccountPage({token,client,onRestartTutorial}){
   return <div>
     <div style={{marginBottom:24,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
       <div>
-        <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Mi cuenta corriente</h2>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",lineHeight:1.5}}>Registro de saldos a favor, descuentos y aplicaciones en tus operaciones.</p>
+        <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{t("acc.title")}</h2>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",lineHeight:1.5}}>{t("acc.subtitle")}</p>
       </div>
-      {onRestartTutorial&&<button onClick={onRestartTutorial} style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:10,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",letterSpacing:"0.03em",display:"inline-flex",alignItems:"center",gap:6}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.15)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(184,149,106,0.08)";}}>🎓 Ver tutorial de nuevo</button>}
+      {onRestartTutorial&&<button onClick={onRestartTutorial} style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:10,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",letterSpacing:"0.03em",display:"inline-flex",alignItems:"center",gap:6}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.15)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(184,149,106,0.08)";}}>🎓 {t("acc.tutorialAgain")}</button>}
     </div>
     {/* Hero balance */}
     <div style={{padding:"26px 30px",background:isCredit?"linear-gradient(135deg, rgba(34,197,94,0.12) 0%, rgba(255,255,255,0.02) 100%)":isDebt?"linear-gradient(135deg, rgba(239,68,68,0.12) 0%, rgba(255,255,255,0.02) 100%)":"rgba(255,255,255,0.025)",border:`1px solid ${isCredit?"rgba(34,197,94,0.4)":isDebt?"rgba(239,68,68,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:16,marginBottom:22,boxShadow:isCredit?"0 0 28px rgba(34,197,94,0.15)":isDebt?"0 0 28px rgba(239,68,68,0.15)":"none",position:"relative",overflow:"hidden"}}>
       {(isCredit||isDebt)&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:isCredit?"linear-gradient(90deg, #22c55e, #10b981)":"linear-gradient(90deg, #ef4444, #dc2626)"}}/>}
-      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{isCredit?"Saldo a favor":isDebt?"Saldo pendiente":"Balance de cuenta"}</p>
+      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{isCredit?t("acc.creditBal"):isDebt?t("acc.pendingBal"):t("acc.balanceLbl")}</p>
       <p style={{fontSize:44,fontWeight:800,color:isCredit?"#22c55e":isDebt?"#ef4444":"#fff",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.03em",lineHeight:1}}>{isCredit?"+":""}USD {balance.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-      {isCredit&&<p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"10px 0 0",lineHeight:1.5}}>Se aplicará automáticamente a tu próxima operación pendiente de cobro.</p>}
-      {isDebt&&<p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"10px 0 0",lineHeight:1.5}}>Este saldo se saldará en tu próxima operación.</p>}
-      {!isCredit&&!isDebt&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"10px 0 0"}}>Sin movimientos pendientes.</p>}
+      {isCredit&&<p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"10px 0 0",lineHeight:1.5}}>{t("acc.creditNote")}</p>}
+      {isDebt&&<p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"10px 0 0",lineHeight:1.5}}>{t("acc.debtNote")}</p>}
+      {!isCredit&&!isDebt&&<p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"10px 0 0"}}>{t("acc.noPending")}</p>}
     </div>
     {/* Pendientes de pago (ops GI activas + ops entregadas con saldo) */}
     {pendingOps.length>0&&<div style={{marginBottom:24}}>
-      <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Pendientes de pago</h3>
+      <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("acc.pendingPayments")}</h3>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         {pendingOps.map(p=>{const isEntregada=p.status==="entregada";return <div key={p.id} style={{background:"linear-gradient(135deg, rgba(251,146,60,0.08) 0%, rgba(255,255,255,0.02) 100%)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:14,padding:"18px 22px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,flexWrap:"wrap",marginBottom:14}}>
             <div style={{flex:1,minWidth:220}}>
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
-                <span style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:999,background:"rgba(251,146,60,0.15)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.4)",letterSpacing:"0.08em",textTransform:"uppercase"}}>{isEntregada?"Lista para retirar":"Pendiente de pago"}</span>
-                {p.isGI&&<span style={{fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`}}>Gestión Integral</span>}
+                <span style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:999,background:"rgba(251,146,60,0.15)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.4)",letterSpacing:"0.08em",textTransform:"uppercase"}}>{isEntregada?t("acc.readyForPickup"):t("acc.pendingPay")}</span>
+                {p.isGI&&<span style={{fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`}}>{t("acc.gi")}</span>}
                 <span style={{fontSize:12,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,color:GOLD_LIGHT,letterSpacing:"0.04em"}}>{p.code}</span>
               </div>
               {p.desc&&<p style={{fontSize:14,fontWeight:600,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>{p.desc}</p>}
-              {isEntregada?<p style={{fontSize:11,color:"#22c55e",margin:0,fontWeight:600}}>✓ Disponible para retirar · Abonar antes de retirar</p>:p.eta?<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:0}}>Entrega estimada · <span style={{color:"#fff",fontWeight:600}}>{fmtDate(p.eta)}</span></p>:null}
+              {isEntregada?<p style={{fontSize:11,color:"#22c55e",margin:0,fontWeight:600}}>✓ {t("acc.availableForPickup")}</p>:p.eta?<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:0}}>{t("acc.estDelivery")} · <span style={{color:"#fff",fontWeight:600}}>{fmtDate(p.eta)}</span></p>:null}
             </div>
             <div style={{textAlign:"right"}}>
-              <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Saldo a abonar</p>
+              <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t("acc.balanceDue")}</p>
               <p style={{fontSize:22,fontWeight:800,color:"#fb923c",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {p.saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
             </div>
           </div>
@@ -1767,18 +1768,18 @@ function AccountPage({token,client,onRestartTutorial}){
             </div>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(255,255,255,0.55)"}}>
-            <span>Pagaste <b style={{color:"#22c55e"}}>USD {p.cobrado.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</b> de USD {p.total.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+            <span dangerouslySetInnerHTML={{__html:t("acc.youPaid",{paid:`<b style="color:#22c55e">USD ${p.cobrado.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</b>`,total:`USD ${p.total.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`})}}/>
             <span style={{fontWeight:700}}>{p.pct.toFixed(0)}%</span>
           </div>
         </div>;})}
       </div>
-      <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"12px 0 0",fontStyle:"italic"}}>El saldo se actualiza automáticamente a medida que registramos tus pagos.</p>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"12px 0 0",fontStyle:"italic"}}>{t("acc.balanceUpdates")}</p>
     </div>}
 
     {/* Historial */}
-    <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Historial de movimientos</h3>
+    <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("acc.history")}</h3>
     {loading?<SkeletonTable rows={4} cols={3} hideHeader/>:timeline.length===0?
-      <EmptyState icon="document" title="Sin movimientos todavía" description="Cuando haya pagos, saldos a favor, descuentos o ajustes en tu cuenta los vas a ver acá."/>
+      <EmptyState icon="document" title={t("acc.emptyTitle")} description={t("acc.emptyDesc")}/>
       :<div style={{display:"flex",flexDirection:"column",gap:2,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
       {timeline.map(t=>{const amt=t.amount;const isPos=amt>0;const color=MOV_COLORS[t.type]||"#fff";const label=MOV_LABELS[t.type]||t.type;return <div key={t.id} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 18px",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
         <div style={{flex:1,minWidth:0}}>
@@ -1795,6 +1796,7 @@ function AccountPage({token,client,onRestartTutorial}){
   </div>;
 }
 function InternationalPaymentsPage({client}){
+  const {t}=useT();
   // WhatsApp de Argencargo para derivar pagos internacionales
   const WA_PHONE="5491125088580";
   const [origin,setOrigin]=useState("");      // "china" | "usa"
@@ -1848,17 +1850,17 @@ function InternationalPaymentsPage({client}){
 
   return <div>
     <div style={{marginBottom:24}}>
-      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Pagos internacionales</h2>
-      <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",lineHeight:1.5}}>Calculamos la tarifa y te pagamos al proveedor en el exterior por vos.</p>
+      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{t("pay.title")}</h2>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",lineHeight:1.5}}>{t("pay.calc")}</p>
     </div>
 
     {/* STEP 1: Origen */}
     <div style={{marginBottom:22}}>
-      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.12em"}}>1 · ¿Dónde está la cuenta del proveedor?</p>
+      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.12em"}}>{t("pay.step1")}</p>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         {[
-          {k:"china",flag:"🇨🇳",label:"China",sub:"Transferencia SWIFT · 3,25% + USD 125 fijo"},
-          {k:"usa",flag:"🇺🇸",label:"Estados Unidos",sub:"Transferencia WIRE · 3,25% + USD 100 fijo"},
+          {k:"china",flag:"🇨🇳",label:t("origin.china"),sub:"SWIFT · 3.25% + USD 125"},
+          {k:"usa",flag:"🇺🇸",label:t("origin.usa"),sub:"WIRE · 3.25% + USD 100"},
         ].map(o=>{const active=origin===o.k;return <div key={o.k} onClick={()=>setOrigin(o.k)} style={{padding:"18px 20px",border:`1px solid ${active?GOLD_DEEP:"rgba(255,255,255,0.08)"}`,borderRadius:14,cursor:"pointer",background:active?"rgba(184,149,106,0.08)":"rgba(255,255,255,0.025)",transition:"all 150ms",position:"relative",overflow:"hidden",boxShadow:active?GOLD_GLOW:"none"}}>
           {active&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT}}/>}
           <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -1874,7 +1876,7 @@ function InternationalPaymentsPage({client}){
 
     {/* STEP 2: Monto */}
     {origin&&<div style={{marginBottom:22}}>
-      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.12em"}}>2 · Importe a transferir al proveedor</p>
+      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.12em"}}>{t("pay.step2")}</p>
       <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14}}>
         <span style={{fontSize:14,fontWeight:700,color:GOLD_LIGHT,letterSpacing:"0.04em"}}>USD</span>
         <input type="text" inputMode="decimal" value={amountStr} onChange={e=>onAmount(e.target.value)} placeholder="0.00" style={{flex:1,background:"transparent",border:"none",outline:"none",color:"#fff",fontSize:24,fontWeight:700,fontVariantNumeric:"tabular-nums",padding:0,letterSpacing:"-0.01em"}}/>
@@ -1883,11 +1885,11 @@ function InternationalPaymentsPage({client}){
 
     {/* STEP 3: Método de pago */}
     {origin&&amount>0&&<div style={{marginBottom:22}}>
-      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.12em"}}>3 · ¿Cómo vas a abonarle a Argencargo?</p>
+      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.12em"}}>{t("pay.step3")}</p>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         {[
-          {k:"cash",label:"Efectivo",sub:"Sin recargo",icon:"💵"},
-          {k:"transfer",label:"Transferencia",sub:"+2,5% recargo",icon:"🏦"},
+          {k:"cash",label:t("pay.cash"),sub:t("pay.cashSub"),icon:"💵"},
+          {k:"transfer",label:t("pay.transfer"),sub:t("pay.transferSub"),icon:"🏦"},
         ].map(o=>{const active=method===o.k;return <div key={o.k} onClick={()=>setMethod(o.k)} style={{padding:"16px 20px",border:`1px solid ${active?GOLD_DEEP:"rgba(255,255,255,0.08)"}`,borderRadius:14,cursor:"pointer",background:active?"rgba(184,149,106,0.08)":"rgba(255,255,255,0.025)",transition:"all 150ms",display:"flex",alignItems:"center",gap:12}}>
           <span style={{fontSize:22,lineHeight:1}}>{o.icon}</span>
           <div>
@@ -1901,33 +1903,33 @@ function InternationalPaymentsPage({client}){
     {/* Resumen + total */}
     {canAdvance&&<div style={{marginBottom:22,padding:"20px 24px",background:"linear-gradient(135deg, rgba(184,149,106,0.1) 0%, rgba(255,255,255,0.02) 100%)",border:`1px solid ${GOLD_DEEP}`,borderRadius:16,boxShadow:GOLD_GLOW,position:"relative",overflow:"hidden"}}>
       <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT}}/>
-      <p style={{fontSize:10,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.14em"}}>Resumen</p>
+      <p style={{fontSize:10,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{t("pay.summary")}</p>
       {[
-        {l:"Importe al proveedor",v:amount},
+        {l:t("pay.amountToSupplier"),v:amount},
         {l:`${wireLabel} (${(pctArgencargo*100).toFixed(2)}%)`,v:commission},
-        {l:"Cargo fijo",v:fixedUsd},
-        ...(pctTransfer>0?[{l:"Recargo transferencia (2,5%)",v:transferSurcharge}]:[]),
+        {l:t("pay.fixedCharge"),v:fixedUsd},
+        ...(pctTransfer>0?[{l:t("pay.transferSurcharge"),v:transferSurcharge}]:[]),
       ].map((r,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13,color:"rgba(255,255,255,0.75)"}}>
         <span>{r.l}</span>
         <span style={{fontVariantNumeric:"tabular-nums"}}>USD {r.v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
       </div>)}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0 2px",borderTop:"1px solid rgba(184,149,106,0.3)",marginTop:8}}>
-        <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.1em"}}>Total a abonar a Argencargo</span>
+        <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("pay.totalToArgencargo")}</span>
         <span style={{fontSize:24,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {total.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
       </div>
     </div>}
 
     {/* CTA Avanzar */}
-    {canAdvance&&!showForm&&<button onClick={()=>setShowForm(true)} style={{padding:"14px 28px",fontSize:14,fontWeight:700,borderRadius:12,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW,letterSpacing:"0.02em"}}>Avanzar →</button>}
+    {canAdvance&&!showForm&&<button onClick={()=>setShowForm(true)} style={{padding:"14px 28px",fontSize:14,fontWeight:700,borderRadius:12,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW,letterSpacing:"0.02em"}}>{t("pay.advance")} →</button>}
 
     {/* STEP 4: Datos del proveedor (libre) */}
     {showForm&&<div style={{marginTop:20,padding:"24px 26px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16}}>
-      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.12em"}}>4 · Datos del proveedor</p>
-      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>Pegá la info que tengas (email del proveedor, datos sueltos, lo que sea). Si preferís, dejalo vacío y nos mandás la foto o captura directamente por WhatsApp — te la vamos a pedir ahí.</p>
-      <textarea value={bankInfo} onChange={e=>setBankInfo(e.target.value)} placeholder={"Beneficiario:\nBanco:\nNº cuenta / IBAN:\nSWIFT / ABA:\nDirección del banco:\n\n(O pegá el email completo, como venga)"} rows={7} style={{width:"100%",padding:"14px 16px",fontSize:13.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",transition:"all 180ms",fontFamily:"inherit",lineHeight:1.55,resize:"vertical"}} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";e.target.style.background="rgba(255,255,255,0.07)";}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";e.target.style.boxShadow="none";e.target.style.background="rgba(255,255,255,0.04)";}}/>
+      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.12em"}}>{t("pay.step4")}</p>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>{t("pay.supplierInfoNote")}</p>
+      <textarea value={bankInfo} onChange={e=>setBankInfo(e.target.value)} placeholder={t("pay.supplierPlaceholder")} rows={7} style={{width:"100%",padding:"14px 16px",fontSize:13.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",transition:"all 180ms",fontFamily:"inherit",lineHeight:1.55,resize:"vertical"}} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";e.target.style.background="rgba(255,255,255,0.07)";}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";e.target.style.boxShadow="none";e.target.style.background="rgba(255,255,255,0.04)";}}/>
       <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap"}}>
-        <a href={`https://wa.me/${WA_PHONE}?text=${buildWAMessage()}`} target="_blank" rel="noopener noreferrer" style={{padding:"13px 24px",fontSize:14,fontWeight:700,borderRadius:10,cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:10,boxShadow:"0 4px 14px rgba(37,211,102,0.25)",letterSpacing:"0.02em"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>Enviar por WhatsApp</a>
-        <button onClick={resetAll} style={{padding:"13px 20px",fontSize:13,fontWeight:600,borderRadius:10,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.02em"}}>Empezar de nuevo</button>
+        <a href={`https://wa.me/${WA_PHONE}?text=${buildWAMessage()}`} target="_blank" rel="noopener noreferrer" style={{padding:"13px 24px",fontSize:14,fontWeight:700,borderRadius:10,cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:10,boxShadow:"0 4px 14px rgba(37,211,102,0.25)",letterSpacing:"0.02em"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>{t("pay.sendWA")}</a>
+        <button onClick={resetAll} style={{padding:"13px 20px",fontSize:13,fontWeight:600,borderRadius:10,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.02em"}}>{t("pay.startOver")}</button>
       </div>
     </div>}
   </div>;
