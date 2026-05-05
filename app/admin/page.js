@@ -2004,7 +2004,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <Btn onClick={applySaldo} small>Aplicar a esta op →</Btn>
         </div>}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
-          <Inp label={`Monto cobrado (${op.collection_currency||"USD"})`} type="number" value={op.collected_amount||op.budget_total} onChange={chOp("collected_amount")} step="0.01"/>
+          {/* Fix bug: NO usar fallback a budget_total en value — confunde porque parece cargado pero el state está en 0.
+             Mostrarlo como placeholder para que el admin sepa el monto sugerido sin inducir error. */}
+          <Inp label={`Monto cobrado (${op.collection_currency||"USD"})`} type="number" value={op.collected_amount} onChange={chOp("collected_amount")} step="0.01" placeholder={Number(op.budget_total)?`${Number(op.budget_total).toFixed(2)} (presupuesto)`:"0.00"}/>
           <Sel label="Método de cobro" value={op.collection_method||"transferencia"} onChange={chOp("collection_method")} options={[{value:"efectivo",label:"Efectivo"},{value:"transferencia",label:"Transferencia"},{value:"cripto",label:"Cripto"}]}/>
           <Sel label="Moneda" value={op.collection_currency||"USD"} onChange={chOp("collection_currency")} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]}/>
         </div>
@@ -2013,11 +2015,45 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           {op.collection_currency==="ARS"&&<Inp label="Tipo de cambio (ARS/USD)" type="number" value={op.collection_exchange_rate} onChange={chOp("collection_exchange_rate")} step="0.01" placeholder="Ej: 1200"/>}
           <Inp label="Fecha de cobro" type="date" value={op.collection_date||""} onChange={chOp("collection_date")}/>
         </div>
-        {/* Aviso de diff (considerando CC aplicado) */}
+        {/* Si hay descuento aplicado, mostrar mini banner con opción de limpiarlo */}
+        {Number(op.discount_applied_usd)>0.01&&<div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px 10px 16px",borderRadius:10,marginBottom:10,position:"relative",overflow:"hidden",background:"linear-gradient(90deg,rgba(167,139,250,0.10),rgba(167,139,250,0.02))",border:"1px solid rgba(167,139,250,0.28)",fontSize:12.5}}>
+          <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:"#a78bfa"}}/>
+          <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(167,139,250,0.18)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#a78bfa",fontSize:13}}>🎟</div>
+          <div style={{flex:1}}>
+            <p style={{margin:0,fontWeight:700,color:"#a78bfa"}}>Descuento intencional aplicado: USD {Number(op.discount_applied_usd).toFixed(2)}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si fue por error, limpiá el descuento y volvé a cobrar correctamente.</p>
+          </div>
+          <button onClick={async()=>{if(!confirm("¿Limpiar el descuento aplicado? Esto NO modifica el monto cobrado, solo elimina el flag de descuento."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{discount_applied_usd:0}});setOp(p=>({...p,discount_applied_usd:0}));flash("Descuento limpiado");}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.10)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar descuento</button>
+        </div>}
+
+        {/* Aviso de diff modernizado — card con icon + título + descripción + acento lateral */}
         {(cobroRaw>0||creditApplied>0)&&budgetTot>0&&(()=>{
-          if(Math.abs(diff)<0.01)return <div style={{padding:"9px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:8,fontSize:12,color:"#22c55e",marginBottom:8,fontWeight:500}}>✓ Monto coincide con el presupuesto{creditApplied>0?` (USD ${cobroUsd.toFixed(2)} cash + USD ${creditApplied.toFixed(2)} saldo CC)`:""}</div>;
-          if(diff>0)return <div style={{padding:"9px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:8,fontSize:12,color:"#22c55e",marginBottom:8}}>Pagó <strong>USD {diff.toFixed(2)} de más</strong>. Al marcar cobrada se registra como saldo a favor.</div>;
-          return <div style={{padding:"9px 14px",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.22)",borderRadius:8,fontSize:12,color:"#fbbf24",marginBottom:8}}>Faltan <strong>USD {Math.abs(diff).toFixed(2)}</strong>. Al marcar cobrada elegís: descuento o deuda.</div>;
+          const baseStyle={display:"flex",alignItems:"center",gap:12,padding:"12px 14px 12px 16px",borderRadius:10,marginBottom:10,position:"relative",overflow:"hidden",fontSize:12.5,lineHeight:1.45};
+          const accent=(c)=><div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:c}}/>;
+          if(Math.abs(diff)<0.01)return <div style={{...baseStyle,background:"linear-gradient(90deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.25)"}}>
+            {accent("#22c55e")}
+            <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(34,197,94,0.18)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#22c55e",fontSize:14,fontWeight:800}}>✓</div>
+            <div style={{flex:1}}>
+              <p style={{margin:0,fontWeight:700,color:"#22c55e"}}>Monto coincide con el presupuesto</p>
+              {creditApplied>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>USD {cobroUsd.toFixed(2)} cash + USD {creditApplied.toFixed(2)} de saldo CC</p>}
+            </div>
+          </div>;
+          if(diff>0)return <div style={{...baseStyle,background:"linear-gradient(90deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.25)"}}>
+            {accent("#22c55e")}
+            <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(34,197,94,0.18)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#22c55e",fontSize:14}}>↑</div>
+            <div style={{flex:1}}>
+              <p style={{margin:0,fontWeight:700,color:"#22c55e"}}>Pagó USD {diff.toFixed(2)} de más</p>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Al marcar cobrada se registra como saldo a favor en CC.</p>
+            </div>
+          </div>;
+          return <div style={{...baseStyle,background:"linear-gradient(90deg,rgba(251,191,36,0.10),rgba(251,191,36,0.02))",border:"1px solid rgba(251,191,36,0.30)"}}>
+            {accent("#fbbf24")}
+            <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(251,191,36,0.18)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#fbbf24",fontSize:14}}>!</div>
+            <div style={{flex:1}}>
+              <p style={{margin:0,fontWeight:700,color:"#fbbf24"}}>Faltan USD {Math.abs(diff).toFixed(2)}</p>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si el monto cargado no es correcto, ajustalo. Si efectivamente cobraste menos, al guardar elegís: descuento intencional o deuda en CC.</p>
+            </div>
+          </div>;
         })()}
         {/* Mini-tabla de cobros parciales — solo si hay >=1 pagos parciales registrados */}
         {clientPayments.length>0&&<div style={{background:"rgba(34,197,94,0.04)",border:"1px solid rgba(34,197,94,0.18)",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
@@ -2043,8 +2079,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <p style={{fontSize:13,fontWeight:700,color:op.is_collected?"#22c55e":"#fff",margin:0,letterSpacing:"0.01em"}}>{op.is_collected?"Operación cobrada":"Marcar como cobrada"}</p>
             <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>{op.is_collected?"La operación está cerrada y figura en el libro de finanzas.":"Activá cuando recibas el pago del cliente."}</p>
           </div>
-          {/* Toggle switch */}
-          <div onClick={()=>chOp("is_collected")(!op.is_collected)} style={{flexShrink:0,width:52,height:28,background:op.is_collected?"linear-gradient(135deg, #22c55e, #10b981)":"rgba(255,255,255,0.1)",borderRadius:999,position:"relative",cursor:"pointer",transition:"all 200ms",boxShadow:op.is_collected?"0 0 12px rgba(34,197,94,0.35), inset 0 1px 0 rgba(255,255,255,0.2)":"inset 0 1px 3px rgba(0,0,0,0.3)"}}>
+          {/* Toggle switch — al activar, auto-fill collected_amount con budget_total si estaba vacío */}
+          <div onClick={()=>{const next=!op.is_collected;setOp(p=>{const upd={...p,is_collected:next};if(next&&(!Number(p.collected_amount)||Number(p.collected_amount)===0)&&Number(p.budget_total)>0){upd.collected_amount=Number(p.budget_total);}if(next&&!p.collection_date){upd.collection_date=new Date().toISOString().slice(0,10);}return upd;});}} style={{flexShrink:0,width:52,height:28,background:op.is_collected?"linear-gradient(135deg, #22c55e, #10b981)":"rgba(255,255,255,0.1)",borderRadius:999,position:"relative",cursor:"pointer",transition:"all 200ms",boxShadow:op.is_collected?"0 0 12px rgba(34,197,94,0.35), inset 0 1px 0 rgba(255,255,255,0.2)":"inset 0 1px 3px rgba(0,0,0,0.3)"}}>
             <div style={{position:"absolute",top:2,left:op.is_collected?26:2,width:24,height:24,borderRadius:"50%",background:"#fff",boxShadow:"0 2px 6px rgba(0,0,0,0.25)",transition:"left 220ms cubic-bezier(0.34, 1.56, 0.64, 1)",display:"flex",alignItems:"center",justifyContent:"center"}}>
               {op.is_collected&&<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
             </div>
