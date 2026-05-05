@@ -8,7 +8,8 @@ import TrackingDuplicateWarning from "../components/TrackingDuplicateWarning";
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 const LOGO=`${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
-const BG="linear-gradient(160deg,#0F1E3D 0%,#152849 50%,#0F1E3D 100%)";
+// Navy Argencargo + radiales sutiles dorado/azul para profundidad
+const BG="radial-gradient(1200px 700px at 85% -5%, rgba(184,149,106,0.12), transparent 55%), radial-gradient(900px 800px at -10% 105%, rgba(74,144,217,0.10), transparent 50%), linear-gradient(165deg,#0A1628 0%,#142849 45%,#0F1E3D 100%)";
 const GOLD="#B8956A", GOLD_LIGHT="#E8D098", GOLD_DEEP="#A68456";
 const IC=GOLD_LIGHT; // Accent alias oro claro
 const GOLD_GRADIENT="linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 100%)";
