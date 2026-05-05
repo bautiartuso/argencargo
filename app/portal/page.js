@@ -180,25 +180,56 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
   const code=client?.client_code||"";
   const stats=[{l:t("home.totalImports"),v:ops.length,c:"#fff"},{l:t("home.inProgress"),v:act.length,c:GOLD_LIGHT},{l:t("home.completed"),v:past.length,c:"#22c55e"},{l:t("home.reports"),v:null,btn:true}];
   const gd=(o)=>{const d=o.description||"";return d.length>60?(t("imports.consolidated")||"CONSOLIDADO"):d.toUpperCase();};
-  const renderOp=(op)=>{const st=SM[op.status]||{l:op.status,c:"#999"};const isA=op.channel?.includes("aereo");const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <div key={op.id} className="ac-hover-card" style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14,transition:"all 200ms cubic-bezier(.4,0,.2,1)"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.22)";e.currentTarget.style.background="rgba(255,255,255,0.035)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:10,flexWrap:"wrap"}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-        <span style={{fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,0.95)",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{op.operation_code}</span>
-        <span style={{width:1,height:14,background:"rgba(255,255,255,0.12)"}}/>
-        {op.service_type==="gestion_integral"&&<span className="ac-gi-pulse" style={{fontSize:10.5,fontWeight:800,padding:"6px 14px",borderRadius:7,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.14em",textTransform:"uppercase",border:`1.5px solid ${GOLD_DEEP}`,boxShadow:`${GOLD_GLOW}, inset 0 1px 0 rgba(255,255,255,0.4)`}}>Gestión Integral</span>}
-        <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,border:`1px solid ${st.c}40`,background:`${st.c}14`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px `:"none"}}/>{t("opStatus."+op.status)}</span>
+  // renderOp con clases .ac-cli-* del mockup (cards alargadas, espaciosas)
+  const renderOp=(op)=>{
+    const isA=op.channel?.includes("aereo");
+    const pillVariant=(()=>{
+      if(["entregada","operacion_cerrada"].includes(op.status))return"good";
+      if(op.status==="en_aduana")return"orange";
+      if(["en_transito","arribo_argentina"].includes(op.status))return"info";
+      if(["en_preparacion","en_deposito_origen"].includes(op.status))return"warn";
+      return"muted";
+    })();
+    const ps={good:{c:"#22c55e",bg:"rgba(34,197,94,0.10)",bd:"rgba(34,197,94,0.4)"},orange:{c:"#fb923c",bg:"rgba(251,146,60,0.10)",bd:"rgba(251,146,60,0.4)"},info:{c:"#60a5fa",bg:"rgba(96,165,250,0.10)",bd:"rgba(96,165,250,0.4)"},warn:{c:"#fbbf24",bg:"rgba(251,191,36,0.10)",bd:"rgba(251,191,36,0.4)"},muted:{c:"#94a3b8",bg:"rgba(148,163,184,0.10)",bd:"rgba(148,163,184,0.4)"}}[pillVariant];
+    const saldoTxt=(()=>{
+      const bt=Number(op.budget_total||0);
+      if(bt<=0)return{txt:t("common.pending"),isPending:true};
+      const pmtTot=Number(pmtsByOp[op.id]||0);
+      const ant=Number(op.total_anticipos||0);
+      const cliPaid=Number(cliPmtsByOp[op.id]||0);
+      const saldo=Math.max(0,bt-cliPaid+Math.max(0,pmtTot-ant));
+      if(saldo<0.01)return{txt:"PAGADO ✓",isPaid:true};
+      return{txt:`USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`};
+    })();
+    return <div key={op.id} className="ac-cli-op-card" onClick={()=>onSelect(op)}>
+    <div className="ac-cli-op-head">
+      <div className="ac-cli-op-head-left">
+        <span className="ac-cli-op-code">{op.operation_code}</span>
+        <span className="ac-cli-pill" style={{color:ps.c,background:ps.bg,borderColor:ps.bd}}>
+          <span className="pdot" style={{background:ps.c,boxShadow:`0 0 6px ${ps.c}`}}/>
+          {t("opStatus."+op.status)}
+        </span>
+        {op.service_type==="gestion_integral"&&<span style={{fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`}}>Gestión Integral</span>}
       </div>
-      {op.eta&&op.status!=="entregada"&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.55)",letterSpacing:"0.02em"}}>ETA · <span style={{color:"#fff",fontWeight:600}}>{formatDate(op.eta)}</span></span>}
+      {op.eta&&op.status!=="entregada"&&<span className="ac-cli-op-eta">ETA · <b>{formatDate(op.eta)}</b></span>}
     </div>
-    <p style={{fontSize:16,fontWeight:600,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>{gd(op)}</p>
-    {op.tier_discount_applied_usd>0&&(()=>{const ti=getTierInfo(op.tier_discount_applied);return <div style={{marginTop:10,marginBottom:4,padding:"10px 14px",background:`linear-gradient(90deg, ${ti.color}22, transparent)`,border:`1px solid ${ti.color}55`,borderRadius:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:16}}>{ti.icon}</span><div style={{flex:1,minWidth:200}}><p style={{fontSize:11,fontWeight:700,color:ti.light,margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("home.tierDiscount",{tier:ti.label})}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:"2px 0 0"}}>{t("home.tierDiscountDesc")}</p></div><span style={{fontSize:14,fontWeight:800,color:ti.light,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>−USD {Number(op.tier_discount_applied_usd).toFixed(2)}</span></div>;})()}
-    <OpProgress status={op.status} isAereo={isA} onActionClick={()=>onSelect(op)} isGI={op.service_type==="gestion_integral"} channel={op.channel} hasItems={(itemsByOp[op.id]||0)>0}/>
-    <div className="op-info" style={{display:"flex",gap:32,alignItems:"center",borderTop:"1px solid rgba(255,255,255,0.028)",paddingTop:14,marginTop:8,flexWrap:"wrap"}}>
-      {op.service_type!=="gestion_integral"&&<div><span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t("imports.origin")}</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"3px 0 0"}}>{t("origin."+(op.origin||"china").toLowerCase())||op.origin||"China"}</p></div>}
-      {op.service_type!=="gestion_integral"&&<div><span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t("imports.channel")}</span><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"3px 0 0"}}>{op.channel?t("channel."+op.channel):"—"}</p></div>}
-      {op.service_type!=="gestion_integral"&&<div style={{flex:1}}><span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t("imports.remaining")}</span><p style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,margin:"3px 0 0",letterSpacing:"-0.01em"}}>{(()=>{const bt=Number(op.budget_total||0);if(bt<=0)return<span style={{color:"rgba(255,255,255,0.5)",fontWeight:500}}>{t("common.pending")}</span>;const pmtTot=Number(pmtsByOp[op.id]||0);const ant=Number(op.total_anticipos||0);const cliPaid=Number(cliPmtsByOp[op.id]||0);const saldo=Math.max(0,bt-cliPaid+Math.max(0,pmtTot-ant));return `USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;})()}</p></div>}
-      {op.service_type==="gestion_integral"&&<div style={{flex:1}}/>}
-      <button onClick={()=>onSelect(op)} style={{fontSize:12,fontWeight:600,color:GOLD_LIGHT,background:"transparent",border:"1px solid rgba(184,149,106,0.25)",borderRadius:8,padding:"8px 16px",cursor:"pointer",letterSpacing:"0.02em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.1)";e.currentTarget.style.borderColor="rgba(184,149,106,0.45)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.borderColor="rgba(184,149,106,0.25)";}}>{t("common.viewDetail")} →</button>
+    <p className="ac-cli-op-desc">{gd(op)}</p>
+    {op.tier_discount_applied_usd>0&&(()=>{const ti=getTierInfo(op.tier_discount_applied);return <div style={{marginBottom:8,padding:"10px 14px",background:`linear-gradient(90deg, ${ti.color}22, transparent)`,border:`1px solid ${ti.color}55`,borderRadius:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:16}}>{ti.icon}</span><div style={{flex:1,minWidth:200}}><p style={{fontSize:11,fontWeight:700,color:ti.light,margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("home.tierDiscount",{tier:ti.label})}</p></div><span style={{fontSize:14,fontWeight:800,color:ti.light,fontVariantNumeric:"tabular-nums"}}>−USD {Number(op.tier_discount_applied_usd).toFixed(2)}</span></div>;})()}
+    <OpProgress status={op.status} isAereo={isA} onActionClick={(e)=>{e?.stopPropagation?.();onSelect(op);}} isGI={op.service_type==="gestion_integral"} channel={op.channel} hasItems={(itemsByOp[op.id]||0)>0}/>
+    <div className="ac-cli-op-foot">
+      {op.service_type!=="gestion_integral"&&<div className="ac-cli-op-foot-item">
+        <span className="l">{t("imports.origin")}</span>
+        <span className="v">{op.origin==="China"?"🇨🇳":op.origin==="USA"?"🇺🇸":op.origin==="España"?"🇪🇸":"🌍"} {t("origin."+(op.origin||"china").toLowerCase())||op.origin||"China"}</span>
+      </div>}
+      {op.service_type!=="gestion_integral"&&<div className="ac-cli-op-foot-item">
+        <span className="l">{t("imports.channel")}</span>
+        <span className="v">{op.channel?t("channel."+op.channel).replace(" Comercial","").replace(" Carga LCL/FCL",""):"—"}</span>
+      </div>}
+      {op.service_type!=="gestion_integral"&&<div className="ac-cli-op-foot-item">
+        <span className="l">{t("imports.remaining")}</span>
+        <span className={`v${saldoTxt.isPaid||saldoTxt.isPending?"":" gold"}`} style={saldoTxt.isPaid?{color:"#22c55e"}:saldoTxt.isPending?{color:"rgba(255,255,255,0.5)",fontWeight:500}:{}}>{saldoTxt.txt}</span>
+      </div>}
+      <button onClick={(e)=>{e.stopPropagation();onSelect(op);}}>{t("common.viewDetail")} →</button>
     </div>
     {op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&!op.consolidation_confirmed&&<div style={{marginTop:14,background:"rgba(251,191,36,0.07)",border:"1px solid rgba(251,191,36,0.22)",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <span style={{fontSize:12.5,fontWeight:500,color:"#fbbf24"}}>{t("home.consolidation.q")}</span>
@@ -216,7 +247,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
       <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>{t("home.subtitle")} · <strong style={{color:GOLD_LIGHT}}>{new Date().toLocaleDateString("es-AR",{weekday:"long",day:"2-digit",month:"long"})}</strong></p>
     </div>
 
-    {/* Hero grid IDÉNTICO al mockup: Tier (1.4fr) + Saldo a favor (1fr) + En curso (1fr) */}
+    {/* Hero grid — usa clases del mockup (.ac-cli-*) sin inline styles */}
     {(()=>{
       const tier=client?.tier||"standard";
       const ti=getTierInfo(tier);
@@ -226,57 +257,56 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
       const progressPct=nextTier?Math.min(100,Math.max(0,((lifetime-ti.min)/(nextTier.min-ti.min))*100)):100;
       const isStandard=tier==="standard";
       const ccBalance=Number(client?.account_balance_usd||0);
-      return <div className="ac-hero-grid" style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr",gap:14,marginBottom:24}}>
+      const nextTierIcon=Object.values(TIERS).find(t=>t.min===ti.next)?.icon||"";
+      return <div className="ac-cli-hero-grid">
         {/* TIER HERO CARD */}
-        <div style={{background:isStandard?"rgba(255,255,255,0.025)":"linear-gradient(135deg,rgba(184,149,106,0.10) 0%,rgba(184,149,106,0.02) 60%)",border:`1px solid ${isStandard?"rgba(255,255,255,0.06)":"rgba(184,149,106,0.30)"}`,borderRadius:16,padding:"22px 26px",position:"relative",overflow:"hidden",boxShadow:isStandard?"none":"0 0 32px rgba(184,149,106,0.06)"}}>
-          {!isStandard&&<div style={{position:"absolute",top:-50,right:-50,width:200,height:200,background:"radial-gradient(circle,rgba(232,208,152,0.16) 0%,transparent 70%)",pointerEvents:"none"}}/>}
-          <div style={{position:"relative",display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-            <span style={{fontSize:28,lineHeight:1}}>{ti.icon}</span>
+        <div className={`ac-cli-hero-card${isStandard?" standard":""}`}>
+          {!isStandard&&<div className="glow"/>}
+          <div className="ac-cli-hero-tier">
+            <span className="icon">{ti.icon}</span>
             <div>
-              <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:0,textTransform:"uppercase",letterSpacing:"0.14em"}}>Tu categoría</p>
-              <p style={{fontSize:24,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.025em",lineHeight:1.05}}>{ti.label}</p>
+              <p className="label">Tu categoría</p>
+              <p className="name">{ti.label}</p>
             </div>
           </div>
-          {!isStandard&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.65)",margin:"6px 0 0",position:"relative"}}>Tenés <b style={{color:GOLD_LIGHT}}>+{ti.bonus}% bonus</b> en puntos{ti.discount?<> y <b style={{color:GOLD_LIGHT}}>{ti.discount}% off</b> en flete</>:""}</p>}
-          {nextTier?<div style={{marginTop:14,position:"relative"}}>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(255,255,255,0.6)",marginBottom:6}}>
-              <span>En <b style={{color:GOLD_LIGHT}}>{ptsToNext} pts</b> llegás a <b style={{color:GOLD_LIGHT}}>{nextTier.label}</b> {Object.values(TIERS).find(t=>t.min===ti.next)?.icon||""}</span>
+          {!isStandard&&<p className="desc">Tenés <b>+{ti.bonus}% bonus</b> en puntos{ti.discount?<> y <b>{ti.discount}% off</b> en flete</>:""}</p>}
+          {nextTier?<div className="bar-wrap">
+            <div className="bar-info">
+              <span>En <b>{ptsToNext} pts</b> llegás a <b>{nextTier.label}</b> {nextTierIcon}</span>
               <span style={{color:"rgba(255,255,255,0.4)"}}>{Math.round(progressPct)}%</span>
             </div>
-            <div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:6,overflow:"hidden"}}>
-              <div style={{width:`${progressPct}%`,height:"100%",background:GOLD_GRADIENT,borderRadius:6,boxShadow:"0 0 14px rgba(184,149,106,0.4)",transition:"width 400ms"}}/>
-            </div>
-          </div>:<p style={{marginTop:14,fontSize:11,color:GOLD_LIGHT,fontWeight:600,letterSpacing:"0.04em",position:"relative"}}>★ Nivel máximo alcanzado</p>}
+            <div className="bar-track"><div className="bar-fill" style={{width:`${progressPct}%`}}/></div>
+          </div>:<p className="max">★ Nivel máximo alcanzado</p>}
         </div>
 
         {/* SALDO A FAVOR */}
-        <div className="ac-hover-card" style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 20px",display:"flex",flexDirection:"column",justifyContent:"space-between",minHeight:130}}>
+        <div className="ac-cli-stat-card">
           <div>
-            <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.1em",display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:14,opacity:0.7}}>💳</span>Saldo a favor</p>
-            <p style={{fontSize:36,fontWeight:800,margin:"8px 0 0",letterSpacing:"-0.03em",lineHeight:1,fontVariantNumeric:"tabular-nums",background:"linear-gradient(135deg,#fff 30%,#E8D098 95%)",WebkitBackgroundClip:"text",backgroundClip:"text",WebkitTextFillColor:"transparent"}}>USD {Math.abs(ccBalance).toLocaleString("en-US",{maximumFractionDigits:0})}</p>
+            <p className="label"><span className="ico">💳</span>Saldo a favor</p>
+            <p className="value gold">USD {Math.abs(ccBalance).toLocaleString("en-US",{maximumFractionDigits:0})}</p>
           </div>
-          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"8px 0 0"}}>{ccBalance>0?"Se aplica a tu próxima op":ccBalance<0?"Saldo pendiente de pago":"Sin movimientos pendientes"}</p>
+          <p className="sub">{ccBalance>0?"Se aplica a tu próxima op":ccBalance<0?"Saldo pendiente de pago":"Sin movimientos pendientes"}</p>
         </div>
 
         {/* EN CURSO */}
-        <div className="ac-hover-card" style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 20px",display:"flex",flexDirection:"column",justifyContent:"space-between",minHeight:130}}>
+        <div className="ac-cli-stat-card">
           <div>
-            <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.1em",display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:14,opacity:0.7}}>📦</span>En curso</p>
-            <p style={{fontSize:36,fontWeight:800,color:"#fff",margin:"8px 0 0",letterSpacing:"-0.03em",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{act.length}</p>
+            <p className="label"><span className="ico">📦</span>En curso</p>
+            <p className="value">{act.length}</p>
           </div>
-          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"8px 0 0"}}>de <b style={{color:"#fff"}}>{ops.length}</b> totales · {past.length} cerradas</p>
+          <p className="sub">de <b>{ops.length}</b> totales · {past.length} cerradas</p>
         </div>
       </div>;
     })()}
 
-    {/* Sección "En curso" con header y card list */}
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"28px 0 14px"}}>
-      <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.72)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>{t("home.inProgress")} <span style={{color:GOLD_LIGHT,fontWeight:600}}>({act.length})</span></h3>
-      {past.length>0&&<button onClick={()=>{const el=document.getElementById("ac-historico");if(el)el.scrollIntoView({behavior:"smooth"});}} style={{padding:"6px 12px",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:7,background:"transparent",cursor:"pointer"}}>Ver histórico →</button>}
+    {/* Sección "En curso" con header */}
+    <div className="ac-cli-section-h">
+      <h2>{t("home.inProgress")} <span className="count">({act.length})</span></h2>
+      {past.length>0&&<button onClick={()=>{const el=document.getElementById("ac-historico");if(el)el.scrollIntoView({behavior:"smooth"});}}>Ver histórico →</button>}
     </div>
     {act.length>0?act.map(renderOp):<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"2rem 0",fontStyle:"italic"}}>No tenés operaciones en curso.</p>}
 
-    {past.length>0&&<><h3 id="ac-historico" style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"32px 0 14px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t("home.completed")} <span style={{color:GOLD_LIGHT,fontWeight:600}}>({past.length})</span></h3>{past.map(renderOp)}</>}
+    {past.length>0&&<><div className="ac-cli-section-h" id="ac-historico"><h2>{t("home.completed")} <span className="count">({past.length})</span></h2></div>{past.map(renderOp)}</>}
     {ops.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>No tenés operaciones todavía.</p>}
   </div>;
 }
