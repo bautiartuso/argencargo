@@ -138,7 +138,8 @@ function AnimNum({value,format=v=>v,duration=700}){
     prev.current=to;
     return ()=>cancelAnimationFrame(raf);
   },[value,duration]);
-  return <span style={{fontVariantNumeric:"tabular-nums"}}>{format(display)}</span>;
+  // No envolvemos en span con styles para que herede gradient text del padre (-webkit-text-fill-color)
+  return <>{format(display)}</>;
 }
 
 function NotifBell({token}){
@@ -7082,28 +7083,27 @@ function AdminDashboard({session,onLogout}){
   const token=session.token;
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
   // Nav agrupado por secciones (estilo Linear/Notion). Cada item: {key, label, p (svg paths)}
+  // Estructura definida por el usuario. Inteligencia / Tareas / Tickets quedan como rutas
+  // accesibles vía URL pero NO aparecen en sidebar.
   const navSections=[
-    {section:"Operación",items:[
+    {section:"Operativa",items:[
       {key:"today",label:"Hoy",p:["M12 2L3 7l9 5 9-5-9-5z","M3 17l9 5 9-5","M3 12l9 5 9-5"]},
       {key:"operations",label:"Operaciones",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},
       {key:"agents",label:"Agentes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},
-      {key:"tasks",label:"Tareas",p:["M9 11l3 3 8-8","M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"]},
       {key:"purchase_notifs",label:"Avisos de compra",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},
-    ]},
-    {section:"Análisis",items:[
-      {key:"dashboard",label:"Dashboard",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},
-      {key:"intel",label:"Inteligencia",p:["M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"]},
-      {key:"tickets",label:"Tickets",p:["M21 13V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v5a3 3 0 0 1 0 6v-1a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1a3 3 0 0 1 0-6z"]},
-    ]},
-    {section:"Comunicación",items:[
-      {key:"comms",label:"Comunicaciones",p:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},
       {key:"quotes",label:"Cotizaciones",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},
     ]},
-    {section:"Datos",items:[
-      {key:"clients",label:"Clientes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},
-      {key:"finance",label:"Finanzas",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},
+    {section:"Finanzas",items:[
+      {key:"dashboard",label:"Dashboard",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},
+      {key:"finance",label:"Libro diario",p:["M4 19.5A2.5 2.5 0 0 1 6.5 17H20","M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"]},
       {key:"tariffs",label:"Tarifas",p:["M18 20V10","M12 20V4","M6 20v-6"]},
-      {key:"settings",label:"Configuración",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]},
+    ]},
+    {section:"Comercial",items:[
+      {key:"comms",label:"Comunicaciones",p:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},
+      {key:"clients",label:"Clientes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},
+    ]},
+    {section:"Configuración",items:[
+      {key:"settings",label:"Ajustes",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]},
     ]},
   ];
   // Backward-compat: si en algún lado se referencia 'nav' como flat list

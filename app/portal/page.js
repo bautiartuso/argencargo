@@ -73,18 +73,19 @@ const OS=[{k:"proveedor",l:"Proveedor"},{k:"warehouse",l:"Depósito"},{k:"docume
 const S2S={pendiente:0,en_deposito_origen:1,en_preparacion:2,en_transito:3,arribo_argentina:4,en_aduana:5,entregada:6,operacion_cerrada:7,cancelada:-1};
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},entregada:{l:"LISTA PARA RETIRAR",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
 const CM={aereo_blanco:"Aéreo Courier Comercial",aereo_negro:"Aéreo Integral AC",maritimo_blanco:"Marítimo Carga LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
-// Nav portal cliente agrupado por secciones (estilo Linear/Notion). Sentence case (no UPPERCASE).
+// Nav portal cliente — estructura definida por el usuario, sentence case
 const CN_SECTIONS=[
-  {section:"Principal",items:[
+  {section:"Operaciones",items:[
     {key:"imports",tkey:"nav.imports",label:"Importaciones",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"]},
-    {key:"purchases",tkey:"nav.purchases",label:"Compras en camino",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},
+    {key:"purchases",tkey:"nav.purchases",label:"Avisos de compra",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},
   ]},
   {section:"Herramientas",items:[
     {key:"calculator",tkey:"nav.calculator",label:"Calculadora",p:["M4 4h16v16H4z","M4 8h16","M8 4v16"]},
     {key:"quotes",tkey:"nav.quotes",label:"Cotizaciones",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8","M10 9H8"]},
+  ]},
+  {section:"Servicios",items:[
     {key:"payments",tkey:"nav.payments",label:"Pagos internacionales",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},
-    {key:"services",tkey:"nav.services",label:"Servicios",p:["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"]},
-    {key:"support",tkey:"nav.support",label:"Soporte",p:["M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"]},
+    {key:"services",tkey:"nav.services",label:"Soluciones",p:["M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"]},
   ]},
   {section:"Mi cuenta",items:[
     {key:"account",tkey:"nav.account",label:"Cuenta corriente",p:["M3 3h18v18H3z","M3 9h18","M9 21V9"]},
@@ -209,66 +210,73 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     </div>}
   </div>;};
   return <div>
-    {/* Hero card — Welcome + Tier + Progress + Quick stats */}
-    <div style={{marginBottom:24}}>
-      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 2px",letterSpacing:"-0.02em"}}>{t("home.hello",{name:client?.first_name||t("common.client")})}</h2>
-      <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"0 0 18px"}}>{t("home.subtitle")}</p>
-      {(()=>{
-        const tier=client?.tier||"standard";
-        const ti=getTierInfo(tier);
-        const lifetime=Number(client?.lifetime_points_earned||0);
-        const balance=Number(client?.points_balance||0);
-        const pendingVouchers=Number(client?._pending_vouchers_count||0);
-        const nextTier=ti.next?Object.values(TIERS).find(t=>t.min===ti.next):null;
-        const ptsToNext=nextTier?Math.max(0,nextTier.min-lifetime):0;
-        const progressPct=nextTier?Math.min(100,Math.max(0,((lifetime-ti.min)/(nextTier.min-ti.min))*100)):100;
-        const nextOp=act.filter(o=>o.eta&&o.status!=="entregada").sort((a,b)=>String(a.eta||"").localeCompare(String(b.eta||"")))[0];
-        const isStandard=tier==="standard";
-        return <div className="ac-hero-grid" style={{display:"grid",gridTemplateColumns:"1.3fr 1fr",gap:12}}>
-          {/* Tier card (principal) */}
-          <div style={{background:isStandard?"rgba(255,255,255,0.025)":`linear-gradient(135deg, ${ti.color}22 0%, rgba(255,255,255,0.02) 100%)`,border:`1px solid ${isStandard?"rgba(255,255,255,0.06)":ti.color+"55"}`,borderRadius:16,padding:"18px 22px",position:"relative",overflow:"hidden",boxShadow:isStandard?"none":ti.glow}}>
-            {!isStandard&&<div style={{position:"absolute",top:-30,right:-30,width:150,height:150,background:`radial-gradient(circle, ${ti.color}30 0%, transparent 70%)`,pointerEvents:"none"}}/>}
-            <div style={{position:"relative"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
-                <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.14em"}}>Tu categoría</p>
-                {/* Balance pts + vouchers como mini pills a la derecha */}
-                <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-                  {pendingVouchers>0&&<span onClick={()=>typeof window!=="undefined"&&window.dispatchEvent(new CustomEvent("ac_nav",{detail:"points"}))} title={`${pendingVouchers} descuento${pendingVouchers>1?"s":""} por categoría pendiente${pendingVouchers>1?"s":""}`} style={{fontSize:9.5,fontWeight:700,padding:"3px 8px",borderRadius:999,background:"rgba(184,149,106,0.14)",color:GOLD_LIGHT,border:"1px solid rgba(184,149,106,0.35)",letterSpacing:"0.04em",cursor:"pointer",textTransform:"uppercase"}}>★ {pendingVouchers} dcto{pendingVouchers>1?"s":""}</span>}
-                  {balance>0&&<span onClick={()=>typeof window!=="undefined"&&window.dispatchEvent(new CustomEvent("ac_nav",{detail:"points"}))} title="Balance de puntos — click para ver catálogo" style={{fontSize:9.5,fontWeight:700,padding:"3px 8px",borderRadius:999,background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.75)",border:"1px solid rgba(255,255,255,0.1)",letterSpacing:"0.04em",cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>{balance.toLocaleString("es-AR")} pts</span>}
-                </div>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginTop:8}}>
-                <span style={{fontSize:26,lineHeight:1}}>{ti.icon}</span>
-                <div>
-                  <p style={{fontSize:22,fontWeight:800,color:"#fff",margin:0,lineHeight:1,letterSpacing:"-0.02em"}}>{ti.label}</p>
-                  {!isStandard&&<p style={{fontSize:10,color:ti.light,margin:"3px 0 0",fontWeight:600,letterSpacing:"0.04em"}}>+{ti.bonus}% bonus puntos</p>}
-                </div>
-              </div>
-              {nextTier&&<div style={{marginTop:12}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
-                  <span style={{fontSize:10,color:"rgba(255,255,255,0.55)"}}><strong style={{color:ti.light,fontVariantNumeric:"tabular-nums"}}>{ptsToNext}</strong> para {nextTier.label}</span>
-                  <span style={{fontSize:10,color:"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{Math.round(progressPct)}%</span>
-                </div>
-                <div style={{height:5,background:"rgba(255,255,255,0.06)",borderRadius:999,overflow:"hidden"}}>
-                  <div style={{width:`${progressPct}%`,height:"100%",background:ti.gradient,borderRadius:999,transition:"width 400ms"}}/>
-                </div>
-              </div>}
-              {!nextTier&&<p style={{marginTop:12,fontSize:10,color:ti.light,fontWeight:600,letterSpacing:"0.04em"}}>★ Nivel máximo alcanzado</p>}
-            </div>
-          </div>
-          {/* Próxima ETA */}
-          <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"18px 22px"}}>
-            <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.14em"}}>Próxima llegada</p>
-            {nextOp?(()=>{const s=String(nextOp.eta).slice(0,10);const m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);const MN=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];const shortDate=m?`${Number(m[3])} ${MN[Number(m[2])-1]} ${m[1]}`:formatDate(nextOp.eta);return <><p style={{fontSize:22,fontWeight:800,color:"#fff",margin:"8px 0 3px",lineHeight:1.1,letterSpacing:"-0.02em"}}>{shortDate}</p><p style={{fontSize:11,color:GOLD_LIGHT,margin:0,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.04em"}}>{nextOp.operation_code}</p></>;})():<><p style={{fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"8px 0 3px",lineHeight:1}}>—</p><p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:0}}>Sin ETA pendiente</p></>}
-          </div>
-        </div>;
-      })()}
+    {/* Header compacto con saludo */}
+    <div style={{marginBottom:18}}>
+      <h2 style={{fontSize:14,fontWeight:600,color:"rgba(255,255,255,0.72)",margin:0,letterSpacing:"-0.005em"}}>👋 <strong style={{color:"#fff",fontWeight:700}}>{t("home.hello",{name:client?.first_name||t("common.client")})}</strong></h2>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>{t("home.subtitle")} · <strong style={{color:GOLD_LIGHT}}>{new Date().toLocaleDateString("es-AR",{weekday:"long",day:"2-digit",month:"long"})}</strong></p>
     </div>
 
-    <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Mis importaciones</h3>
-    <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{stats.map((s,i)=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px",transition:"all 180ms",cursor:s.btn?"pointer":"default"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.25)";e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}><p style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.5)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{s.l}</p>{s.btn?<p style={{fontSize:13,fontWeight:600,color:GOLD_LIGHT,margin:0,display:"inline-flex",alignItems:"center",gap:4}}>Ver reporte <span style={{fontSize:14}}>→</span></p>:<p style={{fontSize:32,fontWeight:700,color:s.c,margin:0,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{s.v}</p>}</div>)}</div>
-    {act.length>0&&act.map(renderOp)}
-    {past.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"24px 0 12px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t("home.completed")} ({past.length})</h3>{past.map(renderOp)}</>}
+    {/* Hero grid IDÉNTICO al mockup: Tier (1.4fr) + Saldo a favor (1fr) + En curso (1fr) */}
+    {(()=>{
+      const tier=client?.tier||"standard";
+      const ti=getTierInfo(tier);
+      const lifetime=Number(client?.lifetime_points_earned||0);
+      const nextTier=ti.next?Object.values(TIERS).find(t=>t.min===ti.next):null;
+      const ptsToNext=nextTier?Math.max(0,nextTier.min-lifetime):0;
+      const progressPct=nextTier?Math.min(100,Math.max(0,((lifetime-ti.min)/(nextTier.min-ti.min))*100)):100;
+      const isStandard=tier==="standard";
+      const ccBalance=Number(client?.account_balance_usd||0);
+      return <div className="ac-hero-grid" style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr",gap:14,marginBottom:24}}>
+        {/* TIER HERO CARD */}
+        <div style={{background:isStandard?"rgba(255,255,255,0.025)":"linear-gradient(135deg,rgba(184,149,106,0.10) 0%,rgba(184,149,106,0.02) 60%)",border:`1px solid ${isStandard?"rgba(255,255,255,0.06)":"rgba(184,149,106,0.30)"}`,borderRadius:16,padding:"22px 26px",position:"relative",overflow:"hidden",boxShadow:isStandard?"none":"0 0 32px rgba(184,149,106,0.06)"}}>
+          {!isStandard&&<div style={{position:"absolute",top:-50,right:-50,width:200,height:200,background:"radial-gradient(circle,rgba(232,208,152,0.16) 0%,transparent 70%)",pointerEvents:"none"}}/>}
+          <div style={{position:"relative",display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+            <span style={{fontSize:28,lineHeight:1}}>{ti.icon}</span>
+            <div>
+              <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:0,textTransform:"uppercase",letterSpacing:"0.14em"}}>Tu categoría</p>
+              <p style={{fontSize:24,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.025em",lineHeight:1.05}}>{ti.label}</p>
+            </div>
+          </div>
+          {!isStandard&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.65)",margin:"6px 0 0",position:"relative"}}>Tenés <b style={{color:GOLD_LIGHT}}>+{ti.bonus}% bonus</b> en puntos{ti.discount?<> y <b style={{color:GOLD_LIGHT}}>{ti.discount}% off</b> en flete</>:""}</p>}
+          {nextTier?<div style={{marginTop:14,position:"relative"}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(255,255,255,0.6)",marginBottom:6}}>
+              <span>En <b style={{color:GOLD_LIGHT}}>{ptsToNext} pts</b> llegás a <b style={{color:GOLD_LIGHT}}>{nextTier.label}</b> {Object.values(TIERS).find(t=>t.min===ti.next)?.icon||""}</span>
+              <span style={{color:"rgba(255,255,255,0.4)"}}>{Math.round(progressPct)}%</span>
+            </div>
+            <div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:6,overflow:"hidden"}}>
+              <div style={{width:`${progressPct}%`,height:"100%",background:GOLD_GRADIENT,borderRadius:6,boxShadow:"0 0 14px rgba(184,149,106,0.4)",transition:"width 400ms"}}/>
+            </div>
+          </div>:<p style={{marginTop:14,fontSize:11,color:GOLD_LIGHT,fontWeight:600,letterSpacing:"0.04em",position:"relative"}}>★ Nivel máximo alcanzado</p>}
+        </div>
+
+        {/* SALDO A FAVOR */}
+        <div className="ac-hover-card" style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 20px",display:"flex",flexDirection:"column",justifyContent:"space-between",minHeight:130}}>
+          <div>
+            <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.1em",display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:14,opacity:0.7}}>💳</span>Saldo a favor</p>
+            <p style={{fontSize:36,fontWeight:800,margin:"8px 0 0",letterSpacing:"-0.03em",lineHeight:1,fontVariantNumeric:"tabular-nums",background:"linear-gradient(135deg,#fff 30%,#E8D098 95%)",WebkitBackgroundClip:"text",backgroundClip:"text",WebkitTextFillColor:"transparent"}}>USD {Math.abs(ccBalance).toLocaleString("en-US",{maximumFractionDigits:0})}</p>
+          </div>
+          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"8px 0 0"}}>{ccBalance>0?"Se aplica a tu próxima op":ccBalance<0?"Saldo pendiente de pago":"Sin movimientos pendientes"}</p>
+        </div>
+
+        {/* EN CURSO */}
+        <div className="ac-hover-card" style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 20px",display:"flex",flexDirection:"column",justifyContent:"space-between",minHeight:130}}>
+          <div>
+            <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.1em",display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:14,opacity:0.7}}>📦</span>En curso</p>
+            <p style={{fontSize:36,fontWeight:800,color:"#fff",margin:"8px 0 0",letterSpacing:"-0.03em",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{act.length}</p>
+          </div>
+          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"8px 0 0"}}>de <b style={{color:"#fff"}}>{ops.length}</b> totales · {past.length} cerradas</p>
+        </div>
+      </div>;
+    })()}
+
+    {/* Sección "En curso" con header y card list */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"28px 0 14px"}}>
+      <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.72)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>{t("home.inProgress")} <span style={{color:GOLD_LIGHT,fontWeight:600}}>({act.length})</span></h3>
+      {past.length>0&&<button onClick={()=>{const el=document.getElementById("ac-historico");if(el)el.scrollIntoView({behavior:"smooth"});}} style={{padding:"6px 12px",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:7,background:"transparent",cursor:"pointer"}}>Ver histórico →</button>}
+    </div>
+    {act.length>0?act.map(renderOp):<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"2rem 0",fontStyle:"italic"}}>No tenés operaciones en curso.</p>}
+
+    {past.length>0&&<><h3 id="ac-historico" style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"32px 0 14px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t("home.completed")} <span style={{color:GOLD_LIGHT,fontWeight:600}}>({past.length})</span></h3>{past.map(renderOp)}</>}
     {ops.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>No tenés operaciones todavía.</p>}
   </div>;
 }
