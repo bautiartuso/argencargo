@@ -13,6 +13,15 @@ export default function Landing(){
   const [scrolled,setScrolled]=useState(false);
   const [faq,setFaq]=useState(null);
   const [reviews,setReviews]=useState(null);
+  // Si el cliente llega al root con hash de Supabase (recovery / signup confirm), reenviar a /portal
+  // preservando el hash. Pasa cuando Supabase Site URL apunta a "/" en vez de "/portal".
+  useEffect(()=>{
+    if(typeof window==="undefined")return;
+    const h=window.location.hash||"";
+    if(h.includes("type=recovery")||h.includes("type=signup")||h.includes("access_token=")){
+      window.location.replace("/portal"+h);
+    }
+  },[]);
   useEffect(()=>{const f=()=>setScrolled(window.scrollY>50);window.addEventListener("scroll",f);return()=>window.removeEventListener("scroll",f);},[]);
   useEffect(()=>{fetch("/api/reviews").then(r=>r.json()).then(d=>{if(d&&!d.fallback&&Array.isArray(d.reviews)&&d.reviews.length>0)setReviews(d);}).catch(()=>{});},[]);
 

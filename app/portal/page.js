@@ -2755,8 +2755,13 @@ export default function Page(){
     if(!email||!email.includes("@")){setGErr(t("auth.email"));return;}
     setLoading(true);setGErr("");
     try{
+      // Supabase requiere redirect_to como QUERY PARAM, no en body.data (estaba mal antes).
       const redirectTo=(typeof window!=="undefined"?window.location.origin:"https://www.argencargo.com.ar")+"/portal";
-      const r=await ac("recover",{email,gotrue_meta_security:{},data:{redirect_to:redirectTo}});
+      const r=await fetch(`${SB_URL}/auth/v1/recover?redirect_to=${encodeURIComponent(redirectTo)}`,{
+        method:"POST",
+        headers:{apikey:SB_KEY,"Content-Type":"application/json"},
+        body:JSON.stringify({email,gotrue_meta_security:{}}),
+      }).then(x=>x.json());
       // Supabase devuelve {} en éxito; si hay error trae error_code o msg
       if(r?.error||r?.msg||r?.error_description){setGErr(r.msg||r.error_description||"Error");setLoading(false);return;}
       setForgotSent(true);
