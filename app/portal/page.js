@@ -138,7 +138,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
   const code=client?.client_code||"";
   const stats=[{l:t("home.totalImports"),v:ops.length,c:"#fff"},{l:t("home.inProgress"),v:act.length,c:GOLD_LIGHT},{l:t("home.completed"),v:past.length,c:"#22c55e"},{l:t("home.reports"),v:null,btn:true}];
   const gd=(o)=>{const d=o.description||"";return d.length>60?(t("imports.consolidated")||"CONSOLIDADO"):d.toUpperCase();};
-  const renderOp=(op)=>{const st=SM[op.status]||{l:op.status,c:"#999"};const isA=op.channel?.includes("aereo");const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <div key={op.id} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14,transition:"all 180ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.22)";e.currentTarget.style.background="rgba(255,255,255,0.035)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}>
+  const renderOp=(op)=>{const st=SM[op.status]||{l:op.status,c:"#999"};const isA=op.channel?.includes("aereo");const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <div key={op.id} className="ac-hover-card" style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14,transition:"all 200ms cubic-bezier(.4,0,.2,1)"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.22)";e.currentTarget.style.background="rgba(255,255,255,0.035)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:10,flexWrap:"wrap"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <span style={{fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,0.95)",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{op.operation_code}</span>
@@ -2283,8 +2283,9 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
         .mob-header{display:flex!important}
         .mob-close{display:block!important}
         .desktop-notif-bar{display:none!important}
-        .main-content{margin-left:0!important;padding-top:60px!important;overflow-x:hidden!important}
+        .main-content{margin-left:0!important;padding-top:60px!important;padding-bottom:74px!important;overflow-x:hidden!important}
         .main-inner{padding:16px!important;max-width:100vw!important;box-sizing:border-box!important}
+        .ac-mob-bottom-nav{display:flex!important}
         .mob-overlay{display:block!important}
         .mob-sidebar{display:flex!important}
         .grid-2{grid-template-columns:1fr!important}
@@ -2335,6 +2336,20 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
       <div className="desktop-notif-bar" style={{position:"sticky",top:0,zIndex:20,display:"flex",alignItems:"center",justifyContent:"flex-end",padding:"12px 32px",gap:12,background:"rgba(10,22,40,0.65)",backdropFilter:"blur(16px)",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>{token&&<NotifBell token={token}/>}</div>
       <div className="main-inner" style={{maxWidth:1000,margin:"0 auto",padding:"28px 32px"}}>{children}</div></div>
     <WhatsAppFab message={`Hola Argencargo! 👋 Soy ${client?.first_name||""} ${client?.last_name||""}${client?.client_code?` (${client.client_code})`:""}, tengo una consulta.`}/>
+    {/* Bottom nav mobile (≤768px) — 5 acciones más usadas. El resto via "más" → sidebar */}
+    <nav className="ac-mob-bottom-nav" style={{display:"none",position:"fixed",bottom:0,left:0,right:0,zIndex:25,background:"rgba(10,22,40,0.95)",backdropFilter:"blur(18px)",borderTop:"1px solid rgba(255,255,255,0.08)",padding:"6px 8px 10px",justifyContent:"space-around"}}>
+      {[
+        {key:"imports",ic:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z","M3.27 6.96 12 12.01l8.73-5.05","M12 22.08V12"],l:t("nav.imports")},
+        {key:"purchases",ic:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"],l:t("nav.purchases")},
+        {key:"calculator",ic:["M4 4h16v16H4z","M4 8h16","M8 4v16"],l:t("nav.calculator")},
+        {key:"support",ic:["M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"],l:t("nav.support")},
+        {key:"_more",ic:["M5 12h.01M12 12h.01M19 12h.01"],l:"Más",isMore:true},
+      ].map(it=>{const active=page===it.key;return <button key={it.key} onClick={()=>{if(it.isMore){setMobOpen(true);}else{setPage(it.key);}}} style={{flex:1,maxWidth:90,display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"6px 4px",background:"transparent",border:"none",color:active?GOLD_LIGHT:"rgba(255,255,255,0.55)",cursor:"pointer",borderRadius:8,transition:"color 150ms"}}>
+        <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{it.ic.map((d,i)=><path key={i} d={d}/>)}</svg>
+        <span style={{fontSize:10,fontWeight:active?700:500,letterSpacing:"0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{it.l}</span>
+        {active&&<span style={{position:"absolute",top:0,width:24,height:2,background:GOLD_GRADIENT,borderRadius:"0 0 2px 2px"}}/>}
+      </button>;})}
+    </nav>
   </div>;
 }
 function ReferralsPage({token,client}){
