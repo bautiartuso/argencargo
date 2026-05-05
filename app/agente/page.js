@@ -115,6 +115,16 @@ const I18N={
     success:"Paquete registrado correctamente",
     hello:"Hola",
     active_in:"Activo en",
+    greet_morning:"Buen día",
+    greet_afternoon:"Buenas tardes",
+    greet_night:"Buenas noches",
+    stat_today_pkgs:"Paquetes hoy",
+    stat_in_deposit:"En depósito",
+    stat_active_flights:"Vuelos activos",
+    stat_balance:"Saldo CC",
+    pkg_no_photo_singular:"paquete sin foto — falta cargarla",
+    pkg_no_photo_plural:"paquetes sin foto — faltan cargarlas",
+    review:"Revisar",
     select_client:"Seleccioná un cliente",
     search_client:"Buscar por código o nombre...",
     unregistered_client:"Cliente no registrado",
@@ -355,6 +365,16 @@ const I18N={
     success:"包裹注册成功",
     hello:"你好",
     active_in:"活跃于",
+    greet_morning:"早上好",
+    greet_afternoon:"下午好",
+    greet_night:"晚上好",
+    stat_today_pkgs:"今日包裹",
+    stat_in_deposit:"仓库中",
+    stat_active_flights:"在执行航班",
+    stat_balance:"账户余额",
+    pkg_no_photo_singular:"个包裹缺少照片",
+    pkg_no_photo_plural:"个包裹缺少照片",
+    review:"查看",
     select_client:"选择客户",
     search_client:"按代码或姓名搜索...",
     unregistered_client:"未注册的客户",
@@ -763,13 +783,13 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     const isWaiting=f.status==="preparando"&&!f.invoice_presented_at;
     const cardBg=isReady?"rgba(34,197,94,0.08)":isWaiting?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.028)";
     const cardBorder=isReady?"1.5px solid rgba(34,197,94,0.35)":isWaiting?"1.5px solid rgba(251,191,36,0.25)":"1px solid rgba(255,255,255,0.06)";
-    return <div onClick={()=>setSelFlight(f.id)} style={{cursor:"pointer",background:cardBg,border:cardBorder,borderRadius:14,padding:"1rem 1.25rem"}}>
-    {isReady&&<p style={{fontSize:13,fontWeight:700,color:"#22c55e",margin:"0 0 8px"}}>{t.ready_to_ship}</p>}
+    return <div onClick={()=>setSelFlight(f.id)} className="ac-hover-card" style={{cursor:"pointer",background:cardBg,border:cardBorder,borderRadius:14,padding:"1rem 1.25rem"}}>
+    {isReady&&<p style={{fontSize:13,fontWeight:700,color:"#22c55e",margin:"0 0 8px",display:"inline-flex",alignItems:"center",gap:6}}><span className="ac-live-dot" style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 8px rgba(34,197,94,0.6)"}}/>{t.ready_to_ship}</p>}
     {isWaiting&&<p style={{fontSize:13,fontWeight:700,color:"#fbbf24",margin:"0 0 8px"}}>{t.waiting_invoice}</p>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:8}}>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"monospace"}}>{f.flight_code}</span>
-        <span style={{fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,color:isReady?"#22c55e":stColors[f.status],background:isReady?"rgba(34,197,94,0.2)":`${stColors[f.status]}20`,border:`1px solid ${isReady?"rgba(34,197,94,0.4)":stColors[f.status]+"40"}`,textTransform:"uppercase"}}>{isReady?t.flight_status_listo:t["flight_status_"+f.status]}</span>
+        <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{f.flight_code}</span>
+        <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:isReady?"#22c55e":stColors[f.status],background:isReady?"rgba(34,197,94,0.14)":`${stColors[f.status]}14`,border:`1px solid ${isReady?"rgba(34,197,94,0.4)":stColors[f.status]+"40"}`,textTransform:"uppercase",letterSpacing:"0.05em",display:"inline-flex",alignItems:"center",gap:6}}><span className={f.status==="preparando"||f.status==="despachado"?"ac-live-dot":""} style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:isReady?"#22c55e":stColors[f.status]}}/>{isReady?t.flight_status_listo:t["flight_status_"+f.status]}</span>
         <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{ops.length} ops</span>
       </div>
       <span style={{color:IC,fontSize:12,fontWeight:600}}>{t.flight} →</span>
@@ -779,14 +799,44 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     {f.destination_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>📍 {f.destination_address}</p>}
   </div>;};
 
+  // Stats hero — paquetes hoy / total depósito / vuelos preparando / saldo CC
+  const todayISO=new Date().toISOString().slice(0,10);
+  const pkgsToday=packages.filter(p=>String(p.created_at||"").slice(0,10)===todayISO).length;
+  const noPhotoCount=depositPkgsAll.filter(p=>!p.photo_url).length;
+  const greeting=(()=>{const h=new Date().getHours();return h<12?(t.greet_morning||"Buen día"):h<19?(t.greet_afternoon||"Buenas tardes"):(t.greet_night||"Buenas noches");})();
+
   return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token}>
-    <div style={{marginBottom:24,display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
+    <div style={{marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
       <div>
-        <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.02em"}}>{t.hello}, {signup.first_name||signup.email}</h2>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0,display:"inline-flex",alignItems:"center",gap:6}}><span style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 8px rgba(34,197,94,0.6)"}}/>{t.active_in} <span style={{color:GOLD_LIGHT,fontWeight:600}}>{signup.country||"China"}</span></p>
+        <h2 style={{fontSize:28,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.025em"}}>👋 {greeting}, {signup.first_name||signup.email}</h2>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0,display:"inline-flex",alignItems:"center",gap:6}}><span className="ac-live-dot" style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 8px rgba(34,197,94,0.6)"}}/>{t.active_in} <span style={{color:GOLD_LIGHT,fontWeight:600}}>{signup.country||"China"}</span></p>
       </div>
       {!showForm&&<Btn onClick={()=>{setTab("deposit");setShowForm(true);}}>+ {t.register_pkg}</Btn>}
     </div>
+
+    {/* Mini stat cards — visión rápida del día */}
+    <div className="ac-bento" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
+      {[
+        {label:t.stat_today_pkgs||"Paquetes hoy",value:pkgsToday,color:GOLD_LIGHT,icon:"📦"},
+        {label:t.stat_in_deposit||"En depósito",value:depositPkgsAll.length,color:"#60a5fa",icon:"🏬",sub:`${depositTotalKg} kg`},
+        {label:t.stat_active_flights||"Vuelos activos",value:activeFlights.length,color:"#fbbf24",icon:"✈️"},
+        {label:t.stat_balance||"Saldo CC",value:balance,color:balance>=0?"#22c55e":"#ef4444",icon:"💰",fmt:v=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0})}`},
+      ].map((s,i)=><div key={i} className="ac-hover-card ac-bento-cell" data-span={3} style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"14px 16px",position:"relative",overflow:"hidden",minHeight:90}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+          <span style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em"}}>{s.label}</span>
+          <span style={{fontSize:14,opacity:0.6}}>{s.icon}</span>
+        </div>
+        <p style={{fontSize:24,fontWeight:800,color:s.color,margin:0,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{s.fmt?s.fmt(s.value):s.value}</p>
+        {s.sub&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.42)",margin:"6px 0 0"}}>{s.sub}</p>}
+      </div>)}
+    </div>
+
+    {/* Banner foto pendiente — alerta visual amarilla cuando hay paquetes sin foto */}
+    {noPhotoCount>0&&<div style={{marginBottom:14,padding:"10px 14px",background:"linear-gradient(135deg,rgba(251,191,36,0.10),rgba(251,191,36,0.02))",border:"1px solid rgba(251,191,36,0.3)",borderRadius:10,display:"flex",alignItems:"center",gap:10,fontSize:12.5,color:"#fbbf24"}}>
+      <span style={{fontSize:16}}>📷</span>
+      <span style={{flex:1}}>{noPhotoCount} {noPhotoCount===1?(t.pkg_no_photo_singular||"paquete sin foto"):(t.pkg_no_photo_plural||"paquetes sin foto")}</span>
+      <button onClick={()=>setTab("deposit")} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>{t.review||"Revisar"} →</button>
+    </div>}
     <PushNagBanner token={token} t={t}/>
     {repackRequests.length>0&&<div style={{marginBottom:16}}>
       {repackRequests.map(r=><div key={r.id} style={{padding:"14px 18px",background:"linear-gradient(135deg,rgba(251,191,36,0.15),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.5)",borderRadius:12,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
