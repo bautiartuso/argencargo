@@ -1413,22 +1413,23 @@ function CalculatorPage({token,client}){
   </div>;
 }
 function QuotesPage({token,client}){
+  const {t}=useT();
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [sel,setSel]=useState(null);
   useEffect(()=>{if(!client?.id){setLo(false);return;}(async()=>{const q=await dq("quotes",{token,filters:`?client_id=eq.${client.id}&select=*&order=created_at.desc`});setQuotes(Array.isArray(q)?q:[]);setLo(false);})();},[token,client?.id]);
-  const delQuote=async(id)=>{if(!confirm("¿Eliminar esta cotización?"))return;await dq("quotes",{method:"DELETE",token,filters:`?id=eq.${id}`});setQuotes(p=>p.filter(q=>q.id!==id));};
+  const delQuote=async(id)=>{if(!confirm(t("quotes.confirmDel")))return;await dq("quotes",{method:"DELETE",token,filters:`?id=eq.${id}`});setQuotes(p=>p.filter(q=>q.id!==id));};
   const fmtDate=(d)=>{const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return new Date(y,m-1,day).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});};
   const usd=v=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-  const ST={pending:{l:"Pendiente",c:"#fbbf24"},contacted:{l:"Contactado",c:"#60a5fa"},converted:{l:"Convertida",c:"#22c55e"},rejected:{l:"Rechazada",c:"#f87171"}};
+  const ST={pending:{l:t("quotes.statusPending"),c:"#fbbf24"},contacted:{l:t("quotes.statusContacted"),c:"#60a5fa"},converted:{l:t("quotes.statusConverted"),c:"#22c55e"},rejected:{l:t("quotes.statusRejected"),c:"#f87171"}};
   const resendWA=(q)=>{const prods=typeof q.products==="string"?JSON.parse(q.products):q.products||[];const prodSummary=Array.isArray(prods)?prods.map(p=>`${p.description||p.type} x${p.quantity}`).join(", "):"";const flag=q.origin==="USA"?"🇺🇸":q.origin==="España"?"🇪🇸":"🇨🇳";const isAereo=q.channel_key?.includes("aereo");const msg=encodeURIComponent(`Hola Bautista! Te paso una cotización que tengo guardada.\n\nOrigen: *${q.origin}* ${flag}\nMercadería: *${prodSummary}*\nCanal: *${q.channel_name}*\nValor total: *${usd(q.total_fob)}*\n${isAereo?`Peso: *${Number(q.total_weight).toFixed(2)} kg*`:`CBM: *${Number(q.total_cbm).toFixed(4)} m³*`}\nTotal estimado: *${usd(q.total_cost)}*\n\nCódigo cliente: *${q.client_code}*`);window.open(`https://wa.me/5491125088580?text=${msg}`,"_blank");};
-  if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"3rem 0"}}>Cargando...</p>;
+  if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"3rem 0"}}>{t("common.loading")}</p>;
   return <div>
     <div style={{marginBottom:24}}>
-      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 6px",letterSpacing:"-0.02em"}}>Mis cotizaciones <span style={{color:GOLD_LIGHT,fontWeight:600}}>({quotes.length})</span></h2>
-      <p style={{fontSize:14,color:"rgba(255,255,255,0.4)",margin:0}}>Historial de cotizaciones realizadas</p>
+      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 6px",letterSpacing:"-0.02em"}}>{t("quotes.title")} <span style={{color:GOLD_LIGHT,fontWeight:600}}>({quotes.length})</span></h2>
+      <p style={{fontSize:14,color:"rgba(255,255,255,0.4)",margin:0}}>{t("quotes.subtitle")}</p>
     </div>
     {quotes.length===0?<div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px dashed rgba(255,255,255,0.1)",padding:"3rem 2rem",textAlign:"center"}}>
-      <p style={{fontSize:15,color:"rgba(255,255,255,0.5)",margin:"0 0 6px"}}>No tenés cotizaciones guardadas todavía</p>
-      <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:0}}>Usá la calculadora y tocá "Guardar cotización" para que aparezcan acá</p>
+      <p style={{fontSize:15,color:"rgba(255,255,255,0.5)",margin:"0 0 6px"}}>{t("quotes.empty")}</p>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:0}}>{t("quotes.emptyDesc")}</p>
     </div>:<div style={{display:"grid",gap:12}}>{quotes.map(q=>{const st=ST[q.status]||{l:q.status,c:"#999"};const prods=typeof q.products==="string"?JSON.parse(q.products):q.products||[];const prodDesc=Array.isArray(prods)?prods.map(p=>`${p.description||p.type} x${p.quantity}`).join(", "):"";const isAereo=q.channel_key?.includes("aereo");
       return <div key={q.id} style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"1.25rem 1.5rem"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
@@ -1437,7 +1438,7 @@ function QuotesPage({token,client}){
             <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>{st.l}</span>
             <span style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:4,color:"rgba(255,255,255,0.6)",background:"rgba(255,255,255,0.06)"}}>{q.origin==="USA"?"🇺🇸":q.origin==="España"?"🇪🇸":"🇨🇳"} {q.channel_name}</span>
           </div>
-          <button onClick={()=>delQuote(q.id)} style={{fontSize:10,padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>Eliminar</button>
+          <button onClick={()=>delQuote(q.id)} style={{fontSize:10,padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>{t("common.delete")}</button>
         </div>
         {Array.isArray(prods)&&prods.length>0?<div style={{marginBottom:12}}>{prods.map((p,i)=>{const fobItem=Number(p.unit_price||0)*Number(p.quantity||1);const nc=p.ncm||{};return <div key={i} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 12px",marginBottom:6}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:nc.ncm_code?6:0,flexWrap:"wrap",gap:8}}>
@@ -1454,28 +1455,29 @@ function QuotesPage({token,client}){
         </div>;})}</div>:<p style={{fontSize:14,fontWeight:500,color:"#fff",margin:"0 0 10px",lineHeight:1.4}}>{prodDesc||"Sin descripción"}</p>}
         {/* Selector de canales disponibles (si la cotización tiene alternativas guardadas) */}
         {(()=>{const alts=q.channel_alternatives;if(!Array.isArray(alts)||alts.length<=1)return null;const selected=q.client_selected_channel||q.channel_key;return <div style={{marginBottom:14}}>
-          <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Elegí tu canal preferido</p>
+          <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("quotes.choosePref")}</p>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10}}>
             {alts.map(a=>{const active=selected===a.key;return <div key={a.key} onClick={async()=>{try{await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${q.id}`,body:{client_selected_channel:a.key}});setQuotes(p=>p.map(x=>x.id===q.id?{...x,client_selected_channel:a.key}:x));toast(`Elegiste ${a.name}`,"success");}catch(e){toast("Error al guardar","error");}}} style={{padding:"12px 14px",borderRadius:12,border:`1px solid ${active?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.08)"}`,background:active?"linear-gradient(135deg, rgba(184,149,106,0.12) 0%, rgba(255,255,255,0.02) 100%)":"rgba(255,255,255,0.025)",cursor:"pointer",transition:"all 150ms",position:"relative",overflow:"hidden",boxShadow:active?GOLD_GLOW:"none"}}>
               {active&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT}}/>}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6,gap:6}}>
                 <div><p style={{fontSize:12,fontWeight:700,color:"#fff",margin:0}}>{a.name}</p><p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{a.info}</p></div>
-                {active&&<span style={{fontSize:8.5,fontWeight:800,padding:"2px 6px",borderRadius:999,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase"}}>Elegido</span>}
+                {active&&<span style={{fontSize:8.5,fontWeight:800,padding:"2px 6px",borderRadius:999,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase"}}>{t("quotes.chosen")}</span>}
               </div>
               <p style={{fontSize:15,fontWeight:800,color:active?GOLD_LIGHT:"#fff",margin:"8px 0 0",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>USD {Number(a.totalAbonar||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
             </div>;})}
           </div>
         </div>;})()}
         <div style={{display:"flex",gap:20,flexWrap:"wrap",paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",alignItems:"center"}}>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>VALOR FOB</p><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{usd(q.total_fob)}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{isAereo?"PESO":"CBM"}</p><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{isAereo?`${Number(q.total_weight).toFixed(2)} kg`:`${Number(q.total_cbm).toFixed(4)} m³`}</p></div>
-          <div style={{marginLeft:"auto"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{q.client_selected_channel?"CANAL ELEGIDO":"TOTAL ESTIMADO"}</p><p style={{fontSize:18,fontWeight:700,color:IC,margin:0}}>{(()=>{if(q.client_selected_channel&&Array.isArray(q.channel_alternatives)){const a=q.channel_alternatives.find(x=>x.key===q.client_selected_channel);if(a)return usd(a.totalAbonar);}return usd(q.total_cost);})()}</p></div>
-          <button onClick={()=>resendWA(q)} style={{padding:"10px 18px",fontSize:12,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff"}}>Enviar por WhatsApp →</button>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{t("quotes.fobValue")}</p><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{usd(q.total_fob)}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{isAereo?t("quotes.weightLbl"):"CBM"}</p><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{isAereo?`${Number(q.total_weight).toFixed(2)} kg`:`${Number(q.total_cbm).toFixed(4)} m³`}</p></div>
+          <div style={{marginLeft:"auto"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{q.client_selected_channel?t("quotes.chosenChannel"):t("quotes.totalEst")}</p><p style={{fontSize:18,fontWeight:700,color:IC,margin:0}}>{(()=>{if(q.client_selected_channel&&Array.isArray(q.channel_alternatives)){const a=q.channel_alternatives.find(x=>x.key===q.client_selected_channel);if(a)return usd(a.totalAbonar);}return usd(q.total_cost);})()}</p></div>
+          <button onClick={()=>resendWA(q)} style={{padding:"10px 18px",fontSize:12,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff"}}>{t("quotes.sendWA")} →</button>
         </div>
       </div>;})}</div>}
   </div>;
 }
 function PointsPage({token,client}){
+  const {t}=useT();
   const [catalog,setCatalog]=useState([]);
   const [txs,setTxs]=useState([]);
   const [pending,setPending]=useState([]);
@@ -1516,7 +1518,7 @@ function PointsPage({token,client}){
   const fmtDate=d=>{if(!d)return"—";try{return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}catch{return d;}};
   const fmtDateTime=d=>{if(!d)return"—";try{return new Date(d).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});}catch{return d;}};
   const expiringSoon=txs.filter(t=>t.type==="earn"&&t.expires_at&&new Date(t.expires_at)<new Date(Date.now()+30*86400000)&&new Date(t.expires_at)>new Date());
-  const txLabel={earn:"Ganados",redeem:"Canje",expire:"Expiraron",refund:"Devolución",adjust:"Ajuste"};
+  const txLabel={earn:t("points.txEarn"),redeem:t("points.txRedeem"),expire:t("points.txExpire"),refund:t("points.txRefund"),adjust:t("points.txAdjust")};
   const txColor={earn:"#22c55e",redeem:"#60a5fa",expire:"#ef4444",refund:"#a78bfa",adjust:"#fbbf24"};
   const ti=getTierInfo(tier);
   const nextTier=ti.next?Object.values(TIERS).find(t=>t.min===ti.next):null;
@@ -1525,8 +1527,8 @@ function PointsPage({token,client}){
   const pendingVouchers=tierVouchers.filter(v=>v.status==="pending");
   return <div>
     <div style={{marginBottom:24}}>
-      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Mis puntos</h2>
-      <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",lineHeight:1.5}}>Ganás puntos por cada kg aéreo y CBM marítimo que importes.</p>
+      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{t("points.title")}</h2>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",lineHeight:1.5}}>{t("points.subtitle")}</p>
     </div>
     {msg&&<p style={{fontSize:13,color:"#22c55e",fontWeight:600,marginBottom:16,padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:8,animation:"ac_fade_in 200ms"}}>{msg}</p>}
 
@@ -1535,60 +1537,60 @@ function PointsPage({token,client}){
       <div style={{position:"absolute",top:-50,right:-50,width:220,height:220,background:`radial-gradient(circle, ${ti.color}22 0%, transparent 70%)`,pointerEvents:"none"}}/>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",position:"relative"}}>
         <div>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.14em"}}>Tu categoría</p>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.14em"}}>{t("points.yourTier")}</p>
           <div style={{display:"flex",alignItems:"center",gap:12,marginTop:6}}>
             <span style={{fontSize:34}}>{ti.icon}</span>
             <div>
               <p style={{fontSize:32,fontWeight:800,color:"#fff",margin:0,lineHeight:1,letterSpacing:"-0.02em",textShadow:tier!=="standard"?`0 0 20px ${ti.color}55`:"none"}}>{ti.label}</p>
-              {tier!=="standard"&&<p style={{fontSize:11,color:ti.light,margin:"4px 0 0",fontWeight:600,letterSpacing:"0.04em"}}>+{ti.bonus}% bonus en puntos</p>}
+              {tier!=="standard"&&<p style={{fontSize:11,color:ti.light,margin:"4px 0 0",fontWeight:600,letterSpacing:"0.04em"}}>{t("points.bonus",{n:ti.bonus})}</p>}
             </div>
           </div>
         </div>
         <div style={{textAlign:"right"}}>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>Ganados en total</p>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("points.lifetimeEarned")}</p>
           <p style={{fontSize:24,fontWeight:700,color:"#fff",margin:"4px 0 0",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>{lifetime.toLocaleString("es-AR")} <span style={{fontSize:12,color:ti.light,fontWeight:600}}>pts</span></p>
         </div>
       </div>
       {nextTier&&<div style={{marginTop:18,position:"relative"}}>
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-          <span style={{fontSize:11,color:"rgba(255,255,255,0.55)",fontWeight:500}}>En <strong style={{color:ti.light,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{ptsToNext}</strong> pts llegás a <strong style={{color:getTierInfo(Object.keys(TIERS).find(k=>TIERS[k].min===ti.next)).light,fontWeight:700}}>{nextTier.label}</strong> {Object.values(TIERS).find(t=>t.min===ti.next)?.icon}</span>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.55)",fontWeight:500}}>{t("points.toReachTier",{pts:ptsToNext,tier:nextTier.label})} {Object.values(TIERS).find(t=>t.min===ti.next)?.icon}</span>
           <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{Math.round(progressPct)}%</span>
         </div>
         <div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:999,overflow:"hidden",border:"1px solid rgba(255,255,255,0.04)"}}>
           <div style={{width:`${progressPct}%`,height:"100%",background:ti.gradient,borderRadius:999,boxShadow:ti.glow,transition:"width 400ms ease-out"}}/>
         </div>
       </div>}
-      {!nextTier&&<p style={{marginTop:16,fontSize:12,color:ti.light,fontWeight:600,letterSpacing:"0.04em"}}>★ Alcanzaste el nivel máximo. ¡Gracias por importar con nosotros!</p>}
+      {!nextTier&&<p style={{marginTop:16,fontSize:12,color:ti.light,fontWeight:600,letterSpacing:"0.04em"}}>{t("points.maxTier")}</p>}
     </div>
 
     {/* Vouchers de tier pendientes */}
     {pendingVouchers.length>0&&<div style={{marginBottom:24,padding:"16px 20px",background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.22)",borderRadius:14}}>
-      <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.1em"}}>★ Descuentos por categoría disponibles</p>
-      <div style={{display:"flex",flexDirection:"column",gap:8}}>{pendingVouchers.map(v=>{const vti=getTierInfo(v.tier);return <div key={v.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,padding:"10px 12px",background:"rgba(255,255,255,0.02)",borderRadius:10,border:`1px solid ${vti.color}40`}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:20}}>{vti.icon}</span><div><p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>Descuento {vti.label}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Se aplica automáticamente en tu próxima operación</p></div></div><span style={{fontSize:16,fontWeight:800,color:vti.light,fontVariantNumeric:"tabular-nums"}}>USD {Number(v.discount_usd).toFixed(0)}</span></div>;})}</div>
+      <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.1em"}}>★ {t("points.tierVouchers")}</p>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>{pendingVouchers.map(v=>{const vti=getTierInfo(v.tier);return <div key={v.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,padding:"10px 12px",background:"rgba(255,255,255,0.02)",borderRadius:10,border:`1px solid ${vti.color}40`}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:20}}>{vti.icon}</span><div><p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>{t("points.tierDiscount",{tier:vti.label})}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>{t("points.autoApplied")}</p></div></div><span style={{fontSize:16,fontWeight:800,color:vti.light,fontVariantNumeric:"tabular-nums"}}>USD {Number(v.discount_usd).toFixed(0)}</span></div>;})}</div>
     </div>}
 
     {/* Balance hero + secundarios */}
     <div style={{display:"grid",gridTemplateColumns:expiringSoon.length>0?"2fr 1fr 1fr":"2fr 1fr",gap:14,marginBottom:28}}>
       <div style={{background:"linear-gradient(135deg, rgba(184,149,106,0.14) 0%, rgba(232,208,152,0.05) 100%)",border:`1px solid ${GOLD_DEEP}`,borderRadius:16,padding:"24px 28px",position:"relative",overflow:"hidden",boxShadow:GOLD_GLOW}}>
         <div style={{position:"absolute",top:-40,right:-40,width:200,height:200,background:"radial-gradient(circle, rgba(232,208,152,0.22) 0%, transparent 70%)",pointerEvents:"none"}}/>
-        <p style={{fontSize:10,fontWeight:700,color:GOLD_LIGHT,margin:0,textTransform:"uppercase",letterSpacing:"0.14em",position:"relative"}}>★ Balance actual</p>
+        <p style={{fontSize:10,fontWeight:700,color:GOLD_LIGHT,margin:0,textTransform:"uppercase",letterSpacing:"0.14em",position:"relative"}}>★ {t("points.balanceCurrent")}</p>
         <p style={{fontSize:48,fontWeight:800,color:"#fff",margin:"8px 0 0",lineHeight:1,letterSpacing:"-0.03em",fontVariantNumeric:"tabular-nums",position:"relative"}}>{balance.toLocaleString("es-AR")} <span style={{fontSize:16,fontWeight:600,color:GOLD_LIGHT,letterSpacing:"0.04em"}}>pts</span></p>
       </div>
       <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"24px 22px"}}>
-        <p style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>Canjes pendientes</p>
+        <p style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("points.pendingRedeems")}</p>
         <p style={{fontSize:32,fontWeight:700,color:"#fff",margin:"8px 0 0",lineHeight:1,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{pending.length}</p>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"6px 0 0"}}>{pending.length===0?"Ninguno":"se aplican en tu próxima op"}</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"6px 0 0"}}>{pending.length===0?"—":t("points.appliesNextOp")}</p>
       </div>
       {expiringSoon.length>0&&<div style={{background:"rgba(239,68,68,0.06)",border:"1px solid rgba(239,68,68,0.22)",borderRadius:16,padding:"24px 22px"}}>
-        <p style={{fontSize:10,fontWeight:600,color:"rgba(239,68,68,0.85)",margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>Expiran en 30d</p>
+        <p style={{fontSize:10,fontWeight:600,color:"rgba(239,68,68,0.85)",margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("points.expireIn30")}</p>
         <p style={{fontSize:32,fontWeight:700,color:"#ef4444",margin:"8px 0 0",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{expiringSoon.reduce((s,e)=>s+e.amount,0)}</p>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"6px 0 0"}}>Canjealos antes</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"6px 0 0"}}>{t("points.redeemBefore")}</p>
       </div>}
     </div>
 
     {/* Canjes pendientes */}
     {pending.length>0&&<div style={{marginBottom:28}}>
-      <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Tus canjes pendientes</h3>
+      <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("points.yourPending")}</h3>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>{pending.map(p=><div key={p.id} style={{background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.18)",borderRadius:12,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <div><p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0}}>{p.reward_name}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>Canjeado {fmtDate(p.redeemed_at)} · {p.points_spent} pts · Expira {fmtDate(p.expires_at)}</p></div>
         <span style={{fontSize:9.5,fontWeight:700,padding:"4px 10px",borderRadius:999,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.1em",border:`1px solid ${GOLD_DEEP}`,textTransform:"uppercase"}}>Pendiente</span>
@@ -1596,43 +1598,44 @@ function PointsPage({token,client}){
     </div>}
 
     {/* Catálogo */}
-    <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Catálogo de premios</h3>
-    {loading?<p style={{color:"rgba(255,255,255,0.4)",padding:"2rem 0",textAlign:"center"}}>Cargando...</p>:
+    <h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("points.catalog")}</h3>
+    {loading?<p style={{color:"rgba(255,255,255,0.4)",padding:"2rem 0",textAlign:"center"}}>{t("common.loading")}</p>:
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14,marginBottom:28}}>{catalog.map(r=>{
       const canRedeem=balance>=r.points_cost;
       return <div key={r.id} style={{background:"rgba(255,255,255,0.025)",border:`1px solid ${canRedeem?"rgba(184,149,106,0.28)":"rgba(255,255,255,0.06)"}`,borderRadius:16,padding:"20px 22px",display:"flex",flexDirection:"column",gap:12,opacity:canRedeem?1:0.55,transition:"all 180ms",position:"relative",overflow:"hidden"}} onMouseEnter={e=>{if(canRedeem){e.currentTarget.style.borderColor="rgba(184,149,106,0.5)";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=GOLD_GLOW;}}} onMouseLeave={e=>{if(canRedeem){e.currentTarget.style.borderColor="rgba(184,149,106,0.28)";e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}><span style={{fontSize:32,lineHeight:1}}>{r.icon||"🎁"}</span><span style={{fontSize:11,fontWeight:800,color:GOLD_LIGHT,padding:"4px 10px",background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:999,letterSpacing:"0.04em",fontVariantNumeric:"tabular-nums"}}>{r.points_cost} pts</span></div>
         <div><p style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>{r.name}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0,lineHeight:1.5}}>{r.description}</p></div>
-        <button disabled={!canRedeem||busy===r.id} onClick={()=>redeem(r)} style={{marginTop:"auto",padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:10,cursor:canRedeem?"pointer":"not-allowed",background:canRedeem?GOLD_GRADIENT:"rgba(255,255,255,0.04)",color:canRedeem?"#0A1628":"rgba(255,255,255,0.4)",border:canRedeem?`1px solid ${GOLD_DEEP}`:"1px solid rgba(255,255,255,0.06)",boxShadow:canRedeem?GOLD_GLOW:"none",letterSpacing:"0.02em",transition:"all 150ms"}}>{busy===r.id?"Canjeando…":canRedeem?"Canjear →":`Faltan ${r.points_cost-balance} pts`}</button>
+        <button disabled={!canRedeem||busy===r.id} onClick={()=>redeem(r)} style={{marginTop:"auto",padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:10,cursor:canRedeem?"pointer":"not-allowed",background:canRedeem?GOLD_GRADIENT:"rgba(255,255,255,0.04)",color:canRedeem?"#0A1628":"rgba(255,255,255,0.4)",border:canRedeem?`1px solid ${GOLD_DEEP}`:"1px solid rgba(255,255,255,0.06)",boxShadow:canRedeem?GOLD_GLOW:"none",letterSpacing:"0.02em",transition:"all 150ms"}}>{busy===r.id?t("points.redeeming"):canRedeem?`${t("points.redeemBtn")} →`:t("points.notEnough",{n:r.points_cost-balance})}</button>
       </div>;})}</div>}
 
     {/* Historial */}
-    <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"24px 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Historial</h3>
-    {txs.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Aún no tenés movimientos. Se acumulan al cerrar cada operación.</p>:
-    <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,overflow:"hidden"}}>{txs.map((t,i)=><div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:i<txs.length-1?"1px solid rgba(255,255,255,0.04)":"none",gap:12,flexWrap:"wrap"}}>
-      <div><p style={{fontSize:12,fontWeight:700,color:txColor[t.type]||"#fff",margin:0}}>{txLabel[t.type]||t.type}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{t.description||"—"}{t.expires_at&&t.type==="earn"?` · Expira ${fmtDate(t.expires_at)}`:""}</p></div>
-      <div style={{textAlign:"right"}}><p style={{fontSize:14,fontWeight:800,color:t.amount>0?"#22c55e":"#ef4444",margin:0}}>{t.amount>0?"+":""}{t.amount} pts</p><p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:"2px 0 0"}}>{fmtDateTime(t.created_at)}</p></div>
+    <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"24px 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t("points.history")}</h3>
+    {txs.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>{t("points.noTx")}</p>:
+    <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,overflow:"hidden"}}>{txs.map((tr,i)=><div key={tr.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:i<txs.length-1?"1px solid rgba(255,255,255,0.04)":"none",gap:12,flexWrap:"wrap"}}>
+      <div><p style={{fontSize:12,fontWeight:700,color:txColor[tr.type]||"#fff",margin:0}}>{txLabel[tr.type]||tr.type}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{tr.description||"—"}{tr.expires_at&&tr.type==="earn"?` · ${t("points.expiresOn",{date:fmtDate(tr.expires_at)})}`:""}</p></div>
+      <div style={{textAlign:"right"}}><p style={{fontSize:14,fontWeight:800,color:tr.amount>0?"#22c55e":"#ef4444",margin:0}}>{tr.amount>0?"+":""}{tr.amount} pts</p><p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:"2px 0 0"}}>{fmtDateTime(tr.created_at)}</p></div>
     </div>)}</div>}
 
-    <p style={{fontSize:11,color:"rgba(255,255,255,0.35)",margin:"16px 0 0",textAlign:"center",fontStyle:"italic"}}>Ganás 1 pt por cada kg aéreo facturable · 50 pts por CBM marítimo · Expiran a 12 meses · 10 pts = USD 1 de descuento en flete</p>
+    <p style={{fontSize:11,color:"rgba(255,255,255,0.35)",margin:"16px 0 0",textAlign:"center",fontStyle:"italic"}}>{t("points.howEarn")}</p>
   </div>;
 }
 
 function ServicesPage({client}){
+  const {t}=useT();
   const code=client?.client_code||"";const name=client?`${client.first_name}`:"";
   const services=[
-    {icon:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"],title:"Gestión de Pagos Internacionales",desc:"Realizamos el giro al exterior para que puedas pagar a tu proveedor de forma segura y rápida. Nos encargamos de toda la operatoria cambiaria.",cta:"Necesito hacer un pago internacional",color:"#22c55e",tag:"Popular"},
-    {icon:["M21 21l-6-6m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0z"],title:"Búsqueda de Proveedores",desc:"¿No sabés dónde comprar? Buscamos proveedores verificados en China y USA para tu producto. Negociamos precios y condiciones por vos.",cta:"Quiero que me busquen un proveedor",color:"#60a5fa",tag:null},
-    {icon:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"],title:"Inspección de Mercadería",desc:"Verificamos la calidad de tu mercadería en origen antes de que se envíe. Fotos, videos y reportes detallados para que compres con tranquilidad.",cta:"Quiero inspeccionar mi mercadería",color:"#a78bfa",tag:null},
-    {icon:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"],title:"Consolidación de Carga",desc:"Juntamos mercadería de varios proveedores en un solo envío para optimizar costos de flete. Ideal si comprás en múltiples fábricas.",cta:"Quiero consolidar mi carga",color:"#fb923c",tag:null},
-    {icon:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8","M10 9H8"],title:"Asesoramiento Aduanero",desc:"Te orientamos sobre clasificación arancelaria, requisitos de importación, documentación necesaria y régimen impositivo de tu mercadería.",cta:"Necesito asesoramiento",color:"#f97316",tag:null},
-    {icon:["M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z","M7 7h.01"],title:"Seguro de Carga",desc:"Protegé tu inversión con cobertura integral durante todo el trayecto. Cubrimos pérdida total, daños parciales y extravíos.",cta:"Quiero asegurar mi carga",color:"#ef4444",tag:null}
+    {icon:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"],title:t("svc.payments.t"),desc:t("svc.payments.d"),cta:t("svc.payments.cta"),color:"#22c55e",tag:t("svc.popular")},
+    {icon:["M21 21l-6-6m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0z"],title:t("svc.suppliers.t"),desc:t("svc.suppliers.d"),cta:t("svc.suppliers.cta"),color:"#60a5fa",tag:null},
+    {icon:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"],title:t("svc.inspect.t"),desc:t("svc.inspect.d"),cta:t("svc.inspect.cta"),color:"#a78bfa",tag:null},
+    {icon:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"],title:t("svc.consol.t"),desc:t("svc.consol.d"),cta:t("svc.consol.cta"),color:"#fb923c",tag:null},
+    {icon:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8","M10 9H8"],title:t("svc.advice.t"),desc:t("svc.advice.d"),cta:t("svc.advice.cta"),color:"#f97316",tag:null},
+    {icon:["M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z","M7 7h.01"],title:t("svc.insurance.t"),desc:t("svc.insurance.d"),cta:t("svc.insurance.cta"),color:"#ef4444",tag:null}
   ];
-  const makeWA=(svc)=>encodeURIComponent(`Hola Bautista! Soy ${name} (${code}).\n\n${svc.cta}.\n\n¿Me podrías dar más información sobre el servicio de *${svc.title}*?\n\nGracias!`);
+  const makeWA=(svc)=>encodeURIComponent(`Hola Bautista! Soy ${name} (${code}).\n\n${svc.cta}.\n\n${svc.title}\n\nGracias!`);
   return <div>
     <div style={{marginBottom:24}}>
-      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 6px",letterSpacing:"-0.02em"}}>Nuestros servicios</h2>
-      <p style={{fontSize:14,color:"rgba(255,255,255,0.4)",margin:0}}>Soluciones integrales para tu comercio exterior</p>
+      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 6px",letterSpacing:"-0.02em"}}>{t("svc.title")}</h2>
+      <p style={{fontSize:14,color:"rgba(255,255,255,0.4)",margin:0}}>{t("svc.subtitle")}</p>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}} className="grid-2">
       {services.map((svc,i)=><div key={i} style={{background:"rgba(255,255,255,0.028)",borderRadius:16,border:"1px solid rgba(255,255,255,0.06)",padding:"1.5rem",display:"flex",flexDirection:"column",justifyContent:"space-between",position:"relative",overflow:"hidden"}}>
@@ -2330,6 +2333,7 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
   </div>;
 }
 function ReferralsPage({token,client}){
+  const {t}=useT();
   const [referrals,setReferrals]=useState([]);
   const [lo,setLo]=useState(true);
   const [copied,setCopied]=useState(false);
@@ -2351,48 +2355,48 @@ function ReferralsPage({token,client}){
   const copy=async()=>{try{await navigator.clipboard.writeText(refLink);setCopied(true);setTimeout(()=>setCopied(false),2500);}catch{prompt("Copiá tu link:",refLink);}};
   const shareWA=()=>{const msg=encodeURIComponent(`Hola! Te recomiendo Argencargo para importar desde China/USA/España. Si te registrás con mi link recibís USD 50 de descuento en tu primera importación 🚀\n\n${refLink}`);window.open(`https://wa.me/?text=${msg}`,"_blank");};
   return <div>
-    <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 8px",letterSpacing:"-0.02em"}}>Programa de referidos</h2>
-    <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"0 0 24px"}}>Compartí tu link y ganá USD 50 por cada amigo que importe con Argencargo.</p>
+    <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 8px",letterSpacing:"-0.02em"}}>{t("ref.title")}</h2>
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"0 0 24px"}}>{t("ref.headerSub")}</p>
 
     {/* Cards de stats */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:14,marginBottom:24}}>
       <div style={{background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:14,padding:"16px 20px"}}>
-        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Ganado</p>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t("ref.earned")}</p>
         <p style={{fontSize:24,fontWeight:800,color:"#22c55e",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalGanado.toFixed(0)}</p>
       </div>
       <div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:14,padding:"16px 20px"}}>
-        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Referidos acreditados</p>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t("ref.credited")}</p>
         <p style={{fontSize:24,fontWeight:800,color:GOLD_LIGHT,margin:0,fontVariantNumeric:"tabular-nums"}}>{acreditados}</p>
       </div>
       <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"16px 20px"}}>
-        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Pendientes</p>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t("ref.pending")}</p>
         <p style={{fontSize:24,fontWeight:800,color:"rgba(255,255,255,0.7)",margin:0,fontVariantNumeric:"tabular-nums"}}>{pendientes}</p>
       </div>
     </div>
 
     {/* Link a compartir */}
     <div style={{background:"linear-gradient(135deg, rgba(184,149,106,0.12), rgba(212,177,122,0.06))",border:`1.5px solid rgba(184,149,106,0.4)`,borderRadius:16,padding:"22px 26px",marginBottom:24}}>
-      <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>🔗 Tu link único</p>
-      <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 12px"}}>Compartilo con quien quieras</h3>
+      <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>🔗 {t("ref.yourLink")}</p>
+      <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 12px"}}>{t("ref.shareIt")}</h3>
       <div style={{display:"flex",gap:8,alignItems:"center",padding:"10px 14px",background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,marginBottom:14,flexWrap:"wrap"}}>
         <code style={{flex:1,minWidth:200,fontSize:12.5,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{refLink}</code>
-        <button onClick={copy} style={{padding:"7px 14px",fontSize:11,fontWeight:700,borderRadius:7,border:"none",cursor:"pointer",background:copied?"#22c55e":"linear-gradient(135deg,#B8956A,#D4B17A)",color:copied?"#fff":"#0A1628",whiteSpace:"nowrap",transition:"all 200ms"}}>{copied?"✓ Copiado":"📋 Copiar"}</button>
+        <button onClick={copy} style={{padding:"7px 14px",fontSize:11,fontWeight:700,borderRadius:7,border:"none",cursor:"pointer",background:copied?"#22c55e":"linear-gradient(135deg,#B8956A,#D4B17A)",color:copied?"#fff":"#0A1628",whiteSpace:"nowrap",transition:"all 200ms"}}>{copied?`✓ ${t("ref.copied")}`:`📋 ${t("ref.copy")}`}</button>
       </div>
       <button onClick={shareWA} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:"#25D366",color:"#fff"}}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M.057 24l1.687-6.163a11.867 11.867 0 0 1-1.587-5.946C.16 5.335 5.495 0 12.05 0a11.817 11.817 0 0 1 8.413 3.488 11.824 11.824 0 0 1 3.48 8.414c-.003 6.557-5.338 11.892-11.893 11.892a11.9 11.9 0 0 1-5.688-1.448L.057 24z"/></svg>
-        Compartir por WhatsApp
+        {t("ref.shareWA")}
       </button>
     </div>
 
     {/* Cómo funciona */}
     <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 24px",marginBottom:24}}>
-      <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Cómo funciona</h3>
+      <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t("ref.howSteps")}</h3>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         {[
-          {n:1,t:"Compartí tu link",d:"Mandalo por WhatsApp, redes o como quieras."},
-          {n:2,t:"Tu referido se registra",d:"Tiene que entrar al portal usando tu link y crear su cuenta."},
-          {n:3,t:"Hace su primera importación",d:"Cuando complete y pague su primera operación..."},
-          {n:4,t:"Ambos ganan USD 50",d:"A vos te acreditamos USD 50 en tu cuenta corriente. A él, USD 50 de descuento para su próxima importación."},
+          {n:1,t:t("ref.step1.t"),d:t("ref.step1.d")},
+          {n:2,t:t("ref.step2.t"),d:t("ref.step2.d")},
+          {n:3,t:t("ref.step3.t"),d:t("ref.step3.d")},
+          {n:4,t:t("ref.step4.t"),d:t("ref.step4.d")},
         ].map(s=><div key={s.n} style={{display:"flex",gap:14,alignItems:"flex-start"}}>
           <div style={{flexShrink:0,width:28,height:28,borderRadius:"50%",background:`linear-gradient(135deg,${GOLD},${GOLD_LIGHT})`,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,color:"#0A1628",fontSize:13}}>{s.n}</div>
           <div><p style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 2px"}}>{s.t}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0,lineHeight:1.5}}>{s.d}</p></div>
@@ -2401,14 +2405,14 @@ function ReferralsPage({token,client}){
     </div>
 
     {/* Lista de referidos */}
-    <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Mis referidos ({referrals.length})</h3>
-    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:referrals.length===0?<div style={{padding:"2rem",background:"rgba(255,255,255,0.02)",border:"1px dashed rgba(255,255,255,0.08)",borderRadius:12,textAlign:"center"}}><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Todavía no referiste a nadie. ¡Compartí tu link!</p></div>:<div style={{display:"flex",flexDirection:"column",gap:8}}>
+    <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t("ref.myReferrals")} ({referrals.length})</h3>
+    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>{t("common.loading")}</p>:referrals.length===0?<div style={{padding:"2rem",background:"rgba(255,255,255,0.02)",border:"1px dashed rgba(255,255,255,0.08)",borderRadius:12,textAlign:"center"}}><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>{t("ref.emptyShareNow")}</p></div>:<div style={{display:"flex",flexDirection:"column",gap:8}}>
       {referrals.map(r=>{const credited=!!r.referral_credited_at;return <div key={r.client_code} style={{padding:"12px 16px",background:credited?"rgba(34,197,94,0.06)":"rgba(255,255,255,0.025)",border:`1px solid ${credited?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.06)"}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:180}}>
           <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"0 0 2px"}}>{r.first_name} {r.last_name||""} <span style={{color:GOLD_LIGHT,fontFamily:"monospace",fontSize:11,marginLeft:6}}>{r.client_code}</span></p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>Se registró {formatDate(r.created_at)}{credited?` · Acreditado ${formatDate(r.referral_credited_at)}`:""}</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>{t("ref.signedUp",{date:formatDate(r.created_at)})}{credited?` · ${t("ref.creditedOn",{date:formatDate(r.referral_credited_at)})}`:""}</p>
         </div>
-        <span style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:5,background:credited?"rgba(34,197,94,0.18)":"rgba(255,255,255,0.06)",color:credited?"#22c55e":"rgba(255,255,255,0.55)",letterSpacing:"0.05em"}}>{credited?"✓ +USD 50":"⏳ Pendiente 1ra op"}</span>
+        <span style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:5,background:credited?"rgba(34,197,94,0.18)":"rgba(255,255,255,0.06)",color:credited?"#22c55e":"rgba(255,255,255,0.55)",letterSpacing:"0.05em"}}>{credited?"✓ +USD 50":`⏳ ${t("ref.firstOpPending")}`}</span>
       </div>;})}
     </div>}
   </div>;
