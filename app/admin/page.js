@@ -3658,7 +3658,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   useEffect(()=>{(async()=>{
     const opIds=flightOps.map(fo=>fo.operation_id).filter(Boolean);
     if(opIds.length===0){setFlightOpsData([]);return;}
-    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name)`});
+    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name,tax_condition,company_name,cuit)`});
     setFlightOpsData(Array.isArray(r)?r:[]);
   })();},[flightOps.length,token]);
   const opsUnique=flightOpsData.length>0?flightOpsData:Array.from(new Map([...depositOps,...allOps].filter(o=>flightOps.some(fo=>fo.operation_id===o.id)).map(o=>[o.id,o])).values());
@@ -3676,6 +3676,24 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   // Debounced save: dispara 800ms después de la última tecla
   useEffect(()=>{const diff={};Object.keys(dest).forEach(k=>{if((flight[k]||"")!==dest[k])diff[k]=dest[k];});if(Object.keys(diff).length===0)return;if(diff.dest_address!==undefined)diff.destination_address=diff.dest_address;const t=setTimeout(()=>{updateFlightSilent(diff);},800);return()=>clearTimeout(t);},[dest.dest_name,dest.dest_tax_id,dest.dest_address,dest.dest_postal_code,dest.dest_phone,dest.dest_email]);
   const chDest=(f,v)=>{typingRef.current=Date.now();setDest(p=>({...p,[f]:v}));};
+  // Auto-prefill razón social + CUIT si hay un cliente RI en el vuelo y los campos están vacíos.
+  // Solo dispara una vez (cuando aparecen los flightOpsData) — el usuario puede sobreescribir libremente después.
+  const autoFilledRef=useRef(false);
+  useEffect(()=>{
+    if(autoFilledRef.current)return;
+    if(!flightOpsData.length)return;
+    if((flight.dest_name||"").trim()||(flight.dest_tax_id||"").trim())return;
+    const riClients=flightOpsData.map(o=>o.clients).filter(c=>c?.tax_condition==="responsable_inscripto"&&(c.company_name||c.cuit));
+    if(riClients.length===0)return;
+    // Si hay varias RI distintas, no prefilleamos (ambiguo) — el admin elige.
+    const uniq=Array.from(new Map(riClients.map(c=>[c.cuit||c.company_name,c])).values());
+    if(uniq.length!==1)return;
+    const c=uniq[0];
+    autoFilledRef.current=true;
+    const body={dest_name:c.company_name||"",dest_tax_id:c.cuit||""};
+    setDest(p=>({...p,...body}));
+    updateFlightSilent(body);
+  },[flightOpsData.length,flight.dest_name,flight.dest_tax_id]);
   const [savedAddrs,setSavedAddrs]=useState([]);const [showNewAddr,setShowNewAddr]=useState(false);const [newAddr,setNewAddr]=useState({label:"",name:"",tax_id:"",address:"",postal_code:"",phone:"",email:""});
   const loadAddrs=async()=>{const r=await dq("shipping_addresses",{token,filters:"?select=*&order=is_default.desc,created_at.desc"});setSavedAddrs(Array.isArray(r)?r:[]);};
   useEffect(()=>{loadAddrs();},[]);
@@ -4308,7 +4326,7 @@ function AgentsPanel({token}){
       dq("agent_signups",{token,filters:"?select=*&order=created_at.desc"}),
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
       dq("operations",{token,filters:"?select=id,operation_code,client_id,clients(client_code,first_name,last_name,tax_condition)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&consolidation_confirmed=eq.false&order=created_at.desc"}),
-      dq("operations",{token,filters:"?select=id,operation_code,description,client_id,created_by_agent_id,status,consolidation_confirmed,origin,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp,tax_condition)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
+      dq("operations",{token,filters:"?select=id,operation_code,description,client_id,created_by_agent_id,status,consolidation_confirmed,origin,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp,tax_condition,company_name,cuit)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
       dq("operation_packages",{token,filters:"?select=*&order=package_number.asc"}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
       dq("flight_operations",{token,filters:"?select=*"}),
