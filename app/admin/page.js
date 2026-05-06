@@ -694,12 +694,31 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}));
     }catch(e){console.error("autoSync budget",e);}
   };
-  const saveItem=async(it)=>{const{id,...rest}=it;delete rest.created_at;
+  const saveItem=async(it)=>{
+    // Whitelist explícita de campos: evita que cualquier basura del state local pise columnas NOT NULL.
+    // Caso histórico: quantity se reseteaba a 1 / unit_price a 0 cuando el spread enviaba valores vacíos.
+    const numOrNull=(v)=>{const n=Number(v);return v===""||v==null||isNaN(n)?null:n;};
+    const intOr=(v,fb)=>{const n=parseInt(v,10);return isNaN(n)||n<=0?fb:n;};
+    const body={
+      description:it.description||null,
+      quantity:intOr(it.quantity,1),
+      unit_price_usd:numOrNull(it.unit_price_usd),
+      ncm_code:it.ncm_code||null,
+      import_duty_rate:numOrNull(it.import_duty_rate),
+      statistics_rate:numOrNull(it.statistics_rate),
+      iva_rate:numOrNull(it.iva_rate),
+      length_cm:numOrNull(it.length_cm),
+      width_cm:numOrNull(it.width_cm),
+      height_cm:numOrNull(it.height_cm),
+      gross_weight_kg:numOrNull(it.gross_weight_kg),
+      notes:it.notes||null,
+    };
     // Auto-clasificar NCM si tiene descripción pero no código
-    if(rest.description&&!rest.ncm_code){
-      try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:rest.description})});const d=await r.json();if(d?.ncm_code){rest.ncm_code=d.ncm_code;if(d.import_duty_rate&&!rest.import_duty_rate)rest.import_duty_rate=d.import_duty_rate;if(d.statistics_rate&&!rest.statistics_rate)rest.statistics_rate=d.statistics_rate;if(d.iva_rate&&!rest.iva_rate)rest.iva_rate=d.iva_rate;}}catch(e){}
+    if(body.description&&!body.ncm_code){
+      try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:body.description})});const d=await r.json();if(d?.ncm_code){body.ncm_code=d.ncm_code;if(d.import_duty_rate&&body.import_duty_rate==null)body.import_duty_rate=Number(d.import_duty_rate);if(d.statistics_rate&&body.statistics_rate==null)body.statistics_rate=Number(d.statistics_rate);if(d.iva_rate&&body.iva_rate==null)body.iva_rate=Number(d.iva_rate);}}catch(e){}
     }
-    await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash(rest.ncm_code?`Producto guardado · NCM ${rest.ncm_code}`:"Producto guardado");autoSyncBudget();await reloadItems();};
+    await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body});flash(body.ncm_code?`Producto guardado · NCM ${body.ncm_code}`:"Producto guardado");autoSyncBudget();await reloadItems();
+  };
   const addItem=async()=>{await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:"Nuevo producto",quantity:1,unit_price_usd:0}});await reloadItems();flash("Producto agregado");autoSyncBudget();};
   // Clasificar TODOS los items: si no tienen NCM → IA. Si tienen NCM pero no tasas → llenar tasas con IA. Si tienen todo → saltear.
   const [classifyingAll,setClassifyingAll]=useState(false);
