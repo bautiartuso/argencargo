@@ -1057,6 +1057,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
 function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
   const [invoiceItems,setInvoiceItems]=useState([]);
+  const [lightboxPhoto,setLightboxPhoto]=useState(null);
   // Peso total calculado automáticamente desde los bultos
   const autoWeight=flightOps.reduce((s,fo)=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);return s+opPkgs.reduce((a,p)=>a+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);},0);
   const [totalCost,setTotalCost]=useState(flight.total_cost_usd||"");
@@ -1221,8 +1222,9 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
             <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{w.toFixed(2)} kg{fo.cost_share_usd?` · ${usdF(fo.cost_share_usd)}`:""}</span>
           </div>
           {opPkgs.length>0&&<div style={{paddingLeft:12,borderLeft:"2px solid rgba(184,149,106,0.2)",marginLeft:4}}>
-            {opPkgs.map((p,i)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0);const l=Number(p.length_cm||0),wd=Number(p.width_cm||0),h=Number(p.height_cm||0);const hasDims=l&&wd&&h;const nt=p.national_tracking||"";return <div key={p.id||i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:11,color:"rgba(255,255,255,0.7)",gap:10,flexWrap:"wrap"}}>
+            {opPkgs.map((p,i)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0);const l=Number(p.length_cm||0),wd=Number(p.width_cm||0),h=Number(p.height_cm||0);const hasDims=l&&wd&&h;const nt=p.national_tracking||"";return <div key={p.id||i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",fontSize:11,color:"rgba(255,255,255,0.7)",gap:10,flexWrap:"wrap"}}>
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                {p.photo_url?<img src={p.photo_url} alt="" onClick={()=>setLightboxPhoto(p.photo_url)} style={{width:38,height:38,objectFit:"cover",borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in"}}/>:<div style={{width:38,height:38,borderRadius:6,border:"1px dashed rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"rgba(255,255,255,0.25)"}}>📦</div>}
                 <span style={{minWidth:22,color:IC,fontWeight:700}}>#{p.package_number||i+1}</span>
                 {nt&&<span style={{fontFamily:"monospace",background:"rgba(184,149,106,0.1)",padding:"2px 7px",borderRadius:4,color:IC,fontSize:10,border:"1px solid rgba(184,149,106,0.2)"}}>{nt}</span>}
               </div>
@@ -1293,6 +1295,10 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
         <span><strong style={{color:"#fff"}}>{t.courier}:</strong> {flight.international_carrier}</span>
         <span><strong style={{color:"#fff"}}>{t.intl_tracking}:</strong> {flight.international_tracking}</span>
       </div>
+    </div>}
+    {lightboxPhoto&&<div onClick={()=>setLightboxPhoto(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,cursor:"zoom-out"}}>
+      <button onClick={(e)=>{e.stopPropagation();setLightboxPhoto(null);}} style={{position:"absolute",top:20,right:20,padding:"8px 16px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.2)",background:"rgba(0,0,0,0.5)",color:"#fff",cursor:"pointer"}}>✕</button>
+      <img src={lightboxPhoto} alt="" onClick={(e)=>e.stopPropagation()} style={{maxWidth:"95vw",maxHeight:"95vh",objectFit:"contain",borderRadius:8,boxShadow:"0 20px 60px rgba(0,0,0,0.7)"}}/>
     </div>}
   </div>;
 }
