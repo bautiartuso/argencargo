@@ -3939,9 +3939,10 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     }
   };
   const markReceived=async()=>{
-    if(!confirm(`¿Marcar ${flight.flight_code} como recibido en Bs As? Las ops cambiarán a 'arribo_argentina'.`))return;
+    if(!confirm(`¿Marcar ${flight.flight_code} como recibido en Bs As?`))return;
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{status:"recibido",received_at:new Date().toISOString()}});
-    for(const fo of flightOps){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"arribo_argentina"}});}
+    // El status de las ops lo maneja el tracking automático (arribo_argentina, en_aduana, etc).
+    // Acá solo marcamos el vuelo como recibido — no tocamos las ops.
     // Notification #3a: notify agent about flight received
     try{await dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Vuelo ${flight.flight_code} recibido en Buenos Aires`,body:null,link:"?tab=history"}});}catch(e){console.error("notif error",e);}
     try{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,title:`Vuelo ${flight.flight_code} recibido en Buenos Aires`,url:"/agente?tab=history"})});}catch(e){}
