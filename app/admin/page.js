@@ -3871,7 +3871,17 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     const newPmt=costForm.payment_method||null;
     const newCarrier=costForm.international_carrier||null;
     const newTracking=costForm.international_tracking||null;
-    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{total_cost_usd:newCost,total_weight_kg:newWeight,international_carrier:newCarrier,international_tracking:newTracking,payment_method:newPmt}});
+    const flightPatch={total_cost_usd:newCost,total_weight_kg:newWeight,international_carrier:newCarrier,international_tracking:newTracking,payment_method:newPmt};
+    // Si admin cambia a 'alibaba' (rookie agent se equivocó), reactivar el flujo pendiente para que se complete via banner HOY
+    if(newPmt==="alibaba"&&flight.payment_method!=="alibaba"){
+      flightPatch.awaiting_alibaba_payment=true;
+      flightPatch.alibaba_base_cost_usd=newCost;
+      flightPatch.alibaba_payment_method=null;
+      flightPatch.alibaba_card_closing_date=null;
+      flightPatch.alibaba_real_cost_usd=null;
+      flightPatch.alibaba_paid_at=null;
+    }
+    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:flightPatch});
     // PROPAGAR carrier + tracking a TODAS las ops del vuelo. Antes este patch solo
     // tocaba flights.international_tracking, dejando operations.international_tracking
     // con el valor viejo → el sync del cliente seguía usando el tracking incorrecto.
@@ -3888,7 +3898,8 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     for(const fo of flightOps){
       const opW=Number(fo.weight_kg||0);
       const share=newWeight>0?(opW/newWeight)*newCost:0;
-      const cflMethod=newPmt==="cuenta_corriente"?"cuenta_corriente":(newPmt==="transferencia"?"transferencia":"contado");
+      // Mapeo: cuenta_corriente queda igual; alibaba se setea provisional (admin completa después con TC/débito en el banner HOY)
+      const cflMethod=newPmt==="alibaba"?"alibaba":newPmt;
       await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{cost_share_usd:share}});
       await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{cost_flete:share,cost_flete_method:cflMethod}});
     }
@@ -4185,9 +4196,8 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           <label style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase"}}>Método de pago</label>
           <select value={costForm.payment_method||""} onChange={e=>setCostForm(p=>({...p,payment_method:e.target.value}))} style={{padding:"6px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff"}}>
             <option value="" style={{background:"#142038"}}>—</option>
-            <option value="contado" style={{background:"#142038"}}>contado</option>
-            <option value="transferencia" style={{background:"#142038"}}>transferencia</option>
-            <option value="cuenta_corriente" style={{background:"#142038"}}>cuenta corriente</option>
+            <option value="cuenta_corriente" style={{background:"#142038"}}>Cuenta Corriente</option>
+            <option value="alibaba" style={{background:"#142038"}}>Alibaba (pendiente de completar)</option>
           </select>
         </div>
         {Number(costForm.total_cost_usd)>0&&Number(costForm.total_weight_kg)>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"0 0 10px"}}>Tarifa resultante: <strong style={{color:IC}}>{usd(Number(costForm.total_cost_usd)/Number(costForm.total_weight_kg))}/kg</strong></p>}
