@@ -1834,15 +1834,17 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
   // se reutiliza — los nuevos bultos se agregan a ella aunque ya esté consolidada
   // (mientras no haya despachado, podemos seguir sumando paquetes).
   useEffect(()=>{if(!clientId||clientId==="unregistered"){setExistingOp(null);return;}(async()=>{
-    // Buscar ops abiertas del cliente
-    const ops=await dq("operations",{token,filters:`?client_id=eq.${clientId}&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&select=id,operation_code,status&order=created_at.desc`});
+    // Buscar ops abiertas del cliente. Incluye 'pendiente' para capturar GI sin paquetes todavía.
+    const ops=await dq("operations",{token,filters:`?client_id=eq.${clientId}&channel=eq.aereo_blanco&status=in.(pendiente,en_deposito_origen,en_preparacion)&select=id,operation_code,status,service_type&order=created_at.desc`});
     if(!Array.isArray(ops)||ops.length===0){setExistingOp(null);return;}
     // Filtrar las que YA están en un vuelo activo (preparando/despachado/recibido) — esas no aceptan más bultos
     const opIds=ops.map(o=>o.id);
     const fos=await dq("flight_operations",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=operation_id,flights(status)`});
     const inFlightIds=new Set((Array.isArray(fos)?fos:[]).filter(fo=>fo.flights&&["preparando","despachado","recibido"].includes(fo.flights.status)).map(fo=>fo.operation_id));
     const trulyOpen=ops.filter(o=>!inFlightIds.has(o.id));
-    setExistingOp(trulyOpen[0]||null);
+    // Priorizar GI sobre courier: si el cliente tiene una GI abierta, los paquetes van ahí (es la intención del cliente, no una op suelta).
+    const gi=trulyOpen.find(o=>o.service_type==="gestion_integral");
+    setExistingOp(gi||trulyOpen[0]||null);
   })();},[clientId,token]);
 
   // Buscar aviso de compra que matchee el tracking en CUALQUIERA de sus trackings (debounce 350ms)
@@ -1940,7 +1942,16 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
         opId=matchedNotif.operation_id;
       }
       // PRIORIDAD 2: si hay op abierta del cliente (consolidación normal), usarla
-      else if(existingOp){opId=existingOp.id;}
+      else if(existingOp){opId=existingOp.id;
+        // GI en pendiente recibe su primer paquete físico → avanza a en_deposito_origen + asigna agente si no tenía.
+        if(existingOp.status==="pendiente"){
+          const fresh=await dq("operations",{token,filters:`?id=eq.${opId}&select=created_by_agent_id`});
+          const hadAgent=Array.isArray(fresh)&&fresh[0]?.created_by_agent_id;
+          const patch={status:"en_deposito_origen"};
+          if(!hadAgent)patch.created_by_agent_id=agentId;
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opId}`,body:patch});
+        }
+      }
       // PRIORIDAD 3: crear op nueva
       else {
         const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
