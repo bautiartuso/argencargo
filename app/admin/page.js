@@ -245,11 +245,11 @@ function OperationsList({token,onSelect,onNew}){
       const raw=Number(o.collected_amount||0);
       const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
       const cash=isArs&&rate>0?raw/rate:raw;
-      // Sumar crédito de CC aplicado y descuento intencional (contabilizado como ingreso "virtual")
+      // Sumar solo crédito de CC aplicado (es ingreso real ya recibido en su momento). El descuento NO suma — es plata que no entró.
       // Capear cash al budget_total: si pagó de más, el excedente va a CC, no es ingreso de la op
       const bt=Number(o.budget_total||0);
       const cashForOp=bt>0?Math.min(cash,bt):cash;
-      ing=cashForOp+Number(o.credit_applied_usd||0)+Number(o.discount_applied_usd||0);
+      ing=cashForOp+Number(o.credit_applied_usd||0);
       // Fallback: si la op está cobrada pero no tiene collected_amount cargado, usar presupuesto
       if(ing<=0)ing=Number(o.budget_total||0);
     } else {
@@ -1784,12 +1784,13 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const isArsCollection=op.collection_currency==="ARS";
       const colRate=Number(op.collection_exchange_rate||0);
       const cobroUsd=isArsCollection&&colRate>0?cobroRaw/colRate:cobroRaw;
-      // Crédito aplicado de la cuenta corriente del cliente (parte del cobro no-cash)
+      // Crédito aplicado de la cuenta corriente del cliente (parte del cobro no-cash, pero es ingreso real porque ya lo recibimos en su momento)
       const creditApplied=Number(op.credit_applied_usd||0);
-      // Descuento intencional del admin (ese monto no se pierde — es descuento a propósito, no deuda)
+      // Descuento aplicado: lo que el cliente NO pagó por decisión (promo, costos asumidos por el cliente, etc).
+      // Es solo informativo — NO se suma al cobro porque no es plata que entró.
       const discountApplied=Number(op.discount_applied_usd||0);
-      // Ingreso efectivo: cash recibido + crédito de CC + descuento (el descuento se contabiliza como ingreso "virtual" para no inflar pérdidas)
-      const cobro=(cobroUsd+creditApplied+discountApplied)||presupuesto;
+      // Cobro real = cash recibido + crédito de CC. Si nunca se cargó cobro, fallback al presupuesto para no romper la card.
+      const cobro=(cobroUsd+creditApplied)||presupuesto;
       const feePct=Number(op.collection_fee_pct||0);const isTransf=op.collection_method==="transferencia";
       // La comisión solo aplica al cash real que recibiste por transferencia (no al crédito de CC ni descuento)
       const comision=isTransf?cobroUsd*(feePct/100):0;
@@ -2257,7 +2258,6 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
         {!isCC&&Number(op.cost_flete)>0&&!op.cost_flete_paid_at&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-6px 0 12px",fontStyle:"italic"}}>⚠ Sin fecha de pago — el libro diario va a usar hoy. Cargá la fecha real del pago si fue otro día.</p>}
         </>;})()}
-        </div>
         {/* Impuestos y Gasto Documental: solo para canal A (blanco). En canal B/negro no aplican. */}
         {!op.channel?.includes("negro")&&<><div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Impuestos (ARS)</p>
@@ -2303,7 +2303,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <div style={{background:"rgba(34,197,94,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(34,197,94,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>COBRO NETO</p><p style={{fontSize:18,fontWeight:700,color:"#22c55e",margin:0}}>USD {ingresoNeto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
           <div style={{background:"rgba(255,80,80,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(255,80,80,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>COSTOS</p><p style={{fontSize:18,fontWeight:700,color:"#ff6b6b",margin:0}}>USD {totalCostos.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
         </div>
-        {rw("Cobro bruto",cobro)}{comision>0&&rw(`Comisión transferencia (${feePct}%)`,-comision,false,"#ff6b6b")}{rw("Cobro neto",ingresoNeto)}
+        {rw("Cobro bruto",cobro)}{comision>0&&rw(`Comisión transferencia (${feePct}%)`,-comision,false,"#ff6b6b")}{rw("Cobro neto",ingresoNeto)}{discountApplied>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Descuento aplicado (no cobrado)</span><span style={{fontSize:12,fontWeight:600,color:"#fbbf24"}}>USD {discountApplied.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>}
         <div style={{height:8}}/>
         {costProducto>0&&rw("Costo producto",costProducto,false,"#c084fc")}{rw("Costo flete",costFlete)}{rw("Impuestos reales",costImp)}{rw("Gasto documental",costDoc)}{costSeg>0&&rw("Seguro",costSeg)}{costLocal>0&&rw("Flete local",costLocal)}{costOtros>0&&rw("Otros",costOtros)}{rw("TOTAL COSTOS",totalCostos,true,"#ff6b6b")}
         {payments.length>0&&<><div style={{height:8}}/>
@@ -5702,7 +5702,7 @@ function OperationalAnalytics({token}){
         const cash=isArs&&rate>0?raw/rate:raw;
         const bt=Number(o.budget_total||0);
         const cashForOp=bt>0?Math.min(cash,bt):cash;
-        ing=cashForOp+Number(o.credit_applied_usd||0)+Number(o.discount_applied_usd||0);
+        ing=cashForOp+Number(o.credit_applied_usd||0);
         if(ing<=0)ing=bt;
       } else ing=Number(o.budget_total||0);
       const costProd=o.service_type==="gestion_integral"?Number(o.cost_producto_usd||0):0;
@@ -5777,7 +5777,7 @@ function FinanceDashboard({token}){
       // Cap cash al budget_total: el excedente fue a CC, no es ingreso de op
       const bt=Number(o.budget_total||0);
       const cashForOp=bt>0?Math.min(cash,bt):cash;
-      baseIng=cashForOp+Number(o.credit_applied_usd||0)+Number(o.discount_applied_usd||0);
+      baseIng=cashForOp+Number(o.credit_applied_usd||0);
     } else {
       baseIng=Number(o.budget_total||0);
     }
@@ -5992,7 +5992,7 @@ function FinanceDashboard({token}){
         const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
         const cash=isArs&&rate>0?raw/rate:raw;
         const cashForOp=Math.min(cash,bt);
-        const ing=cashForOp+Number(o.credit_applied_usd||0)+Number(o.discount_applied_usd||0);
+        const ing=cashForOp+Number(o.credit_applied_usd||0);
         const ratio=bt>0?ing/bt:0;
         return s+comp*ratio;
       },0);
