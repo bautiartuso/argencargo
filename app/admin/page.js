@@ -3296,20 +3296,23 @@ function FinancePanel({token}){
     // Si la op tiene pagos parciales, los agregamos más abajo (evita duplicar)
     if(o.is_collected&&!opsWithClientPmts.has(o.id)){const amt=Number(o.collected_amount||o.budget_total||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const usdAmt=isArs&&rate?amt/rate:amt;if(usdAmt>0)ledger.push({date:o.collection_date||o.closed_at?.slice(0,10)||"—",type:"ingreso",origen:"op",code:o.operation_code,desc:`Cobro ${o.operation_code} — ${o.clients?.client_code||""}`,amount:usdAmt,detail:isArs?`ARS ${amt.toLocaleString("es-AR")} @ ${rate}`:""});}
     // Costos op: una fila por concepto con su fecha real de pago.
-    // Flete CC: NO se incluye (la salida de cash ya está en el anticipo al agente). Resto usa cost_X_paid_at || closed_at.
+    // - Flete CC: NO se incluye (el cash ya salió como anticipo al agente).
+    // - Si no hay paid_at NI closed_at (op activa sin pago confirmado), NO se agrega — sino aparecería como gasto del día actual, falso.
+    // - Impuestos / gasto documental: se omiten acá porque ya viven como finance_entries auto-generadas (sino se duplican).
     const cc=o.clients?.client_code||"";
-    const today=new Date().toISOString().slice(0,10);
-    const fallback=o.closed_at?.slice(0,10)||today;
+    const closedDate=o.closed_at?.slice(0,10)||null;
+    const pickDate=(paid)=>paid?.slice(0,10)||closedDate;
     const fleteMethod=o.cost_flete_method||"cuenta_corriente";
-    if(fleteMethod!=="cuenta_corriente"&&Number(o.cost_flete||0)>0){
-      ledger.push({date:o.cost_flete_paid_at?.slice(0,10)||fallback,type:"gasto",origen:"op",code:o.operation_code,desc:`Flete ${o.operation_code} — ${cc}`,amount:Number(o.cost_flete)});
+    const fleteDate=pickDate(o.cost_flete_paid_at);
+    if(fleteMethod!=="cuenta_corriente"&&Number(o.cost_flete||0)>0&&fleteDate){
+      ledger.push({date:fleteDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Flete ${o.operation_code} — ${cc}`,amount:Number(o.cost_flete)});
     }
-    if(Number(o.cost_seguro||0)>0)ledger.push({date:o.cost_seguro_paid_at?.slice(0,10)||fallback,type:"gasto",origen:"op",code:o.operation_code,desc:`Seguro ${o.operation_code} — ${cc}`,amount:Number(o.cost_seguro)});
-    if(Number(o.cost_flete_local||0)>0)ledger.push({date:o.cost_flete_local_paid_at?.slice(0,10)||fallback,type:"gasto",origen:"op",code:o.operation_code,desc:`Flete local ${o.operation_code} — ${cc}`,amount:Number(o.cost_flete_local)});
-    if(Number(o.cost_otros||0)>0)ledger.push({date:o.cost_otros_paid_at?.slice(0,10)||fallback,type:"gasto",origen:"op",code:o.operation_code,desc:`Otros ${o.operation_code} — ${cc}`,amount:Number(o.cost_otros)});
-    // Impuestos / gasto documental: sin paid_at propio, se mantienen agrupados con closed_at
-    const impDocCost=Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0);
-    if(impDocCost>0)ledger.push({date:fallback,type:"gasto",origen:"op",code:o.operation_code,desc:`Impuestos/Doc ${o.operation_code} — ${cc}`,amount:impDocCost});
+    const segDate=pickDate(o.cost_seguro_paid_at);
+    if(Number(o.cost_seguro||0)>0&&segDate)ledger.push({date:segDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Seguro ${o.operation_code} — ${cc}`,amount:Number(o.cost_seguro)});
+    const flDate=pickDate(o.cost_flete_local_paid_at);
+    if(Number(o.cost_flete_local||0)>0&&flDate)ledger.push({date:flDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Flete local ${o.operation_code} — ${cc}`,amount:Number(o.cost_flete_local)});
+    const otDate=pickDate(o.cost_otros_paid_at);
+    if(Number(o.cost_otros||0)>0&&otDate)ledger.push({date:otDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Otros ${o.operation_code} — ${cc}`,amount:Number(o.cost_otros)});
   });
   // Gestión Integral: cada pago parcial al proveedor aparece en su fecha (no en closed_at)
   supplierPmts.filter(p=>p.is_paid).forEach(p=>{
