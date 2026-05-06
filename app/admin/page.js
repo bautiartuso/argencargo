@@ -2036,6 +2036,20 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const fresh=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=account_balance_usd`});
           if(Array.isArray(fresh)&&fresh[0])setOpClient(p=>({...p,account_balance_usd:fresh[0].account_balance_usd}));
         };
+        // Sumar deuda anterior del cliente a esta op
+        const debtBal=Math.max(0,-creditBal); // monto positivo de deuda (creditBal es negativo)
+        const debtApplied=Number(op.debt_applied_usd||0);
+        const applyDebt=async()=>{
+          if(debtBal<=0)return;
+          if(!confirm(`El cliente debe USD ${debtBal.toFixed(2)} de operaciones anteriores.\n\n¿Sumar al cobro de esta op?\n\nLa deuda se cancelará en su CC y el monto a cobrar será presupuesto + ${debtBal.toFixed(2)}.`))return;
+          await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"applied",amount_usd:debtBal,description:`Deuda cancelada en ${op.operation_code}`});
+          const newDebtApplied=debtApplied+debtBal;
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{debt_applied_usd:newDebtApplied}});
+          setOp(p=>({...p,debt_applied_usd:newDebtApplied}));
+          flash(`Deuda anterior sumada: +USD ${debtBal.toFixed(2)}`);
+          const fresh=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=account_balance_usd`});
+          if(Array.isArray(fresh)&&fresh[0])setOpClient(p=>({...p,account_balance_usd:fresh[0].account_balance_usd}));
+        };
         const totalParciales=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
         const saldoParciales=budgetTot-totalParciales;
         return <Card title="Cobro" actions={<div style={{display:"flex",gap:6}}><Btn small variant="secondary" onClick={()=>{setAddPaymentForm({amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",payment_date:new Date().toISOString().slice(0,10),notes:""});setShowAddPayment(true);}}>+ Cobro adicional</Btn><Btn onClick={saveCobro} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
@@ -2046,6 +2060,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             {creditApplied>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Ya aplicaste USD {creditApplied.toFixed(2)} a esta op.</p>}
           </div>
           <Btn onClick={applySaldo} small>Aplicar a esta op →</Btn>
+        </div>}
+        {/* Banner: cliente con deuda anterior */}
+        {debtBal>0.01&&!op.is_collected&&budgetTot>0&&<div style={{marginBottom:12,padding:"12px 16px",background:"linear-gradient(90deg, rgba(251,146,60,0.1), rgba(251,146,60,0.02))",border:"1px solid rgba(251,146,60,0.35)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div>
+            <p style={{fontSize:12,fontWeight:700,color:"#fb923c",margin:0}}>⚠ Cliente con deuda anterior: USD {debtBal.toFixed(2)}</p>
+            {debtApplied>0?<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Ya sumaste USD {debtApplied.toFixed(2)} a esta op. Total a cobrar: <strong style={{color:"#fff"}}>USD {(budgetTot+debtApplied).toFixed(2)}</strong></p>:<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si la sumás, el monto a cobrar pasa a USD {(budgetTot+debtBal).toFixed(2)} y la deuda se cancela.</p>}
+          </div>
+          {debtApplied<=0&&<Btn onClick={applyDebt} small>Sumar a esta op →</Btn>}
         </div>}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
           {/* Fix bug: NO usar fallback a budget_total en value — confunde porque parece cargado pero el state está en 0.
