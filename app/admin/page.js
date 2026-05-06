@@ -787,13 +787,15 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const [showCloseChecklist,setShowCloseChecklist]=useState(false);
   // Reempaque pendiente
   const [repackReq,setRepackReq]=useState(null);
+  const [showRepackDetail,setShowRepackDetail]=useState(false);
   useEffect(()=>{(async()=>{const r=await dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&order=requested_at.desc&limit=1`});if(Array.isArray(r)&&r[0])setRepackReq(r[0]);else setRepackReq(null);})();},[op.id,token]);
   const requestRepack=async()=>{
     const reason=prompt("Motivo del pedido de reempaque (opcional):\n\nEj: 'Reempaquetar para reducir volumétrico, intentar bajar de 50kg a 35kg'","");
     if(reason===null)return;
     // Calcular peso facturable actual usando divisor del agente
     const billable=pkgs.reduce((s,p)=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/agentVolDiv)*q:0;return s+Math.max(b,v);},0);
-    const r=await dq("repack_requests",{method:"POST",token,body:{operation_id:op.id,status:"pending",reason:reason||null,original_billable_kg:Number(billable.toFixed(2)),original_pkg_count:pkgs.length}});
+    const snapshot=pkgs.map(p=>({package_number:p.package_number,quantity:Number(p.quantity||1),gross_weight_kg:p.gross_weight_kg?Number(p.gross_weight_kg):null,length_cm:p.length_cm?Number(p.length_cm):null,width_cm:p.width_cm?Number(p.width_cm):null,height_cm:p.height_cm?Number(p.height_cm):null,national_tracking:p.national_tracking||null}));
+    const r=await dq("repack_requests",{method:"POST",token,body:{operation_id:op.id,status:"pending",reason:reason||null,original_billable_kg:Number(billable.toFixed(2)),original_pkg_count:pkgs.length,original_packages_snapshot:snapshot}});
     setRepackReq(Array.isArray(r)?r[0]:r);
     // Auto-log en comms
     try{await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"note",content:`🔄 Pedido de reempaque al agente.\nPeso facturable actual: ${billable.toFixed(2)} kg (${pkgs.length} bultos)${reason?`\nMotivo: ${reason}`:""}`}});}catch(e){}
@@ -911,9 +913,26 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </div>
       <Btn small variant="secondary" onClick={cancelRepack}>Cancelar pedido</Btn>
     </div>}
-    {repackReq&&repackReq.status==="done"&&(()=>{const before=Number(repackReq.original_billable_kg||0);const after=Number(repackReq.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;return <div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(34,197,94,0.12),rgba(34,197,94,0.04))",border:"1.5px solid rgba(34,197,94,0.35)",borderRadius:10}}>
-      <p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✅ Reempaque completado por el agente</p>
-      <p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0"}}>Peso facturable: <strong style={{color:"#fff"}}>{before.toFixed(2)} kg → {after.toFixed(2)} kg</strong>{delta>0&&<span style={{color:"#22c55e",marginLeft:6,fontWeight:700}}>(−{delta.toFixed(2)} kg / −{pct.toFixed(0)}%)</span>}{repackReq.agent_notes?` · ${repackReq.agent_notes}`:""}</p>
+    {repackReq&&repackReq.status==="done"&&(()=>{const before=Number(repackReq.original_billable_kg||0);const after=Number(repackReq.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;const oSnap=Array.isArray(repackReq.original_packages_snapshot)?repackReq.original_packages_snapshot:null;const nSnap=Array.isArray(repackReq.new_packages_snapshot)?repackReq.new_packages_snapshot:null;const hasSnap=oSnap||nSnap;return <div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(34,197,94,0.12),rgba(34,197,94,0.04))",border:"1.5px solid rgba(34,197,94,0.35)",borderRadius:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:240}}>
+          <p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✅ Reempaque completado por el agente</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0"}}>Peso facturable: <strong style={{color:"#fff"}}>{before.toFixed(2)} kg → {after.toFixed(2)} kg</strong>{delta>0&&<span style={{color:"#22c55e",marginLeft:6,fontWeight:700}}>(−{delta.toFixed(2)} kg / −{pct.toFixed(0)}%)</span>}{repackReq.agent_notes?` · ${repackReq.agent_notes}`:""}</p>
+        </div>
+        {hasSnap&&<button onClick={()=>setShowRepackDetail(p=>!p)} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.10)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>{showRepackDetail?"Ocultar detalle":"Ver bultos antes/después"}</button>}
+      </div>
+      {hasSnap&&showRepackDetail&&(()=>{const fmt=(p)=>{const dim=p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}cm`:"—";const w=p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—";const q=p.quantity>1?` ×${p.quantity}`:"";return {dim,w,q,trk:p.national_tracking||"—"};};const renderTbl=(snap,label,tone)=>!snap?<div style={{flex:1,padding:12,fontSize:11,color:"rgba(255,255,255,0.45)",fontStyle:"italic",textAlign:"center"}}>Sin snapshot ({label.toLowerCase()})</div>:<div style={{flex:1,minWidth:260}}>
+        <p style={{fontSize:10,fontWeight:700,color:tone,margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{label} · {snap.length} bulto{snap.length!==1?"s":""}</p>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{["#","Tracking","Dim","Peso"].map(h=><th key={h} style={{textAlign:"left",padding:"4px 6px",color:"rgba(255,255,255,0.4)",fontWeight:700,fontSize:9,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+          <tbody>{snap.map((p,i)=>{const f=fmt(p);return <tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{padding:"4px 6px",color:"#fff",fontWeight:600}}>{p.package_number||i+1}{f.q}</td>
+            <td style={{padding:"4px 6px",color:"rgba(255,255,255,0.6)",fontFamily:"monospace",fontSize:10}}>{f.trk}</td>
+            <td style={{padding:"4px 6px",color:"rgba(255,255,255,0.55)"}}>{f.dim}</td>
+            <td style={{padding:"4px 6px",color:"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums"}}>{f.w}</td>
+          </tr>;})}</tbody>
+        </table>
+      </div>;return <div style={{display:"flex",gap:14,marginTop:12,paddingTop:12,borderTop:"1px solid rgba(34,197,94,0.2)",flexWrap:"wrap"}}>{renderTbl(oSnap,"Antes","#fbbf24")}{renderTbl(nSnap,"Después","#22c55e")}</div>;})()}
     </div>;})()}
     {pendingRedemptions.length>0&&<div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:10}}>
       <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>⭐ Canje de puntos pendiente{pendingRedemptions.length>1?"s":""}</p>

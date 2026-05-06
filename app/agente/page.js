@@ -1398,7 +1398,8 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
       }
       // 3. Marcar request como done
       if(request?.id){
-        await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${request.id}`,body:{status:"done",new_billable_kg:Number(after.toFixed(2)),new_pkg_count:newBultos.length,agent_notes:notes||null,completed_at:new Date().toISOString(),completed_by:userId}});
+        const newSnapshot=newBultos.map((b,i)=>({package_number:i+1,quantity:1,gross_weight_kg:Number(b.weight)||null,length_cm:Number(b.length)||null,width_cm:Number(b.width)||null,height_cm:Number(b.height)||null,national_tracking:refFor(i)}));
+        await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${request.id}`,body:{status:"done",new_billable_kg:Number(after.toFixed(2)),new_pkg_count:newBultos.length,agent_notes:notes||null,completed_at:new Date().toISOString(),completed_by:userId,new_packages_snapshot:newSnapshot}});
       }
       // 4. Log en comunicaciones
       try{await dq("op_communications",{method:"POST",token,body:{operation_id:opId,type:"note",content:`✅ Reempaque completado.\nPeso facturable: ${before.toFixed(2)} kg → ${after.toFixed(2)} kg${delta>0?` (−${delta.toFixed(2)} kg)`:""}\nBultos: ${packages.length} → ${newBultos.length}\nNuevas referencias: ${newBultos.map((_,i)=>refFor(i)).join(", ")}${notes?`\nNotas: ${notes}`:""}`}});}catch(e){}
