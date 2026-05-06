@@ -601,7 +601,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     autoSyncBudget();
   };
   // CC balance del agente asignado a esta op (mismo número que ve el panel Agentes)
-  const loadCCBalance=async()=>{const ag=op.created_by_agent_id;if(!ag){setCcBalance(0);return;}const mvs=await dq("agent_account_movements",{token,filters:`?agent_id=eq.${ag}&select=type,amount_usd`});if(Array.isArray(mvs)){const bal=mvs.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):(-Number(m.amount_usd))),0);setCcBalance(bal);}};
+  const loadCCBalance=async()=>{const ag=op.created_by_agent_id;if(!ag){setCcBalance(0);return;}const mvs=await dq("agent_account_movements",{token,filters:`?agent_id=eq.${ag}&select=type,amount_usd`});if(Array.isArray(mvs)){const bal=mvs.reduce((s,m)=>s+((m.type==="anticipo"||m.type==="refund")?Number(m.amount_usd):(-Number(m.amount_usd))),0);setCcBalance(bal);}};
   // Divisor volumétrico del agente que creó la op (default 5000 si no hay agente o no está set)
   const [agentVolDiv,setAgentVolDiv]=useState(5000);
   useEffect(()=>{(async()=>{if(!op.created_by_agent_id){setAgentVolDiv(5000);return;}const r=await dq("agent_signups",{token,filters:`?auth_user_id=eq.${op.created_by_agent_id}&select=volumetric_divisor`});const d=Array.isArray(r)&&r[0]?Number(r[0].volumetric_divisor):5000;setAgentVolDiv(d||5000);})();},[op.created_by_agent_id,token]);
@@ -4350,7 +4350,7 @@ function RefundForm({token,agentId,onSaved}){
       <Inp label="Descripción" value={desc} onChange={setDesc} placeholder="Ej: Compensación por demora vuelo FL-0003"/>
       <Btn small onClick={save} disabled={saving||!amount}>{saving?"...":"Guardar"}</Btn>
     </div>
-    <p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"8px 0 0"}}>↳ Resta del balance del agente y aparece como ingreso en el libro diario</p>
+    <p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"8px 0 0"}}>↳ Suma al balance (reduce la deuda con el agente) y aparece como ingreso en el libro diario</p>
   </div>;
 }
 
@@ -4513,7 +4513,7 @@ function AgentsPanel({token}){
     },0);
   };
   const opGrossWeight=(opId)=>opPackages(opId).reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);
-  const agentBalance=(agentId)=>accMovements.filter(m=>m.agent_id===agentId).reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):-Number(m.amount_usd)),0);
+  const agentBalance=(agentId)=>accMovements.filter(m=>m.agent_id===agentId).reduce((s,m)=>s+((m.type==="anticipo"||m.type==="refund")?Number(m.amount_usd):-Number(m.amount_usd)),0);
   const toggleSelOp=(opId)=>setSelectedOps(p=>p.includes(opId)?p.filter(x=>x!==opId):[...p,opId]);
   const createFlight=async()=>{
     if(selectedOps.length===0)return;
@@ -4804,7 +4804,7 @@ function AgentsPanel({token}){
           <tbody>{movs.map(m=>{const fl=flights.find(f=>f.id===m.flight_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)"}}>{formatDate(m.date)}</td>
             <td style={{padding:"8px 12px"}}>{(()=>{const cfg=m.type==="anticipo"?{lbl:"ANTICIPO",bg:"rgba(34,197,94,0.15)",fg:"#22c55e"}:m.type==="refund"?{lbl:"DEVOLUCIÓN",bg:"rgba(96,165,250,0.15)",fg:"#60a5fa"}:{lbl:"DEDUCCIÓN",bg:"rgba(255,80,80,0.15)",fg:"#ff6b6b"};return <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:cfg.bg,color:cfg.fg}}>{cfg.lbl}</span>;})()}</td>
-            <td style={{padding:"8px 12px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":m.type==="refund"?"#60a5fa":"#ff6b6b"}}>{m.type==="anticipo"?"+":"-"}{usd(m.amount_usd)}</td>
+            <td style={{padding:"8px 12px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":m.type==="refund"?"#60a5fa":"#ff6b6b"}}>{(m.type==="anticipo"||m.type==="refund")?"+":"-"}{usd(m.amount_usd)}</td>
             <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)"}}>{m.description||"—"}</td>
             <td style={{padding:"8px 12px",fontFamily:"monospace",color:IC,fontSize:11}}>{fl?fl.flight_code:"—"}</td>
           </tr>;})}</tbody>
