@@ -5272,14 +5272,20 @@ function AlibabaPendingBanner({flights,token,onDone}){
   const [open,setOpen]=useState(null); // flight.id que está siendo completado
   const [method,setMethod]=useState("tarjeta_credito");
   const [closing,setClosing]=useState("");
+  const [realCostInput,setRealCostInput]=useState("");
+  const [userEdited,setUserEdited]=useState(false);
   const [saving,setSaving]=useState(false);
-  const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");};
+  const flight=flights.find(f=>f.id===open);
+  const base=flight?Number(flight.alibaba_base_cost_usd||0):0;
+  const autoCost=Math.round(base*1.03*(method==="tarjeta_credito"?1.012:1)*100)/100;
+  // Auto-calcular cuando cambia el método o el flight, salvo que el usuario haya editado manualmente.
+  useEffect(()=>{if(!userEdited&&open)setRealCostInput(String(autoCost));},[autoCost,open,userEdited]);
+  const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");setUserEdited(false);};
   const complete=async(flight)=>{
     if(method==="tarjeta_credito"&&!closing){alert("Falta fecha de cierre de tarjeta");return;}
+    const realCost=Number(realCostInput||0);
+    if(!realCost||realCost<=0){alert("Cargá un costo real válido");return;}
     setSaving(true);
-    const base=Number(flight.alibaba_base_cost_usd||0);
-    // Comisiones: Alibaba 3% siempre. Sellos 1.2% solo TC.
-    const realCost=Math.round(base*1.03*(method==="tarjeta_credito"?1.012:1)*100)/100;
     const isTC=method==="tarjeta_credito";
     // 1) Update flight con datos del pago + nuevo total_cost_usd (para que las distribuciones queden coherentes)
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{awaiting_alibaba_payment:false,alibaba_payment_method:method,alibaba_card_closing_date:isTC?closing:null,alibaba_real_cost_usd:realCost,alibaba_paid_at:new Date().toISOString(),total_cost_usd:realCost}});
@@ -5311,15 +5317,18 @@ function AlibabaPendingBanner({flights,token,onDone}){
           </div>
           {!isOpen&&<button onClick={()=>startEdit(f)} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.12)",color:"#60a5fa",cursor:"pointer"}}>Completar pago</button>}
         </div>
-        {isOpen&&<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:method==="tarjeta_credito"?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr",gap:10,alignItems:"end"}}>
-          <Sel label="Método de pago" value={method} onChange={setMethod} options={[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"tarjeta_debito",label:"Tarjeta de Débito"}]}/>
-          {method==="tarjeta_credito"&&<Inp label="Cierre de tarjeta" type="date" value={closing} onChange={setClosing}/>}
-          <div style={{padding:"6px 10px",background:"rgba(34,197,94,0.08)",borderRadius:8,border:"1px solid rgba(34,197,94,0.25)"}}>
-            <p style={{fontSize:9,color:"rgba(255,255,255,0.45)",margin:"0 0 2px",textTransform:"uppercase",fontWeight:700}}>Costo real</p>
-            <p style={{fontSize:14,color:"#22c55e",fontWeight:700,margin:0,fontVariantNumeric:"tabular-nums"}}>USD {(base*1.03*(method==="tarjeta_credito"?1.012:1)).toFixed(2)}</p>
+        {isOpen&&<>
+          <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:method==="tarjeta_credito"?"1fr 1fr 1fr":"1fr 1fr",gap:10,alignItems:"end"}}>
+            <Sel label="Método de pago" value={method} onChange={v=>{setMethod(v);setUserEdited(false);}} options={[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"tarjeta_debito",label:"Tarjeta de Débito"}]}/>
+            {method==="tarjeta_credito"&&<Inp label="Cierre de tarjeta" type="date" value={closing} onChange={setClosing}/>}
+            <Inp label={`Costo real (auto: USD ${autoCost.toFixed(2)})`} type="number" step="0.01" value={realCostInput} onChange={v=>{setRealCostInput(v);setUserEdited(true);}}/>
           </div>
-          <div style={{display:"flex",gap:6}}><Btn small onClick={()=>complete(f)} disabled={saving||(method==="tarjeta_credito"&&!closing)}>{saving?"...":"Confirmar"}</Btn><button onClick={()=>setOpen(null)} disabled={saving} style={{padding:"6px 12px",fontSize:11,borderRadius:7,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.5)",cursor:"pointer"}}>Cancelar</button></div>
-        </div>}
+          <div style={{display:"flex",gap:8,marginTop:10,justifyContent:"flex-end"}}>
+            {userEdited&&<button onClick={()=>{setUserEdited(false);setRealCostInput(String(autoCost));}} style={{padding:"6px 12px",fontSize:11,borderRadius:7,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>↻ Usar auto</button>}
+            <button onClick={()=>setOpen(null)} disabled={saving} style={{padding:"6px 14px",fontSize:11,borderRadius:7,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.5)",cursor:"pointer"}}>Cancelar</button>
+            <Btn small onClick={()=>complete(f)} disabled={saving||(method==="tarjeta_credito"&&!closing)||!Number(realCostInput)}>{saving?"...":"Confirmar"}</Btn>
+          </div>
+        </>}
       </div>;})}
     </div>
   </div>;
