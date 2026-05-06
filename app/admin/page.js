@@ -64,11 +64,20 @@ const ensureFreshToken=async(token)=>{
   }
   return token;
 };
+// Sanitiza body antes de PATCH/POST: convierte "" a null para que columnas DATE/NUMERIC
+// no fallen con 400 cuando un input quedó vacío. Bug observado: AC-0026 no guardaba
+// porque algún campo DATE estaba "" y el PATCH 400-eaba silenciosamente.
+const _sanitizeBody=(b)=>{
+  if(!b||typeof b!=="object"||Array.isArray(b))return b;
+  const out={};for(const k in b){const v=b[k];out[k]=v===""?null:v;}return out;
+};
 const dq=async(t,{method="GET",body,token,filters="",headers:h={}})=>{
   const fresh=await ensureFreshToken(token);
+  const cleanBody=(method==="PATCH"||method==="POST")?_sanitizeBody(body):body;
   const doReq=async(tk)=>{
-    const r=await fetch(`${SB_URL}/rest/v1/${t}${filters}`,{method,body:body?JSON.stringify(body):undefined,headers:{apikey:SB_KEY,"Content-Type":"application/json",Authorization:`Bearer ${tk}`,...(method==="POST"?{Prefer:"return=representation"}:method==="DELETE"?{Prefer:"return=minimal"}:method==="PATCH"?{Prefer:"return=representation"}:{}),...h}});
+    const r=await fetch(`${SB_URL}/rest/v1/${t}${filters}`,{method,body:cleanBody?JSON.stringify(cleanBody):undefined,headers:{apikey:SB_KEY,"Content-Type":"application/json",Authorization:`Bearer ${tk}`,...(method==="POST"?{Prefer:"return=representation"}:method==="DELETE"?{Prefer:"return=minimal"}:method==="PATCH"?{Prefer:"return=representation"}:{}),...h}});
     const txt=await r.text();let parsed=null;try{parsed=JSON.parse(txt);}catch{}
+    if(r.status>=400){console.error(`[dq] ${method} ${t} ${r.status}`,parsed);}
     return {status:r.status,body:parsed};
   };
   let r=await doReq(fresh);
