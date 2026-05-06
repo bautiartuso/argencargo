@@ -587,6 +587,16 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const maxNum=Array.isArray(destPkgs)&&destPkgs.length>0?Math.max(...destPkgs.map(p=>Number(p.package_number||0))):0;
     await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{operation_id:dest.id,package_number:maxNum+1}});
     await reloadPkgs();
+    // Si la op origen quedó vacía (sin bultos ni items) y todavía no avanzó, la eliminamos para no dejar ops fantasma.
+    const remainPkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=id&limit=1`});
+    const remainItems=await dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=id&limit=1`});
+    const empty=(!Array.isArray(remainPkgs)||remainPkgs.length===0)&&(!Array.isArray(remainItems)||remainItems.length===0);
+    const safeToDelete=["en_deposito_origen","en_preparacion","pendiente"].includes(op.status)&&!op.is_collected&&Number(op.budget_total||0)===0;
+    if(empty&&safeToDelete){
+      await dq("operations",{method:"DELETE",token,filters:`?id=eq.${op.id}`});
+      flash(`✓ Bulto movido a ${dest.operation_code} · ${op.operation_code} eliminada (quedó vacía)`);
+      (onDelete||onBack)?.();return;
+    }
     flash(`✓ Bulto movido a ${dest.operation_code}`);
     autoSyncBudget();
   };
@@ -4447,8 +4457,18 @@ function AgentsPanel({token}){
     const destPkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${destOpId}&select=package_number`});
     const maxNum=Array.isArray(destPkgs)&&destPkgs.length>0?Math.max(...destPkgs.map(p=>Number(p.package_number||0))):0;
     await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{operation_id:destOpId,package_number:maxNum+1}});
+    // Si la op origen quedó vacía y todavía no avanzó, la eliminamos.
+    let deletedMsg="";
+    const remainPkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${fromOp.id}&select=id&limit=1`});
+    const remainItems=await dq("operation_items",{token,filters:`?operation_id=eq.${fromOp.id}&select=id&limit=1`});
+    const empty=(!Array.isArray(remainPkgs)||remainPkgs.length===0)&&(!Array.isArray(remainItems)||remainItems.length===0);
+    const safeToDelete=["en_deposito_origen","en_preparacion","pendiente"].includes(fromOp.status)&&!fromOp.is_collected&&Number(fromOp.budget_total||0)===0;
+    if(empty&&safeToDelete){
+      await dq("operations",{method:"DELETE",token,filters:`?id=eq.${fromOp.id}`});
+      deletedMsg=` · ${fromOp.operation_code} eliminada (quedó vacía)`;
+    }
     setMoveSaving(false);closeMoveModal();
-    flash(`✓ Bulto movido a ${destCode} (${moveSelClient.client_code})`);
+    flash(`✓ Bulto movido a ${destCode} (${moveSelClient.client_code})${deletedMsg}`);
     load();
   };
   // Peso facturable: max(bruto, volumétrico) por bulto, sumado. Usa divisor del agente (default 5000).
