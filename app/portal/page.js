@@ -873,6 +873,19 @@ function ProfilePage({client,token}){
   if(!client)return null;
   const f=[{l:t("auth.firstName"),v:`${client.first_name} ${client.last_name}`},{l:t("profile.code"),v:client.client_code,m:true},{l:t("auth.email"),v:client.email},{l:t("auth.whatsapp"),v:client.whatsapp},{l:t("profile.address"),v:`${client.street}${client.floor_apt?`, ${client.floor_apt}`:""}`},{l:t("profile.locality"),v:`${client.city}, ${client.province}`},{l:t("profile.zip"),v:client.postal_code},{l:t("profile.vat"),v:t("tax."+(client.tax_condition||"consumidor_final"))}];
   const [exporting,setExporting]=useState(false);
+  const [pwd1,setPwd1]=useState("");const [pwd2,setPwd2]=useState("");const [pwdMsg,setPwdMsg]=useState("");const [pwdErr,setPwdErr]=useState("");const [pwdSaving,setPwdSaving]=useState(false);
+  const changePwd=async()=>{
+    setPwdMsg("");setPwdErr("");
+    if(!pwd1||pwd1.length<6){setPwdErr("Mínimo 6 caracteres");return;}
+    if(pwd1!==pwd2){setPwdErr(t("auth.reset.passwordsDontMatch"));return;}
+    setPwdSaving(true);
+    try{
+      const r=await fetch(`${SB_URL}/auth/v1/user`,{method:"PUT",headers:{apikey:SB_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({password:pwd1})}).then(x=>x.json());
+      if(r?.error||r?.msg||r?.error_description){setPwdErr(r.msg||r.error_description||"Error al cambiar la contraseña");}
+      else{setPwdMsg(t("profile.changed"));setPwd1("");setPwd2("");setTimeout(()=>setPwdMsg(""),3000);}
+    }catch(e){setPwdErr("Error de conexión");}
+    setPwdSaving(false);
+  };
   const exportHistory=async(format)=>{
     setExporting(true);
     try{
@@ -934,6 +947,18 @@ function ProfilePage({client,token}){
   };
   return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 24px",letterSpacing:"-0.02em"}}>{t("profile.title")}</h2><div style={{background:"rgba(255,255,255,0.025)",borderRadius:16,border:"1px solid rgba(255,255,255,0.06)",padding:"1.75rem 2rem"}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"24px 28px"}}>{f.map((x,i)=><div key={i}><p style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{x.l}</p><p style={{fontSize:15,color:"#fff",margin:0,fontWeight:500,...(x.m?{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:18,color:GOLD_LIGHT,letterSpacing:"0.04em"}:{})}}>{x.v||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</p></div>)}</div></div>
     <div style={{background:"rgba(184,149,106,0.06)",borderRadius:12,border:"1px solid rgba(184,149,106,0.18)",padding:"14px 20px",marginTop:16,display:"flex",alignItems:"center",gap:12}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={GOLD_LIGHT} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg><p style={{fontSize:13,color:"rgba(255,255,255,0.65)",margin:0,lineHeight:1.5}}>{t("profile.codeNote",{code:client.client_code})}</p></div>
+    {/* Cambiar contraseña */}
+    <div style={{background:"rgba(255,255,255,0.025)",borderRadius:16,border:"1px solid rgba(255,255,255,0.06)",padding:"1.5rem 2rem",marginTop:16}}>
+      <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>🔒 {t("profile.changePassword")}</h3>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",lineHeight:1.5}}>Mínimo 6 caracteres. Tu sesión se mantiene activa después del cambio.</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+        <div><p style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t("profile.newPassword")}</p><input type="password" value={pwd1} onChange={e=>setPwd1(e.target.value)} autoComplete="new-password" style={{width:"100%",padding:"10px 12px",fontSize:14,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#fff",outline:"none"}}/></div>
+        <div><p style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{t("auth.passwordConfirm")}</p><input type="password" value={pwd2} onChange={e=>setPwd2(e.target.value)} autoComplete="new-password" style={{width:"100%",padding:"10px 12px",fontSize:14,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#fff",outline:"none"}}/></div>
+      </div>
+      {pwdErr&&<p style={{fontSize:12,color:"#f87171",margin:"0 0 10px"}}>{pwdErr}</p>}
+      {pwdMsg&&<p style={{fontSize:12,color:"#22c55e",margin:"0 0 10px"}}>✓ {pwdMsg}</p>}
+      <button onClick={changePwd} disabled={pwdSaving} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:pwdSaving?"wait":"pointer",opacity:pwdSaving?0.5:1}}>{pwdSaving?"Guardando...":t("profile.changePassword")}</button>
+    </div>
     {/* Exportar histórico */}
     <div style={{background:"rgba(255,255,255,0.025)",borderRadius:16,border:"1px solid rgba(255,255,255,0.06)",padding:"1.5rem 2rem",marginTop:16}}>
       <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>📥 {t("profile.exportTitle")}</h3>

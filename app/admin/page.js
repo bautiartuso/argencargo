@@ -2242,16 +2242,21 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           </div>;
         })()}
         <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Flete</p>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px",marginBottom:16}}>
+        {(()=>{const isCC=(op.cost_flete_method||"cuenta_corriente")==="cuenta_corriente";return <>
+        <div style={{display:"grid",gridTemplateColumns:isCC?"1fr 1fr 1fr":"1fr 1fr 1fr",gap:"0 16px",marginBottom:isCC?16:8}}>
           <Inp label="Costo flete (USD)" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>
           <Sel label="Método de pago" value={op.cost_flete_method||"cuenta_corriente"} onChange={chOp("cost_flete_method")} options={[{value:"cuenta_corriente",label:"Cuenta Corriente"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"},{value:"transferencia",label:"Transferencia Bancaria"}]}/>
-          {(op.cost_flete_method||"cuenta_corriente")==="cuenta_corriente"&&<div style={{paddingTop:22}} title="Cuenta Corriente con el agente asignado a esta op: anticipos suman, fletes en CC restan. Negativo (rojo) = le debés al agente.">
+          {isCC&&<div style={{paddingTop:22}} title="Cuenta Corriente con el agente asignado a esta op: anticipos suman, fletes en CC restan. Negativo (rojo) = le debés al agente.">
             <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>SALDO AGENTE (CC)</p>
             {op.created_by_agent_id?<>
               <p style={{fontSize:16,fontWeight:700,color:ccBalance>0?"#22c55e":"#ff6b6b",margin:0}}>USD {ccBalance.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
               <p style={{fontSize:9,color:"rgba(255,255,255,0.35)",margin:"2px 0 0",fontStyle:"italic"}}>{ccBalance>=0?"crédito disponible":"deuda con agente"}</p>
             </>:<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:0,fontStyle:"italic"}}>op sin agente asignado</p>}
           </div>}
+          {!isCC&&Number(op.cost_flete)>0&&<Inp label="Fecha de pago del flete" type="date" value={op.cost_flete_paid_at?String(op.cost_flete_paid_at).slice(0,10):""} onChange={v=>chOp("cost_flete_paid_at")(v?v+"T12:00:00-03":null)}/>}
+        </div>
+        {!isCC&&Number(op.cost_flete)>0&&!op.cost_flete_paid_at&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-6px 0 12px",fontStyle:"italic"}}>⚠ Sin fecha de pago — el libro diario va a usar hoy. Cargá la fecha real del pago si fue otro día.</p>}
+        </>;})()}
         </div>
         {/* Impuestos y Gasto Documental: solo para canal A (blanco). En canal B/negro no aplican. */}
         {!op.channel?.includes("negro")&&<><div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
@@ -2274,10 +2279,21 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div></>}
         <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Otros costos (USD)</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
-            <Inp label="Flete local" type="number" value={op.cost_flete_local} onChange={chOp("cost_flete_local")} step="0.01"/>
-            <Inp label="Otros costos" type="number" value={op.cost_otros} onChange={chOp("cost_otros")} step="0.01"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px",marginBottom:8}}>
+            <Inp label="Seguro" type="number" value={op.cost_seguro} onChange={chOp("cost_seguro")} step="0.01"/>
+            {Number(op.cost_seguro)>0&&<Inp label="Fecha de pago del seguro" type="date" value={op.cost_seguro_paid_at?String(op.cost_seguro_paid_at).slice(0,10):""} onChange={v=>chOp("cost_seguro_paid_at")(v?v+"T12:00:00-03":null)}/>}
           </div>
+          {Number(op.cost_seguro)>0&&!op.cost_seguro_paid_at&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-4px 0 8px",fontStyle:"italic"}}>⚠ Sin fecha de pago — el libro diario va a usar hoy.</p>}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px",marginBottom:8}}>
+            <Inp label="Flete local" type="number" value={op.cost_flete_local} onChange={chOp("cost_flete_local")} step="0.01"/>
+            {Number(op.cost_flete_local)>0&&<Inp label="Fecha de pago flete local" type="date" value={op.cost_flete_local_paid_at?String(op.cost_flete_local_paid_at).slice(0,10):""} onChange={v=>chOp("cost_flete_local_paid_at")(v?v+"T12:00:00-03":null)}/>}
+          </div>
+          {Number(op.cost_flete_local)>0&&!op.cost_flete_local_paid_at&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-4px 0 8px",fontStyle:"italic"}}>⚠ Sin fecha de pago — el libro diario va a usar hoy.</p>}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px",marginBottom:8}}>
+            <Inp label="Otros costos" type="number" value={op.cost_otros} onChange={chOp("cost_otros")} step="0.01"/>
+            {Number(op.cost_otros)>0&&<Inp label="Fecha de pago otros" type="date" value={op.cost_otros_paid_at?String(op.cost_otros_paid_at).slice(0,10):""} onChange={v=>chOp("cost_otros_paid_at")(v?v+"T12:00:00-03":null)}/>}
+          </div>
+          {Number(op.cost_otros)>0&&!op.cost_otros_paid_at&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-4px 0 8px",fontStyle:"italic"}}>⚠ Sin fecha de pago — el libro diario va a usar hoy.</p>}
           <Inp label="Notas" value={op.cost_notas} onChange={chOp("cost_notas")} placeholder="Ej: Consolidado con AC-0002..."/>
         </div>
       </Card>
@@ -3218,7 +3234,7 @@ function FinancePanel({token}){
   const [clientPmts,setClientPmts]=useState([]);
   const load=async()=>{const [e,o,pm,dp,am,ag,sp,cp,cdUsd,cdArs,cdPmts,supTcArs,supTcUsd]=await Promise.all([
     dq("finance_entries",{token,filters:"?select=*&auto_generated=is.false&order=date.desc,created_at.desc"}),
-    dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,closed_at,cost_flete,cost_flete_method,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,service_type,cost_producto_usd,cost_producto_method,cost_producto_paid,cost_producto_paid_at,clients(first_name,last_name,client_code)&order=created_at.desc"}),
+    dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,closed_at,cost_flete,cost_flete_method,cost_flete_paid_at,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_seguro_paid_at,cost_flete_local,cost_flete_local_paid_at,cost_otros,cost_otros_paid_at,service_type,cost_producto_usd,cost_producto_method,cost_producto_paid,cost_producto_paid_at,clients(first_name,last_name,client_code)&order=created_at.desc"}),
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)"}),
     dq("finance_entries",{token,filters:"?select=*&currency=eq.ARS&exchange_rate=is.null&auto_generated=eq.true&order=card_closing_date.asc"}),
     dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),
@@ -3279,11 +3295,21 @@ function FinancePanel({token}){
   allOps.forEach(o=>{
     // Si la op tiene pagos parciales, los agregamos más abajo (evita duplicar)
     if(o.is_collected&&!opsWithClientPmts.has(o.id)){const amt=Number(o.collected_amount||o.budget_total||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const usdAmt=isArs&&rate?amt/rate:amt;if(usdAmt>0)ledger.push({date:o.collection_date||o.closed_at?.slice(0,10)||"—",type:"ingreso",origen:"op",code:o.operation_code,desc:`Cobro ${o.operation_code} — ${o.clients?.client_code||""}`,amount:usdAmt,detail:isArs?`ARS ${amt.toLocaleString("es-AR")} @ ${rate}`:""});}
-    // Cost_flete via cuenta_corriente: NO se incluye en libro diario (la salida de cash ya está en el anticipo al agente)
+    // Costos op: una fila por concepto con su fecha real de pago.
+    // Flete CC: NO se incluye (la salida de cash ya está en el anticipo al agente). Resto usa cost_X_paid_at || closed_at.
+    const cc=o.clients?.client_code||"";
+    const today=new Date().toISOString().slice(0,10);
+    const fallback=o.closed_at?.slice(0,10)||today;
     const fleteMethod=o.cost_flete_method||"cuenta_corriente";
-    const fleteForLedger=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);
-    const cost=fleteForLedger+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
-    if(cost>0)ledger.push({date:o.closed_at?.slice(0,10)||"—",type:"gasto",origen:"op",code:o.operation_code,desc:`Costos ${o.operation_code} — ${o.clients?.client_code||""}`,amount:cost,detail:fleteMethod==="cuenta_corriente"&&Number(o.cost_flete||0)>0?`(flete CC ${usd(Number(o.cost_flete))} ya cubierto por anticipo)`:""});
+    if(fleteMethod!=="cuenta_corriente"&&Number(o.cost_flete||0)>0){
+      ledger.push({date:o.cost_flete_paid_at?.slice(0,10)||fallback,type:"gasto",origen:"op",code:o.operation_code,desc:`Flete ${o.operation_code} — ${cc}`,amount:Number(o.cost_flete)});
+    }
+    if(Number(o.cost_seguro||0)>0)ledger.push({date:o.cost_seguro_paid_at?.slice(0,10)||fallback,type:"gasto",origen:"op",code:o.operation_code,desc:`Seguro ${o.operation_code} — ${cc}`,amount:Number(o.cost_seguro)});
+    if(Number(o.cost_flete_local||0)>0)ledger.push({date:o.cost_flete_local_paid_at?.slice(0,10)||fallback,type:"gasto",origen:"op",code:o.operation_code,desc:`Flete local ${o.operation_code} — ${cc}`,amount:Number(o.cost_flete_local)});
+    if(Number(o.cost_otros||0)>0)ledger.push({date:o.cost_otros_paid_at?.slice(0,10)||fallback,type:"gasto",origen:"op",code:o.operation_code,desc:`Otros ${o.operation_code} — ${cc}`,amount:Number(o.cost_otros)});
+    // Impuestos / gasto documental: sin paid_at propio, se mantienen agrupados con closed_at
+    const impDocCost=Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0);
+    if(impDocCost>0)ledger.push({date:fallback,type:"gasto",origen:"op",code:o.operation_code,desc:`Impuestos/Doc ${o.operation_code} — ${cc}`,amount:impDocCost});
   });
   // Gestión Integral: cada pago parcial al proveedor aparece en su fecha (no en closed_at)
   supplierPmts.filter(p=>p.is_paid).forEach(p=>{
