@@ -2189,9 +2189,37 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         // Save impuestos + gasto doc ARS → auto-create finance_entries
         const impArs=Number(op.cost_impuestos_ars||0);
         const docArs=Number(op.cost_gasto_documental_ars||0);
-        // Save operation first
-        const{id,clients,...rest}=op;delete rest.created_at;delete rest.updated_at;
-        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
+        // Whitelist explícita: solo campos cost_* + cost_notas. Evita pisar otras columnas.
+        const id=op.id;
+        const numOrNull=(v)=>{const n=Number(v);return v===""||v==null||isNaN(n)?null:n;};
+        const dateOrNull=(v)=>v?String(v).slice(0,10):null;
+        const costBody={
+          cost_flete:numOrNull(op.cost_flete),
+          cost_flete_method:op.cost_flete_method||null,
+          cost_flete_paid_at:dateOrNull(op.cost_flete_paid_at),
+          cost_impuestos_ars:numOrNull(op.cost_impuestos_ars),
+          cost_impuestos_method:op.cost_impuestos_method||null,
+          cost_impuestos_card_closing:op.cost_impuestos_card_closing||null,
+          cost_impuestos_paid_at:dateOrNull(op.cost_impuestos_paid_at),
+          cost_impuestos_reales:numOrNull(op.cost_impuestos_reales),
+          cost_gasto_documental_ars:numOrNull(op.cost_gasto_documental_ars),
+          cost_gasto_doc_method:op.cost_gasto_doc_method||null,
+          cost_gasto_doc_card_closing:op.cost_gasto_doc_card_closing||null,
+          cost_gasto_doc_paid_at:dateOrNull(op.cost_gasto_doc_paid_at),
+          cost_gasto_documental:numOrNull(op.cost_gasto_documental),
+          cost_seguro:numOrNull(op.cost_seguro),
+          cost_seguro_paid_at:dateOrNull(op.cost_seguro_paid_at),
+          cost_flete_local:numOrNull(op.cost_flete_local),
+          cost_flete_local_paid_at:dateOrNull(op.cost_flete_local_paid_at),
+          cost_otros:numOrNull(op.cost_otros),
+          cost_otros_paid_at:dateOrNull(op.cost_otros_paid_at),
+          cost_notas:op.cost_notas||null,
+          cost_producto_usd:numOrNull(op.cost_producto_usd),
+          cost_producto_method:op.cost_producto_method||null,
+          cost_producto_paid:op.cost_producto_paid||false,
+          cost_producto_paid_at:op.cost_producto_paid_at||null,
+        };
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:costBody});
         // CC deduction for flete if new
         if(fleteMethod==="cuenta_corriente"&&fleteAmt>0&&op.created_by_agent_id){
           // Deducción en la CC del agente asignado a esta op (alineado con panel Agentes)
