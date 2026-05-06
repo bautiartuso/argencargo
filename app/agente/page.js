@@ -214,6 +214,7 @@ const I18N={
     courier:"Courier",
     payment_method_label:"Método de pago",
     method_cc:"Cuenta corriente",
+    method_alibaba:"Alibaba",
     method_cash:"Contado",
     method_transfer:"Transferencia",
     confirm_dispatch:"Confirmar despacho",
@@ -464,6 +465,7 @@ const I18N={
     courier:"快递",
     payment_method_label:"付款方式",
     method_cc:"往来账户",
+    method_alibaba:"阿里巴巴",
     method_cash:"现金",
     method_transfer:"转账",
     confirm_dispatch:"确认发送",
@@ -1161,25 +1163,32 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
     if(autoWeight<=0){setErr("El peso total es 0 - cargá peso en los bultos primero");return;}
     setSaving(true);setErr("");
     const w=autoWeight,c=Number(totalCost);
-    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{total_weight_kg:w,total_cost_usd:c,international_tracking:tracking,international_carrier:carrier,payment_method:pmtMethod,status:"despachado",dispatched_at:new Date().toISOString()}});
-    // 2. Distribute cost by weight + update each operation
+    const isAlibaba=pmtMethod==="alibaba";
+    // Para Alibaba: el costo es PROVISIONAL (sin comisiones todavía). Admin completa después método tarjeta y se recalcula.
+    const flightPatch={total_weight_kg:w,total_cost_usd:c,international_tracking:tracking,international_carrier:carrier,payment_method:pmtMethod,status:"despachado",dispatched_at:new Date().toISOString()};
+    if(isAlibaba){flightPatch.awaiting_alibaba_payment=true;flightPatch.alibaba_base_cost_usd=c;}
+    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:flightPatch});
+    // 2. Distribute cost by weight + update each operation (Alibaba usa el base provisional, se recalcula cuando admin completa)
     for(const fo of flightOps){
       const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);
       const opW=opPkgs.reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);
       const share=w>0?(opW/w)*c:0;
       await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{weight_kg:opW,cost_share_usd:share}});
-      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"en_transito",international_tracking:tracking,international_carrier:carrier,cost_flete:share,cost_flete_method:pmtMethod==="cuenta_corriente"?"cuenta_corriente":pmtMethod==="transferencia"?"transferencia":"contado"}});
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"en_transito",international_tracking:tracking,international_carrier:carrier,cost_flete:share,cost_flete_method:pmtMethod}});
     }
     // 3. Registrar pago según método
     if(pmtMethod==="cuenta_corriente"){
       // CC: descontar del saldo del agente (anticipo ya dado)
       await dq("agent_account_movements",{method:"POST",token,body:{agent_id:flight.agent_id,type:"deduccion",amount_usd:c,description:`Costo vuelo ${flight.flight_code}`,flight_id:flight.id,date:new Date().toISOString().slice(0,10)}});
-    } else {
-      // Contado/transferencia: es un gasto real → registrar en finanzas
-      try{await dq("finance_entries",{method:"POST",token,body:{category_id:"427a9ecc-b2d2-4008-a54b-8901e427e0a1",type:"gasto",amount_usd:c,description:`Flete vuelo ${flight.flight_code} (${pmtMethod})`,date:new Date().toISOString().slice(0,10)}});}catch(e){console.error("finance entry error",e);}
     }
+    // Para Alibaba: NO se registra finance_entry todavía. El admin completa el método de tarjeta y ahí se crea el gasto real.
     // Notification #4: notify admin about flight dispatched
-    try{const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;if(adminId){await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title:`Vuelo ${flight.flight_code} despachado`,body:`${carrier} - ${tracking}`,link:null}});}}catch(e){console.error("notif error",e);}
+    try{const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;if(adminId){
+      const baseTitle=`Vuelo ${flight.flight_code} despachado`;
+      const title=isAlibaba?`💳 ${baseTitle} — Alibaba pendiente de completar`:baseTitle;
+      const body=isAlibaba?`Cargá cómo pagaste (TC/débito) para calcular el costo real con comisiones`:`${carrier} - ${tracking}`;
+      await dq("notifications",{method:"POST",token,body:{user_id:adminId,portal:"admin",title,body,link:null}});
+    }}catch(e){console.error("notif error",e);}
     setSaving(false);
     onDispatched();
   };
@@ -1273,8 +1282,7 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
         <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.payment_method_label}</label>
           <select value={pmtMethod} onChange={e=>setPmtMethod(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
             <option value="cuenta_corriente" style={{background:"#142038"}}>{t.method_cc}</option>
-            <option value="efectivo" style={{background:"#142038"}}>{t.method_cash}</option>
-            <option value="transferencia" style={{background:"#142038"}}>{t.method_transfer}</option>
+            <option value="alibaba" style={{background:"#142038"}}>{t.method_alibaba}</option>
           </select>
         </div>
       </div>

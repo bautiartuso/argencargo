@@ -5258,6 +5258,63 @@ function ShipmentsTracking({token,onSelectOp}){
 
 // "Modo Hoy" — Dashboard ejecutivo con TODAS las tareas pendientes que requieren acción del admin.
 // Cards clickeables que navegan a la sección correspondiente.
+function AlibabaPendingBanner({flights,token,onDone}){
+  const [open,setOpen]=useState(null); // flight.id que está siendo completado
+  const [method,setMethod]=useState("tarjeta_credito");
+  const [closing,setClosing]=useState("");
+  const [saving,setSaving]=useState(false);
+  const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");};
+  const complete=async(flight)=>{
+    if(method==="tarjeta_credito"&&!closing){alert("Falta fecha de cierre de tarjeta");return;}
+    setSaving(true);
+    const base=Number(flight.alibaba_base_cost_usd||0);
+    // Comisiones: Alibaba 3% siempre. Sellos 1.2% solo TC.
+    const realCost=Math.round(base*1.03*(method==="tarjeta_credito"?1.012:1)*100)/100;
+    const isTC=method==="tarjeta_credito";
+    // 1) Update flight con datos del pago + nuevo total_cost_usd (para que las distribuciones queden coherentes)
+    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{awaiting_alibaba_payment:false,alibaba_payment_method:method,alibaba_card_closing_date:isTC?closing:null,alibaba_real_cost_usd:realCost,alibaba_paid_at:new Date().toISOString(),total_cost_usd:realCost}});
+    // 2) Recalcular cost_share por op (prorrateado por peso) y actualizar cost_flete en cada op
+    const fos=await dq("flight_operations",{token,filters:`?flight_id=eq.${flight.id}&select=*`});
+    const totalW=(Array.isArray(fos)?fos:[]).reduce((s,fo)=>s+Number(fo.weight_kg||0),0);
+    for(const fo of (Array.isArray(fos)?fos:[])){
+      const share=totalW>0?(Number(fo.weight_kg||0)/totalW)*realCost:0;
+      await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{cost_share_usd:share}});
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{cost_flete:share,cost_flete_method:isTC?"tarjeta_credito":"tarjeta_debito",cost_flete_paid_at:isTC?null:new Date().toISOString()}});
+    }
+    // 3) Crear finance_entry: TC pendiente con card_closing_date, débito pagado al día.
+    await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Flete vuelo ${flight.flight_code} (Alibaba ${isTC?"TC":"débito"})`,amount:realCost,currency:"USD",payment_method:isTC?"tarjeta_credito":"transferencia",card_closing_date:isTC?closing:null,is_paid:!isTC,auto_generated:true,flight_id:flight.id}});
+    setSaving(false);setOpen(null);onDone();
+  };
+  return <div style={{marginBottom:18,padding:"16px 20px",background:"linear-gradient(135deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04))",border:"1.5px solid rgba(96,165,250,0.4)",borderRadius:12}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+      <div>
+        <p style={{fontSize:13,fontWeight:700,color:"#60a5fa",margin:0}}>💳 {flights.length} vuelo{flights.length>1?"s":""} Alibaba pendiente{flights.length>1?"s":""} de completar pago</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Cargá cómo lo pagaste (TC/débito) para calcular el costo real con comisiones (Alibaba 3% + sellos 1.2% si TC) y distribuirlo en las ops.</p>
+      </div>
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {flights.map(f=>{const base=Number(f.alibaba_base_cost_usd||0);const isOpen=open===f.id;return <div key={f.id} style={{padding:"10px 14px",background:"rgba(0,0,0,0.25)",borderRadius:8,border:"1px solid rgba(96,165,250,0.18)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div>
+            <span style={{fontFamily:"monospace",color:"#fff",fontWeight:700,fontSize:13}}>{f.flight_code}</span>
+            <span style={{marginLeft:10,fontSize:11,color:"rgba(255,255,255,0.55)"}}>{f.international_carrier||"—"} · base USD {base.toFixed(2)} · despachado {new Date(f.dispatched_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</span>
+          </div>
+          {!isOpen&&<button onClick={()=>startEdit(f)} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.12)",color:"#60a5fa",cursor:"pointer"}}>Completar pago</button>}
+        </div>
+        {isOpen&&<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:method==="tarjeta_credito"?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr",gap:10,alignItems:"end"}}>
+          <Sel label="Método de pago" value={method} onChange={setMethod} options={[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"tarjeta_debito",label:"Tarjeta de Débito"}]}/>
+          {method==="tarjeta_credito"&&<Inp label="Cierre de tarjeta" type="date" value={closing} onChange={setClosing}/>}
+          <div style={{padding:"6px 10px",background:"rgba(34,197,94,0.08)",borderRadius:8,border:"1px solid rgba(34,197,94,0.25)"}}>
+            <p style={{fontSize:9,color:"rgba(255,255,255,0.45)",margin:"0 0 2px",textTransform:"uppercase",fontWeight:700}}>Costo real</p>
+            <p style={{fontSize:14,color:"#22c55e",fontWeight:700,margin:0,fontVariantNumeric:"tabular-nums"}}>USD {(base*1.03*(method==="tarjeta_credito"?1.012:1)).toFixed(2)}</p>
+          </div>
+          <div style={{display:"flex",gap:6}}><Btn small onClick={()=>complete(f)} disabled={saving||(method==="tarjeta_credito"&&!closing)}>{saving?"...":"Confirmar"}</Btn><button onClick={()=>setOpen(null)} disabled={saving} style={{padding:"6px 12px",fontSize:11,borderRadius:7,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.5)",cursor:"pointer"}}>Cancelar</button></div>
+        </div>}
+      </div>;})}
+    </div>
+  </div>;
+}
+
 function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
   const [data,setData]=useState(null);
   const [lo,setLo]=useState(true);
@@ -5268,7 +5325,7 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
     const d7agoISO=new Date(Date.now()-7*24*60*60*1000).toISOString();
     const monthStartISO=new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString();
     const lastMonthStartISO=new Date(new Date().getFullYear(),new Date().getMonth()-1,1).toISOString();
-    const [opsAll,purchaseNotifs,repackReqs,ticketsOpen,recentEvents,recentPmts]=await Promise.all([
+    const [opsAll,purchaseNotifs,repackReqs,ticketsOpen,recentEvents,recentPmts,alibabaPending]=await Promise.all([
       dq("operations",{token,filters:`?select=id,operation_code,status,client_id,description,created_at,eta,channel,budget_total,clients(client_code,first_name,last_name,whatsapp)&order=created_at.desc&limit=500`}),
       dq("purchase_notifications",{token,filters:`?select=id,client_id,description,origin,shipping_method,created_at,clients(client_code,first_name)&status=eq.pending&created_at=lt.${d1agoISO}&order=created_at.asc`}),
       dq("repack_requests",{token,filters:`?select=id,operation_id,requested_at,operations(operation_code,clients(client_code,first_name))&status=eq.pending&order=requested_at.asc`}),
@@ -5277,6 +5334,8 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
       dq("tracking_events",{token,filters:`?select=id,operation_id,title,description,occurred_at,source,operations(operation_code,clients(client_code,first_name))&order=occurred_at.desc&limit=30`}).catch(()=>[]),
       // Pagos recientes para activity feed
       dq("operation_client_payments",{token,filters:`?select=id,operation_id,amount_usd,payment_date,payment_method,operations(operation_code,clients(client_code,first_name))&order=payment_date.desc&limit=10`}).catch(()=>[]),
+      // Vuelos Alibaba pendientes de completar pago (admin tiene que cargar TC/débito + fecha cierre)
+      dq("flights",{token,filters:`?select=id,flight_code,alibaba_base_cost_usd,dispatched_at,international_carrier&awaiting_alibaba_payment=eq.true&order=dispatched_at.desc`}).catch(()=>[]),
     ]);
     const opsArr=Array.isArray(opsAll)?opsAll:[];
     // Documentación pendiente cliente +5 días (canal A blanco en preparación sin items)
@@ -5353,6 +5412,7 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
       fobThisMonth,fobTrend,opsThisMonthCount:opsThisMonth.length,
       nextDays,maxDayCount,
       activity,
+      alibabaPending:Array.isArray(alibabaPending)?alibabaPending:[],
     });
     setLo(false);
   };
@@ -5491,6 +5551,9 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
         <button onClick={()=>{onNav&&onNav("operations");setTimeout(()=>window.dispatchEvent(new CustomEvent("ac_new_op")),50);}} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",boxShadow:GOLD_GLOW}}>+ Nueva operación</button>
       </div>
     </div>
+
+    {/* Banner Alibaba pendientes — alta prioridad: bloquea el cálculo de costos reales hasta que se complete */}
+    {data.alibabaPending.length>0&&<AlibabaPendingBanner flights={data.alibabaPending} token={token} onDone={load}/>}
 
     {/* Bento grid principal */}
     <div className="ac-bento" style={{display:"grid",gridTemplateColumns:"repeat(12,1fr)",gridAutoRows:"minmax(100px,auto)",gap:12,marginBottom:18}}>
