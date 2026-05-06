@@ -2275,7 +2275,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {(()=>{const isCC=(op.cost_flete_method||"cuenta_corriente")==="cuenta_corriente";return <>
         <div style={{display:"grid",gridTemplateColumns:isCC?"1fr 1fr 1fr":"1fr 1fr 1fr",gap:"0 16px",marginBottom:isCC?16:8}}>
           <Inp label="Costo flete (USD)" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>
-          <Sel label="Método de pago" value={op.cost_flete_method||"cuenta_corriente"} onChange={chOp("cost_flete_method")} options={[{value:"cuenta_corriente",label:"Cuenta Corriente"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"},{value:"transferencia",label:"Transferencia Bancaria"}]}/>
+          <Sel label="Método de pago" value={op.cost_flete_method||"cuenta_corriente"} onChange={chOp("cost_flete_method")} options={[{value:"cuenta_corriente",label:"Cuenta Corriente"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"tarjeta_debito",label:"Tarjeta de Débito"}]}/>
           {isCC&&<div style={{paddingTop:22}} title="Cuenta Corriente con el agente asignado a esta op: anticipos suman, fletes en CC restan. Negativo (rojo) = le debés al agente.">
             <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>SALDO AGENTE (CC)</p>
             {op.created_by_agent_id?<>
