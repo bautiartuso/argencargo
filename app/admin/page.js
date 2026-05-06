@@ -798,6 +798,16 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   // Reempaque pendiente
   const [repackReq,setRepackReq]=useState(null);
   const [showRepackDetail,setShowRepackDetail]=useState(false);
+  // Helper idempotente: si ya existe un movement (op + type) lo actualiza, sino lo crea.
+  // Evita duplicados por doble click o lógica re-ejecutada (unique index también lo previene a nivel DB).
+  const upsertClientMov=async({client_id,operation_id,type,amount_usd,description})=>{
+    const existing=await dq("client_account_movements",{token,filters:`?client_id=eq.${client_id}&operation_id=eq.${operation_id}&type=eq.${type}&select=id&limit=1`});
+    if(Array.isArray(existing)&&existing[0]){
+      await dq("client_account_movements",{method:"PATCH",token,filters:`?id=eq.${existing[0].id}`,body:{amount_usd,description}});
+    } else {
+      await dq("client_account_movements",{method:"POST",token,body:{client_id,operation_id,type,amount_usd,description}});
+    }
+  };
   useEffect(()=>{(async()=>{const r=await dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&order=requested_at.desc&limit=1`});if(Array.isArray(r)&&r[0])setRepackReq(r[0]);else setRepackReq(null);})();},[op.id,token]);
   const requestRepack=async()=>{
     const reason=prompt("Motivo del pedido de reempaque (opcional):\n\nEj: 'Reempaquetar para reducir volumétrico, intentar bajar de 50kg a 35kg'","");
@@ -1871,7 +1881,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const diff=newTotal-budgetTot;
           if(budgetTot>0&&diff>0.01&&op.client_id){
             if(confirm(`El cliente pagó USD ${diff.toFixed(2)} de más.\n\n¿Registrar el excedente como saldo a favor en la cuenta corriente del cliente?`)){
-              await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`}});
+              await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`});
               flash(`Saldo a favor registrado: +USD ${diff.toFixed(2)}`);
             }
           }
@@ -1904,7 +1914,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           if(!confirm(`El cliente quedó debiendo USD ${saldoCli.toFixed(2)}.\n\nVamos a registrarlo como deuda en su cuenta corriente (se podrá aplicar a próximas operaciones).\n\n¿Confirmás?`))return;
           const opUpdate={is_collected:true,collected_amount:totalCli,collection_date:new Date().toISOString().slice(0,10)};
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
-          await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"debt",amount_usd:-saldoCli,description:`Deuda pendiente de ${op.operation_code}`}});
+          await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"debt",amount_usd:-saldoCli,description:`Deuda pendiente de ${op.operation_code}`});
           setOp(p=>({...p,...opUpdate}));
           flash(`Deuda registrada: -USD ${saldoCli.toFixed(2)}`);
         };
@@ -1986,7 +1996,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                 // Capear collected_amount al budget: el excedente queda en CC, no infla la ganancia
                 setOp(p=>({...p,collected_amount:budgetTot}));
                 await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{collected_amount:budgetTot,is_collected:true,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
-                await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`}});
+                await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`});
                 flash(`Cobrada · saldo a favor +USD ${diff.toFixed(2)}`);
                 return;
               }
@@ -2001,7 +2011,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                 return;
               } else if(choice==="c"||choice==="C"){
                 await saveOp();
-                await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"debt",amount_usd:diff,description:`Deuda pendiente de ${op.operation_code}`}});
+                await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"debt",amount_usd:diff,description:`Deuda pendiente de ${op.operation_code}`});
                 flash(`Cobrada · deuda registrada -USD ${Math.abs(diff).toFixed(2)}`);
                 return;
               } else {alert("Opción inválida. Escribí 'd' o 'c'");return;}
