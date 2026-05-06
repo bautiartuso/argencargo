@@ -3386,6 +3386,8 @@ function FinancePanel({token}){
     ledger.push({date:e.date,type:e.type,origen:"manual",code:"",desc:e.description,amount:Number(e.amount||0),detail:e.detail||"",cat:e.category,recurring:e.is_recurring,id:e.id});
   });
   agentMvs.filter(m=>m.type==="anticipo").forEach(m=>{const ag=agentSignups.find(a=>a.auth_user_id===m.agent_id);const agName=ag?`${ag.first_name} ${ag.last_name}`:"agente";const recv=Number(m.amount_received_usd||m.amount_usd);ledger.push({date:m.date,type:"gasto",origen:"agente",code:"",desc:`Anticipo a ${agName}`,amount:Number(m.amount_usd||0),detail:m.amount_received_usd&&recv!==Number(m.amount_usd)?`Recibió ${usd(recv)}, comisión ${usd(Number(m.amount_usd)-recv)}`:(m.description||"")});});
+  // Refunds del agente (cash que el agente devuelve a AC) → ingreso en libro diario
+  agentMvs.filter(m=>m.type==="refund").forEach(m=>{const ag=agentSignups.find(a=>a.auth_user_id===m.agent_id);const agName=ag?`${ag.first_name} ${ag.last_name}`:"agente";const recv=Number(m.amount_received_usd||m.amount_usd);ledger.push({date:m.date,type:"ingreso",origen:"agente",code:"",desc:`Devolución de ${agName}`,amount:recv,detail:m.description||""});});
   ledger.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   const ledgerIngresos=ledger.filter(l=>l.type==="ingreso").reduce((s,l)=>s+l.amount,0);
   const ledgerGastosOp=ledger.filter(l=>l.type==="gasto"&&l.origen!=="manual").reduce((s,l)=>s+l.amount,0);
@@ -4330,6 +4332,28 @@ function AnticipoForm({token,agentId,onSaved}){
   </div>;
 }
 
+function RefundForm({token,agentId,onSaved}){
+  const [date,setDate]=useState(new Date().toISOString().slice(0,10));
+  const [amount,setAmount]=useState("");
+  const [desc,setDesc]=useState("");
+  const [saving,setSaving]=useState(false);
+  const save=async()=>{
+    if(!amount)return;setSaving(true);
+    const amt=Number(amount);
+    await dq("agent_account_movements",{method:"POST",token,body:{agent_id:agentId,date,type:"refund",amount_usd:amt,amount_received_usd:amt,description:desc||"Refund"}});
+    setSaving(false);onSaved();
+  };
+  return <div style={{background:"rgba(96,165,250,0.04)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr 1fr",gap:10,alignItems:"end"}}>
+      <Inp label="Fecha" type="date" value={date} onChange={setDate}/>
+      <Inp label="Monto devuelto (USD)" type="number" value={amount} onChange={setAmount} step="0.01"/>
+      <Inp label="Descripción" value={desc} onChange={setDesc} placeholder="Ej: Compensación por demora vuelo FL-0003"/>
+      <Btn small onClick={save} disabled={saving||!amount}>{saving?"...":"Guardar"}</Btn>
+    </div>
+    <p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"8px 0 0"}}>↳ Resta del balance del agente y aparece como ingreso en el libro diario</p>
+  </div>;
+}
+
 function AgentsPanel({token}){
   const [tab,setTab]=useState("deposito");
   const [signups,setSignups]=useState([]);
@@ -4346,6 +4370,7 @@ function AgentsPanel({token}){
   const [opsWithDocs,setOpsWithDocs]=useState(new Set());
   const [selFlight,setSelFlight]=useState(null);
   const [showAnticipoForm,setShowAnticipoForm]=useState(null);
+  const [showRefundForm,setShowRefundForm]=useState(null);
   const [expandedOp,setExpandedOp]=useState(null);
   const [depositItems,setDepositItems]=useState([]);
   const [repackReqs,setRepackReqs]=useState([]);
@@ -4768,16 +4793,18 @@ function AgentsPanel({token}){
                 <option value="6000" style={{background:"#142038"}}>6000</option>
               </select>
             </label>
-            <Btn small onClick={()=>setShowAnticipoForm(showAnticipoForm===a.auth_user_id?null:a.auth_user_id)}>+ Cargar anticipo</Btn>
+            <Btn small onClick={()=>{setShowAnticipoForm(showAnticipoForm===a.auth_user_id?null:a.auth_user_id);setShowRefundForm(null);}}>+ Cargar anticipo</Btn>
+            <Btn small variant="secondary" onClick={()=>{setShowRefundForm(showRefundForm===a.auth_user_id?null:a.auth_user_id);setShowAnticipoForm(null);}}>↩ Devolución</Btn>
           </div>
         </div>
         {showAnticipoForm===a.auth_user_id&&<AnticipoForm token={token} agentId={a.auth_user_id} onSaved={()=>{setShowAnticipoForm(null);load();flash("Anticipo cargado");}}/>}
+        {showRefundForm===a.auth_user_id&&<RefundForm token={token} agentId={a.auth_user_id} onSaved={()=>{setShowRefundForm(null);load();flash("Devolución cargada");}}/>}
         {movs.length>0?<table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{["Fecha","Tipo","Monto","Descripción","Vuelo"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
           <tbody>{movs.map(m=>{const fl=flights.find(f=>f.id===m.flight_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)"}}>{formatDate(m.date)}</td>
-            <td style={{padding:"8px 12px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:m.type==="anticipo"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:m.type==="anticipo"?"#22c55e":"#ff6b6b"}}>{m.type==="anticipo"?"ANTICIPO":"DEDUCCIÓN"}</span></td>
-            <td style={{padding:"8px 12px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":"#ff6b6b"}}>{m.type==="anticipo"?"+":"-"}{usd(m.amount_usd)}</td>
+            <td style={{padding:"8px 12px"}}>{(()=>{const cfg=m.type==="anticipo"?{lbl:"ANTICIPO",bg:"rgba(34,197,94,0.15)",fg:"#22c55e"}:m.type==="refund"?{lbl:"DEVOLUCIÓN",bg:"rgba(96,165,250,0.15)",fg:"#60a5fa"}:{lbl:"DEDUCCIÓN",bg:"rgba(255,80,80,0.15)",fg:"#ff6b6b"};return <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:cfg.bg,color:cfg.fg}}>{cfg.lbl}</span>;})()}</td>
+            <td style={{padding:"8px 12px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":m.type==="refund"?"#60a5fa":"#ff6b6b"}}>{m.type==="anticipo"?"+":"-"}{usd(m.amount_usd)}</td>
             <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)"}}>{m.description||"—"}</td>
             <td style={{padding:"8px 12px",fontFamily:"monospace",color:IC,fontSize:11}}>{fl?fl.flight_code:"—"}</td>
           </tr>;})}</tbody>
