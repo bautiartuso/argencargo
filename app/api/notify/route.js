@@ -171,7 +171,7 @@ export async function POST(req) {
 
     const { op_id, trigger, force } = await req.json();
     if (!op_id || !trigger) return Response.json({ error: "op_id y trigger requeridos" }, { status: 400 });
-    if (!["deposito", "arribo", "cerrada"].includes(trigger))
+    if (!["deposito", "arribo", "retiro", "cerrada"].includes(trigger))
       return Response.json({ error: "trigger inválido" }, { status: 400 });
 
     // Fetch op + client
