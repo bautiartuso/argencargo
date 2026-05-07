@@ -831,10 +831,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const [waTpls,setWaTpls]=useState([]);
   useEffect(()=>{(async()=>{const r=await dq("message_templates",{token,filters:"?channel=eq.whatsapp&select=key,body"});setWaTpls(Array.isArray(r)?r:[]);})();},[token]);
   const sendWaTrigger=async(trigger)=>{
-    const wa=op.clients?.whatsapp?.replace(/[^0-9]/g,"");
+    // opClient tiene la data completa del cliente (whatsapp inclusive). op.clients viene del SELECT con campos limitados.
+    const waRaw=opClient?.whatsapp||op.clients?.whatsapp||"";
+    const wa=String(waRaw).replace(/[^0-9]/g,"");
     if(!wa){alert("El cliente no tiene WhatsApp cargado.");return;}
     const tpl=waTpls.find(t=>t.key===`wa_${trigger}`);
-    const firstName=op.clients?.first_name||"";
+    const firstName=opClient?.first_name||op.clients?.first_name||"";
     const opCode=op.operation_code||"";
     const desc=op.description||"tu mercadería";
     const portalLink=`https://argencargo.com.ar/portal?op=${opCode}`;
