@@ -3420,7 +3420,8 @@ function FinancePanel({token}){
   const [supplierPmts,setSupplierPmts]=useState([]);
   const [clientPmts,setClientPmts]=useState([]);
   const [autoEntries,setAutoEntries]=useState([]);
-  const load=async()=>{const [e,o,pm,dp,am,ag,sp,cp,cdUsd,cdArs,cdPmts,supTcArs,supTcUsd,autoE]=await Promise.all([
+  const [clientAccMvs,setClientAccMvs]=useState([]);
+  const load=async()=>{const [e,o,pm,dp,am,ag,sp,cp,cdUsd,cdArs,cdPmts,supTcArs,supTcUsd,autoE,clMv]=await Promise.all([
     dq("finance_entries",{token,filters:"?select=*&auto_generated=is.false&order=date.desc,created_at.desc"}),
     dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,closed_at,cost_flete,cost_flete_method,cost_flete_paid_at,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_seguro_paid_at,cost_flete_local,cost_flete_local_paid_at,cost_otros,cost_otros_paid_at,service_type,cost_producto_usd,cost_producto_method,cost_producto_paid,cost_producto_paid_at,clients(first_name,last_name,client_code)&order=created_at.desc"}),
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)"}),
@@ -3440,8 +3441,10 @@ function FinancePanel({token}){
     // Costos GI con TC + USD pendientes (deuda tarjeta USD) — NO incluir refunds
     dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&or=(currency.eq.USD,currency.is.null)&type=neq.refund&order=card_closing_date.asc"}),
     // Auto-generated entries (impuestos/gasto doc dolarizados desde ops). Van al libro diario, no al panel "Gastos del Negocio".
-    dq("finance_entries",{token,filters:"?select=*&auto_generated=eq.true&currency=eq.USD&is_paid=eq.true&order=date.desc"})
-  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);setCardDebt({usd:Array.isArray(cdUsd)?cdUsd:[],ars:Array.isArray(cdArs)?cdArs:[],pmts:Array.isArray(cdPmts)?cdPmts:[],supTcArs:Array.isArray(supTcArs)?supTcArs:[],supTcUsd:Array.isArray(supTcUsd)?supTcUsd:[]});setAutoEntries(Array.isArray(autoE)?autoE:[]);setLo(false);};
+    dq("finance_entries",{token,filters:"?select=*&auto_generated=eq.true&currency=eq.USD&is_paid=eq.true&order=date.desc"}),
+    // Movimientos CC del cliente vinculados a una op (overpayment / applied / debt). Para reflejar el cash real en libro diario.
+    dq("client_account_movements",{token,filters:"?select=operation_id,type,amount_usd&operation_id=not.is.null"})
+  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);setCardDebt({usd:Array.isArray(cdUsd)?cdUsd:[],ars:Array.isArray(cdArs)?cdArs:[],pmts:Array.isArray(cdPmts)?cdPmts:[],supTcArs:Array.isArray(supTcArs)?supTcArs:[],supTcUsd:Array.isArray(supTcUsd)?supTcUsd:[]});setAutoEntries(Array.isArray(autoE)?autoE:[]);setClientAccMvs(Array.isArray(clMv)?clMv:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const addEntry=async()=>{
@@ -3484,7 +3487,24 @@ function FinancePanel({token}){
   const opsWithClientPmts=new Set(clientPmts.map(p=>p.operation_id));
   allOps.forEach(o=>{
     // Si la op tiene pagos parciales, los agregamos más abajo (evita duplicar)
-    if(o.is_collected&&!opsWithClientPmts.has(o.id)){const amt=Number(o.collected_amount||o.budget_total||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const usdAmt=isArs&&rate?amt/rate:amt;if(usdAmt>0)ledger.push({date:o.collection_date||o.closed_at?.slice(0,10)||"—",type:"ingreso",origen:"op",code:o.operation_code,desc:`Cobro ${o.operation_code} — ${o.clients?.client_code||""}`,amount:usdAmt,detail:isArs?`ARS ${amt.toLocaleString("es-AR")} @ ${rate}`:""});}
+    if(o.is_collected&&!opsWithClientPmts.has(o.id)){
+      const amt=Number(o.collected_amount||o.budget_total||0);
+      const isArs=o.collection_currency==="ARS";
+      const rate=Number(o.collection_exchange_rate||0);
+      const collectedUsd=isArs&&rate?amt/rate:amt;
+      // Cash real recibido = collected_amount + overpayment − credit_applied (porque applied no es cash nuevo, es saldo viejo consumido).
+      const opMvs=clientAccMvs.filter(m=>m.operation_id===o.id);
+      const overpay=opMvs.filter(m=>m.type==="overpayment").reduce((s,m)=>s+Number(m.amount_usd||0),0);
+      const creditApp=Number(o.credit_applied_usd||0);
+      const cashIn=collectedUsd+overpay-creditApp;
+      if(cashIn>0){
+        const detail=[];
+        if(isArs)detail.push(`ARS ${amt.toLocaleString("es-AR")} @ ${rate}`);
+        if(creditApp>0)detail.push(`incluye USD ${creditApp.toFixed(2)} de saldo a favor aplicado`);
+        if(overpay>0.01)detail.push(`USD ${overpay.toFixed(2)} a saldo a favor del cliente`);
+        ledger.push({date:o.collection_date||o.closed_at?.slice(0,10)||"—",type:"ingreso",origen:"op",code:o.operation_code,desc:`Cobro ${o.operation_code} — ${o.clients?.client_code||""}`,amount:cashIn,detail:detail.join(" · ")});
+      }
+    }
     // Costos op: una fila por concepto con su fecha real de pago.
     // - Flete CC: NO se incluye (el cash ya salió como anticipo al agente).
     // - Si no hay paid_at NI closed_at (op activa sin pago confirmado), NO se agrega — sino aparecería como gasto del día actual, falso.
