@@ -3361,7 +3361,8 @@ function FinancePanel({token}){
   const [agentMvs,setAgentMvs]=useState([]);const [agentSignups,setAgentSignups]=useState([]);
   const [supplierPmts,setSupplierPmts]=useState([]);
   const [clientPmts,setClientPmts]=useState([]);
-  const load=async()=>{const [e,o,pm,dp,am,ag,sp,cp,cdUsd,cdArs,cdPmts,supTcArs,supTcUsd]=await Promise.all([
+  const [autoEntries,setAutoEntries]=useState([]);
+  const load=async()=>{const [e,o,pm,dp,am,ag,sp,cp,cdUsd,cdArs,cdPmts,supTcArs,supTcUsd,autoE]=await Promise.all([
     dq("finance_entries",{token,filters:"?select=*&auto_generated=is.false&order=date.desc,created_at.desc"}),
     dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,closed_at,cost_flete,cost_flete_method,cost_flete_paid_at,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_seguro_paid_at,cost_flete_local,cost_flete_local_paid_at,cost_otros,cost_otros_paid_at,service_type,cost_producto_usd,cost_producto_method,cost_producto_paid,cost_producto_paid_at,clients(first_name,last_name,client_code)&order=created_at.desc"}),
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)"}),
@@ -3379,8 +3380,10 @@ function FinancePanel({token}){
     // Costos GI con TC + ARS pendientes (dolarización) — NO incluir refunds (no son deuda)
     dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&currency=eq.ARS&type=neq.refund&order=card_closing_date.asc"}),
     // Costos GI con TC + USD pendientes (deuda tarjeta USD) — NO incluir refunds
-    dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&or=(currency.eq.USD,currency.is.null)&type=neq.refund&order=card_closing_date.asc"})
-  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);setCardDebt({usd:Array.isArray(cdUsd)?cdUsd:[],ars:Array.isArray(cdArs)?cdArs:[],pmts:Array.isArray(cdPmts)?cdPmts:[],supTcArs:Array.isArray(supTcArs)?supTcArs:[],supTcUsd:Array.isArray(supTcUsd)?supTcUsd:[]});setLo(false);};
+    dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&or=(currency.eq.USD,currency.is.null)&type=neq.refund&order=card_closing_date.asc"}),
+    // Auto-generated entries (impuestos/gasto doc dolarizados desde ops). Van al libro diario, no al panel "Gastos del Negocio".
+    dq("finance_entries",{token,filters:"?select=*&auto_generated=eq.true&currency=eq.USD&is_paid=eq.true&order=date.desc"})
+  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);setCardDebt({usd:Array.isArray(cdUsd)?cdUsd:[],ars:Array.isArray(cdArs)?cdArs:[],pmts:Array.isArray(cdPmts)?cdPmts:[],supTcArs:Array.isArray(supTcArs)?supTcArs:[],supTcUsd:Array.isArray(supTcUsd)?supTcUsd:[]});setAutoEntries(Array.isArray(autoE)?autoE:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const addEntry=async()=>{
@@ -3484,6 +3487,11 @@ function FinancePanel({token}){
     const tarjetaPendiente=e.payment_method==="tarjeta_credito"&&!e.is_paid;
     if(tarjetaPendiente)return;
     ledger.push({date:e.date,type:e.type,origen:"manual",code:"",desc:e.description,amount:Number(e.amount||0),detail:e.detail||"",cat:e.category,recurring:e.is_recurring,id:e.id});
+  });
+  // Auto-generated entries de ops (impuestos/gasto doc dolarizados): aparecen como "op" para que se distingan de gastos manuales del negocio.
+  autoEntries.forEach(e=>{
+    if(e.payment_method==="tarjeta_credito"&&!e.is_paid)return;
+    ledger.push({date:e.date,type:e.type,origen:"op",code:"",desc:e.description,amount:Number(e.amount||0),detail:e.detail||"",id:e.id});
   });
   agentMvs.filter(m=>m.type==="anticipo").forEach(m=>{const ag=agentSignups.find(a=>a.auth_user_id===m.agent_id);const agName=ag?`${ag.first_name} ${ag.last_name}`:"agente";const recv=Number(m.amount_received_usd||m.amount_usd);ledger.push({date:m.date,type:"gasto",origen:"agente",code:"",desc:`Anticipo a ${agName}`,amount:Number(m.amount_usd||0),detail:m.amount_received_usd&&recv!==Number(m.amount_usd)?`Recibió ${usd(recv)}, comisión ${usd(Number(m.amount_usd)-recv)}`:(m.description||"")});});
   // Refunds del agente (cash que el agente devuelve a AC) → ingreso en libro diario
