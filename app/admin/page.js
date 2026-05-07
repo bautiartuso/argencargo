@@ -835,17 +835,23 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const waRaw=opClient?.whatsapp||op.clients?.whatsapp||"";
     const wa=String(waRaw).replace(/[^0-9]/g,"");
     if(!wa){alert("El cliente no tiene WhatsApp cargado.");return;}
-    const tpl=waTpls.find(t=>t.key===`wa_${trigger}`);
     const firstName=opClient?.first_name||op.clients?.first_name||"";
     const opCode=op.operation_code||"";
     const desc=op.description||"tu mercadería";
     const portalLink=`https://argencargo.com.ar/portal?op=${opCode}`;
     const bt=Number(op.budget_total||0);
+    const envioCost=Number(op.shipping_cost||0);
+    const importTotal=Math.max(0,bt-envioCost);
     const totAnt=Number(op.total_anticipos||0);
     const collected=Number(op.collected_amount||0);
     const saldo=Math.max(0,bt-totAnt-collected);
     const saldoTxt=saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toFixed(2)}*`:"";
-    const data={firstName,opCode,desc,portalLink,saldoTxt};
+    // Si la op tiene envío a domicilio, usar template wa_envio (con desglose) en lugar de wa_retiro.
+    const useEnvio=trigger==="retiro"&&op.shipping_to_door&&envioCost>0;
+    const tplKey=useEnvio?"wa_envio":`wa_${trigger}`;
+    const tpl=waTpls.find(t=>t.key===tplKey);
+    const fmt=v=>Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const data={firstName,opCode,desc,portalLink,saldoTxt,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
     const msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Av. Callao 1137.${saldoTxt}`;
     window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`,"_blank");
