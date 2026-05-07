@@ -827,6 +827,36 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   // Reempaque pendiente
   const [repackReq,setRepackReq]=useState(null);
   const [showRepackDetail,setShowRepackDetail]=useState(false);
+  // Templates WhatsApp (cargadas una vez para botones de "Avisar al cliente").
+  const [waTpls,setWaTpls]=useState([]);
+  useEffect(()=>{(async()=>{const r=await dq("message_templates",{token,filters:"?channel=eq.whatsapp&select=key,body"});setWaTpls(Array.isArray(r)?r:[]);})();},[token]);
+  const sendWaTrigger=async(trigger)=>{
+    const wa=op.clients?.whatsapp?.replace(/[^0-9]/g,"");
+    if(!wa){alert("El cliente no tiene WhatsApp cargado.");return;}
+    const tpl=waTpls.find(t=>t.key===`wa_${trigger}`);
+    const firstName=op.clients?.first_name||"";
+    const opCode=op.operation_code||"";
+    const desc=op.description||"tu mercadería";
+    const portalLink=`https://argencargo.com.ar/portal?op=${opCode}`;
+    const bt=Number(op.budget_total||0);
+    const totAnt=Number(op.total_anticipos||0);
+    const collected=Number(op.collected_amount||0);
+    const saldo=Math.max(0,bt-totAnt-collected);
+    const saldoTxt=saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toFixed(2)}*`:"";
+    const data={firstName,opCode,desc,portalLink,saldoTxt};
+    const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
+    const msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Av. Callao 1137.${saldoTxt}`;
+    window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`,"_blank");
+    // Log en op_communications + marcar sent_notifications
+    try{
+      const sentKey=`wa_${trigger}`;
+      const newSent={...(op.sent_notifications||{}),[sentKey]:new Date().toISOString()};
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{sent_notifications:newSent}});
+      setOp(p=>({...p,sent_notifications:newSent}));
+      await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"whatsapp",direction:"out",content:msg}});
+    }catch(e){console.error("wa log",e);}
+    flash(`💬 WhatsApp ${trigger} abierto`);
+  };
   // Helper idempotente: si ya existe un movement (op + type) lo actualiza, sino lo crea.
   // Evita duplicados por doble click o lógica re-ejecutada (unique index también lo previene a nivel DB).
   const upsertClientMov=async({client_id,operation_id,type,amount_usd,description})=>{
@@ -993,7 +1023,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:<>
 
     {tab==="general"&&<>
-      <Card title="Estado" actions={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{op.created_by_agent_id&&pkgs.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(op.status)&&(!repackReq||repackReq.status!=="pending")&&<Btn small variant="secondary" onClick={requestRepack}>🔄 Pedir reempaque</Btn>}{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&<Btn small variant="secondary" onClick={async()=>{if(!confirm("¿Reabrir la declaración? El cliente podrá modificar/agregar productos."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{status:"en_deposito_origen",consolidation_confirmed:false}});setOp(p=>({...p,status:"en_deposito_origen",consolidation_confirmed:false}));flash("✅ Declaración reabierta — el cliente puede editar");}}>↻ Reabrir declaración</Btn>}{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",entregada:"retiro",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];return <Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>;})()}<Btn onClick={handleSave} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
+      <Card title="Estado" actions={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{op.created_by_agent_id&&pkgs.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(op.status)&&(!repackReq||repackReq.status!=="pending")&&<Btn small variant="secondary" onClick={requestRepack}>🔄 Pedir reempaque</Btn>}{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&<Btn small variant="secondary" onClick={async()=>{if(!confirm("¿Reabrir la declaración? El cliente podrá modificar/agregar productos."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{status:"en_deposito_origen",consolidation_confirmed:false}});setOp(p=>({...p,status:"en_deposito_origen",consolidation_confirmed:false}));flash("✅ Declaración reabierta — el cliente puede editar");}}>↻ Reabrir declaración</Btn>}{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",entregada:"retiro",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];const waSent=op.sent_notifications?.[`wa_${tr}`];const hasWaTpl=tr==="deposito"||tr==="retiro";return <>
+<Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>
+{hasWaTpl&&<Btn small variant="secondary" onClick={()=>sendWaTrigger(tr)}>{waSent?"💬 Reenviar WA":"💬 Enviar WA"}</Btn>}
+</>;})()}<Btn onClick={handleSave} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
         <Sel label="Estado de la carga" value={op.status} onChange={chOp("status")} options={STATUSES.filter(s=>!(isGI&&s==="en_preparacion")).map(s=>({value:s,label:SM[s].l}))}/>
         <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
         <Inp label="ETA (fecha estimada de arribo)" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>
@@ -1507,7 +1540,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           else if(first?.skipped)alert(first.skipped);
           await reloadEvents();
         }}>↻ Sincronizar tracking</Btn>
-        {(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",entregada:"retiro",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];return <Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>;})()}
+        {(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",entregada:"retiro",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];const waSent=op.sent_notifications?.[`wa_${tr}`];const hasWaTpl=tr==="deposito"||tr==="retiro";return <>
+<Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>
+{hasWaTpl&&<Btn small variant="secondary" onClick={()=>sendWaTrigger(tr)}>{waSent?"💬 Reenviar WA":"💬 Enviar WA"}</Btn>}
+</>;})()}
         <Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>
       </div>}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
