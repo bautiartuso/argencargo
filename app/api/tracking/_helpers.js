@@ -68,8 +68,25 @@ const GENERIC_TITLES = {
 function stripCourierRefs(text) {
   if (!text) return null;
   // Saca cualquier mención explícita de DHL, FedEx, UPS, "facility", AWB numbers, etc.
+  // Y traduce las frases más comunes del status raw inglés al español.
   return String(text)
-    // Frases compuestas primero (ej "FedEx Office", "FedEx location", "DHL Express"):
+    // Frases completas comunes (traducción directa):
+    .replace(/\bShipment is out with courier for delivery\b/gi, "Saliendo a oficina Argencargo para entrega final")
+    .replace(/\bShipment is out for delivery\b/gi, "Saliendo a oficina Argencargo para entrega final")
+    .replace(/\bShipment has been delivered\b/gi, "Recibido en oficina Argencargo")
+    .replace(/\bArrived at Sort centro\b/gi, "Llegó a centro de clasificación")
+    .replace(/\bArrived at Sort Facility\b/gi, "Llegó a centro de clasificación")
+    .replace(/\bDeparted from Sort centro\b/gi, "Salió del centro de clasificación")
+    .replace(/\bProcessed at\b/gi, "Procesado en")
+    .replace(/\bClearance processing complete at\b/gi, "Despacho aduanero completado en")
+    .replace(/\bClearance event\b/gi, "Gestión aduanera")
+    .replace(/\bIn transit to\b/gi, "En camino a")
+    .replace(/\bOn the way to\b/gi, "En camino a")
+    .replace(/\bShipment information sent to\b/gi, "Información enviada a")
+    .replace(/\bArrived at\b/gi, "Llegó a")
+    .replace(/\bDeparted\b/gi, "Salida")
+    .replace(/\bDelivered\b/gi, "Recibido en oficina Argencargo")
+    // Frases compuestas con marca primero (ej "FedEx Office", "FedEx location", "DHL Express"):
     .replace(/\b(FedEx|FEDEX|Fed Ex|DHL|UPS)\s+(Office|Location|Station|Facility|Hub|Express|Ground|Home Delivery|Smartpost)\b/gi, "centro")
     .replace(/\b(On\s+)?(FedEx|FEDEX|Fed Ex|DHL|UPS)\s+vehicle\b/gi, "en vehículo de reparto")
     // Marca suelta
