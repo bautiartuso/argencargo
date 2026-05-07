@@ -1822,10 +1822,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             await dq("operation_client_payments",{method:"DELETE",token,filters:`?id=eq.${id}`});
             const rest=clientPayments.filter(p=>p.id!==id);
             const newTotal=rest.reduce((s,p)=>s+Number(p.amount_usd||0),0);
-            if(newTotal<totalIngreso){
-              await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{is_collected:false}});
-              setOp(p=>({...p,is_collected:false}));
-            }
+            // Resync total_anticipos siempre, NO solo el flag is_collected. Antes este path dejaba total_anticipos stale.
+            const upd={total_anticipos:newTotal};
+            if(newTotal<totalIngreso)upd.is_collected=false;
+            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});
+            setOp(p=>({...p,...upd}));
             load();
           };
           return <Card title="Cobros del cliente">
@@ -2207,7 +2208,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               <span style={{display:"flex",gap:8,alignItems:"center"}}>
                 <span style={{fontFamily:"monospace",color:"#fff",fontWeight:600}}>USD {Number(p.amount_usd).toFixed(2)}{isArs?` (ARS ${Number(p.amount_ars||0).toLocaleString("es-AR")} @ ${p.exchange_rate})`:""}</span>
                 <button onClick={()=>printReceiptPdf({op,payment:p,client:opClient})} title="Generar recibo PDF para enviar al cliente" style={{background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.3)",color:"#60a5fa",cursor:"pointer",fontSize:10,padding:"3px 8px",borderRadius:4,fontWeight:700}}>📄 Recibo</button>
-                <button onClick={async()=>{if(!confirm("¿Eliminar este cobro parcial?"))return;await dq("operation_client_payments",{method:"DELETE",token,filters:`?id=eq.${p.id}`});const newTot=clientPayments.filter(x=>x.id!==p.id).reduce((s,x)=>s+Number(x.amount_usd||0),0);const upd={collected_amount:newTot};if(newTot<budgetTot)upd.is_collected=false;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});setOp(prev=>({...prev,...upd}));await load();flash("Cobro eliminado");}} title="Eliminar este cobro" style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.7)",cursor:"pointer",fontSize:14,padding:"0 4px"}}>×</button>
+                <button onClick={async()=>{if(!confirm("¿Eliminar este cobro parcial?"))return;await dq("operation_client_payments",{method:"DELETE",token,filters:`?id=eq.${p.id}`});const newTot=clientPayments.filter(x=>x.id!==p.id).reduce((s,x)=>s+Number(x.amount_usd||0),0);const upd={collected_amount:newTot,total_anticipos:newTot};if(newTot<budgetTot)upd.is_collected=false;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});setOp(prev=>({...prev,...upd}));await load();flash("Cobro eliminado");}} title="Eliminar este cobro" style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.7)",cursor:"pointer",fontSize:14,padding:"0 4px"}}>×</button>
               </span>
             </div>;})}
           </div>
