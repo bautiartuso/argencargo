@@ -5182,16 +5182,24 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
       // Canal: admin puede haber elegido en el modal. Default = negro (Integral AC) si no eligió
       const channel=confirmChannel||(n.shipping_method==="maritimo"?"maritimo_negro":"aereo_negro");
       const origin=n.origin==="usa"?"USA":"China";
-      // international_tracking guarda los trackings concatenados (la lógica futura puede leer de la tabla hija)
-      const intTrk=trkCodes.join(", ");
-      const opBody={operation_code:newCode,client_id:n.client_id,channel,origin,service_type:"courier",status:"en_deposito_origen",description:n.description||null,international_tracking:intTrk};
+      // OJO: los trackings del aviso son national_trackings (tracking del proveedor en origen), no
+      // el international_tracking del courier (DHL/FedEx). Ese se completa al despacho del vuelo.
+      // Creamos un operation_package por cada tracking → preserva la info del aviso en la op.
+      const opBody={operation_code:newCode,client_id:n.client_id,channel,origin,service_type:"courier",status:"en_deposito_origen",description:n.description||null};
       const created=await dq("operations",{method:"POST",token,body:opBody});
       const opObj=Array.isArray(created)?created[0]:created;
       if(!opObj?.id){alert("Error creando op");setWorking(false);return;}
-      // Marcar TODOS los trackings del aviso como received + linkear aviso con op
+      // Crear un operation_package por cada tracking del aviso (preserva codes + bultos físicos del cliente).
       const now=new Date().toISOString();
+      let pkgNum=0;
       for(const t of trks){
+        pkgNum++;
+        await dq("operation_packages",{method:"POST",token,body:{operation_id:opObj.id,package_number:pkgNum,quantity:1,national_tracking:t.tracking_code||null}}).catch(e=>console.error("pkg create",e));
         if(!t.received_at){await dq("purchase_notification_trackings",{method:"PATCH",token,filters:`?id=eq.${t.id}`,body:{received_at:now}}).catch(()=>{});}
+      }
+      // Si el aviso no tenía trackings hijos pero sí un tracking_code legacy en el aviso mismo
+      if(trks.length===0&&n.tracking_code){
+        await dq("operation_packages",{method:"POST",token,body:{operation_id:opObj.id,package_number:1,quantity:1,national_tracking:n.tracking_code}}).catch(e=>console.error("pkg create legacy",e));
       }
       await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{status:"received",operation_id:opObj.id,confirmed_at:now}});
       // Notif al cliente
