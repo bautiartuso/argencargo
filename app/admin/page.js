@@ -2070,14 +2070,23 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           if(op.is_collected&&isArsCol&&!colRate){alert("El cobro es en ARS: cargá el tipo de cambio primero");return;}
           if(op.is_collected&&budgetTot>0){
             if(diff>0.01){
-              if(confirm(`El cliente pagó USD ${diff.toFixed(2)} de más.\n\n¿Registrar el excedente como saldo a favor en la cuenta corriente?`)){
+              const choice=window.prompt(`El cliente pagó USD ${diff.toFixed(2)} MÁS que el presupuesto.\n\nEscribí:\n  s = SALDO A FAVOR (queda en CC del cliente, lo aplicás a futuro)\n  e = CARGO EXTRA (es revenue de esta op, no se devuelve — ej. cargo por TC, urgencia, ajuste)\n\nSi cancelás, no se guardan cambios.`,"s");
+              if(choice===null)return;
+              if(choice==="s"||choice==="S"){
                 // Capear collected_amount al budget: el excedente queda en CC, no infla la ganancia
                 setOp(p=>({...p,collected_amount:budgetTot}));
-                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{collected_amount:budgetTot,is_collected:true,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
+                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{collected_amount:budgetTot,extra_charge_usd:0,is_collected:true,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
                 await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`});
                 flash(`Cobrada · saldo a favor +USD ${diff.toFixed(2)}`);
                 return;
-              }
+              } else if(choice==="e"||choice==="E"){
+                // Cargo extra: collected_amount queda tal cual (no se capea), se setea extra_charge_usd para trazabilidad,
+                // NO se crea overpayment movement, el revenue de la op crece naturalmente.
+                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{is_collected:true,extra_charge_usd:diff,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
+                setOp(p=>({...p,extra_charge_usd:diff}));
+                flash(`Cobrada · cargo extra +USD ${diff.toFixed(2)} (revenue)`);
+                return;
+              } else {alert("Opción inválida. Escribí 's' o 'e'");return;}
             } else if(diff<-0.01){
               const choice=window.prompt(`El cliente pagó USD ${Math.abs(diff).toFixed(2)} MENOS que el presupuesto.\n\nEscribí:\n  d = DESCUENTO intencional (no genera deuda)\n  c = queda como DEUDA en CC\n\nSi cancelás, no se guardan cambios.`,"d");
               if(choice===null)return;
@@ -2146,6 +2155,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             {debtApplied>0?<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Ya sumaste USD {debtApplied.toFixed(2)} a esta op. Total a cobrar: <strong style={{color:"#fff"}}>USD {(budgetTot+debtApplied).toFixed(2)}</strong></p>:<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si la sumás, el monto a cobrar pasa a USD {(budgetTot+debtBal).toFixed(2)} y la deuda se cancela.</p>}
           </div>
           {debtApplied<=0&&<Btn onClick={applyDebt} small>Sumar a esta op →</Btn>}
+        </div>}
+        {/* Banner: cargo extra registrado (cobraste más que el presupuesto, NO es saldo a favor) */}
+        {Number(op.extra_charge_usd||0)>0.01&&op.is_collected&&<div style={{marginBottom:12,padding:"10px 14px",background:"linear-gradient(90deg, rgba(167,139,250,0.10), rgba(167,139,250,0.02))",border:"1px solid rgba(167,139,250,0.3)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div>
+            <p style={{fontSize:12,fontWeight:700,color:"#a78bfa",margin:0}}>💰 Cargo extra: USD {Number(op.extra_charge_usd).toFixed(2)}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Presupuesto USD {budgetTot.toFixed(2)} + extra USD {Number(op.extra_charge_usd).toFixed(2)} = cobrado USD {(budgetTot+Number(op.extra_charge_usd)).toFixed(2)}. Se cuenta como revenue de esta op.</p>
+          </div>
+          <button onClick={async()=>{if(!confirm("¿Limpiar el cargo extra? Solo borra el flag, no modifica el monto cobrado."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{extra_charge_usd:0}});setOp(p=>({...p,extra_charge_usd:0}));flash("Cargo extra limpiado");}} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:6,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar</button>
         </div>}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
           {/* Fix bug: NO usar fallback a budget_total en value — confunde porque parece cargado pero el state está en 0.
@@ -3423,7 +3440,7 @@ function FinancePanel({token}){
   const [clientAccMvs,setClientAccMvs]=useState([]);
   const load=async()=>{const [e,o,pm,dp,am,ag,sp,cp,cdUsd,cdArs,cdPmts,supTcArs,supTcUsd,autoE,clMv]=await Promise.all([
     dq("finance_entries",{token,filters:"?select=*&auto_generated=is.false&order=date.desc,created_at.desc"}),
-    dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,credit_applied_usd,debt_applied_usd,closed_at,cost_flete,cost_flete_method,cost_flete_paid_at,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_seguro_paid_at,cost_flete_local,cost_flete_local_paid_at,cost_otros,cost_otros_paid_at,service_type,cost_producto_usd,cost_producto_method,cost_producto_paid,cost_producto_paid_at,clients(first_name,last_name,client_code)&order=created_at.desc"}),
+    dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,credit_applied_usd,debt_applied_usd,extra_charge_usd,closed_at,cost_flete,cost_flete_method,cost_flete_paid_at,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_seguro_paid_at,cost_flete_local,cost_flete_local_paid_at,cost_otros,cost_otros_paid_at,service_type,cost_producto_usd,cost_producto_method,cost_producto_paid,cost_producto_paid_at,clients(first_name,last_name,client_code)&order=created_at.desc"}),
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)"}),
     dq("finance_entries",{token,filters:"?select=*&currency=eq.ARS&exchange_rate=is.null&auto_generated=eq.true&order=card_closing_date.asc"}),
     dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),
@@ -3492,16 +3509,22 @@ function FinancePanel({token}){
       const isArs=o.collection_currency==="ARS";
       const rate=Number(o.collection_exchange_rate||0);
       const collectedUsd=isArs&&rate?amt/rate:amt;
-      // Cash real recibido = collected_amount + overpayment − credit_applied (porque applied no es cash nuevo, es saldo viejo consumido).
+      // Cash real recibido. Hay 2 casos según cómo se cobró:
+      // (a) Saldo a favor: collected_amount está cap'd al budget, overpay registra el extra,
+      //     credit_applied indica saldo viejo consumido (no cash nuevo). Cash = collected + overpay − credit.
+      // (b) Cargo extra: collected_amount = cash real (NO cap'd), no hay overpay, credit_applied es saldo viejo.
+      //     Cash = collected (que ya refleja el cash recibido).
       const opMvs=clientAccMvs.filter(m=>m.operation_id===o.id);
       const overpay=opMvs.filter(m=>m.type==="overpayment").reduce((s,m)=>s+Number(m.amount_usd||0),0);
       const creditApp=Number(o.credit_applied_usd||0);
-      const cashIn=collectedUsd+overpay-creditApp;
+      const extraCharge=Number(o.extra_charge_usd||0);
+      const cashIn=extraCharge>0.01?collectedUsd:(collectedUsd+overpay-creditApp);
       if(cashIn>0){
         const detail=[];
         if(isArs)detail.push(`ARS ${amt.toLocaleString("es-AR")} @ ${rate}`);
         if(creditApp>0)detail.push(`incluye USD ${creditApp.toFixed(2)} de saldo a favor aplicado`);
         if(overpay>0.01)detail.push(`USD ${overpay.toFixed(2)} a saldo a favor del cliente`);
+        if(extraCharge>0.01)detail.push(`incluye cargo extra USD ${extraCharge.toFixed(2)}`);
         ledger.push({date:o.collection_date||o.closed_at?.slice(0,10)||"—",type:"ingreso",origen:"op",code:o.operation_code,desc:`Cobro ${o.operation_code} — ${o.clients?.client_code||""}`,amount:cashIn,detail:detail.join(" · ")});
       }
     }
