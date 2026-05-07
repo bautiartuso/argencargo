@@ -6932,25 +6932,44 @@ function AdminTasks({token}){
   const [lo,setLo]=useState(true);
   const [newTitle,setNewTitle]=useState("");
   const [newPriority,setNewPriority]=useState("normal");
-  const [newDueDate,setNewDueDate]=useState("");
+  const [newDueDate,setNewDueDate]=useState("today"); // 'today' | 'tomorrow' | 'week' | YYYY-MM-DD
   const [showCompleted,setShowCompleted]=useState(false);
   const [editingId,setEditingId]=useState(null);
   const [editText,setEditText]=useState("");
+  // Día seleccionado en la vista. Default: hoy (offset 0). offset = diff en días contra hoy.
+  const [dayOffset,setDayOffset]=useState(0);
+  const [showOverdue,setShowOverdue]=useState(true);
+
+  const todayStr=new Date().toISOString().slice(0,10);
+  const ymd=(date)=>date.toISOString().slice(0,10);
+  const addDays=(date,n)=>{const d=new Date(date);d.setDate(d.getDate()+n);return d;};
+  const todayDate=new Date();todayDate.setHours(0,0,0,0);
+  const selectedDate=addDays(todayDate,dayOffset);
+  const selectedYmd=ymd(selectedDate);
 
   const load=async()=>{
-    const r=await dq("admin_tasks",{token,filters:"?select=*&order=done.asc,created_at.desc"});
+    const r=await dq("admin_tasks",{token,filters:"?select=*&order=done.asc,priority.asc,due_date.asc,created_at.desc"});
     setTasks(Array.isArray(r)?r:[]);
     setLo(false);
   };
   useEffect(()=>{load();},[token]);
 
+  const resolveDueDate=(opt)=>{
+    if(opt==="today")return todayStr;
+    if(opt==="tomorrow")return ymd(addDays(todayDate,1));
+    if(opt==="week")return ymd(addDays(todayDate,7));
+    if(opt==="none")return null;
+    return opt; // YYYY-MM-DD custom
+  };
+
   const addTask=async()=>{
     const t=newTitle.trim();
     if(!t)return;
     const body={title:t,priority:newPriority};
-    if(newDueDate)body.due_date=newDueDate;
+    const due=resolveDueDate(newDueDate);
+    if(due)body.due_date=due;
     await dq("admin_tasks",{method:"POST",token,body});
-    setNewTitle("");setNewDueDate("");setNewPriority("normal");
+    setNewTitle("");setNewDueDate("today");setNewPriority("normal");
     load();
   };
 
@@ -6974,133 +6993,151 @@ function AdminTasks({token}){
     setEditingId(null);
   };
 
-  const pending=tasks.filter(t=>!t.done);
-  const completed=tasks.filter(t=>t.done);
+  const moveTaskTo=async(task,newDue)=>{
+    await dq("admin_tasks",{method:"PATCH",token,filters:`?id=eq.${task.id}`,body:{due_date:newDue}});
+    setTasks(tasks.map(t=>t.id===task.id?{...t,due_date:newDue}:t));
+  };
 
   const PRIO_COLOR={alta:"#ef4444",normal:"#60a5fa",baja:"#94a3b8"};
   const PRIO_LBL={alta:"Alta",normal:"Normal",baja:"Baja"};
 
-  const formatDue=(d)=>{
-    if(!d)return null;
-    const s=String(d).slice(0,10);
-    const [y,m,day]=s.split("-");
-    const date=new Date(Number(y),Number(m)-1,Number(day));
-    const today=new Date();today.setHours(0,0,0,0);
-    const diff=Math.round((date-today)/86400000);
-    if(diff<0)return {text:`Vencida (${Math.abs(diff)}d)`,color:"#ef4444"};
-    if(diff===0)return {text:"Hoy",color:"#fb923c"};
-    if(diff===1)return {text:"Mañana",color:"#fb923c"};
-    if(diff<=7)return {text:`En ${diff}d`,color:"#fbbf24"};
-    return {text:date.toLocaleDateString("es-AR",{day:"2-digit",month:"short"}),color:"rgba(255,255,255,0.4)"};
+  // Tareas no completadas con due_date < hoy = atrasadas
+  const overdueTasks=tasks.filter(t=>!t.done&&t.due_date&&String(t.due_date).slice(0,10)<todayStr);
+  // Tareas del día seleccionado (no completadas)
+  const dayTasks=tasks.filter(t=>!t.done&&t.due_date&&String(t.due_date).slice(0,10)===selectedYmd);
+  // Sin fecha (cuando estás en hoy, también las mostramos en el bucket)
+  const noDateTasks=dayOffset===0?tasks.filter(t=>!t.done&&!t.due_date):[];
+  // Completadas del día seleccionado
+  const dayDone=tasks.filter(t=>t.done&&t.done_at&&t.done_at.slice(0,10)===selectedYmd);
+
+  // Día en español
+  const DAYS_SHORT=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+  const DAYS_LONG=["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+  const MONTHS=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const dayLabel=(offset)=>{
+    if(offset===0)return "Hoy";
+    if(offset===1)return "Mañana";
+    if(offset===-1)return "Ayer";
+    const d=addDays(todayDate,offset);
+    return `${DAYS_SHORT[d.getDay()]} ${d.getDate()}`;
   };
+
+  // Strip de 7 días: hoy + 6 siguientes
+  const weekDays=Array.from({length:7},(_,i)=>{
+    const d=addDays(todayDate,i);
+    const dStr=ymd(d);
+    const count=tasks.filter(t=>!t.done&&t.due_date&&String(t.due_date).slice(0,10)===dStr).length;
+    return{offset:i,date:d,ymd:dStr,count,label:i===0?"HOY":DAYS_SHORT[d.getDay()].toUpperCase(),num:d.getDate()};
+  });
 
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
 
+  // Render una task card (compartido entre overdue, day, sin fecha)
+  const renderTask=(t,opts={})=>{
+    const isOverdue=opts.overdue;
+    const overdueDays=isOverdue&&t.due_date?Math.round((todayDate-new Date(String(t.due_date).slice(0,10)))/86400000):0;
+    return <div key={t.id} style={{background:isOverdue?"linear-gradient(90deg,rgba(239,68,68,0.10),rgba(239,68,68,0.02))":"rgba(255,255,255,0.04)",border:`1px solid ${isOverdue?"rgba(239,68,68,0.35)":(t.priority==="alta"?"rgba(239,68,68,0.3)":"rgba(255,255,255,0.08)")}`,borderLeft:`4px solid ${PRIO_COLOR[t.priority]}`,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:12}}>
+      <button onClick={()=>toggleDone(t)} style={{width:22,height:22,minWidth:22,borderRadius:6,border:"2px solid rgba(255,255,255,0.3)",background:"transparent",cursor:"pointer",padding:0}} title="Marcar como completada"/>
+      <div style={{flex:1,minWidth:0}}>
+        {editingId===t.id?<input type="text" value={editText} onChange={e=>setEditText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")saveEdit(t.id);if(e.key==="Escape")setEditingId(null);}} onBlur={()=>saveEdit(t.id)} autoFocus style={{width:"100%",padding:"4px 8px",fontSize:14,background:"rgba(0,0,0,0.4)",border:`1px solid ${IC}`,borderRadius:6,color:"#fff",outline:"none",boxSizing:"border-box"}}/>
+        :<p onClick={()=>{setEditingId(t.id);setEditText(t.title);}} style={{margin:0,fontSize:14,color:"#fff",cursor:"text",lineHeight:1.4}}>{t.title}</p>}
+        <div style={{display:"flex",gap:8,marginTop:4,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:10,fontWeight:700,color:PRIO_COLOR[t.priority],textTransform:"uppercase",letterSpacing:"0.04em"}}>{PRIO_LBL[t.priority]}</span>
+          {isOverdue&&<span style={{fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:4,background:"rgba(239,68,68,0.18)",color:"#fca5a5",border:"1px solid rgba(239,68,68,0.4)",textTransform:"uppercase",letterSpacing:"0.04em"}}>🔥 Atrasada {overdueDays}d</span>}
+          {t.due_date&&!isOverdue&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>📅 {new Date(String(t.due_date).slice(0,10)+"T12:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</span>}
+          {!t.due_date&&<span style={{fontSize:10,color:"rgba(255,255,255,0.35)",fontStyle:"italic"}}>Sin fecha</span>}
+        </div>
+      </div>
+      {/* Quick actions: mover a hoy/mañana */}
+      {isOverdue&&<button onClick={()=>moveTaskTo(t,todayStr)} title="Mover a hoy" style={{padding:"5px 10px",fontSize:10,fontWeight:700,background:"rgba(184,149,106,0.12)",border:"1px solid rgba(184,149,106,0.35)",borderRadius:6,color:GOLD_LIGHT,cursor:"pointer",whiteSpace:"nowrap"}}>→ Hoy</button>}
+      {!isOverdue&&dayOffset===0&&<button onClick={()=>moveTaskTo(t,ymd(addDays(todayDate,1)))} title="Mover a mañana" style={{padding:"5px 10px",fontSize:10,fontWeight:700,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,color:"rgba(255,255,255,0.55)",cursor:"pointer",whiteSpace:"nowrap"}}>→ Mañana</button>}
+      <button onClick={()=>deleteTask(t.id)} style={{padding:"6px 10px",fontSize:12,background:"transparent",border:"1px solid rgba(255,80,80,0.25)",borderRadius:6,color:"rgba(255,100,100,0.7)",cursor:"pointer"}} title="Eliminar">✕</button>
+    </div>;
+  };
+
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
-      <div>
-        <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Tareas pendientes</h2>
-        <p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{pending.length} pendiente{pending.length!==1?"s":""}{completed.length>0&&` · ${completed.length} completada${completed.length!==1?"s":""}`}</p>
-      </div>
+    {/* Header */}
+    <div style={{marginBottom:20}}>
+      <h2 style={{fontSize:24,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.02em"}}>Tareas</h2>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:0}}>Tu día a día. Las atrasadas se muestran arriba como urgentes — su fecha original queda intacta.</p>
     </div>
 
-    {/* Form para agregar nueva tarea */}
-    <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"16px",marginBottom:20}}>
-      <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
-        <div style={{flex:"2 1 300px",minWidth:200}}>
-          <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",display:"block",marginBottom:4}}>Nueva tarea</label>
-          <input
-            type="text"
-            value={newTitle}
-            onChange={e=>setNewTitle(e.target.value)}
-            onKeyDown={e=>e.key==="Enter"&&addTask()}
-            placeholder="¿Qué tenés que hacer?"
-            style={{width:"100%",padding:"10px 12px",fontSize:14,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,color:"#fff",outline:"none",boxSizing:"border-box"}}
-          />
+    {/* Banner de atrasadas */}
+    {overdueTasks.length>0&&<div style={{marginBottom:16,padding:"14px 18px",background:"linear-gradient(135deg,rgba(239,68,68,0.12),rgba(239,68,68,0.03))",border:"1.5px solid rgba(239,68,68,0.4)",borderRadius:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",gap:10,flexWrap:"wrap"}} onClick={()=>setShowOverdue(p=>!p)}>
+        <div>
+          <p style={{fontSize:13,fontWeight:800,color:"#fca5a5",margin:0}}>🔥 {overdueTasks.length} tarea{overdueTasks.length!==1?"s":""} atrasada{overdueTasks.length!==1?"s":""}</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>De días anteriores sin completar. Click "→ Hoy" para moverlas o tildá si ya las hiciste.</p>
         </div>
-        <div style={{flex:"0 0 auto",minWidth:110}}>
-          <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",display:"block",marginBottom:4}}>Prioridad</label>
-          <select value={newPriority} onChange={e=>setNewPriority(e.target.value)} style={{width:"100%",padding:"10px 12px",fontSize:13,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,color:"#fff",outline:"none",boxSizing:"border-box",cursor:"pointer"}}>
-            <option value="baja">Baja</option>
-            <option value="normal">Normal</option>
-            <option value="alta">Alta</option>
-          </select>
-        </div>
-        <div style={{flex:"0 0 auto",minWidth:130}}>
-          <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",display:"block",marginBottom:4}}>Vencimiento</label>
-          <input
-            type="date"
-            value={newDueDate}
-            onChange={e=>setNewDueDate(e.target.value)}
-            style={{width:"100%",padding:"10px 12px",fontSize:13,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,color:"#fff",outline:"none",boxSizing:"border-box"}}
-          />
-        </div>
-        <button
-          onClick={addTask}
-          disabled={!newTitle.trim()}
-          style={{padding:"10px 20px",fontSize:13,fontWeight:700,background:newTitle.trim()?IC:"rgba(255,255,255,0.1)",color:"#fff",border:"none",borderRadius:8,cursor:newTitle.trim()?"pointer":"not-allowed",opacity:newTitle.trim()?1:0.5}}
-        >
-          + Agregar
-        </button>
+        <span style={{fontSize:18,color:"rgba(252,165,165,0.7)",userSelect:"none",transform:showOverdue?"rotate(180deg)":"none",transition:"transform 150ms"}}>▼</span>
       </div>
+      {showOverdue&&<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:12}}>{overdueTasks.map(t=>renderTask(t,{overdue:true}))}</div>}
+    </div>}
+
+    {/* Strip de la semana */}
+    <div style={{display:"flex",gap:6,marginBottom:16,overflowX:"auto",paddingBottom:4}}>
+      {weekDays.map(w=>{const sel=dayOffset===w.offset;return <button key={w.offset} onClick={()=>setDayOffset(w.offset)} style={{flex:"1 1 80px",minWidth:72,padding:"10px 8px",borderRadius:10,border:`1.5px solid ${sel?GOLD:"rgba(255,255,255,0.08)"}`,background:sel?"linear-gradient(135deg,rgba(184,149,106,0.18),rgba(184,149,106,0.04))":"rgba(255,255,255,0.025)",cursor:"pointer",textAlign:"center",transition:"all 150ms",position:"relative"}}>
+        <p style={{fontSize:9.5,fontWeight:800,color:sel?GOLD_LIGHT:"rgba(255,255,255,0.4)",margin:"0 0 4px",letterSpacing:"0.08em"}}>{w.label}</p>
+        <p style={{fontSize:18,fontWeight:700,color:sel?"#fff":"rgba(255,255,255,0.7)",margin:0,letterSpacing:"-0.02em"}}>{w.num}</p>
+        {w.count>0&&<span style={{position:"absolute",top:6,right:6,fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:8,background:sel?GOLD_GRADIENT:"rgba(255,255,255,0.08)",color:sel?"#0A1628":"rgba(255,255,255,0.7)",minWidth:16,textAlign:"center"}}>{w.count}</span>}
+      </button>;})}
     </div>
 
-    {/* Lista de pendientes */}
-    {pending.length===0&&completed.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:"rgba(255,255,255,0.35)"}}>
-      <div style={{fontSize:40,marginBottom:8}}>✓</div>
-      <p style={{margin:0,fontSize:14}}>No tenés tareas pendientes — todo al día</p>
-    </div>}
+    {/* Hero del día seleccionado */}
+    <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"18px 20px",marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,gap:12,flexWrap:"wrap"}}>
+        <div>
+          <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.1em"}}>{dayLabel(dayOffset)}</p>
+          <h3 style={{fontSize:22,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{DAYS_LONG[selectedDate.getDay()]} {selectedDate.getDate()} de {MONTHS[selectedDate.getMonth()]}</h3>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>{dayTasks.length} pendiente{dayTasks.length!==1?"s":""}{dayDone.length>0&&` · ${dayDone.length} completada${dayDone.length!==1?"s":""}`}{dayOffset===0&&noDateTasks.length>0&&` · ${noDateTasks.length} sin fecha`}</p>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          {dayOffset!==0&&<button onClick={()=>setDayOffset(0)} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.10)",color:GOLD_LIGHT,cursor:"pointer"}}>Volver a hoy</button>}
+        </div>
+      </div>
 
-    {pending.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:24}}>
-      {pending.sort((a,b)=>{
-        const pr={alta:0,normal:1,baja:2};
-        if(pr[a.priority]!==pr[b.priority])return pr[a.priority]-pr[b.priority];
-        if(a.due_date&&b.due_date)return a.due_date.localeCompare(b.due_date);
-        if(a.due_date)return -1;
-        if(b.due_date)return 1;
-        return b.created_at.localeCompare(a.created_at);
-      }).map(t=>{
-        const due=formatDue(t.due_date);
-        return <div key={t.id} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${t.priority==="alta"?"rgba(239,68,68,0.3)":"rgba(255,255,255,0.08)"}`,borderLeft:`4px solid ${PRIO_COLOR[t.priority]}`,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:12}}>
-          <button onClick={()=>toggleDone(t)} style={{width:22,height:22,minWidth:22,borderRadius:6,border:"2px solid rgba(255,255,255,0.3)",background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0}} title="Marcar como completada" />
-          <div style={{flex:1,minWidth:0}}>
-            {editingId===t.id?<input
-              type="text"
-              value={editText}
-              onChange={e=>setEditText(e.target.value)}
-              onKeyDown={e=>{if(e.key==="Enter")saveEdit(t.id);if(e.key==="Escape")setEditingId(null);}}
-              onBlur={()=>saveEdit(t.id)}
-              autoFocus
-              style={{width:"100%",padding:"4px 8px",fontSize:14,background:"rgba(0,0,0,0.4)",border:`1px solid ${IC}`,borderRadius:6,color:"#fff",outline:"none",boxSizing:"border-box"}}
-            />:<p onClick={()=>{setEditingId(t.id);setEditText(t.title);}} style={{margin:0,fontSize:14,color:"#fff",cursor:"text",lineHeight:1.4}}>{t.title}</p>}
-            <div style={{display:"flex",gap:8,marginTop:4,alignItems:"center",flexWrap:"wrap"}}>
-              <span style={{fontSize:10,fontWeight:700,color:PRIO_COLOR[t.priority],textTransform:"uppercase",letterSpacing:"0.04em"}}>{PRIO_LBL[t.priority]}</span>
-              {due&&<span style={{fontSize:11,color:due.color,fontWeight:600}}>📅 {due.text}</span>}
-              <span style={{fontSize:10,color:"rgba(255,255,255,0.3)"}}>Creada {new Date(t.created_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</span>
-            </div>
-          </div>
-          <button onClick={()=>deleteTask(t.id)} style={{padding:"6px 10px",fontSize:12,background:"transparent",border:"1px solid rgba(255,80,80,0.25)",borderRadius:6,color:"rgba(255,100,100,0.7)",cursor:"pointer"}} title="Eliminar">✕</button>
-        </div>;
-      })}
-    </div>}
+      {/* Form crear tarea */}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"stretch",marginBottom:14,padding:"10px 12px",background:"rgba(0,0,0,0.18)",borderRadius:10,border:"1px solid rgba(255,255,255,0.04)"}}>
+        <input type="text" value={newTitle} onChange={e=>setNewTitle(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addTask()} placeholder="¿Qué tenés que hacer?" style={{flex:"3 1 240px",minWidth:160,padding:"10px 12px",fontSize:14,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,color:"#fff",outline:"none"}}/>
+        <select value={newPriority} onChange={e=>setNewPriority(e.target.value)} style={{flex:"0 0 auto",minWidth:100,padding:"10px 12px",fontSize:13,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,color:"#fff",outline:"none",cursor:"pointer"}}>
+          <option value="baja">Baja</option><option value="normal">Normal</option><option value="alta">Alta</option>
+        </select>
+        <select value={typeof newDueDate==="string"&&newDueDate.match(/^\d{4}-\d{2}-\d{2}$/)?"custom":newDueDate} onChange={e=>{const v=e.target.value;if(v==="custom")setNewDueDate(todayStr);else setNewDueDate(v);}} style={{flex:"0 0 auto",minWidth:120,padding:"10px 12px",fontSize:13,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,color:"#fff",outline:"none",cursor:"pointer"}}>
+          <option value="today">Hoy</option><option value="tomorrow">Mañana</option><option value="week">En 1 semana</option><option value="custom">Fecha custom</option><option value="none">Sin fecha</option>
+        </select>
+        {(typeof newDueDate==="string"&&newDueDate.match(/^\d{4}-\d{2}-\d{2}$/))&&<input type="date" value={newDueDate} onChange={e=>setNewDueDate(e.target.value)} style={{flex:"0 0 auto",padding:"10px 12px",fontSize:13,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,color:"#fff",outline:"none"}}/>}
+        <button onClick={addTask} disabled={!newTitle.trim()} style={{padding:"10px 18px",fontSize:13,fontWeight:700,background:newTitle.trim()?GOLD_GRADIENT:"rgba(255,255,255,0.05)",color:newTitle.trim()?"#0A1628":"rgba(255,255,255,0.3)",border:newTitle.trim()?`1px solid ${GOLD_DEEP}`:"1px solid rgba(255,255,255,0.06)",borderRadius:8,cursor:newTitle.trim()?"pointer":"not-allowed"}}>+ Agregar</button>
+      </div>
 
-    {/* Sección completadas (colapsable) */}
-    {completed.length>0&&<div>
-      <button onClick={()=>setShowCompleted(!showCompleted)} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontSize:12,fontWeight:700,padding:"8px 0",display:"flex",alignItems:"center",gap:6}}>
-        <span style={{transform:showCompleted?"rotate(90deg)":"rotate(0)",transition:"transform 0.15s",display:"inline-block"}}>▶</span>
-        {showCompleted?"Ocultar":"Ver"} completadas ({completed.length})
-      </button>
-      {showCompleted&&<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8,opacity:0.5}}>
-        {completed.slice(0,50).map(t=><div key={t.id} style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.028)",borderRadius:8,padding:"10px 14px",display:"flex",alignItems:"center",gap:12}}>
-          <button onClick={()=>toggleDone(t)} style={{width:22,height:22,minWidth:22,borderRadius:6,border:`2px solid ${IC}`,background:IC,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:12,padding:0}} title="Marcar como pendiente">✓</button>
-          <div style={{flex:1,minWidth:0}}>
-            <p style={{margin:0,fontSize:13,color:"rgba(255,255,255,0.5)",textDecoration:"line-through"}}>{t.title}</p>
-            {t.done_at&&<span style={{fontSize:10,color:"rgba(255,255,255,0.35)"}}>Completada {new Date(t.done_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span>}
-          </div>
-          <button onClick={()=>deleteTask(t.id)} style={{padding:"4px 8px",fontSize:11,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>✕</button>
-        </div>)}
+      {/* Tareas del día */}
+      {dayTasks.length===0&&noDateTasks.length===0&&dayDone.length===0?<div style={{textAlign:"center",padding:"30px 20px",color:"rgba(255,255,255,0.35)"}}>
+        <div style={{fontSize:32,marginBottom:6}}>✓</div>
+        <p style={{margin:0,fontSize:13}}>{dayOffset===0?"Sin tareas para hoy — buen día para sumar una.":dayOffset>0?"No hay tareas planificadas para este día.":"No había tareas asignadas a este día."}</p>
+      </div>:<div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {dayTasks.sort((a,b)=>{const pr={alta:0,normal:1,baja:2};return pr[a.priority]-pr[b.priority]||b.created_at.localeCompare(a.created_at);}).map(t=>renderTask(t))}
       </div>}
-    </div>}
+
+      {/* Sin fecha (solo en hoy) */}
+      {dayOffset===0&&noDateTasks.length>0&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Sin fecha asignada ({noDateTasks.length})</p>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>{noDateTasks.map(t=>renderTask(t))}</div>
+      </div>}
+
+      {/* Completadas del día */}
+      {dayDone.length>0&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+        <button onClick={()=>setShowCompleted(!showCompleted)} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.55)",cursor:"pointer",fontSize:11,fontWeight:700,padding:0,display:"flex",alignItems:"center",gap:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>
+          <span style={{transform:showCompleted?"rotate(90deg)":"none",transition:"transform 0.15s",display:"inline-block"}}>▶</span>
+          Completadas hoy ({dayDone.length})
+        </button>
+        {showCompleted&&<div style={{display:"flex",flexDirection:"column",gap:5,marginTop:10,opacity:0.55}}>
+          {dayDone.map(t=><div key={t.id} style={{background:"rgba(34,197,94,0.04)",border:"1px solid rgba(34,197,94,0.15)",borderRadius:8,padding:"8px 12px",display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={()=>toggleDone(t)} style={{width:20,height:20,minWidth:20,borderRadius:5,border:"2px solid #22c55e",background:"#22c55e",color:"#fff",cursor:"pointer",fontSize:11,padding:0}}>✓</button>
+            <p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.55)",textDecoration:"line-through",flex:1}}>{t.title}</p>
+            <button onClick={()=>deleteTask(t.id)} style={{padding:"3px 7px",fontSize:11,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"rgba(255,255,255,0.35)",cursor:"pointer"}}>✕</button>
+          </div>)}
+        </div>}
+      </div>}
+    </div>
   </div>;
 }
 
@@ -7491,6 +7528,7 @@ function AdminDashboard({session,onLogout}){
   const navSections=[
     {section:"Operativa",items:[
       {key:"today",label:"Hoy",p:["M12 2L3 7l9 5 9-5-9-5z","M3 17l9 5 9-5","M3 12l9 5 9-5"]},
+      {key:"tasks",label:"Tareas",p:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"]},
       {key:"operations",label:"Operaciones",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},
       {key:"agents",label:"Agentes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},
       {key:"purchase_notifs",label:"Avisos de compra",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},
