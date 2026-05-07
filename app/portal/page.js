@@ -2802,12 +2802,36 @@ export default function Page(){
   useEffect(()=>{
     if(typeof window==="undefined")return;
     const h=window.location.hash||"";
-    if(!h.includes("type=recovery"))return;
-    const params=new URLSearchParams(h.slice(1));
-    const tok=params.get("access_token");
-    if(tok){setResetToken(tok);setView("reset");
-      // limpiar hash para que no quede expuesto
-      try{history.replaceState(null,"",window.location.pathname+window.location.search);}catch(e){}
+    const qs=window.location.search||"";
+    // Caso A: error de Supabase en query params (ej. ?error=access_denied&error_description=...).
+    // Pasa cuando el link de recovery expiró o el redirect_to no está whitelisted.
+    if(qs.includes("error=")){
+      const sp=new URLSearchParams(qs);
+      const err=sp.get("error_description")||sp.get("error_code")||sp.get("error")||"Link inválido o expirado";
+      setOkMsg("");setGErr(`Recuperación falló: ${decodeURIComponent(err).replace(/\+/g," ")}. Pedí un link nuevo.`);
+      setView("forgot");
+      try{history.replaceState(null,"",window.location.pathname);}catch(e){}
+      return;
+    }
+    // Caso B: hash con tipo recovery → setView reset
+    if(h.includes("type=recovery")||h.includes("error=")){
+      const params=new URLSearchParams(h.slice(1));
+      // Hash también puede traer error
+      if(params.get("error")){
+        const errH=params.get("error_description")||params.get("error_code")||params.get("error");
+        setGErr(`Recuperación falló: ${decodeURIComponent(errH).replace(/\+/g," ")}. Pedí un link nuevo.`);
+        setView("forgot");
+        try{history.replaceState(null,"",window.location.pathname);}catch(e){}
+        return;
+      }
+      const tok=params.get("access_token");
+      if(tok){setResetToken(tok);setView("reset");
+        // limpiar hash para que no quede expuesto
+        try{history.replaceState(null,"",window.location.pathname+window.location.search);}catch(e){}
+      } else {
+        setGErr("El link no trae el token de acceso. Pedí un link nuevo.");
+        setView("forgot");
+      }
     }
   },[]);
   const doReset=async()=>{

@@ -13,13 +13,17 @@ export default function Landing(){
   const [scrolled,setScrolled]=useState(false);
   const [faq,setFaq]=useState(null);
   const [reviews,setReviews]=useState(null);
-  // Si el cliente llega al root con hash de Supabase (recovery / signup confirm), reenviar a /portal
-  // preservando el hash. Pasa cuando Supabase Site URL apunta a "/" en vez de "/portal".
+  // Si el cliente llega al root con hash de Supabase (recovery / signup confirm) o con error en
+  // query string (ej. ?error=access_denied), reenviar a /portal preservando todo. Pasa cuando
+  // Supabase Site URL apunta a "/" en vez de "/portal", o cuando el redirect_to no está whitelisted.
   useEffect(()=>{
     if(typeof window==="undefined")return;
     const h=window.location.hash||"";
-    if(h.includes("type=recovery")||h.includes("type=signup")||h.includes("access_token=")){
-      window.location.replace("/portal"+h);
+    const qs=window.location.search||"";
+    const isRecoveryHash=h.includes("type=recovery")||h.includes("type=signup")||h.includes("access_token=")||h.includes("error=");
+    const isErrorQs=qs.includes("error=")||qs.includes("error_code=");
+    if(isRecoveryHash||isErrorQs){
+      window.location.replace("/portal"+qs+h);
     }
   },[]);
   useEffect(()=>{const f=()=>setScrolled(window.scrollY>50);window.addEventListener("scroll",f);return()=>window.removeEventListener("scroll",f);},[]);
