@@ -2193,18 +2193,21 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         const id=op.id;
         const numOrNull=(v)=>{const n=Number(v);return v===""||v==null||isNaN(n)?null:n;};
         const dateOrNull=(v)=>v?String(v).slice(0,10):null;
+        // El campo card_closing en TC es DATE, pero en modo "efectivo" se reutiliza como tipo de cambio (numero).
+        // Para evitar PATCH 400, solo mandamos card_closing si parece YYYY-MM-DD; sino null.
+        const dateOnly=(v)=>{const s=v?String(v).slice(0,10):"";return /^\d{4}-\d{2}-\d{2}$/.test(s)?s:null;};
         const costBody={
           cost_flete:numOrNull(op.cost_flete),
           cost_flete_method:op.cost_flete_method||null,
           cost_flete_paid_at:dateOrNull(op.cost_flete_paid_at),
           cost_impuestos_ars:numOrNull(op.cost_impuestos_ars),
           cost_impuestos_method:op.cost_impuestos_method||null,
-          cost_impuestos_card_closing:op.cost_impuestos_card_closing||null,
+          cost_impuestos_card_closing:dateOnly(op.cost_impuestos_card_closing),
           cost_impuestos_paid_at:dateOrNull(op.cost_impuestos_paid_at),
           cost_impuestos_reales:numOrNull(op.cost_impuestos_reales),
           cost_gasto_documental_ars:numOrNull(op.cost_gasto_documental_ars),
           cost_gasto_doc_method:op.cost_gasto_doc_method||null,
-          cost_gasto_doc_card_closing:op.cost_gasto_doc_card_closing||null,
+          cost_gasto_doc_card_closing:dateOnly(op.cost_gasto_doc_card_closing),
           cost_gasto_doc_paid_at:dateOrNull(op.cost_gasto_doc_paid_at),
           cost_gasto_documental:numOrNull(op.cost_gasto_documental),
           cost_seguro:numOrNull(op.cost_seguro),
