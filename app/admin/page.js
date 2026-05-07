@@ -844,7 +844,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const importTotal=Math.max(0,bt-envioCost);
     const totAnt=Number(op.total_anticipos||0);
     const collected=Number(op.collected_amount||0);
-    const saldo=Math.max(0,bt-totAnt-collected);
+    const creditApp=Number(op.credit_applied_usd||0); // saldo a favor aplicado a esta op
+    const debtApp=Number(op.debt_applied_usd||0); // deuda anterior sumada a esta op
+    // Saldo real = (budget + deuda anterior) - (anticipos + cobros + saldo a favor aplicado)
+    const saldo=Math.max(0,bt+debtApp-totAnt-collected-creditApp);
     const saldoTxt=saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toFixed(2)}*`:"";
     // Si la op tiene envío a domicilio, usar template wa_envio (con desglose) en lugar de wa_retiro.
     const useEnvio=trigger==="retiro"&&op.shipping_to_door&&envioCost>0;
