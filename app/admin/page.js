@@ -854,7 +854,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const data={firstName,opCode,desc,portalLink,saldoTxt,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
     const msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Av. Callao 1137.${saldoTxt}`;
-    window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`,"_blank");
+    // api.whatsapp.com/send maneja mejor emojis multi-byte que wa.me (que a veces los muestra como "?").
+    window.open(`https://api.whatsapp.com/send?phone=${wa}&text=${encodeURIComponent(msg)}`,"_blank");
     // Log en op_communications + marcar sent_notifications
     try{
       const sentKey=`wa_${trigger}`;
