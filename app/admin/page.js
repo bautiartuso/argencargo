@@ -615,7 +615,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     autoSyncBudget();
   };
   // CC balance del agente asignado a esta op (mismo número que ve el panel Agentes)
-  const loadCCBalance=async()=>{const ag=op.created_by_agent_id;if(!ag){setCcBalance(0);return;}const mvs=await dq("agent_account_movements",{token,filters:`?agent_id=eq.${ag}&select=type,amount_usd`});if(Array.isArray(mvs)){const bal=mvs.reduce((s,m)=>s+((m.type==="anticipo"||m.type==="refund")?Number(m.amount_usd):(-Number(m.amount_usd))),0);setCcBalance(bal);}};
+  const loadCCBalance=async()=>{const ag=op.created_by_agent_id;if(!ag){setCcBalance(0);return;}const mvs=await dq("agent_account_movements",{token,filters:`?agent_id=eq.${ag}&select=type,amount_usd,amount_received_usd`});if(Array.isArray(mvs)){const bal=mvs.reduce((s,m)=>{
+    // Para anticipos: usar lo que recibió el agente (no lo que pagaste vos al banco — la comisión se contabiliza aparte)
+    const amt=(m.type==="anticipo"||m.type==="refund")?(m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd)):Number(m.amount_usd);
+    return s+((m.type==="anticipo"||m.type==="refund")?amt:-amt);
+  },0);setCcBalance(bal);}};
   // Divisor volumétrico del agente que creó la op (default 5000 si no hay agente o no está set)
   const [agentVolDiv,setAgentVolDiv]=useState(5000);
   useEffect(()=>{(async()=>{if(!op.created_by_agent_id){setAgentVolDiv(5000);return;}const r=await dq("agent_signups",{token,filters:`?auth_user_id=eq.${op.created_by_agent_id}&select=volumetric_divisor`});const d=Array.isArray(r)&&r[0]?Number(r[0].volumetric_divisor):5000;setAgentVolDiv(d||5000);})();},[op.created_by_agent_id,token]);
@@ -3650,7 +3654,9 @@ function FinancePanel({token}){
     if(e.payment_method==="tarjeta_credito"&&!e.is_paid)return;
     ledger.push({date:e.date,type:e.type,origen:"op",code:"",desc:e.description,amount:Number(e.amount||0),detail:e.detail||"",id:e.id});
   });
-  agentMvs.filter(m=>m.type==="anticipo").forEach(m=>{const ag=agentSignups.find(a=>a.auth_user_id===m.agent_id);const agName=ag?`${ag.first_name} ${ag.last_name}`:"agente";const recv=Number(m.amount_received_usd||m.amount_usd);ledger.push({date:m.date,type:"gasto",origen:"agente",code:"",desc:`Anticipo a ${agName}`,amount:Number(m.amount_usd||0),detail:m.amount_received_usd&&recv!==Number(m.amount_usd)?`Recibió ${usd(recv)}, comisión ${usd(Number(m.amount_usd)-recv)}`:(m.description||"")});});
+  agentMvs.filter(m=>m.type==="anticipo").forEach(m=>{const ag=agentSignups.find(a=>a.auth_user_id===m.agent_id);const agName=ag?`${ag.first_name} ${ag.last_name}`:"agente";const paid=Number(m.amount_usd||0);const recv=m.amount_received_usd!=null?Number(m.amount_received_usd):paid;const com=Math.max(0,paid-recv);
+    // Solo se cuenta lo que recibió el agente (el resto va como gasto comisión separado en finance_entries para no duplicar)
+    ledger.push({date:m.date,type:"gasto",origen:"agente",code:"",desc:`Anticipo a ${agName}`,amount:recv,detail:com>0?`Pagaste ${usd(paid)} · Agente recibió ${usd(recv)} (comisión ${usd(com)} contabilizada aparte)`:(m.description||"")});});
   // Refunds del agente (cash que el agente devuelve a AC) → ingreso en libro diario
   agentMvs.filter(m=>m.type==="refund").forEach(m=>{const ag=agentSignups.find(a=>a.auth_user_id===m.agent_id);const agName=ag?`${ag.first_name} ${ag.last_name}`:"agente";const recv=Number(m.amount_received_usd||m.amount_usd);ledger.push({date:m.date,type:"ingreso",origen:"agente",code:"",desc:`Devolución de ${agName}`,amount:recv,detail:m.description||""});});
   ledger.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
@@ -4790,7 +4796,12 @@ function AgentsPanel({token}){
     },0);
   };
   const opGrossWeight=(opId)=>opPackages(opId).reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);
-  const agentBalance=(agentId)=>accMovements.filter(m=>m.agent_id===agentId).reduce((s,m)=>s+((m.type==="anticipo"||m.type==="refund")?Number(m.amount_usd):-Number(m.amount_usd)),0);
+  const agentBalance=(agentId)=>accMovements.filter(m=>m.agent_id===agentId).reduce((s,m)=>{
+    // Para anticipos/refunds: usar lo que recibió el agente (no lo que pagaste vos al banco — la comisión es gasto separado)
+    const isCredit=m.type==="anticipo"||m.type==="refund";
+    const amt=isCredit&&m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd);
+    return s+(isCredit?amt:-amt);
+  },0);
   const toggleSelOp=(opId)=>setSelectedOps(p=>p.includes(opId)?p.filter(x=>x!==opId):[...p,opId]);
   const createFlight=async()=>{
     if(selectedOps.length===0)return;
@@ -6323,7 +6334,11 @@ function FinanceDashboard({token}){
   },0);
   const porPagar=porPagarSup+porPagarFE;
   // Cash estimado: usamos saldos agente como proxy de cash bajo gestión (anticipos disponibles - ya gastados)
-  const cashAgentes=agentMvs.reduce((s,m)=>s+(m.type==="anticipo"?-Number(m.amount_usd||0):Number(m.amount_usd||0)),0);
+  const cashAgentes=agentMvs.reduce((s,m)=>{
+    // Para anticipo: descontar lo que recibió el agente, no lo que pagaste al banco (la comisión está aparte en finance_entries)
+    const amt=m.type==="anticipo"&&m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);
+    return s+(m.type==="anticipo"?-amt:amt);
+  },0);
   // El termómetro: lo que esperás tener neto en próximos 30d
   const termometro=cashAgentes+porCobrar-porPagar;
   const themeColor=termometro>=5000?"#22c55e":termometro>=0?"#fbbf24":"#ef4444";
