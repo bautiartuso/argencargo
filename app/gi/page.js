@@ -940,64 +940,74 @@ const STATUS_MAP={
 };
 
 function PaneOps({token}){
-  const [quotes,setQuotes]=useState([]);
+  const [ops,setOps]=useState([]);
+  const [earnings,setEarnings]=useState([]);
   const [lo,setLo]=useState(true);
   const [tab,setTab]=useState("active");
   const [search,setSearch]=useState("");
 
   useEffect(()=>{(async()=>{
     setLo(true);
-    // Cotizaciones convertidas → cargan op + cliente + productos
-    const r=await dq("gi_quotes",{token,filters:"?status=eq.converted&select=*,operations(id,operation_code,status,channel,description,budget_total,collected_amount,is_collected,eta,created_at,closed_at,clients(first_name,last_name,client_code))&order=accepted_at.desc"});
-    setQuotes(Array.isArray(r)?r.filter(q=>q.operations):[]);
+    // RLS hace el filtro: el socio solo ve ops GI de sus clientes asignados.
+    // Admin ve todas las GI.
+    const [opsRes,earnRes]=await Promise.all([
+      dq("operations",{token,filters:"?service_type=eq.gestion_integral&select=*,clients(first_name,last_name,client_code,gi_partner_id,gi_commission_pct)&order=created_at.desc"}),
+      dq("gi_partner_earnings",{token,filters:"?select=*&order=closed_at.desc"}),
+    ]);
+    setOps(Array.isArray(opsRes)?opsRes:[]);
+    setEarnings(Array.isArray(earnRes)?earnRes:[]);
     setLo(false);
   })();},[token]);
 
+  const earningByOpId=earnings.reduce((m,e)=>{m[e.operation_id]=e;return m;},{});
+
   const tabs=[
-    {k:"active",l:"Activas",f:q=>q.operations&&!["operacion_cerrada","cancelada"].includes(q.operations.status)},
-    {k:"closed",l:"Cerradas",f:q=>q.operations&&["operacion_cerrada","cancelada"].includes(q.operations.status)},
+    {k:"active",l:"Activas",f:o=>!["operacion_cerrada","cancelada"].includes(o.status)},
+    {k:"closed",l:"Cerradas",f:o=>["operacion_cerrada","cancelada"].includes(o.status)},
   ];
 
-  const filtered=quotes.filter(q=>{
+  const filtered=ops.filter(op=>{
     const t=tabs.find(x=>x.k===tab);
-    if(!t.f(q))return false;
+    if(!t.f(op))return false;
     if(search){
       const s=search.toLowerCase();
-      const op=q.operations;
       const cn=op.clients?`${op.clients.first_name||""} ${op.clients.last_name||""}`.toLowerCase():"";
       if(!op.operation_code.toLowerCase().includes(s)&&!cn.includes(s)&&!String(op.description||"").toLowerCase().includes(s))return false;
     }
     return true;
   });
 
-  const calcGanancia=(q)=>{
-    const op=q.operations;
-    if(!op)return 0;
+  // Comisión:
+  //   - Si la op está cerrada: leer de gi_partner_earnings (real)
+  //   - Si está activa: estimar usando gi_commission_pct del cliente sobre el budget
+  const calcComision=(op)=>{
+    const earn=earningByOpId[op.id];
+    if(earn)return {amount:Number(earn.commission_usd||0),real:true,pct:Number(earn.commission_pct||0)};
+    const pct=Number(op.clients?.gi_commission_pct||0);
     const total=Number(op.budget_total||0);
-    const honoraires=total*Number(q.honorarios_pct||0)/100;
-    // Spread mock: el total al cliente vs costo real (que tenemos guardado)
-    const realKey={aereo_negro:"cost_courier_real_usd",aereo_blanco:"cost_aereo_int_real_usd",maritimo_negro:"cost_maritimo_lcl_real_usd",maritimo_blanco:"cost_maritimo_int_real_usd"}[q.selected_channel];
-    const real=realKey?Number(q[realKey]||0):total*0.92;
-    const spread=Math.max(0,total-real-honoraires);
-    return honoraires+spread;
+    // Estimación: net mock 8% del total → comisión = pct * net
+    const netEst=total*0.08;
+    const est=netEst*pct/100;
+    return {amount:est,real:false,pct};
   };
 
-  const totalActiveGain=filtered.reduce((s,q)=>s+calcGanancia(q),0);
+  const totalActiveCommission=filtered.filter(op=>!["operacion_cerrada","cancelada"].includes(op.status)).reduce((s,op)=>s+calcComision(op).amount,0);
+  const totalClosedCommission=filtered.filter(op=>op.status==="operacion_cerrada").reduce((s,op)=>s+calcComision(op).amount,0);
 
   return <div>
     <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Operaciones GI</h1>
-    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>Cotizaciones aceptadas que ya son ops AC-XXXX. Mismo seguimiento que en el panel admin.</p>
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>Operaciones de Gestión Integral de tus clientes asignados. Las comisiones se calculan al cerrar cada op sobre la ganancia neta real.</p>
 
     <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por código, cliente o descripción..." style={{padding:"9px 12px",fontSize:12.5,border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit",minWidth:280,flex:1}}/>
     </div>
 
-    <div style={{display:"flex",gap:4,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:18}}>
-      {tabs.map(t=>{const n=quotes.filter(t.f).length;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"9px 14px",fontSize:12,fontWeight:600,color:tab===t.k?GOLD_LIGHT:"rgba(255,255,255,0.5)",background:"transparent",border:"none",borderBottom:`2px solid ${tab===t.k?GOLD_LIGHT:"transparent"}`,cursor:"pointer",fontFamily:"inherit"}}>{t.l} <span style={{marginLeft:5,fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:8,background:tab===t.k?"rgba(184,149,106,0.15)":"rgba(255,255,255,0.06)",color:tab===t.k?GOLD_LIGHT:"rgba(255,255,255,0.5)"}}>{n}</span></button>;})}
-      {tab==="active"&&filtered.length>0&&<span style={{marginLeft:"auto",alignSelf:"center",fontSize:12,color:"rgba(255,255,255,0.6)",paddingBottom:8}}>Ganancia estimada activa: <strong style={{color:GOLD_LIGHT}}>{fmtUSD(totalActiveGain)}</strong></span>}
+    <div style={{display:"flex",gap:4,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:18,alignItems:"flex-end"}}>
+      {tabs.map(t=>{const n=ops.filter(t.f).length;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"9px 14px",fontSize:12,fontWeight:600,color:tab===t.k?GOLD_LIGHT:"rgba(255,255,255,0.5)",background:"transparent",border:"none",borderBottom:`2px solid ${tab===t.k?GOLD_LIGHT:"transparent"}`,cursor:"pointer",fontFamily:"inherit"}}>{t.l} <span style={{marginLeft:5,fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:8,background:tab===t.k?"rgba(184,149,106,0.15)":"rgba(255,255,255,0.06)",color:tab===t.k?GOLD_LIGHT:"rgba(255,255,255,0.5)"}}>{n}</span></button>;})}
+      {filtered.length>0&&<span style={{marginLeft:"auto",alignSelf:"center",fontSize:12,color:"rgba(255,255,255,0.6)",paddingBottom:8}}>{tab==="active"?<>Comisión est. activa: <strong style={{color:GOLD_LIGHT}}>{fmtUSD(totalActiveCommission)}</strong></>:<>Comisión real cerrada: <strong style={{color:"#22c55e"}}>{fmtUSD(totalClosedCommission)}</strong></>}</span>}
     </div>
 
-    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"3rem 0"}}>No hay operaciones en esta vista.</p>:
+    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"3rem 0"}}>{tab==="active"?"No tenés operaciones GI activas. Cuando un cliente asignado a vos acepte una cotización aparecen acá.":"No tenés operaciones cerradas todavía."}</p>:
       <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.22)"}}>
@@ -1008,10 +1018,10 @@ function PaneOps({token}){
             <th style={thStyle()}>Estado</th>
             <th style={thStyle()}>ETA</th>
             <th style={{...thStyle(),textAlign:"right"}}>Total</th>
-            <th style={{...thStyle(),textAlign:"right"}}>Tu ganancia</th>
+            <th style={{...thStyle(),textAlign:"right"}}>Tu comisión</th>
           </tr></thead>
           <tbody>
-            {filtered.map(q=>{const op=q.operations;const st=STATUS_MAP[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name||""} ${op.clients.last_name||""}`.trim():"—";const gan=calcGanancia(q);const chLabel=CHANNEL_DEFS.find(c=>c.key===op.channel)?.name||op.channel;return <tr key={q.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            {filtered.map(op=>{const st=STATUS_MAP[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name||""} ${op.clients.last_name||""}`.trim():"—";const com=calcComision(op);const chLabel=CHANNEL_DEFS.find(c=>c.key===op.channel)?.name||op.channel;return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
               <td style={{padding:"13px 14px",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:GOLD_LIGHT,fontSize:12.5,letterSpacing:"0.04em"}}>{op.operation_code}</td>
               <td style={{padding:"13px 14px",color:"#fff",fontWeight:600}}>{cn}</td>
               <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.6)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{op.description||"—"}</td>
@@ -1019,7 +1029,7 @@ function PaneOps({token}){
               <td style={{padding:"13px 14px"}}><span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,letterSpacing:"0.05em",textTransform:"uppercase",display:"inline-flex",alignItems:"center",gap:5}}><span style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:st.c}}/>{st.l}</span></td>
               <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.5)"}}>{op.eta?fmtDate(op.eta):"—"}</td>
               <td style={{padding:"13px 14px",textAlign:"right",color:"#fff",fontWeight:600,fontFeatureSettings:'"tnum"'}}>{fmtUSD(op.budget_total)}</td>
-              <td style={{padding:"13px 14px",textAlign:"right",color:"#22c55e",fontWeight:700,fontFeatureSettings:'"tnum"'}}>{fmtUSD(gan)}</td>
+              <td style={{padding:"13px 14px",textAlign:"right",color:com.real?"#22c55e":"rgba(255,255,255,0.5)",fontWeight:700,fontFeatureSettings:'"tnum"'}} title={com.real?`Comisión real: ${com.pct}% sobre ganancia neta`:`Estimación con ${com.pct}% del cliente`}>{com.pct>0?fmtUSD(com.amount):"—"}{!com.real&&com.pct>0&&<span style={{fontSize:9,marginLeft:4,opacity:0.6}}>est.</span>}</td>
             </tr>;})}
           </tbody>
         </table>
