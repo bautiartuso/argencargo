@@ -2768,6 +2768,8 @@ function ClientsList({token,onSelect}){
 
 function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   const [cl,setCl]=useState(initClient);const [ops,setOps]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("info");const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [msg,setMsg]=useState("");const [saving,setSaving]=useState(false);
+  const [giPartners,setGiPartners]=useState([]);
+  useEffect(()=>{(async()=>{const r=await dq("profiles",{token,filters:"?is_gi_partner=eq.true&select=id,email&order=email.asc"});setGiPartners(Array.isArray(r)?r:[]);})();},[token]);
   // Cuenta corriente
   const [accMovs,setAccMovs]=useState([]);
   const [cliPmtsCC,setCliPmtsCC]=useState([]); // pagos GI (operation_client_payments)
@@ -2865,6 +2867,17 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
         <Inp label="Provincia" value={cl.province} onChange={chCl("province")}/>
         {cl.tax_condition==="responsable_inscripto"&&<><Inp label="Empresa" value={cl.company_name} onChange={chCl("company_name")}/><Inp label="CUIT" value={cl.cuit} onChange={chCl("cuit")}/></>}
         <Inp label="Puntos" type="number" value={cl.points_balance} onChange={v=>chCl("points_balance")(Number(v)||0)}/>
+      </div>
+      <div style={{marginTop:18,padding:"14px 16px",background:"linear-gradient(90deg,rgba(184,149,106,0.08),rgba(184,149,106,0.02))",border:"1px solid rgba(184,149,106,0.25)",borderRadius:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:5,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.16em"}}>GI</span>
+          <p style={{fontSize:12.5,fontWeight:700,color:GOLD_LIGHT,margin:0}}>Asignación de socio · Gestión Integral</p>
+        </div>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",lineHeight:1.5}}>Si este cliente trabaja con un socio GI, asignalo acá. La comisión se aplica sobre la <strong>ganancia neta real</strong> al cerrar cada op. Si dejás sin asignar, las cotizaciones GI no generan comisión.</p>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12}}>
+          <Sel label="Socio GI asignado" value={cl.gi_partner_id||""} onChange={chCl("gi_partner_id")} options={[{value:"",label:"— Sin asignar —"},...giPartners.map(p=>({value:p.id,label:p.email}))]}/>
+          <Inp label="Comisión % sobre neto" type="number" step="0.01" value={cl.gi_commission_pct||""} onChange={v=>chCl("gi_commission_pct")(v===""?null:Number(v))}/>
+        </div>
       </div>
     </Card>}
     {tab==="ops"&&<Card title="Operaciones">{lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:ops.length>0?ops.map(op=>{const st=SM[op.status]||{l:op.status,c:"#999"};const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <div key={op.id} onClick={()=>onSelectOp(op)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 4px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms",borderRadius:6}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:"#fff",fontSize:12.5,letterSpacing:"0.04em"}}>{op.operation_code}</span><span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px `:"none"}}/>{st.l}</span></div><div style={{display:"flex",alignItems:"center",gap:14}}><span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{CM[op.channel]||op.channel}</span><span style={{color:GOLD_LIGHT,fontSize:12,fontWeight:600}}>→</span></div></div>;}):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin operaciones</p>}</Card>}
