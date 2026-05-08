@@ -1407,7 +1407,6 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
           operation_id:opId,package_number:nn,quantity:1,
           gross_weight_kg:Number(b.weight),length_cm:Number(b.length),width_cm:Number(b.width),height_cm:Number(b.height),
           national_tracking:refFor(nn-1),
-          registered_by_agent_id:userId,
         }});
       }
       // 3. Marcar request como done

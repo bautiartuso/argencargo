@@ -4647,7 +4647,8 @@ function AgentsPanel({token}){
     const {op,pkgs,billable,reason}=repackModal;
     setRepackModal(s=>({...s,sending:true}));
     try{
-      await dq("repack_requests",{method:"POST",token,body:{operation_id:op.id,status:"pending",reason:reason.trim()||null,original_billable_kg:Number(billable.toFixed(2)),original_pkg_count:pkgs.length}});
+      const origSnapshot=pkgs.map(p=>({package_number:p.package_number,quantity:Number(p.quantity||1),gross_weight_kg:p.gross_weight_kg?Number(p.gross_weight_kg):null,length_cm:p.length_cm?Number(p.length_cm):null,width_cm:p.width_cm?Number(p.width_cm):null,height_cm:p.height_cm?Number(p.height_cm):null,national_tracking:p.national_tracking||null}));
+      await dq("repack_requests",{method:"POST",token,body:{operation_id:op.id,status:"pending",reason:reason.trim()||null,original_billable_kg:Number(billable.toFixed(2)),original_pkg_count:pkgs.length,original_packages_snapshot:origSnapshot}});
       try{await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"note",content:`🔄 Pedido de reempaque al agente.\nPeso facturable actual: ${billable.toFixed(2)} kg (${pkgs.length} bultos)${reason.trim()?`\nMotivo: ${reason.trim()}`:""}`}});}catch(e){}
       fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:op.created_by_agent_id,title:`🔄 Pedido de reempaque ${op.operation_code}`,body:reason.trim()||`Reempaquetar para bajar volumétrico (${billable.toFixed(1)} kg)`,url:"/agente?tab=deposit"})}).catch(()=>{});
       setRepackModal(null);

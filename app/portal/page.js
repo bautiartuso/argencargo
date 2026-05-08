@@ -539,7 +539,7 @@ function EditableItemRow({item,editable,token,onChange}){
 
 function OperationDetail({op,token,onBack}){
   const {t}=useT();
-  const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [purchaseNotif,setPurchaseNotif]=useState(null);
+  const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [purchaseNotif,setPurchaseNotif]=useState(null);const [repackInfo,setRepackInfo]=useState(null);const [showRepackDetail,setShowRepackDetail]=useState(false);
   const [docInputMode,setDocInputMode]=useState(null); // 'pdf' | 'manual'
   const [localConfirmed,setLocalConfirmed]=useState(false);
   const [classifyingHs,setClassifyingHs]=useState(false);
@@ -572,7 +572,8 @@ function OperationDetail({op,token,onBack}){
   const toggleSection=(s)=>setOpenSections(p=>({...p,[s]:!p[s]}));
   const downloadPdf=()=>printQuotePdf({op,items,pkgs,payments:pmts,cliPmts});
   const downloadClosingPdf=()=>printClosingPdf({op,items,pkgs,cliPmts,events});
-  const loadAll=async()=>{const [it,ev,pk,pm,cp,pn]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("purchase_notifications",{token,filters:`?operation_id=eq.${op.id}&select=tracking_code,origin,shipping_method,description,created_at,confirmed_at&limit=1`})]);setItems(Array.isArray(it)?it:[]);setEvents((Array.isArray(ev)?ev:[]).filter(e=>{
+  const loadAll=async()=>{const [it,ev,pk,pm,cp,pn,rk]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("purchase_notifications",{token,filters:`?operation_id=eq.${op.id}&select=tracking_code,origin,shipping_method,description,created_at,confirmed_at&limit=1`}),dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&status=eq.done&order=completed_at.desc&limit=1`})]);
+  setRepackInfo(Array.isArray(rk)&&rk[0]?rk[0]:null);setItems(Array.isArray(it)?it:[]);setEvents((Array.isArray(ev)?ev:[]).filter(e=>{
   // Filtrar eventos internos auto-generados por cambio de status (ya están en la barra de progreso)
   if(e.source==="internal"&&String(e.title||"").startsWith("Estado actualizado"))return false;
   // Filtrar eventos de pre-clearance aduanero de DHL: marcan location ARGENTINA aunque la carga esté en origen
@@ -842,6 +843,27 @@ function OperationDetail({op,token,onBack}){
         </div></div>;})()}
       </div>;})}
     </div>}
+    {!loading&&repackInfo&&(()=>{const before=Number(repackInfo.original_billable_kg||0);const after=Number(repackInfo.new_billable_kg||0);const delta=before-after;const pct=before>0?(delta/before*100):0;const oSnap=Array.isArray(repackInfo.original_packages_snapshot)?repackInfo.original_packages_snapshot:null;const nSnap=Array.isArray(repackInfo.new_packages_snapshot)?repackInfo.new_packages_snapshot:null;const hasSnap=oSnap||nSnap;const fmt=(p)=>{const dim=p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm} cm`:"—";const w=p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—";const q=p.quantity>1?` ×${p.quantity}`:"";return{dim,w,q,trk:p.national_tracking||"—"};};const renderTbl=(snap,label,tone)=>!snap?<div style={{flex:1,padding:14,fontSize:11,color:"rgba(255,255,255,0.45)",fontStyle:"italic",textAlign:"center"}}>Sin detalle ({label.toLowerCase()})</div>:<div style={{flex:1,minWidth:240}}>
+      <p style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",color:tone,margin:"0 0 8px",textTransform:"uppercase"}}>{label} · {snap.length} {snap.length===1?"bulto":"bultos"}</p>
+      <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,overflow:"hidden"}}>
+        {snap.map((p,i)=>{const f=fmt(p);return <div key={i} style={{padding:"8px 10px",borderTop:i>0?"1px solid rgba(255,255,255,0.05)":"none",fontSize:11.5}}>
+          <p style={{margin:0,fontWeight:700,color:"#fff"}}>#{p.package_number||(i+1)}{f.q} · <span style={{color:"rgba(255,255,255,0.55)",fontFamily:"monospace",fontWeight:500}}>{f.trk}</span></p>
+          <p style={{margin:"3px 0 0",color:"rgba(255,255,255,0.7)"}}>{f.dim} · <strong style={{color:"#fff"}}>{f.w}</strong></p>
+        </div>;})}
+      </div>
+    </div>;return <div style={{background:"linear-gradient(135deg,rgba(34,197,94,0.10),rgba(34,197,94,0.03))",border:"1.5px solid rgba(34,197,94,0.32)",borderRadius:14,padding:"14px 18px",marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <div>
+          <p style={{fontSize:13,fontWeight:700,color:"#22c55e",margin:0}}>✅ Reempaque realizado en depósito</p>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"3px 0 0"}}>Peso facturable: <strong style={{color:"#fff"}}>{before.toFixed(2)} kg → {after.toFixed(2)} kg</strong>{delta>0&&<span style={{color:"#22c55e",marginLeft:8,fontWeight:700}}>(ahorraste {delta.toFixed(2)} kg · −{pct.toFixed(0)}%)</span>}</p>
+        </div>
+        {hasSnap&&<button onClick={()=>setShowRepackDetail(v=>!v)} style={{fontSize:11,fontWeight:700,padding:"6px 12px",borderRadius:8,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",letterSpacing:"0.04em"}}>{showRepackDetail?"Ocultar detalle":"Ver antes / después"}</button>}
+      </div>
+      {hasSnap&&showRepackDetail&&<div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:14,paddingTop:14,borderTop:"1px solid rgba(34,197,94,0.18)"}}>
+        {renderTbl(oSnap,"Antes","rgba(248,113,113,0.85)")}
+        {renderTbl(nSnap,"Después","rgba(34,197,94,0.85)")}
+      </div>}
+    </div>;})()}
     {!loading&&pkgs.length>0&&(()=>{const isAer=op.channel?.includes("aereo");const isMar=op.channel?.includes("maritimo");const pkData=pkgs.map(pk=>{const l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0),gw=Number(pk.gross_weight_kg||0);const vw=l&&w&&h?(l*w*h)/5000:0;const cbm=l&&w&&h?(l*w*h)/1000000:0;return{...pk,l,w,h,gw,vw,cbm};});const totGW=pkData.reduce((s,p)=>s+p.gw,0);const totVW=pkData.reduce((s,p)=>s+p.vw,0);const totCBM=pkData.reduce((s,p)=>s+p.cbm,0);let pf=0;pkData.forEach(p=>{pf+=Math.max(p.gw,p.vw);});const dd=(label,val)=><div style={{textAlign:"center"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px",textTransform:"uppercase"}}>{label}</p><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{val}</p></div>;return <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem",marginBottom:16}}>
       <button onClick={()=>toggleSection("packages")} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",padding:0,marginBottom:openSections.packages?14:0}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>BULTOS ({pkgs.length})</h3><span style={{color:"rgba(255,255,255,0.4)",fontSize:14}}>{openSections.packages?"▲":"▼"}</span></button>
       {openSections.packages&&pkData.map((pk,i)=><div key={pk.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.08)":"none",padding:"14px 0"}}>
