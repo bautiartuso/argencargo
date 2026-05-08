@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, use } from "react";
+import { printGiAcceptedPdf } from "../../../lib/pdf-templates";
 
 const LOGO = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png";
 
@@ -91,7 +92,7 @@ export default function CotizacionPublica({ params }) {
 
   // Si ya fue aceptada
   if (accepted || quote.status === "accepted" || quote.status === "converted") {
-    return <AcceptedView quote={quote} accepted={accepted} cn={cn} settings={settings}/>;
+    return <AcceptedView quote={quote} accepted={accepted} cn={cn} settings={settings} products={products} client={quote.gi_quote_requests?.clients}/>;
   }
 
   return <div style={pageStyle()}>
@@ -249,15 +250,26 @@ function TimeStep({ n, name, meta }) {
   </div>;
 }
 
-function AcceptedView({ quote, accepted, cn, settings }) {
+function AcceptedView({ quote, accepted, cn, settings, products, client }) {
+  const opCode = accepted?.operation_code || (quote.operation_id ? "asignada" : null);
+  const downloadPdf = () => {
+    printGiAcceptedPdf({
+      quote: { ...quote, request_code: quote.gi_quote_requests?.request_code || quote.request_code },
+      products: products || [],
+      client: client || quote.gi_quote_requests?.clients,
+      settings,
+      operationCode: accepted?.operation_code,
+    });
+  };
   return <div style={pageStyle()}>
     <div style={{ maxWidth: 600, padding: "40px 30px", background: "#fafaf7", color: "#1a1a1a", borderRadius: 16, textAlign: "center", boxShadow: "0 24px 80px rgba(0,0,0,0.55)" }}>
-      <div style={{ fontSize: 60, marginBottom: 14 }}>✓</div>
+      <div style={{ fontSize: 60, marginBottom: 14, color: "#22c55e" }}>✓</div>
       <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em", marginBottom: 8 }}>¡Cotización aceptada!</h1>
       <p style={{ fontSize: 14, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
         Hola <strong>{cn}</strong>, recibimos tu confirmación. {accepted?.operation_code && <>Tu operación es <strong style={{ fontFamily: "'JetBrains Mono',monospace", color: "#B8956A" }}>{accepted.operation_code}</strong>.</>}
       </p>
-      <p style={{ fontSize: 13, color: "#666", lineHeight: 1.6 }}>En las próximas horas te enviamos por email las instrucciones para el primer pago. Cualquier duda escribinos a <strong>info@argencargo.com.ar</strong>.</p>
+      <p style={{ fontSize: 13, color: "#666", lineHeight: 1.6, marginBottom: 22 }}>En las próximas horas te enviamos por email las instrucciones para el primer pago. Cualquier duda escribinos a <strong>info@argencargo.com.ar</strong>.</p>
+      <button onClick={downloadPdf} style={{ padding: "12px 24px", background: "#0A1628", color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", letterSpacing: "0.04em", fontFamily: "inherit" }}>📄 Descargar PDF de la cotización</button>
       {settings?.office_phone && <p style={{ fontSize: 12, color: "#888", marginTop: 14 }}>Tel: {settings.office_phone}</p>}
     </div>
   </div>;
