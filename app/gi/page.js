@@ -243,12 +243,12 @@ function Shell({session,profile,onLogout}){
         {pane==="resumen"&&<PaneResumen token={token} onNav={setPane}/>}
         {pane==="quotes"&&<PaneQuotes token={token}/>}
         {pane==="settings"&&<PaneSettings token={token}/>}
-        {pane==="operations"&&<Stub title="Operaciones GI" desc="Las cotizaciones aceptadas convertidas en ops aparecen acá."/>}
-        {pane==="dashboard"&&<Stub title="Dashboard" desc="Resumen financiero (ganancias mensuales, ticket promedio, etc)."/>}
-        {pane==="ledger"&&<Stub title="Libro diario" desc="Movimientos de finanzas GI con filtros por fecha y op."/>}
-        {pane==="suppliers"&&<Stub title="Proveedores" desc="Listado de proveedores agrupados por rubro."/>}
-        {pane==="agents"&&<Stub title="Agentes de compra" desc="Sourcing agents en China/USA."/>}
-        {pane==="forwarders"&&<Stub title="Embarcadores" desc="Forwarders agrupados por ciudad."/>}
+        {pane==="operations"&&<PaneOps token={token}/>}
+        {pane==="dashboard"&&<PaneDashboard token={token}/>}
+        {pane==="ledger"&&<PaneLedger token={token}/>}
+        {pane==="suppliers"&&<ContactsPanel token={token} type="suppliers" title="Proveedores" desc="Listado de proveedores agrupados por rubro." groupBy="rubro" rubroOptions={["Indumentaria","Electrónica","Calzado","Hogar","Cosmética","Juguetería","Deportes","Otros"]} fields={[{k:"name",l:"Nombre",req:true},{k:"rubro",l:"Rubro",select:true},{k:"country",l:"País",options:["China","USA"]},{k:"city",l:"Ciudad"},{k:"email",l:"Email"},{k:"phone",l:"Teléfono"},{k:"wechat",l:"WeChat"},{k:"moq",l:"MOQ",num:true},{k:"lead_time_days",l:"Lead time (días)",num:true},{k:"notes",l:"Notas",textarea:true}]}/>}
+        {pane==="agents"&&<ContactsPanel token={token} type="purchase_agents" title="Agentes de compra" desc="Sourcing agents en China/USA." groupBy="rubro" rubroOptions={["Indumentaria","Electrónica","Calzado","General","Otros"]} fields={[{k:"name",l:"Nombre",req:true},{k:"rubro",l:"Rubro",select:true},{k:"base_city",l:"Ciudad base"},{k:"email",l:"Email"},{k:"phone",l:"Teléfono"},{k:"wechat",l:"WeChat"},{k:"commission_pct",l:"Comisión %",num:true},{k:"commission_fixed_usd",l:"Comisión fija USD",num:true},{k:"notes",l:"Notas",textarea:true}]}/>}
+        {pane==="forwarders"&&<ContactsPanel token={token} type="forwarders" title="Embarcadores" desc="Forwarders agrupados por ciudad." groupBy="city" rubroOptions={["Shanghái","Guangzhou","Shenzhen","Yiwu","Ningbo","Miami","Los Ángeles","Otros"]} fields={[{k:"name",l:"Nombre",req:true},{k:"city",l:"Ciudad",select:true},{k:"email",l:"Email"},{k:"phone",l:"Teléfono"},{k:"modes_str",l:"Modos (coma separado)",placeholder:"aereo,maritimo"},{k:"notes",l:"Notas",textarea:true}]}/>}
       </div>
     </main>
   </div>;
@@ -884,6 +884,456 @@ function WizStep3({generatedQuote,onBack}){
 function lblStyle(){return {fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:5};}
 function inpStyle(){return {width:"100%",padding:"8px 10px",fontSize:12.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit"};}
 function Tag({children}){return <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.12)",color:"#60a5fa",letterSpacing:"0.04em"}}>{children}</span>;}
+
+// ────────────────────────────────────────────
+// PANE: OPERACIONES GI
+// ────────────────────────────────────────────
+const STATUS_MAP={
+  pendiente:{l:"Pendiente",c:"#94a3b8"},
+  en_deposito_origen:{l:"En depósito",c:"#fbbf24"},
+  en_preparacion:{l:"Preparación",c:"#a78bfa"},
+  en_transito:{l:"En tránsito",c:"#22d3ee"},
+  arribo_argentina:{l:"Arribo AR",c:"#818cf8"},
+  en_aduana:{l:"Aduana",c:"#fb923c"},
+  entregada:{l:"Lista entrega",c:"#22c55e"},
+  operacion_cerrada:{l:"Cerrada",c:"#10b981"},
+  cancelada:{l:"Cancelada",c:"#f87171"},
+};
+
+function PaneOps({token}){
+  const [quotes,setQuotes]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [tab,setTab]=useState("active");
+  const [search,setSearch]=useState("");
+
+  useEffect(()=>{(async()=>{
+    setLo(true);
+    // Cotizaciones convertidas → cargan op + cliente + productos
+    const r=await dq("gi_quotes",{token,filters:"?status=eq.converted&select=*,operations(id,operation_code,status,channel,description,budget_total,collected_amount,is_collected,eta,created_at,closed_at,clients(first_name,last_name,client_code))&order=accepted_at.desc"});
+    setQuotes(Array.isArray(r)?r.filter(q=>q.operations):[]);
+    setLo(false);
+  })();},[token]);
+
+  const tabs=[
+    {k:"active",l:"Activas",f:q=>q.operations&&!["operacion_cerrada","cancelada"].includes(q.operations.status)},
+    {k:"closed",l:"Cerradas",f:q=>q.operations&&["operacion_cerrada","cancelada"].includes(q.operations.status)},
+  ];
+
+  const filtered=quotes.filter(q=>{
+    const t=tabs.find(x=>x.k===tab);
+    if(!t.f(q))return false;
+    if(search){
+      const s=search.toLowerCase();
+      const op=q.operations;
+      const cn=op.clients?`${op.clients.first_name||""} ${op.clients.last_name||""}`.toLowerCase():"";
+      if(!op.operation_code.toLowerCase().includes(s)&&!cn.includes(s)&&!String(op.description||"").toLowerCase().includes(s))return false;
+    }
+    return true;
+  });
+
+  const calcGanancia=(q)=>{
+    const op=q.operations;
+    if(!op)return 0;
+    const total=Number(op.budget_total||0);
+    const honoraires=total*Number(q.honorarios_pct||0)/100;
+    // Spread mock: el total al cliente vs costo real (que tenemos guardado)
+    const realKey={aereo_negro:"cost_courier_real_usd",aereo_blanco:"cost_aereo_int_real_usd",maritimo_negro:"cost_maritimo_lcl_real_usd",maritimo_blanco:"cost_maritimo_int_real_usd"}[q.selected_channel];
+    const real=realKey?Number(q[realKey]||0):total*0.92;
+    const spread=Math.max(0,total-real-honoraires);
+    return honoraires+spread;
+  };
+
+  const totalActiveGain=filtered.reduce((s,q)=>s+calcGanancia(q),0);
+
+  return <div>
+    <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Operaciones GI</h1>
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>Cotizaciones aceptadas que ya son ops AC-XXXX. Mismo seguimiento que en el panel admin.</p>
+
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por código, cliente o descripción..." style={{padding:"9px 12px",fontSize:12.5,border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit",minWidth:280,flex:1}}/>
+    </div>
+
+    <div style={{display:"flex",gap:4,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:18}}>
+      {tabs.map(t=>{const n=quotes.filter(t.f).length;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"9px 14px",fontSize:12,fontWeight:600,color:tab===t.k?GOLD_LIGHT:"rgba(255,255,255,0.5)",background:"transparent",border:"none",borderBottom:`2px solid ${tab===t.k?GOLD_LIGHT:"transparent"}`,cursor:"pointer",fontFamily:"inherit"}}>{t.l} <span style={{marginLeft:5,fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:8,background:tab===t.k?"rgba(184,149,106,0.15)":"rgba(255,255,255,0.06)",color:tab===t.k?GOLD_LIGHT:"rgba(255,255,255,0.5)"}}>{n}</span></button>;})}
+      {tab==="active"&&filtered.length>0&&<span style={{marginLeft:"auto",alignSelf:"center",fontSize:12,color:"rgba(255,255,255,0.6)",paddingBottom:8}}>Ganancia estimada activa: <strong style={{color:GOLD_LIGHT}}>{fmtUSD(totalActiveGain)}</strong></span>}
+    </div>
+
+    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"3rem 0"}}>No hay operaciones en esta vista.</p>:
+      <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.22)"}}>
+            <th style={thStyle()}>Op</th>
+            <th style={thStyle()}>Cliente</th>
+            <th style={thStyle()}>Descripción</th>
+            <th style={thStyle()}>Canal</th>
+            <th style={thStyle()}>Estado</th>
+            <th style={thStyle()}>ETA</th>
+            <th style={{...thStyle(),textAlign:"right"}}>Total</th>
+            <th style={{...thStyle(),textAlign:"right"}}>Tu ganancia</th>
+          </tr></thead>
+          <tbody>
+            {filtered.map(q=>{const op=q.operations;const st=STATUS_MAP[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name||""} ${op.clients.last_name||""}`.trim():"—";const gan=calcGanancia(q);const chLabel=CHANNEL_DEFS.find(c=>c.key===op.channel)?.name||op.channel;return <tr key={q.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+              <td style={{padding:"13px 14px",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:GOLD_LIGHT,fontSize:12.5,letterSpacing:"0.04em"}}>{op.operation_code}</td>
+              <td style={{padding:"13px 14px",color:"#fff",fontWeight:600}}>{cn}</td>
+              <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.6)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{op.description||"—"}</td>
+              <td style={{padding:"13px 14px"}}><span style={{fontSize:10,padding:"3px 8px",borderRadius:6,background:"rgba(184,149,106,0.10)",color:GOLD_LIGHT,fontWeight:600,letterSpacing:"0.03em"}}>{chLabel}</span></td>
+              <td style={{padding:"13px 14px"}}><span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,letterSpacing:"0.05em",textTransform:"uppercase",display:"inline-flex",alignItems:"center",gap:5}}><span style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:st.c}}/>{st.l}</span></td>
+              <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.5)"}}>{op.eta?fmtDate(op.eta):"—"}</td>
+              <td style={{padding:"13px 14px",textAlign:"right",color:"#fff",fontWeight:600,fontFeatureSettings:'"tnum"'}}>{fmtUSD(op.budget_total)}</td>
+              <td style={{padding:"13px 14px",textAlign:"right",color:"#22c55e",fontWeight:700,fontFeatureSettings:'"tnum"'}}>{fmtUSD(gan)}</td>
+            </tr>;})}
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>;
+}
+
+function thStyle(){return {textAlign:"left",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"};}
+
+// ────────────────────────────────────────────
+// PANE: DASHBOARD (financiero)
+// ────────────────────────────────────────────
+function PaneDashboard({token}){
+  const [data,setData]=useState(null);
+  useEffect(()=>{(async()=>{
+    const r=await dq("gi_quotes",{token,filters:"?status=eq.converted&select=*,operations(id,operation_code,status,budget_total,closed_at,is_collected,collected_amount)&order=accepted_at.desc"});
+    setData(Array.isArray(r)?r.filter(q=>q.operations):[]);
+  })();},[token]);
+
+  if(!data)return <p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>;
+
+  const calcGan=(q)=>{
+    const op=q.operations;if(!op)return 0;
+    const total=Number(op.budget_total||0);
+    const honoraires=total*Number(q.honorarios_pct||0)/100;
+    const realKey={aereo_negro:"cost_courier_real_usd",aereo_blanco:"cost_aereo_int_real_usd",maritimo_negro:"cost_maritimo_lcl_real_usd",maritimo_blanco:"cost_maritimo_int_real_usd"}[q.selected_channel];
+    const real=realKey?Number(q[realKey]||0):total*0.92;
+    const spread=Math.max(0,total-real-honoraires);
+    return honoraires+spread;
+  };
+
+  const closed=data.filter(q=>q.operations?.status==="operacion_cerrada");
+  const active=data.filter(q=>!["operacion_cerrada","cancelada"].includes(q.operations?.status));
+
+  // Mes actual
+  const now=new Date();
+  const monthStart=new Date(now.getFullYear(),now.getMonth(),1).toISOString();
+  const thisMonth=closed.filter(q=>q.operations?.closed_at&&q.operations.closed_at>=monthStart);
+  const lastMonth=closed.filter(q=>{const c=q.operations?.closed_at;if(!c)return false;const d=new Date(c);return d.getMonth()===(now.getMonth()===0?11:now.getMonth()-1)&&d.getFullYear()===(now.getMonth()===0?now.getFullYear()-1:now.getFullYear());});
+
+  const ganMes=thisMonth.reduce((s,q)=>s+calcGan(q),0);
+  const ganLastMes=lastMonth.reduce((s,q)=>s+calcGan(q),0);
+  const ganAcum=closed.reduce((s,q)=>s+calcGan(q),0);
+  const pendingCobro=active.reduce((s,q)=>{
+    const op=q.operations;
+    if(!op)return s;
+    const t=Number(op.budget_total||0)-Number(op.collected_amount||0);
+    return s+Math.max(0,t);
+  },0);
+  const trend=ganLastMes>0?((ganMes-ganLastMes)/ganLastMes*100):(ganMes>0?100:0);
+  const ticketAvg=closed.length>0?ganAcum/closed.length:0;
+
+  // Chart mensual (últimos 8 meses)
+  const months=[];
+  for(let i=7;i>=0;i--){
+    const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    const start=d.toISOString();
+    const end=new Date(d.getFullYear(),d.getMonth()+1,1).toISOString();
+    const monthClosed=closed.filter(q=>q.operations?.closed_at&&q.operations.closed_at>=start&&q.operations.closed_at<end);
+    const total=monthClosed.reduce((s,q)=>s+calcGan(q),0);
+    months.push({label:d.toLocaleDateString("es-AR",{month:"short"}),val:total});
+  }
+  const maxBar=Math.max(...months.map(m=>m.val),100);
+
+  return <div>
+    <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Dashboard</h1>
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>Tus ganancias y métricas como socio GI.</p>
+
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:24}}>
+      <Kpi label="Ganancia este mes" val={fmtUSD(ganMes)} sub={isFinite(trend)?`${trend>0?"+":""}${trend.toFixed(0)}% vs mes anterior`:"—"} color="#22c55e"/>
+      <Kpi label="Acumulado total" val={fmtUSD(ganAcum)} sub={`${closed.length} ops cerradas`} color={GOLD_LIGHT}/>
+      <Kpi label="Pendiente de cobro" val={fmtUSD(pendingCobro)} sub={`${active.length} ops activas`}/>
+      <Kpi label="Ticket promedio" val={fmtUSD(ticketAvg)} sub="Ganancia / op cerrada"/>
+    </div>
+
+    <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>
+      <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 14px"}}>Ganancia mensual</h3>
+      <div style={{display:"flex",alignItems:"flex-end",gap:14,height:200,padding:"10px 0"}}>
+        {months.map((m,i)=><div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",height:"100%",justifyContent:"flex-end"}}>
+          <div style={{width:"100%",height:`${(m.val/maxBar)*100}%`,minHeight:m.val>0?6:0,background:"linear-gradient(180deg,rgba(184,149,106,0.6),rgba(184,149,106,0.2))",borderRadius:"6px 6px 0 0",border:"1px solid rgba(184,149,106,0.3)",borderBottom:"none",display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:6}}>
+            {m.val>0&&<span style={{fontSize:10,fontWeight:700,color:GOLD_LIGHT,fontFeatureSettings:'"tnum"'}}>{m.val>=1000?(m.val/1000).toFixed(1)+"k":m.val.toFixed(0)}</span>}
+          </div>
+        </div>)}
+      </div>
+      <div style={{display:"flex",gap:14,marginTop:6}}>{months.map((m,i)=><span key={i} style={{flex:1,textAlign:"center",fontSize:10,color:"rgba(255,255,255,0.45)",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em"}}>{m.label}</span>)}</div>
+    </div>
+
+    {closed.length>0&&<div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>
+      <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 14px"}}>Ops cerradas — ganancia detallada</h3>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+          <th style={thStyle()}>Op</th>
+          <th style={thStyle()}>Cerrada</th>
+          <th style={{...thStyle(),textAlign:"right"}}>Total op</th>
+          <th style={{...thStyle(),textAlign:"right"}}>Honorarios %</th>
+          <th style={{...thStyle(),textAlign:"right"}}>Tu ganancia</th>
+        </tr></thead>
+        <tbody>
+          {closed.slice(0,10).map(q=>{const op=q.operations;const gan=calcGan(q);return <tr key={q.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{padding:"11px 12px",fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:600}}>{op.operation_code}</td>
+            <td style={{padding:"11px 12px",color:"rgba(255,255,255,0.55)"}}>{fmtDate(op.closed_at)}</td>
+            <td style={{padding:"11px 12px",textAlign:"right",fontFeatureSettings:'"tnum"'}}>{fmtUSD(op.budget_total)}</td>
+            <td style={{padding:"11px 12px",textAlign:"right",fontFeatureSettings:'"tnum"',color:"rgba(255,255,255,0.6)"}}>{q.honorarios_pct||0}%</td>
+            <td style={{padding:"11px 12px",textAlign:"right",color:"#22c55e",fontWeight:700,fontFeatureSettings:'"tnum"'}}>{fmtUSD(gan)}</td>
+          </tr>;})}
+        </tbody>
+      </table>
+    </div>}
+  </div>;
+}
+
+// ────────────────────────────────────────────
+// PANE: LIBRO DIARIO
+// ────────────────────────────────────────────
+function PaneLedger({token}){
+  const [movements,setMovements]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [fFrom,setFFrom]=useState("");
+  const [fTo,setFTo]=useState("");
+  const [fSearch,setFSearch]=useState("");
+  const [fType,setFType]=useState("");
+
+  useEffect(()=>{(async()=>{
+    setLo(true);
+    // Cargar finance_entries relacionados con ops GI
+    const ops=await dq("gi_quotes",{token,filters:"?status=eq.converted&select=operation_id,gi_quote_requests(client_id,clients(first_name,last_name))"});
+    const opIds=(Array.isArray(ops)?ops:[]).filter(q=>q.operation_id).map(q=>q.operation_id);
+    if(opIds.length===0){setMovements([]);setLo(false);return;}
+    const inFilter=opIds.map(id=>`"${id}"`).join(",");
+    const m=await dq("finance_entries",{token,filters:`?operation_id=in.(${inFilter})&select=*,operations(operation_code)&order=date.desc&limit=200`});
+    setMovements(Array.isArray(m)?m:[]);
+    setLo(false);
+  })();},[token]);
+
+  const filtered=movements.filter(m=>{
+    if(fFrom&&m.date<fFrom)return false;
+    if(fTo&&m.date>fTo)return false;
+    if(fType&&m.type!==fType)return false;
+    if(fSearch){
+      const s=fSearch.toLowerCase();
+      const c=String(m.description||"").toLowerCase();
+      const op=String(m.operations?.operation_code||"").toLowerCase();
+      if(!c.includes(s)&&!op.includes(s))return false;
+    }
+    return true;
+  });
+
+  const totalIn=filtered.filter(m=>Number(m.amount||0)>0).reduce((s,m)=>s+Number(m.amount||0),0);
+  const totalOut=filtered.filter(m=>Number(m.amount||0)<0).reduce((s,m)=>s+Math.abs(Number(m.amount||0)),0);
+
+  return <div>
+    <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Libro diario</h1>
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>Movimientos financieros de tus operaciones GI. Filtrá por fecha, op o tipo.</p>
+
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
+      <input value={fSearch} onChange={e=>setFSearch(e.target.value)} placeholder="Buscar por op o concepto..." style={{...inpStyle(),background:"rgba(255,255,255,0.04)",minWidth:240,flex:1,padding:"9px 12px",fontSize:12}}/>
+      <input type="date" value={fFrom} onChange={e=>setFFrom(e.target.value)} style={{...inpStyle(),background:"rgba(255,255,255,0.04)",padding:"9px 12px",fontSize:12,minWidth:140,width:"auto"}}/>
+      <span style={{color:"rgba(255,255,255,0.4)",fontSize:12}}>→</span>
+      <input type="date" value={fTo} onChange={e=>setFTo(e.target.value)} style={{...inpStyle(),background:"rgba(255,255,255,0.04)",padding:"9px 12px",fontSize:12,minWidth:140,width:"auto"}}/>
+      <select value={fType} onChange={e=>setFType(e.target.value)} style={{...inpStyle(),background:"rgba(255,255,255,0.04)",padding:"9px 12px",fontSize:12,width:"auto",minWidth:160}}>
+        <option value="">Todos los tipos</option>
+        <option value="cobro">Cobros</option>
+        <option value="pago_proveedor">Pagos proveedor</option>
+        <option value="pago_flete">Pagos flete</option>
+        <option value="pago_aduana">Pagos aduana</option>
+        <option value="comision">Comisión</option>
+      </select>
+      <button onClick={()=>{setFFrom("");setFTo("");setFSearch("");setFType("");}} style={{padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer",fontFamily:"inherit"}}>Limpiar</button>
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:18}}>
+      <Kpi label="Ingresos del filtro" val={fmtUSD(totalIn)} color="#22c55e"/>
+      <Kpi label="Egresos del filtro" val={fmtUSD(totalOut)} color="#f87171"/>
+      <Kpi label="Movimientos" val={String(filtered.length)}/>
+    </div>
+
+    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"3rem 0"}}>No hay movimientos en este filtro. {movements.length===0&&"Cuando empieces a registrar cobros y pagos, aparecen acá."}</p>:
+      <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.22)"}}>
+            <th style={thStyle()}>Fecha</th>
+            <th style={thStyle()}>Op</th>
+            <th style={thStyle()}>Concepto</th>
+            <th style={thStyle()}>Tipo</th>
+            <th style={{...thStyle(),textAlign:"right"}}>Monto</th>
+          </tr></thead>
+          <tbody>
+            {filtered.map(m=>{const amt=Number(m.amount||0);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+              <td style={{padding:"11px 12px",color:"rgba(255,255,255,0.55)",fontFamily:"'JetBrains Mono',monospace"}}>{fmtDate(m.date)}</td>
+              <td style={{padding:"11px 12px",fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:600}}>{m.operations?.operation_code||"—"}</td>
+              <td style={{padding:"11px 12px",color:"rgba(255,255,255,0.85)"}}>{m.description||"—"}</td>
+              <td style={{padding:"11px 12px"}}><span style={{fontSize:10,padding:"2px 7px",borderRadius:5,background:amt>0?"rgba(34,197,94,0.10)":"rgba(248,113,113,0.10)",color:amt>0?"#22c55e":"#f87171",fontWeight:600,textTransform:"capitalize"}}>{(m.type||"").replace(/_/g," ")}</span></td>
+              <td style={{padding:"11px 12px",textAlign:"right",fontWeight:700,fontFeatureSettings:'"tnum"',color:amt>0?"#22c55e":"#f87171"}}>{amt>0?"+":""}{fmtUSD(amt)}</td>
+            </tr>;})}
+          </tbody>
+        </table>
+      </div>
+    }
+    {movements.length===0&&!lo&&<div style={{padding:"14px 18px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12,color:"rgba(255,255,255,0.8)",lineHeight:1.5,marginTop:12}}>
+      <strong style={{color:"#60a5fa"}}>Sin movimientos todavía.</strong> Cuando se registren cobros y pagos en las ops convertidas (desde el panel admin), van a aparecer acá filtrados solo por las tuyas.
+    </div>}
+  </div>;
+}
+
+// ────────────────────────────────────────────
+// PANE: CONTACTOS (suppliers / agents / forwarders)
+// ────────────────────────────────────────────
+function ContactsPanel({token,type,title,desc,groupBy,rubroOptions,fields}){
+  const tableMap={suppliers:"gi_suppliers",purchase_agents:"gi_purchase_agents",forwarders:"gi_forwarders"};
+  const tableName=tableMap[type];
+  const [items,setItems]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [search,setSearch]=useState("");
+  const [groupFilter,setGroupFilter]=useState("");
+  const [editId,setEditId]=useState(null); // id | "new" | null
+  const [form,setForm]=useState({});
+  const [saving,setSaving]=useState(false);
+  const [msg,setMsg]=useState("");
+  const flash=(t)=>{setMsg(t);setTimeout(()=>setMsg(""),3000);};
+
+  const load=async()=>{
+    setLo(true);
+    const r=await dq(tableName,{token,filters:"?select=*&order=created_at.desc"});
+    setItems(Array.isArray(r)?r:[]);
+    setLo(false);
+  };
+  useEffect(()=>{load();},[token,type]);
+
+  const startNew=()=>{
+    const f={};fields.forEach(fl=>{f[fl.k]="";});
+    setForm(f);setEditId("new");
+  };
+  const startEdit=(it)=>{
+    const f={};fields.forEach(fl=>{
+      if(fl.k==="modes_str")f[fl.k]=Array.isArray(it.modes)?it.modes.join(","):"";
+      else f[fl.k]=it[fl.k]??"";
+    });
+    setForm(f);setEditId(it.id);
+  };
+  const cancel=()=>{setEditId(null);setForm({});};
+  const save=async()=>{
+    setSaving(true);
+    const body={};
+    fields.forEach(fl=>{
+      if(fl.k==="modes_str"){body.modes=form.modes_str?form.modes_str.split(",").map(s=>s.trim()).filter(Boolean):null;}
+      else if(fl.num){body[fl.k]=form[fl.k]!==""?Number(form[fl.k]):null;}
+      else body[fl.k]=form[fl.k]||null;
+    });
+    if(editId==="new"){
+      await dq(tableName,{method:"POST",token,body});
+    } else {
+      body.updated_at=new Date().toISOString();
+      await dq(tableName,{method:"PATCH",token,filters:`?id=eq.${editId}`,body});
+    }
+    flash(editId==="new"?"Creado":"Actualizado");
+    cancel();
+    setSaving(false);
+    load();
+  };
+  const remove=async(id)=>{
+    if(!confirm("¿Eliminar este contacto?"))return;
+    await dq(tableName,{method:"DELETE",token,filters:`?id=eq.${id}`});
+    flash("Eliminado");load();
+  };
+
+  // Filter
+  const filtered=items.filter(it=>{
+    if(groupFilter&&it[groupBy]!==groupFilter)return false;
+    if(search){
+      const s=search.toLowerCase();
+      const all=fields.map(fl=>String(it[fl.k]||"")).join(" ").toLowerCase();
+      if(!all.includes(s))return false;
+    }
+    return true;
+  });
+  // Group
+  const groups={};
+  filtered.forEach(it=>{const g=it[groupBy]||"Sin clasificar";if(!groups[g])groups[g]=[];groups[g].push(it);});
+  const groupKeys=Object.keys(groups).sort();
+
+  return <div>
+    {msg&&<div style={{position:"fixed",top:20,right:20,background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",padding:"10px 16px",borderRadius:10,fontSize:13,fontWeight:600,zIndex:9999,boxShadow:"0 12px 30px rgba(0,0,0,0.4)"}}>{msg}</div>}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12,marginBottom:6}}>
+      <div><h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>{title}</h1><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>{desc}</p></div>
+      <button onClick={startNew} disabled={editId!==null} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:editId!==null?"rgba(184,149,106,0.3)":GOLD_GRADIENT,color:"#0A1628",cursor:editId!==null?"not-allowed":"pointer",fontFamily:"inherit"}}>+ Nuevo</button>
+    </div>
+
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginTop:18,marginBottom:14}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar..." style={{...inpStyle(),background:"rgba(255,255,255,0.04)",minWidth:240,flex:1,padding:"9px 12px",fontSize:12}}/>
+      <select value={groupFilter} onChange={e=>setGroupFilter(e.target.value)} style={{...inpStyle(),background:"rgba(255,255,255,0.04)",padding:"9px 12px",fontSize:12,width:"auto",minWidth:180}}>
+        <option value="">Todos los {groupBy==="rubro"?"rubros":"grupos"}</option>
+        {rubroOptions.map(r=><option key={r} value={r}>{r}</option>)}
+      </select>
+    </div>
+
+    {editId==="new"&&<EditCard form={form} setForm={setForm} fields={fields} rubroOptions={rubroOptions} groupBy={groupBy} onSave={save} onCancel={cancel} saving={saving} isNew/>}
+
+    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:groupKeys.length===0&&editId==="new"?null:groupKeys.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"3rem 0"}}>No hay contactos registrados todavía.</p>:
+      groupKeys.map(g=><div key={g} style={{marginBottom:24}}>
+        <h3 style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 12px"}}>{g} <span style={{color:"rgba(255,255,255,0.4)",fontWeight:500,textTransform:"none",letterSpacing:0,marginLeft:6}}>· {groups[g].length}</span></h3>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+          {groups[g].map(it=>editId===it.id?<EditCard key={it.id} form={form} setForm={setForm} fields={fields} rubroOptions={rubroOptions} groupBy={groupBy} onSave={save} onCancel={cancel} saving={saving}/>:<ContactCard key={it.id} item={it} fields={fields} groupBy={groupBy} onEdit={()=>startEdit(it)} onDelete={()=>remove(it.id)}/>)}
+        </div>
+      </div>)
+    }
+  </div>;
+}
+
+function ContactCard({item,fields,groupBy,onEdit,onDelete}){
+  const tagField=fields.find(f=>f.k===groupBy);
+  const tagVal=item[groupBy];
+  return <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:8,transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";e.currentTarget.style.background="rgba(184,149,106,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+      <span style={{fontSize:14,fontWeight:700,color:"#fff"}}>{item.name||"—"}</span>
+      {tagVal&&<span style={{fontSize:10,fontWeight:600,padding:"2px 8px",borderRadius:5,background:"rgba(184,149,106,0.1)",color:GOLD_LIGHT,letterSpacing:"0.03em"}}>{tagVal}</span>}
+    </div>
+    {fields.filter(f=>f.k!=="name"&&f.k!==groupBy&&!f.textarea).map(f=>{
+      const v=item[f.k];
+      if(!v||v==="")return null;
+      const display=Array.isArray(v)?v.join(", "):v;
+      return <p key={f.k} style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",margin:0}}>{f.l}: <span style={{color:"#fff"}}>{display}</span></p>;
+    })}
+    {item.notes&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",fontStyle:"italic",lineHeight:1.5}}>{item.notes}</p>}
+    <div style={{display:"flex",gap:6,marginTop:6,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.04)"}}>
+      <button onClick={onEdit} style={{flex:1,padding:"5px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer",fontFamily:"inherit"}}>Editar</button>
+      <button onClick={onDelete} style={{padding:"5px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(248,113,113,0.25)",background:"transparent",color:"#f87171",cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+    </div>
+  </div>;
+}
+
+function EditCard({form,setForm,fields,rubroOptions,groupBy,onSave,onCancel,saving,isNew}){
+  return <div style={{background:"rgba(184,149,106,0.06)",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:12,padding:"16px 18px",gridColumn:"span 2",marginBottom:18}}>
+    <h4 style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 14px"}}>{isNew?"Nuevo contacto":"Editar contacto"}</h4>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
+      {fields.map(f=><div key={f.k} style={f.textarea?{gridColumn:"span 2"}:{}}>
+        <label style={lblStyle()}>{f.l}{f.req?" *":""}</label>
+        {f.textarea?
+          <textarea value={form[f.k]||""} onChange={e=>setForm(p=>({...p,[f.k]:e.target.value}))} rows={3} style={{...inpStyle(),resize:"vertical"}}/>:
+          (f.options||(f.select&&rubroOptions))?
+            <select value={form[f.k]||""} onChange={e=>setForm(p=>({...p,[f.k]:e.target.value}))} style={inpStyle()}>
+              <option value="">— elegir —</option>
+              {(f.options||rubroOptions).map(o=><option key={o} value={o}>{o}</option>)}
+            </select>:
+            <input value={form[f.k]||""} onChange={e=>{const v=e.target.value;if(f.num){if(v===""||/^-?\d*\.?\d*$/.test(v))setForm(p=>({...p,[f.k]:v}));}else setForm(p=>({...p,[f.k]:v}));}} placeholder={f.placeholder||""} inputMode={f.num?"decimal":undefined} style={inpStyle()}/>}
+      </div>)}
+    </div>
+    <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:14,paddingTop:14,borderTop:"1px solid rgba(184,149,106,0.2)"}}>
+      <button onClick={onCancel} style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+      <button onClick={onSave} disabled={saving} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:7,border:"none",background:saving?"rgba(184,149,106,0.4)":GOLD_GRADIENT,color:"#0A1628",cursor:saving?"wait":"pointer",fontFamily:"inherit"}}>{saving?"Guardando…":"Guardar"}</button>
+    </div>
+  </div>;
+}
 
 // ────────────────────────────────────────────
 // PANE: SETTINGS (Tarifas + Oficina + T&C)
