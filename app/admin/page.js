@@ -7649,6 +7649,7 @@ function GiAdminPanel({token,clients}){
   const [partnerEmail,setPartnerEmail]=useState("");
   const [partnerPct,setPartnerPct]=useState("");
   const [partnerSaving,setPartnerSaving]=useState(false);
+  const [inviteResult,setInviteResult]=useState(null); // {email,password,already_existed,message}
   const loadPartners=async()=>{
     const r=await dq("profiles",{token,filters:"?is_gi_partner=eq.true&select=id,email,gi_partner_pct"});
     setPartners(Array.isArray(r)?r:[]);
@@ -7664,20 +7665,20 @@ function GiAdminPanel({token,clients}){
     flash("% socio actualizado");
     loadPartners();
   };
-  const addPartnerByEmail=async()=>{
+  const inviteGiPartner=async()=>{
     if(!partnerEmail?.trim())return;
     setPartnerSaving(true);
+    setInviteResult(null);
     try{
-      const found=await dq("profiles",{token,filters:`?email=eq.${encodeURIComponent(partnerEmail.trim())}&select=id,email,is_gi_partner`});
-      if(!Array.isArray(found)||!found[0]){
-        alert("No existe un perfil con ese email. Primero la persona tiene que crear su cuenta en /gi (ahí aparece el link 'Crear cuenta').");
-        setPartnerSaving(false);return;
-      }
-      const p=found[0];
-      if(p.is_gi_partner){flash("Este perfil ya tiene acceso GI");setPartnerSaving(false);return;}
-      await dq("profiles",{method:"PATCH",token,filters:`?id=eq.${p.id}`,body:{is_gi_partner:true,gi_partner_pct:partnerPct?Number(partnerPct):null}});
+      const r=await fetch("/api/admin/gi-invite",{
+        method:"POST",
+        headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},
+        body:JSON.stringify({email:partnerEmail.trim().toLowerCase(),gi_partner_pct:partnerPct?Number(partnerPct):null}),
+      });
+      const d=await r.json();
+      if(!r.ok){alert("Error: "+(d.error||"desconocido"));setPartnerSaving(false);return;}
+      setInviteResult(d);
       setPartnerEmail("");setPartnerPct("");
-      flash(`✓ Acceso GI activado para ${p.email}`);
       loadPartners();
     } catch(e){alert("Error: "+e.message);}
     setPartnerSaving(false);
@@ -7836,15 +7837,32 @@ function GiAdminPanel({token,clients}){
         </div>
 
         <div style={{padding:"12px 14px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:11.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:14}}>
-          <strong style={{color:"#60a5fa"}}>Cómo funciona:</strong> la persona crea su cuenta en <code style={{background:"rgba(255,255,255,0.06)",padding:"1px 6px",borderRadius:3,fontFamily:"monospace"}}>/gi → Crear cuenta</code> con email + contraseña. Después la activás acá con su email y queda como socio GI.
+          <strong style={{color:"#60a5fa"}}>Cómo funciona:</strong> escribís el email del socio. Si <strong>no tiene cuenta todavía</strong>, se crea automáticamente con una contraseña random que te mostramos para que se la pases. Si <strong>ya existe</strong> (por ej. admin/cliente), solo se activa el acceso GI sin tocar la contraseña.
         </div>
 
-        <h4 style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"6px 0 8px"}}>Activar nuevo acceso</h4>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr auto",gap:8,marginBottom:18}}>
+        <h4 style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"6px 0 8px"}}>Crear / activar acceso</h4>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr auto",gap:8,marginBottom:14}}>
           <input value={partnerEmail} onChange={e=>setPartnerEmail(e.target.value)} placeholder="email@ejemplo.com" style={{padding:"9px 12px",fontSize:12.5,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
-          <input value={partnerPct} onChange={e=>setPartnerPct(e.target.value.replace(/[^0-9.]/g,""))} placeholder="% socio (opcional)" style={{padding:"9px 12px",fontSize:12.5,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
-          <button onClick={addPartnerByEmail} disabled={!partnerEmail.trim()||partnerSaving} style={{padding:"9px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",background:!partnerEmail.trim()||partnerSaving?"rgba(184,149,106,0.4)":GOLD_GRADIENT,color:"#0A1628",cursor:!partnerEmail.trim()||partnerSaving?"not-allowed":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{partnerSaving?"…":"Activar"}</button>
+          <input value={partnerPct} onChange={e=>setPartnerPct(e.target.value.replace(/[^0-9.]/g,""))} placeholder="% socio (opc.)" style={{padding:"9px 12px",fontSize:12.5,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
+          <button onClick={inviteGiPartner} disabled={!partnerEmail.trim()||partnerSaving} style={{padding:"9px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",background:!partnerEmail.trim()||partnerSaving?"rgba(184,149,106,0.4)":GOLD_GRADIENT,color:"#0A1628",cursor:!partnerEmail.trim()||partnerSaving?"not-allowed":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{partnerSaving?"…":"Crear / Activar"}</button>
         </div>
+
+        {inviteResult&&<div style={{padding:"14px 16px",background:"linear-gradient(135deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))",border:"1.5px solid rgba(34,197,94,0.4)",borderRadius:10,marginBottom:18}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+            <p style={{fontSize:12.5,fontWeight:700,color:"#22c55e",margin:0}}>✓ {inviteResult.already_existed?"Acceso GI activado":"Cuenta creada y activada"}</p>
+            <button onClick={()=>setInviteResult(null)} style={{fontSize:14,background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer",padding:"0 4px"}}>✕</button>
+          </div>
+          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.7)",margin:"4px 0 10px"}}>{inviteResult.message}</p>
+          <div style={{padding:"10px 12px",background:"rgba(0,0,0,0.3)",borderRadius:7,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:12}}>
+            <p style={{color:"#fff"}}><span style={{color:"rgba(255,255,255,0.5)"}}>Email:</span> {inviteResult.email}</p>
+            {inviteResult.password&&<p style={{color:"#fff",marginTop:4}}><span style={{color:"rgba(255,255,255,0.5)"}}>Contraseña:</span> <strong style={{color:GOLD_LIGHT}}>{inviteResult.password}</strong></p>}
+            <p style={{color:"#fff",marginTop:4}}><span style={{color:"rgba(255,255,255,0.5)"}}>URL:</span> argencargo.com.ar/gi</p>
+          </div>
+          {inviteResult.password&&<div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+            <button onClick={()=>{navigator.clipboard?.writeText(`Acceso a tu panel GI:\nEmail: ${inviteResult.email}\nContraseña: ${inviteResult.password}\nURL: ${typeof window!=="undefined"?window.location.origin:"https://argencargo.com.ar"}/gi\n\nCambiá la contraseña al ingresar.`);flash("Credenciales copiadas");}} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>📋 Copiar mensaje</button>
+            <p style={{fontSize:10.5,color:"rgba(255,255,255,0.5)",margin:0,lineHeight:1.6,flex:1,minWidth:200}}>⚠ Guardá esta contraseña ahora — no se vuelve a mostrar. Sugerile al socio cambiarla al primer ingreso.</p>
+          </div>}
+        </div>}
 
         <h4 style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"6px 0 8px"}}>Socios activos ({partners.length})</h4>
         {partners.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.45)",fontStyle:"italic",padding:"12px 0"}}>Todavía no hay socios GI activos. Activá el primero arriba.</p>:

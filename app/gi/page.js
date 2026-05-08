@@ -78,65 +78,28 @@ export default function GIPage(){
 // LOGIN
 // ────────────────────────────────────────────
 function Login({onLogin,initialErr}){
-  const [mode,setMode]=useState("login"); // login | signup
   const [email,setEmail]=useState("");
   const [pass,setPass]=useState("");
   const [err,setErr]=useState(initialErr||"");
-  const [info,setInfo]=useState("");
   const [lo,setLo]=useState(false);
 
-  const checkAndLogin=async(token,user)=>{
-    const p=await dq("profiles",{token,filters:`?id=eq.${user.id}&select=id,role,is_gi_partner,email`});
-    if(!Array.isArray(p)||!p[0]){setErr("Perfil no encontrado. El admin tiene que aprobarte primero.");return false;}
-    const prof=p[0];
-    if(prof.is_gi_partner!==true&&prof.role!=="admin"){
-      setErr("Tu cuenta no tiene acceso al panel GI todavía. Avisale al admin para que te active.");
-      return false;
-    }
-    const sess={access_token:token,refresh_token:user.refresh_token,user};
-    // refresh token ya viene en el response separado, lo seteamos abajo
-    return prof;
-  };
-
-  const doLogin=async()=>{
-    setLo(true);setErr("");setInfo("");
+  const submit=async(e)=>{e?.preventDefault?.();
+    if(!email||!pass)return;
+    setLo(true);setErr("");
     const r=await ac("token?grant_type=password",{email,password:pass});
     if(!r.access_token){setErr(r.error_description||r.msg||"Credenciales inválidas");setLo(false);return;}
-    const prof=await checkAndLogin(r.access_token,r.user);
-    if(prof){
-      const sess={access_token:r.access_token,refresh_token:r.refresh_token,user:r.user};
-      saveSession(sess);
-      onLogin(sess,prof);
-    }
-    setLo(false);
-  };
-
-  const doSignup=async()=>{
-    if(!email||!pass||pass.length<6){setErr("Ingresá email y contraseña (mín 6 caracteres)");return;}
-    setLo(true);setErr("");setInfo("");
-    const r=await ac("signup",{email,password:pass});
-    const errMsg=(r.error_description||r.msg||r.message||r.error||"").toString().toLowerCase();
-    if(errMsg.includes("already")||errMsg.includes("registered")){
-      setErr("Ya existe una cuenta con ese email. Iniciá sesión.");
-      setMode("login");
+    const p=await dq("profiles",{token:r.access_token,filters:`?id=eq.${r.user.id}&select=id,role,is_gi_partner,email`});
+    if(!Array.isArray(p)||!p[0]){setErr("Perfil no encontrado");setLo(false);return;}
+    const prof=p[0];
+    if(prof.is_gi_partner!==true&&prof.role!=="admin"){
+      setErr("Tu cuenta no tiene acceso al panel de Gestión Integral. Pedile al admin que te active.");
       setLo(false);return;
     }
-    if(!r.user){setErr(r.error_description||r.msg||"No se pudo crear la cuenta");setLo(false);return;}
-    // Auto-login (si email confirmation está off)
-    const l=await ac("token?grant_type=password",{email,password:pass});
-    if(l.access_token){
-      // El profile lo crea el trigger de Supabase automáticamente con role=cliente.
-      // Nadie tiene acceso GI todavía → mostrar mensaje.
-      setInfo("Cuenta creada. Avisale al admin para que te active el acceso a GI.");
-      setMode("login");
-    } else {
-      setInfo("Cuenta creada. Confirmá tu email y después avisale al admin para que te active el acceso a GI.");
-      setMode("login");
-    }
+    const sess={access_token:r.access_token,refresh_token:r.refresh_token,user:r.user};
+    saveSession(sess);
+    onLogin(sess,prof);
     setLo(false);
   };
-
-  const submit=(e)=>{e?.preventDefault?.();if(!email||!pass)return;mode==="login"?doLogin():doSignup();};
 
   return <div style={{minHeight:"100vh",background:BG,display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem 1rem",fontFamily:"'Inter','Segoe UI',sans-serif"}}>
     <div style={{maxWidth:400,width:"100%"}}>
@@ -146,14 +109,13 @@ function Login({onLogin,initialErr}){
       </div>
       <form onSubmit={submit} style={{background:"rgba(10,22,40,0.72)",backdropFilter:"blur(28px)",borderRadius:16,padding:"2rem 1.75rem",border:"1px solid rgba(255,255,255,0.06)",position:"relative",overflow:"hidden"}}>
         <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT,opacity:0.85}}/>
-        <h2 style={{fontSize:20,fontWeight:700,color:"#fff",textAlign:"center",margin:"0 0 6px"}}>{mode==="login"?"Iniciar sesión":"Crear cuenta"}</h2>
-        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:"0 0 18px"}}>{mode==="login"?"Acceso restringido al socio GI":"Después de crearla, el admin tiene que activar tu acceso"}</p>
+        <h2 style={{fontSize:20,fontWeight:700,color:"#fff",textAlign:"center",margin:"0 0 6px"}}>Iniciar sesión</h2>
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:"0 0 18px"}}>Acceso restringido al socio GI</p>
         {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:12.5,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
-        {info&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.10)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,fontSize:12.5,color:"#22c55e",marginBottom:14}}>{info}</div>}
         <Field label="Email" value={email} onChange={setEmail} type="email"/>
         <Field label="Contraseña" value={pass} onChange={setPass} type="password"/>
-        <button type="submit" disabled={lo} style={{width:"100%",padding:"11px 16px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:lo?"rgba(184,149,106,0.4)":GOLD_GRADIENT,color:"#0A1628",cursor:lo?"wait":"pointer",letterSpacing:"0.04em",marginTop:6,fontFamily:"inherit"}}>{lo?(mode==="login"?"Ingresando…":"Creando…"):(mode==="login"?"Ingresar":"Crear cuenta")}</button>
-        <p style={{fontSize:11.5,color:GOLD_LIGHT,textAlign:"center",marginTop:14,cursor:"pointer",fontWeight:600}} onClick={()=>{setMode(mode==="login"?"signup":"login");setErr("");setInfo("");}}>{mode==="login"?"¿No tenés cuenta? Crear una":"¿Ya tenés cuenta? Iniciar sesión"}</p>
+        <button type="submit" disabled={lo} style={{width:"100%",padding:"11px 16px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:lo?"rgba(184,149,106,0.4)":GOLD_GRADIENT,color:"#0A1628",cursor:lo?"wait":"pointer",letterSpacing:"0.04em",marginTop:6,fontFamily:"inherit"}}>{lo?"Ingresando…":"Ingresar"}</button>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",textAlign:"center",marginTop:14,lineHeight:1.5}}>¿No tenés cuenta? El admin la crea por vos y te pasa las credenciales.</p>
       </form>
     </div>
   </div>;
