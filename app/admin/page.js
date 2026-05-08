@@ -7643,6 +7643,45 @@ function GiAdminPanel({token,clients}){
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState("");
   const flash=(t)=>{setMsg(t);setTimeout(()=>setMsg(""),3500);};
+  // Manage GI partners
+  const [partners,setPartners]=useState([]);
+  const [showPartnersModal,setShowPartnersModal]=useState(false);
+  const [partnerEmail,setPartnerEmail]=useState("");
+  const [partnerPct,setPartnerPct]=useState("");
+  const [partnerSaving,setPartnerSaving]=useState(false);
+  const loadPartners=async()=>{
+    const r=await dq("profiles",{token,filters:"?is_gi_partner=eq.true&select=id,email,gi_partner_pct"});
+    setPartners(Array.isArray(r)?r:[]);
+  };
+  useEffect(()=>{loadPartners();},[token]);
+  const togglePartner=async(profileId,currentValue)=>{
+    await dq("profiles",{method:"PATCH",token,filters:`?id=eq.${profileId}`,body:{is_gi_partner:!currentValue}});
+    flash(currentValue?"Acceso GI revocado":"Acceso GI activado");
+    loadPartners();
+  };
+  const updatePartnerPct=async(profileId,pct)=>{
+    await dq("profiles",{method:"PATCH",token,filters:`?id=eq.${profileId}`,body:{gi_partner_pct:pct?Number(pct):null}});
+    flash("% socio actualizado");
+    loadPartners();
+  };
+  const addPartnerByEmail=async()=>{
+    if(!partnerEmail?.trim())return;
+    setPartnerSaving(true);
+    try{
+      const found=await dq("profiles",{token,filters:`?email=eq.${encodeURIComponent(partnerEmail.trim())}&select=id,email,is_gi_partner`});
+      if(!Array.isArray(found)||!found[0]){
+        alert("No existe un perfil con ese email. Primero la persona tiene que crear su cuenta en /gi (ahí aparece el link 'Crear cuenta').");
+        setPartnerSaving(false);return;
+      }
+      const p=found[0];
+      if(p.is_gi_partner){flash("Este perfil ya tiene acceso GI");setPartnerSaving(false);return;}
+      await dq("profiles",{method:"PATCH",token,filters:`?id=eq.${p.id}`,body:{is_gi_partner:true,gi_partner_pct:partnerPct?Number(partnerPct):null}});
+      setPartnerEmail("");setPartnerPct("");
+      flash(`✓ Acceso GI activado para ${p.email}`);
+      loadPartners();
+    } catch(e){alert("Error: "+e.message);}
+    setPartnerSaving(false);
+  };
 
   const load=async()=>{
     setLo(true);
@@ -7679,8 +7718,11 @@ function GiAdminPanel({token,clients}){
     if(validProds.length===0){alert("Cargá al menos un producto");return;}
     setSaving(true);
     try{
-      const codeRes=await fetch(`${SB_URL}/rest/v1/rpc/gi_next_request_code`,{method:"POST",headers:{apikey:SB_KEY,"Content-Type":"application/json",Authorization:`Bearer ${token}`,Prefer:"return=representation"},body:JSON.stringify({})});
-      const code=(await codeRes.text()).replace(/^"|"$/g,"").trim();
+      // Usa dq (que maneja refresh de JWT) en lugar de fetch raw
+      const code=await dq("rpc/gi_next_request_code",{method:"POST",token,body:{}});
+      if(typeof code!=="string"||!code.startsWith("GI-")){
+        throw new Error("No se pudo generar código de solicitud (RPC). Recargá la página.");
+      }
       const expDate=new Date(Date.now()+Number(form.expiresIn||7)*86400000).toISOString().slice(0,10);
       const inserted=await dq("gi_quote_requests",{method:"POST",token,body:{
         request_code:code,
@@ -7736,7 +7778,10 @@ function GiAdminPanel({token,clients}){
         <h2 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Gestión Integral</h2>
         <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Pedile cotizaciones al socio. Cuando arma la cotización, se la enviás al cliente, y al aceptar se convierte en op AC-XXXX.</p>
       </div>
-      <button onClick={openModal} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.02em"}}>+ Nueva solicitud</button>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button onClick={()=>setShowPartnersModal(true)} style={{padding:"10px 16px",fontSize:12,fontWeight:600,borderRadius:10,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",letterSpacing:"0.02em"}}>👥 Accesos GI {partners.length>0&&<span style={{marginLeft:6,padding:"1px 7px",background:"rgba(184,149,106,0.2)",borderRadius:8,fontSize:10}}>{partners.length}</span>}</button>
+        <button onClick={openModal} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.02em"}}>+ Nueva solicitud</button>
+      </div>
     </div>
 
     <div style={{display:"flex",gap:4,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:18,flexWrap:"wrap"}}>
@@ -7778,6 +7823,45 @@ function GiAdminPanel({token,clients}){
         </table>
       </div>
     }
+
+    {/* Modal Gestionar accesos GI */}
+    {showPartnersModal&&<div onClick={()=>setShowPartnersModal(false)} style={{position:"fixed",inset:0,background:"rgba(8,12,20,0.78)",backdropFilter:"blur(8px)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"5vh 20px",overflowY:"auto"}}>
+      <div onClick={e=>e.stopPropagation()} style={{maxWidth:680,width:"100%",background:"linear-gradient(180deg,#142038,#0f1a2e)",border:"1px solid rgba(184,149,106,0.28)",borderRadius:14,padding:"22px 24px",boxShadow:"0 32px 80px rgba(0,0,0,0.65)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,paddingBottom:12,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+          <div>
+            <h3 style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 2px"}}>Gestionar accesos a Gestión Integral</h3>
+            <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:0}}>Quién puede entrar a /gi a armar cotizaciones y ver sus ganancias.</p>
+          </div>
+          <button onClick={()=>setShowPartnersModal(false)} style={{fontSize:22,background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer",padding:"0 4px"}}>✕</button>
+        </div>
+
+        <div style={{padding:"12px 14px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:11.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:14}}>
+          <strong style={{color:"#60a5fa"}}>Cómo funciona:</strong> la persona crea su cuenta en <code style={{background:"rgba(255,255,255,0.06)",padding:"1px 6px",borderRadius:3,fontFamily:"monospace"}}>/gi → Crear cuenta</code> con email + contraseña. Después la activás acá con su email y queda como socio GI.
+        </div>
+
+        <h4 style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"6px 0 8px"}}>Activar nuevo acceso</h4>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr auto",gap:8,marginBottom:18}}>
+          <input value={partnerEmail} onChange={e=>setPartnerEmail(e.target.value)} placeholder="email@ejemplo.com" style={{padding:"9px 12px",fontSize:12.5,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
+          <input value={partnerPct} onChange={e=>setPartnerPct(e.target.value.replace(/[^0-9.]/g,""))} placeholder="% socio (opcional)" style={{padding:"9px 12px",fontSize:12.5,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
+          <button onClick={addPartnerByEmail} disabled={!partnerEmail.trim()||partnerSaving} style={{padding:"9px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",background:!partnerEmail.trim()||partnerSaving?"rgba(184,149,106,0.4)":GOLD_GRADIENT,color:"#0A1628",cursor:!partnerEmail.trim()||partnerSaving?"not-allowed":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{partnerSaving?"…":"Activar"}</button>
+        </div>
+
+        <h4 style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"6px 0 8px"}}>Socios activos ({partners.length})</h4>
+        {partners.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.45)",fontStyle:"italic",padding:"12px 0"}}>Todavía no hay socios GI activos. Activá el primero arriba.</p>:
+          <div style={{background:"rgba(0,0,0,0.18)",borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,0.06)"}}>
+            {partners.map(p=><div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+              <div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,rgba(184,149,106,0.22),rgba(184,149,106,0.08))",border:"1px solid rgba(184,149,106,0.25)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:11.5,color:GOLD_LIGHT}}>{(p.email||"?").slice(0,2).toUpperCase()}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{fontSize:12.5,fontWeight:600,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.email}</p>
+                <p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>Socio GI activo</p>
+              </div>
+              <input defaultValue={p.gi_partner_pct||""} onBlur={e=>{const v=e.target.value;if(v!==(p.gi_partner_pct||"").toString())updatePartnerPct(p.id,v);}} placeholder="% socio" style={{width:80,padding:"5px 8px",fontSize:11,border:"1px solid rgba(255,255,255,0.1)",borderRadius:5,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit",textAlign:"right"}}/>
+              <button onClick={()=>{if(confirm(`¿Revocar el acceso GI de ${p.email}?`))togglePartner(p.id,true);}} style={{padding:"5px 10px",fontSize:10.5,fontWeight:600,borderRadius:6,border:"1px solid rgba(248,113,113,0.3)",background:"rgba(248,113,113,0.06)",color:"#f87171",cursor:"pointer",fontFamily:"inherit"}}>Revocar</button>
+            </div>)}
+          </div>
+        }
+      </div>
+    </div>}
 
     {/* Modal Nueva solicitud */}
     {modalOpen&&<div onClick={()=>!saving&&setModalOpen(false)} style={{position:"fixed",inset:0,background:"rgba(8,12,20,0.78)",backdropFilter:"blur(8px)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"5vh 20px",overflowY:"auto"}}>

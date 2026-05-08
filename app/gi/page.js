@@ -335,14 +335,25 @@ function Card({title,children,actionLabel,onAction}){
 // ────────────────────────────────────────────
 function PaneQuotes({token}){
   const [reqs,setReqs]=useState([]);
+  const [clients,setClients]=useState([]);
   const [lo,setLo]=useState(true);
   const [tab,setTab]=useState("pending");
   const [selDetail,setSelDetail]=useState(null);
   const [wizardId,setWizardId]=useState(null);
+  const [creatingNew,setCreatingNew]=useState(false);
+  const [newClientId,setNewClientId]=useState("");
+  const [newClientSearch,setNewClientSearch]=useState("");
+  const [showClientList,setShowClientList]=useState(false);
+  const [newSaving,setNewSaving]=useState(false);
+
   const load=async()=>{
     setLo(true);
-    const r=await dq("gi_quote_requests",{token,filters:"?select=*,clients(first_name,last_name,client_code),gi_quote_request_products(*)&order=created_at.desc"});
+    const [r,cl]=await Promise.all([
+      dq("gi_quote_requests",{token,filters:"?select=*,clients(first_name,last_name,client_code),gi_quote_request_products(*)&order=created_at.desc"}),
+      dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"}),
+    ]);
     setReqs(Array.isArray(r)?r:[]);
+    setClients(Array.isArray(cl)?cl:[]);
     setLo(false);
   };
   useEffect(()=>{load();},[token]);
@@ -350,6 +361,43 @@ function PaneQuotes({token}){
   if(wizardId){
     return <CotizadorWizard token={token} requestId={wizardId} onBack={()=>{setWizardId(null);setSelDetail(null);load();}}/>;
   }
+
+  const startDirectQuote=async()=>{
+    if(!newClientId){alert("Seleccioná un cliente");return;}
+    setNewSaving(true);
+    try{
+      const code=await dq("rpc/gi_next_request_code",{method:"POST",token,body:{}});
+      if(typeof code!=="string"||!code.startsWith("GI-"))throw new Error("No se pudo generar código");
+      const inserted=await dq("gi_quote_requests",{method:"POST",token,body:{
+        request_code:code,
+        client_id:newClientId,
+        notes:"Cotización iniciada directamente desde panel GI",
+        status:"quoting",
+        expires_at:new Date(Date.now()+7*86400000).toISOString().slice(0,10),
+      }});
+      const reqId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
+      if(!reqId)throw new Error("No se pudo crear la solicitud");
+      setCreatingNew(false);
+      setWizardId(reqId);
+    } catch(e){
+      alert("Error: "+e.message);
+    } finally {
+      setNewSaving(false);
+    }
+  };
+
+  const filteredClients=clients.filter(c=>{
+    const q=(newClientSearch||"").toLowerCase().trim();
+    if(!q)return clients.length<=15;
+    const name=`${c.first_name||""} ${c.last_name||""}`.toLowerCase();
+    return name.includes(q)||(c.client_code||"").toLowerCase().includes(q);
+  }).slice(0,8);
+
+  const selectClient=(c)=>{
+    setNewClientId(c.id);
+    setNewClientSearch(`${c.first_name||""} ${c.last_name||""}`.trim()+(c.client_code?` (${c.client_code})`:""));
+    setShowClientList(false);
+  };
 
   const tabs=[
     {k:"pending",l:"Pendientes",f:r=>["pending","quoting"].includes(r.status)},
@@ -365,10 +413,36 @@ function PaneQuotes({token}){
   }
 
   return <div>
-    <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Cotizaciones</h1>
-    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>Solicitudes pedidas por el admin para que armes la cotización.</p>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12,marginBottom:6}}>
+      <div>
+        <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Cotizaciones</h1>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Solicitudes del admin + las que armás directamente.</p>
+      </div>
+      <button onClick={()=>{setCreatingNew(true);setNewClientId("");setNewClientSearch("");}} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>+ Nueva cotización</button>
+    </div>
 
-    <div style={{display:"flex",gap:4,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:18,flexWrap:"wrap"}}>
+    {creatingNew&&<div style={{marginTop:18,marginBottom:18,padding:18,background:"rgba(184,149,106,0.06)",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:12}}>
+      <h3 style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 12px"}}>Nueva cotización directa</h3>
+      <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",marginBottom:14}}>Empezás directo sin esperar al admin. Elegí el cliente (debe estar registrado en Argencargo) y arrancás el wizard.</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 200px",gap:10,alignItems:"end"}}>
+        <div style={{position:"relative"}}>
+          <label style={lblStyle()}>Cliente</label>
+          <input value={newClientSearch} onChange={e=>{setNewClientSearch(e.target.value);setNewClientId("");setShowClientList(true);}} onFocus={()=>setShowClientList(true)} placeholder="Buscar por nombre o código..." style={{...inpStyle(),padding:"9px 12px",fontSize:13,border:`1px solid ${newClientId?"rgba(34,197,94,0.4)":"rgba(255,255,255,0.12)"}`}}/>
+          {showClientList&&filteredClients.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,maxHeight:240,overflowY:"auto",zIndex:50,boxShadow:"0 12px 30px rgba(0,0,0,0.5)"}}>
+            {filteredClients.map(c=><button key={c.id} onClick={()=>selectClient(c)} style={{width:"100%",textAlign:"left",padding:"9px 12px",fontSize:12.5,background:"transparent",border:"none",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"inherit"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(184,149,106,0.08)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <strong>{`${c.first_name||""} ${c.last_name||""}`.trim()}</strong>
+              <span style={{fontFamily:"monospace",fontSize:10.5,color:GOLD_LIGHT}}>{c.client_code||""}</span>
+            </button>)}
+          </div>}
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"end",height:"100%"}}>
+          <button onClick={()=>setCreatingNew(false)} style={{flex:1,padding:"9px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+          <button onClick={startDirectQuote} disabled={!newClientId||newSaving} style={{flex:1.5,padding:"9px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",background:!newClientId||newSaving?"rgba(184,149,106,0.4)":GOLD_GRADIENT,color:"#0A1628",cursor:!newClientId||newSaving?"not-allowed":"pointer",fontFamily:"inherit"}}>{newSaving?"Creando…":"Iniciar →"}</button>
+        </div>
+      </div>
+    </div>}
+
+    <div style={{display:"flex",gap:4,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:18,marginTop:18,flexWrap:"wrap"}}>
       {tabs.map(t=>{const n=reqs.filter(t.f).length;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"9px 14px",fontSize:12,fontWeight:600,color:tab===t.k?GOLD_LIGHT:"rgba(255,255,255,0.5)",background:"transparent",border:"none",borderBottom:`2px solid ${tab===t.k?GOLD_LIGHT:"transparent"}`,cursor:"pointer",fontFamily:"inherit"}}>{t.l} <span style={{marginLeft:5,fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:8,background:tab===t.k?"rgba(184,149,106,0.15)":"rgba(255,255,255,0.06)",color:tab===t.k?GOLD_LIGHT:"rgba(255,255,255,0.5)"}}>{n}</span></button>;})}
     </div>
 
