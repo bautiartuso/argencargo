@@ -491,6 +491,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const [cancelingRedemption,setCancelingRedemption]=useState(false);
   const [showAddPayment,setShowAddPayment]=useState(false);
   const [savingAddPayment,setSavingAddPayment]=useState(false);
+  const [cobroDecision,setCobroDecision]=useState(null); // {kind:"overpay"|"underpay", diff, resolve}
+  const askCobroDecision=(kind,diff)=>new Promise(resolve=>setCobroDecision({kind,diff,resolve}));
   const [addPaymentForm,setAddPaymentForm]=useState({amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",payment_date:new Date().toISOString().slice(0,10),notes:""});
   const submitAddPayment=async()=>{
     const amtUsd=Number(addPaymentForm.amount_usd);
@@ -2070,38 +2072,38 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           if(op.is_collected&&isArsCol&&!colRate){alert("El cobro es en ARS: cargá el tipo de cambio primero");return;}
           if(op.is_collected&&budgetTot>0){
             if(diff>0.01){
-              const choice=window.prompt(`El cliente pagó USD ${diff.toFixed(2)} MÁS que el presupuesto.\n\nEscribí:\n  s = SALDO A FAVOR (queda en CC del cliente, lo aplicás a futuro)\n  e = CARGO EXTRA (es revenue de esta op, no se devuelve — ej. cargo por TC, urgencia, ajuste)\n\nSi cancelás, no se guardan cambios.`,"s");
+              const choice=await askCobroDecision("overpay",diff);
               if(choice===null)return;
-              if(choice==="s"||choice==="S"){
+              if(choice==="s"){
                 // Capear collected_amount al budget: el excedente queda en CC, no infla la ganancia
                 setOp(p=>({...p,collected_amount:budgetTot}));
                 await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{collected_amount:budgetTot,extra_charge_usd:0,is_collected:true,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
                 await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`});
                 flash(`Cobrada · saldo a favor +USD ${diff.toFixed(2)}`);
                 return;
-              } else if(choice==="e"||choice==="E"){
+              } else if(choice==="e"){
                 // Cargo extra: collected_amount queda tal cual (no se capea), se setea extra_charge_usd para trazabilidad,
                 // NO se crea overpayment movement, el revenue de la op crece naturalmente.
                 await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{is_collected:true,extra_charge_usd:diff,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
                 setOp(p=>({...p,extra_charge_usd:diff}));
                 flash(`Cobrada · cargo extra +USD ${diff.toFixed(2)} (revenue)`);
                 return;
-              } else {alert("Opción inválida. Escribí 's' o 'e'");return;}
+              } else return;
             } else if(diff<-0.01){
-              const choice=window.prompt(`El cliente pagó USD ${Math.abs(diff).toFixed(2)} MENOS que el presupuesto.\n\nEscribí:\n  d = DESCUENTO intencional (no genera deuda)\n  c = queda como DEUDA en CC\n\nSi cancelás, no se guardan cambios.`,"d");
+              const choice=await askCobroDecision("underpay",Math.abs(diff));
               if(choice===null)return;
-              if(choice==="d"||choice==="D"){
+              if(choice==="d"){
                 await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{discount_applied_usd:Math.abs(diff)}});
                 setOp(p=>({...p,discount_applied_usd:Math.abs(diff)}));
                 await saveOp();
                 flash(`Cobrada con descuento de USD ${Math.abs(diff).toFixed(2)}`);
                 return;
-              } else if(choice==="c"||choice==="C"){
+              } else if(choice==="c"){
                 await saveOp();
                 await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"debt",amount_usd:diff,description:`Deuda pendiente de ${op.operation_code}`});
                 flash(`Cobrada · deuda registrada -USD ${Math.abs(diff).toFixed(2)}`);
                 return;
-              } else {alert("Opción inválida. Escribí 'd' o 'c'");return;}
+              } else return;
             }
           }
           await saveOp();
@@ -2580,6 +2582,33 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
       </div>
     </div>}
+    {cobroDecision&&(()=>{const {kind,diff,resolve}=cobroDecision;const isOver=kind==="overpay";const close=(val)=>{resolve(val);setCobroDecision(null);};const opts=isOver?[
+      {key:"s",emoji:"💚",label:"Saldo a favor",desc:"Queda en la cuenta corriente del cliente. Lo podés aplicar a una operación futura.",accent:"#22c55e"},
+      {key:"e",emoji:"💰",label:"Cargo extra",desc:"Es revenue de esta operación, no se devuelve. Ej: cargo por TC, urgencia, ajuste.",accent:"#a78bfa"},
+    ]:[
+      {key:"d",emoji:"🎁",label:"Descuento intencional",desc:"No genera deuda. Cobraste menos a propósito.",accent:"#22c55e"},
+      {key:"c",emoji:"⚠️",label:"Deuda en CC",desc:"Queda registrado como deuda del cliente. La aplicás a la próxima op o pago.",accent:"#fbbf24"},
+    ];return <div onClick={()=>close(null)} style={{position:"fixed",inset:0,background:"rgba(8,12,20,0.78)",backdropFilter:"blur(8px)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,animation:"acFade 150ms ease"}}>
+      <div onClick={e=>e.stopPropagation()} style={{maxWidth:520,width:"100%",background:"linear-gradient(180deg,#142038,#0f1a2e)",border:"1px solid rgba(184,149,106,0.28)",borderRadius:16,padding:"24px 26px 20px",boxShadow:"0 32px 80px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.04)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+          <span style={{fontSize:22}}>{isOver?"⬆️":"⬇️"}</span>
+          <h3 style={{fontSize:17,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>El cliente pagó USD {diff.toFixed(2)} {isOver?"de más":"de menos"}</h3>
+        </div>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"0 0 18px",lineHeight:1.5}}>¿Cómo querés registrarlo?</p>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {opts.map(o=><button key={o.key} onClick={()=>close(o.key)} style={{textAlign:"left",padding:"14px 16px",borderRadius:12,border:`1px solid ${o.accent}38`,background:`linear-gradient(135deg,${o.accent}12,${o.accent}04)`,color:"#fff",cursor:"pointer",transition:"all 150ms ease",display:"flex",gap:12,alignItems:"flex-start"}} onMouseEnter={e=>{e.currentTarget.style.background=`linear-gradient(135deg,${o.accent}22,${o.accent}08)`;e.currentTarget.style.borderColor=`${o.accent}66`;e.currentTarget.style.transform="translateY(-1px)";}} onMouseLeave={e=>{e.currentTarget.style.background=`linear-gradient(135deg,${o.accent}12,${o.accent}04)`;e.currentTarget.style.borderColor=`${o.accent}38`;e.currentTarget.style.transform="translateY(0)";}}>
+            <span style={{fontSize:22,lineHeight:1}}>{o.emoji}</span>
+            <div style={{flex:1}}>
+              <p style={{fontSize:14,fontWeight:700,color:o.accent,margin:0,letterSpacing:"-0.01em"}}>{o.label}</p>
+              <p style={{fontSize:12,color:"rgba(255,255,255,0.65)",margin:"3px 0 0",lineHeight:1.45}}>{o.desc}</p>
+            </div>
+          </button>)}
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:18,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          <button onClick={()=>close(null)} style={{padding:"8px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.10)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.04em"}}>Cancelar</button>
+        </div>
+      </div>
+    </div>;})()}
   </div>;
 }
 
