@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { calcOpBudget } from "../../lib/calc";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -337,6 +338,7 @@ function PaneQuotes({token}){
   const [lo,setLo]=useState(true);
   const [tab,setTab]=useState("pending");
   const [selDetail,setSelDetail]=useState(null);
+  const [wizardId,setWizardId]=useState(null);
   const load=async()=>{
     setLo(true);
     const r=await dq("gi_quote_requests",{token,filters:"?select=*,clients(first_name,last_name,client_code),gi_quote_request_products(*)&order=created_at.desc"});
@@ -344,6 +346,10 @@ function PaneQuotes({token}){
     setLo(false);
   };
   useEffect(()=>{load();},[token]);
+
+  if(wizardId){
+    return <CotizadorWizard token={token} requestId={wizardId} onBack={()=>{setWizardId(null);setSelDetail(null);load();}}/>;
+  }
 
   const tabs=[
     {k:"pending",l:"Pendientes",f:r=>["pending","quoting"].includes(r.status)},
@@ -355,7 +361,7 @@ function PaneQuotes({token}){
   const filtered=reqs.filter(tabs.find(t=>t.k===tab).f);
 
   if(selDetail){
-    return <RequestDetail token={token} requestId={selDetail} onBack={()=>{setSelDetail(null);load();}}/>;
+    return <RequestDetail token={token} requestId={selDetail} onBack={()=>{setSelDetail(null);load();}} onStartWizard={()=>setWizardId(selDetail)}/>;
   }
 
   return <div>
@@ -397,7 +403,7 @@ function PaneQuotes({token}){
   </div>;
 }
 
-function RequestDetail({token,requestId,onBack}){
+function RequestDetail({token,requestId,onBack,onStartWizard}){
   const [req,setReq]=useState(null);
   const [lo,setLo]=useState(true);
   useEffect(()=>{(async()=>{
@@ -418,7 +424,7 @@ function RequestDetail({token,requestId,onBack}){
         <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}><span style={{color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.04em"}}>{req.request_code}</span> · {cn}</h1>
         <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Pedida {fmtDate(req.created_at)}{req.expires_at?` · Vence ${fmtDate(req.expires_at)}`:""}</p>
       </div>
-      <button style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>Armar cotización →</button>
+      <button onClick={onStartWizard} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>Armar cotización →</button>
     </div>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:18}}>
@@ -449,11 +455,435 @@ function RequestDetail({token,requestId,onBack}){
       }
     </Card>
 
-    <div style={{padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12,color:"rgba(255,255,255,0.8)",lineHeight:1.5,marginTop:10}}>
-      <strong style={{color:"#60a5fa"}}>Próximo paso:</strong> el cotizador está en construcción. Cuando esté listo vas a poder armar la cotización completa con NCM automático, costos por canal y % honorarios.
+  </div>;
+}
+
+// ────────────────────────────────────────────
+// COTIZADOR WIZARD (3 steps)
+// ────────────────────────────────────────────
+const CHANNEL_DEFS=[
+  {key:"aereo_negro",name:"Aéreo Courier Comercial",time:"7 a 10 días hábiles"},
+  {key:"aereo_blanco",name:"Aéreo Integral AC",time:"10 a 15 días hábiles"},
+  {key:"maritimo_negro",name:"Marítimo LCL/FCL",time:"~ 60 días"},
+  {key:"maritimo_blanco",name:"Marítimo Integral AC",time:"~ 60 días"},
+];
+
+function CotizadorWizard({token,requestId,onBack}){
+  const [step,setStep]=useState(1);
+  const [request,setRequest]=useState(null);
+  const [client,setClient]=useState(null);
+  const [tariffs,setTariffs]=useState([]);
+  const [config,setConfig]=useState({});
+  const [products,setProducts]=useState([]);
+  const [honorariosPct,setHonorariosPct]=useState(10);
+  const [paymentPlan,setPaymentPlan]=useState([
+    {pct:30,label:"Inicio de producción"},
+    {pct:20,label:"Producción terminada"},
+    {pct:50,label:"Contra entrega"},
+  ]);
+  const [lo,setLo]=useState(true);
+  const [generatedQuote,setGeneratedQuote]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [msg,setMsg]=useState("");
+  const flash=(t)=>{setMsg(t);setTimeout(()=>setMsg(""),3500);};
+
+  // Cargar todo
+  useEffect(()=>{(async()=>{
+    setLo(true);
+    const [reqRes,tar,cfg]=await Promise.all([
+      dq("gi_quote_requests",{token,filters:`?id=eq.${requestId}&select=*,clients(*),gi_quote_request_products(*)`}),
+      dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),
+      dq("calc_config",{token,filters:"?select=*"})
+    ]);
+    if(Array.isArray(reqRes)&&reqRes[0]){
+      const r=reqRes[0];
+      setRequest(r);
+      setClient(r.clients);
+      const rawProds=(r.gi_quote_request_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
+      setProducts(rawProds.map((p,i)=>({
+        _id:p.id,
+        description:p.description||"",
+        notes:p.notes||"",
+        origin:"china",
+        quantity:String(p.quantity||""),
+        unit_cost_usd:"",
+        lead_time_days:"",
+        photo_url:p.photo_url||"",
+        ncm_code:"",
+        ncm_description:"",
+        import_duty_rate:"",
+        statistics_rate:"",
+        iva_rate:"",
+        ncm_loading:false,
+        ncm_error:false,
+        pkg_count:"1",
+        pkg_length_cm:"",
+        pkg_width_cm:"",
+        pkg_height_cm:"",
+        pkg_weight_kg:"",
+      })));
+    }
+    setTariffs(Array.isArray(tar)?tar:[]);
+    const cfgObj={};(Array.isArray(cfg)?cfg:[]).forEach(r=>{cfgObj[r.key]=Number(r.value);});setConfig(cfgObj);
+    setLo(false);
+  })();},[requestId,token]);
+
+  const updateProduct=(i,field,value)=>setProducts(p=>p.map((x,j)=>j===i?{...x,[field]:value}:x));
+  const addProduct=()=>setProducts(p=>[...p,{description:"",notes:"",origin:"china",quantity:"",unit_cost_usd:"",lead_time_days:"",photo_url:"",ncm_code:"",ncm_description:"",import_duty_rate:"",statistics_rate:"",iva_rate:"",ncm_loading:false,ncm_error:false,pkg_count:"1",pkg_length_cm:"",pkg_width_cm:"",pkg_height_cm:"",pkg_weight_kg:""}]);
+  const removeProduct=(i)=>setProducts(p=>p.length>1?p.filter((_,j)=>j!==i):p);
+
+  const classifyNcm=async(i)=>{
+    const p=products[i];
+    if(!p.description?.trim())return;
+    updateProduct(i,"ncm_loading",true);updateProduct(i,"ncm_error",false);
+    try{
+      const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:p.description})});
+      const d=await r.json();
+      if(d.fallback||d.error){
+        setProducts(prods=>prods.map((x,j)=>j===i?{...x,ncm_loading:false,ncm_error:true}:x));
+      } else {
+        setProducts(prods=>prods.map((x,j)=>j===i?{...x,ncm_loading:false,ncm_error:false,ncm_code:d.ncm_code||"",ncm_description:d.ncm_description||"",import_duty_rate:String(d.import_duty_rate||""),statistics_rate:String(d.statistics_rate||""),iva_rate:String(d.iva_rate||"")}:x));
+      }
+    } catch(e){
+      setProducts(prods=>prods.map((x,j)=>j===i?{...x,ncm_loading:false,ncm_error:true}:x));
+    }
+  };
+
+  // Cálculo por canal: corre calcOpBudget para cada canal disponible
+  const computeChannel=(channelKey)=>{
+    const items=products.map(p=>({
+      unit_price_usd:Number(p.unit_cost_usd||0),
+      quantity:Number(p.quantity||0),
+      import_duty_rate:p.import_duty_rate?Number(p.import_duty_rate):0,
+      statistics_rate:p.statistics_rate?Number(p.statistics_rate):0,
+      iva_rate:p.iva_rate?Number(p.iva_rate):21,
+    }));
+    // Convertir packing por producto a array global (multiplicando cada uno por su pkg_count y quantity)
+    const pkgs=products.flatMap(p=>{
+      if(!p.pkg_count||!p.pkg_length_cm)return [];
+      return [{
+        quantity:Number(p.pkg_count||1),
+        gross_weight_kg:Number(p.pkg_weight_kg||0),
+        length_cm:Number(p.pkg_length_cm||0),
+        width_cm:Number(p.pkg_width_cm||0),
+        height_cm:Number(p.pkg_height_cm||0),
+      }];
+    });
+    const op={
+      channel:channelKey,
+      origin:products.some(p=>p.origin==="usa")?"USA":"China",
+      has_battery:false,
+      has_phones:false,
+      shipping_to_door:false,
+      shipping_cost:0,
+      merchandise_value_usd:items.reduce((s,it)=>s+it.unit_price_usd*it.quantity,0),
+    };
+    try{
+      return calcOpBudget(op,items,pkgs,tariffs,config,[],client);
+    } catch(e){
+      console.error(`[calc ${channelKey}]`,e);
+      return null;
+    }
+  };
+
+  const totalFob=products.reduce((s,p)=>s+Number(p.unit_cost_usd||0)*Number(p.quantity||0),0);
+  const channelResults=CHANNEL_DEFS.map(ch=>{
+    const r=computeChannel(ch.key);
+    if(!r)return {...ch,total:0,real:0,error:true};
+    // total al cliente (incluye margen de tarifa) y "real" (lo que pagamos a embarcadores) son iguales para ahora porque no tenemos costo real separado todavía
+    // En MVP usamos totalAbonar como "total al cliente" y un % menor como "costo real" mock para mostrar spread
+    const total=r.totalAbonar+totalFob;
+    const real=total*0.92; // mock: 8% spread logístico (ajustable después en config)
+    return {...ch,total,real,calc:r};
+  });
+
+  // Filtrar canales por origen
+  const someUSA=products.some(p=>p.origin==="usa");
+  const visibleChannels=someUSA
+    ?channelResults.filter(c=>c.key.includes("negro")||c.key==="maritimo_blanco")
+    :channelResults;
+
+  // Calcular ganancia por canal (con honorarios)
+  const profitFor=(c)=>{
+    const honoraires=c.total*Number(honorariosPct||0)/100;
+    const totalConHon=c.total+honoraires;
+    const spread=c.total-c.real;
+    const tot=spread+honoraires;
+    return {totalAlCliente:totalConHon,spread,honoraires,total:tot};
+  };
+
+  const validateStep1=()=>{
+    if(products.length===0)return "Agregá al menos un producto";
+    for(let i=0;i<products.length;i++){
+      const p=products[i];
+      if(!p.description?.trim())return `Producto ${i+1}: falta descripción`;
+      if(!p.quantity||Number(p.quantity)<=0)return `Producto ${i+1}: falta cantidad`;
+      if(!p.unit_cost_usd||Number(p.unit_cost_usd)<=0)return `Producto ${i+1}: falta costo unitario`;
+      if(!p.pkg_length_cm||!p.pkg_width_cm||!p.pkg_height_cm||!p.pkg_weight_kg)return `Producto ${i+1}: faltan datos de embalaje`;
+    }
+    return null;
+  };
+
+  const goStep=(n)=>{
+    if(n>1){const e=validateStep1();if(e){alert(e);return;}}
+    setStep(n);
+  };
+
+  const generateLink=async()=>{
+    setSaving(true);
+    try{
+      const ch=channelResults.reduce((acc,c)=>{
+        if(c.key==="aereo_negro"){acc.cost_courier_total_usd=Math.round(c.total*100)/100;acc.cost_courier_real_usd=Math.round(c.real*100)/100;}
+        else if(c.key==="aereo_blanco"){acc.cost_aereo_int_total_usd=Math.round(c.total*100)/100;acc.cost_aereo_int_real_usd=Math.round(c.real*100)/100;}
+        else if(c.key==="maritimo_negro"){acc.cost_maritimo_lcl_total_usd=Math.round(c.total*100)/100;acc.cost_maritimo_lcl_real_usd=Math.round(c.real*100)/100;}
+        else if(c.key==="maritimo_blanco"){acc.cost_maritimo_int_total_usd=Math.round(c.total*100)/100;acc.cost_maritimo_int_real_usd=Math.round(c.real*100)/100;}
+        return acc;
+      },{});
+      const expDate=new Date(Date.now()+7*86400000).toISOString().slice(0,10);
+      const inserted=await dq("gi_quotes",{method:"POST",token,body:{
+        request_id:requestId,
+        honorarios_pct:Number(honorariosPct||0),
+        payment_plan:paymentPlan,
+        ...ch,
+        status:"draft",
+        expires_at:expDate,
+      }});
+      const quoteId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
+      const publicToken=Array.isArray(inserted)?inserted[0]?.public_token:inserted?.public_token;
+      if(!quoteId)throw new Error("No se pudo crear la cotización");
+      // Insert productos
+      for(let i=0;i<products.length;i++){
+        const p=products[i];
+        await dq("gi_quote_products",{method:"POST",token,body:{
+          quote_id:quoteId,
+          description:p.description,
+          origin:p.origin,
+          quantity:Number(p.quantity)||0,
+          unit_cost_usd:Number(p.unit_cost_usd)||0,
+          ncm_code:p.ncm_code||null,
+          ncm_description:p.ncm_description||null,
+          ncm_di_pct:p.import_duty_rate?Number(p.import_duty_rate):null,
+          ncm_iva_pct:p.iva_rate?Number(p.iva_rate):null,
+          ncm_estad_pct:p.statistics_rate?Number(p.statistics_rate):null,
+          lead_time_days:p.lead_time_days?Number(p.lead_time_days):null,
+          photo_url:p.photo_url||null,
+          pkg_count:Number(p.pkg_count)||1,
+          pkg_length_cm:Number(p.pkg_length_cm)||null,
+          pkg_width_cm:Number(p.pkg_width_cm)||null,
+          pkg_height_cm:Number(p.pkg_height_cm)||null,
+          pkg_weight_kg:Number(p.pkg_weight_kg)||null,
+          display_order:i,
+        }});
+      }
+      // Update request status
+      await dq("gi_quote_requests",{method:"PATCH",token,filters:`?id=eq.${requestId}`,body:{status:"quoted"}});
+      setGeneratedQuote({id:quoteId,public_token:publicToken});
+      setStep(3);
+      flash("Cotización generada");
+    } catch(e){
+      alert("Error: "+e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if(lo)return <p style={{color:"rgba(255,255,255,0.4)"}}>Cargando cotizador…</p>;
+  if(!request)return <p style={{color:"rgba(255,255,255,0.4)"}}>Solicitud no encontrada</p>;
+  const cn=client?`${client.first_name||""} ${client.last_name||""}`.trim():"—";
+
+  const Step=({n,label,active,done})=><div style={{display:"flex",alignItems:"center",gap:10,flex:1}}>
+    <span style={{width:26,height:26,borderRadius:"50%",background:done?"#22c55e":(active?GOLD_GRADIENT:"rgba(255,255,255,0.06)"),color:done?"#fff":(active?"#0A1628":"rgba(255,255,255,0.5)"),fontSize:12,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{done?"✓":n}</span>
+    <p style={{fontSize:12,fontWeight:600,color:active?"#fff":(done?"rgba(255,255,255,0.7)":"rgba(255,255,255,0.5)"),margin:0,textTransform:"uppercase",letterSpacing:0}}>{label}</p>
+  </div>;
+
+  return <div>
+    {msg&&<div style={{position:"fixed",top:20,right:20,background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",padding:"10px 16px",borderRadius:10,fontSize:13,fontWeight:600,zIndex:9999,boxShadow:"0 12px 30px rgba(0,0,0,0.4)"}}>{msg}</div>}
+    <button onClick={onBack} style={{fontSize:12,color:"rgba(255,255,255,0.55)",background:"transparent",border:"1px solid rgba(255,255,255,0.08)",cursor:"pointer",fontWeight:600,marginBottom:18,padding:"6px 12px",borderRadius:8,letterSpacing:"0.04em",fontFamily:"inherit"}}>← Volver</button>
+
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:14,marginBottom:6}}>
+      <div>
+        <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Cotizador <span style={{color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.04em"}}>{request.request_code}</span></h1>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Cliente: <strong style={{color:"#fff"}}>{cn}</strong></p>
+      </div>
+    </div>
+
+    <div style={{display:"flex",alignItems:"center",gap:12,marginTop:18,marginBottom:24,padding:"14px 18px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12}}>
+      <Step n={1} label="Productos & embalaje" active={step===1} done={step>1}/>
+      <div style={{flex:"0 0 24px",height:1,background:step>1?"#22c55e":"rgba(255,255,255,0.1)"}}/>
+      <Step n={2} label="Costos & honorarios" active={step===2} done={step>2}/>
+      <div style={{flex:"0 0 24px",height:1,background:step>2?"#22c55e":"rgba(255,255,255,0.1)"}}/>
+      <Step n={3} label="Link al cliente" active={step===3} done={false}/>
+    </div>
+
+    {step===1&&<WizStep1 products={products} onUpdate={updateProduct} onAdd={addProduct} onRemove={removeProduct} onClassify={classifyNcm} onNext={()=>goStep(2)} totalFob={totalFob}/>}
+    {step===2&&<WizStep2 visibleChannels={visibleChannels} someUSA={someUSA} honorariosPct={honorariosPct} setHonorariosPct={setHonorariosPct} paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} profitFor={profitFor} onBack={()=>setStep(1)} onNext={generateLink} saving={saving}/>}
+    {step===3&&<WizStep3 generatedQuote={generatedQuote} onBack={onBack}/>}
+  </div>;
+}
+
+function WizStep1({products,onUpdate,onAdd,onRemove,onClassify,onNext,totalFob}){
+  return <div>
+    <div style={{padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:18}}>
+      <strong style={{color:"#60a5fa"}}>Step 1:</strong> cargá cada producto con su packing. Si origen es <strong>China</strong> apretá "Clasificar NCM" para que el sistema busque el código y los aranceles. Si es <strong>USA</strong>, va canal B automáticamente.
+    </div>
+    {products.map((p,i)=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:18,marginBottom:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,paddingBottom:10,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+        <h4 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>Producto {i+1}</h4>
+        <button onClick={()=>onRemove(i)} disabled={products.length<=1} style={{padding:"5px 10px",fontSize:10.5,fontWeight:600,borderRadius:6,border:"1px solid rgba(248,113,113,0.3)",background:"transparent",color:products.length<=1?"rgba(255,255,255,0.2)":"#f87171",cursor:products.length<=1?"not-allowed":"pointer",fontFamily:"inherit"}}>✕ Quitar</button>
+      </div>
+      <div style={{marginBottom:12}}>
+        <label style={lblStyle()}>Descripción del producto</label>
+        <input value={p.description} onChange={e=>onUpdate(i,"description",e.target.value)} style={inpStyle()}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:12}}>
+        <div><label style={lblStyle()}>Origen</label>
+          <select value={p.origin} onChange={e=>onUpdate(i,"origin",e.target.value)} style={inpStyle()}>
+            <option value="china">China</option>
+            <option value="usa">USA</option>
+          </select>
+        </div>
+        <div><label style={lblStyle()}>Lead prod. (días)</label><input type="text" inputMode="numeric" value={p.lead_time_days} onChange={e=>onUpdate(i,"lead_time_days",e.target.value.replace(/[^0-9]/g,""))} style={inpStyle()}/></div>
+        <div><label style={lblStyle()}>Cantidad</label><input type="text" inputMode="numeric" value={p.quantity} onChange={e=>onUpdate(i,"quantity",e.target.value.replace(/[^0-9]/g,""))} style={inpStyle()}/></div>
+        <div><label style={lblStyle()}>Costo unit. USD FOB</label><input type="text" inputMode="decimal" value={p.unit_cost_usd} onChange={e=>onUpdate(i,"unit_cost_usd",e.target.value.replace(/[^0-9.]/g,""))} style={inpStyle()}/></div>
+      </div>
+
+      {p.origin==="china"&&<div style={{padding:"12px 14px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:8,marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:200}}>
+            {p.ncm_code?<>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",marginBottom:3}}>Clasificación NCM</p>
+              <p style={{fontSize:13,fontWeight:700,color:"#fff"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#60a5fa"}}>{p.ncm_code}</span> · {p.ncm_description}</p>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
+                <Tag>DI {p.import_duty_rate}%</Tag>
+                <Tag>IVA {p.iva_rate}%</Tag>
+                <Tag>Tasa Estad. {p.statistics_rate}%</Tag>
+              </div>
+            </>:<p style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>{p.ncm_error?<span style={{color:"#fbbf24"}}>⚠ No se pudo clasificar. Cargá los aranceles a mano abajo.</span>:"Apretá clasificar para que el sistema busque NCM y aranceles."}</p>}
+          </div>
+          <button onClick={()=>onClassify(i)} disabled={!p.description?.trim()||p.ncm_loading} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#60a5fa",cursor:p.description?.trim()?"pointer":"not-allowed",fontFamily:"inherit",opacity:p.description?.trim()?1:0.4}}>{p.ncm_loading?"Clasificando…":(p.ncm_code?"Reclasificar":"Clasificar NCM")}</button>
+        </div>
+        {p.ncm_error&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:10}}>
+          <div><label style={lblStyle()}>DI %</label><input type="text" inputMode="decimal" value={p.import_duty_rate} onChange={e=>onUpdate(i,"import_duty_rate",e.target.value)} style={inpStyle()}/></div>
+          <div><label style={lblStyle()}>IVA %</label><input type="text" inputMode="decimal" value={p.iva_rate} onChange={e=>onUpdate(i,"iva_rate",e.target.value)} style={inpStyle()}/></div>
+          <div><label style={lblStyle()}>Tasa Estad. %</label><input type="text" inputMode="decimal" value={p.statistics_rate} onChange={e=>onUpdate(i,"statistics_rate",e.target.value)} style={inpStyle()}/></div>
+        </div>}
+      </div>}
+
+      <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8,marginTop:14}}>Embalaje</p>
+      <div style={{display:"grid",gridTemplateColumns:"0.6fr 1fr 1fr 1fr 1fr",gap:8}}>
+        <div><label style={lblStyle()}>Cant. bultos</label><input type="text" inputMode="numeric" value={p.pkg_count} onChange={e=>onUpdate(i,"pkg_count",e.target.value.replace(/[^0-9]/g,""))} style={inpStyle()}/></div>
+        <div><label style={lblStyle()}>Largo (cm)</label><input type="text" inputMode="decimal" value={p.pkg_length_cm} onChange={e=>onUpdate(i,"pkg_length_cm",e.target.value.replace(/[^0-9.]/g,""))} style={inpStyle()}/></div>
+        <div><label style={lblStyle()}>Ancho (cm)</label><input type="text" inputMode="decimal" value={p.pkg_width_cm} onChange={e=>onUpdate(i,"pkg_width_cm",e.target.value.replace(/[^0-9.]/g,""))} style={inpStyle()}/></div>
+        <div><label style={lblStyle()}>Alto (cm)</label><input type="text" inputMode="decimal" value={p.pkg_height_cm} onChange={e=>onUpdate(i,"pkg_height_cm",e.target.value.replace(/[^0-9.]/g,""))} style={inpStyle()}/></div>
+        <div><label style={lblStyle()}>Peso bulto (kg)</label><input type="text" inputMode="decimal" value={p.pkg_weight_kg} onChange={e=>onUpdate(i,"pkg_weight_kg",e.target.value.replace(/[^0-9.]/g,""))} style={inpStyle()}/></div>
+      </div>
+    </div>)}
+    <button onClick={onAdd} style={{padding:"7px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer",fontFamily:"inherit",marginBottom:18}}>+ Agregar producto</button>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10}}>
+      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",margin:0}}>Subtotal FOB: <strong style={{color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(totalFob)}</strong></p>
+      <button onClick={onNext} style={{padding:"10px 20px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>Continuar a costos →</button>
     </div>
   </div>;
 }
+
+function WizStep2({visibleChannels,someUSA,honorariosPct,setHonorariosPct,paymentPlan,setPaymentPlan,profitFor,onBack,onNext,saving}){
+  return <div>
+    <div style={{padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:18}}>
+      <strong style={{color:"#60a5fa"}}>Step 2:</strong> el sistema calcula el costo final por canal usando la calculadora del portal{someUSA?". Hay algún producto USA, así que solo se muestran canales B.":"."} Definí el % de honorarios sobre el total. La ganancia incluye spread logístico + honorarios — si el % es 0, ganás igual por el spread.
+    </div>
+
+    <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>Costo por canal (al cliente)</h3>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:18}}>
+      {visibleChannels.map(c=><div key={c.key} style={{background:"linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:16}}>
+        <p style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:3}}>{c.name}</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:14}}>{c.time}</p>
+        {c.error?<p style={{fontSize:11,color:"#f87171"}}>Sin tarifa configurada</p>:<>
+          <div style={{paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+            <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total</span>
+            <span style={{fontSize:20,fontWeight:800,color:GOLD_LIGHT,fontFeatureSettings:'"tnum"'}}>{fmtUSD(c.total)}</span>
+          </div>
+        </>}
+      </div>)}
+    </div>
+
+    <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>
+      <label style={lblStyle()}>Honorarios GI (% sobre total importación)</label>
+      <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:6}}>
+        <input type="text" inputMode="decimal" value={honorariosPct} onChange={e=>setHonorariosPct(e.target.value.replace(/[^0-9.]/g,""))} style={{...inpStyle(),width:100,fontSize:18,fontWeight:700,textAlign:"center"}}/>
+        <span style={{color:"rgba(255,255,255,0.5)",fontSize:18}}>%</span>
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",margin:0}}>Aplicado sobre el total de cada canal. Si pones 0%, igual ganás por spread logístico.</p>
+      </div>
+    </div>
+
+    <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>Tu ganancia (por canal)</h3>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:18}}>
+      {visibleChannels.map(c=>{const p=profitFor(c);return <div key={c.key} style={{background:"linear-gradient(135deg,rgba(34,197,94,0.06),rgba(34,197,94,0.01))",border:"1px solid rgba(34,197,94,0.25)",borderRadius:12,padding:16}}>
+        <p style={{fontSize:13,fontWeight:700,color:"#22c55e",marginBottom:8}}>{c.name}</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+          <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.03)",borderRadius:8}}>
+            <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Spread logístico</p>
+            <p style={{fontSize:13,fontWeight:700,fontFeatureSettings:'"tnum"',color:"#fff"}}>{fmtUSD(p.spread)}</p>
+          </div>
+          <div style={{padding:"10px 12px",background:"rgba(184,149,106,0.06)",borderRadius:8}}>
+            <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Honorarios {honorariosPct||0}%</p>
+            <p style={{fontSize:13,fontWeight:700,fontFeatureSettings:'"tnum"',color:GOLD_LIGHT}}>{fmtUSD(p.honoraires)}</p>
+          </div>
+        </div>
+        <div style={{paddingTop:10,borderTop:"1px solid rgba(34,197,94,0.2)",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+          <span style={{fontSize:11,fontWeight:700,color:"#22c55e",textTransform:"uppercase",letterSpacing:"0.08em"}}>Ganancia total</span>
+          <span style={{fontSize:18,fontWeight:800,color:"#22c55e",fontFeatureSettings:'"tnum"'}}>{fmtUSD(p.total)}</span>
+        </div>
+      </div>;})}
+    </div>
+
+    <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>
+      <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 12px"}}>Plan de pagos</h3>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        {paymentPlan.map((stage,i)=><div key={i} style={{flex:"1 1 200px",padding:"12px 14px",background:"rgba(0,0,0,0.18)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+            <input type="text" inputMode="numeric" value={stage.pct} onChange={e=>{const v=e.target.value.replace(/[^0-9]/g,"");setPaymentPlan(p=>p.map((s,j)=>j===i?{...s,pct:Number(v)||0}:s));}} style={{width:50,padding:"4px 6px",fontSize:14,fontWeight:700,background:"transparent",border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,color:"#fff",textAlign:"center",outline:"none"}}/>
+            <span style={{fontSize:14,fontWeight:700,color:"#fff"}}>%</span>
+          </div>
+          <input value={stage.label} onChange={e=>setPaymentPlan(p=>p.map((s,j)=>j===i?{...s,label:e.target.value}:s))} style={{width:"100%",padding:"5px 8px",fontSize:11,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"rgba(255,255,255,0.8)",outline:"none",fontFamily:"inherit"}}/>
+        </div>)}
+      </div>
+      <p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",marginTop:8}}>Total: <strong style={{color:paymentPlan.reduce((s,p)=>s+p.pct,0)===100?"#22c55e":"#fbbf24"}}>{paymentPlan.reduce((s,p)=>s+p.pct,0)}%</strong> {paymentPlan.reduce((s,p)=>s+p.pct,0)!==100&&<span style={{color:"#fbbf24"}}>(debe sumar 100%)</span>}</p>
+    </div>
+
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:14}}>
+      <button onClick={onBack} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer",fontFamily:"inherit"}}>← Volver</button>
+      <button onClick={onNext} disabled={saving} style={{padding:"10px 20px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:saving?"rgba(184,149,106,0.4)":GOLD_GRADIENT,color:"#0A1628",cursor:saving?"wait":"pointer",fontFamily:"inherit"}}>{saving?"Generando…":"Generar link al cliente →"}</button>
+    </div>
+  </div>;
+}
+
+function WizStep3({generatedQuote,onBack}){
+  const [copied,setCopied]=useState(false);
+  if(!generatedQuote)return <p style={{color:"rgba(255,255,255,0.5)"}}>Sin cotización generada</p>;
+  const url=`${typeof window!=="undefined"?window.location.origin:"https://argencargo.com.ar"}/cotizacion/${generatedQuote.public_token}`;
+  const copy=()=>{navigator.clipboard?.writeText(url);setCopied(true);setTimeout(()=>setCopied(false),2000);};
+  return <div>
+    <div style={{textAlign:"center",padding:"40px 30px",background:"linear-gradient(135deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.3)",borderRadius:14,marginBottom:18}}>
+      <div style={{fontSize:48,marginBottom:8}}>🔗</div>
+      <h2 style={{fontSize:20,fontWeight:800,marginBottom:8}}>Cotización lista</h2>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",marginBottom:20}}>Compartile este link al cliente. Puede elegir servicio + entrega y aceptar online.</p>
+      <div style={{display:"flex",alignItems:"center",gap:10,maxWidth:600,margin:"0 auto",padding:"12px 16px",background:"rgba(0,0,0,0.3)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:10}}>
+        <span style={{flex:1,fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:GOLD_LIGHT,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{url}</span>
+        <button onClick={copy} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"none",background:copied?"#22c55e":GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{copied?"✓ Copiado":"📋 Copiar"}</button>
+      </div>
+    </div>
+    <div style={{padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:18}}>
+      <strong style={{color:"#60a5fa"}}>Próximo paso:</strong> el cliente abre el link, elige servicio + entrega y acepta. Cuando acepta, se convierte automáticamente en una operación AC-XXXX en el panel admin.
+    </div>
+    <div style={{display:"flex",justifyContent:"flex-end"}}>
+      <button onClick={onBack} style={{padding:"9px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>Volver al listado</button>
+    </div>
+  </div>;
+}
+
+function lblStyle(){return {fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:5};}
+function inpStyle(){return {width:"100%",padding:"8px 10px",fontSize:12.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit"};}
+function Tag({children}){return <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.12)",color:"#60a5fa",letterSpacing:"0.04em"}}>{children}</span>;}
 
 // ────────────────────────────────────────────
 // PANE: SETTINGS (Tarifas + Oficina + T&C)
