@@ -1,0 +1,1309 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Preview GI · Argencargo</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0A1628; --gold:#B8956A; --gold-light:#E8D098; --gold-deep:#9B7A52;
+    --text:#fff; --muted:rgba(255,255,255,0.55); --dim:rgba(255,255,255,0.4);
+  }
+  body{font-family:'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+
+  .top{position:sticky;top:0;background:rgba(8,14,26,0.94);backdrop-filter:blur(12px);border-bottom:1px solid rgba(184,149,106,0.18);z-index:200;padding:10px 22px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .top-title{font-size:10px;font-weight:700;color:var(--gold-light);letter-spacing:0.22em;text-transform:uppercase;margin-right:14px;opacity:0.7}
+  .top-btn{padding:7px 12px;font-size:11.5px;font-weight:600;border-radius:7px;border:1px solid rgba(255,255,255,0.08);background:transparent;color:rgba(255,255,255,0.6);cursor:pointer;font-family:inherit;letter-spacing:0.02em;transition:all 150ms}
+  .top-btn:hover{color:#fff;border-color:rgba(184,149,106,0.4)}
+  .top-btn.active{background:linear-gradient(135deg,var(--gold),var(--gold-light));color:#0A1628;border-color:var(--gold);font-weight:700}
+
+  .root-view{display:none}
+  .root-view.active{display:block}
+
+  .app{display:flex;height:calc(100vh - 47px)}
+  .sidebar{width:240px;background:rgba(0,0,0,0.28);border-right:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;flex-shrink:0}
+  .sidebar-logo{padding:24px 20px 20px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center}
+  .sidebar-logo .logoBox{display:flex;align-items:center;gap:10px}
+  .sidebar-logo .acText{font-size:17px;font-weight:800;letter-spacing:0.04em;color:#fff}
+  .sidebar-logo .giTag{font-size:9px;font-weight:800;padding:3px 8px;border-radius:5px;background:linear-gradient(135deg,var(--gold),var(--gold-light));color:#0A1628;letter-spacing:0.16em}
+  .sidebar nav{flex:1;padding:10px 10px 14px;overflow-y:auto}
+  .sec-label{font-size:10px;font-weight:700;color:rgba(255,255,255,0.32);margin:16px 0 6px;padding:0 14px;text-transform:uppercase;letter-spacing:0.14em}
+  .sec-label:first-child{margin-top:8px}
+  .nav-item{width:100%;display:flex;align-items:center;gap:11px;padding:8px 14px;margin-bottom:1px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:500;letter-spacing:-0.005em;background:transparent;color:rgba(255,255,255,0.55);position:relative;font-family:inherit;transition:all 150ms}
+  .nav-item:hover{background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.9)}
+  .nav-item.active{background:linear-gradient(90deg,rgba(184,149,106,0.10),rgba(184,149,106,0.02));color:#fff;font-weight:700}
+  .nav-item.active::before{content:"";position:absolute;left:-10px;top:6px;bottom:6px;width:3px;background:linear-gradient(180deg,var(--gold),var(--gold-light));border-radius:0 3px 3px 0}
+  .nav-item svg{flex-shrink:0;opacity:0.9}
+  .nav-item.active svg{stroke:var(--gold-light);opacity:1}
+  .nav-item .badge{margin-left:auto;background:linear-gradient(135deg,var(--gold),var(--gold-light));color:#0A1628;font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:8px;min-width:18px;text-align:center;border:1px solid var(--gold-deep)}
+  .sidebar-foot{padding:14px 16px;border-top:1px solid rgba(255,255,255,0.06)}
+  .user{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,rgba(184,149,106,0.22),rgba(184,149,106,0.08));border:1px solid rgba(184,149,106,0.25);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--gold-light)}
+  .user .name{font-size:12.5px;font-weight:600;color:#fff}
+  .user .email{font-size:10.5px;color:rgba(255,255,255,0.4)}
+  .logout{width:100%;padding:8px 10px;font-size:11.5px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:rgba(255,255,255,0.5);cursor:pointer;font-weight:600;letter-spacing:0.04em}
+  .logout:hover{border-color:rgba(184,149,106,0.35);color:var(--gold-light)}
+
+  .main{flex:1;overflow-y:auto;padding:32px 36px}
+  .main-inner{max-width:1280px;margin:0 auto}
+
+  .pane{display:none;animation:fade 200ms ease}
+  .pane.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  h1{font-size:24px;font-weight:800;letter-spacing:-0.02em;margin-bottom:4px}
+  h2{font-size:18px;font-weight:700;letter-spacing:-0.01em;margin-bottom:8px}
+  h3{font-size:13px;font-weight:700;color:rgba(255,255,255,0.55);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:14px}
+  .sub{font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:24px}
+
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:28px}
+  .kpi{background:linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015));border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:18px 20px}
+  .kpi-label{font-size:10px;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px}
+  .kpi-val{font-size:26px;font-weight:800;letter-spacing:-0.02em;font-feature-settings:"tnum"}
+  .kpi-val.gold{background:linear-gradient(135deg,var(--gold),var(--gold-light));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .kpi-val.green{color:#22c55e}
+  .kpi-val.amber{color:#fbbf24}
+  .kpi-val.red{color:#f87171}
+  .kpi-sub{font-size:11px;color:rgba(255,255,255,0.4);margin-top:6px}
+
+  .card{background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:20px;margin-bottom:18px}
+  .card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap}
+  .card-head h3{margin:0}
+
+  .btn{padding:8px 16px;font-size:12px;font-weight:700;border-radius:8px;border:none;cursor:pointer;font-family:inherit;letter-spacing:0.02em;transition:all 120ms}
+  .btn-pri{background:linear-gradient(135deg,var(--gold),var(--gold-light));color:#0A1628}
+  .btn-pri:hover{filter:brightness(1.08)}
+  .btn-sec{background:rgba(255,255,255,0.06);color:#fff;border:1px solid rgba(255,255,255,0.1)}
+  .btn-sec:hover{background:rgba(255,255,255,0.1)}
+  .btn-ghost{background:transparent;color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.1)}
+  .btn-ghost:hover{color:#fff;border-color:rgba(184,149,106,0.4)}
+  .btn-sm{padding:5px 10px;font-size:11px}
+  .btn-lg{padding:11px 22px;font-size:13px}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:12px 14px;font-size:10px;font-weight:700;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.08em;background:rgba(0,0,0,0.22);border-bottom:1px solid rgba(255,255,255,0.06)}
+  td{padding:13px 14px;border-bottom:1px solid rgba(255,255,255,0.04);font-size:12.5px}
+  tr.clickable{cursor:pointer;transition:background 120ms}
+  tr.clickable:hover{background:rgba(184,149,106,0.05)}
+  th.right,td.right{text-align:right}
+
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;letter-spacing:0.05em;text-transform:uppercase;border:1px solid}
+  .pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+  .pill-pending{background:rgba(251,191,36,0.12);color:#fbbf24;border-color:rgba(251,191,36,0.3)}
+  .pill-quoted{background:rgba(96,165,250,0.12);color:#60a5fa;border-color:rgba(96,165,250,0.3)}
+  .pill-accepted{background:rgba(34,197,94,0.12);color:#22c55e;border-color:rgba(34,197,94,0.3)}
+  .pill-rejected{background:rgba(248,113,113,0.12);color:#f87171;border-color:rgba(248,113,113,0.3)}
+  .pill-active{background:rgba(184,149,106,0.12);color:var(--gold-light);border-color:rgba(184,149,106,0.3)}
+  .pill-prep{background:rgba(167,139,250,0.10);color:#a78bfa;border-color:rgba(167,139,250,0.25)}
+  .pill-transit{background:rgba(34,211,238,0.10);color:#22d3ee;border-color:rgba(34,211,238,0.25)}
+
+  .mono{font-family:"JetBrains Mono","SF Mono",monospace;letter-spacing:0.04em}
+  .gold{color:var(--gold-light)}
+  .green{color:#22c55e}
+  .red{color:#f87171}
+  .amber{color:#fbbf24}
+  .muted{color:rgba(255,255,255,0.45)}
+  .num{font-feature-settings:"tnum";font-variant-numeric:tabular-nums}
+
+  .tabs{display:flex;gap:4px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:20px;flex-wrap:wrap}
+  .tab{padding:9px 14px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.5);cursor:pointer;border-bottom:2px solid transparent;transition:all 120ms}
+  .tab:hover{color:#fff}
+  .tab.active{color:var(--gold-light);border-bottom-color:var(--gold-light)}
+  .tab .tcount{margin-left:5px;font-size:10px;font-weight:700;padding:1px 7px;border-radius:8px;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.55)}
+  .tab.active .tcount{background:rgba(184,149,106,0.15);color:var(--gold-light)}
+
+  .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+  .inp,.filter-input{padding:9px 12px;font-size:12px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(255,255,255,0.04);color:#fff;outline:none;font-family:inherit}
+  .inp{width:100%}
+  .filter-input{min-width:200px}
+  .inp:focus,.filter-input:focus{border-color:rgba(184,149,106,0.5)}
+  .lbl{font-size:9.5px;font-weight:700;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:5px}
+
+  .ph{width:50px;height:50px;border-radius:8px;background:linear-gradient(135deg,rgba(184,149,106,0.15),rgba(184,149,106,0.05));border:1px solid rgba(184,149,106,0.25);display:flex;align-items:center;justify-content:center;color:var(--gold-light);flex-shrink:0}
+  .ph-lg{width:90px;height:90px;border-radius:10px}
+  .ph-photo{width:100%;height:100%;display:flex;align-items:center;justify-content:center;border-radius:inherit;border:1.5px dashed rgba(184,149,106,0.35);color:rgba(184,149,106,0.6);font-size:11px;font-weight:600;cursor:pointer}
+
+  .pdf-wrap{display:flex;justify-content:center;padding:30px 20px;background:#1a1a1a;min-height:calc(100vh - 47px)}
+  .pdf-iframe{width:210mm;height:297mm;border:none;background:#fff;box-shadow:0 8px 40px rgba(0,0,0,0.4)}
+
+  .hint{padding:12px 16px;background:linear-gradient(90deg,rgba(96,165,250,0.08),rgba(96,165,250,0.02));border:1px solid rgba(96,165,250,0.25);border-radius:10px;margin-bottom:18px;font-size:12.5px;color:rgba(255,255,255,0.8);line-height:1.5}
+  .hint strong{color:#60a5fa}
+  .hint-amber{padding:11px 14px;background:linear-gradient(90deg,rgba(251,191,36,0.08),rgba(251,191,36,0.02));border:1px solid rgba(251,191,36,0.25);border-radius:8px;font-size:12px;color:rgba(255,255,255,0.85);line-height:1.5;margin-top:10px}
+  .hint-amber strong{color:#fbbf24}
+
+  .chart{display:flex;align-items:flex-end;gap:14px;height:200px;padding:14px 0}
+  .chart-bar{flex:1;background:linear-gradient(180deg,rgba(184,149,106,0.6),rgba(184,149,106,0.2));border-radius:6px 6px 0 0;border:1px solid rgba(184,149,106,0.3);border-bottom:none;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:6px}
+  .chart-bar .v{font-size:10px;font-weight:700;color:var(--gold-light);text-align:center;font-feature-settings:"tnum"}
+  .chart-labels{display:flex;gap:14px;margin-top:6px}
+  .chart-labels span{flex:1;text-align:center;font-size:10px;color:rgba(255,255,255,0.45);font-weight:600;text-transform:uppercase;letter-spacing:0.06em}
+
+  .ledger-row{display:grid;grid-template-columns:90px 90px 1fr 120px 120px 90px;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,0.04);font-size:12.5px}
+  .ledger-row:hover{background:rgba(184,149,106,0.04)}
+  .ledger-head{display:grid;grid-template-columns:90px 90px 1fr 120px 120px 90px;gap:14px;padding:12px 14px;font-size:10px;font-weight:700;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.08em;background:rgba(0,0,0,0.22);border-bottom:1px solid rgba(255,255,255,0.06)}
+  .ledger-head span.right,.ledger-row .right{text-align:right}
+
+  .contact-card{background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;transition:all 150ms;cursor:pointer}
+  .contact-card:hover{border-color:rgba(184,149,106,0.3);background:rgba(184,149,106,0.04)}
+  .contact-name{font-size:14px;font-weight:700;color:#fff}
+  .contact-meta{display:flex;flex-wrap:wrap;gap:6px;font-size:11px;color:rgba(255,255,255,0.55)}
+  .contact-tag{padding:2px 8px;border-radius:5px;background:rgba(184,149,106,0.1);color:var(--gold-light);font-size:10px;font-weight:600;letter-spacing:0.03em}
+  .contact-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+
+  /* Wizard cotizador */
+  .wiz-steps{display:flex;align-items:center;gap:12px;margin-bottom:24px;padding:14px 18px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.06);border-radius:12px}
+  .wiz-step{display:flex;align-items:center;gap:10px;flex:1}
+  .wiz-step .num{width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.5);font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .wiz-step.done .num{background:#22c55e;color:#fff}
+  .wiz-step.current .num{background:linear-gradient(135deg,var(--gold),var(--gold-light));color:#0A1628}
+  .wiz-step .lbl-step{font-size:12px;font-weight:600;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0;margin:0}
+  .wiz-step.current .lbl-step{color:#fff}
+  .wiz-step.done .lbl-step{color:rgba(255,255,255,0.7)}
+  .wiz-conn{flex:0 0 24px;height:1px;background:rgba(255,255,255,0.1)}
+  .wiz-conn.done{background:#22c55e}
+
+  /* Product card en cotizador */
+  .prod-card{background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:18px 20px;margin-bottom:14px}
+  .prod-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.06)}
+  .prod-card-head h4{font-size:14px;font-weight:700;color:#fff}
+  .prod-grid{display:grid;grid-template-columns:120px 1fr;gap:18px;align-items:start}
+  .prod-fields{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .prod-fields .full{grid-column:1/-1}
+
+  .ncm-result{padding:10px 14px;background:rgba(96,165,250,0.06);border:1px solid rgba(96,165,250,0.22);border-radius:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:10px}
+  .ncm-tags{display:flex;gap:6px;flex-wrap:wrap}
+  .ncm-tag{font-size:10px;font-weight:700;padding:3px 8px;border-radius:5px;background:rgba(96,165,250,0.12);color:#60a5fa;letter-spacing:0.04em}
+
+  /* Channel result cards */
+  .ch-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:18px}
+  .ch-card{background:linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015));border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:16px 18px;cursor:pointer;transition:all 150ms;position:relative}
+  .ch-card:hover{border-color:rgba(184,149,106,0.4);background:rgba(184,149,106,0.04)}
+  .ch-card.recommended{border-color:rgba(184,149,106,0.45);background:linear-gradient(135deg,rgba(184,149,106,0.08),rgba(184,149,106,0.02))}
+  .ch-card.recommended::before{content:"Recomendado";position:absolute;top:-10px;right:14px;font-size:9px;font-weight:800;padding:3px 8px;border-radius:5px;background:linear-gradient(135deg,var(--gold),var(--gold-light));color:#0A1628;letter-spacing:0.1em}
+  .ch-name{font-size:13px;font-weight:700;color:#fff;margin-bottom:4px}
+  .ch-time{font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:14px}
+  .ch-rows{display:flex;flex-direction:column;gap:6px;font-size:12px;font-feature-settings:"tnum"}
+  .ch-row{display:flex;justify-content:space-between;align-items:center}
+  .ch-row .l{color:rgba(255,255,255,0.6)}
+  .ch-row .v{font-weight:600}
+  .ch-total{margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:baseline}
+  .ch-total .tl{font-size:11px;font-weight:700;color:rgba(255,255,255,0.55);text-transform:uppercase;letter-spacing:0.08em}
+  .ch-total .tv{font-size:20px;font-weight:800;color:var(--gold-light);font-feature-settings:"tnum"}
+
+  /* Profit panel */
+  .profit-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
+  .profit-card{padding:12px 14px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.22);border-radius:10px}
+  .profit-card .pl{font-size:9.5px;font-weight:700;color:rgba(255,255,255,0.55);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px}
+  .profit-card .pv{font-size:14px;font-weight:700;color:#fff;font-feature-settings:"tnum"}
+  .profit-card .pdetail{font-size:10px;color:rgba(255,255,255,0.5);margin-top:4px;line-height:1.4}
+  .profit-card.highlight{background:linear-gradient(135deg,rgba(34,197,94,0.14),rgba(34,197,94,0.04));border-color:rgba(34,197,94,0.4)}
+  .profit-card.highlight .pv{color:#22c55e;font-size:18px}
+
+  /* Cliente quote */
+  .cli-quote{max-width:760px;margin:30px auto;background:#fff;color:#1a1a1a;border-radius:14px;overflow:hidden;box-shadow:0 16px 60px rgba(0,0,0,0.45)}
+  .cli-head{padding:26px 32px 22px;border-bottom:6px solid;border-image:linear-gradient(90deg,#B8956A,#E8D098,#B8956A) 1;background:#0A1628;color:#fff;position:relative}
+  .cli-head::after{content:"";position:absolute;left:0;right:0;bottom:-6px;height:6px;background:linear-gradient(90deg,#B8956A,#E8D098,#B8956A)}
+  .cli-logo{font-size:18px;font-weight:800;letter-spacing:0.08em;color:#fff}
+  .cli-body{padding:24px 32px 30px;background:#fafaf7;color:#1a1a1a}
+  .cli-section{margin-bottom:22px}
+  .cli-section-title{font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.14em;margin-bottom:8px}
+  .cli-product-row{display:flex;gap:14px;align-items:center;padding:12px 0;border-bottom:1px solid #eee}
+  .cli-product-row:last-child{border-bottom:none}
+  .cli-prod-img{width:56px;height:56px;border-radius:8px;background:linear-gradient(135deg,#f0e9d8,#e8d8b8);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;border:1px solid #d4c5a0}
+  .cli-prod-name{font-size:14px;font-weight:700;color:#1a1a1a}
+  .cli-prod-meta{font-size:11.5px;color:#666;margin-top:2px}
+  .cli-channel-block{padding:16px;background:#fff;border:1px solid #ddd;border-radius:12px;margin-bottom:18px}
+  .cli-channel-row{display:flex;align-items:center;gap:14px;padding:13px 14px;border:1.5px solid #e6e6e6;border-radius:10px;cursor:pointer;margin-bottom:8px;transition:all 150ms;background:#fff}
+  .cli-channel-row:hover{border-color:#B8956A;background:#fdf9f1}
+  .cli-channel-row.selected{border-color:#B8956A;background:linear-gradient(135deg,#fdf6e8,#faedd0);box-shadow:0 4px 16px rgba(184,149,106,0.18)}
+  .cli-channel-radio{width:20px;height:20px;border-radius:50%;border:2px solid #c4b59a;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+  .cli-channel-row.selected .cli-channel-radio{border-color:#B8956A;background:#B8956A}
+  .cli-channel-row.selected .cli-channel-radio::after{content:"";width:7px;height:7px;border-radius:50%;background:#fff}
+  .cli-channel-info{flex:1}
+  .cli-channel-name{font-size:13px;font-weight:700;color:#1a1a1a}
+  .cli-channel-time{font-size:11.5px;color:#777;margin-top:1px}
+  .cli-channel-price{font-size:16px;font-weight:800;color:#B8956A;font-feature-settings:"tnum"}
+  .cli-total-bar{padding:18px 20px;background:linear-gradient(135deg,#B8956A,#E8D098);color:#0A1628;border-radius:12px;display:flex;justify-content:space-between;align-items:center;margin:18px 0}
+  .cli-total-bar .l{font-size:11px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase}
+  .cli-total-bar .v{font-size:30px;font-weight:800;font-feature-settings:"tnum"}
+  .cli-pay-row{display:flex;justify-content:space-between;padding:10px 0;font-size:13px;border-bottom:1px solid #eee}
+  .cli-pay-row:last-child{border-bottom:none}
+  .cli-pay-label{color:#444;font-weight:600}
+  .cli-pay-amt{font-weight:700;color:#1a1a1a;font-feature-settings:"tnum"}
+  .cli-cta{padding:14px 24px;background:#0A1628;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;width:100%;letter-spacing:0.04em;font-family:inherit}
+  .cli-cta:hover{background:#1a2a48}
+
+  /* Combobox simulation */
+  .combo{position:relative}
+  .combo-list{position:absolute;top:100%;left:0;right:0;background:#142038;border:1px solid rgba(255,255,255,0.12);border-radius:8px;margin-top:4px;max-height:200px;overflow-y:auto;box-shadow:0 12px 30px rgba(0,0,0,0.5);z-index:50}
+  .combo-item{padding:9px 12px;font-size:12px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;justify-content:space-between;align-items:center}
+  .combo-item:hover{background:rgba(184,149,106,0.08)}
+  .combo-item .code{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--gold-light);font-weight:600}
+
+  /* Pkg row (embalajes step) */
+  .pkg-row{display:grid;grid-template-columns:60px repeat(4,1fr) 32px;gap:10px;align-items:end;padding:10px 12px;background:rgba(0,0,0,0.18);border:1px solid rgba(255,255,255,0.06);border-radius:10px;margin-bottom:8px}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <span class="top-title">Preview</span>
+  <button class="top-btn active" data-root="panel">Panel del socio GI</button>
+  <button class="top-btn" data-root="admin">Admin · pedir cotización</button>
+  <button class="top-btn" data-root="cliente">Cotización al cliente (link)</button>
+  <button class="top-btn" data-root="pdf">PDF descargable</button>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- ROOT 1: PANEL DEL SOCIO                       -->
+<!-- ════════════════════════════════════════════ -->
+<div class="root-view active" id="root-panel">
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="logoBox">
+          <span class="acText">ARGENCARGO</span>
+          <span class="giTag">GI</span>
+        </div>
+      </div>
+      <nav>
+        <p class="sec-label">Inicio</p>
+        <button class="nav-item active" data-pane="resumen">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l2-2 4 4 6-6 6 6"/><path d="M3 20h18"/></svg>
+          Resumen
+        </button>
+
+        <p class="sec-label">Operativa</p>
+        <button class="nav-item" data-pane="ops">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          Operaciones
+        </button>
+        <button class="nav-item" data-pane="cot">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+          Cotizaciones
+          <span class="badge">3</span>
+        </button>
+
+        <p class="sec-label">Finanzas</p>
+        <button class="nav-item" data-pane="dashboard">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+          Dashboard
+        </button>
+        <button class="nav-item" data-pane="ledger">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Libro diario
+        </button>
+
+        <p class="sec-label">Contactos</p>
+        <button class="nav-item" data-pane="proveedores">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18l-2 12H5L3 7z"/><path d="M8 7V5a4 4 0 0 1 8 0v2"/></svg>
+          Proveedores
+        </button>
+        <button class="nav-item" data-pane="agentes">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Agentes de compra
+        </button>
+        <button class="nav-item" data-pane="embarcadores">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l3-3 4 4 8-8 3 3"/><path d="M21 6V3h-3"/></svg>
+          Embarcadores
+        </button>
+
+        <p class="sec-label">Configuración</p>
+        <button class="nav-item" data-pane="tarifas">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+          Tarifas de envío
+        </button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="user">
+          <div class="avatar">JG</div>
+          <div style="flex:1;min-width:0"><p class="name">Joaquín G.</p><p class="email">socio · GI</p></div>
+        </div>
+        <button class="logout">Cerrar sesión</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="main-inner">
+
+        <!-- RESUMEN -->
+        <section class="pane active" id="pane-resumen">
+          <h1>Resumen</h1>
+          <p class="sub">Estado general de tu actividad en Gestión Integral.</p>
+          <div class="kpi-grid">
+            <div class="kpi"><p class="kpi-label">Cotizaciones pendientes</p><p class="kpi-val amber">3</p><p class="kpi-sub">Más reciente: hace 2 hs</p></div>
+            <div class="kpi"><p class="kpi-label">Ops GI activas</p><p class="kpi-val">7</p><p class="kpi-sub">5 en producción · 2 en envío</p></div>
+            <div class="kpi"><p class="kpi-label">Ganancia mes</p><p class="kpi-val green">USD 2.840</p><p class="kpi-sub">+18% vs mes anterior</p></div>
+            <div class="kpi"><p class="kpi-label">Acumulado 2026</p><p class="kpi-val gold">USD 14.260</p><p class="kpi-sub">12 ops cerradas</p></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Cotizaciones esperando trabajo</h3><button class="btn btn-ghost btn-sm" onclick="showPane('cot')">Ver todas →</button></div>
+            <table>
+              <thead><tr><th>Código</th><th>Cliente</th><th>Productos</th><th>Pedido</th><th>Estado</th><th></th></tr></thead>
+              <tbody>
+                <tr class="clickable" onclick="showPane('cotizador')"><td class="mono">GI-045</td><td><strong>Underwave</strong></td><td class="muted">2 productos · 170 u.</td><td class="muted">Hace 2 hs</td><td><span class="pill pill-pending"><span class="dot"></span> Pendiente</span></td><td><button class="btn btn-pri btn-sm">Cotizar</button></td></tr>
+                <tr class="clickable"><td class="mono">GI-044</td><td><strong>Lobo Indumentaria</strong></td><td class="muted">5 productos · 800 u.</td><td class="muted">Ayer</td><td><span class="pill pill-pending"><span class="dot"></span> Pendiente</span></td><td><button class="btn btn-pri btn-sm">Cotizar</button></td></tr>
+                <tr class="clickable"><td class="mono">GI-043</td><td><strong>Tejedora Norte</strong></td><td class="muted">1 producto · 50 u.</td><td class="muted">3 días</td><td><span class="pill pill-pending"><span class="dot"></span> Pendiente</span></td><td><button class="btn btn-pri btn-sm">Cotizar</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Ops GI en curso</h3><button class="btn btn-ghost btn-sm" onclick="showPane('ops')">Ver todas →</button></div>
+            <table>
+              <thead><tr><th>Op</th><th>Cliente</th><th>Total</th><th class="right">Tu ganancia</th><th>Estado</th><th>Próximo paso</th></tr></thead>
+              <tbody>
+                <tr><td class="mono gold">AC-0118</td><td>MARIVA</td><td class="num">USD 12.400</td><td class="num green right">USD 1.240</td><td><span class="pill pill-prep"><span class="dot"></span> En producción</span></td><td class="muted">Pago 2 (20%)</td></tr>
+                <tr><td class="mono gold">AC-0115</td><td>Roma Sport</td><td class="num">USD 8.300</td><td class="num green right">USD 830</td><td><span class="pill pill-transit"><span class="dot"></span> En tránsito</span></td><td class="muted">Pago final 50%</td></tr>
+                <tr><td class="mono gold">AC-0109</td><td>Underwave</td><td class="num">USD 9.060</td><td class="num green right">USD 906</td><td><span class="pill pill-active"><span class="dot"></span> Listo entrega</span></td><td class="muted">Coordinar Bs As</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- OPS -->
+        <section class="pane" id="pane-ops">
+          <h1>Operaciones</h1>
+          <p class="sub">Cotizaciones aceptadas convertidas en ops. Mismo formato que el panel admin, filtrado por GI.</p>
+          <div class="filters">
+            <input class="filter-input" placeholder="Buscar por código, cliente o descripción...">
+            <select class="filter-input" style="min-width:160px"><option>Todos los estados</option></select>
+            <select class="filter-input" style="min-width:140px"><option>Todos los canales</option></select>
+          </div>
+          <h3 style="margin:24px 0 14px">Activas <span style="color:var(--gold-light);margin-left:4px">(7)</span></h3>
+          <div class="card" style="padding:0;overflow:hidden">
+            <table>
+              <thead><tr><th style="width:36px"><input type="checkbox"></th><th>Código</th><th>Cliente</th><th>Descripción</th><th>Canal</th><th>Estado</th><th>ETA</th><th class="right">Saldo</th><th class="right">Tu ganancia</th></tr></thead>
+              <tbody>
+                <tr class="clickable"><td><input type="checkbox"></td><td class="mono">AC-0118</td><td>MARIVA</td><td class="muted">Camperas técnicas 200u</td><td><span class="pill pill-active">Aéreo Int.</span></td><td><span class="pill pill-prep"><span class="dot"></span> Producción</span></td><td class="muted">15 jun 2026</td><td class="num gold right">USD 8.680</td><td class="num green right">USD 1.240</td></tr>
+                <tr class="clickable"><td><input type="checkbox"></td><td class="mono">AC-0115</td><td>Roma Sport</td><td class="muted">Indumentaria deportiva</td><td><span class="pill pill-active">Marítimo Int.</span></td><td><span class="pill pill-transit"><span class="dot"></span> Tránsito</span></td><td class="muted">22 may 2026</td><td class="num gold right">USD 4.150</td><td class="num green right">USD 830</td></tr>
+                <tr class="clickable"><td><input type="checkbox"></td><td class="mono">AC-0109</td><td>Underwave</td><td class="muted">Camperas Snow + Dope</td><td><span class="pill pill-active">Aéreo Int.</span></td><td><span class="pill pill-active"><span class="dot"></span> Listo entrega</span></td><td class="muted">10 may 2026</td><td class="num gold right">USD 4.530</td><td class="num green right">USD 906</td></tr>
+                <tr class="clickable"><td><input type="checkbox"></td><td class="mono">AC-0107</td><td>Lobo</td><td class="muted">5 modelos surtidos</td><td><span class="pill pill-active">Aéreo Courier</span></td><td><span class="pill pill-prep"><span class="dot"></span> Producción</span></td><td class="muted">28 jun 2026</td><td class="num gold right">USD 12.740</td><td class="num green right">USD 1.820</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- COTIZACIONES (LISTA) -->
+        <section class="pane" id="pane-cot">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+            <div>
+              <h1>Cotizaciones</h1>
+              <p class="sub" style="margin:4px 0 0">Pedidos del admin + cotizaciones que armás vos directamente.</p>
+            </div>
+            <button class="btn btn-pri btn-lg" onclick="showPane('cotizador')">+ Nueva cotización</button>
+          </div>
+          <div class="hint" style="margin-top:18px"><strong>Flujo:</strong> normalmente el admin pide la cotización desde su panel y aparece acá como pendiente. También podés iniciar una cotización directa desde "+ Nueva cotización". El cliente recibe un link, elige servicio y entrega, y al aceptar se convierte en op AC-XXXX.</div>
+          <div class="tabs">
+            <div class="tab active">Pendientes <span class="tcount">3</span></div>
+            <div class="tab">En revisión admin <span class="tcount">2</span></div>
+            <div class="tab">Enviadas a cliente <span class="tcount">5</span></div>
+            <div class="tab">Aceptadas <span class="tcount">2</span></div>
+            <div class="tab">Rechazadas <span class="tcount">1</span></div>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <table>
+              <thead><tr><th>Código</th><th>Cliente</th><th>Productos</th><th>Cantidad</th><th>Pedida</th><th>Vence</th><th></th></tr></thead>
+              <tbody>
+                <tr class="clickable" onclick="showPane('cotizador')"><td class="mono">GI-045</td><td><strong>Underwave</strong></td><td class="muted">Campera Snow · Dope</td><td class="num">170 u.</td><td class="muted">Hace 2 hs</td><td class="muted">en 5 días</td><td><button class="btn btn-pri btn-sm">Cotizar →</button></td></tr>
+                <tr class="clickable"><td class="mono">GI-044</td><td><strong>Lobo Indumentaria</strong></td><td class="muted">5 modelos surtidos</td><td class="num">800 u.</td><td class="muted">Ayer 18:30</td><td class="muted">en 6 días</td><td><button class="btn btn-pri btn-sm">Cotizar →</button></td></tr>
+                <tr class="clickable"><td class="mono">GI-043</td><td><strong>Tejedora Norte</strong></td><td class="muted">Buzos algodón premium</td><td class="num">50 u.</td><td class="muted">5 may</td><td class="red">Vence mañana</td><td><button class="btn btn-pri btn-sm">Cotizar →</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ─────────────────────── COTIZADOR (WIZARD) ─────────────────────── -->
+        <section class="pane" id="pane-cotizador">
+          <button class="btn btn-ghost btn-sm" onclick="showPane('cot')" style="margin-bottom:14px">← Volver al listado</button>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+            <div>
+              <h1>Cotizador <span class="mono gold">GI-045</span></h1>
+              <p class="sub" style="margin:4px 0 0">Cliente <strong style="color:#fff">Underwave</strong> · Pedida hace 2 hs · <strong style="color:#fff">Retiro por oficina</strong></p>
+            </div>
+            <span class="pill pill-pending"><span class="dot"></span> Borrador</span>
+          </div>
+
+          <div class="wiz-steps">
+            <div class="wiz-step current" data-step="1"><span class="num">1</span><p class="lbl-step">Productos & embalaje</p></div>
+            <div class="wiz-conn"></div>
+            <div class="wiz-step" data-step="2"><span class="num">2</span><p class="lbl-step">Costos & Honorarios</p></div>
+            <div class="wiz-conn"></div>
+            <div class="wiz-step" data-step="3"><span class="num">3</span><p class="lbl-step">Link al cliente</p></div>
+          </div>
+
+          <!-- STEP 1: PRODUCTOS + PACKING -->
+          <div class="wiz-pane active" id="wiz-1">
+            <div class="hint"><strong>Step 1:</strong> cada producto se carga con su propio packing (cantidad de bultos + dimensiones + peso). Así podemos calcular el costo individual de cada producto y mostrárselo al cliente. Si origen es <strong>USA</strong> → canal B automático. Si es <strong>China</strong> → clasificación NCM automática con los aranceles aplicables.</div>
+
+            <!-- Producto 1 -->
+            <div class="prod-card">
+              <div class="prod-card-head">
+                <h4>Producto 1</h4>
+                <button class="btn btn-ghost btn-sm">✕ Quitar</button>
+              </div>
+              <div class="prod-grid">
+                <div><div class="ph ph-lg ph-photo">📷<br>Foto</div></div>
+                <div class="prod-fields">
+                  <div class="full"><label class="lbl">Descripción del producto</label><input class="inp" value="Campera Snow outdoor con cremallera"></div>
+                  <div><label class="lbl">Origen</label><select class="inp"><option>China 🇨🇳</option><option>USA 🇺🇸</option></select></div>
+                  <div><label class="lbl">Tiempo de producción (días)</label><input class="inp" value="25"></div>
+                  <div><label class="lbl">Cantidad</label><input class="inp" value="70"></div>
+                  <div><label class="lbl">Costo unitario (USD FOB)</label><input class="inp" value="42.50"></div>
+                </div>
+              </div>
+              <div class="ncm-result">
+                <div>
+                  <p style="font-size:11px;color:rgba(255,255,255,0.55);margin-bottom:4px">Clasificación NCM automática</p>
+                  <p style="font-size:13px;font-weight:700;color:#fff"><span class="mono" style="color:#60a5fa">6201.93.00</span> · Anoraks (incl. Camperas) de fibras sintéticas</p>
+                </div>
+                <div class="ncm-tags"><span class="ncm-tag">DI 35%</span><span class="ncm-tag">IVA 21%</span><span class="ncm-tag">II 21%</span><span class="ncm-tag">Tasa Estad. 3%</span></div>
+              </div>
+
+              <p class="lbl" style="margin-top:18px">Embalaje de este producto</p>
+              <div class="pkg-row">
+                <div><label class="lbl">Cant.</label><input class="inp" value="3"></div>
+                <div><label class="lbl">Largo (cm)</label><input class="inp" value="60"></div>
+                <div><label class="lbl">Ancho (cm)</label><input class="inp" value="45"></div>
+                <div><label class="lbl">Alto (cm)</label><input class="inp" value="40"></div>
+                <div><label class="lbl">Peso bulto (kg)</label><input class="inp" value="22"></div>
+                <button class="btn btn-ghost btn-sm" style="padding:7px 10px">✕</button>
+              </div>
+              <button class="btn btn-ghost btn-sm" style="margin-top:6px">+ Agregar bulto</button>
+
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px;padding-top:12px;border-top:1px dashed rgba(255,255,255,0.08)">
+                <div><p class="lbl">Bultos</p><p style="font-size:14px;font-weight:700;color:#fff" class="num">3</p></div>
+                <div><p class="lbl">Peso bruto</p><p style="font-size:14px;font-weight:700;color:#fff" class="num">66 kg</p></div>
+                <div><p class="lbl">CBM</p><p style="font-size:14px;font-weight:700;color:#fff" class="num">0,324 m³</p></div>
+                <div><p class="lbl">FOB producto</p><p style="font-size:14px;font-weight:700;color:var(--gold-light)" class="num">USD 2.975</p></div>
+              </div>
+            </div>
+
+            <!-- Producto 2 -->
+            <div class="prod-card">
+              <div class="prod-card-head">
+                <h4>Producto 2</h4>
+                <button class="btn btn-ghost btn-sm">✕ Quitar</button>
+              </div>
+              <div class="prod-grid">
+                <div><div class="ph ph-lg ph-photo">📷<br>Foto</div></div>
+                <div class="prod-fields">
+                  <div class="full"><label class="lbl">Descripción del producto</label><input class="inp" value="Campera Dope buzo negro con logo bordado"></div>
+                  <div><label class="lbl">Origen</label><select class="inp"><option>China 🇨🇳</option><option>USA 🇺🇸</option></select></div>
+                  <div><label class="lbl">Tiempo de producción (días)</label><input class="inp" value="22"></div>
+                  <div><label class="lbl">Cantidad</label><input class="inp" value="100"></div>
+                  <div><label class="lbl">Costo unitario (USD FOB)</label><input class="inp" value="40.50"></div>
+                </div>
+              </div>
+              <div class="ncm-result">
+                <div>
+                  <p style="font-size:11px;color:rgba(255,255,255,0.55);margin-bottom:4px">Clasificación NCM automática</p>
+                  <p style="font-size:13px;font-weight:700;color:#fff"><span class="mono" style="color:#60a5fa">6110.30.00</span> · Suéteres y similares de fibras sintéticas</p>
+                </div>
+                <div class="ncm-tags"><span class="ncm-tag">DI 35%</span><span class="ncm-tag">IVA 21%</span><span class="ncm-tag">II 21%</span><span class="ncm-tag">Tasa Estad. 3%</span></div>
+              </div>
+
+              <p class="lbl" style="margin-top:18px">Embalaje de este producto</p>
+              <div class="pkg-row">
+                <div><label class="lbl">Cant.</label><input class="inp" value="2"></div>
+                <div><label class="lbl">Largo (cm)</label><input class="inp" value="55"></div>
+                <div><label class="lbl">Ancho (cm)</label><input class="inp" value="40"></div>
+                <div><label class="lbl">Alto (cm)</label><input class="inp" value="35"></div>
+                <div><label class="lbl">Peso bulto (kg)</label><input class="inp" value="18"></div>
+                <button class="btn btn-ghost btn-sm" style="padding:7px 10px">✕</button>
+              </div>
+              <button class="btn btn-ghost btn-sm" style="margin-top:6px">+ Agregar bulto</button>
+
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px;padding-top:12px;border-top:1px dashed rgba(255,255,255,0.08)">
+                <div><p class="lbl">Bultos</p><p style="font-size:14px;font-weight:700;color:#fff" class="num">2</p></div>
+                <div><p class="lbl">Peso bruto</p><p style="font-size:14px;font-weight:700;color:#fff" class="num">36 kg</p></div>
+                <div><p class="lbl">CBM</p><p style="font-size:14px;font-weight:700;color:#fff" class="num">0,154 m³</p></div>
+                <div><p class="lbl">FOB producto</p><p style="font-size:14px;font-weight:700;color:var(--gold-light)" class="num">USD 4.050</p></div>
+              </div>
+            </div>
+
+            <button class="btn btn-ghost" style="margin-bottom:18px">+ Agregar producto</button>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:rgba(184,149,106,0.06);border:1px solid rgba(184,149,106,0.2);border-radius:10px;margin-top:6px">
+              <div>
+                <p class="lbl" style="margin-bottom:2px">Totales</p>
+                <p style="font-size:12.5px;color:rgba(255,255,255,0.85)"><strong style="color:#fff">170 unidades</strong> · 5 bultos · 102 kg · 0,478 m³</p>
+              </div>
+              <div style="text-align:right">
+                <p class="lbl" style="margin-bottom:2px">Subtotal FOB</p>
+                <p style="font-size:18px;font-weight:800;color:var(--gold-light)" class="num">USD 7.025,00</p>
+              </div>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;align-items:center;padding-top:14px">
+              <button class="btn btn-pri btn-lg" onclick="goWiz(2)">Continuar a costos →</button>
+            </div>
+          </div>
+
+          <!-- STEP 2: COSTOS & HONORARIOS -->
+          <div class="wiz-pane" id="wiz-2" style="display:none">
+            <div class="hint"><strong>Step 3:</strong> el sistema calcula el costo final por cada uno de los 4 canales (igual que la calculadora del portal). Definís tu % de honorarios sobre el total importación. La ganancia incluye honorarios + spread logístico — si el % es 0, ganás igual por el spread.</div>
+
+            <h3 style="margin-top:24px">Costo por canal</h3>
+            <div class="ch-grid">
+              <div class="ch-card">
+                <p class="ch-name">Aéreo Courier Comercial</p>
+                <p class="ch-time">7 a 10 días hábiles</p>
+                <div class="ch-rows">
+                  <div class="ch-row"><span class="l">Producto FOB</span><span class="v">USD 7.025</span></div>
+                  <div class="ch-row"><span class="l">Flete + carga</span><span class="v">USD 1.020</span></div>
+                  <div class="ch-row"><span class="l">Impuestos / aranceles</span><span class="v">USD 1.890</span></div>
+                  <div class="ch-row"><span class="l">Despacho + serv.</span><span class="v">USD 360</span></div>
+                </div>
+                <div class="ch-total"><span class="tl">Total</span><span class="tv">USD 10.295</span></div>
+              </div>
+
+              <div class="ch-card recommended">
+                <p class="ch-name">Aéreo Integral AC</p>
+                <p class="ch-time">10 a 15 días hábiles</p>
+                <div class="ch-rows">
+                  <div class="ch-row"><span class="l">Producto FOB</span><span class="v">USD 7.025</span></div>
+                  <div class="ch-row"><span class="l">Flete + carga</span><span class="v">USD 850</span></div>
+                  <div class="ch-row"><span class="l">Impuestos / aranceles</span><span class="v">USD 1.685</span></div>
+                  <div class="ch-row"><span class="l">Despacho + serv.</span><span class="v">USD 280</span></div>
+                </div>
+                <div class="ch-total"><span class="tl">Total</span><span class="tv">USD 9.840</span></div>
+              </div>
+
+              <div class="ch-card">
+                <p class="ch-name">Marítimo LCL/FCL</p>
+                <p class="ch-time">~ 60 días</p>
+                <div class="ch-rows">
+                  <div class="ch-row"><span class="l">Producto FOB</span><span class="v">USD 7.025</span></div>
+                  <div class="ch-row"><span class="l">Flete + carga</span><span class="v">USD 320</span></div>
+                  <div class="ch-row"><span class="l">Impuestos / aranceles</span><span class="v">USD 1.520</span></div>
+                  <div class="ch-row"><span class="l">Despacho + serv.</span><span class="v">USD 410</span></div>
+                </div>
+                <div class="ch-total"><span class="tl">Total</span><span class="tv">USD 9.275</span></div>
+              </div>
+
+              <div class="ch-card">
+                <p class="ch-name">Marítimo Integral AC</p>
+                <p class="ch-time">~ 60 días</p>
+                <div class="ch-rows">
+                  <div class="ch-row"><span class="l">Producto FOB</span><span class="v">USD 7.025</span></div>
+                  <div class="ch-row"><span class="l">Flete + carga</span><span class="v">USD 240</span></div>
+                  <div class="ch-row"><span class="l">Impuestos / aranceles</span><span class="v">USD 1.420</span></div>
+                  <div class="ch-row"><span class="l">Despacho + serv.</span><span class="v">USD 280</span></div>
+                </div>
+                <div class="ch-total"><span class="tl">Total</span><span class="tv">USD 8.965</span></div>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:6px">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:end">
+                <div>
+                  <label class="lbl">Honorarios GI (% sobre total importación)</label>
+                  <div style="display:flex;gap:10px;align-items:center">
+                    <input class="inp" value="10" style="width:90px;font-size:18px;font-weight:700;text-align:center" oninput="recalcProfit(this.value)">
+                    <span style="color:rgba(255,255,255,0.5);font-size:18px">%</span>
+                    <p style="font-size:12px;color:rgba(255,255,255,0.55);margin-left:14px">Aplicado sobre el total de cada canal</p>
+                  </div>
+                </div>
+                <div>
+                  <label class="lbl">Si pones 0%, igual ganás por el spread logístico</label>
+                  <p style="font-size:11px;color:rgba(255,255,255,0.55);line-height:1.5">El precio que cobrás al cliente por flete/despacho ya incluye un margen sobre nuestro costo real. Esa es la <strong style="color:#22c55e">ganancia logística base</strong>.</p>
+                </div>
+              </div>
+            </div>
+
+            <h3 style="margin-top:6px">Tu ganancia (por canal)</h3>
+            <div class="ch-grid">
+              <div class="ch-card" style="border-color:rgba(34,197,94,0.25);background:linear-gradient(135deg,rgba(34,197,94,0.05),rgba(34,197,94,0.01))">
+                <p class="ch-name" style="color:#22c55e">Aéreo Courier Comercial</p>
+                <div class="profit-grid" style="grid-template-columns:1fr 1fr">
+                  <div class="profit-card"><p class="pl">Spread logístico</p><p class="pv num">USD 285</p></div>
+                  <div class="profit-card"><p class="pl">Honorarios 10%</p><p class="pv num gold">USD 1.030</p></div>
+                </div>
+                <div class="ch-total" style="border-top-color:rgba(34,197,94,0.3)"><span class="tl" style="color:#22c55e">Tu ganancia</span><span class="tv num" style="color:#22c55e;-webkit-text-fill-color:#22c55e;background:none">USD 1.315</span></div>
+              </div>
+              <div class="ch-card" style="border-color:rgba(34,197,94,0.25);background:linear-gradient(135deg,rgba(34,197,94,0.05),rgba(34,197,94,0.01))">
+                <p class="ch-name" style="color:#22c55e">Aéreo Integral AC</p>
+                <div class="profit-grid" style="grid-template-columns:1fr 1fr">
+                  <div class="profit-card"><p class="pl">Spread logístico</p><p class="pv num">USD 412</p></div>
+                  <div class="profit-card"><p class="pl">Honorarios 10%</p><p class="pv num gold">USD 984</p></div>
+                </div>
+                <div class="ch-total" style="border-top-color:rgba(34,197,94,0.3)"><span class="tl" style="color:#22c55e">Tu ganancia</span><span class="tv num" style="color:#22c55e;-webkit-text-fill-color:#22c55e;background:none">USD 1.396</span></div>
+              </div>
+              <div class="ch-card" style="border-color:rgba(34,197,94,0.25);background:linear-gradient(135deg,rgba(34,197,94,0.05),rgba(34,197,94,0.01))">
+                <p class="ch-name" style="color:#22c55e">Marítimo LCL/FCL</p>
+                <div class="profit-grid" style="grid-template-columns:1fr 1fr">
+                  <div class="profit-card"><p class="pl">Spread logístico</p><p class="pv num">USD 580</p></div>
+                  <div class="profit-card"><p class="pl">Honorarios 10%</p><p class="pv num gold">USD 928</p></div>
+                </div>
+                <div class="ch-total" style="border-top-color:rgba(34,197,94,0.3)"><span class="tl" style="color:#22c55e">Tu ganancia</span><span class="tv num" style="color:#22c55e;-webkit-text-fill-color:#22c55e;background:none">USD 1.508</span></div>
+              </div>
+              <div class="ch-card" style="border-color:rgba(34,197,94,0.25);background:linear-gradient(135deg,rgba(34,197,94,0.05),rgba(34,197,94,0.01))">
+                <p class="ch-name" style="color:#22c55e">Marítimo Integral AC</p>
+                <div class="profit-grid" style="grid-template-columns:1fr 1fr">
+                  <div class="profit-card"><p class="pl">Spread logístico</p><p class="pv num">USD 645</p></div>
+                  <div class="profit-card"><p class="pl">Honorarios 10%</p><p class="pv num gold">USD 897</p></div>
+                </div>
+                <div class="ch-total" style="border-top-color:rgba(34,197,94,0.3)"><span class="tl" style="color:#22c55e">Tu ganancia</span><span class="tv num" style="color:#22c55e;-webkit-text-fill-color:#22c55e;background:none">USD 1.542</span></div>
+              </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-top:14px">
+              <button class="btn btn-ghost" onclick="goWiz(1)">← Volver a productos</button>
+              <button class="btn btn-pri btn-lg" onclick="goWiz(3)">Generar link al cliente →</button>
+            </div>
+          </div>
+
+          <!-- STEP 3: LINK GENERADO -->
+          <div class="wiz-pane" id="wiz-3" style="display:none">
+            <div class="hint"><strong>Step 4:</strong> el sistema genera un link único para el cliente. Cuando lo abre, ve la cotización con los 4 canales y puede elegir cuál prefiere — el precio se actualiza automáticamente. <strong style="color:#60a5fa">El cliente NO ve aranceles ni NCM</strong>, sólo el precio final que le ofrecemos.</div>
+
+            <div class="card" style="text-align:center;padding:30px 24px">
+              <div style="font-size:36px;margin-bottom:8px">🔗</div>
+              <h2 style="text-align:center;margin-bottom:6px">Cotización lista para enviar</h2>
+              <p class="muted" style="font-size:13px;margin-bottom:18px">Compartí este link con el cliente. Caduca en 7 días.</p>
+
+              <div style="background:rgba(0,0,0,0.3);border:1px solid rgba(184,149,106,0.3);border-radius:10px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap">
+                <span class="mono" style="color:var(--gold-light);font-size:13px;letter-spacing:0">argencargo.com.ar/cotizacion/<strong style="color:#fff">a8f3c2-underwave</strong></span>
+                <button class="btn btn-sec btn-sm">📋 Copiar</button>
+              </div>
+
+              <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+                <button class="btn btn-ghost btn-sm">📧 Enviar por email</button>
+                <button class="btn btn-ghost btn-sm">💬 Compartir por WhatsApp</button>
+                <button class="btn btn-pri btn-sm" onclick="showRoot('cliente')">👁 Ver cómo lo verá el cliente</button>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>Resumen para el admin</h3>
+              <p style="font-size:12.5px;color:rgba(255,255,255,0.7);line-height:1.6">El admin va a recibir esta cotización en su panel para aprobar antes de que se envíe al cliente. Puede revisar productos, costos, % de honorarios y la ganancia estimada por canal.</p>
+              <div class="profit-grid" style="margin-top:14px">
+                <div class="profit-card highlight"><p class="pl">Más barata</p><p class="pv num">USD 8.965</p><p class="pdetail">Marítimo Integral AC</p></div>
+                <div class="profit-card highlight"><p class="pl">Más rápida</p><p class="pv num">USD 10.295</p><p class="pdetail">Aéreo Courier · 7-10 d</p></div>
+                <div class="profit-card highlight"><p class="pl">Honorarios</p><p class="pv num">10%</p><p class="pdetail">Sobre total importación</p></div>
+                <div class="profit-card highlight"><p class="pl">Tu ganancia est.</p><p class="pv num">USD 1.396</p><p class="pdetail">Si elige el recomendado</p></div>
+              </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-top:14px">
+              <button class="btn btn-ghost" onclick="goWiz(2)">← Volver a costos</button>
+              <button class="btn btn-pri btn-lg">✓ Enviar cotización al admin</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- DASHBOARD -->
+        <section class="pane" id="pane-dashboard">
+          <h1>Dashboard</h1>
+          <p class="sub">Resumen financiero. Lo desarrollamos en profundidad después.</p>
+          <div class="kpi-grid">
+            <div class="kpi"><p class="kpi-label">Ganancia este mes</p><p class="kpi-val green">USD 2.840</p><p class="kpi-sub">+18% vs mes ant.</p></div>
+            <div class="kpi"><p class="kpi-label">Acumulado 2026</p><p class="kpi-val gold">USD 14.260</p><p class="kpi-sub">12 ops cerradas</p></div>
+            <div class="kpi"><p class="kpi-label">Pendiente de cobro</p><p class="kpi-val">USD 6.246</p><p class="kpi-sub">7 ops activas</p></div>
+            <div class="kpi"><p class="kpi-label">Ticket promedio</p><p class="kpi-val">USD 1.188</p><p class="kpi-sub">Tu ganancia / op</p></div>
+          </div>
+          <div class="card">
+            <h3>Ganancia mensual</h3>
+            <div class="chart">
+              <div class="chart-bar" style="height:35%"><span class="v">820</span></div>
+              <div class="chart-bar" style="height:48%"><span class="v">1.150</span></div>
+              <div class="chart-bar" style="height:62%"><span class="v">1.480</span></div>
+              <div class="chart-bar" style="height:78%"><span class="v">1.840</span></div>
+              <div class="chart-bar" style="height:42%"><span class="v">980</span></div>
+              <div class="chart-bar" style="height:55%"><span class="v">1.310</span></div>
+              <div class="chart-bar" style="height:68%"><span class="v">1.620</span></div>
+              <div class="chart-bar" style="height:88%"><span class="v">2.840</span></div>
+            </div>
+            <div class="chart-labels"><span>Oct</span><span>Nov</span><span>Dic</span><span>Ene</span><span>Feb</span><span>Mar</span><span>Abr</span><span>May</span></div>
+          </div>
+        </section>
+
+        <!-- LIBRO DIARIO -->
+        <section class="pane" id="pane-ledger">
+          <h1>Libro diario</h1>
+          <p class="sub">Movimientos de finanzas GI. Filtrá por fecha, op o tipo.</p>
+          <div class="filters">
+            <input class="filter-input" placeholder="Buscar por op o concepto..." style="min-width:240px">
+            <input type="date" class="filter-input" style="min-width:150px">
+            <span class="muted" style="font-size:12px">→</span>
+            <input type="date" class="filter-input" style="min-width:150px">
+            <select class="filter-input" style="min-width:170px"><option>Todos los movimientos</option><option>Cobros</option><option>Pagos a proveedor</option><option>Pagos a embarcador</option><option>Comisión socio</option></select>
+            <button class="btn btn-ghost btn-sm">Limpiar</button>
+            <button class="btn btn-sec btn-sm" style="margin-left:auto">⬇ Exportar CSV</button>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <div class="ledger-head"><span>Fecha</span><span>Op</span><span>Concepto</span><span>Tipo</span><span class="right">Monto</span><span class="right">Saldo</span></div>
+            <div class="ledger-row"><span class="muted mono">08 may</span><span class="mono gold">AC-0109</span><span>Cobro pago 2 (20%) · Underwave</span><span><span class="pill pill-accepted">Cobro</span></span><span class="num green right">+USD 1.812,00</span><span class="num right">USD 32.430</span></div>
+            <div class="ledger-row"><span class="muted mono">07 may</span><span class="mono gold">AC-0118</span><span>Pago a proveedor · Tex Industries</span><span><span class="pill pill-rejected">Pago</span></span><span class="num red right">−USD 4.200,00</span><span class="num right">USD 30.618</span></div>
+            <div class="ledger-row"><span class="muted mono">07 may</span><span class="mono gold">AC-0115</span><span>Cobro pago 1 (50%) · Roma Sport</span><span><span class="pill pill-accepted">Cobro</span></span><span class="num green right">+USD 4.150,00</span><span class="num right">USD 34.818</span></div>
+            <div class="ledger-row"><span class="muted mono">06 may</span><span class="mono gold">AC-0098</span><span>Comisión socio · Tejedora Norte</span><span><span class="pill pill-quoted">Comisión</span></span><span class="num gold right">+USD 620,00</span><span class="num right">USD 30.668</span></div>
+            <div class="ledger-row"><span class="muted mono">05 may</span><span class="mono gold">AC-0107</span><span>Pago a embarcador · CN-SH-Logistics</span><span><span class="pill pill-rejected">Pago</span></span><span class="num red right">−USD 1.840,00</span><span class="num right">USD 30.048</span></div>
+          </div>
+        </section>
+
+        <!-- PROVEEDORES -->
+        <section class="pane" id="pane-proveedores">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px"><div><h1>Proveedores</h1><p class="sub" style="margin:4px 0 0">Listado agrupado por rubro.</p></div><button class="btn btn-pri">+ Nuevo proveedor</button></div>
+          <div class="filters" style="margin-top:18px">
+            <input class="filter-input" placeholder="Buscar..." style="min-width:280px">
+            <select class="filter-input" style="min-width:180px"><option>Todos los rubros</option></select>
+            <select class="filter-input" style="min-width:140px"><option>Todos los países</option></select>
+          </div>
+          <h3 style="margin:24px 0 12px">Indumentaria <span style="color:var(--muted);font-weight:500;text-transform:none;letter-spacing:0">· 4 proveedores</span></h3>
+          <div class="contact-grid">
+            <div class="contact-card"><div style="display:flex;justify-content:space-between"><span class="contact-name">Yiwu Tex Industries</span><span class="contact-tag">Indumentaria</span></div><p class="muted" style="font-size:12px">Camperas técnicas, polares · Yiwu</p><div class="contact-meta"><span>📧 sales@yiwutex.cn</span><span>📱 +86 138 1234 5678</span></div><div class="contact-meta"><span class="muted" style="font-size:10px">Última op: AC-0118 · MOQ 50u · Lead 25d</span></div></div>
+            <div class="contact-card"><div style="display:flex;justify-content:space-between"><span class="contact-name">Guangzhou Apparel Co.</span><span class="contact-tag">Indumentaria</span></div><p class="muted" style="font-size:12px">Buzos, remeras casual · Guangzhou</p><div class="contact-meta"><span>📧 vivian@gzapparel.com</span></div><div class="contact-meta"><span class="muted" style="font-size:10px">Última op: AC-0109 · MOQ 100u · Lead 20d</span></div></div>
+            <div class="contact-card"><div style="display:flex;justify-content:space-between"><span class="contact-name">Shenzhen Jersey Pro</span><span class="contact-tag">Indumentaria</span></div><p class="muted" style="font-size:12px">Indumentaria deportiva · Shenzhen</p><div class="contact-meta"><span>📧 contact@szjersey.com</span></div><div class="contact-meta"><span class="muted" style="font-size:10px">Última op: AC-0115 · MOQ 30u · Lead 18d</span></div></div>
+          </div>
+          <h3 style="margin:32px 0 12px">Electrónica <span style="color:var(--muted);font-weight:500;text-transform:none;letter-spacing:0">· 2 proveedores</span></h3>
+          <div class="contact-grid">
+            <div class="contact-card"><div style="display:flex;justify-content:space-between"><span class="contact-name">Huaqiang Electronics</span><span class="contact-tag">Electrónica</span></div><p class="muted" style="font-size:12px">Accesorios mobile, audio · Shenzhen</p><div class="contact-meta"><span>📧 mike@huaqiang-tech.cn</span></div><div class="contact-meta"><span class="muted" style="font-size:10px">Última op: AC-0089 · MOQ 200u · Lead 15d</span></div></div>
+          </div>
+        </section>
+
+        <!-- AGENTES -->
+        <section class="pane" id="pane-agentes">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px"><div><h1>Agentes de compra</h1><p class="sub" style="margin:4px 0 0">Sourcing agents en China.</p></div><button class="btn btn-pri">+ Nuevo agente</button></div>
+          <div class="filters" style="margin-top:18px"><input class="filter-input" placeholder="Buscar agente..."><select class="filter-input"><option>Todos los rubros</option></select></div>
+          <h3 style="margin:24px 0 12px">Indumentaria</h3>
+          <div class="contact-grid">
+            <div class="contact-card"><div style="display:flex;justify-content:space-between"><span class="contact-name">Lily Wang</span><span class="contact-tag">Indumentaria</span></div><p class="muted" style="font-size:12px">Yiwu / Guangzhou · Comisión 5%</p><div class="contact-meta"><span>📱 WeChat: lilywang_yw</span></div><div class="contact-meta"><span class="muted" style="font-size:10px">12 ops · USD 84.500</span></div></div>
+            <div class="contact-card"><div style="display:flex;justify-content:space-between"><span class="contact-name">Vivian Chen</span><span class="contact-tag">Indumentaria</span></div><p class="muted" style="font-size:12px">Guangzhou · Comisión USD 200/op</p><div class="contact-meta"><span>📱 WeChat: vivian_gz</span></div><div class="contact-meta"><span class="muted" style="font-size:10px">7 ops · USD 51.300</span></div></div>
+          </div>
+          <h3 style="margin:32px 0 12px">General</h3>
+          <div class="contact-grid">
+            <div class="contact-card"><div style="display:flex;justify-content:space-between"><span class="contact-name">Mike Zhao</span><span class="contact-tag">General</span></div><p class="muted" style="font-size:12px">Shenzhen · Multirubro · 3-5%</p><div class="contact-meta"><span>📱 WeChat: mikezhao_sz</span></div></div>
+          </div>
+        </section>
+
+        <!-- EMBARCADORES -->
+        <section class="pane" id="pane-embarcadores">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px"><div><h1>Embarcadores</h1><p class="sub" style="margin:4px 0 0">Forwarders agrupados por ciudad.</p></div><button class="btn btn-pri">+ Nuevo embarcador</button></div>
+          <div class="filters" style="margin-top:18px"><input class="filter-input" placeholder="Buscar..."><select class="filter-input"><option>Todas las ciudades</option></select><select class="filter-input"><option>Todos los modos</option></select></div>
+          <h3 style="margin:24px 0 12px">Shanghái</h3>
+          <div class="contact-grid">
+            <div class="contact-card"><div style="display:flex;justify-content:space-between"><span class="contact-name">CN-SH Logistics</span><span class="contact-tag">Aéreo + Marítimo</span></div><p class="muted" style="font-size:12px">Sólido para aéreo Bs As</p><div class="contact-meta"><span>📧 ops@cnshlogistics.com</span></div><div class="contact-meta"><span class="muted" style="font-size:10px">15 vuelos · 22 contenedores</span></div></div>
+            <div class="contact-card"><div style="display:flex;justify-content:space-between"><span class="contact-name">Pacific Cargo Shanghai</span><span class="contact-tag">Marítimo</span></div><p class="muted" style="font-size:12px">Especialistas LCL · Yangshan</p><div class="contact-meta"><span>📧 booking@pacificcargo.cn</span></div></div>
+          </div>
+          <h3 style="margin:32px 0 12px">Guangzhou</h3>
+          <div class="contact-grid">
+            <div class="contact-card"><div style="display:flex;justify-content:space-between"><span class="contact-name">GZ Express Forwarding</span><span class="contact-tag">Aéreo</span></div><p class="muted" style="font-size:12px">Aéreo express desde GZ</p><div class="contact-meta"><span>📧 contact@gzexpress.com</span></div></div>
+          </div>
+          <h3 style="margin:32px 0 12px">Miami</h3>
+          <div class="contact-grid">
+            <div class="contact-card"><div style="display:flex;justify-content:space-between"><span class="contact-name">Atlantic Forwarders FL</span><span class="contact-tag">Aéreo + Marítimo</span></div><p class="muted" style="font-size:12px">Hub USA → Bs As</p><div class="contact-meta"><span>📧 ops@atlanticfwd.us</span></div></div>
+          </div>
+        </section>
+
+        <!-- TARIFAS DE ENVÍO -->
+        <section class="pane" id="pane-tarifas">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px"><div><h1>Tarifas de envío a domicilio</h1><p class="sub" style="margin:4px 0 0">Costos por kg y/o CBM que se aplican cuando el cliente elige "envío a domicilio" en su cotización.</p></div></div>
+
+          <div class="hint" style="margin-top:18px"><strong>Cómo se calcula:</strong> el sistema toma el peso facturable de la cotización (mayor entre bruto y volumétrico) y le suma el costo según la zona seleccionada. Si configurás varias zonas, el cliente elige al final.</div>
+
+          <div class="card">
+            <div class="card-head"><h3>Tarifas por zona y peso</h3><button class="btn btn-pri btn-sm">+ Nueva tarifa</button></div>
+            <table>
+              <thead><tr><th>Zona</th><th>Hasta (kg)</th><th>Hasta (CBM)</th><th class="right">Costo USD</th><th class="right">Costo ARS</th><th></th></tr></thead>
+              <tbody>
+                <tr><td><strong>CABA</strong></td><td class="num">50 kg</td><td class="num">0,3 m³</td><td class="num right">USD 35</td><td class="num right">ARS 38.500</td><td><button class="btn btn-ghost btn-sm">✎</button></td></tr>
+                <tr><td><strong>CABA</strong></td><td class="num">150 kg</td><td class="num">1,0 m³</td><td class="num right">USD 70</td><td class="num right">ARS 77.000</td><td><button class="btn btn-ghost btn-sm">✎</button></td></tr>
+                <tr><td><strong>CABA</strong></td><td class="num">+ 150 kg</td><td class="num">+ 1,0 m³</td><td class="num right">USD 110</td><td class="num right">ARS 121.000</td><td><button class="btn btn-ghost btn-sm">✎</button></td></tr>
+                <tr><td><strong>GBA Norte</strong></td><td class="num">50 kg</td><td class="num">0,3 m³</td><td class="num right">USD 55</td><td class="num right">ARS 60.500</td><td><button class="btn btn-ghost btn-sm">✎</button></td></tr>
+                <tr><td><strong>GBA Norte</strong></td><td class="num">150 kg</td><td class="num">1,0 m³</td><td class="num right">USD 90</td><td class="num right">ARS 99.000</td><td><button class="btn btn-ghost btn-sm">✎</button></td></tr>
+                <tr><td><strong>GBA Sur</strong></td><td class="num">50 kg</td><td class="num">0,3 m³</td><td class="num right">USD 65</td><td class="num right">ARS 71.500</td><td><button class="btn btn-ghost btn-sm">✎</button></td></tr>
+                <tr><td><strong>GBA Sur</strong></td><td class="num">150 kg</td><td class="num">1,0 m³</td><td class="num right">USD 100</td><td class="num right">ARS 110.000</td><td><button class="btn btn-ghost btn-sm">✎</button></td></tr>
+                <tr><td><strong>Interior</strong></td><td class="muted">A coordinar</td><td class="muted">—</td><td class="muted right">A presupuestar</td><td class="muted right">—</td><td><button class="btn btn-ghost btn-sm">✎</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <h3>Datos de retiro por oficina</h3>
+            <p class="sub" style="margin-bottom:14px">Estos datos se muestran al cliente cuando elige "retiro por oficina" en su cotización.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+              <div><label class="lbl">Dirección</label><input class="inp" value="Av. Callao 1137"></div>
+              <div><label class="lbl">Localidad</label><input class="inp" value="Recoleta, CABA"></div>
+              <div><label class="lbl">Horario</label><input class="inp" value="Lunes a viernes de 10 a 18 hs"></div>
+              <div><label class="lbl">Teléfono / WhatsApp</label><input class="inp" value="+54 9 11 2508-8580"></div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn btn-pri">Guardar</button></div>
+          </div>
+
+          <div class="card">
+            <h3>Tipo de cambio referencia</h3>
+            <p class="sub" style="margin-bottom:10px">Para convertir USD ↔ ARS en las tarifas. Se actualiza diariamente con el dólar oficial Galicia (igual que la calculadora del portal).</p>
+            <div style="display:flex;align-items:center;gap:14px;font-size:13px"><span class="muted">Hoy:</span><strong style="font-size:16px;color:var(--gold-light)" class="num">1 USD = ARS 1.100,00</strong><span class="muted" style="font-size:11px">· actualizado a las 09:00</span></div>
+          </div>
+
+          <div class="card">
+            <h3>Términos y condiciones</h3>
+            <p class="sub" style="margin-bottom:10px">Aparecen al final de la cotización del cliente, en el desplegable "Términos y condiciones". Acepta saltos de línea y formato simple.</p>
+            <textarea class="inp" rows="14" style="font-family:'JetBrains Mono','SF Mono',monospace;font-size:12px;line-height:1.6;resize:vertical" placeholder="Ej:&#10;&#10;Argencargo se compromete a:&#10;- Coordinar con el proveedor en origen&#10;- ...&#10;&#10;Argencargo no se hace responsable de:&#10;- ...">Argencargo se hace responsable de:
+- Coordinación con el proveedor en origen
+- Flete internacional con seguro de mercadería
+- Despacho aduanero y pago de impuestos
+- Entrega en oficina o domicilio según opción elegida por el cliente
+
+Argencargo NO se hace responsable de:
+- Defectos de fabricación del proveedor (sujeto a inspección de calidad acordada)
+- Demoras de aduana fuera de nuestro control
+- ...
+
+(Texto definitivo a redactar — este es un borrador editable)</textarea>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;flex-wrap:wrap;gap:10px">
+              <p class="muted" style="font-size:11px">Última edición: hace 3 días</p>
+              <button class="btn btn-pri">Guardar cambios</button>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- ROOT 2: ADMIN PIDE COTIZACIÓN                 -->
+<!-- ════════════════════════════════════════════ -->
+<div class="root-view" id="root-admin">
+  <div class="main" style="padding:32px 36px">
+    <div class="main-inner" style="max-width:980px">
+      <h1>Admin · Pedir cotización GI</h1>
+      <p class="sub">Esta vista vive dentro del panel admin (sección Gestión Integral). Acá cargás cliente + productos para que el socio cotice.</p>
+
+      <div class="hint"><strong>Claves:</strong> el cliente se selecciona desde la base ya existente (no se puede escribir libre, debe estar registrado en Argencargo). La <strong>condición de entrega</strong> la elige el cliente cuando recibe el link de cotización, no acá.</div>
+
+      <div class="card">
+        <h3>Nueva solicitud de cotización</h3>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px">
+          <div class="combo" style="grid-column:span 2">
+            <label class="lbl">Cliente (de la base de datos)</label>
+            <input class="inp" value="Underwave" placeholder="Buscar cliente...">
+            <div class="combo-list" style="display:none">
+              <div class="combo-item"><span><strong>Underwave</strong><br><span class="muted" style="font-size:10px">CABA · Indumentaria</span></span><span class="code">UND-001</span></div>
+              <div class="combo-item"><span><strong>Lobo Indumentaria</strong><br><span class="muted" style="font-size:10px">Córdoba</span></span><span class="code">LOB-014</span></div>
+              <div class="combo-item"><span><strong>Tejedora Norte</strong><br><span class="muted" style="font-size:10px">Salta</span></span><span class="code">TEJ-022</span></div>
+            </div>
+            <p style="font-size:10.5px;color:rgba(255,255,255,0.45);margin-top:5px">Si no aparece, primero hay que registrarlo desde el módulo de clientes.</p>
+          </div>
+          <div><label class="lbl">Vence en (días)</label><input class="inp" value="7"></div>
+        </div>
+
+        <label class="lbl" style="margin-top:8px">Productos</label>
+        <div style="display:flex;gap:10px;align-items:center;padding:12px 14px;background:rgba(0,0,0,0.18);border:1px solid rgba(255,255,255,0.06);border-radius:10px;margin-bottom:8px"><div class="ph">📷</div><input class="inp" placeholder="Descripción / nombre del producto" style="flex:2"><input class="inp" placeholder="Cant." style="flex:0.6"><input class="inp" placeholder="Talles, colores, notas..." style="flex:1.4"><button class="btn btn-ghost btn-sm">✕</button></div>
+        <div style="display:flex;gap:10px;align-items:center;padding:12px 14px;background:rgba(0,0,0,0.18);border:1px solid rgba(255,255,255,0.06);border-radius:10px;margin-bottom:8px"><div class="ph">📷</div><input class="inp" placeholder="Descripción" style="flex:2"><input class="inp" placeholder="Cant." style="flex:0.6"><input class="inp" placeholder="Notas..." style="flex:1.4"><button class="btn btn-ghost btn-sm">✕</button></div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:4px">+ Agregar producto</button>
+
+        <label class="lbl" style="margin-top:18px">Notas para el socio (opcional)</label>
+        <input class="inp" placeholder="Ej: cliente recurrente, urgencia, prefiere algodón premium...">
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.06)">
+          <button class="btn btn-ghost">Cancelar</button>
+          <button class="btn btn-pri">Enviar al socio</button>
+        </div>
+      </div>
+
+      <h3 style="margin-top:30px">Solicitudes en curso</h3>
+      <div class="card" style="padding:0;overflow:hidden">
+        <table>
+          <thead><tr><th>Cód.</th><th>Cliente</th><th>Productos</th><th>Pedida</th><th>Estado</th><th>Entrega elegida</th><th class="right">Total est.</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="mono">GI-045</td><td><strong>Underwave</strong></td><td class="muted">Campera Snow · Dope</td><td class="muted">Hace 2 hs</td><td><span class="pill pill-pending"><span class="dot"></span> Cotizando</span></td><td class="muted">— (elige cliente)</td><td class="num right muted">—</td><td><button class="btn btn-ghost btn-sm">Ver</button></td></tr>
+            <tr><td class="mono">GI-044</td><td><strong>Lobo</strong></td><td class="muted">5 modelos · 800 u.</td><td class="muted">Ayer</td><td><span class="pill pill-pending"><span class="dot"></span> Cotizando</span></td><td class="muted">— (elige cliente)</td><td class="num right muted">—</td><td><button class="btn btn-ghost btn-sm">Ver</button></td></tr>
+            <tr><td class="mono">GI-042</td><td>Roma Sport</td><td class="muted">2 modelos · 200 u.</td><td class="muted">3 may</td><td><span class="pill pill-quoted"><span class="dot"></span> Revisar</span></td><td class="muted">Retiro oficina</td><td class="num right">USD 8.300</td><td><button class="btn btn-pri btn-sm">Aprobar →</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- ROOT 3: COTIZACIÓN AL CLIENTE (link · A4 landscape) -->
+<!-- ════════════════════════════════════════════ -->
+<div class="root-view" id="root-cliente">
+  <div style="background:#1a1f2e;padding:24px 20px;min-height:calc(100vh - 47px)">
+    <p style="text-align:center;font-size:10.5px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.14em;margin-bottom:4px">Vista del cliente · link único · A4 horizontal</p>
+    <p style="text-align:center;font-size:11px;color:rgba(255,255,255,0.3);margin-bottom:20px">argencargo.com.ar/cotizacion/a8f3c2-underwave</p>
+
+    <!-- Quote document — landscape A4 (297 x 210mm) -->
+    <div class="qd">
+      <!-- Header navy con logo real + banda dorada -->
+      <div class="qd-head">
+        <div class="qd-head-top">
+          <img src="https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png" alt="Argencargo" class="qd-logo-img">
+          <div style="text-align:right">
+            <p class="qd-head-tag">Cotización · Gestión Integral</p>
+            <p class="qd-head-num">GI-045</p>
+            <p class="qd-head-date">8 de mayo de 2026 · Válida 7 días</p>
+          </div>
+        </div>
+        <div class="qd-head-client">
+          <div><p class="qd-head-lbl">Cliente</p><p class="qd-head-val">Underwave</p></div>
+          <div><p class="qd-head-lbl">170 unidades · 2 productos</p></div>
+        </div>
+        <div class="qd-gold-band"></div>
+      </div>
+
+      <!-- Body en 2 columnas (landscape) -->
+      <div class="qd-body">
+        <div class="qd-cols">
+          <!-- COL IZQUIERDA: productos + servicio -->
+          <div class="qd-col">
+
+            <div class="qd-sec qd-sec-interactive">
+              <p class="qd-sec-title">Productos</p>
+              <div class="qd-product">
+                <div class="qd-prod-img">🧥</div>
+                <div class="qd-prod-info">
+                  <p class="qd-prod-name">Campera Snow</p>
+                  <p class="qd-prod-meta">Outdoor con cremallera</p>
+                  <p class="qd-prod-lead">⏱ Producción 25 días hábiles</p>
+                </div>
+                <div class="qd-prod-pricing">
+                  <p class="qd-prod-line"><span>70 u.</span><span>×</span><span class="qd-prod-unit" data-base="42.50">USD 54,70</span></p>
+                  <p class="qd-prod-sub" data-base="2975">USD 3.829,00</p>
+                </div>
+              </div>
+              <div class="qd-product">
+                <div class="qd-prod-img">👕</div>
+                <div class="qd-prod-info">
+                  <p class="qd-prod-name">Campera Dope</p>
+                  <p class="qd-prod-meta">Buzo negro con logo bordado</p>
+                  <p class="qd-prod-lead">⏱ Producción 22 días hábiles</p>
+                </div>
+                <div class="qd-prod-pricing">
+                  <p class="qd-prod-line"><span>100 u.</span><span>×</span><span class="qd-prod-unit" data-base="40.50">USD 52,31</span></p>
+                  <p class="qd-prod-sub" data-base="4050">USD 5.231,00</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="qd-sec qd-sec-interactive">
+              <p class="qd-sec-title">Elegí qué servicio preferís</p>
+              <p class="qd-sec-help">El precio cambia según modo de transporte. Todos incluyen flete internacional, gestión aduanera y entrega final.</p>
+
+              <div class="qd-svc-list">
+                <label class="qd-svc" data-ch="courier">
+                  <input type="radio" name="svc">
+                  <div class="qd-svc-content">
+                    <div class="qd-svc-info">
+                      <p class="qd-svc-name">Aéreo Courier Comercial</p>
+                      <p class="qd-svc-time">7 a 10 días hábiles · Más rápido</p>
+                    </div>
+                    <p class="qd-svc-price">USD 10.295</p>
+                  </div>
+                </label>
+                <label class="qd-svc selected" data-ch="aereo-int">
+                  <input type="radio" name="svc" checked>
+                  <div class="qd-svc-content">
+                    <div class="qd-svc-info">
+                      <p class="qd-svc-name">Aéreo Integral AC <span class="qd-svc-tag">Recomendado</span></p>
+                      <p class="qd-svc-time">10 a 15 días hábiles</p>
+                    </div>
+                    <p class="qd-svc-price">USD 9.840</p>
+                  </div>
+                </label>
+                <label class="qd-svc" data-ch="maritimo-lcl">
+                  <input type="radio" name="svc">
+                  <div class="qd-svc-content">
+                    <div class="qd-svc-info">
+                      <p class="qd-svc-name">Marítimo LCL / FCL</p>
+                      <p class="qd-svc-time">~ 60 días</p>
+                    </div>
+                    <p class="qd-svc-price">USD 9.275</p>
+                  </div>
+                </label>
+                <label class="qd-svc" data-ch="maritimo-int">
+                  <input type="radio" name="svc">
+                  <div class="qd-svc-content">
+                    <div class="qd-svc-info">
+                      <p class="qd-svc-name">Marítimo Integral AC <span class="qd-svc-tag-econ">Más económico</span></p>
+                      <p class="qd-svc-time">~ 60 días</p>
+                    </div>
+                    <p class="qd-svc-price">USD 8.965</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- COL DERECHA: entrega + total + plan + tiempos -->
+          <div class="qd-col">
+
+            <div class="qd-sec qd-sec-interactive">
+              <p class="qd-sec-title">¿Cómo querés recibirla?</p>
+              <div class="qd-deliv-list">
+                <label class="qd-deliv selected" data-deliv="oficina">
+                  <input type="radio" name="deliv" checked>
+                  <div class="qd-deliv-content">
+                    <div class="qd-deliv-info">
+                      <p class="qd-deliv-name">Retiro por oficina</p>
+                      <p class="qd-deliv-meta">Av. Callao 1137 · Recoleta, CABA · L-V 10-18 hs</p>
+                    </div>
+                    <p class="qd-deliv-price">Incluido</p>
+                  </div>
+                </label>
+                <label class="qd-deliv" data-deliv="domicilio">
+                  <input type="radio" name="deliv">
+                  <div class="qd-deliv-content">
+                    <div class="qd-deliv-info">
+                      <p class="qd-deliv-name">Envío a domicilio</p>
+                      <p class="qd-deliv-meta">CABA / GBA · Coordinamos día y horario</p>
+                    </div>
+                    <p class="qd-deliv-price">+ USD 70</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div class="qd-total-bar">
+              <div>
+                <p class="qd-total-lbl">Total</p>
+                <p class="qd-total-sub" id="qd-total-sub">Aéreo Integral AC · Retiro por oficina</p>
+              </div>
+              <p class="qd-total-val" id="qd-total">USD 9.840</p>
+            </div>
+
+            <div class="qd-sec">
+              <p class="qd-sec-title">Plan de pagos</p>
+              <div class="qd-pay-grid">
+                <div class="qd-pay-card"><p class="qd-pay-pct">30%</p><p class="qd-pay-when">Inicio prod.</p><p class="qd-pay-amt" id="pay1">USD 2.952</p></div>
+                <div class="qd-pay-card"><p class="qd-pay-pct">20%</p><p class="qd-pay-when">Prod. terminada</p><p class="qd-pay-amt" id="pay2">USD 1.968</p></div>
+                <div class="qd-pay-card"><p class="qd-pay-pct">50%</p><p class="qd-pay-when">Contra entrega</p><p class="qd-pay-amt" id="pay3">USD 4.920</p></div>
+              </div>
+            </div>
+
+            <div class="qd-sec">
+              <p class="qd-sec-title">Tiempos estimados</p>
+              <div class="qd-times-stack">
+                <div class="qd-time-step"><span class="qd-time-num">1</span><div><p class="qd-time-name">Producción</p><p class="qd-time-meta">Hasta 25 días hábiles</p></div></div>
+                <div class="qd-time-step"><span class="qd-time-num">2</span><div><p class="qd-time-name">Envío y arribo</p><p class="qd-time-meta" id="qd-time-ship">10 a 15 días hábiles</p></div></div>
+                <div class="qd-time-step"><span class="qd-time-num">3</span><div><p class="qd-time-name">Entrega final</p><p class="qd-time-meta" id="qd-time-deliv">Retiro · Recoleta CABA</p></div></div>
+              </div>
+            </div>
+
+            <details class="qd-tc">
+              <summary>Términos y condiciones</summary>
+              <div class="qd-tc-body">
+                <p style="margin-bottom:6px"><em>(texto definitivo a redactar)</em></p>
+                <p><strong>Argencargo se hace responsable de:</strong> coordinación con proveedor, flete internacional con seguro, despacho aduanero, entrega en oficina o domicilio.</p>
+                <p style="margin-top:6px"><strong>No se hace responsable de:</strong> defectos de fabricación del proveedor (sujeto a inspección de calidad acordada), demoras de aduana fuera de nuestro control.</p>
+              </div>
+            </details>
+
+            <button class="qd-cta">Aceptar y comenzar producción</button>
+            <p class="qd-cta-help">Al aceptar, recibís email con instrucciones para el primer pago.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer estilo PDF (réplica del adjunto) -->
+      <div class="qd-foot">
+        <div class="qd-foot-left">
+          <p class="qd-foot-brand">ARGENCARGO</p>
+          <p class="qd-foot-line"><strong>Tel:</strong> +54 9 11 2508-8580 &nbsp;·&nbsp; <strong>Email:</strong> info@argencargo.com.ar</p>
+          <p class="qd-foot-line">Av. Callao 1137 — Recoleta, CABA</p>
+        </div>
+        <p class="qd-foot-url">argencargo.com.ar</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* ─── Quote Document (cliente link · web flow) ─── */
+  .qd{max-width:1180px;width:100%;margin:0 auto;background:#fafaf7;border-radius:10px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,0.55);color:#1a1a1a;font-family:'Inter','Helvetica Neue',Arial,sans-serif;display:flex;flex-direction:column}
+
+  .qd-head{background:#0A1628;color:#fff;padding:18px 28px 16px;position:relative;flex-shrink:0}
+  .qd-head-top{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:14px}
+  .qd-logo-img{height:46px;width:auto;object-fit:contain}
+  .qd-head-tag{font-size:9px;font-weight:700;letter-spacing:0.18em;color:rgba(232,208,152,0.85);text-transform:uppercase;margin-bottom:3px}
+  .qd-head-num{font-family:'JetBrains Mono','SF Mono',monospace;font-size:17px;font-weight:700;color:#E8D098;letter-spacing:0.04em;margin-bottom:1px}
+  .qd-head-date{font-size:10.5px;color:rgba(255,255,255,0.55)}
+  .qd-head-client{display:flex;justify-content:space-between;align-items:baseline;gap:14px;flex-wrap:wrap;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08)}
+  .qd-head-lbl{font-size:9px;font-weight:700;letter-spacing:0.14em;color:rgba(232,208,152,0.65);text-transform:uppercase;margin-bottom:3px}
+  .qd-head-val{font-size:18px;font-weight:700;color:#fff;letter-spacing:-0.01em}
+  .qd-gold-band{height:5px;background:linear-gradient(90deg,#B8956A 0%,#E8D098 50%,#B8956A 100%);position:absolute;left:0;right:0;bottom:0}
+
+  .qd-body{padding:24px 30px 28px;background:#fafaf7}
+  .qd-cols{display:grid;grid-template-columns:1.15fr 1fr;gap:18px;align-items:start}
+  .qd-col{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+  .qd-sec{margin-bottom:0}
+  .qd-sec-title{font-size:9.5px;font-weight:800;letter-spacing:0.18em;color:#666;text-transform:uppercase;margin-bottom:8px}
+  .qd-sec-help{font-size:11px;color:#888;margin:-4px 0 8px;line-height:1.5}
+
+  /* Productos con costos */
+  .qd-product{display:flex;gap:12px;align-items:center;padding:11px 14px;background:#fff;border:1px solid #ebe6db;border-radius:10px;margin-bottom:6px}
+  /* Cuando productos está dentro del card interactive, los rows van flat con separador */
+  .qd-sec-interactive .qd-product{background:transparent;border:none;border-bottom:1px solid #ebe6db;border-radius:0;margin-bottom:0;padding:12px 0}
+  .qd-sec-interactive .qd-product:last-child{border-bottom:none;padding-bottom:4px}
+  .qd-sec-interactive .qd-product:first-of-type{padding-top:6px}
+  .qd-prod-img{width:46px;height:46px;border-radius:7px;background:linear-gradient(135deg,#f3eadb,#e7d8b8);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;border:1px solid #d4c5a0}
+  .qd-prod-info{flex:1;min-width:0}
+  .qd-prod-name{font-size:13px;font-weight:700;color:#1a1a1a;margin-bottom:1px}
+  .qd-prod-meta{font-size:10.5px;color:#777}
+  .qd-prod-lead{font-size:10.5px;color:#B8956A;font-weight:600;margin-top:3px;letter-spacing:0.02em}
+  .qd-prod-pricing{text-align:right;flex-shrink:0}
+  .qd-prod-line{font-size:11px;color:#666;font-feature-settings:"tnum";display:flex;gap:5px;align-items:center;justify-content:flex-end;margin-bottom:2px}
+  .qd-prod-unit{font-weight:600;color:#444}
+  .qd-prod-sub{font-size:14px;font-weight:800;color:#0A1628;font-feature-settings:"tnum";letter-spacing:-0.01em}
+
+  /* Selectores */
+  .qd-sec-interactive{padding:12px 14px;background:#fff;border:1px solid #ebe6db;border-radius:11px}
+  .qd-sec-interactive .qd-sec-title{margin-bottom:4px}
+
+  .qd-svc-list,.qd-deliv-list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+  .qd-svc,.qd-deliv{cursor:pointer;display:block;border-radius:9px;border:1.5px solid #e6e6e6;background:#fafaf7;transition:all 150ms;position:relative}
+  .qd-svc input,.qd-deliv input{position:absolute;opacity:0;pointer-events:none}
+  .qd-svc:hover,.qd-deliv:hover{border-color:#B8956A;background:#fdf9f1}
+  .qd-svc.selected,.qd-deliv.selected{border-color:#B8956A;background:linear-gradient(135deg,#fdf6e8,#faedd0);box-shadow:0 3px 10px rgba(184,149,106,0.18)}
+  .qd-svc-content,.qd-deliv-content{display:flex;align-items:center;gap:10px;padding:9px 12px}
+  .qd-svc-content::before,.qd-deliv-content::before{content:"";width:16px;height:16px;border-radius:50%;border:2px solid #c4b59a;flex-shrink:0}
+  .qd-svc.selected .qd-svc-content::before,.qd-deliv.selected .qd-deliv-content::before{border-color:#B8956A;background:#B8956A;box-shadow:inset 0 0 0 3.5px #fff}
+  .qd-svc-info,.qd-deliv-info{flex:1;min-width:0}
+  .qd-svc-name,.qd-deliv-name{font-size:12.5px;font-weight:700;color:#1a1a1a;margin-bottom:1px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .qd-svc-time,.qd-deliv-meta{font-size:10.5px;color:#777}
+  .qd-svc-price,.qd-deliv-price{font-size:13.5px;font-weight:800;color:#B8956A;font-feature-settings:"tnum";white-space:nowrap}
+  .qd-svc-tag{font-size:8.5px;font-weight:800;padding:2px 6px;border-radius:4px;background:linear-gradient(135deg,#B8956A,#E8D098);color:#0A1628;letter-spacing:0.08em;text-transform:uppercase}
+  .qd-svc-tag-econ{font-size:8.5px;font-weight:800;padding:2px 6px;border-radius:4px;background:#22c55e;color:#fff;letter-spacing:0.08em;text-transform:uppercase}
+
+  /* Total bar */
+  .qd-total-bar{padding:14px 18px;background:linear-gradient(135deg,#B8956A,#E8D098);color:#0A1628;border-radius:11px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 5px 16px rgba(184,149,106,0.25);gap:10px}
+  .qd-total-lbl{font-size:10px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase}
+  .qd-total-sub{font-size:10.5px;font-weight:600;color:rgba(10,22,40,0.65);margin-top:2px}
+  .qd-total-val{font-size:26px;font-weight:800;letter-spacing:-0.02em;font-feature-settings:"tnum"}
+
+  /* Plan de pagos */
+  .qd-pay-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .qd-pay-card{padding:10px 12px;background:#fff;border:1px solid #ebe6db;border-radius:9px}
+  .qd-pay-pct{font-size:18px;font-weight:800;color:#B8956A;letter-spacing:-0.02em;margin-bottom:1px}
+  .qd-pay-when{font-size:10px;color:#777;margin-bottom:5px;line-height:1.3}
+  .qd-pay-amt{font-size:12.5px;font-weight:700;color:#1a1a1a;font-feature-settings:"tnum";padding-top:5px;border-top:1px solid #f0eadc}
+
+  /* Tiempos vertical en col derecha */
+  .qd-times-stack{display:flex;flex-direction:column;gap:5px}
+  .qd-time-step{display:flex;align-items:center;gap:9px;padding:8px 12px;background:#fff;border:1px solid #ebe6db;border-radius:9px}
+  .qd-time-num{width:21px;height:21px;border-radius:50%;background:#0A1628;color:#E8D098;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .qd-time-name{font-size:11.5px;font-weight:700;color:#1a1a1a;margin-bottom:1px}
+  .qd-time-meta{font-size:10.5px;color:#777}
+
+  /* T&C */
+  .qd-tc{padding:9px 12px;background:#fff;border:1px solid #ebe6db;border-radius:9px;font-size:11px;color:#555}
+  .qd-tc summary{cursor:pointer;font-weight:700;color:#1a1a1a;font-size:10.5px;letter-spacing:0.04em;text-transform:uppercase}
+  .qd-tc summary:hover{color:#B8956A}
+  .qd-tc-body{padding-top:8px;margin-top:8px;border-top:1px solid #ebe6db;line-height:1.5}
+
+  /* CTA */
+  .qd-cta{width:100%;padding:13px 22px;background:#0A1628;color:#fff;border:none;border-radius:10px;font-size:13.5px;font-weight:700;cursor:pointer;letter-spacing:0.04em;font-family:inherit;transition:all 150ms}
+  .qd-cta:hover{background:#1a2a48;transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,0.18)}
+  .qd-cta-help{text-align:center;font-size:10px;color:#888;margin-top:6px}
+
+  /* Footer estilo PDF (réplica) */
+  .qd-foot{background:#0A1628;color:#fff;padding:14px 28px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-shrink:0}
+  .qd-foot-left{flex:1}
+  .qd-foot-brand{font-size:14px;font-weight:800;color:#fff;letter-spacing:0.08em;margin-bottom:6px}
+  .qd-foot-line{font-size:11px;color:rgba(255,255,255,0.7);line-height:1.6}
+  .qd-foot-line strong{color:#E8D098;font-weight:700}
+  .qd-foot-url{font-size:13px;font-weight:700;color:#E8D098;letter-spacing:0.04em}
+</style>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- ROOT 4: PDF                                   -->
+<!-- ════════════════════════════════════════════ -->
+<div class="root-view" id="root-pdf">
+  <div style="background:#1a1a1a;border-bottom:1px solid #333;padding:12px 20px;display:flex;justify-content:space-between;align-items:center">
+    <span style="font-size:12px;color:rgba(255,255,255,0.5)">PDF descargable · idéntico al de Underwave (sin selector — versión final post-aceptación)</span>
+    <button class="btn btn-pri btn-sm">⬇ Descargar PDF</button>
+  </div>
+  <div class="pdf-wrap">
+    <iframe class="pdf-iframe" src="presupuesto-underwave.html"></iframe>
+  </div>
+</div>
+
+<script>
+  function showRoot(name){
+    document.querySelectorAll('.root-view').forEach(v=>v.classList.remove('active'));
+    document.getElementById('root-'+name).classList.add('active');
+    document.querySelectorAll('.top-btn').forEach(b=>b.classList.toggle('active',b.dataset.root===name));
+    window.scrollTo(0,0);
+  }
+  function showPane(name){
+    document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+    document.getElementById('pane-'+name).classList.add('active');
+    document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.pane===name));
+    document.querySelector('.main').scrollTo(0,0);
+  }
+  function goWiz(n){
+    document.querySelectorAll('.wiz-pane').forEach(p=>p.style.display='none');
+    document.getElementById('wiz-'+n).style.display='block';
+    document.querySelectorAll('.wiz-step').forEach(s=>{
+      const i=Number(s.dataset.step);
+      s.classList.remove('done','current');
+      if(i<n)s.classList.add('done');
+      else if(i===n)s.classList.add('current');
+    });
+    document.querySelectorAll('.wiz-conn').forEach((c,idx)=>{
+      c.classList.toggle('done',idx<n-1);
+    });
+    window.scrollTo(0,0);
+  }
+  document.querySelectorAll('.top-btn').forEach(b=>b.addEventListener('click',()=>showRoot(b.dataset.root)));
+  document.querySelectorAll('.nav-item').forEach(b=>b.addEventListener('click',()=>showPane(b.dataset.pane)));
+
+  // Cliente: selector de servicio + entrega → actualizar total, sumario, tiempos, plan pagos, precios unitarios
+  // Precios unitarios mock por canal (mantienen proporción Snow/Dope original Underwave)
+  const channels={
+    "courier":{total:10295,time:"7 a 10 días hábiles",name:"Aéreo Courier Comercial",snowU:62.16,snowS:4351,dopeU:59.44,dopeS:5944},
+    "aereo-int":{total:9840,time:"10 a 15 días hábiles",name:"Aéreo Integral AC",snowU:59.41,snowS:4159,dopeU:56.81,dopeS:5681},
+    "maritimo-lcl":{total:9275,time:"~ 60 días",name:"Marítimo LCL/FCL",snowU:55.99,snowS:3919,dopeU:53.56,dopeS:5356},
+    "maritimo-int":{total:8965,time:"~ 60 días",name:"Marítimo Integral AC",snowU:54.12,snowS:3789,dopeU:51.76,dopeS:5176},
+  };
+  const delivs={
+    "oficina":{cost:0,name:"Retiro por oficina",detail:"Retiro · Recoleta CABA"},
+    "domicilio":{cost:70,name:"Envío a domicilio",detail:"Envío a domicilio · CABA / GBA"},
+  };
+  let curCh="aereo-int", curDl="oficina";
+  function fmt(n){return 'USD '+n.toLocaleString('es-AR',{maximumFractionDigits:n%1?2:0,minimumFractionDigits:n%1?2:0})}
+  function recalcQd(){
+    const ch=channels[curCh], dl=delivs[curDl];
+    const total=ch.total+dl.cost;
+    document.getElementById('qd-total').textContent=fmt(total);
+    document.getElementById('qd-total-sub').textContent=ch.name+' · '+dl.name;
+    document.getElementById('pay1').textContent=fmt(Math.round(total*0.3));
+    document.getElementById('pay2').textContent=fmt(Math.round(total*0.2));
+    document.getElementById('pay3').textContent=fmt(total-Math.round(total*0.3)-Math.round(total*0.2));
+    document.getElementById('qd-time-ship').textContent=ch.time;
+    document.getElementById('qd-time-deliv').textContent=dl.detail;
+    // Update product unit + subtotal
+    const units=document.querySelectorAll('.qd-prod-unit');
+    const subs=document.querySelectorAll('.qd-prod-sub');
+    if(units[0])units[0].textContent=fmt(ch.snowU);
+    if(units[1])units[1].textContent=fmt(ch.dopeU);
+    if(subs[0])subs[0].textContent=fmt(ch.snowS);
+    if(subs[1])subs[1].textContent=fmt(ch.dopeS);
+  }
+  document.querySelectorAll('.qd-svc').forEach(s=>{
+    s.addEventListener('click',()=>{
+      document.querySelectorAll('.qd-svc').forEach(r=>r.classList.remove('selected'));
+      s.classList.add('selected');
+      s.querySelector('input').checked=true;
+      curCh=s.dataset.ch;
+      recalcQd();
+    });
+  });
+  document.querySelectorAll('.qd-deliv').forEach(d=>{
+    d.addEventListener('click',()=>{
+      document.querySelectorAll('.qd-deliv').forEach(r=>r.classList.remove('selected'));
+      d.classList.add('selected');
+      d.querySelector('input').checked=true;
+      curDl=d.dataset.deliv;
+      recalcQd();
+    });
+  });
+</script>
+
+</body>
+</html>

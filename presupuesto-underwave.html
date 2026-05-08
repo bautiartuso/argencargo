@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<title>Presupuesto Underwave — Argencargo</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @page{size:A4;margin:0}
+  html,body{width:210mm;height:297mm}
+  body{font-family:'Helvetica Neue',Arial,sans-serif;color:#1a1a1a;font-size:12px;line-height:1.4;background:#eef1f5}
+  .page{width:210mm;height:297mm;margin:0 auto;background:#fff;padding:28px 36px 22px;position:relative;display:flex;flex-direction:column;overflow:hidden}
+
+  /* HEADER */
+  .header{display:flex;justify-content:space-between;align-items:center;border-bottom:2.5px solid #0A1628;padding-bottom:12px;margin-bottom:18px}
+  .header .brand{display:flex;align-items:center;gap:12px}
+  .header .brand img{height:36px;width:auto}
+  .header .brand .titles{line-height:1.15}
+  .header .brand .titles .title{font-size:16px;font-weight:800;color:#0A1628;letter-spacing:-0.01em}
+  .header .brand .titles .sub{font-size:9.5px;color:#6b7280;font-weight:500;text-transform:uppercase;letter-spacing:0.08em;margin-top:2px}
+  .header .meta{text-align:right;font-size:10.5px;color:#475569;line-height:1.5}
+  .header .meta .label{color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;font-size:9px}
+  .header .meta .value{color:#0A1628;font-weight:700}
+  .header .meta .code{color:#B8956A;font-family:'Courier New',monospace;font-size:12px;font-weight:700;letter-spacing:0.04em;display:block;margin-bottom:2px}
+
+  /* CLIENT BLOCK */
+  .client{background:linear-gradient(135deg,#0A1628 0%,#1B2D4F 100%);color:#fff;padding:14px 20px;border-radius:9px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;gap:16px}
+  .client .name{display:flex;align-items:center;gap:12px}
+  .client .name .logo-circle{width:48px;height:48px;border-radius:50%;background:#000;border:2px solid #B8956A;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden}
+  .client .name .logo-circle img{width:90%;height:90%;object-fit:contain}
+  .client .name .who{line-height:1.15}
+  .client .name .who .lbl{font-size:9px;color:#B8956A;font-weight:700;text-transform:uppercase;letter-spacing:0.08em}
+  .client .name .who .val{font-size:20px;font-weight:800;letter-spacing:-0.02em;margin-top:2px}
+  .client .modality{text-align:right;font-size:10.5px}
+  .client .modality .lbl{color:#B8956A;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;font-size:9px;display:block}
+  .client .modality .val{font-weight:700;font-size:13px;margin-top:2px}
+
+  /* SECTION TITLE */
+  .section-title{font-size:10.5px;color:#B8956A;font-weight:800;text-transform:uppercase;letter-spacing:0.12em;margin:4px 0 10px;padding-bottom:5px;border-bottom:1px solid #e5e7eb}
+
+  /* PRODUCT CARDS */
+  .product{display:flex;gap:14px;background:#f8fafc;border:1px solid #e5e7eb;border-left:4px solid #0A1628;border-radius:9px;padding:12px 14px;margin-bottom:10px;align-items:center}
+  .product .photo{width:96px;height:96px;border-radius:7px;background:#fff;border:1px solid #e5e7eb;flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .product .photo img{width:100%;height:100%;object-fit:contain;background:#fff}
+  .product .photo .placeholder{font-size:9px;color:#94a3b8;text-align:center;padding:6px;line-height:1.3}
+  .product .info{flex:1;min-width:0}
+  .product .info .name{font-size:16px;font-weight:800;color:#0A1628;letter-spacing:-0.02em;margin-bottom:8px}
+  .product .info .specs{display:flex;gap:18px;flex-wrap:wrap;font-size:11px}
+  .product .info .specs div{line-height:1.25}
+  .product .info .specs .lbl{color:#94a3b8;font-weight:600;font-size:8.5px;text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:1px}
+  .product .info .specs .val{color:#0A1628;font-weight:700;font-size:12.5px}
+  .product .subtotal{text-align:right;flex-shrink:0;border-left:1px solid #e5e7eb;padding-left:14px;align-self:stretch;display:flex;flex-direction:column;justify-content:center;min-width:108px}
+  .product .subtotal .lbl{font-size:8.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:2px}
+  .product .subtotal .val{font-size:20px;font-weight:800;color:#0A1628;letter-spacing:-0.02em;font-variant-numeric:tabular-nums}
+
+  /* TOTAL */
+  .total-bar{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;margin:14px 0 18px;background:linear-gradient(135deg,#B8956A 0%,#E8D098 50%,#B8956A 100%);color:#0A1628;border-radius:9px}
+  .total-bar .lbl{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em}
+  .total-bar .val{font-size:28px;font-weight:800;letter-spacing:-0.025em;font-variant-numeric:tabular-nums}
+
+  /* PAYMENT + TIMING */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
+  .grid .card{background:#f8fafc;border:1px solid #e5e7eb;border-radius:9px;padding:13px 16px}
+  .grid .card h3{font-size:10.5px;color:#0A1628;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+  .pmt-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #e5e7eb;font-size:11px}
+  .pmt-row:last-child{border-bottom:none;padding-bottom:0}
+  .pmt-row .desc{color:#475569}
+  .pmt-row .desc strong{color:#0A1628;display:inline-block;min-width:34px}
+  .pmt-row .amt{font-weight:800;color:#0A1628;font-variant-numeric:tabular-nums}
+  .timeline-row{display:flex;justify-content:space-between;padding:5px 0;font-size:11px;border-bottom:1px dashed #e5e7eb}
+  .timeline-row:last-child{border-bottom:none;padding-top:7px;margin-top:3px;border-top:2px solid #0A1628;font-weight:700}
+  .timeline-row .lbl{color:#475569}
+  .timeline-row .val{font-weight:700;color:#0A1628}
+
+  /* FOOTER */
+  .footer{margin-top:auto;padding:12px 20px;background:#0A1628;color:#fff;border-radius:9px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  .footer .ac-logo{font-size:14px;font-weight:800;letter-spacing:-0.01em;color:#fff;margin-bottom:3px}
+  .footer .info{font-size:10px;line-height:1.5;color:#94a3b8}
+  .footer .info b{color:#E8D098;font-weight:700}
+  .footer .right{font-size:10px;color:#E8D098;text-align:right;font-weight:600;letter-spacing:0.04em}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="brand">
+      <img src="https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo_color.png" alt="Argencargo"/>
+      <div class="titles">
+        <div class="title">PRESUPUESTO</div>
+        <div class="sub">Gestión Integral · Importación llave en mano</div>
+      </div>
+    </div>
+    <div class="meta">
+      <span class="code">GI-UNDERWAVE</span>
+      <div><span class="label">Emitido:</span> <span class="value">8 de mayo de 2026</span></div>
+      <div><span class="label">Validez:</span> <span class="value">15 días</span></div>
+    </div>
+  </div>
+
+  <!-- CLIENT -->
+  <div class="client">
+    <div class="name">
+      <div class="logo-circle">
+        <img src="underwave-logo.png" alt="Underwave" onerror="this.style.display='none';this.parentNode.innerHTML='<div style=&quot;color:#fff;font-size:11px;font-weight:800;text-align:center;letter-spacing:0.05em&quot;>UW</div>'"/>
+      </div>
+      <div class="who">
+        <div class="lbl">Cliente</div>
+        <div class="val">Underwave</div>
+      </div>
+    </div>
+    <div class="modality">
+      <span class="lbl">Modalidad</span>
+      <span class="val">Gestión Integral</span>
+    </div>
+  </div>
+
+  <!-- ITEMS -->
+  <div class="section-title">Productos cotizados</div>
+
+  <div class="product">
+    <div class="photo">
+      <img src="campera-snow.png" alt="Campera Snow" onerror="this.style.display='none';this.parentNode.innerHTML='<div class=&quot;placeholder&quot;>📸<br/>Campera<br/>Snow</div>'"/>
+    </div>
+    <div class="info">
+      <div class="name">Campera Snow</div>
+      <div class="specs">
+        <div><span class="lbl">Cantidad</span><span class="val">70 unidades</span></div>
+        <div><span class="lbl">Precio unitario</span><span class="val">USD 54.70</span></div>
+        <div><span class="lbl">Producción</span><span class="val">25 días hábiles</span></div>
+        <div><span class="lbl">Vía</span><span class="val">Aéreo</span></div>
+      </div>
+    </div>
+    <div class="subtotal">
+      <div class="lbl">Subtotal</div>
+      <div class="val">USD 3,829</div>
+    </div>
+  </div>
+
+  <div class="product">
+    <div class="photo">
+      <img src="campera-dope.png" alt="Campera Dope" onerror="this.style.display='none';this.parentNode.innerHTML='<div class=&quot;placeholder&quot;>📸<br/>Campera<br/>Dope</div>'"/>
+    </div>
+    <div class="info">
+      <div class="name">Campera Dope</div>
+      <div class="specs">
+        <div><span class="lbl">Cantidad</span><span class="val">100 unidades</span></div>
+        <div><span class="lbl">Precio unitario</span><span class="val">USD 52.31</span></div>
+        <div><span class="lbl">Producción</span><span class="val">25 días hábiles</span></div>
+        <div><span class="lbl">Vía</span><span class="val">Aéreo</span></div>
+      </div>
+    </div>
+    <div class="subtotal">
+      <div class="lbl">Subtotal</div>
+      <div class="val">USD 5,231</div>
+    </div>
+  </div>
+
+  <!-- TOTAL -->
+  <div class="total-bar">
+    <span class="lbl">Total importación llave en mano</span>
+    <span class="val">USD 9,060</span>
+  </div>
+
+  <!-- PAGO + TIEMPOS -->
+  <div class="grid">
+    <div class="card">
+      <h3>💳 Modalidad de pago</h3>
+      <div class="pmt-row">
+        <span class="desc"><strong>30%</strong> Al iniciar producción</span>
+        <span class="amt">USD 2,718</span>
+      </div>
+      <div class="pmt-row">
+        <span class="desc"><strong>20%</strong> Producción terminada</span>
+        <span class="amt">USD 1,812</span>
+      </div>
+      <div class="pmt-row">
+        <span class="desc"><strong>50%</strong> Contra entrega en Bs As</span>
+        <span class="amt">USD 4,530</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>📅 Tiempos estimados</h3>
+      <div class="timeline-row">
+        <span class="lbl">Producción en origen</span>
+        <span class="val">25 días hábiles</span>
+      </div>
+      <div class="timeline-row">
+        <span class="lbl">Envío aéreo + despacho aduanero</span>
+        <span class="val">10 días</span>
+      </div>
+      <div class="timeline-row">
+        <span class="lbl">Entrega total estimada</span>
+        <span class="val">~35 días hábiles</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div>
+      <div class="ac-logo">ARGENCARGO</div>
+      <div class="info">
+        <b>Tel:</b> +54 9 11 2508-8580 &nbsp;·&nbsp; <b>Email:</b> info@argencargo.com.ar<br/>
+        Av. Callao 1137 — Recoleta, CABA
+      </div>
+    </div>
+    <div class="right">argencargo.com.ar</div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -7630,6 +7630,204 @@ function CmdK({token,onNavigate,allClients}){
   </div>;
 }
 
+// ════════════════════════════════════════════════════════════════
+// GESTIÓN INTEGRAL · admin · pedir cotización al socio
+// ════════════════════════════════════════════════════════════════
+function GiAdminPanel({token,clients}){
+  const [reqs,setReqs]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [tab,setTab]=useState("active");
+  const [modalOpen,setModalOpen]=useState(false);
+  const [form,setForm]=useState({clientId:"",clientSearch:"",products:[{description:"",quantity:"",notes:""}],notes:"",expiresIn:"7"});
+  const [showClientList,setShowClientList]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [msg,setMsg]=useState("");
+  const flash=(t)=>{setMsg(t);setTimeout(()=>setMsg(""),3500);};
+
+  const load=async()=>{
+    setLo(true);
+    const r=await dq("gi_quote_requests",{token,filters:"?select=*,clients(id,first_name,last_name,client_code),gi_quote_request_products(id,description,quantity)&order=created_at.desc"});
+    setReqs(Array.isArray(r)?r:[]);
+    setLo(false);
+  };
+  useEffect(()=>{load();},[token]);
+
+  const openModal=()=>{
+    setForm({clientId:"",clientSearch:"",products:[{description:"",quantity:"",notes:""}],notes:"",expiresIn:"7"});
+    setShowClientList(false);
+    setModalOpen(true);
+  };
+  const addProduct=()=>setForm(f=>({...f,products:[...f.products,{description:"",quantity:"",notes:""}]}));
+  const rmProduct=(i)=>setForm(f=>({...f,products:f.products.length>1?f.products.filter((_,j)=>j!==i):f.products}));
+  const chProduct=(i,k,v)=>setForm(f=>({...f,products:f.products.map((p,j)=>j===i?{...p,[k]:v}:p)}));
+
+  const filteredClients=clients.filter(c=>{
+    const q=(form.clientSearch||"").toLowerCase().trim();
+    if(!q)return clients.length<=20; // si lista corta muestra todos, sino requerir search
+    const name=`${c.first_name||""} ${c.last_name||""}`.toLowerCase();
+    return name.includes(q)||(c.client_code||"").toLowerCase().includes(q);
+  }).slice(0,8);
+
+  const selectClient=(c)=>{
+    setForm(f=>({...f,clientId:c.id,clientSearch:`${c.first_name||""} ${c.last_name||""}`.trim()+(c.client_code?` (${c.client_code})`:"")}));
+    setShowClientList(false);
+  };
+
+  const submit=async()=>{
+    if(!form.clientId){alert("Seleccioná un cliente");return;}
+    const validProds=form.products.filter(p=>p.description?.trim());
+    if(validProds.length===0){alert("Cargá al menos un producto");return;}
+    setSaving(true);
+    try{
+      const codeRes=await fetch(`${SB_URL}/rest/v1/rpc/gi_next_request_code`,{method:"POST",headers:{apikey:SB_KEY,"Content-Type":"application/json",Authorization:`Bearer ${token}`,Prefer:"return=representation"},body:JSON.stringify({})});
+      const code=(await codeRes.text()).replace(/^"|"$/g,"").trim();
+      const expDate=new Date(Date.now()+Number(form.expiresIn||7)*86400000).toISOString().slice(0,10);
+      const inserted=await dq("gi_quote_requests",{method:"POST",token,body:{
+        request_code:code,
+        client_id:form.clientId,
+        notes:form.notes||null,
+        expires_at:expDate,
+        status:"pending",
+      }});
+      const reqId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
+      if(!reqId)throw new Error("No se pudo crear la solicitud");
+      for(let i=0;i<validProds.length;i++){
+        const p=validProds[i];
+        await dq("gi_quote_request_products",{method:"POST",token,body:{
+          request_id:reqId,
+          description:p.description.trim(),
+          quantity:p.quantity?Number(p.quantity):null,
+          notes:p.notes?p.notes.trim():null,
+          display_order:i,
+        }});
+      }
+      flash(`✓ Solicitud ${code} enviada al socio GI`);
+      setModalOpen(false);
+      load();
+    } catch(e){
+      alert("Error: "+(e.message||"desconocido"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const filtered=reqs.filter(r=>{
+    if(tab==="converted")return r.status==="converted";
+    if(tab==="rejected")return r.status==="rejected"||r.status==="expired";
+    return !["converted","rejected","expired"].includes(r.status);
+  });
+
+  const STATUS_LABEL={
+    pending:{l:"Cotizando",c:"#fbbf24"},
+    quoting:{l:"Cotizando",c:"#fbbf24"},
+    quoted:{l:"Revisar cotización",c:"#60a5fa"},
+    approved:{l:"Aprobada",c:"#22c55e"},
+    sent:{l:"Enviada al cliente",c:"#a78bfa"},
+    accepted:{l:"Aceptada por cliente",c:"#22c55e"},
+    rejected:{l:"Rechazada",c:"#f87171"},
+    expired:{l:"Expirada",c:"#94a3b8"},
+    converted:{l:"Convertida a op",c:"#10b981"},
+  };
+
+  return <div>
+    {msg&&<div style={{position:"fixed",top:20,right:20,background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",padding:"10px 16px",borderRadius:10,fontSize:13,fontWeight:600,zIndex:9999,boxShadow:"0 12px 30px rgba(0,0,0,0.4)"}}>{msg}</div>}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12,marginBottom:14}}>
+      <div>
+        <h2 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Gestión Integral</h2>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Pedile cotizaciones al socio. Cuando arma la cotización, se la enviás al cliente, y al aceptar se convierte en op AC-XXXX.</p>
+      </div>
+      <button onClick={openModal} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.02em"}}>+ Nueva solicitud</button>
+    </div>
+
+    <div style={{display:"flex",gap:4,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:18,flexWrap:"wrap"}}>
+      {[
+        {k:"active",l:"Activas",n:reqs.filter(r=>!["converted","rejected","expired"].includes(r.status)).length},
+        {k:"converted",l:"Convertidas a op",n:reqs.filter(r=>r.status==="converted").length},
+        {k:"rejected",l:"Rechazadas / expiradas",n:reqs.filter(r=>["rejected","expired"].includes(r.status)).length},
+      ].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"9px 16px",fontSize:12,fontWeight:600,color:tab===t.k?GOLD_LIGHT:"rgba(255,255,255,0.5)",background:"transparent",border:"none",borderBottom:`2px solid ${tab===t.k?GOLD_LIGHT:"transparent"}`,cursor:"pointer",fontFamily:"inherit"}}>{t.l} <span style={{marginLeft:5,fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:8,background:tab===t.k?"rgba(184,149,106,0.15)":"rgba(255,255,255,0.06)",color:tab===t.k?GOLD_LIGHT:"rgba(255,255,255,0.5)"}}>{t.n}</span></button>)}
+    </div>
+
+    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>No hay solicitudes en esta vista. {tab==="active"&&<><br/><button onClick={openModal} style={{marginTop:14,padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer"}}>Crear la primera</button></>}</p>:
+      <div style={{background:"rgba(255,255,255,0.025)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.22)"}}>
+            <th style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Código</th>
+            <th style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Cliente</th>
+            <th style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Productos</th>
+            <th style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Pedida</th>
+            <th style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Vence</th>
+            <th style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Estado</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+            {filtered.map(r=>{const st=STATUS_LABEL[r.status]||{l:r.status,c:"#999"};const cn=r.clients?`${r.clients.first_name||""} ${r.clients.last_name||""}`.trim():"—";const pcount=r.gi_quote_request_products?.length||0;const totalQty=(r.gi_quote_request_products||[]).reduce((s,p)=>s+Number(p.quantity||0),0);
+              return <tr key={r.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                <td style={{padding:"13px 14px",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:GOLD_LIGHT,fontSize:12.5,letterSpacing:"0.04em"}}>{r.request_code}</td>
+                <td style={{padding:"13px 14px",fontWeight:600,color:"#fff"}}>{cn}{r.clients?.client_code&&<span style={{marginLeft:6,fontSize:10,color:"rgba(255,255,255,0.4)"}}>· {r.clients.client_code}</span>}</td>
+                <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.65)"}}>{pcount} {pcount===1?"producto":"productos"}{totalQty>0?` · ${totalQty} u.`:""}</td>
+                <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.5)"}}>{formatDate(r.created_at)}</td>
+                <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.5)"}}>{r.expires_at?formatDate(r.expires_at):"—"}</td>
+                <td style={{padding:"13px 14px"}}><span style={{fontSize:10,fontWeight:700,padding:"4px 10px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,letterSpacing:"0.05em",textTransform:"uppercase"}}>{st.l}</span></td>
+                <td style={{padding:"13px 14px",textAlign:"right"}}>
+                  {(r.status==="pending"||r.status==="quoting")&&<button onClick={async()=>{if(!confirm(`¿Cancelar la solicitud ${r.request_code}? El socio dejará de verla en su panel.`))return;await dq("gi_quote_requests",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body:{status:"rejected"}});flash("Solicitud cancelada");load();}} style={{padding:"5px 10px",fontSize:10.5,fontWeight:600,borderRadius:6,border:"1px solid rgba(248,113,113,0.3)",background:"rgba(248,113,113,0.08)",color:"#f87171",cursor:"pointer"}}>Cancelar</button>}
+                  {r.status==="quoted"&&<button style={{padding:"5px 10px",fontSize:10.5,fontWeight:700,borderRadius:6,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>Revisar →</button>}
+                </td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>
+    }
+
+    {/* Modal Nueva solicitud */}
+    {modalOpen&&<div onClick={()=>!saving&&setModalOpen(false)} style={{position:"fixed",inset:0,background:"rgba(8,12,20,0.78)",backdropFilter:"blur(8px)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"5vh 20px",overflowY:"auto"}}>
+      <div onClick={e=>e.stopPropagation()} style={{maxWidth:760,width:"100%",background:"linear-gradient(180deg,#142038,#0f1a2e)",border:"1px solid rgba(184,149,106,0.28)",borderRadius:14,padding:"22px 24px",boxShadow:"0 32px 80px rgba(0,0,0,0.65)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,paddingBottom:12,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+          <h3 style={{fontSize:17,fontWeight:700,color:"#fff",margin:0}}>Nueva solicitud de cotización</h3>
+          <button onClick={()=>!saving&&setModalOpen(false)} style={{fontSize:22,background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer",padding:"0 4px"}}>✕</button>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+          <div style={{position:"relative"}}>
+            <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:5}}>Cliente *</label>
+            <input value={form.clientSearch} onChange={e=>{setForm(f=>({...f,clientSearch:e.target.value,clientId:""}));setShowClientList(true);}} onFocus={()=>setShowClientList(true)} placeholder="Buscar por nombre o código..." style={{width:"100%",padding:"9px 12px",fontSize:13,boxSizing:"border-box",border:`1px solid ${form.clientId?"rgba(34,197,94,0.4)":"rgba(255,255,255,0.12)"}`,borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
+            {showClientList&&filteredClients.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,maxHeight:240,overflowY:"auto",zIndex:50,boxShadow:"0 12px 30px rgba(0,0,0,0.5)"}}>
+              {filteredClients.map(c=><button key={c.id} onClick={()=>selectClient(c)} style={{width:"100%",textAlign:"left",padding:"9px 12px",fontSize:12.5,background:"transparent",border:"none",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"inherit"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(184,149,106,0.08)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <span><strong>{`${c.first_name||""} ${c.last_name||""}`.trim()}</strong></span>
+                <span style={{fontFamily:"monospace",fontSize:10.5,color:GOLD_LIGHT}}>{c.client_code||""}</span>
+              </button>)}
+            </div>}
+            <p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"5px 0 0"}}>Si no aparece, primero registralo desde Clientes.</p>
+          </div>
+          <div>
+            <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:5}}>Vence en (días)</label>
+            <input type="number" value={form.expiresIn} onChange={e=>setForm(f=>({...f,expiresIn:e.target.value}))} style={{width:"100%",padding:"9px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
+          </div>
+        </div>
+
+        <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:8}}>Productos *</label>
+        {form.products.map((p,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"2fr 0.7fr 1.5fr 32px",gap:8,marginBottom:8,alignItems:"start",padding:"10px 12px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
+          <input value={p.description} onChange={e=>chProduct(i,"description",e.target.value)} placeholder="Descripción / nombre del producto" style={{width:"100%",padding:"7px 10px",fontSize:12,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none"}}/>
+          <input value={p.quantity} onChange={e=>chProduct(i,"quantity",e.target.value)} placeholder="Cant." inputMode="numeric" style={{width:"100%",padding:"7px 10px",fontSize:12,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none"}}/>
+          <input value={p.notes} onChange={e=>chProduct(i,"notes",e.target.value)} placeholder="Talles, colores, especificaciones..." style={{width:"100%",padding:"7px 10px",fontSize:12,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none"}}/>
+          <button onClick={()=>rmProduct(i)} disabled={form.products.length<=1} style={{padding:"6px 8px",fontSize:14,borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:form.products.length<=1?"rgba(255,255,255,0.2)":"rgba(248,113,113,0.7)",cursor:form.products.length<=1?"not-allowed":"pointer"}}>✕</button>
+        </div>)}
+        <button onClick={addProduct} style={{padding:"6px 12px",fontSize:11.5,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer",fontFamily:"inherit"}}>+ Agregar producto</button>
+
+        <div style={{marginTop:14}}>
+          <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:5}}>Notas para el socio (opcional)</label>
+          <input value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Ej: cliente recurrente, urgencia, prefiere algodón premium..." style={{width:"100%",padding:"9px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
+        </div>
+
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:18,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          <button onClick={()=>!saving&&setModalOpen(false)} disabled={saving} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:saving?"not-allowed":"pointer"}}>Cancelar</button>
+          <button onClick={submit} disabled={saving} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"none",background:saving?"rgba(184,149,106,0.4)":GOLD_GRADIENT,color:"#0A1628",cursor:saving?"wait":"pointer"}}>{saving?"Enviando…":"Enviar al socio"}</button>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
 function AdminDashboard({session,onLogout}){
   const [page,setPage]=useState("today");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);const [mobOpen,setMobOpen]=useState(false);
   const token=session.token;
@@ -7650,6 +7848,9 @@ function AdminDashboard({session,onLogout}){
       {key:"dashboard",label:"Dashboard",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},
       {key:"finance",label:"Libro diario",p:["M4 19.5A2.5 2.5 0 0 1 6.5 17H20","M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"]},
       {key:"tariffs",label:"Tarifas",p:["M18 20V10","M12 20V4","M6 20v-6"]},
+    ]},
+    {section:"Gestión Integral",items:[
+      {key:"gi_requests",label:"Cotizaciones GI",p:["M12 2L4 8l8 14 8-14-8-6z","M4 8h16","M12 2v20"]},
     ]},
     {section:"Comercial",items:[
       {key:"comms",label:"Comunicaciones",p:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},
@@ -7744,6 +7945,7 @@ function AdminDashboard({session,onLogout}){
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
       {page==="quotes"&&<QuotesList token={token}/>}
+      {page==="gi_requests"&&<GiAdminPanel token={token} clients={allClients}/>}
       {page==="settings"&&<AdminSettings token={token} session={session}/>}
     </div></div>
   </div>;
