@@ -6265,14 +6265,64 @@ function FinanceDashboard({token}){
     return{ing,cost,gan:ing-cost};
   };
 
-  const totalIng=periodOps.reduce((s,o)=>s+calcGan(o).ing,0);
-  const totalCostOp=periodOps.reduce((s,o)=>s+calcGan(o).cost,0);
-  // Costos fijos del período (manuales)
-  const fixedCostsManual=finEntries.filter(e=>e.auto_generated===false&&e.type==="gasto");
-  const totalCostFijos=filterByPeriod(fixedCostsManual,"date").reduce((s,e)=>s+Number(e.amount||0),0);
-  const totalCost=totalCostOp+totalCostFijos;
+  // ═══ Ganancia del período: replica el libro diario completo (ingresos − gastos) ═══
+  // No se limita a "ops cerradas". Suma TODOS los movimientos del período: cobros, pagos parciales,
+  // costos de ops cuando se pagaron realmente, pagos a proveedor (GI), comisiones de giro y giros,
+  // finance_entries (manuales y auto-generadas), anticipos a agentes.
+  const periodFilter=(ds)=>{if(!ds)return false;const p=parseLocalDate(ds);if(period==="all")return true;if(period==="today")return p.ds===today;if(period==="week")return p.ds>=weekAgo;if(period==="month")return p.m===(selM-1)&&p.y===selY;if(period==="year")return p.y===thisYear;return true;};
+  const isCobrada=(o)=>o.is_collected;
+  // Ingresos del período
+  let totalIng=0;
+  ops.filter(o=>o.is_collected&&o.service_type!=="gestion_integral"&&periodFilter(o.collection_date||o.closed_at?.slice(0,10))).forEach(o=>{
+    const opPmts=clientPmts.filter(p=>p.operation_id===o.id);
+    if(opPmts.length>0)return; // se cuentan en clientPmts loop
+    const raw=Number(o.collected_amount||o.budget_total||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
+    const cash=isArs&&rate>0?raw/rate:raw;
+    const collectedUsd=cash;const overpay=Math.max(0,collectedUsd-Number(o.budget_total||0));
+    const creditApp=Number(o.credit_applied_usd||0);const extraCharge=Number(o.extra_charge_usd||0);
+    const cashIn=extraCharge>0.01?collectedUsd:(collectedUsd+overpay-creditApp);
+    if(cashIn>0)totalIng+=cashIn;
+  });
+  totalIng+=clientPmts.filter(p=>periodFilter(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+  totalIng+=Object.values(pmtsByOp).flat().filter(p=>p.client_paid&&periodFilter(p.client_paid_date)).reduce((s,p)=>s+Number(p.client_paid_amount_usd??p.client_amount_usd??0),0);
+  totalIng+=supplierPmts.filter(p=>p.is_paid&&p.type==="refund"&&periodFilter(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+  // Ingresos manuales del libro diario
+  totalIng+=finEntries.filter(e=>e.type==="ingreso"&&periodFilter(e.date)).reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
+
+  // Gastos del período
+  let totalCost=0;
+  ops.forEach(o=>{
+    const fleteMethod=o.cost_flete_method||"cuenta_corriente";
+    const closedDate=o.closed_at?.slice(0,10)||null;
+    const pickDate=(paid)=>paid?.slice(0,10)||closedDate;
+    const fleteDate=pickDate(o.cost_flete_paid_at);
+    if(fleteMethod!=="cuenta_corriente"&&Number(o.cost_flete||0)>0&&fleteDate&&periodFilter(fleteDate))totalCost+=Number(o.cost_flete);
+    const segDate=pickDate(o.cost_seguro_paid_at);
+    if(Number(o.cost_seguro||0)>0&&segDate&&periodFilter(segDate))totalCost+=Number(o.cost_seguro);
+    const flDate=pickDate(o.cost_flete_local_paid_at);
+    if(Number(o.cost_flete_local||0)>0&&flDate&&periodFilter(flDate))totalCost+=Number(o.cost_flete_local);
+    const otDate=pickDate(o.cost_otros_paid_at);
+    if(Number(o.cost_otros||0)>0&&otDate&&periodFilter(otDate))totalCost+=Number(o.cost_otros);
+  });
+  totalCost+=supplierPmts.filter(p=>p.is_paid&&p.type!=="refund"&&periodFilter(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+  Object.values(pmtsByOp).flat().forEach(p=>{
+    if(p.giro_status==="confirmado"&&Number(p.cost_comision_giro||0)>0&&periodFilter(p.giro_date||p.client_paid_date))totalCost+=Number(p.cost_comision_giro);
+    const tarjetaPend=p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid;
+    const giroDate=p.giro_tarjeta_paid_at?p.giro_tarjeta_paid_at.slice(0,10):p.giro_date;
+    if(p.giro_status==="confirmado"&&!tarjetaPend&&Number(p.giro_amount_usd||0)>0&&periodFilter(giroDate))totalCost+=Number(p.giro_amount_usd);
+  });
+  // finance_entries de gastos (incluye manuales + auto-generadas como impuestos/gasto doc/comisiones bancarias)
+  totalCost+=finEntries.filter(e=>e.type==="gasto"&&!(e.payment_method==="tarjeta_credito"&&!e.is_paid)&&periodFilter(e.date)).reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
+  // Anticipos a agentes (solo lo que recibió el agente — la comisión bancaria ya está en finance_entries auto-generadas)
+  totalCost+=agentMvs.filter(m=>m.type==="anticipo"&&periodFilter(m.date)).reduce((s,m)=>{const recv=m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);return s+recv;},0);
+  // Refunds del agente (lo que devolvió) → ingreso
+  totalIng+=agentMvs.filter(m=>m.type==="refund"&&periodFilter(m.date)).reduce((s,m)=>{const recv=m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);return s+recv;},0);
+
   const totalGan=totalIng-totalCost;
   const margen=totalIng>0?((totalGan/totalIng)*100):0;
+  // Para mostrar cantidad de ops cerradas en el período (info contextual)
+  const fixedCostsManual=finEntries.filter(e=>e.auto_generated===false&&e.type==="gasto");
+  const totalCostOp=periodOps.reduce((s,o)=>s+calcGan(o).cost,0); // legacy, used elsewhere
 
   // By channel with margin
   const byChannel={};periodOps.forEach(o=>{const ch=o.channel||"unknown";if(!byChannel[ch])byChannel[ch]={count:0,ing:0,cost:0};byChannel[ch].count++;const g=calcGan(o);byChannel[ch].ing+=g.ing;byChannel[ch].cost+=g.cost;});
@@ -6311,60 +6361,7 @@ function FinanceDashboard({token}){
 
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
 
-  // === TERMÓMETRO FINANCIERO: salud líquida estimada a 30 días ===
-  // cash actual = saldo agentes (anticipos pendientes) + balance ARS dolarizado
-  // por cobrar 30d = saldo de ops entregadas/cerradas no cobradas + payment_management con cliente_paid=false
-  // por pagar 30d = supplier payments + finance_entries con due_date próximos 30d no pagados
-  const ahora=Date.now();
-  const in30=ahora+30*86400000;
-  // Por cobrar: ops sin is_collected con saldo > 0
-  const porCobrar=ops.filter(o=>!o.is_collected&&o.status!=="cancelada"&&Number(o.budget_total||0)>0).reduce((s,o)=>{
-    const bt=Number(o.budget_total||0);
-    const cliPaid=o.service_type==="gestion_integral"?clientPmts.filter(p=>p.operation_id===o.id).reduce((a,p)=>a+Number(p.amount_usd||0),0):0;
-    const credit=Number(o.credit_applied_usd||0);
-    const discount=Number(o.discount_applied_usd||0);
-    const saldo=Math.max(0,bt-cliPaid-credit-discount);
-    return s+saldo;
-  },0);
-  // Por pagar: supplier payments no pagados con due ≤ 30d (o sin due) + finance_entries con tarjeta no pagada
-  const porPagarSup=supplierPmts.filter(p=>!p.is_paid&&p.type!=="refund").reduce((s,p)=>s+Number(p.amount_usd||0),0);
-  const porPagarFE=finEntries.filter(e=>e.payment_method==="tarjeta_credito"&&!e.is_paid).reduce((s,e)=>{
-    const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);
-    return s+c;
-  },0);
-  const porPagar=porPagarSup+porPagarFE;
-  // Cash estimado: usamos saldos agente como proxy de cash bajo gestión (anticipos disponibles - ya gastados)
-  const cashAgentes=agentMvs.reduce((s,m)=>{
-    // Para anticipo: descontar lo que recibió el agente, no lo que pagaste al banco (la comisión está aparte en finance_entries)
-    const amt=m.type==="anticipo"&&m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);
-    return s+(m.type==="anticipo"?-amt:amt);
-  },0);
-  // El termómetro: lo que esperás tener neto en próximos 30d
-  const termometro=cashAgentes+porCobrar-porPagar;
-  const themeColor=termometro>=5000?"#22c55e":termometro>=0?"#fbbf24":"#ef4444";
-  const themeLabel=termometro>=5000?"Saludable":termometro>=0?"Ajustado":"En rojo";
-
   return <div>
-    <div style={{background:`linear-gradient(135deg, ${themeColor}15, ${themeColor}03)`,border:`1.5px solid ${themeColor}50`,borderRadius:16,padding:"22px 26px",marginBottom:24,display:"flex",justifyContent:"space-between",alignItems:"center",gap:18,flexWrap:"wrap"}}>
-      <div style={{flex:1,minWidth:240}}>
-        <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:6}}>
-          <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Termómetro 30d</span>
-          <span style={{fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:6,background:`${themeColor}25`,color:themeColor,border:`1px solid ${themeColor}50`,letterSpacing:"0.06em",textTransform:"uppercase"}}>{themeLabel}</span>
-        </div>
-        <p style={{fontSize:36,fontWeight:800,color:themeColor,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{termometro>=0?"+":""}{usd(termometro)}</p>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"6px 0 0",lineHeight:1.5}}>Cash agentes ({usd(cashAgentes)}) + por cobrar ({usd(porCobrar)}) − por pagar ({usd(porPagar)})</p>
-      </div>
-      <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
-        <div style={{padding:"10px 16px",borderRadius:10,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.06)",minWidth:130}}>
-          <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px",textTransform:"uppercase"}}>Por cobrar</p>
-          <p style={{fontSize:16,fontWeight:700,color:"#22c55e",margin:0,fontVariantNumeric:"tabular-nums"}}>+{usd(porCobrar)}</p>
-        </div>
-        <div style={{padding:"10px 16px",borderRadius:10,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.06)",minWidth:130}}>
-          <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px",textTransform:"uppercase"}}>Por pagar</p>
-          <p style={{fontSize:16,fontWeight:700,color:"#ef4444",margin:0,fontVariantNumeric:"tabular-nums"}}>−{usd(porPagar)}</p>
-        </div>
-      </div>
-    </div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
       <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Dashboard Financiero</h2>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>{[{k:"week",l:"Semana"},{k:"month",l:"Mes"},{k:"year",l:"Año"},{k:"all",l:"Total"}].map(p=><button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k==="month")setSelMonth(`${thisYear}-${String(thisMonth+1).padStart(2,"0")}`);}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:period===p.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:period===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:period===p.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{p.l}</button>)}
@@ -6376,19 +6373,27 @@ function FinanceDashboard({token}){
       </div>
     </div>
 
-    {/* ═══ FILA 1: KPIs del período (Ganancia/Ingresos/Costos/Margen) ═══ */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:20}}>
-      <div style={{background:totalGan>=0?"linear-gradient(135deg,rgba(34,197,94,0.12),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(255,80,80,0.12),rgba(255,80,80,0.03))",border:`1px solid ${totalGan>=0?"rgba(34,197,94,0.25)":"rgba(255,80,80,0.25)"}`,borderRadius:14,padding:"20px 22px"}}>
-        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Ganancia neta</p>
-        <p style={{fontSize:30,fontWeight:700,color:totalGan>=0?"#22c55e":"#ff6b6b",margin:0,lineHeight:1.1}}>{usd(totalGan)}</p>
-        <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>Ingresos − Costos ({periodOps.length} ops cerradas)</p>
+    {/* ═══ KPIs PRINCIPALES — más grandes, son lo más importante ═══ */}
+    <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr 1fr 1fr",gap:18,marginBottom:20}}>
+      <div style={{background:totalGan>=0?"linear-gradient(135deg,rgba(34,197,94,0.14),rgba(34,197,94,0.04))":"linear-gradient(135deg,rgba(255,80,80,0.14),rgba(255,80,80,0.04))",border:`1.5px solid ${totalGan>=0?"rgba(34,197,94,0.32)":"rgba(255,80,80,0.32)"}`,borderRadius:16,padding:"26px 28px"}}>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Ganancia neta del período</p>
+        <p style={{fontSize:42,fontWeight:800,color:totalGan>=0?"#22c55e":"#ff6b6b",margin:0,lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{usd(totalGan)}</p>
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"10px 0 0"}}>Todo el libro diario · ingresos − gastos del período</p>
       </div>
-      {stat("Ingresos",usd(totalIng),"#fff",true)}
-      {stat("Costos",usd(totalCost),"#ff6b6b",true)}
-      <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"16px 20px"}}>
-        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>Margen</p>
-        <p style={{fontSize:28,fontWeight:700,color:margen>=20?"#22c55e":margen>=0?"#fbbf24":"#ff6b6b",margin:0}}>{margen.toFixed(1)}%</p>
-        <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>{margen>=20?"Saludable":margen>=0?"Ajustado":"En rojo"}</p>
+      <div style={{background:"linear-gradient(135deg,rgba(34,197,94,0.06),rgba(34,197,94,0.01))",border:"1.5px solid rgba(34,197,94,0.25)",borderRadius:16,padding:"26px 28px"}}>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Ingresos</p>
+        <p style={{fontSize:34,fontWeight:800,color:"#22c55e",margin:0,lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{usd(totalIng)}</p>
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"10px 0 0"}}>Cobros + anticipos + reembolsos</p>
+      </div>
+      <div style={{background:"linear-gradient(135deg,rgba(255,80,80,0.06),rgba(255,80,80,0.01))",border:"1.5px solid rgba(255,80,80,0.25)",borderRadius:16,padding:"26px 28px"}}>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Costos</p>
+        <p style={{fontSize:34,fontWeight:800,color:"#ff6b6b",margin:0,lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{usd(totalCost)}</p>
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"10px 0 0"}}>Costos op + gastos fijos + comisiones</p>
+      </div>
+      <div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.08),rgba(184,149,106,0.02))",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:16,padding:"26px 28px"}}>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Margen</p>
+        <p style={{fontSize:34,fontWeight:800,color:margen>=20?"#22c55e":margen>=0?"#fbbf24":"#ff6b6b",margin:0,lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{margen.toFixed(1)}%</p>
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"10px 0 0"}}>{margen>=20?"Saludable":margen>=0?"Ajustado":"En rojo"}</p>
       </div>
     </div>
 
@@ -6435,116 +6440,33 @@ function FinanceDashboard({token}){
       const deudaTCUsdSup=supplierPmts.filter(p=>p.payment_method==="tarjeta_credito"&&!p.is_paid&&(p.currency==="USD"||!p.currency)&&p.type!=="refund").reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const deudaTCUsd=deudaTCUsdFinance+deudaTCUsdPmts+deudaTCUsdSup;
       const cashDisponible=totCobrado-totCostosTotales;
-      return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
-        <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.1),rgba(34,197,94,0.03))":"linear-gradient(135deg,rgba(255,80,80,0.1),rgba(255,80,80,0.03))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,borderRadius:14,padding:"20px 24px",display:"flex",flexDirection:"column"}}>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase"}}>Cash disponible</p>
-          <p style={{fontSize:32,fontWeight:700,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>{usd(cashDisponible)}</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Cobrado ({usd(totCobrado)}) − Costos ops ({usd(totCostosOps+totCostosPmts)}) − Gastos ({usd(totCostosFijos)}) − Anticipos ({usd(totAnticiposAgentes)})</p>
-          <div style={{marginTop:"auto"}}>
-            {margenActivas!==0&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:4}}>↳ {usd(margenActivas)} margen ops activas (aún no ganancia)</p>}
-            {deudaTCUsd>0&&<p style={{fontSize:10,color:"#a78bfa",margin:"2px 0 0"}}>💳 {usd(deudaTCUsd)} deuda TC pendiente (no descontada — sigue en el bolsillo hasta el débito)</p>}
-            {girosColgados>0&&<p style={{fontSize:10,color:"#fb923c",margin:"2px 0 0",cursor:"help"}} title={girosColgadosDetail.map(d=>`${d.code} ${d.client}: debe ${usd(d.debe)}${d.anticipo>0?` − anticipo ${usd(d.anticipo)}`:""} = ${usd(d.real)} pendiente`).join("\n")}>⚠ {usd(girosColgados)} pendiente de cobrar al cliente ({girosColgadosDetail.length})</p>}
-            {girosPendientes>0&&<p style={{fontSize:10,color:"#60a5fa",margin:"2px 0 0"}}>⏳ {usd(girosPendientes)} cobrados, giro pendiente envío</p>}
+      return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:24}}>
+        {/* Cash disponible — compacto */}
+        <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.08),rgba(34,197,94,0.02))":"linear-gradient(135deg,rgba(255,80,80,0.08),rgba(255,80,80,0.02))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,borderRadius:12,padding:"14px 18px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>Cash disponible</p>
+            <p style={{fontSize:22,fontWeight:700,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:0,fontVariantNumeric:"tabular-nums"}}>{usd(cashDisponible)}</p>
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:10,marginTop:8}}>
+            {deudaTCUsd>0&&<span style={{fontSize:10,color:"#a78bfa"}}>💳 {usd(deudaTCUsd)} deuda TC pendiente (no descontada)</span>}
+            {girosColgados>0&&<span style={{fontSize:10,color:"#fb923c"}} title={girosColgadosDetail.map(d=>`${d.code}: ${usd(d.real)}`).join("\n")}>⚠ {usd(girosColgados)} pendiente cobrar</span>}
+            {girosPendientes>0&&<span style={{fontSize:10,color:"#60a5fa"}}>⏳ {usd(girosPendientes)} giro pendiente</span>}
           </div>
         </div>
-        <div style={{background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:14,padding:"20px 24px",display:"flex",flexDirection:"column"}}>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase"}}>Deuda tarjeta de crédito</p>
-          {deudaTCUsd>0&&<p style={{fontSize:28,fontWeight:700,color:"#fb923c",margin:"0 0 2px",lineHeight:1.15}}>USD {deudaTCUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
-          {deudaTCArs>0&&<p style={{fontSize:28,fontWeight:700,color:"#fb923c",margin:"0 0 4px",lineHeight:1.15}}>ARS {deudaTCArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
-          {deudaTCArs===0&&deudaTCUsd===0&&<p style={{fontSize:32,fontWeight:700,color:"rgba(255,255,255,0.2)",margin:"0 0 4px"}}>Sin deuda</p>}
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"auto 0 0"}}>{deudaTCArs>0||deudaTCUsd>0?"Pendiente de débito":"Todo al día ✓"}</p>
+        {/* Deuda TC — compacto */}
+        <div style={{background:deudaTCArs>0||deudaTCUsd>0?"rgba(251,146,60,0.06)":"rgba(255,255,255,0.025)",border:`1px solid ${deudaTCArs>0||deudaTCUsd>0?"rgba(251,146,60,0.2)":"rgba(255,255,255,0.06)"}`,borderRadius:12,padding:"14px 18px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>Deuda tarjeta de crédito</p>
+            <div style={{textAlign:"right"}}>
+              {deudaTCUsd>0?<p style={{fontSize:18,fontWeight:700,color:"#fb923c",margin:0,lineHeight:1.15,fontVariantNumeric:"tabular-nums"}}>USD {deudaTCUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>:null}
+              {deudaTCArs>0?<p style={{fontSize:18,fontWeight:700,color:"#fb923c",margin:"2px 0 0",lineHeight:1.15,fontVariantNumeric:"tabular-nums"}}>ARS {deudaTCArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>:null}
+              {deudaTCArs===0&&deudaTCUsd===0&&<p style={{fontSize:18,fontWeight:600,color:"rgba(255,255,255,0.35)",margin:0}}>Sin deuda</p>}
+            </div>
+          </div>
+          <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"6px 0 0"}}>{deudaTCArs>0||deudaTCUsd>0?"Pendiente de débito":"Todo al día ✓"}</p>
         </div>
       </div>;
     })()}
-
-    {/* ═══ FILA 3: Comparativa ingreso vs costo por concepto ═══ */}
-    {(()=>{
-      // Cobertura: % del budget_total que viene de cash + credit + discount
-      // Usamos eso para escalar los budget_flete/seguro/taxes al ingreso real cobrado
-      const sum=(f)=>periodOps.reduce((s,o)=>s+Number(o[f]||0),0);
-      const sumIng=(f)=>periodOps.reduce((s,o)=>{
-        const bt=Number(o.budget_total||0);if(bt<=0)return s;
-        const comp=Number(o[f]||0);
-        if(!o.is_collected)return s+comp;
-        const raw=Number(o.collected_amount||0);
-        const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
-        const cash=isArs&&rate>0?raw/rate:raw;
-        const cashForOp=Math.min(cash,bt);
-        const ing=cashForOp+Number(o.credit_applied_usd||0);
-        const ratio=bt>0?ing/bt:0;
-        return s+comp*ratio;
-      },0);
-      // Conceptos con ingreso↔costo directo
-      const concepts=[
-        {label:"Flete internacional",ingF:"budget_flete",costF:"cost_flete",color:"#60a5fa"},
-        {label:"Seguro",ingF:"budget_seguro",costF:"cost_seguro",color:"#fbbf24"},
-        {label:"Impuestos",ingF:"budget_taxes",costF:"cost_impuestos_reales",color:"#f97316"}
-      ].map(c=>{
-        const ing=sumIng(c.ingF);const cost=sum(c.costF);const gan=ing-cost;const mg=ing>0?(gan/ing)*100:0;
-        return{...c,ing,cost,gan,mg};
-      }).filter(c=>c.ing>0||c.cost>0);
-      // Conceptos de costo puro (sin ingreso directo, absorben parte del margen global)
-      const pureCosts=[
-        {label:"Gasto documental",cost:sum("cost_gasto_documental"),color:"#a78bfa"},
-        {label:"Flete local",cost:sum("cost_flete_local"),color:"#34d399"},
-        {label:"Otros (op)",cost:sum("cost_otros"),color:"#fb7185"},
-        {label:"Giros (gestión pagos)",cost:periodOps.reduce((s,o)=>{const pm=pmtsByOp[o.id]||[];return s+pm.reduce((a,p)=>a+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);},0),color:"#c084fc"}
-      ].filter(c=>c.cost>0);
-      // Gastos fijos del período por categoría
-      const fixedByCat={};filterByPeriod(fixedCostsManual,"date").forEach(e=>{const k=e.category||"otros";if(!fixedByCat[k])fixedByCat[k]=0;fixedByCat[k]+=Number(e.amount||0);});
-      const fixedRows=Object.entries(fixedByCat).map(([k,v])=>({label:CAT_LBL[k]||k,cost:v,color:CAT_COLOR[k]||"#888"})).sort((a,b)=>b.cost-a.cost);
-
-      const maxAny=Math.max(...concepts.map(c=>Math.max(c.ing,c.cost)),...pureCosts.map(c=>c.cost),...fixedRows.map(c=>c.cost),1);
-
-      return <div style={{marginBottom:24}}><Card title="📊 Comparativa por concepto — ingreso vs costo">
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 14px"}}>Flete, Seguro, Impuestos se cobran al cliente (lo que facturás) vs lo que realmente pagás. Los costos sin ingreso directo (documental, flete local, giros, gastos fijos) se absorben del margen global.</p>
-        <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr 0.8fr",gap:10,paddingBottom:8,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:8}}>
-          {["CONCEPTO","INGRESO","COSTO","GANANCIA","MARGEN"].map(h=><p key={h} style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textAlign:h==="CONCEPTO"?"left":"right"}}>{h}</p>)}
-        </div>
-        {concepts.map(c=><div key={c.label} style={{padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr 0.8fr",gap:10,alignItems:"center"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:2,background:c.color}}/><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{c.label}</span></div>
-            <span style={{fontSize:12,fontWeight:600,color:"#22c55e",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{usd(c.ing)}</span>
-            <span style={{fontSize:12,fontWeight:600,color:"#ff6b6b",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{usd(c.cost)}</span>
-            <span style={{fontSize:12,fontWeight:700,color:c.gan>=0?"#22c55e":"#ff6b6b",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{usd(c.gan)}</span>
-            <span style={{fontSize:12,fontWeight:700,color:c.mg>=20?"#22c55e":c.mg>=0?"#fbbf24":"#ff6b6b",textAlign:"right"}}>{c.mg.toFixed(1)}%</span>
-          </div>
-          {/* Dual bar: ingreso arriba (verde), costo abajo (rojo) */}
-          <div style={{display:"flex",gap:6,marginTop:6,alignItems:"center"}}>
-            <div style={{flex:1,height:5,background:"rgba(255,255,255,0.04)",borderRadius:3,overflow:"hidden"}}><div style={{width:`${(c.ing/maxAny)*100}%`,height:"100%",background:"#22c55e"}}/></div>
-            <div style={{flex:1,height:5,background:"rgba(255,255,255,0.04)",borderRadius:3,overflow:"hidden"}}><div style={{width:`${(c.cost/maxAny)*100}%`,height:"100%",background:"#ff6b6b"}}/></div>
-          </div>
-        </div>)}
-        {pureCosts.length>0&&<>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"16px 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Costos sin ingreso directo (ops)</p>
-          {pureCosts.map(c=><div key={c.label} style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr 0.8fr",gap:10,alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:2,background:c.color}}/><span style={{fontSize:12,color:"rgba(255,255,255,0.75)"}}>{c.label}</span></div>
-            <span style={{fontSize:11,color:"rgba(255,255,255,0.3)",textAlign:"right"}}>—</span>
-            <span style={{fontSize:12,fontWeight:600,color:"#ff6b6b",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{usd(c.cost)}</span>
-            <span style={{fontSize:12,fontWeight:600,color:"#ff6b6b",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>-{usd(c.cost)}</span>
-            <span style={{fontSize:11,color:"rgba(255,255,255,0.3)",textAlign:"right"}}>—</span>
-          </div>)}
-        </>}
-        {fixedRows.length>0&&<>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.35)",margin:"16px 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Gastos fijos del negocio (período)</p>
-          {fixedRows.map(c=><div key={c.label} style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr 0.8fr",gap:10,alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:2,background:c.color}}/><span style={{fontSize:12,color:"rgba(255,255,255,0.75)"}}>{c.label}</span></div>
-            <span style={{fontSize:11,color:"rgba(255,255,255,0.3)",textAlign:"right"}}>—</span>
-            <span style={{fontSize:12,fontWeight:600,color:"#ff6b6b",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{usd(c.cost)}</span>
-            <span style={{fontSize:12,fontWeight:600,color:"#ff6b6b",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>-{usd(c.cost)}</span>
-            <span style={{fontSize:11,color:"rgba(255,255,255,0.3)",textAlign:"right"}}>—</span>
-          </div>)}
-        </>}
-      </Card></div>;
-    })()}
-
-    {/* ═══ FILA 4: Contadores operativos ═══ */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:24}}>
-      {stat("Operaciones activas",activeOps.length,IC)}
-      {stat("Operaciones cerradas",closedOps.length,"#22c55e")}
-      {stat("Clientes nuevos (mes)",newClients,"#a78bfa")}
-      {stat("Cotizaciones pendientes",pendingQuotes,"#fbbf24")}
-    </div>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
       <Card title="Ganancia mensual (últimos 6 meses)">
@@ -6578,20 +6500,6 @@ function FinanceDashboard({token}){
         </div>;});})()}
         {Object.keys(byChannel).length===0&&<p style={{color:"rgba(255,255,255,0.45)"}}>Sin datos</p>}
       </Card>
-      <Card title="Desglose de costos">
-        {costBreakdown.length>0?<>
-          <div style={{height:12,borderRadius:6,overflow:"hidden",display:"flex",marginBottom:16}}>
-            {costBreakdown.map((c,i)=><div key={i} style={{width:`${(c.value/totalCostBreak)*100}%`,background:c.color,height:"100%"}}/>)}
-          </div>
-          {costBreakdown.map((c,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:3,background:c.color}}/><span style={{fontSize:12,color:"rgba(255,255,255,0.6)"}}>{c.label}</span></div>
-            <div><span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{usd(c.value)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:8}}>{((c.value/totalCostBreak)*100).toFixed(1)}%</span></div>
-          </div>)}
-        </>:<p style={{color:"rgba(255,255,255,0.45)"}}>Sin datos</p>}
-      </Card>
-    </div>
-
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
       <Card title="Top clientes por rentabilidad">
         {topClients.length>0?topClients.map(([name,d],i)=>{const mg=d.ing>0?((d.gan/d.ing)*100):0;const pct=(Math.abs(d.gan)/maxClientGan)*100;return <div key={name} style={{marginBottom:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
@@ -6601,111 +6509,7 @@ function FinanceDashboard({token}){
           {bar(pct,d.gan>0?"#22c55e":"#ff6b6b")}
         </div>;}):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin datos</p>}
       </Card>
-      <Card title="Por origen">
-        {Object.entries(byOrigin).map(([or,d])=>{const maxOr=Math.max(...Object.values(byOrigin).map(v=>v.ing),1);const pct=(d.ing/maxOr)*100;return <div key={or} style={{marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-            <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{or==="China"?"🇨🇳":"🇺🇸"} {or} ({d.count} ops)</span>
-            <span style={{fontSize:13,fontWeight:600,color:IC}}>{usd(d.ing)}</span>
-          </div>
-          {bar(pct,or==="China"?"#f97316":"#60a5fa")}
-        </div>;})}
-        {Object.keys(byOrigin).length===0&&<p style={{color:"rgba(255,255,255,0.45)"}}>Sin datos</p>}
-      </Card>
     </div>
-
-    {/* Cohorts de clientes + Tiempos promedio por ruta */}
-    {(()=>{
-      // ——— Cohorts: agrupa clientes por el mes de su primera op cerrada. Mide retención. ———
-      const clientOps={};closedOps.forEach(o=>{const cid=o.client_id;if(!cid)return;if(!clientOps[cid])clientOps[cid]={name:o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—",ops:[]};clientOps[cid].ops.push(o);});
-      const cohorts={};Object.values(clientOps).forEach(c=>{
-        const sorted=c.ops.slice().sort((a,b)=>(a.closed_at||"").localeCompare(b.closed_at||""));
-        const firstMonth=sorted[0].closed_at?String(sorted[0].closed_at).slice(0,7):null;
-        if(!firstMonth)return;
-        if(!cohorts[firstMonth])cohorts[firstMonth]={firstMonth,nuevos:0,repitieron:0,totalOps:0,totalIng:0};
-        cohorts[firstMonth].nuevos++;
-        cohorts[firstMonth].totalOps+=c.ops.length;
-        cohorts[firstMonth].totalIng+=c.ops.reduce((s,o)=>s+calcGan(o).ing,0);
-        if(c.ops.length>1)cohorts[firstMonth].repitieron++;
-      });
-      const cohortRows=Object.values(cohorts).sort((a,b)=>b.firstMonth.localeCompare(a.firstMonth)).slice(0,8);
-
-      // ——— Tiempos promedio por ruta (origin + channel) ———
-      const routeStats={};closedOps.forEach(o=>{
-        if(!o.dispatched_at||!o.delivered_at)return;
-        const route=`${o.origin||"?"} · ${CM[o.channel]||o.channel}`;
-        const totalDays=(new Date(o.delivered_at)-new Date(o.dispatched_at))/86400000;
-        if(totalDays<0||totalDays>120)return; // outliers
-        if(!routeStats[route])routeStats[route]={count:0,totalDays:0,days:[]};
-        routeStats[route].count++;
-        routeStats[route].totalDays+=totalDays;
-        routeStats[route].days.push(totalDays);
-      });
-      const rutas=Object.entries(routeStats).map(([r,d])=>({ruta:r,count:d.count,avg:d.totalDays/d.count,min:Math.min(...d.days),max:Math.max(...d.days)})).sort((a,b)=>a.avg-b.avg);
-
-      return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
-        <Card title="Cohorts — clientes nuevos por mes">
-          {cohortRows.length>0?<>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,paddingBottom:8,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:8}}>
-              {["MES","NUEVOS","REPITIERON","OPS/CLIENTE"].map(h=><p key={h} style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0}}>{h}</p>)}
-            </div>
-            {cohortRows.map(c=>{const retPct=c.nuevos>0?(c.repitieron/c.nuevos)*100:0;const opsPerClient=c.nuevos>0?c.totalOps/c.nuevos:0;return <div key={c.firstMonth} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:12}}>
-              <span style={{color:"#fff",fontWeight:600}}>{c.firstMonth}</span>
-              <span style={{color:"#fff"}}>{c.nuevos}</span>
-              <span style={{color:retPct>=50?"#22c55e":retPct>=25?"#fbbf24":"rgba(255,255,255,0.5)"}}>{c.repitieron} ({retPct.toFixed(0)}%)</span>
-              <span style={{color:"rgba(255,255,255,0.7)"}}>{opsPerClient.toFixed(1)}</span>
-            </div>;})}
-            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>Clientes agrupados por el mes de su 1ra op cerrada. "Repitieron" = tienen más de una op.</p>
-          </>:<p style={{color:"rgba(255,255,255,0.45)"}}>Sin datos de ops cerradas</p>}
-        </Card>
-        <Card title="Tiempos promedio por ruta">
-          {rutas.length>0?<>
-            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",gap:10,paddingBottom:8,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:8}}>
-              {["RUTA","OPS","PROM","RANGO"].map(h=><p key={h} style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0}}>{h}</p>)}
-            </div>
-            {rutas.map(r=><div key={r.ruta} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",gap:10,padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",fontSize:12}}>
-              <span style={{color:"#fff",fontWeight:600}}>{r.ruta}</span>
-              <span style={{color:"rgba(255,255,255,0.7)"}}>{r.count}</span>
-              <span style={{color:IC,fontWeight:700}}>{r.avg.toFixed(0)}d</span>
-              <span style={{color:"rgba(255,255,255,0.5)",fontSize:11}}>{r.min.toFixed(0)}-{r.max.toFixed(0)}d</span>
-            </div>)}
-            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>Días desde despacho a entrega final. Outliers (&gt;120d o negativos) excluidos.</p>
-          </>:<p style={{color:"rgba(255,255,255,0.45)"}}>Faltan datos — ops necesitan dispatched_at + delivered_at</p>}
-        </Card>
-      </div>;
-    })()}
-
-    {(()=>{
-      // Gastos del negocio agrupados por categoría (manuales) + ingresos por canal
-      const gastosByCat={};fixedCostsManual.forEach(e=>{const k=e.category||"otros";gastosByCat[k]=(gastosByCat[k]||0)+Number(e.amount||0);});
-      const totGastosCat=Object.values(gastosByCat).reduce((s,v)=>s+v,0);
-      const ingresosByChan={};periodOps.forEach(o=>{const ch=o.channel||"unknown";ingresosByChan[ch]=(ingresosByChan[ch]||0)+calcGan(o).ing;});
-      const totIngChan=Object.values(ingresosByChan).reduce((s,v)=>s+v,0);
-      return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
-        <Card title="Gastos del negocio por categoría">
-          {totGastosCat>0?<>
-            <div style={{height:12,borderRadius:6,overflow:"hidden",display:"flex",marginBottom:16}}>
-              {Object.entries(gastosByCat).map(([k,v])=><div key={k} style={{width:`${(v/totGastosCat)*100}%`,background:CAT_COLOR[k]||"#888",height:"100%"}}/>)}
-            </div>
-            {Object.entries(gastosByCat).sort((a,b)=>b[1]-a[1]).map(([k,v])=><div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:3,background:CAT_COLOR[k]||"#888"}}/><span style={{fontSize:12,color:"rgba(255,255,255,0.6)"}}>{CAT_LBL[k]||k}</span></div>
-              <div><span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{usd(v)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:8}}>{((v/totGastosCat)*100).toFixed(1)}%</span></div>
-            </div>)}
-            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>Total acumulado · cargá en Finanzas → Gastos del Negocio</p>
-          </>:<p style={{color:"rgba(255,255,255,0.45)"}}>Sin gastos cargados — agregá Meta ads, Vercel, Claude, salarios, etc. en Finanzas</p>}
-        </Card>
-        <Card title="Ingresos por canal (período)">
-          {totIngChan>0?<>
-            <div style={{height:12,borderRadius:6,overflow:"hidden",display:"flex",marginBottom:16}}>
-              {Object.entries(ingresosByChan).map(([k,v])=><div key={k} style={{width:`${(v/totIngChan)*100}%`,background:k==="aereo_blanco"?"#22c55e":k==="aereo_negro"?"#60a5fa":k==="maritimo_blanco"?"#a78bfa":"#fb923c",height:"100%"}}/>)}
-            </div>
-            {Object.entries(ingresosByChan).sort((a,b)=>b[1]-a[1]).map(([k,v])=><div key={k} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:3,background:k==="aereo_blanco"?"#22c55e":k==="aereo_negro"?"#60a5fa":k==="maritimo_blanco"?"#a78bfa":"#fb923c"}}/><span style={{fontSize:12,color:"rgba(255,255,255,0.6)"}}>{CM[k]||k}</span></div>
-              <div><span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{usd(v)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:8}}>{((v/totIngChan)*100).toFixed(1)}%</span></div>
-            </div>)}
-          </>:<p style={{color:"rgba(255,255,255,0.45)"}}>Sin ops cerradas en el período</p>}
-        </Card>
-      </div>;
-    })()}
 
     {(()=>{
       // Tabla mensual: P&L Devengado vs Flujo de Caja (últimos 12 meses)
