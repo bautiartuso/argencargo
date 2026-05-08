@@ -2153,13 +2153,22 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           </div>
           <Btn onClick={applySaldo} small>Aplicar a esta op →</Btn>
         </div>}
-        {/* Banner: cliente con deuda anterior */}
-        {debtBal>0.01&&!op.is_collected&&budgetTot>0&&<div style={{marginBottom:12,padding:"12px 16px",background:"linear-gradient(90deg, rgba(251,146,60,0.1), rgba(251,146,60,0.02))",border:"1px solid rgba(251,146,60,0.35)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        {/* Banner: cliente con deuda anterior (también permanece visible después de aplicar) */}
+        {(debtBal>0.01||debtApplied>0.01)&&!op.is_collected&&budgetTot>0&&<div style={{marginBottom:12,padding:"12px 16px",background:debtApplied>0?"linear-gradient(90deg, rgba(34,197,94,0.10), rgba(34,197,94,0.02))":"linear-gradient(90deg, rgba(251,146,60,0.1), rgba(251,146,60,0.02))",border:debtApplied>0?"1px solid rgba(34,197,94,0.35)":"1px solid rgba(251,146,60,0.35)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div>
-            <p style={{fontSize:12,fontWeight:700,color:"#fb923c",margin:0}}>⚠ Cliente con deuda anterior: USD {debtBal.toFixed(2)}</p>
-            {debtApplied>0?<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Ya sumaste USD {debtApplied.toFixed(2)} a esta op. Total a cobrar: <strong style={{color:"#fff"}}>USD {(budgetTot+debtApplied).toFixed(2)}</strong></p>:<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si la sumás, el monto a cobrar pasa a USD {(budgetTot+debtBal).toFixed(2)} y la deuda se cancela.</p>}
+            {debtApplied>0?<p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✓ Deuda anterior sumada: USD {debtApplied.toFixed(2)}</p>:<p style={{fontSize:12,fontWeight:700,color:"#fb923c",margin:0}}>⚠ Cliente con deuda anterior: USD {debtBal.toFixed(2)}</p>}
+            {debtApplied>0?<p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0"}}>Total a cobrar: <strong style={{color:"#fff"}}>USD {(budgetTot+debtApplied).toFixed(2)}</strong> · presupuesto USD {budgetTot.toFixed(2)} + deuda USD {debtApplied.toFixed(2)}</p>:<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si la sumás, el monto a cobrar pasa a USD {(budgetTot+debtBal).toFixed(2)} y la deuda se cancela.</p>}
           </div>
-          {debtApplied<=0&&<Btn onClick={applyDebt} small>Sumar a esta op →</Btn>}
+          {debtApplied<=0?<Btn onClick={applyDebt} small>Sumar a esta op →</Btn>:<button onClick={async()=>{if(!confirm(`¿Quitar los USD ${debtApplied.toFixed(2)} de deuda aplicada? La deuda vuelve a la CC del cliente.`))return;
+            // Revertir: borrar el movimiento "applied" creado y limpiar debt_applied_usd
+            const movs=await dq("client_account_movements",{token,filters:`?operation_id=eq.${op.id}&type=eq.applied&description=ilike.*Deuda%20cancelada*&select=id&order=created_at.desc&limit=1`});
+            if(Array.isArray(movs)&&movs[0])await dq("client_account_movements",{method:"DELETE",token,filters:`?id=eq.${movs[0].id}`});
+            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{debt_applied_usd:0}});
+            setOp(p=>({...p,debt_applied_usd:0}));
+            const fresh=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=account_balance_usd`});
+            if(Array.isArray(fresh)&&fresh[0])setOpClient(p=>({...p,account_balance_usd:fresh[0].account_balance_usd}));
+            flash("Deuda revertida");
+          }} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>Revertir</button>}
         </div>}
         {/* Banner: cargo extra registrado (cobraste más que el presupuesto, NO es saldo a favor) */}
         {Number(op.extra_charge_usd||0)>0.01&&op.is_collected&&<div style={{marginBottom:12,padding:"10px 14px",background:"linear-gradient(90deg, rgba(167,139,250,0.10), rgba(167,139,250,0.02))",border:"1px solid rgba(167,139,250,0.3)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
