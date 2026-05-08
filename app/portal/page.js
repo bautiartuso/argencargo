@@ -1194,9 +1194,11 @@ function CalculatorPage({token,client}){
       return{desc:p.description||"Producto",fob:itemFob,cif:itemCif,seguro:itemSeg,derechos,tasa_e,iva,totalImp,drPct:p.ncm?.import_duty_rate||0,tePct:p.ncm?.statistics_rate||0,ivaPct:p.ncm?.iva_rate||21,...extras};
     };
 
-    // Aéreo Courier Comercial (canal A) — peso facturable (max bruto/vol). Omitido si hay marca.
-    // China lo ofrece siempre que NO sea marca. USA y España NO ofrecen este canal.
-    if(!hasBrand&&facturable>0){const fleteRate=getFleteRate("aereo_a_china",facturable);const flete=facturable*fleteRate;
+    // Aéreo Courier Comercial (canal A) — peso facturable (max bruto/vol).
+    // Omitido si: hay marca registrada, o algún bulto unitario supera los 45 kg
+    // (límite operativo del canal courier — no importa el total, sino el peso por bulto)
+    const overweightPkg=pkgs.find(pk=>Number(pk.weight||0)>45);
+    if(!hasBrand&&!overweightPkg&&facturable>0){const fleteRate=getFleteRate("aereo_a_china",facturable);const flete=facturable*fleteRate;
       const certFlete=isRI?(totWeight*certAerReal):(facturable*certAerFict);
       const seguro=(totalFob+certFlete)*0.01;const totalCif=totalFob+certFlete+seguro;const battExtra=hasBattery?facturable*2:0;
       const items=products.filter(p=>Number(p.unit_price)>0).map(p=>calcItemTaxes(p,certFlete,false,totalCif));
@@ -1377,6 +1379,7 @@ function CalculatorPage({token,client}){
       <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 12px"}}>¿Los productos tienen marca?</h3>
       <div style={{display:"flex",gap:12,marginBottom:12}}>{[{k:true,icon:"®",l:"Sí, con marca",sub:"Productos branded / licencia"},{k:false,icon:"✓",l:"Sin marca",sub:"Productos genéricos"}].map(o=><div key={String(o.k)} onClick={()=>setHasBrand(o.k)} style={{flex:1,padding:"20px",textAlign:"center",borderRadius:12,border:`1.5px solid ${hasBrand===o.k?IC:"rgba(255,255,255,0.08)"}`,background:hasBrand===o.k?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.028)",cursor:"pointer"}}><p style={{fontSize:24,margin:"0 0 8px"}}>{o.icon}</p><p style={{fontSize:14,fontWeight:700,color:hasBrand===o.k?IC:"rgba(255,255,255,0.6)",margin:"0 0 4px"}}>{o.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{o.sub}</p></div>)}</div>
       {hasBrand&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:10,padding:"12px 16px",marginBottom:20}}><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Las importaciones con marca se despachan solo por canal <strong style={{color:IC}}>Integral AC</strong> (courier). No es necesario clasificar NCM.</p></div>}
+      {(()=>{const ow=pkgs.find(pk=>Number(pk.weight||0)>45);if(!ow||hasBrand)return null;return <div style={{background:"rgba(251,191,36,0.07)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:10,padding:"12px 16px",marginBottom:20}}><p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:0,lineHeight:1.5}}>⚠ Tenés un bulto de <strong style={{color:"#fbbf24"}}>{Number(ow.weight)} kg</strong>. El canal <strong style={{color:"#fff"}}>Aéreo Courier Comercial</strong> no acepta bultos individuales de más de 45 kg, por eso no aparece como opción. Para ese envío conviene <strong style={{color:"#fff"}}>Aéreo Integral AC</strong> o partir el bulto en unidades más chicas.</p></div>;})()}
       {detectedBrand&&autoDetectedBrandShown&&<div style={{background:"rgba(96,165,250,0.08)",border:"1.5px solid rgba(96,165,250,0.35)",borderRadius:10,padding:"12px 16px",marginBottom:20,display:"flex",gap:10,alignItems:"flex-start"}}><span style={{fontSize:18}}>🔍</span><div style={{flex:1}}><p style={{fontSize:12,fontWeight:700,color:"#60a5fa",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.04em"}}>Marca detectada automáticamente</p><p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:0,lineHeight:1.5}}>Detectamos una marca en tu descripción. Configuramos automáticamente el canal Integral AC. Si tu producto NO es de marca (genérico o réplica), <button onClick={()=>{setHasBrand(false);setAutoDetectedBrandShown(false);}} style={{background:"none",border:"none",color:"#60a5fa",textDecoration:"underline",cursor:"pointer",padding:0,fontSize:12,fontWeight:700}}>cambiá a "Sin marca"</button>.</p></div></div>}
 
       <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 12px"}}>¿Tu producto contiene batería interna?</h3>
