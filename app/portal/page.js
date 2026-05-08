@@ -353,29 +353,58 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
   const [selected,setSelected]=useState({});
   const fileRef=useRef(null);
 
+  // Convierte un File de imagen (jpg/png/heic/webp) a dataURL JPEG con un cap de tamaño
+  // razonable. La API de OCR espera images como dataURL (mismo formato que PDF rendered).
+  const imageFileToDataUrl=(file)=>new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>{
+      const img=new Image();
+      img.onload=()=>{
+        // Reescalar si es muy grande (max 2400px del lado más largo) — OCR mejora con menos ruido
+        const MAX=2400;const w=img.naturalWidth,h=img.naturalHeight;
+        const scale=Math.min(1,MAX/Math.max(w,h));
+        const cw=Math.round(w*scale),ch=Math.round(h*scale);
+        const canvas=document.createElement("canvas");canvas.width=cw;canvas.height=ch;
+        const ctx=canvas.getContext("2d");ctx.drawImage(img,0,0,cw,ch);
+        resolve(canvas.toDataURL("image/jpeg",0.88));
+      };
+      img.onerror=reject;img.src=reader.result;
+    };
+    reader.onerror=reject;reader.readAsDataURL(file);
+  });
+
   const handleFile=async(file)=>{
     if(!file)return;
-    if(!file.name.toLowerCase().endsWith(".pdf")&&file.type!=="application/pdf"){setError("Tiene que ser un archivo PDF");return;}
+    const name=file.name.toLowerCase();
+    const isPdf=name.endsWith(".pdf")||file.type==="application/pdf";
+    const isImage=file.type.startsWith("image/")||/\.(jpe?g|png|webp|heic|heif)$/i.test(name);
+    if(!isPdf&&!isImage){setError("Subí un PDF o una imagen (JPG/PNG)");return;}
     setError("");setStage("rendering");
     try{
-      const pdfjs=await loadPdfJs();
-      const arrayBuffer=await file.arrayBuffer();
-      const pdf=await pdfjs.getDocument({data:arrayBuffer}).promise;
-      const pages=Math.min(pdf.numPages,10);
-      const images=[];
-      for(let i=1;i<=pages;i++){
-        const page=await pdf.getPage(i);
-        const vp=page.getViewport({scale:2}); // 2x for better OCR
-        const canvas=document.createElement("canvas");
-        canvas.width=vp.width;canvas.height=vp.height;
-        const ctx=canvas.getContext("2d");
-        await page.render({canvasContext:ctx,viewport:vp}).promise;
-        images.push(canvas.toDataURL("image/jpeg",0.85));
+      let images=[];
+      if(isImage){
+        // Imagen suelta: una sola "página"
+        const dataUrl=await imageFileToDataUrl(file);
+        images=[dataUrl];
+      } else {
+        const pdfjs=await loadPdfJs();
+        const arrayBuffer=await file.arrayBuffer();
+        const pdf=await pdfjs.getDocument({data:arrayBuffer}).promise;
+        const pages=Math.min(pdf.numPages,10);
+        for(let i=1;i<=pages;i++){
+          const page=await pdf.getPage(i);
+          const vp=page.getViewport({scale:2}); // 2x for better OCR
+          const canvas=document.createElement("canvas");
+          canvas.width=vp.width;canvas.height=vp.height;
+          const ctx=canvas.getContext("2d");
+          await page.render({canvasContext:ctx,viewport:vp}).promise;
+          images.push(canvas.toDataURL("image/jpeg",0.85));
+        }
       }
       setStage("extracting");
       const r=await fetch("/api/parse-invoice-pdf",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images})});
       const j=await r.json();
-      if(!j.ok){setError(j.error||"Error al leer el PDF");setStage("error");return;}
+      if(!j.ok){setError(j.error||"Error al leer la factura");setStage("error");return;}
       const its=Array.isArray(j.items)?j.items:[];
       if(its.length===0){setError(L.no_items);setStage("error");return;}
       setItems(its);
@@ -440,11 +469,11 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
 
   // idle / error
   return <div>
-    <input ref={fileRef} type="file" accept=".pdf,application/pdf" onChange={e=>handleFile(e.target.files?.[0])} style={{display:"none"}}/>
+    <input ref={fileRef} type="file" accept=".pdf,application/pdf,image/*,.jpg,.jpeg,.png,.webp,.heic" onChange={e=>handleFile(e.target.files?.[0])} style={{display:"none"}}/>
     <div onClick={()=>fileRef.current?.click()} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=GOLD;e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";e.currentTarget.style.background="rgba(184,149,106,0.04)";}} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";handleFile(e.dataTransfer.files?.[0]);}} style={{border:"2px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.04)",borderRadius:12,padding:"32px 20px",textAlign:"center",cursor:"pointer",transition:"all 200ms"}}>
       <div style={{fontSize:42,marginBottom:8}}>📄</div>
       <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"0 0 4px"}}>{L.drop_or_pick}</p>
-      <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>PDF · max 10 páginas · facturas chinas o USA</p>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>PDF (max 10 páginas) o imagen JPG/PNG · facturas chinas o USA</p>
     </div>
     {error&&<p style={{fontSize:12,color:"#ff6b6b",margin:"10px 0 0",textAlign:"center"}}>{error}</p>}
     {onCancel&&<div style={{display:"flex",justifyContent:"center",marginTop:10}}>
