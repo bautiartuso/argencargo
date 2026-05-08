@@ -4588,6 +4588,7 @@ function AgentsPanel({token}){
   const [selectedOps,setSelectedOps]=useState([]);
   const [opsWithDocs,setOpsWithDocs]=useState(new Set());
   const [selFlight,setSelFlight]=useState(null);
+  const [expandedRepack,setExpandedRepack]=useState(null); // op.id cuyo snapshot está expandido
   const [showAnticipoForm,setShowAnticipoForm]=useState(null);
   const [showRefundForm,setShowRefundForm]=useState(null);
   const [expandedOp,setExpandedOp]=useState(null);
@@ -4914,10 +4915,28 @@ function AgentsPanel({token}){
                       <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Detalle de {o.operation_code}</span>
                       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                         {rpk?.status==="pending"&&<span style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)"}}>⏳ Reempaque pedido</span>}
-                        {rpk?.status==="done"&&(()=>{const before=Number(rpk.original_billable_kg||0),after=Number(rpk.new_billable_kg||0),delta=before-after;return <span title={`${before.toFixed(2)} kg → ${after.toFixed(2)} kg`} style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)"}}>✅ Reempaque hecho{delta>0?` (−${delta.toFixed(1)} kg)`:""}</span>;})()}
+                        {rpk?.status==="done"&&(()=>{const before=Number(rpk.original_billable_kg||0),after=Number(rpk.new_billable_kg||0),delta=before-after;const hasSnap=Array.isArray(rpk.original_packages_snapshot)||Array.isArray(rpk.new_packages_snapshot);const isOpen=expandedRepack===o.id;return <>
+                          <span title={`${before.toFixed(2)} kg → ${after.toFixed(2)} kg`} style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)"}}>✅ Reempaque hecho{delta>0?` (−${delta.toFixed(1)} kg)`:""}</span>
+                          {hasSnap&&<button onClick={(e)=>{e.stopPropagation();setExpandedRepack(isOpen?null:o.id);}} style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>{isOpen?"Ocultar detalle":"Ver bultos antes/después"}</button>}
+                        </>;})()}
                         {canRepack&&<button onClick={(e)=>{e.stopPropagation();requestRepackForOp(o);}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🔄 Pedir reempaque</button>}
                       </div>
                     </div>
+                    {rpk?.status==="done"&&expandedRepack===o.id&&(()=>{const oSnap=Array.isArray(rpk.original_packages_snapshot)?rpk.original_packages_snapshot:null;const nSnap=Array.isArray(rpk.new_packages_snapshot)?rpk.new_packages_snapshot:null;const fmt=(p)=>{const dim=p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}cm`:"—";const w=p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—";const q=p.quantity>1?` ×${p.quantity}`:"";return{dim,w,q,trk:p.national_tracking||"—"};};const renderTbl=(snap,label,tone)=>!snap?<div style={{flex:1,padding:12,fontSize:11,color:"rgba(255,255,255,0.45)",fontStyle:"italic",textAlign:"center"}}>Sin snapshot ({label.toLowerCase()})</div>:<div style={{flex:1,minWidth:260}}>
+                      <p style={{fontSize:10,fontWeight:700,color:tone,margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{label} · {snap.length} bulto{snap.length!==1?"s":""}</p>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+                        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{["#","Tracking","Dim","Peso"].map(h=><th key={h} style={{textAlign:"left",padding:"4px 6px",color:"rgba(255,255,255,0.4)",fontWeight:700,fontSize:9,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+                        <tbody>{snap.map((p,i)=>{const f=fmt(p);return <tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                          <td style={{padding:"4px 6px",color:"#fff",fontWeight:600}}>{p.package_number||i+1}{f.q}</td>
+                          <td style={{padding:"4px 6px",color:"rgba(255,255,255,0.6)",fontFamily:"monospace",fontSize:10}}>{f.trk}</td>
+                          <td style={{padding:"4px 6px",color:"rgba(255,255,255,0.55)"}}>{f.dim}</td>
+                          <td style={{padding:"4px 6px",color:"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums"}}>{f.w}</td>
+                        </tr>;})}</tbody>
+                      </table>
+                    </div>;return <div style={{display:"flex",gap:14,marginBottom:14,padding:"12px 14px",borderRadius:10,background:"rgba(34,197,94,0.04)",border:"1px solid rgba(34,197,94,0.18)",flexWrap:"wrap"}}>
+                      {renderTbl(oSnap,"Antes","#fbbf24")}
+                      {renderTbl(nSnap,"Después","#22c55e")}
+                    </div>;})()}
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
                     {/* Productos declarados por el cliente */}
                     <div>
