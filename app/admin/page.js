@@ -238,10 +238,11 @@ function OperationsList({token,onSelect,onNew}){
     const cliPaid=o.service_type==="gestion_integral"?Number(cliPmtsByOp[o.id]||0):(()=>{const raw=Number(o.collected_amount||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);return isArs&&rate>0?raw/rate:raw;})();
     const creditApplied=Number(o.credit_applied_usd||0);
     const discountApplied=Number(o.discount_applied_usd||0);
+    const debtApplied=Number(o.debt_applied_usd||0); // deuda anterior sumada a esta op → aumenta el saldo
     const pmts=pmtsByOp[o.id]||[];
     const pmtTot=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
     const ant=Number(o.total_anticipos||0);
-    const saldo=Math.max(0,(bt-cliPaid-creditApplied-discountApplied)+Math.max(0,pmtTot-ant));
+    const saldo=Math.max(0,(bt+debtApplied-cliPaid-creditApplied-discountApplied)+Math.max(0,pmtTot-ant));
     return saldo;
   };
   const toggleStatus=(s)=>setFStatuses(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
@@ -2065,9 +2066,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         const cobroUsd=isArsCol&&colRate>0?cobroRaw/colRate:cobroRaw;
         const creditBal=Number(opClient?.account_balance_usd||0); // saldo a favor del cliente (puede ser negativo = deuda)
         const creditApplied=Number(op.credit_applied_usd||0); // ya aplicado a esta op
-        // Para detectar diff, incluimos crédito aplicado de CC como "pago"
+        const debtAppliedHere=Number(op.debt_applied_usd||0); // deuda anterior sumada → aumenta el monto a cobrar
+        // Para detectar diff, incluimos crédito aplicado de CC como "pago" y deuda aplicada en el budget efectivo
         const cobroEffective=cobroUsd+creditApplied;
-        const diff=cobroEffective-budgetTot; // + = pagó de más, - = pagó de menos
+        const budgetEffective=budgetTot+debtAppliedHere;
+        const diff=cobroEffective-budgetEffective; // + = pagó de más, - = pagó de menos
         const saveCobro=async()=>{
           if(op.is_collected&&isArsCol&&!colRate){alert("El cobro es en ARS: cargá el tipo de cambio primero");return;}
           if(op.is_collected&&budgetTot>0){
@@ -2075,9 +2078,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               const choice=await askCobroDecision("overpay",diff);
               if(choice===null)return;
               if(choice==="s"){
-                // Capear collected_amount al budget: el excedente queda en CC, no infla la ganancia
-                setOp(p=>({...p,collected_amount:budgetTot}));
-                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{collected_amount:budgetTot,extra_charge_usd:0,is_collected:true,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
+                // Capear collected_amount al budget efectivo (incluye deuda aplicada): el excedente queda en CC, no infla la ganancia
+                setOp(p=>({...p,collected_amount:budgetEffective}));
+                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{collected_amount:budgetEffective,extra_charge_usd:0,is_collected:true,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
                 await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`});
                 flash(`Cobrada · saldo a favor +USD ${diff.toFixed(2)}`);
                 return;
