@@ -6335,9 +6335,45 @@ function FinanceDashboard({token}){
   const topClients=Object.entries(byClient).sort((a,b)=>b[1].gan-a[1].gan).slice(0,5);
   const maxClientGan=topClients.length>0?Math.max(...topClients.map(([,d])=>Math.abs(d.gan)),1):1;
 
-  // Monthly profit (last 6 months)
+  // Monthly profit (last 6 months) — usando MISMA lógica que el KPI principal: flujo del libro diario completo
   const MN=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-  const monthly=[];for(let i=5;i>=0;i--){const d=new Date(thisYear,thisMonth-i,1);const m=d.getMonth();const y=d.getFullYear();const mOps=closedOps.filter(o=>{if(!o.closed_at)return false;const p=parseLocalDate(o.closed_at);return p.m===m&&p.y===y;});const ing=mOps.reduce((s,o)=>s+calcGan(o).ing,0);const cost=mOps.reduce((s,o)=>s+calcGan(o).cost,0);monthly.push({label:`${MN[m]} ${y}`,ing,cost,gan:ing-cost,ops:mOps.length});}
+  const monthly=[];for(let i=5;i>=0;i--){
+    const d=new Date(thisYear,thisMonth-i,1);const m=d.getMonth();const y=d.getFullYear();
+    const inThisMonth=(ds)=>{if(!ds)return false;const p=parseLocalDate(ds);return p.m===m&&p.y===y;};
+    let mIng=0,mCost=0;
+    // Ingresos: cobros legacy + clientPmts + pmts.client_paid + supplier refunds + finance_entries ingresos + agent refunds
+    ops.filter(o=>o.is_collected&&o.service_type!=="gestion_integral"&&inThisMonth(o.collection_date||o.closed_at?.slice(0,10))).forEach(o=>{
+      const opPmts=clientPmts.filter(p=>p.operation_id===o.id);if(opPmts.length>0)return;
+      const raw=Number(o.collected_amount||o.budget_total||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const cash=isArs&&rate>0?raw/rate:raw;
+      const overpay=Math.max(0,cash-Number(o.budget_total||0));const creditApp=Number(o.credit_applied_usd||0);const extraCharge=Number(o.extra_charge_usd||0);
+      const cashIn=extraCharge>0.01?cash:(cash+overpay-creditApp);if(cashIn>0)mIng+=cashIn;
+    });
+    mIng+=clientPmts.filter(p=>inThisMonth(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+    mIng+=Object.values(pmtsByOp).flat().filter(p=>p.client_paid&&inThisMonth(p.client_paid_date)).reduce((s,p)=>s+Number(p.client_paid_amount_usd??p.client_amount_usd??0),0);
+    mIng+=supplierPmts.filter(p=>p.is_paid&&p.type==="refund"&&inThisMonth(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+    mIng+=finEntries.filter(e=>e.type==="ingreso"&&inThisMonth(e.date)).reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
+    mIng+=agentMvs.filter(mv=>mv.type==="refund"&&inThisMonth(mv.date)).reduce((s,mv)=>{const recv=mv.amount_received_usd!=null?Number(mv.amount_received_usd):Number(mv.amount_usd||0);return s+recv;},0);
+    // Gastos: costos op pagados + supplier pmts + comisiones giro/giros + finance_entries gastos + anticipos agente
+    ops.forEach(o=>{
+      const fleteMethod=o.cost_flete_method||"cuenta_corriente";const closedDate=o.closed_at?.slice(0,10)||null;
+      const pickDate=(paid)=>paid?.slice(0,10)||closedDate;
+      const fleteDate=pickDate(o.cost_flete_paid_at);if(fleteMethod!=="cuenta_corriente"&&Number(o.cost_flete||0)>0&&fleteDate&&inThisMonth(fleteDate))mCost+=Number(o.cost_flete);
+      const segDate=pickDate(o.cost_seguro_paid_at);if(Number(o.cost_seguro||0)>0&&segDate&&inThisMonth(segDate))mCost+=Number(o.cost_seguro);
+      const flDate=pickDate(o.cost_flete_local_paid_at);if(Number(o.cost_flete_local||0)>0&&flDate&&inThisMonth(flDate))mCost+=Number(o.cost_flete_local);
+      const otDate=pickDate(o.cost_otros_paid_at);if(Number(o.cost_otros||0)>0&&otDate&&inThisMonth(otDate))mCost+=Number(o.cost_otros);
+    });
+    mCost+=supplierPmts.filter(p=>p.is_paid&&p.type!=="refund"&&inThisMonth(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+    Object.values(pmtsByOp).flat().forEach(p=>{
+      if(p.giro_status==="confirmado"&&Number(p.cost_comision_giro||0)>0&&inThisMonth(p.giro_date||p.client_paid_date))mCost+=Number(p.cost_comision_giro);
+      const tarjetaPend=p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid;
+      const giroDate=p.giro_tarjeta_paid_at?p.giro_tarjeta_paid_at.slice(0,10):p.giro_date;
+      if(p.giro_status==="confirmado"&&!tarjetaPend&&Number(p.giro_amount_usd||0)>0&&inThisMonth(giroDate))mCost+=Number(p.giro_amount_usd);
+    });
+    mCost+=finEntries.filter(e=>e.type==="gasto"&&!(e.payment_method==="tarjeta_credito"&&!e.is_paid)&&inThisMonth(e.date)).reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
+    mCost+=agentMvs.filter(mv=>mv.type==="anticipo"&&inThisMonth(mv.date)).reduce((s,mv)=>{const recv=mv.amount_received_usd!=null?Number(mv.amount_received_usd):Number(mv.amount_usd||0);return s+recv;},0);
+    const mOpsCount=closedOps.filter(o=>{if(!o.closed_at)return false;const p=parseLocalDate(o.closed_at);return p.m===m&&p.y===y;}).length;
+    monthly.push({label:`${MN[m]} ${y}`,ing:mIng,cost:mCost,gan:mIng-mCost,ops:mOpsCount});
+  }
   const maxMonthGan=Math.max(...monthly.map(m=>Math.abs(m.gan)),1);
   const maxMonthOps=Math.max(...monthly.map(m=>m.ops),1);
 
