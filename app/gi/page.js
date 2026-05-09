@@ -937,7 +937,7 @@ function CotizadorWizard({token,requestId,onBack}){
     </div>
 
     {step===1&&<WizStep1 token={token} products={products} onUpdate={updateProduct} onAdd={addProduct} onRemove={removeProduct} onClassify={classifyNcm} onNext={()=>goStep(2)} totalFob={totalFob}/>}
-    {step===2&&<WizStep2 visibleChannels={visibleChannels} someUSA={someUSA} honorariosPct={honorariosPct} setHonorariosPct={setHonorariosPct} paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} onBack={()=>setStep(1)} onNext={generateLink} saving={saving}/>}
+    {step===2&&<WizStep2 visibleChannels={visibleChannels} someUSA={someUSA} honorariosPct={honorariosPct} setHonorariosPct={setHonorariosPct} paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} totalFob={totalFob} onBack={()=>setStep(1)} onNext={generateLink} saving={saving}/>}
     {step===3&&<WizStep3 generatedQuote={generatedQuote} onBack={onBack}/>}
   </div>;
 }
@@ -1016,7 +1016,44 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
   </div>;
 }
 
-function WizStep2({visibleChannels,someUSA,honorariosPct,setHonorariosPct,paymentPlan,setPaymentPlan,onBack,onNext,saving}){
+function WizStep2({visibleChannels,someUSA,honorariosPct,setHonorariosPct,paymentPlan,setPaymentPlan,totalFob,onBack,onNext,saving}){
+  // Cálculo del mínimo seguro de primer pago para no quedar en descubierto.
+  // Worst case: el canal con MAYOR ratio FOB/precio (más caro de fundear upfront en proporción).
+  const validChannels=(visibleChannels||[]).filter(c=>!c.error&&c.total>0);
+  const minPctPerChannel=validChannels.map(c=>{
+    const ratio=totalFob/c.total*100;
+    return {key:c.key,name:c.name,total:c.total,fobRatio:ratio};
+  });
+  const minSafePct=minPctPerChannel.length>0?Math.ceil(Math.max(...minPctPerChannel.map(c=>c.fobRatio))):0;
+  const firstPct=Number(paymentPlan?.[0]?.pct||0);
+  const isCovered=firstPct>=minSafePct;
+  const adjustToMinSafe=()=>{
+    if(minSafePct<=0||minSafePct>=100)return;
+    const remaining=100-minSafePct;
+    setPaymentPlan(p=>{
+      if(!Array.isArray(p)||p.length===0)return [{pct:minSafePct,label:"Anticipo (cubre FOB)"},{pct:remaining,label:"Saldo al arribo"}];
+      const updated=[...p];
+      updated[0]={...updated[0],pct:minSafePct};
+      const others=updated.slice(1);
+      const sumOthers=others.reduce((s,x)=>s+Number(x.pct||0),0);
+      if(sumOthers===0&&others.length>0){
+        // distribuir el resto en partes iguales
+        const each=Math.floor(remaining/others.length);
+        const last=remaining-each*(others.length-1);
+        others.forEach((s,i)=>{updated[i+1]={...s,pct:i===others.length-1?last:each};});
+      } else if(sumOthers>0){
+        // re-escalar otros tramos para que sumen "remaining"
+        const factor=remaining/sumOthers;
+        others.forEach((s,i)=>{updated[i+1]={...s,pct:Math.round(Number(s.pct||0)*factor)};});
+        // Ajuste final al último para que sume exacto 100
+        const total=updated.reduce((s,x)=>s+Number(x.pct||0),0);
+        const diff=100-total;
+        if(diff!==0&&updated.length>1){updated[updated.length-1]={...updated[updated.length-1],pct:Number(updated[updated.length-1].pct||0)+diff};}
+      }
+      return updated;
+    });
+  };
+
   return <div>
     <div style={{padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:18}}>
       <strong style={{color:"#60a5fa"}}>Step 2:</strong> el sistema calcula el costo operativo por canal{someUSA?". Hay algún producto USA, así que solo se muestran canales B.":"."} Sumá los honorarios que cobrás al cliente por la gestión y el sistema arma el precio final que ve el cliente. Tu comisión como socio se define por separado al cerrar la op.
@@ -1082,12 +1119,29 @@ function WizStep2({visibleChannels,someUSA,honorariosPct,setHonorariosPct,paymen
     </div>
 
     <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>
-      <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 12px"}}>Plan de pagos</h3>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,marginBottom:12,flexWrap:"wrap"}}>
+        <div>
+          <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:0}}>Plan de pagos</h3>
+          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"4px 0 0",lineHeight:1.5}}>FOB de USD <strong style={{color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(totalFob)}</strong> se paga al proveedor al iniciar la op. El primer tramo del plan tiene que cubrir ese monto para no quedar en descubierto.</p>
+        </div>
+        {minSafePct>0&&minSafePct<100&&<button onClick={adjustToMinSafe} style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>Ajustar al mínimo seguro ({minSafePct}%)</button>}
+      </div>
+
+      {validChannels.length>0&&<div style={{padding:"10px 14px",background:isCovered?"rgba(34,197,94,0.06)":"rgba(248,113,113,0.06)",border:`1px solid ${isCovered?"rgba(34,197,94,0.25)":"rgba(248,113,113,0.3)"}`,borderRadius:10,marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:200}}>
+          <p style={{fontSize:11,fontWeight:700,color:isCovered?"#22c55e":"#f87171",textTransform:"uppercase",letterSpacing:"0.06em",margin:0}}>{isCovered?"✓ Primer tramo cubre el FOB":"⚠ Primer tramo no cubre el FOB"}</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0",lineHeight:1.4}}>
+            Necesitás cobrar al menos <strong style={{color:"#fff"}}>{minSafePct}%</strong> del precio en el primer tramo (peor caso entre canales). Tu plan cobra <strong style={{color:isCovered?"#22c55e":"#f87171"}}>{firstPct}%</strong>.
+          </p>
+        </div>
+      </div>}
+
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-        {paymentPlan.map((stage,i)=><div key={i} style={{flex:"1 1 200px",padding:"12px 14px",background:"rgba(0,0,0,0.18)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
+        {paymentPlan.map((stage,i)=><div key={i} style={{flex:"1 1 200px",padding:"12px 14px",background:"rgba(0,0,0,0.18)",borderRadius:10,border:`1px solid ${i===0&&!isCovered?"rgba(248,113,113,0.35)":"rgba(255,255,255,0.06)"}`}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
             <input type="text" inputMode="numeric" value={stage.pct} onChange={e=>{const v=e.target.value.replace(/[^0-9]/g,"");setPaymentPlan(p=>p.map((s,j)=>j===i?{...s,pct:Number(v)||0}:s));}} style={{width:50,padding:"4px 6px",fontSize:14,fontWeight:700,background:"transparent",border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,color:"#fff",textAlign:"center",outline:"none"}}/>
             <span style={{fontSize:14,fontWeight:700,color:"#fff"}}>%</span>
+            {i===0&&validChannels.length>0&&<span style={{fontSize:9.5,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#60a5fa",letterSpacing:"0.04em",marginLeft:"auto"}}>ANTICIPO</span>}
           </div>
           <input value={stage.label} onChange={e=>setPaymentPlan(p=>p.map((s,j)=>j===i?{...s,label:e.target.value}:s))} style={{width:"100%",padding:"5px 8px",fontSize:11,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"rgba(255,255,255,0.8)",outline:"none",fontFamily:"inherit"}}/>
         </div>)}
