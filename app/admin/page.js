@@ -1066,6 +1066,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>:<>
 
     {tab==="general"&&<>
+      {/* GI: Asignación de socio + comisión por op (override del cliente) — visible apenas entra al detalle */}
+      {op.service_type==="gestion_integral"&&<GiAssignmentCard op={op} setOp={setOp} opClient={opClient} token={token} flash={flash}/>}
       <Card title="Estado" actions={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{op.created_by_agent_id&&pkgs.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(op.status)&&(!repackReq||repackReq.status!=="pending")&&<Btn small variant="secondary" onClick={requestRepack}>🔄 Pedir reempaque</Btn>}{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&<Btn small variant="secondary" onClick={async()=>{if(!confirm("¿Reabrir la declaración? El cliente podrá modificar/agregar productos."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{status:"en_deposito_origen",consolidation_confirmed:false}});setOp(p=>({...p,status:"en_deposito_origen",consolidation_confirmed:false}));flash("✅ Declaración reabierta — el cliente puede editar");}}>↻ Reabrir declaración</Btn>}{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",entregada:"retiro",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];const waSent=op.sent_notifications?.[`wa_${tr}`];const hasWaTpl=tr==="deposito"||tr==="retiro";return <>
 <Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>
 {hasWaTpl&&<Btn small variant="secondary" onClick={()=>sendWaTrigger(tr)}>{waSent?"💬 Reenviar WA":"💬 Enviar WA"}</Btn>}
@@ -2290,9 +2292,6 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           </div>
         </div>
       </Card>;})()}
-
-      {/* GI: Asignación de socio + comisión por operación (override del cliente) */}
-      {op.service_type==="gestion_integral"&&<GiAssignmentCard op={op} setOp={setOp} opClient={opClient} token={token} flash={flash}/>}
 
       <Card title={op.service_type==="gestion_integral"?"Costos reales (Gestión Integral)":"Costos reales"} actions={<Btn onClick={async()=>{setSaving(true);
         // Save flete
