@@ -175,7 +175,7 @@ function Shell({session,profile,onLogout}){
       {k:"forwarders",l:"Embarcadores",p:["M3 17l3-3 4 4 8-8 3 3","M21 6V3h-3"]},
     ]},
     {sec:"Configuración",items:[
-      {k:"settings",l:"Tarifas y T&C",p:["M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z","M7 7h.01"]},
+      {k:"settings",l:"Configuración",p:["M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z","M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"]},
     ]},
   ];
 
@@ -1700,6 +1700,7 @@ function PaneCommissions({token}){
     </div>
 
     {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:<>
+      {pending.some(e=>e.is_estimated)&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:12,color:"#fb923c"}}>⚠ Las ops marcadas <strong style={{padding:"1px 5px",borderRadius:3,background:"rgba(251,146,60,0.2)",fontSize:10,letterSpacing:"0.05em"}}>EST</strong> tienen costos en pesos pendientes de dolarizar. La comisión es estimada y se confirma automáticamente cuando se debiten los pagos pendientes. Hasta entonces, el admin no podrá liquidártela.</div>}
       {pending.length>0&&<>
         <h3 style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,textTransform:"uppercase",letterSpacing:"0.1em",margin:"6px 0 12px"}}>Pendientes de pago ({pending.length})</h3>
         <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden",marginBottom:24}}>
@@ -1716,7 +1717,7 @@ function PaneCommissions({token}){
             </tr></thead>
             <tbody>
               {pending.map(e=>{const cn=e.operations?.clients?`${e.operations.clients.first_name||""} ${e.operations.clients.last_name||""}`.trim():"—";const com=Number(e.commission_usd||0);return <tr key={e.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-                <td style={{padding:"11px 14px",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:GOLD_LIGHT,whiteSpace:"nowrap"}}>{e.operations?.operation_code||"—"}</td>
+                <td style={{padding:"11px 14px",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:GOLD_LIGHT,whiteSpace:"nowrap"}}>{e.operations?.operation_code||"—"}{e.is_estimated&&<span title={`Estimada con FX ${e.estimated_fx_rate||"?"}. Se confirma cuando dolarices los pagos pendientes.`} style={{marginLeft:6,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(251,146,60,0.15)",color:"#fb923c",letterSpacing:"0.05em",fontFamily:"inherit",cursor:"help"}}>EST</span>}</td>
                 <td style={{padding:"11px 14px",color:"#fff",fontWeight:600,whiteSpace:"nowrap"}}>{cn}</td>
                 <td style={{padding:"11px 14px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontFeatureSettings:'"tnum"',textAlign:"center"}}>{fmtDateShort(e.closed_at)}</td>
                 <td style={{padding:"11px 14px",textAlign:"right",color:"#22c55e",fontFeatureSettings:'"tnum"'}}>{fmtUSD(e.revenue_usd)}</td>
@@ -2010,10 +2011,51 @@ function EditCard({form,setForm,fields,rubroOptions,groupBy,onSave,onCancel,savi
 function PaneSettings({token}){
   return <div>
     <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Configuración</h1>
-    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>Tarifas de envío, datos de oficina y términos &amp; condiciones que aparecen en la cotización al cliente.</p>
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>Tarifas de envío, tipo de cambio estimado, datos de oficina y términos &amp; condiciones.</p>
     <SettingsRates token={token}/>
+    <SettingsFx token={token}/>
     <SettingsOffice token={token}/>
     <SettingsTerms token={token}/>
+  </div>;
+}
+
+function SettingsFx({token}){
+  const [data,setData]=useState(null);
+  const [val,setVal]=useState("");
+  const [saving,setSaving]=useState(false);
+  const [msg,setMsg]=useState("");
+  const flash=(t)=>{setMsg(t);setTimeout(()=>setMsg(""),3000);};
+  useEffect(()=>{(async()=>{
+    try{
+      const r=await dq("gi_settings",{token,filters:"?select=*&limit=1"});
+      if(Array.isArray(r)&&r[0]){setData(r[0]);setVal(r[0].default_fx_rate?String(r[0].default_fx_rate):"");}
+    }catch(e){console.error("SettingsFx load",e);}
+  })();},[token]);
+  const save=async()=>{
+    setSaving(true);
+    try{
+      let row=data;
+      if(!row?.id){
+        const r=await dq("gi_settings",{token,filters:"?select=*&limit=1"});
+        if(Array.isArray(r)&&r[0])row=r[0];
+      }
+      if(!row?.id){flash("No hay registro de gi_settings");setSaving(false);return;}
+      await dq("gi_settings",{method:"PATCH",token,filters:`?id=eq.${row.id}`,body:{default_fx_rate:val?Number(val):null,updated_at:new Date().toISOString()}});
+      setData({...row,default_fx_rate:val?Number(val):null});
+      flash("Guardado");
+    }catch(e){console.error(e);flash("Error al guardar");}
+    setSaving(false);
+  };
+  return <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18,position:"relative"}}>
+    {msg&&<div style={{position:"absolute",top:14,right:14,background:"rgba(34,197,94,0.18)",border:"1px solid rgba(34,197,94,0.4)",color:"#22c55e",padding:"5px 12px",borderRadius:8,fontSize:11,fontWeight:600}}>{msg}</div>}
+    <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>Tipo de cambio estimado (ARS → USD)</h3>
+    <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",marginBottom:14,lineHeight:1.5}}>Se usa para estimar costos en pesos pendientes de dolarizar (ej. tarjeta de crédito) cuando se cierra una operación. Cuando dolarices el pago real, la comisión se recalcula automáticamente. Si lo dejás vacío, se toma el último FX cargado en la base.</p>
+    <div style={{display:"flex",alignItems:"end",gap:12}}>
+      <div style={{flex:1,maxWidth:240}}>
+        <Field2 label="ARS por 1 USD" v={val} on={setVal}/>
+      </div>
+      <button onClick={save} disabled={saving} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",background:saving?"rgba(184,149,106,0.4)":GOLD_GRADIENT,color:"#0A1628",cursor:saving?"wait":"pointer",fontFamily:"inherit"}}>{saving?"Guardando…":"Guardar"}</button>
+    </div>
   </div>;
 }
 

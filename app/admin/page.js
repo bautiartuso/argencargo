@@ -645,28 +645,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     // En ops GI el budget_total lo maneja un trigger DB (sync_gi_budget_total = SUM items).
     // Si el state tiene un valor stale, lo sacamos del PATCH para no pisar al trigger.
     if(op.service_type==="gestion_integral"){delete rest.budget_total;}
-    // BLOQUEO: GI op no puede cerrarse si hay gastos con tarjeta de crédito pendientes de débito
-    if(rest.status==="operacion_cerrada"&&op.service_type==="gestion_integral"&&rest.status!==initOp.status){
-      const tcPending=[];
-      // Costos op en TC pendiente
-      if(op.cost_flete_method==="tarjeta_credito"&&!op.cost_flete_paid_at&&Number(op.cost_flete||0)>0)tcPending.push(`Flete USD ${Number(op.cost_flete).toFixed(2)}`);
-      // Pagos a proveedor TC
-      const supTcPend=(supplierPayments||[]).filter(p=>p.payment_method==="tarjeta_credito"&&!p.is_paid);
-      supTcPend.forEach(p=>tcPending.push(`Pago proveedor USD ${Number(p.amount_usd).toFixed(2)}`));
-      // Gestión de pagos: giros TC pendientes
-      const pmTcPend=(payments||[]).filter(p=>p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid&&Number(p.giro_amount_usd||0)>0);
-      pmTcPend.forEach(p=>tcPending.push(`Giro USD ${Number(p.giro_amount_usd).toFixed(2)}`));
-      // finance_entries linkeadas a la op con TC pendiente
-      try{
-        const feTcPend=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&type=eq.gasto&payment_method=eq.tarjeta_credito&is_paid=eq.false&select=description,amount,currency,amount_ars`});
-        if(Array.isArray(feTcPend))feTcPend.forEach(e=>tcPending.push(`${e.description||"Gasto"} ${e.currency==="ARS"?`ARS ${Number(e.amount_ars||e.amount).toFixed(2)}`:`USD ${Number(e.amount).toFixed(2)}`}`));
-      }catch(e){}
-      if(tcPending.length>0){
-        setSaving(false);
-        alert(`⚠ No se puede cerrar la op de Gestión Integral todavía.\n\nTenés ${tcPending.length} gasto${tcPending.length>1?"s":""} con tarjeta de crédito pendiente${tcPending.length>1?"s":""} de débito:\n\n• ${tcPending.join("\n• ")}\n\nMarcalos como pagados (cuando se debiten en el resumen) o cambialos a otro método antes de cerrar la operación. Esto asegura que la comisión del socio se calcule sobre la ganancia neta REAL.`);
-        return;
-      }
-    }
+    // GI: ya NO bloqueamos cierre por TC pendiente. La comisión se calcula como ESTIMADA con FX,
+    // y se confirma automáticamente cuando se dolaricen los pagos pendientes (trigger DB).
+    // El bloqueo a "Marcar pagada" la comisión existe del lado admin → Comisiones a pagar.
     if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();
     if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
@@ -7625,6 +7606,12 @@ function GiAdminPanel({token,clients}){
   };
   useEffect(()=>{loadEarnings();},[token]);
   const payAllForPartner=async(partnerId,earningIds,totalAmount)=>{
+    // Bloqueo: no se pueden liquidar comisiones estimadas (con TC ARS pendiente de dolarizar)
+    const estimadas=earningIds.map(id=>earnings.find(e=>e.id===id)).filter(e=>e?.is_estimated);
+    if(estimadas.length>0){
+      alert(`⚠ No se pueden liquidar comisiones estimadas.\n\n${estimadas.length} op${estimadas.length>1?"s":""} tiene${estimadas.length>1?"n":""} costos en pesos pendientes de dolarizar:\n\n• ${estimadas.map(e=>`${e.operations?.operation_code||"—"} (USD ${Number(e.commission_usd||0).toFixed(2)} estimada)`).join("\n• ")}\n\nDolarizá los pagos pendientes en cada op (cuando se debiten en la TC) y la comisión se confirma automáticamente. Después podés liquidarla.`);
+      return;
+    }
     if(!confirm(`¿Marcar como pagadas ${earningIds.length} comisión${earningIds.length>1?"es":""} por USD ${Math.abs(totalAmount).toFixed(2)}?`))return;
     setPaying(true);
     const now=new Date().toISOString();
@@ -7847,10 +7834,10 @@ function GiAdminPanel({token,clients}){
         {pending.length>0&&<>
           <h4 style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,textTransform:"uppercase",letterSpacing:"0.08em",margin:"6px 0 8px"}}>Pendientes ({pending.length})</h4>
           <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14}}>
-            {pending.map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,fontSize:12.5}}>
+            {pending.map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:`1px solid ${e.is_estimated?"rgba(251,146,60,0.35)":"rgba(255,255,255,0.05)"}`,borderRadius:8,fontSize:12.5}}>
               <div style={{flex:1,minWidth:0}}>
-                <p style={{margin:0,color:"#fff"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:600}}>{e.operations?.operation_code||"—"}</span> · {e.operations?.clients?`${e.operations.clients.first_name||""} ${e.operations.clients.last_name||""}`.trim():"—"}</p>
-                <p style={{margin:"3px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.5)"}}>{formatDate(e.closed_at)} · Ingresos {`USD ${Number(e.revenue_usd||0).toFixed(2)}`} − Costos {`USD ${Number(e.total_costs_usd||0).toFixed(2)}`} = Neto {`USD ${Number(e.net_profit_usd||0).toFixed(2)}`}</p>
+                <p style={{margin:0,color:"#fff"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:600}}>{e.operations?.operation_code||"—"}</span> · {e.operations?.clients?`${e.operations.clients.first_name||""} ${e.operations.clients.last_name||""}`.trim():"—"}{e.is_estimated&&<span title={`Estimada con FX ${e.estimated_fx_rate||"?"}. No se puede liquidar hasta que se dolaricen los TC pendientes.`} style={{marginLeft:8,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(251,146,60,0.2)",color:"#fb923c",letterSpacing:"0.05em"}}>EST</span>}</p>
+                <p style={{margin:"3px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.5)"}}>{formatDate(e.closed_at)} · Ingresos {`USD ${Number(e.revenue_usd||0).toFixed(2)}`} − Costos {`USD ${Number(e.total_costs_usd||0).toFixed(2)}`} = Neto {`USD ${Number(e.net_profit_usd||0).toFixed(2)}`}{e.is_estimated&&<span style={{color:"#fb923c"}}> · FX {Number(e.estimated_fx_rate||0).toFixed(0)}</span>}</p>
               </div>
               <p style={{fontSize:14,fontWeight:700,color:Number(e.commission_usd||0)>=0?"#22c55e":"#f87171",fontVariantNumeric:"tabular-nums",margin:0,whiteSpace:"nowrap",marginLeft:14}}>{Number(e.commission_usd||0)>=0?"":"−"}USD {Math.abs(Number(e.commission_usd||0)).toFixed(2)}</p>
             </div>)}
