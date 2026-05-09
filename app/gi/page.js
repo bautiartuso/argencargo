@@ -1046,21 +1046,27 @@ function OpDetail({token,opId,onBack,calcComision}){
   const [items,setItems]=useState([]);
   const [pkgs,setPkgs]=useState([]);
   const [cliPmts,setCliPmts]=useState([]);
+  const [supPmts,setSupPmts]=useState([]);
+  const [finEntries,setFinEntries]=useState([]);
   const [earning,setEarning]=useState(null);
   const [lo,setLo]=useState(true);
   useEffect(()=>{(async()=>{
     setLo(true);
-    const [opR,it,pk,cp,ea]=await Promise.all([
+    const [opR,it,pk,cp,sp,fe,ea]=await Promise.all([
       dq("operations",{token,filters:`?id=eq.${opId}&select=*,clients(*)`}),
       dq("operation_items",{token,filters:`?operation_id=eq.${opId}&select=*&order=created_at.asc`}),
       dq("operation_packages",{token,filters:`?operation_id=eq.${opId}&select=*&order=package_number.asc`}),
       dq("operation_client_payments",{token,filters:`?operation_id=eq.${opId}&select=*&order=payment_date.asc`}),
+      dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${opId}&select=*&order=payment_date.asc`}),
+      dq("finance_entries",{token,filters:`?operation_id=eq.${opId}&select=*&order=date.asc`}),
       dq("gi_partner_earnings",{token,filters:`?operation_id=eq.${opId}&select=*&limit=1`}),
     ]);
     setOp(Array.isArray(opR)?opR[0]:null);
     setItems(Array.isArray(it)?it:[]);
     setPkgs(Array.isArray(pk)?pk:[]);
     setCliPmts(Array.isArray(cp)?cp:[]);
+    setSupPmts(Array.isArray(sp)?sp:[]);
+    setFinEntries(Array.isArray(fe)?fe:[]);
     setEarning(Array.isArray(ea)&&ea[0]?ea[0]:null);
     setLo(false);
   })();},[opId,token]);
@@ -1156,6 +1162,54 @@ function OpDetail({token,opId,onBack,calcComision}){
         </table>
       }
     </Card>
+
+    {(()=>{
+      // Construir lista de gastos: costos op + pagos a proveedor (GI) + finance_entries (impuestos auto, gasto doc, etc)
+      const gastos=[];
+      // Costos directos de la op (cost_*)
+      const cFlete=Number(op.cost_flete||0);if(cFlete>0)gastos.push({date:op.cost_flete_paid_at?.slice(0,10)||null,label:"Flete internacional",amount:cFlete,paid:!!op.cost_flete_paid_at,method:op.cost_flete_method||"—"});
+      const cSeguro=Number(op.cost_seguro||0);if(cSeguro>0)gastos.push({date:op.cost_seguro_paid_at?.slice(0,10)||null,label:"Seguro",amount:cSeguro,paid:!!op.cost_seguro_paid_at});
+      const cFleteLocal=Number(op.cost_flete_local||0);if(cFleteLocal>0)gastos.push({date:op.cost_flete_local_paid_at?.slice(0,10)||null,label:"Flete local AR",amount:cFleteLocal,paid:!!op.cost_flete_local_paid_at});
+      const cOtros=Number(op.cost_otros||0);if(cOtros>0)gastos.push({date:op.cost_otros_paid_at?.slice(0,10)||null,label:"Otros",amount:cOtros,paid:!!op.cost_otros_paid_at});
+      const cImp=Number(op.cost_impuestos_reales||0);if(cImp>0)gastos.push({date:null,label:"Impuestos reales",amount:cImp,paid:false});
+      const cGastoDoc=Number(op.cost_gasto_documental||0);if(cGastoDoc>0)gastos.push({date:null,label:"Gasto documental",amount:cGastoDoc,paid:false});
+      const cProd=op.service_type==="gestion_integral"?Number(op.cost_producto_usd||0):0;if(cProd>0)gastos.push({date:null,label:"Producto (FOB)",amount:cProd,paid:!!op.cost_producto_paid});
+      // Pagos a proveedor (GI)
+      supPmts.forEach(p=>{const isRefund=p.type==="refund";gastos.push({date:p.payment_date,label:isRefund?`↩ Reembolso proveedor`:`Pago a proveedor${p.notes?` · ${p.notes}`:""}`,amount:isRefund?-Number(p.amount_usd||0):Number(p.amount_usd||0),paid:!!p.is_paid,method:p.payment_method||"—"});});
+      // Finance entries (impuestos/gasto doc auto-generadas + manuales linkeadas a la op)
+      finEntries.filter(e=>e.type==="gasto").forEach(e=>{const amt=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);gastos.push({date:e.date,label:e.description||e.detail||"Gasto",amount:amt,paid:!!e.is_paid,method:e.payment_method||"—",auto:e.auto_generated});});
+      const totalGastos=gastos.reduce((s,g)=>s+g.amount,0);
+      const totalPagados=gastos.filter(g=>g.paid).reduce((s,g)=>s+g.amount,0);
+      gastos.sort((a,b)=>{if(!a.date&&!b.date)return 0;if(!a.date)return 1;if(!b.date)return -1;return a.date.localeCompare(b.date);});
+
+      if(gastos.length===0)return null;
+      return <Card title={`Gastos / Costos de la operación (${gastos.length})`}>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"-4px 0 12px",lineHeight:1.5}}>Costos directos de la op + pagos a proveedor (Gestión Integral) + impuestos y gastos documentales auto-generados.</p>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+            <th style={thStyle()}>Fecha</th>
+            <th style={thStyle()}>Concepto</th>
+            <th style={thStyle()}>Método</th>
+            <th style={thStyle()}>Estado</th>
+            <th style={{...thStyle(),textAlign:"right"}}>Monto</th>
+          </tr></thead>
+          <tbody>
+            {gastos.map((g,i)=><tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+              <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",textAlign:"center",fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}}>{g.date?fmtDateShort(g.date):"—"}</td>
+              <td style={{padding:"10px 12px",color:"#fff"}}>{g.label}{g.auto&&<span style={{marginLeft:6,fontSize:9,padding:"1px 5px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#60a5fa"}}>auto</span>}</td>
+              <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.55)",textAlign:"center",textTransform:"capitalize",whiteSpace:"nowrap"}}>{(g.method||"—").replace(/_/g," ")}</td>
+              <td style={{padding:"10px 12px",textAlign:"center"}}>{g.paid?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:5,background:"rgba(34,197,94,0.10)",color:"#22c55e",letterSpacing:"0.04em",whiteSpace:"nowrap"}}>Pagado</span>:<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:5,background:"rgba(251,191,36,0.10)",color:"#fbbf24",letterSpacing:"0.04em",whiteSpace:"nowrap"}}>Pendiente</span>}</td>
+              <td style={{padding:"10px 12px",textAlign:"right",color:g.amount<0?"#22c55e":"#f87171",fontWeight:700,fontFeatureSettings:'"tnum"'}}>{g.amount<0?"+":"−"}{fmtUSD(Math.abs(g.amount))}</td>
+            </tr>)}
+            <tr style={{borderTop:"1.5px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)"}}>
+              <td colSpan={4} style={{padding:"11px 12px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Total gastos (pagado: {fmtUSD(totalPagados)})</td>
+              <td style={{padding:"11px 12px",textAlign:"right",color:"#f87171",fontWeight:800,fontFeatureSettings:'"tnum"'}}>−{fmtUSD(totalGastos)}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",marginTop:10,fontStyle:"italic",lineHeight:1.5}}>El admin va cargando los costos reales a medida que la op avanza. La comisión del socio se calcula al cerrar la op sobre la ganancia neta real (revenue − todos los costos).</p>
+      </Card>;
+    })()}
 
     {earning&&<Card title="Liquidación de comisión">
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
