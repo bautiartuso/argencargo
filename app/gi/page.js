@@ -458,17 +458,28 @@ function PaneQuotes({token,profileId}){
 
 function RequestDetail({token,requestId,onBack,onStartWizard}){
   const [req,setReq]=useState(null);
+  const [draftProducts,setDraftProducts]=useState([]);
   const [lo,setLo]=useState(true);
   useEffect(()=>{(async()=>{
-    const r=await dq("gi_quote_requests",{token,filters:`?id=eq.${requestId}&select=*,clients(*),gi_quote_request_products(*)`});
+    const [r,q]=await Promise.all([
+      dq("gi_quote_requests",{token,filters:`?id=eq.${requestId}&select=*,clients(*),gi_quote_request_products(*)`}),
+      // Si arrancó como draft directo desde panel GI, los productos están en gi_quote_products
+      dq("gi_quotes",{token,filters:`?request_id=eq.${requestId}&select=id,status,gi_quote_products(*)&order=created_at.desc&limit=1`}),
+    ]);
     setReq(Array.isArray(r)?r[0]:null);
+    if(Array.isArray(q)&&q[0]?.gi_quote_products)setDraftProducts(q[0].gi_quote_products);
     setLo(false);
   })();},[requestId,token]);
 
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>;
   if(!req)return <p style={{color:"rgba(255,255,255,0.4)"}}>Solicitud no encontrada</p>;
   const cn=req.clients?`${req.clients.first_name||""} ${req.clients.last_name||""}`.trim():"—";
-  const products=(req.gi_quote_request_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
+  const reqProducts=(req.gi_quote_request_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
+  // Si no hay productos pedidos por el cliente pero hay productos en el draft, mostrar esos.
+  const usingDraft=reqProducts.length===0 && draftProducts.length>0;
+  const products=usingDraft
+    ? [...draftProducts].sort((a,b)=>(a.display_order||0)-(b.display_order||0))
+    : reqProducts;
 
   return <div>
     <button onClick={onBack} style={{fontSize:12,color:"rgba(255,255,255,0.55)",background:"transparent",border:"1px solid rgba(255,255,255,0.08)",cursor:"pointer",fontWeight:600,marginBottom:18,padding:"6px 12px",borderRadius:8,letterSpacing:"0.04em",fontFamily:"inherit"}}>← Volver</button>
@@ -493,7 +504,8 @@ function RequestDetail({token,requestId,onBack,onStartWizard}){
       </Card>}
     </div>
 
-    <Card title={`Productos (${products.length})`}>
+    <Card title={`Productos (${products.length})${usingDraft?" · borrador en armado":""}`}>
+      {usingDraft&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"-4px 0 10px",fontStyle:"italic"}}>Estos productos provienen del borrador del cotizador (no había pedido del cliente).</p>}
       {products.length===0?<p style={{color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin productos cargados</p>:
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {products.map((p,i)=><div key={p.id} style={{display:"flex",gap:14,alignItems:"center",padding:"12px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10}}>
