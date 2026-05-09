@@ -598,7 +598,12 @@ function CotizadorWizard({token,requestId,onBack}){
       setLastSavedAt(draft.updated_at||draft.created_at);
     } else if(Array.isArray(reqRes)&&reqRes[0]){
       const rawProds=(reqRes[0].gi_quote_request_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
-      setProducts(rawProds.map(p=>emptyProductFrom({description:p.description,notes:p.notes,quantity:p.quantity,photo_url:p.photo_url})));
+      if(rawProds.length>0){
+        setProducts(rawProds.map(p=>emptyProductFrom({description:p.description,notes:p.notes,quantity:p.quantity,photo_url:p.photo_url})));
+      } else {
+        // Cotización directa sin productos pre-cargados — arrancamos con uno vacío
+        setProducts([emptyProductFrom({})]);
+      }
     }
     setTariffs(Array.isArray(tar)?tar:[]);
     const cfgObj={};(Array.isArray(cfg)?cfg:[]).forEach(r=>{cfgObj[r.key]=Number(r.value);});setConfig(cfgObj);
@@ -625,12 +630,21 @@ function CotizadorWizard({token,requestId,onBack}){
       } else {
         await dq("gi_quotes",{method:"PATCH",token,filters:`?id=eq.${quoteId}`,body:{payment_plan:paymentPlan,honorarios_pct:commissionPct?Number(commissionPct):null}});
       }
-      // Reemplazar productos: borrar todos los existentes y reinsertar
-      await dq("gi_quote_products",{method:"DELETE",token,filters:`?quote_id=eq.${quoteId}`});
+      // Si no hay productos en el state, no tocamos los existentes (evitamos perder data por error de UI).
+      if(products.length===0){
+        setLastSavedAt(new Date().toISOString());
+        if(!silent)flash("✓ Borrador guardado (sin productos)");
+        return;
+      }
+      // Estrategia segura: INSERT primero los nuevos, recién DESPUÉS borrar los viejos.
+      // Si el INSERT falla, los viejos siguen vivos. Display_order alto reservado para nuevos.
+      const oldRows=await dq("gi_quote_products",{token,filters:`?quote_id=eq.${quoteId}&select=id`});
+      const oldIds=Array.isArray(oldRows)?oldRows.map(r=>r.id):[];
+      const newOrder=oldIds.length+1000; // garantiza que los nuevos queden ordenados después de los viejos temporalmente
+      const insertedIds=[];
       for(let i=0;i<products.length;i++){
         const p=products[i];
-        // Insertar incluso si está incompleto (es draft)
-        await dq("gi_quote_products",{method:"POST",token,body:{
+        const inserted=await dq("gi_quote_products",{method:"POST",token,body:{
           quote_id:quoteId,
           description:p.description||null,
           origin:p.origin||"china",
@@ -649,8 +663,23 @@ function CotizadorWizard({token,requestId,onBack}){
           pkg_height_cm:p.pkg_height_cm?Number(p.pkg_height_cm):null,
           pkg_weight_kg:p.pkg_weight_kg?Number(p.pkg_weight_kg):null,
           supplier_ref:p.supplier_ref||null,
-          display_order:i,
+          display_order:newOrder+i,
         }});
+        const newId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
+        if(!newId){
+          // Algo falló — dejamos los nuevos creados (si los hubo) y los viejos. Mostramos error claro.
+          throw new Error(`Falló insertar producto ${i+1}. Revisá la consola. Los productos viejos siguen guardados.`);
+        }
+        insertedIds.push(newId);
+      }
+      // Ahora sí, borrar los viejos
+      if(oldIds.length>0){
+        const inFilter=oldIds.map(id=>`"${id}"`).join(",");
+        await dq("gi_quote_products",{method:"DELETE",token,filters:`?id=in.(${inFilter})`});
+      }
+      // Reordenar los nuevos a 0..N-1
+      for(let i=0;i<insertedIds.length;i++){
+        await dq("gi_quote_products",{method:"PATCH",token,filters:`?id=eq.${insertedIds[i]}`,body:{display_order:i}});
       }
       setLastSavedAt(new Date().toISOString());
       if(!silent)flash(`✓ Borrador guardado (${products.length} productos)`);
