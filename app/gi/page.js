@@ -57,7 +57,7 @@ const buildQuoteWaMessage=({firstName,code,url,expiresAt})=>{
   const greeting=firstName?`Hola ${firstName}, ¿cómo estás?`:"Hola, ¿cómo estás?";
   const codePart=code?` ${code}`:"";
   const validez=expiresAt?`\n\nVálida hasta el ${fmtDateLong(expiresAt)}.`:"";
-  return `${greeting}\n\nTe enviamos la cotización${codePart} para tu importación 🚢\n\n${url}${validez}\n\nCualquier duda estamos a disposición ✨\n\n*ARGENCARGO*`;
+  return `${greeting}\n\nTe enviamos la cotización${codePart} para tu importación 🚢\n\n${url}${validez}\n\n_💡 Tip: abrila desde la computadora para verla mucho mejor._\n\nCualquier duda estamos a disposición ✨\n\n*ARGENCARGO*`;
 };
 // Limpia un nro AR a formato wa.me (54911...)
 const cleanWaNumber=(raw)=>{if(!raw)return "";let s=String(raw).replace(/[^0-9]/g,"");if(s.startsWith("0"))s=s.slice(1);if(s.startsWith("15"))s="54911"+s.slice(2);if(!s.startsWith("54"))s="54"+s;return s;};

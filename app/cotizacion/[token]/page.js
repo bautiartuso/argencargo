@@ -14,7 +14,7 @@ const CHANNEL_LABELS = {
   maritimo_blanco: { name: "Marítimo Integral AC", transitMin: 60, transitMax: 60, transitUnit: "días", costKey: "cost_maritimo_int_total_usd" },
 };
 
-// Texto del tiempo total: producción + tránsito
+// Texto resumido del tiempo total (producción + tránsito) — usado en la lista de servicios.
 function channelTimeText(c, maxLead) {
   const tMin = c.transitMin || 0, tMax = c.transitMax || 0;
   const lead = Number(maxLead) || 0;
@@ -23,6 +23,20 @@ function channelTimeText(c, maxLead) {
   const totalStr = totMin === totMax ? `~${totMax}` : `${totMin} a ${totMax}`;
   if (lead > 0) return `${lead}d producción + ${transitStr}d tránsito ≈ ${totalStr} ${c.transitUnit}`;
   return `${transitStr} ${c.transitUnit}`;
+}
+// Solo tránsito, sin producción.
+function channelTransitText(c) {
+  const tMin = c.transitMin || 0, tMax = c.transitMax || 0;
+  if (tMin === tMax) return `~${tMax} ${c.transitUnit}`;
+  return `${tMin} a ${tMax} ${c.transitUnit}`;
+}
+// Total desde el pago: producción + tránsito + 1 día buffer entrega final.
+function totalDaysText(c, maxLead) {
+  const tMin = c.transitMin || 0, tMax = c.transitMax || 0;
+  const lead = Number(maxLead) || 0;
+  const totMin = lead + tMin + 1, totMax = lead + tMax + 1;
+  const totalStr = totMin === totMax ? `~${totMax}` : `aprox. ${totMin} a ${totMax}`;
+  return `${totalStr} ${c.transitUnit} desde el pago`;
 }
 
 export default function CotizacionPublica({ params }) {
@@ -35,6 +49,12 @@ export default function CotizacionPublica({ params }) {
   const [selectedDelivery, setSelectedDelivery] = useState("oficina");
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(null);
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(typeof window !== "undefined" && window.innerWidth < 760);
+    check(); window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -132,44 +152,46 @@ export default function CotizacionPublica({ params }) {
     return <AcceptedView quote={quote} accepted={accepted} cn={cn} settings={settings} products={products} client={quote.gi_quote_requests?.clients}/>;
   }
 
-  return <div style={pageStyle()}>
-    <p style={{ textAlign: "center", fontSize: 10.5, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: 24 }}>Cotización · Argencargo Gestión Integral</p>
+  return <div style={pageStyle(isMobile)}>
+    <p style={{ textAlign: "center", fontSize: 10.5, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: isMobile ? 14 : 24 }}>Cotización · Argencargo Gestión Integral</p>
 
     <div style={qdStyle()}>
       {/* Header */}
-      <div style={qdHeadStyle()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, marginBottom: 14 }}>
-          <img src={LOGO} alt="Argencargo" style={{ height: 46, width: "auto" }}/>
+      <div style={{ ...qdHeadStyle(), padding: isMobile ? "16px 18px 14px" : "20px 30px 18px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+          <img src={LOGO} alt="Argencargo" style={{ height: isMobile ? 32 : 46, width: "auto" }}/>
           <div style={{ textAlign: "right" }}>
-            <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.18em", color: "rgba(232,208,152,0.85)", textTransform: "uppercase", marginBottom: 3 }}>Cotización · Gestión Integral</p>
-            <p style={{ fontFamily: "'JetBrains Mono','SF Mono',monospace", fontSize: 17, fontWeight: 700, color: "#E8D098", letterSpacing: "0.04em", marginBottom: 1 }}>{quote.gi_quote_requests?.request_code || "—"}</p>
-            <p style={{ fontSize: 10.5, color: "rgba(255,255,255,0.55)" }}>{quote.expires_at ? `Válida hasta ${formatDate(quote.expires_at)}` : ""}</p>
+            <p style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: "0.16em", color: "rgba(232,208,152,0.85)", textTransform: "uppercase", marginBottom: 3 }}>Cotización · Gestión Integral</p>
+            <p style={{ fontFamily: "'JetBrains Mono','SF Mono',monospace", fontSize: isMobile ? 14 : 17, fontWeight: 700, color: "#E8D098", letterSpacing: "0.04em", marginBottom: 1 }}>{quote.gi_quote_requests?.request_code || "—"}</p>
+            <p style={{ fontSize: 10, color: "rgba(255,255,255,0.55)" }}>{quote.expires_at ? `Válida hasta ${formatDate(quote.expires_at)}` : ""}</p>
           </div>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 14, flexWrap: "wrap", paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-          <div><p style={qdLblStyle()}>Cliente</p><p style={{ fontSize: 18, fontWeight: 700, color: "#fff", letterSpacing: "-0.01em" }}>{cn}</p></div>
+          <div><p style={qdLblStyle()}>Cliente</p><p style={{ fontSize: isMobile ? 16 : 18, fontWeight: 700, color: "#fff", letterSpacing: "-0.01em" }}>{cn}</p></div>
           <div><p style={qdLblStyle()}>{totalQty} unidades · {products.length} {products.length === 1 ? "producto" : "productos"}</p></div>
         </div>
         <div style={{ height: 5, background: "linear-gradient(90deg,#B8956A 0%,#E8D098 50%,#B8956A 100%)", position: "absolute", left: 0, right: 0, bottom: 0 }}/>
       </div>
 
-      {/* Body 2-col */}
-      <div style={{ padding: "24px 30px 28px", background: "#fafaf7" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1.15fr 1fr", gap: 18, alignItems: "start" }}>
+      {/* Body — 2 col en desktop, 1 col en mobile */}
+      <div style={{ padding: isMobile ? "16px 14px 22px" : "24px 30px 28px", background: "#fafaf7" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.15fr 1fr", gap: isMobile ? 12 : 18, alignItems: "start" }}>
           {/* COL IZQUIERDA: productos + servicio */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 12 : 14, minWidth: 0 }}>
             <div style={qdSecCardStyle()}>
               <p style={qdSecTitleStyle()}>Productos</p>
               {products.map((p, i) => {
                 const sub = Number(p.unit_cost_usd || 0) * Number(p.quantity || 0);
-                return <div key={p.id || i} style={qdProdRowStyle(i === 0)}>
-                  {p.photo_url ? <img src={p.photo_url} alt={p.description || ""} style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0, border: "1px solid #d4c5a0", background: "#f3eadb" }} onError={e => { e.currentTarget.style.display = "none"; }}/>
-                    : <div style={{ width: 56, height: 56, borderRadius: 8, background: "linear-gradient(135deg,#f3eadb,#e7d8b8)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, border: "1px solid #d4c5a0" }}>📦</div>}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", marginBottom: 1, lineHeight: 1.35 }}>{p.description}</p>
-                    {p.lead_time_days > 0 && <p style={{ fontSize: 10.5, color: "#B8956A", fontWeight: 600, marginTop: 3 }}>⏱ Producción {p.lead_time_days} días</p>}
+                return <div key={p.id || i} style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 8 : 12, alignItems: isMobile ? "stretch" : "center", padding: "10px 0", borderBottom: "1px solid #ebe6db", paddingTop: i === 0 ? 4 : 12 }}>
+                  <div style={{ display: "flex", gap: 12, alignItems: "center", flex: 1, minWidth: 0 }}>
+                    {p.photo_url ? <img src={p.photo_url} alt={p.description || ""} style={{ width: isMobile ? 48 : 56, height: isMobile ? 48 : 56, borderRadius: 8, objectFit: "cover", flexShrink: 0, border: "1px solid #d4c5a0", background: "#f3eadb" }} onError={e => { e.currentTarget.style.display = "none"; }}/>
+                      : <div style={{ width: isMobile ? 48 : 56, height: isMobile ? 48 : 56, borderRadius: 8, background: "linear-gradient(135deg,#f3eadb,#e7d8b8)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, border: "1px solid #d4c5a0" }}>📦</div>}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: isMobile ? 12.5 : 13, fontWeight: 700, color: "#1a1a1a", marginBottom: 1, lineHeight: 1.35, wordBreak: "break-word" }}>{p.description}</p>
+                      {p.lead_time_days > 0 && <p style={{ fontSize: 10.5, color: "#B8956A", fontWeight: 600, marginTop: 3 }}>⏱ Producción {p.lead_time_days} días</p>}
+                    </div>
                   </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ textAlign: isMobile ? "right" : "right", flexShrink: 0, paddingLeft: isMobile ? 60 : 0 }}>
                     <p style={{ fontSize: 11, color: "#666", fontFeatureSettings: '"tnum"', marginBottom: 2 }}>{p.quantity} u. × {fmtUSD2(p.unit_cost_usd)}</p>
                     <p style={{ fontSize: 14, fontWeight: 800, color: "#0A1628", fontFeatureSettings: '"tnum"', letterSpacing: "-0.01em" }}>{fmtUSD2(sub)}</p>
                   </div>
@@ -220,8 +242,8 @@ export default function CotizacionPublica({ params }) {
               <p style={qdSecTitleStyle()}>Tiempos estimados</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                 <TimeStep n="1" name="Producción" meta={maxLead > 0 ? `Hasta ${maxLead} días hábiles` : "Según producto"}/>
-                <TimeStep n="2" name="Envío y arribo" meta={selChannel ? channelTimeText(selChannel, maxLead) : "—"}/>
-                <TimeStep n="3" name="Entrega final" meta={selectedDelivery === "oficina" ? `Retiro · ${settings?.office_locality || "Recoleta CABA"}` : `Envío a ${selectedDelivery}`}/>
+                <TimeStep n="2" name="Envío y arribo" meta={selChannel ? channelTransitText(selChannel) : "—"}/>
+                <TimeStep n="3" name="Entrega final" meta={selChannel ? `${totalDaysText(selChannel, maxLead)} · ${selectedDelivery === "oficina" ? `Retiro · ${settings?.office_locality || "Recoleta CABA"}` : `Envío a ${selectedDelivery}`}` : "—"}/>
               </div>
             </div>
 
@@ -316,7 +338,7 @@ function AcceptedView({ quote, accepted, cn, settings, products, client }) {
 
 function formatDate(d) { if (!d) return "—"; const s = String(d).slice(0, 10); const [y, m, day] = s.split("-"); return new Date(y, m - 1, day).toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" }); }
 
-function pageStyle() { return { minHeight: "100vh", background: "#1a1f2e", padding: "28px 20px", display: "flex", flexDirection: "column", alignItems: "center", fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", color: "#fff" }; }
+function pageStyle(isMobile = false) { return { minHeight: "100vh", background: "#1a1f2e", padding: isMobile ? "14px 10px" : "28px 20px", display: "flex", flexDirection: "column", alignItems: "center", fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", color: "#fff" }; }
 function qdStyle() { return { maxWidth: 1180, width: "100%", background: "#fafaf7", borderRadius: 12, overflow: "hidden", boxShadow: "0 24px 80px rgba(0,0,0,0.55)", color: "#1a1a1a", display: "flex", flexDirection: "column" }; }
 function qdHeadStyle() { return { background: "#0A1628", color: "#fff", padding: "20px 30px 18px", position: "relative" }; }
 function qdLblStyle() { return { fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", color: "rgba(232,208,152,0.65)", textTransform: "uppercase", marginBottom: 3 }; }
