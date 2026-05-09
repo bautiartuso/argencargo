@@ -55,7 +55,7 @@ export async function POST(req, { params }) {
   if (!validChannels.includes(body.channel)) return Response.json({ error: "Canal inválido" }, { status: 400 });
 
   // Buscar cotización
-  const qRes = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_requests(client_id),gi_quote_products(*)`);
+  const qRes = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_requests(client_id,assigned_partner_id),gi_quote_products(*)`);
   if (qRes.status >= 400 || !Array.isArray(qRes.body) || qRes.body.length === 0) {
     return Response.json({ error: "Cotización no encontrada" }, { status: 404 });
   }
@@ -93,11 +93,17 @@ export async function POST(req, { params }) {
     operation_code: opCode,
     client_id: clientId,
     channel: body.channel,
-    origin: "China", // por defecto, se ajusta abajo si hay productos USA
+    origin: "China",
     description: `Gestión Integral · ${quote.gi_quote_products?.length || 0} productos`,
     service_type: "gestion_integral",
     status: "en_preparacion",
     budget_total: finalTotal,
+    // Snapshot del socio + % de la cotización para esta op puntual.
+    // gi_partner_id viene del request (a quién el admin asignó cotizar).
+    // gi_commission_pct viene del input que el socio ingresó en step 2 del wizard (gi_quotes.honorarios_pct).
+    gi_partner_id: quote.gi_quote_requests?.assigned_partner_id || null,
+    gi_commission_pct: Number(quote.honorarios_pct || 0) || null,
+    gi_admin_owned: false,
     is_collected: false,
     shipping_to_door: body.delivery_zone !== "oficina",
     shipping_cost: deliveryCost,

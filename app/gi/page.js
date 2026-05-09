@@ -533,6 +533,7 @@ function CotizadorWizard({token,requestId,onBack}){
     {pct:20,label:"Producción terminada"},
     {pct:50,label:"Contra entrega"},
   ]);
+  const [commissionPct,setCommissionPct]=useState("10");
   const [lo,setLo]=useState(true);
   const [generatedQuote,setGeneratedQuote]=useState(null);
   const [saving,setSaving]=useState(false);
@@ -586,6 +587,7 @@ function CotizadorWizard({token,requestId,onBack}){
     if(draft){
       setDraftQuoteId(draft.id);
       if(draft.payment_plan)setPaymentPlan(typeof draft.payment_plan==="string"?JSON.parse(draft.payment_plan):draft.payment_plan);
+      if(draft.honorarios_pct!=null)setCommissionPct(String(draft.honorarios_pct));
       const draftProds=(draft.gi_quote_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
       if(draftProds.length>0){
         setProducts(draftProds.map(emptyProductFrom));
@@ -614,14 +616,14 @@ function CotizadorWizard({token,requestId,onBack}){
         const inserted=await dq("gi_quotes",{method:"POST",token,body:{
           request_id:requestId,
           payment_plan:paymentPlan,
+          honorarios_pct:commissionPct?Number(commissionPct):null,
           status:"draft",
         }});
         quoteId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
         if(!quoteId)throw new Error("No se pudo crear el draft");
         setDraftQuoteId(quoteId);
       } else {
-        // Update payment_plan (los costos por canal se calculan al final, no en draft)
-        await dq("gi_quotes",{method:"PATCH",token,filters:`?id=eq.${quoteId}`,body:{payment_plan:paymentPlan}});
+        await dq("gi_quotes",{method:"PATCH",token,filters:`?id=eq.${quoteId}`,body:{payment_plan:paymentPlan,honorarios_pct:commissionPct?Number(commissionPct):null}});
       }
       // Reemplazar productos: borrar todos los existentes y reinsertar
       await dq("gi_quote_products",{method:"DELETE",token,filters:`?quote_id=eq.${quoteId}`});
@@ -745,13 +747,12 @@ function CotizadorWizard({token,requestId,onBack}){
     :channelResults;
 
   // % comisión del cliente (sobre ganancia neta cuando cierra)
-  const clientCommissionPct=Number(client?.gi_commission_pct||0);
   // Estimación de ganancia neta al cerrar = total al cliente - costo real (mock 92%)
   const profitFor=(c)=>{
     const totalAlCliente=c.total;
     const realCost=c.real; // mock 92% del total
     const netProfitEst=Math.max(0,totalAlCliente-realCost);
-    const commissionEst=netProfitEst*clientCommissionPct/100;
+    const commissionEst=netProfitEst*Number(commissionPct||0)/100;
     return {totalAlCliente,netProfitEst,commissionEst};
   };
 
@@ -785,7 +786,7 @@ function CotizadorWizard({token,requestId,onBack}){
       const expDate=new Date(Date.now()+7*86400000).toISOString().slice(0,10);
       const body={
         request_id:requestId,
-        honorarios_pct:clientCommissionPct,
+        honorarios_pct:commissionPct?Number(commissionPct):0,
         payment_plan:paymentPlan,
         ...ch,
         status:"sent",
@@ -872,7 +873,7 @@ function CotizadorWizard({token,requestId,onBack}){
     </div>
 
     {step===1&&<WizStep1 token={token} products={products} onUpdate={updateProduct} onAdd={addProduct} onRemove={removeProduct} onClassify={classifyNcm} onNext={()=>goStep(2)} totalFob={totalFob}/>}
-    {step===2&&<WizStep2 visibleChannels={visibleChannels} someUSA={someUSA} clientCommissionPct={clientCommissionPct} client={client} paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} profitFor={profitFor} onBack={()=>setStep(1)} onNext={generateLink} saving={saving}/>}
+    {step===2&&<WizStep2 visibleChannels={visibleChannels} someUSA={someUSA} commissionPct={commissionPct} setCommissionPct={setCommissionPct} paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} profitFor={profitFor} onBack={()=>setStep(1)} onNext={generateLink} saving={saving}/>}
     {step===3&&<WizStep3 generatedQuote={generatedQuote} onBack={onBack}/>}
   </div>;
 }
@@ -951,8 +952,7 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
   </div>;
 }
 
-function WizStep2({visibleChannels,someUSA,clientCommissionPct,client,paymentPlan,setPaymentPlan,profitFor,onBack,onNext,saving}){
-  const cn=client?`${client.first_name||""} ${client.last_name||""}`.trim():"—";
+function WizStep2({visibleChannels,someUSA,commissionPct,setCommissionPct,paymentPlan,setPaymentPlan,profitFor,onBack,onNext,saving}){
   return <div>
     <div style={{padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:18}}>
       <strong style={{color:"#60a5fa"}}>Step 2:</strong> el sistema calcula el costo final por canal usando la calculadora del portal{someUSA?". Hay algún producto USA, así que solo se muestran canales B.":"."} Tu comisión sale del % asignado al cliente y se paga sobre la ganancia neta real al cerrar la op.
@@ -972,18 +972,18 @@ function WizStep2({visibleChannels,someUSA,clientCommissionPct,client,paymentPla
       </div>)}
     </div>
 
-    {clientCommissionPct>0?
-      <div style={{padding:"12px 16px",background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:10,marginBottom:18,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-        <div>
-          <p style={{fontSize:12.5,fontWeight:700,color:"#22c55e",margin:0}}>Comisión del cliente · <strong>{clientCommissionPct}%</strong> sobre ganancia neta</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>{cn} tiene asignado este porcentaje. Se calcula y se paga al cerrar la op.</p>
+    <div style={{padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1.5px solid rgba(184,149,106,0.32)",borderRadius:12,marginBottom:18}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:240}}>
+          <p style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,margin:0}}>Tu comisión por esta operación</p>
+          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",margin:"3px 0 0",lineHeight:1.4}}>% sobre la ganancia neta real al cerrar la op (revenue − todos los costos). Si la op va a pérdida, asumís tu parte (% sobre la pérdida).</p>
         </div>
-      </div>:
-      <div style={{padding:"12px 16px",background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:10,marginBottom:18}}>
-        <p style={{fontSize:12.5,fontWeight:700,color:"#fbbf24",margin:0}}>⚠ Cliente sin comisión asignada</p>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0"}}>{cn} no tiene un % de comisión configurado. Pedile al admin que lo asigne desde la ficha del cliente, sino no vas a cobrar comisión cuando cierre la op.</p>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+          <input type="text" inputMode="decimal" value={commissionPct} onChange={e=>{const v=e.target.value;if(v===""||/^\d*\.?\d*$/.test(v))setCommissionPct(v);}} placeholder="0" style={{width:90,padding:"10px 12px",fontSize:18,fontWeight:800,textAlign:"center",border:"1px solid rgba(184,149,106,0.4)",borderRadius:10,background:"rgba(0,0,0,0.25)",color:GOLD_LIGHT,outline:"none",fontFamily:"inherit"}}/>
+          <span style={{fontSize:18,fontWeight:700,color:GOLD_LIGHT}}>%</span>
+        </div>
       </div>
-    }
+    </div>
 
     <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>Estimación de ganancia (por canal)</h3>
     <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:14,lineHeight:1.5,fontStyle:"italic"}}>Estimaciones aproximadas usando un costo real estimado del 92% del total al cliente. La ganancia y comisión real se calculan al cerrar la op con los costos verdaderos.</p>
@@ -996,7 +996,7 @@ function WizStep2({visibleChannels,someUSA,clientCommissionPct,client,paymentPla
             <p style={{fontSize:13,fontWeight:700,fontFeatureSettings:'"tnum"',color:"#fff"}}>{fmtUSD(p.netProfitEst)}</p>
           </div>
           <div style={{padding:"10px 12px",background:"rgba(184,149,106,0.06)",borderRadius:8}}>
-            <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Tu comisión {clientCommissionPct}%</p>
+            <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Tu comisión {commissionPct||0}%</p>
             <p style={{fontSize:13,fontWeight:700,fontFeatureSettings:'"tnum"',color:GOLD_LIGHT}}>{fmtUSD(p.commissionEst)}</p>
           </div>
         </div>
