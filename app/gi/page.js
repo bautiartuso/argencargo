@@ -792,14 +792,23 @@ function CotizadorWizard({token,requestId,onBack}){
   const honorariosFactor=1+(Number(honorariosPct||0)/100);
   const channelResults=CHANNEL_DEFS.map(ch=>{
     const r=computeChannel(ch.key);
-    if(!r)return {...ch,cost:0,total:0,real:0,honorariosUsd:0,error:true};
-    // cost = lo que cuesta operar (FOB + flete + impuestos + etc).
-    // total = precio al cliente = cost × (1 + honorarios%) — lo que se le cobra.
-    // real = costo verdadero (idéntico a cost; "real" se mantiene por compatibilidad).
-    const cost=r.totalAbonar+totalFob;
-    const total=cost*honorariosFactor;
-    const honorariosUsd=total-cost;
-    return {...ch,cost,total,real:cost,honorariosUsd,calc:r};
+    if(!r)return {...ch,impoOnly:0,total:0,real:0,honorariosUsd:0,gainLogistica:0,gainHonorarios:0,gainTotal:0,error:true};
+    // impoOnly = precio al cliente si SOLO hace la impo con nosotros (sin GI).
+    //            Ya incluye nuestra ganancia logística (spread vs. costo real).
+    // total    = precio al cliente con Gestión Integral = impoOnly × (1 + honorarios%).
+    // real     = costo real para Argencargo (lo que efectivamente pagamos).
+    //            Mock 92% del impoOnly hasta que tengamos costos reales por canal.
+    // gainLogistica = impoOnly − real (ganancia ya capturada en la impo regular)
+    // gainHonorarios = total − impoOnly (markup adicional por la gestión integral)
+    // gainTotal = gainLogistica + gainHonorarios = ganancia neta de la empresa por canal.
+    const impoOnly=r.totalAbonar+totalFob;
+    const total=impoOnly*honorariosFactor;
+    const real=impoOnly*0.92;
+    const honorariosUsd=total-impoOnly;
+    const gainLogistica=impoOnly-real;
+    const gainHonorarios=honorariosUsd;
+    const gainTotal=gainLogistica+gainHonorarios;
+    return {...ch,impoOnly,total,real,honorariosUsd,gainLogistica,gainHonorarios,gainTotal,calc:r};
   });
 
   // Filtrar canales por origen
@@ -1026,23 +1035,47 @@ function WizStep2({visibleChannels,someUSA,honorariosPct,setHonorariosPct,paymen
       </div>
     </div>
 
-    <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>Precio por canal</h3>
+    <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>Precio al cliente por canal</h3>
     <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:18}}>
       {visibleChannels.map(c=><div key={c.key} style={{background:"linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:16}}>
         <p style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:3}}>{c.name}</p>
         <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:14}}>{c.time}</p>
         {c.error?<p style={{fontSize:11,color:"#f87171"}}>Sin tarifa configurada</p>:<>
           <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,color:"rgba(255,255,255,0.7)",marginBottom:5}}>
-            <span>Costo operativo</span>
-            <span style={{fontFeatureSettings:'"tnum"',fontWeight:600}}>{fmtUSD(c.cost)}</span>
+            <span title="Lo que se le cobraría si solo hace la impo con nosotros (sin GI)">Total impo solo</span>
+            <span style={{fontFeatureSettings:'"tnum"',fontWeight:600}}>{fmtUSD(c.impoOnly||0)}</span>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,color:"#22c55e",marginBottom:10}}>
-            <span>+ Honorarios ({Number(honorariosPct||0)}%)</span>
+            <span>+ Honorarios GI ({Number(honorariosPct||0)}%)</span>
             <span style={{fontFeatureSettings:'"tnum"',fontWeight:600}}>{fmtUSD(c.honorariosUsd||0)}</span>
           </div>
           <div style={{paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
             <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Precio al cliente</span>
             <span style={{fontSize:20,fontWeight:800,color:GOLD_LIGHT,fontFeatureSettings:'"tnum"'}}>{fmtUSD(c.total)}</span>
+          </div>
+        </>}
+      </div>)}
+    </div>
+
+    <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Ganancia estimada para Argencargo (por canal)</h3>
+    <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:14,lineHeight:1.5,fontStyle:"italic"}}>Ganancia logística usa un spread mock del 8% sobre el total impo. La ganancia real se calcula al cerrar la op con los costos verdaderos (pagos a embarcadores, aduana, etc.).</p>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:18}}>
+      {visibleChannels.map(c=><div key={c.key} style={{background:"linear-gradient(135deg,rgba(34,197,94,0.06),rgba(34,197,94,0.01))",border:"1px solid rgba(34,197,94,0.25)",borderRadius:12,padding:16}}>
+        <p style={{fontSize:13,fontWeight:700,color:"#22c55e",marginBottom:10}}>{c.name}</p>
+        {c.error?<p style={{fontSize:11,color:"#f87171"}}>—</p>:<>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+            <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.03)",borderRadius:8}}>
+              <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Logística est.</p>
+              <p style={{fontSize:13,fontWeight:700,fontFeatureSettings:'"tnum"',color:"#fff"}}>{fmtUSD(c.gainLogistica||0)}</p>
+            </div>
+            <div style={{padding:"10px 12px",background:"rgba(184,149,106,0.06)",borderRadius:8}}>
+              <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Honorarios</p>
+              <p style={{fontSize:13,fontWeight:700,fontFeatureSettings:'"tnum"',color:GOLD_LIGHT}}>{fmtUSD(c.gainHonorarios||0)}</p>
+            </div>
+          </div>
+          <div style={{paddingTop:10,borderTop:"1px solid rgba(34,197,94,0.18)",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+            <span style={{fontSize:11,fontWeight:700,color:"rgba(34,197,94,0.85)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Ganancia total est.</span>
+            <span style={{fontSize:18,fontWeight:800,color:"#22c55e",fontFeatureSettings:'"tnum"'}}>{fmtUSD(c.gainTotal||0)}</span>
           </div>
         </>}
       </div>)}
