@@ -203,7 +203,7 @@ function Shell({session,profile,onLogout}){
     <main style={{flex:1,marginLeft:240,padding:"32px 36px",overflowY:"auto",minHeight:"100vh"}}>
       <div style={{maxWidth:1280,margin:"0 auto"}}>
         {pane==="resumen"&&<PaneResumen token={token} onNav={setPane}/>}
-        {pane==="quotes"&&<PaneQuotes token={token}/>}
+        {pane==="quotes"&&<PaneQuotes token={token} profileId={profile?.id}/>}
         {pane==="settings"&&<PaneSettings token={token}/>}
         {pane==="operations"&&<PaneOps token={token}/>}
         {pane==="dashboard"&&<PaneDashboard token={token}/>}
@@ -295,7 +295,7 @@ function Card({title,children,actionLabel,onAction}){
 // ────────────────────────────────────────────
 // PANE: COTIZACIONES (lista de gi_quote_requests + detalle)
 // ────────────────────────────────────────────
-function PaneQuotes({token}){
+function PaneQuotes({token,profileId}){
   const [reqs,setReqs]=useState([]);
   const [clients,setClients]=useState([]);
   const [lo,setLo]=useState(true);
@@ -333,6 +333,7 @@ function PaneQuotes({token}){
       const inserted=await dq("gi_quote_requests",{method:"POST",token,body:{
         request_code:code,
         client_id:newClientId,
+        assigned_partner_id:profileId,
         notes:"Cotización iniciada directamente desde panel GI",
         status:"quoting",
         expires_at:new Date(Date.now()+7*86400000).toISOString().slice(0,10),

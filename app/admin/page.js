@@ -7508,7 +7508,7 @@ function GiAdminPanel({token,clients}){
   const [lo,setLo]=useState(true);
   const [tab,setTab]=useState("active");
   const [modalOpen,setModalOpen]=useState(false);
-  const [form,setForm]=useState({clientId:"",clientSearch:"",products:[{description:"",quantity:"",notes:""}],notes:"",expiresIn:"7"});
+  const [form,setForm]=useState({clientId:"",clientSearch:"",assignedPartnerId:"",products:[{description:"",quantity:"",notes:""}],notes:"",expiresIn:"7"});
   const [showClientList,setShowClientList]=useState(false);
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState("");
@@ -7563,7 +7563,7 @@ function GiAdminPanel({token,clients}){
   useEffect(()=>{load();},[token]);
 
   const openModal=()=>{
-    setForm({clientId:"",clientSearch:"",products:[{description:"",quantity:"",notes:""}],notes:"",expiresIn:"7"});
+    setForm({clientId:"",clientSearch:"",assignedPartnerId:"",products:[{description:"",quantity:"",notes:""}],notes:"",expiresIn:"7"});
     setShowClientList(false);
     setModalOpen(true);
   };
@@ -7578,8 +7578,14 @@ function GiAdminPanel({token,clients}){
     return name.includes(q)||(c.client_code||"").toLowerCase().includes(q);
   }).slice(0,8);
 
-  const selectClient=(c)=>{
-    setForm(f=>({...f,clientId:c.id,clientSearch:`${c.first_name||""} ${c.last_name||""}`.trim()+(c.client_code?` (${c.client_code})`:"")}));
+  const selectClient=async(c)=>{
+    // Cargar el socio asignado del cliente para prefilling
+    let assignedDefault="";
+    try{
+      const r=await dq("clients",{token,filters:`?id=eq.${c.id}&select=gi_partner_id`});
+      if(Array.isArray(r)&&r[0]?.gi_partner_id)assignedDefault=r[0].gi_partner_id;
+    }catch(e){}
+    setForm(f=>({...f,clientId:c.id,clientSearch:`${c.first_name||""} ${c.last_name||""}`.trim()+(c.client_code?` (${c.client_code})`:""),assignedPartnerId:assignedDefault}));
     setShowClientList(false);
   };
 
@@ -7598,6 +7604,7 @@ function GiAdminPanel({token,clients}){
       const inserted=await dq("gi_quote_requests",{method:"POST",token,body:{
         request_code:code,
         client_id:form.clientId,
+        assigned_partner_id:form.assignedPartnerId||null,
         notes:form.notes||null,
         expires_at:expDate,
         status:"pending",
@@ -7646,8 +7653,8 @@ function GiAdminPanel({token,clients}){
     {msg&&<div style={{position:"fixed",top:20,right:20,background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",padding:"10px 16px",borderRadius:10,fontSize:13,fontWeight:600,zIndex:9999,boxShadow:"0 12px 30px rgba(0,0,0,0.4)"}}>{msg}</div>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12,marginBottom:14}}>
       <div>
-        <h2 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Gestión Integral</h2>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Pedile cotizaciones al socio. Cuando arma la cotización, se la enviás al cliente, y al aceptar se convierte en op AC-XXXX.</p>
+        <h2 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px",color:"#fff"}}>Gestión Integral</h2>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Pedile cotizaciones al socio o armalas vos mismo (sin comisión). Cuando se acepta, se convierte en op AC-XXXX.</p>
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <button onClick={()=>setShowPartnersModal(true)} style={{padding:"10px 16px",fontSize:12,fontWeight:600,borderRadius:10,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",letterSpacing:"0.02em"}}>👥 Accesos GI {partners.length>0&&<span style={{marginLeft:6,padding:"1px 7px",background:"rgba(184,149,106,0.2)",borderRadius:8,fontSize:10}}>{partners.length}</span>}</button>
@@ -7775,6 +7782,15 @@ function GiAdminPanel({token,clients}){
             <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:5}}>Vence en (días)</label>
             <input type="number" value={form.expiresIn} onChange={e=>setForm(f=>({...f,expiresIn:e.target.value}))} style={{width:"100%",padding:"9px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
           </div>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:5}}>Asignar a</label>
+          <select value={form.assignedPartnerId} onChange={e=>setForm(f=>({...f,assignedPartnerId:e.target.value}))} style={{width:"100%",padding:"9px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}>
+            <option value="" style={{background:"#142038"}}>Yo (admin · sin comisión)</option>
+            {partners.map(p=><option key={p.id} value={p.id} style={{background:"#142038"}}>{p.email}{p.gi_partner_pct?` · ${p.gi_partner_pct}% default`:""}</option>)}
+          </select>
+          <p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"5px 0 0"}}>Por defecto: el socio asignado al cliente (si tiene). Si elegís "Yo", la op queda como admin sin comisión a nadie.</p>
         </div>
 
         <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:8}}>Productos *</label>
