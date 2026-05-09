@@ -49,6 +49,7 @@ const uploadProductPhoto=async(file,token)=>{
   return `${SB_URL}/storage/v1/object/public/package-photos/${path}`;
 };
 const fmtDateShort=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return `${day}/${m}/${y.slice(2)}`;}const dd=new Date(d);return `${String(dd.getDate()).padStart(2,"0")}/${String(dd.getMonth()+1).padStart(2,"0")}/${String(dd.getFullYear()).slice(2)}`;};
+const fmtDateTime=(d)=>{if(!d)return"—";const dd=new Date(d);if(isNaN(dd.getTime()))return"—";return `${String(dd.getDate()).padStart(2,"0")}/${String(dd.getMonth()+1).padStart(2,"0")}/${String(dd.getFullYear()).slice(2)} ${String(dd.getHours()).padStart(2,"0")}:${String(dd.getMinutes()).padStart(2,"0")}`;};
 const fmtUSD=(n)=>"USD "+Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
 
 // ────────────────────────────────────────────
@@ -334,7 +335,7 @@ function PaneQuotes({token,profileId}){
   useEffect(()=>{load();},[token]);
 
   if(wizardId){
-    return <CotizadorWizard token={token} requestId={wizardId} onBack={()=>{setWizardId(null);setSelDetail(null);load();}}/>;
+    return <CotizadorWizard token={token} requestId={wizardId} profileId={profileId} onBack={()=>{setWizardId(null);setSelDetail(null);load();}}/>;
   }
 
   const startDirectQuote=async()=>{
@@ -388,7 +389,7 @@ function PaneQuotes({token,profileId}){
   const filtered=reqs.filter(tabs.find(t=>t.k===tab).f);
 
   if(selDetail){
-    return <RequestDetail token={token} requestId={selDetail} onBack={()=>{setSelDetail(null);load();}} onStartWizard={()=>setWizardId(selDetail)}/>;
+    return <RequestDetail token={token} requestId={selDetail} profileId={profileId} onBack={()=>{setSelDetail(null);load();}} onStartWizard={()=>setWizardId(selDetail)}/>;
   }
 
   return <div>
@@ -477,10 +478,11 @@ function PaneQuotes({token,profileId}){
   </div>;
 }
 
-function RequestDetail({token,requestId,onBack,onStartWizard}){
+function RequestDetail({token,requestId,profileId,onBack,onStartWizard}){
   const [req,setReq]=useState(null);
   const [draftProducts,setDraftProducts]=useState([]);
   const [quoteRow,setQuoteRow]=useState(null);
+  const [subTab,setSubTab]=useState("detail");
   const [lo,setLo]=useState(true);
   useEffect(()=>{(async()=>{
     const [r,q]=await Promise.all([
@@ -515,35 +517,140 @@ function RequestDetail({token,requestId,onBack,onStartWizard}){
       </div>
     </div>
 
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:18}}>
-      <Card title="Cliente">
-        <p style={{fontSize:14,fontWeight:700,color:"#fff",marginBottom:4}}>{cn}</p>
-        {req.clients?.client_code&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Código: <span style={{fontFamily:"monospace",color:GOLD_LIGHT}}>{req.clients.client_code}</span></p>}
-        {req.clients?.email&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",marginTop:3}}>Email: {req.clients.email}</p>}
-        {req.clients?.whatsapp&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",marginTop:3}}>WhatsApp: {req.clients.whatsapp}</p>}
-        {req.clients?.city&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",marginTop:3}}>Ciudad: {req.clients.city}{req.clients.province?`, ${req.clients.province}`:""}</p>}
-      </Card>
-      {req.notes&&<Card title="Notas del admin">
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.85)",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{req.notes}</p>
-      </Card>}
+    {/* Sub-tabs */}
+    <div style={{display:"flex",gap:0,borderBottom:"1px solid rgba(255,255,255,0.06)",marginTop:18,marginBottom:18}}>
+      {[{k:"detail",l:"Detalle"},{k:"communications",l:"Comunicaciones"}].map(t=><button key={t.k} onClick={()=>setSubTab(t.k)} style={{padding:"9px 16px",fontSize:12,fontWeight:600,color:subTab===t.k?GOLD_LIGHT:"rgba(255,255,255,0.5)",background:"transparent",border:"none",borderBottom:`2px solid ${subTab===t.k?GOLD_LIGHT:"transparent"}`,cursor:"pointer",fontFamily:"inherit"}}>{t.l}</button>)}
     </div>
 
-    <Card title={`Productos (${products.length})${usingDraft?" · borrador en armado":""}`}>
-      {usingDraft&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"-4px 0 10px",fontStyle:"italic"}}>Estos productos provienen del borrador del cotizador (no había pedido del cliente).</p>}
-      {products.length===0?<p style={{color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin productos cargados</p>:
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {products.map((p,i)=><div key={p.id} style={{display:"flex",gap:14,alignItems:"center",padding:"12px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10}}>
-            <div style={{width:34,height:34,borderRadius:"50%",background:"rgba(184,149,106,0.15)",color:GOLD_LIGHT,fontWeight:800,fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
-            <div style={{flex:1,minWidth:0}}>
-              <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0}}>{p.description||"—"}</p>
-              {p.notes&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>{p.notes}</p>}
-            </div>
-            {p.quantity>0&&<div style={{textAlign:"right",flexShrink:0}}><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Cant.</p><p style={{fontSize:15,fontWeight:700,color:GOLD_LIGHT,fontFeatureSettings:'"tnum"'}}>{p.quantity}</p></div>}
-          </div>)}
-        </div>
-      }
-    </Card>
+    {subTab==="detail"&&<>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+        <Card title="Cliente">
+          <p style={{fontSize:14,fontWeight:700,color:"#fff",marginBottom:4}}>{cn}</p>
+          {req.clients?.client_code&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Código: <span style={{fontFamily:"monospace",color:GOLD_LIGHT}}>{req.clients.client_code}</span></p>}
+          {req.clients?.email&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",marginTop:3}}>Email: {req.clients.email}</p>}
+          {req.clients?.whatsapp&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",marginTop:3}}>WhatsApp: {req.clients.whatsapp}</p>}
+          {req.clients?.city&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",marginTop:3}}>Ciudad: {req.clients.city}{req.clients.province?`, ${req.clients.province}`:""}</p>}
+        </Card>
+        {req.notes&&<Card title="Notas del admin">
+          <p style={{fontSize:13,color:"rgba(255,255,255,0.85)",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{req.notes}</p>
+        </Card>}
+      </div>
 
+      <Card title={`Productos (${products.length})${usingDraft?" · borrador en armado":""}`}>
+        {usingDraft&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"-4px 0 10px",fontStyle:"italic"}}>Estos productos provienen del borrador del cotizador (no había pedido del cliente).</p>}
+        {products.length===0?<p style={{color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin productos cargados</p>:
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {products.map((p,i)=><div key={p.id} style={{display:"flex",gap:14,alignItems:"center",padding:"12px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10}}>
+              <div style={{width:34,height:34,borderRadius:"50%",background:"rgba(184,149,106,0.15)",color:GOLD_LIGHT,fontWeight:800,fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0}}>{p.description||"—"}</p>
+                {p.notes&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>{p.notes}</p>}
+              </div>
+              {p.quantity>0&&<div style={{textAlign:"right",flexShrink:0}}><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Cant.</p><p style={{fontSize:15,fontWeight:700,color:GOLD_LIGHT,fontFeatureSettings:'"tnum"'}}>{p.quantity}</p></div>}
+            </div>)}
+          </div>
+        }
+      </Card>
+    </>}
+
+    {subTab==="communications"&&<CommunicationsTab token={token} quoteId={quoteRow?.id} requestId={requestId} profileId={profileId} clientName={cn} clientWhatsapp={req.clients?.whatsapp} publicToken={quoteRow?.public_token}/>}
+
+  </div>;
+}
+
+function CommunicationsTab({token,quoteId,requestId,profileId,clientName,clientWhatsapp,publicToken}){
+  const [comms,setComms]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [newNote,setNewNote]=useState("");
+  const [posting,setPosting]=useState(false);
+  const load=async()=>{
+    setLo(true);
+    const filter=quoteId?`?quote_id=eq.${quoteId}`:`?request_id=eq.${requestId}`;
+    const r=await dq("gi_quote_communications",{token,filters:`${filter}&select=*&order=created_at.desc&limit=200`});
+    setComms(Array.isArray(r)?r:[]);
+    setLo(false);
+  };
+  useEffect(()=>{load();},[quoteId,requestId,token]);
+
+  const addNote=async()=>{
+    const txt=newNote.trim();if(!txt)return;
+    setPosting(true);
+    try{
+      await dq("gi_quote_communications",{method:"POST",token,body:{
+        quote_id:quoteId||null,
+        request_id:requestId,
+        type:"note",
+        content:txt,
+        author_id:profileId||null,
+      }});
+      setNewNote("");
+      load();
+    }catch(e){alert("Error al guardar la nota: "+e.message);}
+    setPosting(false);
+  };
+  const delNote=async(id)=>{
+    if(!confirm("¿Borrar esta nota?"))return;
+    try{await dq("gi_quote_communications",{method:"DELETE",token,filters:`?id=eq.${id}`});load();}catch(e){alert("No se pudo borrar");}
+  };
+
+  // Acciones rápidas: registrar wpp_sent + abrir wpp con mensaje preset
+  const sendWaWithLog=async(msgType="wpp_sent")=>{
+    const cleanWa=(raw)=>{if(!raw)return "";let s=String(raw).replace(/[^0-9]/g,"");if(s.startsWith("0"))s=s.slice(1);if(s.startsWith("15"))s="54911"+s.slice(2);if(!s.startsWith("54"))s="54"+s;return s;};
+    const num=cleanWa(clientWhatsapp||"");
+    const url=publicToken?`${window.location.origin}/cotizacion/${publicToken}`:"";
+    const txt=encodeURIComponent(`Hola${clientName?` ${clientName.split(" ")[0]}`:""}! Te dejo el link de la cotización:\n\n${url}`);
+    const wa=num?`https://wa.me/${num}?text=${txt}`:`https://wa.me/?text=${txt}`;
+    try{await dq("gi_quote_communications",{method:"POST",token,body:{quote_id:quoteId||null,request_id:requestId,type:msgType,author_id:profileId||null,meta:{public_token:publicToken||null}}});load();}catch{}
+    window.open(wa,"_blank","noopener");
+  };
+
+  const TYPE_META={
+    link_generated:{i:"🔗",l:"Link generado",c:"#60a5fa"},
+    link_regenerated:{i:"🔄",l:"Link regenerado / cotización editada",c:"#60a5fa"},
+    link_viewed:{i:"👁",l:"Cliente abrió el link",c:"#fbbf24"},
+    link_copied:{i:"📋",l:"Link copiado",c:"rgba(255,255,255,0.6)"},
+    wpp_sent:{i:"💬",l:"Enviado por WhatsApp",c:"#22c55e"},
+    accepted:{i:"✓",l:"Cliente aceptó la cotización",c:"#22c55e"},
+    note:{i:"📝",l:"Nota interna",c:GOLD_LIGHT},
+  };
+
+  return <div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
+      <Kpi label="Total eventos" val={String(comms.length)} sub={lo?"Cargando…":""}/>
+      <Kpi label="Veces que abrió el link" val={String(comms.filter(c=>c.type==="link_viewed").length)} sub={comms.find(c=>c.type==="link_viewed")?`Última: ${fmtDateShort(comms.find(c=>c.type==="link_viewed").created_at)}`:"Sin vistas"} color={comms.some(c=>c.type==="link_viewed")?"#fbbf24":"rgba(255,255,255,0.4)"}/>
+      <Kpi label="Estado" val={comms.some(c=>c.type==="accepted")?"Aceptada":(publicToken?"Esperando":"Sin enviar")} color={comms.some(c=>c.type==="accepted")?"#22c55e":"rgba(255,255,255,0.6)"}/>
+    </div>
+
+    {publicToken&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+      <button onClick={()=>sendWaWithLog("wpp_sent")} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",cursor:"pointer",fontFamily:"inherit"}}>💬 Enviar por WhatsApp</button>
+      <button onClick={async()=>{const url=`${window.location.origin}/cotizacion/${publicToken}`;await navigator.clipboard?.writeText(url);try{await dq("gi_quote_communications",{method:"POST",token,body:{quote_id:quoteId||null,request_id:requestId,type:"link_copied",author_id:profileId||null}});load();}catch{}alert("Link copiado:\n"+url);}} style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",fontFamily:"inherit"}}>📋 Copiar link</button>
+    </div>}
+
+    <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:14,marginBottom:14}}>
+      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.08em",margin:"0 0 8px"}}>Agregar nota interna</p>
+      <textarea value={newNote} onChange={e=>setNewNote(e.target.value)} placeholder="Le mandé wpp el lunes, dijo que confirma esta semana..." rows={2} style={{width:"100%",padding:"9px 11px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}}/>
+      <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}>
+        <button onClick={addNote} disabled={!newNote.trim()||posting} style={{padding:"7px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",background:!newNote.trim()||posting?"rgba(184,149,106,0.4)":GOLD_GRADIENT,color:"#0A1628",cursor:!newNote.trim()||posting?"not-allowed":"pointer",fontFamily:"inherit"}}>{posting?"Guardando…":"Agregar nota"}</button>
+      </div>
+    </div>
+
+    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:comms.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2.5rem 0"}}>Sin eventos todavía. Cuando generes el link, lo mandes por WhatsApp o el cliente lo abra, va a aparecer acá.</p>:
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {comms.map(c=>{const m=TYPE_META[c.type]||{i:"·",l:c.type,c:"rgba(255,255,255,0.5)"};return <div key={c.id} style={{display:"flex",gap:12,padding:"12px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,alignItems:"flex-start"}}>
+          <div style={{width:30,height:30,borderRadius:"50%",background:`${m.c}1a`,color:m.c,fontSize:14,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,border:`1px solid ${m.c}40`}}>{m.i}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+              <p style={{fontSize:13,fontWeight:700,color:m.c,margin:0}}>{m.l}</p>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",fontFeatureSettings:'"tnum"',margin:0,whiteSpace:"nowrap"}}>{fmtDateTime(c.created_at)}</p>
+            </div>
+            {c.content&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",margin:"5px 0 0",lineHeight:1.5,whiteSpace:"pre-wrap"}}>{c.content}</p>}
+            {c.type==="accepted"&&c.meta?.operation_code&&<p style={{fontSize:11,color:"rgba(255,255,255,0.6)",margin:"4px 0 0"}}>Operación: <strong style={{color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace"}}>{c.meta.operation_code}</strong> · Canal: {c.meta.channel} · Total USD {c.meta.total}</p>}
+            {c.type==="accepted"&&c.meta?.delivery_zone&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Entrega: {c.meta.delivery_zone}</p>}
+          </div>
+          {c.type==="note"&&<button onClick={()=>delNote(c.id)} title="Borrar nota" style={{padding:"3px 8px",fontSize:11,borderRadius:5,border:"1px solid rgba(248,113,113,0.25)",background:"transparent",color:"#f87171",cursor:"pointer",fontFamily:"inherit"}}>✕</button>}
+        </div>;})}
+      </div>
+    }
   </div>;
 }
 
@@ -557,7 +664,7 @@ const CHANNEL_DEFS=[
   {key:"maritimo_blanco",name:"Marítimo Integral AC",time:"~ 60 días"},
 ];
 
-function CotizadorWizard({token,requestId,onBack}){
+function CotizadorWizard({token,requestId,profileId,onBack}){
   const [step,setStep]=useState(1);
   const [request,setRequest]=useState(null);
   const [client,setClient]=useState(null);
@@ -909,6 +1016,16 @@ function CotizadorWizard({token,requestId,onBack}){
       }
       // Update request status
       await dq("gi_quote_requests",{method:"PATCH",token,filters:`?id=eq.${requestId}`,body:{status:"quoted"}});
+      // Log evento (link generado o regenerado)
+      try{
+        await dq("gi_quote_communications",{method:"POST",token,body:{
+          quote_id:quoteId,
+          request_id:requestId,
+          type:draftQuoteId?"link_regenerated":"link_generated",
+          author_id:profileId||null,
+          meta:{public_token:publicToken,honorarios_pct:Number(honorariosPct||0)},
+        }});
+      }catch(e){console.warn("comm log failed",e);}
       setGeneratedQuote({id:quoteId,public_token:publicToken});
       setStep(3);
       flash("Cotización generada");

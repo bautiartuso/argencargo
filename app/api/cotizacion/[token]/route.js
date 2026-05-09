@@ -37,6 +37,29 @@ export async function GET(req, { params }) {
     sbFetch(`/gi_settings?select=*&limit=1`),
   ]);
 
+  // Log "link_viewed" — pero solo si la cotización aún no fue aceptada y la última vista del mismo
+  // public_token fue hace más de 30 minutos (anti-spam de refresh).
+  if (quote.status !== "accepted" && quote.status !== "converted") {
+    try {
+      const recent = await sbFetch(`/gi_quote_communications?quote_id=eq.${quote.id}&type=eq.link_viewed&select=created_at&order=created_at.desc&limit=1`);
+      const last = Array.isArray(recent.body) && recent.body[0] ? new Date(recent.body[0].created_at) : null;
+      const minutesSince = last ? (Date.now() - last.getTime()) / 60000 : Infinity;
+      if (minutesSince > 30) {
+        const ua = req.headers.get("user-agent") || null;
+        const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+        await sbFetch(`/gi_quote_communications`, {
+          method: "POST",
+          body: JSON.stringify({
+            quote_id: quote.id,
+            request_id: quote.request_id,
+            type: "link_viewed",
+            meta: { ua, ip },
+          }),
+        });
+      }
+    } catch (e) { console.error("[GET cotizacion] log view failed", e.message); }
+  }
+
   return Response.json({
     quote,
     rates: Array.isArray(ratesRes.body) ? ratesRes.body : [],
@@ -156,6 +179,19 @@ export async function POST(req, { params }) {
     method: "PATCH",
     body: JSON.stringify({ status: "converted" }),
   });
+
+  // 5. Log evento "accepted"
+  try {
+    await sbFetch(`/gi_quote_communications`, {
+      method: "POST",
+      body: JSON.stringify({
+        quote_id: quote.id,
+        request_id: quote.request_id,
+        type: "accepted",
+        meta: { channel: body.channel, delivery_zone: body.delivery_zone, operation_code: opCode, total: finalTotal },
+      }),
+    });
+  } catch (e) { console.error("[POST cotizacion] log accept failed", e.message); }
 
   return Response.json({ ok: true, operation_code: opCode, operation_id: opId, total: finalTotal });
 }
