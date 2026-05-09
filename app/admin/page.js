@@ -2268,6 +2268,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           </div>
         </div>
       </Card>;})()}
+
+      {/* GI: Asignación de socio + comisión por operación (override del cliente) */}
+      {op.service_type==="gestion_integral"&&<GiAssignmentCard op={op} setOp={setOp} opClient={opClient} token={token} flash={flash}/>}
+
       <Card title={op.service_type==="gestion_integral"?"Costos reales (Gestión Integral)":"Costos reales"} actions={<Btn onClick={async()=>{setSaving(true);
         // Save flete
         const fleteMethod=op.cost_flete_method||"cuenta_corriente";
@@ -7501,6 +7505,80 @@ function CmdK({token,onNavigate,allClients}){
       </div>
     </div>
   </div>;
+}
+
+// ════════════════════════════════════════════════════════════════
+// GiAssignmentCard · sub-panel dentro de OperationEditor para ops GI
+// Permite asignar socio + comisión a la op puntual (override del cliente)
+// ════════════════════════════════════════════════════════════════
+function GiAssignmentCard({op,setOp,opClient,token,flash}){
+  const [partners,setPartners]=useState([]);
+  const [adminOwned,setAdminOwned]=useState(!!op.gi_admin_owned);
+  const [partnerId,setPartnerId]=useState(op.gi_partner_id||"");
+  const [commissionPct,setCommissionPct]=useState(op.gi_commission_pct!=null?String(op.gi_commission_pct):"");
+  const [saving,setSaving]=useState(false);
+
+  useEffect(()=>{(async()=>{
+    const r=await dq("profiles",{token,filters:"?is_gi_partner=eq.true&select=id,email,gi_partner_pct&order=email.asc"});
+    setPartners(Array.isArray(r)?r:[]);
+  })();},[token]);
+
+  useEffect(()=>{
+    setAdminOwned(!!op.gi_admin_owned);
+    setPartnerId(op.gi_partner_id||"");
+    setCommissionPct(op.gi_commission_pct!=null?String(op.gi_commission_pct):"");
+  },[op.id,op.gi_admin_owned,op.gi_partner_id,op.gi_commission_pct]);
+
+  // Default si no hay nada explícito: el cliente
+  const fallbackPartnerId=opClient?.gi_partner_id||null;
+  const fallbackPct=opClient?.gi_commission_pct||null;
+  const effPartnerId=adminOwned?null:(partnerId||fallbackPartnerId);
+  const effPct=adminOwned?0:(commissionPct!==""?Number(commissionPct):(fallbackPct||0));
+  const effPartner=partners.find(p=>p.id===effPartnerId);
+
+  const save=async()=>{
+    setSaving(true);
+    const body={
+      gi_admin_owned:adminOwned,
+      gi_partner_id:adminOwned?null:(partnerId||null),
+      gi_commission_pct:adminOwned?null:(commissionPct!==""?Number(commissionPct):null),
+    };
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
+    setOp(p=>({...p,...body}));
+    flash("Asignación GI actualizada");
+    setSaving(false);
+  };
+
+  return <Card title="Socio GI · Comisión de esta operación" actions={<Btn onClick={save} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}>
+    <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",lineHeight:1.5}}>Por defecto la op hereda el socio + % asignado al cliente. Acá podés sobrescribir solo para esta op (asignar otro socio o cambiar el %), o marcarla como <strong style={{color:"#fff"}}>op propia del admin sin comisión a nadie</strong>.</p>
+
+    <label style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:adminOwned?"rgba(168,85,247,0.10)":"rgba(255,255,255,0.025)",border:`1px solid ${adminOwned?"rgba(168,85,247,0.35)":"rgba(255,255,255,0.06)"}`,borderRadius:10,cursor:"pointer",marginBottom:14}}>
+      <input type="checkbox" checked={adminOwned} onChange={e=>setAdminOwned(e.target.checked)} style={{cursor:"pointer",accentColor:"#a78bfa"}}/>
+      <span style={{flex:1}}>
+        <p style={{fontSize:13,fontWeight:700,color:adminOwned?"#a78bfa":"#fff",margin:0}}>Op propia del admin (sin comisión a ningún socio)</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si tildás esto, ningún socio ve esta op en su panel y no se genera comisión, aunque el cliente tenga uno asignado.</p>
+      </span>
+    </label>
+
+    {!adminOwned&&<div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:14}}>
+      <div>
+        <label style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,display:"block"}}>Socio asignado</label>
+        <select value={partnerId} onChange={e=>setPartnerId(e.target.value)} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}>
+          <option value="" style={{background:"#142038"}}>{fallbackPartnerId?`Default del cliente (${partners.find(p=>p.id===fallbackPartnerId)?.email||"—"})`:"Sin asignar (admin)"}</option>
+          {partners.map(p=><option key={p.id} value={p.id} style={{background:"#142038"}}>{p.email}</option>)}
+        </select>
+      </div>
+      <div>
+        <label style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,display:"block"}}>% comisión sobre neto</label>
+        <input type="text" inputMode="decimal" value={commissionPct} onChange={e=>{const v=e.target.value;if(v===""||/^-?\d*\.?\d*$/.test(v))setCommissionPct(v);}} placeholder={fallbackPct?`${fallbackPct} (cliente)`:"0"} style={{width:"100%",padding:"10px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
+      </div>
+    </div>}
+
+    {!adminOwned&&effPartnerId&&<div style={{padding:"12px 14px",background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:8,marginTop:14}}>
+      <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:0}}>Esta op va a {effPartner?.email||"socio"} con {effPct}% sobre la ganancia neta</p>
+      <p style={{fontSize:10.5,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>La comisión se calcula y se paga al cerrar la op (status: operación cerrada).</p>
+    </div>}
+  </Card>;
 }
 
 // ════════════════════════════════════════════════════════════════
