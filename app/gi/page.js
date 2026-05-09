@@ -50,6 +50,17 @@ const uploadProductPhoto=async(file,token)=>{
 };
 const fmtDateShort=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return `${day}/${m}/${y.slice(2)}`;}const dd=new Date(d);return `${String(dd.getDate()).padStart(2,"0")}/${String(dd.getMonth()+1).padStart(2,"0")}/${String(dd.getFullYear()).slice(2)}`;};
 const fmtDateTime=(d)=>{if(!d)return"—";const dd=new Date(d);if(isNaN(dd.getTime()))return"—";return `${String(dd.getDate()).padStart(2,"0")}/${String(dd.getMonth()+1).padStart(2,"0")}/${String(dd.getFullYear()).slice(2)} ${String(dd.getHours()).padStart(2,"0")}:${String(dd.getMinutes()).padStart(2,"0")}`;};
+// Fecha "16 de mayo de 2026"
+const fmtDateLong=(d)=>{if(!d)return"";const s=String(d).slice(0,10);const[y,m,day]=s.split("-");if(!y||!m||!day)return"";const meses=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];return `${Number(day)} de ${meses[Number(m)-1]} de ${y}`;};
+// Construye el mensaje de WhatsApp para mandar la cotización al cliente
+const buildQuoteWaMessage=({firstName,code,url,expiresAt})=>{
+  const greeting=firstName?`Hola ${firstName}, ¿cómo estás?`:"Hola, ¿cómo estás?";
+  const codePart=code?` ${code}`:"";
+  const validez=expiresAt?`\n\nVálida hasta el ${fmtDateLong(expiresAt)}.`:"";
+  return `${greeting}\n\nTe enviamos la cotización${codePart} para tu importación 🚢\n\n${url}${validez}\n\nCualquier duda estamos a disposición ✨\n\n*ARGENCARGO*`;
+};
+// Limpia un nro AR a formato wa.me (54911...)
+const cleanWaNumber=(raw)=>{if(!raw)return "";let s=String(raw).replace(/[^0-9]/g,"");if(s.startsWith("0"))s=s.slice(1);if(s.startsWith("15"))s="54911"+s.slice(2);if(!s.startsWith("54"))s="54"+s;return s;};
 const fmtUSD=(n)=>"USD "+Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
 
 // ────────────────────────────────────────────
@@ -553,12 +564,12 @@ function RequestDetail({token,requestId,profileId,onBack,onStartWizard}){
       </Card>
     </>}
 
-    {subTab==="communications"&&<CommunicationsTab token={token} quoteId={quoteRow?.id} requestId={requestId} profileId={profileId} clientName={cn} clientWhatsapp={req.clients?.whatsapp} publicToken={quoteRow?.public_token}/>}
+    {subTab==="communications"&&<CommunicationsTab token={token} quoteId={quoteRow?.id} requestId={requestId} profileId={profileId} clientName={cn} clientWhatsapp={req.clients?.whatsapp} publicToken={quoteRow?.public_token} requestCode={req.request_code} expiresAt={req.expires_at}/>}
 
   </div>;
 }
 
-function CommunicationsTab({token,quoteId,requestId,profileId,clientName,clientWhatsapp,publicToken}){
+function CommunicationsTab({token,quoteId,requestId,profileId,clientName,clientWhatsapp,publicToken,requestCode,expiresAt}){
   const [comms,setComms]=useState([]);
   const [lo,setLo]=useState(true);
   const [newNote,setNewNote]=useState("");
@@ -595,10 +606,9 @@ function CommunicationsTab({token,quoteId,requestId,profileId,clientName,clientW
 
   // Acciones rápidas: registrar wpp_sent + abrir wpp con mensaje preset
   const sendWaWithLog=async(msgType="wpp_sent")=>{
-    const cleanWa=(raw)=>{if(!raw)return "";let s=String(raw).replace(/[^0-9]/g,"");if(s.startsWith("0"))s=s.slice(1);if(s.startsWith("15"))s="54911"+s.slice(2);if(!s.startsWith("54"))s="54"+s;return s;};
-    const num=cleanWa(clientWhatsapp||"");
+    const num=cleanWaNumber(clientWhatsapp||"");
     const url=publicToken?`${window.location.origin}/cotizacion/${publicToken}`:"";
-    const txt=encodeURIComponent(`Hola${clientName?` ${clientName.split(" ")[0]}`:""}! Te dejo el link de la cotización:\n\n${url}`);
+    const txt=encodeURIComponent(buildQuoteWaMessage({firstName:clientName?clientName.split(" ")[0]:"",code:requestCode||"",url,expiresAt:expiresAt||null}));
     const wa=num?`https://wa.me/${num}?text=${txt}`:`https://wa.me/?text=${txt}`;
     try{await dq("gi_quote_communications",{method:"POST",token,body:{quote_id:quoteId||null,request_id:requestId,type:msgType,author_id:profileId||null,meta:{public_token:publicToken||null}}});load();}catch{}
     window.open(wa,"_blank","noopener");
@@ -1332,12 +1342,11 @@ function WizStep3({generatedQuote,client,request,onBack}){
   if(!generatedQuote)return <p style={{color:"rgba(255,255,255,0.5)"}}>Sin cotización generada</p>;
   const url=`${typeof window!=="undefined"?window.location.origin:"https://argencargo.com.ar"}/cotizacion/${generatedQuote.public_token}`;
   const copy=()=>{navigator.clipboard?.writeText(url);setCopied(true);setTimeout(()=>setCopied(false),2000);};
-  // WhatsApp: limpiar número (solo dígitos, +54 si arranca con 0/15) y armar mensaje preset.
-  const cleanWa=(raw)=>{if(!raw)return "";let s=String(raw).replace(/[^0-9]/g,"");if(s.startsWith("0"))s=s.slice(1);if(s.startsWith("15"))s="54911"+s.slice(2);if(!s.startsWith("54"))s="54"+s;return s;};
-  const waNumber=cleanWa(client?.whatsapp||client?.phone||"");
+  // WhatsApp: número AR limpio + mensaje preset (mismo template que en CommunicationsTab).
+  const waNumber=cleanWaNumber(client?.whatsapp||client?.phone||"");
   const firstName=client?.first_name||"";
   const code=request?.request_code||"";
-  const waMsg=encodeURIComponent(`Hola${firstName?` ${firstName}`:""}! Te dejo la cotización${code?` ${code}`:""} de Gestión Integral lista para que la revises:\n\n${url}\n\nDesde el link podés elegir el modo de envío y la entrega final, y aceptarla cuando quieras. Cualquier duda escribime por acá.`);
+  const waMsg=encodeURIComponent(buildQuoteWaMessage({firstName,code,url,expiresAt:request?.expires_at}));
   const waUrl=waNumber?`https://wa.me/${waNumber}?text=${waMsg}`:`https://wa.me/?text=${waMsg}`;
   return <div>
     <div style={{textAlign:"center",padding:"40px 30px",background:"linear-gradient(135deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.3)",borderRadius:14,marginBottom:18}}>
