@@ -156,6 +156,7 @@ function Shell({session,profile,onLogout}){
     ]},
     {sec:"Finanzas",items:[
       {k:"dashboard",l:"Dashboard",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},
+      {k:"commissions",l:"Comisiones",p:["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},
       {k:"ledger",l:"Libro diario",p:["M4 19.5A2.5 2.5 0 0 1 6.5 17H20","M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"]},
     ]},
     {sec:"Contactos",items:[
@@ -208,6 +209,7 @@ function Shell({session,profile,onLogout}){
         {pane==="settings"&&<PaneSettings token={token}/>}
         {pane==="operations"&&<PaneOps token={token}/>}
         {pane==="dashboard"&&<PaneDashboard token={token}/>}
+        {pane==="commissions"&&<PaneCommissions token={token}/>}
         {pane==="ledger"&&<PaneLedger token={token}/>}
         {pane==="suppliers"&&<ContactsPanel token={token} type="suppliers" title="Proveedores" desc="Listado de proveedores agrupados por rubro." groupBy="rubro" rubroOptions={["Indumentaria","Electrónica","Calzado","Hogar","Cosmética","Juguetería","Deportes","Otros"]} fields={[{k:"name",l:"Nombre",req:true},{k:"rubro",l:"Rubro",select:true},{k:"country",l:"País",options:["China","USA"]},{k:"city",l:"Ciudad"},{k:"email",l:"Email"},{k:"phone",l:"Teléfono"},{k:"wechat",l:"WeChat"},{k:"moq",l:"MOQ",num:true},{k:"lead_time_days",l:"Lead time (días)",num:true},{k:"notes",l:"Notas",textarea:true}]}/>}
         {pane==="agents"&&<ContactsPanel token={token} type="purchase_agents" title="Agentes de compra" desc="Sourcing agents en China/USA." groupBy="rubro" rubroOptions={["Indumentaria","Electrónica","Calzado","General","Otros"]} fields={[{k:"name",l:"Nombre",req:true},{k:"rubro",l:"Rubro",select:true},{k:"base_city",l:"Ciudad base"},{k:"email",l:"Email"},{k:"phone",l:"Teléfono"},{k:"wechat",l:"WeChat"},{k:"commission_pct",l:"Comisión %",num:true},{k:"commission_fixed_usd",l:"Comisión fija USD",num:true},{k:"notes",l:"Notas",textarea:true}]}/>}
@@ -1448,6 +1450,102 @@ function PaneDashboard({token}){
 // ────────────────────────────────────────────
 // PANE: LIBRO DIARIO
 // ────────────────────────────────────────────
+// ────────────────────────────────────────────
+// PANE: COMISIONES (read-only para el socio)
+// ────────────────────────────────────────────
+function PaneCommissions({token}){
+  const [earnings,setEarnings]=useState([]);
+  const [lo,setLo]=useState(true);
+  useEffect(()=>{(async()=>{
+    setLo(true);
+    const r=await dq("gi_partner_earnings",{token,filters:"?select=*,operations(operation_code,description,clients(first_name,last_name,client_code))&order=closed_at.desc"});
+    setEarnings(Array.isArray(r)?r:[]);
+    setLo(false);
+  })();},[token]);
+
+  const pending=earnings.filter(e=>!e.paid_to_partner);
+  const paid=earnings.filter(e=>e.paid_to_partner);
+  const totalPending=pending.reduce((s,e)=>s+Number(e.commission_usd||0),0);
+  const totalPaid=paid.reduce((s,e)=>s+Number(e.paid_amount_usd||e.commission_usd||0),0);
+  const positivos=pending.filter(e=>Number(e.commission_usd||0)>0).reduce((s,e)=>s+Number(e.commission_usd),0);
+  const perdidas=pending.filter(e=>Number(e.commission_usd||0)<0).reduce((s,e)=>s+Number(e.commission_usd),0);
+
+  return <div>
+    <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px",color:"#fff"}}>Comisiones</h1>
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:24}}>Tus comisiones por op cerrada. Si una op resulta a pérdida, asumís tu parte (% sobre la pérdida) y se descuenta del saldo total.</p>
+
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:24}}>
+      <Kpi label="Saldo a cobrar (neto)" val={fmtUSD(totalPending)} color={totalPending>=0?"#22c55e":"#f87171"} sub={`${pending.length} ${pending.length===1?"op pendiente":"ops pendientes"}`}/>
+      <Kpi label="Ganancias acumuladas" val={fmtUSD(positivos)} color="#22c55e" sub={`${pending.filter(e=>Number(e.commission_usd||0)>0).length} ops con ganancia`}/>
+      <Kpi label="Pérdidas absorbidas" val={fmtUSD(Math.abs(perdidas))} color={perdidas<0?"#f87171":"rgba(255,255,255,0.4)"} sub={`${pending.filter(e=>Number(e.commission_usd||0)<0).length} ops con pérdida`}/>
+    </div>
+
+    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:<>
+      {pending.length>0&&<>
+        <h3 style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,textTransform:"uppercase",letterSpacing:"0.1em",margin:"6px 0 12px"}}>Pendientes de pago ({pending.length})</h3>
+        <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden",marginBottom:24}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+            <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.22)"}}>
+              <th style={thStyle()}>Op</th>
+              <th style={thStyle()}>Cliente</th>
+              <th style={thStyle()}>Cerrada</th>
+              <th style={{...thStyle(),textAlign:"right"}}>Revenue</th>
+              <th style={{...thStyle(),textAlign:"right"}}>Costos</th>
+              <th style={{...thStyle(),textAlign:"right"}}>Neto</th>
+              <th style={thStyle()}>%</th>
+              <th style={{...thStyle(),textAlign:"right"}}>Comisión</th>
+            </tr></thead>
+            <tbody>
+              {pending.map(e=>{const cn=e.operations?.clients?`${e.operations.clients.first_name||""} ${e.operations.clients.last_name||""}`.trim():"—";const com=Number(e.commission_usd||0);return <tr key={e.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                <td style={{padding:"11px 14px",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:GOLD_LIGHT,whiteSpace:"nowrap"}}>{e.operations?.operation_code||"—"}</td>
+                <td style={{padding:"11px 14px",color:"#fff",fontWeight:600,whiteSpace:"nowrap"}}>{cn}</td>
+                <td style={{padding:"11px 14px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontFeatureSettings:'"tnum"',textAlign:"center"}}>{fmtDateShort(e.closed_at)}</td>
+                <td style={{padding:"11px 14px",textAlign:"right",color:"#22c55e",fontFeatureSettings:'"tnum"'}}>{fmtUSD(e.revenue_usd)}</td>
+                <td style={{padding:"11px 14px",textAlign:"right",color:"#f87171",fontFeatureSettings:'"tnum"'}}>{fmtUSD(e.total_costs_usd)}</td>
+                <td style={{padding:"11px 14px",textAlign:"right",color:Number(e.net_profit_usd||0)>=0?"#fff":"#f87171",fontWeight:600,fontFeatureSettings:'"tnum"'}}>{fmtUSD(e.net_profit_usd)}</td>
+                <td style={{padding:"11px 14px",textAlign:"center",color:"rgba(255,255,255,0.7)"}}>{e.commission_pct}%</td>
+                <td style={{padding:"11px 14px",textAlign:"right",fontWeight:700,color:com>=0?"#22c55e":"#f87171",fontFeatureSettings:'"tnum"'}}>{com>=0?"+":"−"}{fmtUSD(Math.abs(com))}</td>
+              </tr>;})}
+              <tr style={{borderTop:"1.5px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)"}}>
+                <td colSpan={7} style={{padding:"12px 14px",fontWeight:700,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:"0.06em",fontSize:11}}>Saldo neto a cobrar</td>
+                <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:totalPending>=0?"#22c55e":"#f87171",fontFeatureSettings:'"tnum"'}}>{totalPending>=0?"+":"−"}{fmtUSD(Math.abs(totalPending))}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </>}
+
+      {paid.length>0&&<>
+        <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"6px 0 12px"}}>Ya pagadas ({paid.length})</h3>
+        <div style={{background:"rgba(255,255,255,0.018)",border:"1px solid rgba(255,255,255,0.04)",borderRadius:14,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,opacity:0.7}}>
+            <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.18)"}}>
+              <th style={thStyle()}>Op</th>
+              <th style={thStyle()}>Cliente</th>
+              <th style={thStyle()}>Pagada</th>
+              <th style={{...thStyle(),textAlign:"right"}}>Monto</th>
+            </tr></thead>
+            <tbody>
+              {paid.map(e=>{const cn=e.operations?.clients?`${e.operations.clients.first_name||""} ${e.operations.clients.last_name||""}`.trim():"—";return <tr key={e.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                <td style={{padding:"11px 14px",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:GOLD_LIGHT,whiteSpace:"nowrap"}}>{e.operations?.operation_code||"—"}</td>
+                <td style={{padding:"11px 14px",color:"#fff",fontWeight:600,whiteSpace:"nowrap"}}>{cn}</td>
+                <td style={{padding:"11px 14px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontFeatureSettings:'"tnum"',textAlign:"center"}}>{fmtDateShort(e.paid_at)}</td>
+                <td style={{padding:"11px 14px",textAlign:"right",fontWeight:700,color:Number(e.paid_amount_usd||e.commission_usd)>=0?"#22c55e":"#f87171",fontFeatureSettings:'"tnum"'}}>{fmtUSD(e.paid_amount_usd||e.commission_usd)}</td>
+              </tr>;})}
+              <tr style={{borderTop:"1.5px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)"}}>
+                <td colSpan={3} style={{padding:"12px 14px",fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em",fontSize:11}}>Total cobrado</td>
+                <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:"#22c55e",fontFeatureSettings:'"tnum"'}}>{fmtUSD(totalPaid)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </>}
+
+      {pending.length===0&&paid.length===0&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"3rem 0"}}>Cuando se cierre tu primera op aparece tu comisión acá.</p>}
+    </>}
+  </div>;
+}
+
 function PaneLedger({token}){
   const [movements,setMovements]=useState([]);
   const [lo,setLo]=useState(true);

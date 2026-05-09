@@ -7615,6 +7615,33 @@ function GiAdminPanel({token,clients}){
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState("");
   const flash=(t)=>{setMsg(t);setTimeout(()=>setMsg(""),3500);};
+  // Comisiones pendientes por socio
+  const [earnings,setEarnings]=useState([]);
+  const [showCommissionsModal,setShowCommissionsModal]=useState(null); // partner_id | null
+  const [paying,setPaying]=useState(false);
+  const loadEarnings=async()=>{
+    const r=await dq("gi_partner_earnings",{token,filters:"?select=*,operations(operation_code,clients(first_name,last_name))&order=closed_at.desc"});
+    setEarnings(Array.isArray(r)?r:[]);
+  };
+  useEffect(()=>{loadEarnings();},[token]);
+  const payAllForPartner=async(partnerId,earningIds,totalAmount)=>{
+    if(!confirm(`¿Marcar como pagadas ${earningIds.length} comisión${earningIds.length>1?"es":""} por USD ${Math.abs(totalAmount).toFixed(2)}?`))return;
+    setPaying(true);
+    const now=new Date().toISOString();
+    for(const id of earningIds){
+      const earn=earnings.find(e=>e.id===id);
+      await dq("gi_partner_earnings",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{paid_to_partner:true,paid_at:now,paid_amount_usd:Number(earn?.commission_usd||0)}});
+      // Marcar el finance_entry asociado como is_paid
+      if(earn?.operation_id){
+        await dq("finance_entries",{method:"PATCH",token,filters:`?operation_id=eq.${earn.operation_id}&category=eq.comisiones_socio`,body:{is_paid:true}});
+      }
+    }
+    flash(`✓ ${earningIds.length} comisión${earningIds.length>1?"es":""} marcada${earningIds.length>1?"s":""} como pagada${earningIds.length>1?"s":""}`);
+    setShowCommissionsModal(null);
+    loadEarnings();
+    setPaying(false);
+  };
+
   // Manage GI partners
   const [partners,setPartners]=useState([]);
   const [showPartnersModal,setShowPartnersModal]=useState(false);
@@ -7764,6 +7791,44 @@ function GiAdminPanel({token,clients}){
       </div>
     </div>
 
+    {(()=>{
+      // Agrupar earnings pendientes por socio
+      const pendientes=earnings.filter(e=>!e.paid_to_partner);
+      if(pendientes.length===0)return null;
+      const byPartner={};
+      pendientes.forEach(e=>{const k=e.partner_id;if(!byPartner[k])byPartner[k]={ids:[],total:0,pos:0,neg:0,n:0};byPartner[k].ids.push(e.id);byPartner[k].total+=Number(e.commission_usd||0);byPartner[k].n++;if(Number(e.commission_usd||0)>=0)byPartner[k].pos+=Number(e.commission_usd||0);else byPartner[k].neg+=Number(e.commission_usd||0);});
+      const partnerEmail=(pid)=>partners.find(p=>p.id===pid)?.email||"socio";
+      const totalGlobal=pendientes.reduce((s,e)=>s+Number(e.commission_usd||0),0);
+      return <div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.10),rgba(184,149,106,0.02))",border:"1.5px solid rgba(184,149,106,0.32)",borderRadius:14,padding:"18px 20px",marginBottom:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14,flexWrap:"wrap",gap:10}}>
+          <div>
+            <h3 style={{fontSize:14,fontWeight:700,color:GOLD_LIGHT,margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>💰 Comisiones a pagar al socio</h3>
+            <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Cuando una op GI cierra (sin TC pendiente) se calcula la comisión automáticamente. Acá registrás los pagos al socio.</p>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>Total a pagar (neto)</p>
+            <p style={{fontSize:22,fontWeight:800,color:totalGlobal>=0?"#22c55e":"#f87171",fontVariantNumeric:"tabular-nums"}}>{totalGlobal>=0?"":"−"}USD {Math.abs(totalGlobal).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+          </div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {Object.entries(byPartner).map(([pid,d])=><div key={pid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,gap:10,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:200}}>
+              <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0}}>{partnerEmail(pid)}</p>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>{d.n} op{d.n>1?"s":""} pendiente{d.n>1?"s":""}{d.neg<0?` · ganancias USD ${d.pos.toFixed(2)} − pérdidas USD ${Math.abs(d.neg).toFixed(2)}`:""}</p>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <p style={{fontSize:18,fontWeight:800,color:d.total>=0?"#22c55e":"#f87171",fontVariantNumeric:"tabular-nums",margin:0}}>{d.total>=0?"":"−"}USD {Math.abs(d.total).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+              <p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{d.total>=0?"Le pagás":"Te debe"}</p>
+            </div>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={()=>setShowCommissionsModal(pid)} style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:"pointer",fontFamily:"inherit"}}>Ver detalle</button>
+              <button onClick={()=>payAllForPartner(pid,d.ids,d.total)} disabled={paying} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"none",background:paying?"rgba(34,197,94,0.4)":"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",cursor:paying?"wait":"pointer",fontFamily:"inherit"}}>{paying?"…":d.total>=0?"Liquidar":"Aplicar pérdida"}</button>
+            </div>
+          </div>)}
+        </div>
+      </div>;
+    })()}
+
     <div style={{display:"flex",gap:4,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:18,flexWrap:"wrap"}}>
       {[
         {k:"active",l:"Activas",n:reqs.filter(r=>!["converted","rejected","expired"].includes(r.status)).length},
@@ -7771,6 +7836,37 @@ function GiAdminPanel({token,clients}){
         {k:"rejected",l:"Rechazadas / expiradas",n:reqs.filter(r=>["rejected","expired"].includes(r.status)).length},
       ].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"9px 16px",fontSize:12,fontWeight:600,color:tab===t.k?GOLD_LIGHT:"rgba(255,255,255,0.5)",background:"transparent",border:"none",borderBottom:`2px solid ${tab===t.k?GOLD_LIGHT:"transparent"}`,cursor:"pointer",fontFamily:"inherit"}}>{t.l} <span style={{marginLeft:5,fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:8,background:tab===t.k?"rgba(184,149,106,0.15)":"rgba(255,255,255,0.06)",color:tab===t.k?GOLD_LIGHT:"rgba(255,255,255,0.5)"}}>{t.n}</span></button>)}
     </div>
+
+    {/* Modal: detalle de comisiones de un socio */}
+    {showCommissionsModal&&(()=>{const pid=showCommissionsModal;const partnerEarnings=earnings.filter(e=>e.partner_id===pid);const pending=partnerEarnings.filter(e=>!e.paid_to_partner);const paid=partnerEarnings.filter(e=>e.paid_to_partner);return <div onClick={()=>setShowCommissionsModal(null)} style={{position:"fixed",inset:0,background:"rgba(8,12,20,0.78)",backdropFilter:"blur(8px)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"5vh 20px",overflowY:"auto"}}>
+      <div onClick={e=>e.stopPropagation()} style={{maxWidth:780,width:"100%",background:"linear-gradient(180deg,#142038,#0f1a2e)",border:"1px solid rgba(184,149,106,0.28)",borderRadius:14,padding:"22px 24px",boxShadow:"0 32px 80px rgba(0,0,0,0.65)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,paddingBottom:12,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+          <div><h3 style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 2px"}}>{partners.find(p=>p.id===pid)?.email||"Socio"}</h3><p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:0}}>Detalle de comisiones por operación</p></div>
+          <button onClick={()=>setShowCommissionsModal(null)} style={{fontSize:22,background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer",padding:"0 4px"}}>✕</button>
+        </div>
+        {pending.length>0&&<>
+          <h4 style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,textTransform:"uppercase",letterSpacing:"0.08em",margin:"6px 0 8px"}}>Pendientes ({pending.length})</h4>
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14}}>
+            {pending.map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,fontSize:12.5}}>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{margin:0,color:"#fff"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:600}}>{e.operations?.operation_code||"—"}</span> · {e.operations?.clients?`${e.operations.clients.first_name||""} ${e.operations.clients.last_name||""}`.trim():"—"}</p>
+                <p style={{margin:"3px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.5)"}}>{formatDate(e.closed_at)} · Revenue {`USD ${Number(e.revenue_usd||0).toFixed(2)}`} − Costos {`USD ${Number(e.total_costs_usd||0).toFixed(2)}`} = Neto {`USD ${Number(e.net_profit_usd||0).toFixed(2)}`}</p>
+              </div>
+              <p style={{fontSize:14,fontWeight:700,color:Number(e.commission_usd||0)>=0?"#22c55e":"#f87171",fontVariantNumeric:"tabular-nums",margin:0,whiteSpace:"nowrap",marginLeft:14}}>{Number(e.commission_usd||0)>=0?"":"−"}USD {Math.abs(Number(e.commission_usd||0)).toFixed(2)}</p>
+            </div>)}
+          </div>
+        </>}
+        {paid.length>0&&<>
+          <h4 style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em",margin:"14px 0 8px"}}>Pagadas ({paid.length})</h4>
+          <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:200,overflowY:"auto"}}>
+            {paid.map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",fontSize:11.5,opacity:0.6}}>
+              <span><span style={{fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT}}>{e.operations?.operation_code||"—"}</span> · pagada {e.paid_at?formatDate(e.paid_at):"—"}</span>
+              <span style={{color:"rgba(255,255,255,0.6)"}}>USD {Number(e.commission_usd||0).toFixed(2)}</span>
+            </div>)}
+          </div>
+        </>}
+      </div>
+    </div>;})()}
 
     {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<p style={{textAlign:"center",color:"rgba(255,255,255,0.4)",padding:"3rem 0"}}>No hay solicitudes en esta vista. {tab==="active"&&<><br/><button onClick={openModal} style={{marginTop:14,padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer"}}>Crear la primera</button></>}</p>:
       <div style={{background:"rgba(255,255,255,0.025)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
