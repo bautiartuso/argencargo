@@ -1005,7 +1005,7 @@ function WizStep2({visibleChannels,someUSA,commissionPct,setCommissionPct,paymen
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:240}}>
           <p style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,margin:0}}>Tu comisión por esta operación</p>
-          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",margin:"3px 0 0",lineHeight:1.4}}>% sobre la ganancia neta real al cerrar la op (revenue − todos los costos). Si la op va a pérdida, asumís tu parte (% sobre la pérdida).</p>
+          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",margin:"3px 0 0",lineHeight:1.4}}>% sobre la ganancia neta real al cerrar la op (ingresos − todos los costos). Si la op va a pérdida, asumís tu parte (% sobre la pérdida).</p>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           <input type="text" inputMode="decimal" value={commissionPct} onChange={e=>{const v=e.target.value;if(v===""||/^\d*\.?\d*$/.test(v))setCommissionPct(v);}} placeholder="0" style={{width:90,padding:"10px 12px",fontSize:18,fontWeight:800,textAlign:"center",border:"1px solid rgba(184,149,106,0.4)",borderRadius:10,background:"rgba(0,0,0,0.25)",color:GOLD_LIGHT,outline:"none",fontFamily:"inherit"}}/>
@@ -1350,7 +1350,7 @@ function OpDetail({token,opId,onBack,calcComision}){
       return <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginTop:18,marginBottom:24}}>
         <Kpi label="Canal" val={chLabel} sub={op.origin?`Origen ${op.origin}`:""}/>
         <Kpi label="Total cliente" val={fmtUSD(op.budget_total)} sub={pendienteCobro>0.01?`Pendiente: ${fmtUSD(pendienteCobro)}`:`Cobrado completo`} color={GOLD_LIGHT}/>
-        <Kpi label="Ganancia neta op" val={fmtUSD(_netProfit)} sub={`Revenue ${fmtUSD(totalPaid)} − costos ${fmtUSD(_totalCost)}`} color={_netProfit>=0?"#22c55e":"#f87171"}/>
+        <Kpi label="Ganancia neta op" val={fmtUSD(_netProfit)} sub={`Ingresos ${fmtUSD(totalPaid)} − costos ${fmtUSD(_totalCost)}`} color={_netProfit>=0?"#22c55e":"#f87171"}/>
         <Kpi label={com.real?"Tu comisión":"Comisión est."} val={com.pct>0?fmtUSD(com.amount):"—"} sub={com.pct>0?`${com.pct}%${com.real?" sobre neto real":" estimada"}`:"Cliente sin %"} color={com.real?"#22c55e":GOLD_LIGHT}/>
         <Kpi label="ETA" val={op.eta?fmtDate(op.eta):"—"} sub={op.closed_at?`Cerrada: ${fmtDate(op.closed_at)}`:""}/>
       </div>;
@@ -1463,13 +1463,13 @@ function OpDetail({token,opId,onBack,calcComision}){
             </tr>
           </tbody>
         </table>
-        <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",marginTop:10,fontStyle:"italic",lineHeight:1.5}}>El admin va cargando los costos reales a medida que la op avanza. La comisión del socio se calcula al cerrar la op sobre la ganancia neta real (revenue − todos los costos).</p>
+        <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",marginTop:10,fontStyle:"italic",lineHeight:1.5}}>El admin va cargando los costos reales a medida que la op avanza. La comisión del socio se calcula al cerrar la op sobre la ganancia neta real (ingresos − todos los costos).</p>
       </Card>;
     })()}
 
     {earning&&<Card title="Liquidación de comisión">
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Revenue</p><p style={{fontSize:14,fontWeight:700,color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(earning.revenue_usd)}</p></div>
+        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Ingresos</p><p style={{fontSize:14,fontWeight:700,color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(earning.revenue_usd)}</p></div>
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Costos</p><p style={{fontSize:14,fontWeight:700,color:"#f87171",fontFeatureSettings:'"tnum"'}}>{fmtUSD(earning.total_costs_usd)}</p></div>
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Ganancia neta</p><p style={{fontSize:14,fontWeight:700,color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(earning.net_profit_usd)}</p></div>
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Tu comisión {earning.commission_pct}%</p><p style={{fontSize:18,fontWeight:800,color:"#22c55e",fontFeatureSettings:'"tnum"'}}>{fmtUSD(earning.commission_usd)}</p></div>
@@ -1637,7 +1637,7 @@ function PaneDashboard({token}){
           <th style={thStyle()}>Op</th>
           <th style={thStyle()}>Cliente</th>
           <th style={thStyle()}>Cerrada</th>
-          <th style={{...thStyle(),textAlign:"right"}}>Revenue</th>
+          <th style={{...thStyle(),textAlign:"right"}}>Ingresos</th>
           <th style={{...thStyle(),textAlign:"right"}}>Costos</th>
           <th style={{...thStyle(),textAlign:"right"}}>Neto</th>
           <th style={thStyle()}>%</th>
@@ -1708,7 +1708,7 @@ function PaneCommissions({token}){
               <th style={thStyle()}>Op</th>
               <th style={thStyle()}>Cliente</th>
               <th style={thStyle()}>Cerrada</th>
-              <th style={{...thStyle(),textAlign:"right"}}>Revenue</th>
+              <th style={{...thStyle(),textAlign:"right"}}>Ingresos</th>
               <th style={{...thStyle(),textAlign:"right"}}>Costos</th>
               <th style={{...thStyle(),textAlign:"right"}}>Neto</th>
               <th style={thStyle()}>%</th>

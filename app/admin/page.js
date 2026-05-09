@@ -7850,7 +7850,7 @@ function GiAdminPanel({token,clients}){
             {pending.map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,fontSize:12.5}}>
               <div style={{flex:1,minWidth:0}}>
                 <p style={{margin:0,color:"#fff"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:600}}>{e.operations?.operation_code||"—"}</span> · {e.operations?.clients?`${e.operations.clients.first_name||""} ${e.operations.clients.last_name||""}`.trim():"—"}</p>
-                <p style={{margin:"3px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.5)"}}>{formatDate(e.closed_at)} · Revenue {`USD ${Number(e.revenue_usd||0).toFixed(2)}`} − Costos {`USD ${Number(e.total_costs_usd||0).toFixed(2)}`} = Neto {`USD ${Number(e.net_profit_usd||0).toFixed(2)}`}</p>
+                <p style={{margin:"3px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.5)"}}>{formatDate(e.closed_at)} · Ingresos {`USD ${Number(e.revenue_usd||0).toFixed(2)}`} − Costos {`USD ${Number(e.total_costs_usd||0).toFixed(2)}`} = Neto {`USD ${Number(e.net_profit_usd||0).toFixed(2)}`}</p>
               </div>
               <p style={{fontSize:14,fontWeight:700,color:Number(e.commission_usd||0)>=0?"#22c55e":"#f87171",fontVariantNumeric:"tabular-nums",margin:0,whiteSpace:"nowrap",marginLeft:14}}>{Number(e.commission_usd||0)>=0?"":"−"}USD {Math.abs(Number(e.commission_usd||0)).toFixed(2)}</p>
             </div>)}
