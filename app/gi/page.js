@@ -665,10 +665,20 @@ function CotizadorWizard({token,requestId,onBack}){
 
   const classifyNcm=async(i)=>{
     const p=products[i];
-    if(!p.description?.trim())return;
+    if(!p.description?.trim()&&!p.photo_url)return;
     updateProduct(i,"ncm_loading",true);updateProduct(i,"ncm_error",false);
     try{
-      const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:p.description})});
+      // Si hay foto, convertirla a base64 y mandarla junto con la descripción.
+      let body={description:p.description||""};
+      if(p.photo_url){
+        try{
+          const imgR=await fetch(p.photo_url);
+          const blob=await imgR.blob();
+          const b64=await new Promise((resolve,reject)=>{const fr=new FileReader();fr.onload=()=>resolve(fr.result.split(",")[1]);fr.onerror=reject;fr.readAsDataURL(blob);});
+          body.image=b64;
+        } catch(e){console.warn("No pude leer foto para NCM",e);}
+      }
+      const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       const d=await r.json();
       if(d.fallback||d.error){
         setProducts(prods=>prods.map((x,j)=>j===i?{...x,ncm_loading:false,ncm_error:true}:x));
@@ -915,7 +925,7 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
               </div>
             </>:<p style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>{p.ncm_error?<span style={{color:"#fbbf24"}}>⚠ No se pudo clasificar. Cargá los aranceles a mano abajo.</span>:"Apretá clasificar para que el sistema busque NCM y aranceles."}</p>}
           </div>
-          <button onClick={()=>onClassify(i)} disabled={!p.description?.trim()||p.ncm_loading} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#60a5fa",cursor:p.description?.trim()?"pointer":"not-allowed",fontFamily:"inherit",opacity:p.description?.trim()?1:0.4}}>{p.ncm_loading?"Clasificando…":(p.ncm_code?"Reclasificar":"Clasificar NCM")}</button>
+          {(()=>{const can=(p.description?.trim()||p.photo_url);const hasPhoto=!!p.photo_url;return <button onClick={()=>onClassify(i)} disabled={!can||p.ncm_loading} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#60a5fa",cursor:can?"pointer":"not-allowed",fontFamily:"inherit",opacity:can?1:0.4,whiteSpace:"nowrap"}}>{p.ncm_loading?"Clasificando…":(p.ncm_code?(hasPhoto?"🤖 Reclasificar (con foto)":"Reclasificar"):(hasPhoto?"🤖 Clasificar NCM (con foto)":"Clasificar NCM"))}</button>;})()}
         </div>
         {p.ncm_error&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:10}}>
           <div><label style={lblStyle()}>DI %</label><input type="text" inputMode="decimal" value={p.import_duty_rate} onChange={e=>onUpdate(i,"import_duty_rate",e.target.value)} style={inpStyle()}/></div>
@@ -1042,44 +1052,86 @@ function lblStyle(){return {fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,
 function inpStyle(){return {width:"100%",padding:"8px 10px",fontSize:12.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit"};}
 function Tag({children}){return <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.12)",color:"#60a5fa",letterSpacing:"0.04em"}}>{children}</span>;}
 
-// Componente de upload con drag & drop, click para elegir archivo, preview con eliminar.
+// PhotoUpload: thumb + botón cambiar/quitar. Click abre modal con drag/drop/paste/file picker.
 function PhotoUpload({value,onChange,token}){
-  const [drag,setDrag]=useState(false);
-  const [uploading,setUploading]=useState(false);
-  const handleFile=async(file)=>{
-    if(!file||!file.type?.startsWith("image/")){alert("Solo imágenes (JPG/PNG/WebP)");return;}
-    if(file.size>10*1024*1024){alert("Máximo 10 MB");return;}
-    setUploading(true);
-    try{
-      const url=await uploadProductPhoto(file,token);
-      if(url)onChange(url);
-      else alert("No se pudo subir la imagen");
-    } catch(e){alert("Error: "+e.message);}
-    setUploading(false);
-  };
-  const onDrop=(e)=>{e.preventDefault();setDrag(false);const f=e.dataTransfer.files?.[0];if(f)handleFile(f);};
-  const onDragOver=(e)=>{e.preventDefault();if(!drag)setDrag(true);};
-  const onDragLeave=(e)=>{e.preventDefault();setDrag(false);};
-  const onPaste=(e)=>{const items=e.clipboardData?.items||[];for(const it of items){if(it.type.startsWith("image/")){const f=it.getAsFile();if(f){handleFile(f);return;}}}};
-
+  const [open,setOpen]=useState(false);
   return <div>
     <label style={lblStyle()}>Foto del producto</label>
     {value?
-      <div style={{position:"relative",borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,0.12)",background:"#000",height:140,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{position:"relative",borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,0.12)",background:"#000",height:140,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}} onClick={()=>setOpen(true)} title="Click para cambiar">
         <img src={value} alt="Producto" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}/>
-        <button onClick={()=>onChange("")} title="Quitar foto" style={{position:"absolute",top:6,right:6,padding:"5px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(248,113,113,0.5)",background:"rgba(0,0,0,0.7)",color:"#f87171",cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+        <button onClick={e=>{e.stopPropagation();onChange("");}} title="Quitar foto" style={{position:"absolute",top:6,right:6,padding:"5px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(248,113,113,0.5)",background:"rgba(0,0,0,0.7)",color:"#f87171",cursor:"pointer",fontFamily:"inherit"}}>✕</button>
       </div>:
-      <label onDrop={onDrop} onDragOver={onDragOver} onDragLeave={onDragLeave} onPaste={onPaste} tabIndex={0} style={{height:140,border:`2px dashed ${drag?"rgba(184,149,106,0.6)":"rgba(255,255,255,0.18)"}`,borderRadius:10,background:drag?"rgba(184,149,106,0.08)":"rgba(0,0,0,0.18)",cursor:uploading?"wait":"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,transition:"all 150ms",outline:"none"}}>
-        <input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);e.target.value="";}} style={{display:"none"}} disabled={uploading}/>
-        {uploading?<>
-          <div style={{fontSize:24}}>⏳</div>
-          <p style={{fontSize:11,color:GOLD_LIGHT,fontWeight:600,margin:0}}>Subiendo…</p>
-        </>:<>
-          <div style={{fontSize:28,opacity:0.6}}>📷</div>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.65)",fontWeight:600,margin:0,textAlign:"center",lineHeight:1.4}}>Arrastrá una imagen<br/><span style={{color:"rgba(255,255,255,0.4)",fontSize:10,fontWeight:500}}>o click para elegir · Cmd+V para pegar</span></p>
-        </>}
-      </label>
+      <button onClick={()=>setOpen(true)} type="button" style={{width:"100%",height:140,border:"2px dashed rgba(255,255,255,0.18)",borderRadius:10,background:"rgba(0,0,0,0.18)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,transition:"all 150ms",fontFamily:"inherit"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.4)";e.currentTarget.style.background="rgba(184,149,106,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.18)";e.currentTarget.style.background="rgba(0,0,0,0.18)";}}>
+        <div style={{fontSize:28,opacity:0.6}}>📷</div>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.65)",fontWeight:600,margin:0,textAlign:"center"}}>Subir foto del producto</p>
+      </button>
     }
+    {open&&<PhotoUploadModal token={token} onCancel={()=>setOpen(false)} onUploaded={url=>{onChange(url);setOpen(false);}}/>}
+  </div>;
+}
+
+function PhotoUploadModal({token,onCancel,onUploaded}){
+  const [drag,setDrag]=useState(false);
+  const [uploading,setUploading]=useState(false);
+  const [preview,setPreview]=useState(null);
+  // Capturar paste en cualquier parte del modal (document level)
+  useEffect(()=>{
+    const handler=(e)=>{
+      const items=e.clipboardData?.items||[];
+      for(const it of items){
+        if(it.type.startsWith("image/")){const f=it.getAsFile();if(f){handleFile(f);return;}}
+      }
+    };
+    document.addEventListener("paste",handler);
+    return()=>document.removeEventListener("paste",handler);
+  },[]);
+  const handleFile=async(file)=>{
+    if(!file||!file.type?.startsWith("image/")){alert("Solo imágenes (JPG/PNG/WebP)");return;}
+    if(file.size>10*1024*1024){alert("Máximo 10 MB");return;}
+    // Preview inmediato
+    const reader=new FileReader();reader.onload=e=>setPreview(e.target.result);reader.readAsDataURL(file);
+    setUploading(true);
+    try{
+      const url=await uploadProductPhoto(file,token);
+      if(url)onUploaded(url);
+      else{alert("No se pudo subir la imagen");setUploading(false);setPreview(null);}
+    } catch(e){alert("Error: "+e.message);setUploading(false);setPreview(null);}
+  };
+  const onDrop=(e)=>{e.preventDefault();e.stopPropagation();setDrag(false);const f=e.dataTransfer?.files?.[0];if(f)handleFile(f);};
+  const onDragOver=(e)=>{e.preventDefault();e.stopPropagation();if(!drag)setDrag(true);};
+  const onDragEnter=(e)=>{e.preventDefault();e.stopPropagation();setDrag(true);};
+  const onDragLeave=(e)=>{e.preventDefault();e.stopPropagation();if(e.target===e.currentTarget)setDrag(false);};
+
+  return <div onClick={()=>!uploading&&onCancel()} onDragOver={onDragOver} onDrop={onDrop} style={{position:"fixed",inset:0,background:"rgba(8,12,20,0.85)",backdropFilter:"blur(8px)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div onClick={e=>e.stopPropagation()} onDrop={onDrop} onDragOver={onDragOver} onDragEnter={onDragEnter} onDragLeave={onDragLeave} style={{maxWidth:560,width:"100%",background:"linear-gradient(180deg,#142038,#0f1a2e)",border:`2px solid ${drag?"rgba(184,149,106,0.6)":"rgba(255,255,255,0.1)"}`,borderRadius:16,padding:"24px",boxShadow:"0 32px 80px rgba(0,0,0,0.65)",transition:"border-color 150ms"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18,paddingBottom:14,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+        <div>
+          <h3 style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 3px"}}>Subir foto del producto</h3>
+          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:0}}>Arrastrá una imagen, pegala con Cmd+V, o elegí un archivo</p>
+        </div>
+        <button onClick={()=>!uploading&&onCancel()} disabled={uploading} style={{fontSize:22,background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",cursor:uploading?"not-allowed":"pointer",padding:"0 4px"}}>✕</button>
+      </div>
+
+      <div style={{height:300,border:`2px dashed ${drag?"rgba(184,149,106,0.7)":"rgba(255,255,255,0.18)"}`,borderRadius:12,background:drag?"rgba(184,149,106,0.10)":"rgba(0,0,0,0.25)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,transition:"all 150ms",position:"relative",overflow:"hidden"}}>
+        {preview?<img src={preview} alt="Preview" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}/>:
+          uploading?<>
+            <div style={{fontSize:48}}>⏳</div>
+            <p style={{fontSize:13,color:GOLD_LIGHT,fontWeight:600,margin:0}}>Subiendo imagen…</p>
+          </>:<>
+            <div style={{fontSize:48,opacity:drag?1:0.5}}>{drag?"⬇️":"📷"}</div>
+            <p style={{fontSize:14,color:"#fff",fontWeight:700,margin:0,textAlign:"center"}}>{drag?"Soltá la imagen aquí":"Arrastrá una imagen"}</p>
+            <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:0,textAlign:"center"}}>O usá uno de los siguientes:</p>
+            <div style={{display:"flex",gap:10,marginTop:6}}>
+              <label style={{padding:"9px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",fontFamily:"inherit"}}>
+                📁 Elegir archivo
+                <input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);e.target.value="";}} style={{display:"none"}}/>
+              </label>
+              <span style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.6)"}}>⌘V Pegar</span>
+            </div>
+          </>}
+      </div>
+    </div>
   </div>;
 }
 
