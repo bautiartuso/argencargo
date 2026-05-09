@@ -86,10 +86,35 @@ export default function CotizacionPublica({ params }) {
     .filter(c => c.total > 0)
     .sort((a, b) => a.total - b.total);
 
-  // Tarifas activas (sin Interior placeholder)
-  const activeRates = rates.filter(r => r.cost_usd && r.cost_usd > 0);
-  // Reducir tarifas a una entrada por zona (la más cara como representativa, el cálculo real se hace server-side al aceptar)
-  const zoneOptions = activeRates.reduce((acc, r) => { if (!acc[r.zone] || Number(r.cost_usd) > Number(acc[r.zone].cost_usd)) acc[r.zone] = r; return acc; }, {});
+  // Calcular peso facturable total (kg = bruto, cbm volumetrico) entre todos los productos para elegir tier correcto.
+  let totalKg = 0, totalCbm = 0;
+  for (const p of products) {
+    const pkgs = Number(p.pkg_count || 0);
+    const w = Number(p.pkg_weight_kg || 0) * pkgs;
+    const vol = (Number(p.pkg_length_cm || 0) * Number(p.pkg_width_cm || 0) * Number(p.pkg_height_cm || 0)) / 1000000 * pkgs;
+    totalKg += w; totalCbm += vol;
+  }
+  const activeRates = rates.filter(r => r.cost_usd && Number(r.cost_usd) > 0);
+  // Filtrar zonas según la declarada por el socio en el wizard. Si "Interior", "a coordinar". Si no setea, mostrar todas.
+  const declaredZone = quote.delivery_zone || null;
+  const zoneOptions = {};
+  if (declaredZone === "Interior") {
+    // No mostramos opciones — el cliente ve un mensaje "a coordinar" más abajo.
+  } else if (declaredZone) {
+    const tiers = activeRates.filter(r => r.zone === declaredZone).sort((a, b) => Number(a.cost_usd) - Number(b.cost_usd));
+    if (tiers.length > 0) {
+      const fits = tiers.find(t => totalKg <= Number(t.max_kg || Infinity) && totalCbm <= Number(t.max_cbm || Infinity));
+      zoneOptions[declaredZone] = fits || tiers[tiers.length - 1];
+    }
+  } else {
+    const zonesSeen = new Set(activeRates.map(r => r.zone));
+    for (const zone of zonesSeen) {
+      const tiers = activeRates.filter(r => r.zone === zone).sort((a, b) => Number(a.cost_usd) - Number(b.cost_usd));
+      const fits = tiers.find(t => totalKg <= Number(t.max_kg || Infinity) && totalCbm <= Number(t.max_cbm || Infinity));
+      zoneOptions[zone] = fits || tiers[tiers.length - 1];
+    }
+  }
+  const isInterior = declaredZone === "Interior";
 
   const selChannel = channels.find(c => c.key === selectedChannel);
   const channelTotal = selChannel ? selChannel.total : 0;
@@ -168,6 +193,7 @@ export default function CotizacionPublica({ params }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
                 <DelivRow label="Retiro por oficina" meta={settings ? `${settings.office_address || ""} · ${settings.office_locality || ""} · ${settings.office_hours || ""}` : "Sin costo"} price="Incluido" selected={selectedDelivery === "oficina"} onClick={() => setSelectedDelivery("oficina")}/>
                 {Object.values(zoneOptions).map(zone => <DelivRow key={zone.zone} label={`Envío a ${zone.zone}`} meta="Coordinamos día y horario" price={`+ ${fmtUSD(zone.cost_usd)}`} selected={selectedDelivery === zone.zone} onClick={() => setSelectedDelivery(zone.zone)}/>)}
+                {isInterior && <DelivRow label="Envío a domicilio" meta="Coordinamos costo y plazo según localidad" price="A coordinar" selected={selectedDelivery === "interior_coordinar"} onClick={() => setSelectedDelivery("interior_coordinar")}/>}
               </div>
             </div>
 

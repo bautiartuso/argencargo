@@ -679,6 +679,9 @@ function CotizadorWizard({token,requestId,profileId,onBack}){
   // % del FOB que se paga al proveedor como anticipo (resto al fin de producción).
   const [supplierDepositPct,setSupplierDepositPct]=useState("30");
   const [honorariosPct,setHonorariosPct]=useState("10");
+  // Zona del cliente: limita las opciones de envío que ve en /cotizacion/[token].
+  // "" = sin definir; "Interior" = a coordinar; cualquier otro valor = filtra a esa zona puntual.
+  const [deliveryZone,setDeliveryZone]=useState("");
   const [lo,setLo]=useState(true);
   const [generatedQuote,setGeneratedQuote]=useState(null);
   const [saving,setSaving]=useState(false);
@@ -735,6 +738,7 @@ function CotizadorWizard({token,requestId,profileId,onBack}){
       if(draft.payment_plan)setPaymentPlan(typeof draft.payment_plan==="string"?JSON.parse(draft.payment_plan):draft.payment_plan);
       if(draft.honorarios_pct!=null)setHonorariosPct(String(draft.honorarios_pct));
       if(draft.supplier_deposit_pct!=null)setSupplierDepositPct(String(draft.supplier_deposit_pct));
+      if(draft.delivery_zone!=null)setDeliveryZone(draft.delivery_zone);
       const draftProds=(draft.gi_quote_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
       if(draftProds.length>0){
         setProducts(draftProds.map(emptyProductFrom));
@@ -770,13 +774,14 @@ function CotizadorWizard({token,requestId,profileId,onBack}){
           payment_plan:paymentPlan,
           honorarios_pct:honorariosPct?Number(honorariosPct):null,
           supplier_deposit_pct:supplierDepositPct?Number(supplierDepositPct):null,
+          delivery_zone:deliveryZone||null,
           status:"draft",
         }});
         quoteId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
         if(!quoteId)throw new Error("No se pudo crear el draft");
         setDraftQuoteId(quoteId);
       } else {
-        await dq("gi_quotes",{method:"PATCH",token,filters:`?id=eq.${quoteId}`,body:{payment_plan:paymentPlan,honorarios_pct:honorariosPct?Number(honorariosPct):null,supplier_deposit_pct:supplierDepositPct?Number(supplierDepositPct):null}});
+        await dq("gi_quotes",{method:"PATCH",token,filters:`?id=eq.${quoteId}`,body:{payment_plan:paymentPlan,honorarios_pct:honorariosPct?Number(honorariosPct):null,supplier_deposit_pct:supplierDepositPct?Number(supplierDepositPct):null,delivery_zone:deliveryZone||null}});
       }
       // Si no hay productos en el state, no tocamos los existentes (evitamos perder data por error de UI).
       if(products.length===0){
@@ -970,6 +975,7 @@ function CotizadorWizard({token,requestId,profileId,onBack}){
         request_id:requestId,
         honorarios_pct:honorariosPct?Number(honorariosPct):0,
         supplier_deposit_pct:supplierDepositPct?Number(supplierDepositPct):null,
+        delivery_zone:deliveryZone||null,
         payment_plan:paymentPlan,
         ...ch,
         status:"sent",
@@ -1066,7 +1072,7 @@ function CotizadorWizard({token,requestId,profileId,onBack}){
     </div>
 
     {step===1&&<WizStep1 token={token} products={products} onUpdate={updateProduct} onAdd={addProduct} onRemove={removeProduct} onClassify={classifyNcm} onNext={()=>goStep(2)} totalFob={totalFob}/>}
-    {step===2&&<WizStep2 visibleChannels={visibleChannels} someUSA={someUSA} honorariosPct={honorariosPct} setHonorariosPct={setHonorariosPct} paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} totalFob={totalFob} supplierDepositPct={supplierDepositPct} setSupplierDepositPct={setSupplierDepositPct} onBack={()=>setStep(1)} onNext={generateLink} saving={saving}/>}
+    {step===2&&<WizStep2 token={token} visibleChannels={visibleChannels} someUSA={someUSA} honorariosPct={honorariosPct} setHonorariosPct={setHonorariosPct} paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} totalFob={totalFob} supplierDepositPct={supplierDepositPct} setSupplierDepositPct={setSupplierDepositPct} deliveryZone={deliveryZone} setDeliveryZone={setDeliveryZone} client={client} onBack={()=>setStep(1)} onNext={generateLink} saving={saving}/>}
     {step===3&&<WizStep3 generatedQuote={generatedQuote} client={client} request={request} onBack={onBack}/>}
   </div>;
 }
@@ -1145,7 +1151,16 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
   </div>;
 }
 
-function WizStep2({visibleChannels,someUSA,honorariosPct,setHonorariosPct,paymentPlan,setPaymentPlan,totalFob,supplierDepositPct,setSupplierDepositPct,onBack,onNext,saving}){
+function WizStep2({token,visibleChannels,someUSA,honorariosPct,setHonorariosPct,paymentPlan,setPaymentPlan,totalFob,supplierDepositPct,setSupplierDepositPct,deliveryZone,setDeliveryZone,client,onBack,onNext,saving}){
+  // Zonas de envío disponibles (de gi_shipping_rates) para el dropdown.
+  const [zones,setZones]=useState([]);
+  useEffect(()=>{(async()=>{
+    const r=await dq("gi_shipping_rates",{token,filters:"?select=zone&order=display_order.asc"});
+    if(Array.isArray(r)){const set=new Set();r.forEach(x=>x.zone&&set.add(x.zone));setZones(Array.from(set));}
+  })();},[token]);
+  // Auto-detección por province del cliente (sólo sugerencia, no bloquea):
+  const clientProvince=String(client?.province||"").toLowerCase();
+  const autoSuggest=clientProvince.includes("ciudad")||clientProvince==="caba"?"CABA":(clientProvince.includes("buenos aires")?"":"Interior");
   // Cobertura por etapa para no quedar en descubierto:
   //  Stage 1 cliente debe cubrir el ANTICIPO a proveedor (FOB × deposit%).
   //  Stage 1 + Stage 2 cliente deben cubrir el FOB TOTAL (al fin de producción ya pagaste todo al proveedor).
@@ -1186,6 +1201,20 @@ function WizStep2({visibleChannels,someUSA,honorariosPct,setHonorariosPct,paymen
   return <div>
     <div style={{padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:18}}>
       <strong style={{color:"#60a5fa"}}>Step 2:</strong> el sistema calcula el costo operativo por canal{someUSA?". Hay algún producto USA, así que solo se muestran canales B.":"."} Sumá los honorarios que cobrás al cliente por la gestión y el sistema arma el precio final que ve el cliente. Tu comisión como socio se define por separado al cerrar la op.
+    </div>
+
+    <div style={{padding:"14px 18px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:12,marginBottom:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:240}}>
+          <p style={{fontSize:13,fontWeight:700,color:"#60a5fa",margin:0}}>Zona de entrega del cliente</p>
+          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",margin:"3px 0 0",lineHeight:1.4}}>El cliente verá <strong style={{color:"#fff"}}>solo</strong> esta opción de envío más "Retiro por oficina". Si elegís Interior, el costo queda "a coordinar".{autoSuggest&&!deliveryZone?<><br/>Sugerencia según ficha del cliente: <strong style={{color:GOLD_LIGHT}}>{autoSuggest}</strong>.</>:""}</p>
+        </div>
+        <select value={deliveryZone} onChange={e=>setDeliveryZone(e.target.value)} style={{padding:"8px 12px",fontSize:13,fontWeight:600,border:"1px solid rgba(96,165,250,0.4)",borderRadius:8,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit",minWidth:200}}>
+          <option value="">— Sin definir (mostrar todas) —</option>
+          {zones.filter(z=>z!=="Interior").map(z=><option key={z} value={z}>{z}</option>)}
+          <option value="Interior">Interior · a coordinar</option>
+        </select>
+      </div>
     </div>
 
     <div style={{padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1.5px solid rgba(184,149,106,0.32)",borderRadius:12,marginBottom:18}}>
@@ -1280,7 +1309,7 @@ function WizStep2({visibleChannels,someUSA,honorariosPct,setHonorariosPct,paymen
           const errBorder=(i===0&&!isStage1Covered)||(i===1&&!isStage12Covered);
           return <div key={i} style={{flex:"1 1 200px",padding:"12px 14px",background:"rgba(0,0,0,0.18)",borderRadius:10,border:`1px solid ${errBorder?"rgba(248,113,113,0.35)":"rgba(255,255,255,0.06)"}`}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-              <input type="text" inputMode="numeric" value={stage.pct} onChange={e=>{const v=e.target.value.replace(/[^0-9]/g,"");setPaymentPlan(p=>p.map((s,j)=>j===i?{...s,pct:Number(v)||0}:s));}} style={{width:50,padding:"4px 6px",fontSize:14,fontWeight:700,background:"transparent",border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,color:"#fff",textAlign:"center",outline:"none"}}/>
+              <input type="text" inputMode="numeric" value={stage.pct} onChange={e=>{const v=e.target.value.replace(/[^0-9]/g,"");const n=Number(v)||0;setPaymentPlan(p=>{const others=p.reduce((s,x,j)=>s+(j===i?0:Number(x.pct||0)),0);const capped=Math.min(n,Math.max(0,100-others));return p.map((s,j)=>j===i?{...s,pct:capped}:s);});}} style={{width:50,padding:"4px 6px",fontSize:14,fontWeight:700,background:"transparent",border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,color:"#fff",textAlign:"center",outline:"none"}}/>
               <span style={{fontSize:14,fontWeight:700,color:"#fff"}}>%</span>
               {stageBadge&&<span style={{fontSize:9.5,fontWeight:700,padding:"2px 6px",borderRadius:4,background:stageBadge.b,color:stageBadge.c,letterSpacing:"0.04em",marginLeft:"auto"}}>{stageBadge.l}</span>}
             </div>
