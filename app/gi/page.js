@@ -563,7 +563,7 @@ function CotizadorWizard({token,requestId,onBack}){
     {pct:20,label:"Producción terminada"},
     {pct:50,label:"Contra entrega"},
   ]);
-  const [commissionPct,setCommissionPct]=useState("10");
+  const [honorariosPct,setHonorariosPct]=useState("10");
   const [lo,setLo]=useState(true);
   const [generatedQuote,setGeneratedQuote]=useState(null);
   const [saving,setSaving]=useState(false);
@@ -617,7 +617,7 @@ function CotizadorWizard({token,requestId,onBack}){
     if(draft){
       setDraftQuoteId(draft.id);
       if(draft.payment_plan)setPaymentPlan(typeof draft.payment_plan==="string"?JSON.parse(draft.payment_plan):draft.payment_plan);
-      if(draft.honorarios_pct!=null)setCommissionPct(String(draft.honorarios_pct));
+      if(draft.honorarios_pct!=null)setHonorariosPct(String(draft.honorarios_pct));
       const draftProds=(draft.gi_quote_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
       if(draftProds.length>0){
         setProducts(draftProds.map(emptyProductFrom));
@@ -651,14 +651,14 @@ function CotizadorWizard({token,requestId,onBack}){
         const inserted=await dq("gi_quotes",{method:"POST",token,body:{
           request_id:requestId,
           payment_plan:paymentPlan,
-          honorarios_pct:commissionPct?Number(commissionPct):null,
+          honorarios_pct:honorariosPct?Number(honorariosPct):null,
           status:"draft",
         }});
         quoteId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
         if(!quoteId)throw new Error("No se pudo crear el draft");
         setDraftQuoteId(quoteId);
       } else {
-        await dq("gi_quotes",{method:"PATCH",token,filters:`?id=eq.${quoteId}`,body:{payment_plan:paymentPlan,honorarios_pct:commissionPct?Number(commissionPct):null}});
+        await dq("gi_quotes",{method:"PATCH",token,filters:`?id=eq.${quoteId}`,body:{payment_plan:paymentPlan,honorarios_pct:honorariosPct?Number(honorariosPct):null}});
       }
       // Si no hay productos en el state, no tocamos los existentes (evitamos perder data por error de UI).
       if(products.length===0){
@@ -789,14 +789,17 @@ function CotizadorWizard({token,requestId,onBack}){
   };
 
   const totalFob=products.reduce((s,p)=>s+Number(p.unit_cost_usd||0)*Number(p.quantity||0),0);
+  const honorariosFactor=1+(Number(honorariosPct||0)/100);
   const channelResults=CHANNEL_DEFS.map(ch=>{
     const r=computeChannel(ch.key);
-    if(!r)return {...ch,total:0,real:0,error:true};
-    // total al cliente (incluye margen de tarifa) y "real" (lo que pagamos a embarcadores) son iguales para ahora porque no tenemos costo real separado todavía
-    // En MVP usamos totalAbonar como "total al cliente" y un % menor como "costo real" mock para mostrar spread
-    const total=r.totalAbonar+totalFob;
-    const real=total*0.92; // mock: 8% spread logístico (ajustable después en config)
-    return {...ch,total,real,calc:r};
+    if(!r)return {...ch,cost:0,total:0,real:0,honorariosUsd:0,error:true};
+    // cost = lo que cuesta operar (FOB + flete + impuestos + etc).
+    // total = precio al cliente = cost × (1 + honorarios%) — lo que se le cobra.
+    // real = costo verdadero (idéntico a cost; "real" se mantiene por compatibilidad).
+    const cost=r.totalAbonar+totalFob;
+    const total=cost*honorariosFactor;
+    const honorariosUsd=total-cost;
+    return {...ch,cost,total,real:cost,honorariosUsd,calc:r};
   });
 
   // Filtrar canales por origen
@@ -805,15 +808,8 @@ function CotizadorWizard({token,requestId,onBack}){
     ?channelResults.filter(c=>c.key.includes("negro")||c.key==="maritimo_blanco")
     :channelResults;
 
-  // % comisión del cliente (sobre ganancia neta cuando cierra)
-  // Estimación de ganancia neta al cerrar = total al cliente - costo real (mock 92%)
-  const profitFor=(c)=>{
-    const totalAlCliente=c.total;
-    const realCost=c.real; // mock 92% del total
-    const netProfitEst=Math.max(0,totalAlCliente-realCost);
-    const commissionEst=netProfitEst*Number(commissionPct||0)/100;
-    return {totalAlCliente,netProfitEst,commissionEst};
-  };
+  // (profitFor eliminado: la "estimación de ganancia / comisión socio" ya no se muestra en el wizard;
+  //  los honorarios al cliente se calculan directo en channelResults y la comisión socio se resuelve aparte)
 
   const validateStep1=()=>{
     if(products.length===0)return "Agregá al menos un producto";
@@ -845,7 +841,7 @@ function CotizadorWizard({token,requestId,onBack}){
       const expDate=new Date(Date.now()+7*86400000).toISOString().slice(0,10);
       const body={
         request_id:requestId,
-        honorarios_pct:commissionPct?Number(commissionPct):0,
+        honorarios_pct:honorariosPct?Number(honorariosPct):0,
         payment_plan:paymentPlan,
         ...ch,
         status:"sent",
@@ -932,7 +928,7 @@ function CotizadorWizard({token,requestId,onBack}){
     </div>
 
     {step===1&&<WizStep1 token={token} products={products} onUpdate={updateProduct} onAdd={addProduct} onRemove={removeProduct} onClassify={classifyNcm} onNext={()=>goStep(2)} totalFob={totalFob}/>}
-    {step===2&&<WizStep2 visibleChannels={visibleChannels} someUSA={someUSA} commissionPct={commissionPct} setCommissionPct={setCommissionPct} paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} profitFor={profitFor} onBack={()=>setStep(1)} onNext={generateLink} saving={saving}/>}
+    {step===2&&<WizStep2 visibleChannels={visibleChannels} someUSA={someUSA} honorariosPct={honorariosPct} setHonorariosPct={setHonorariosPct} paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} onBack={()=>setStep(1)} onNext={generateLink} saving={saving}/>}
     {step===3&&<WizStep3 generatedQuote={generatedQuote} onBack={onBack}/>}
   </div>;
 }
@@ -1011,55 +1007,45 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
   </div>;
 }
 
-function WizStep2({visibleChannels,someUSA,commissionPct,setCommissionPct,paymentPlan,setPaymentPlan,profitFor,onBack,onNext,saving}){
+function WizStep2({visibleChannels,someUSA,honorariosPct,setHonorariosPct,paymentPlan,setPaymentPlan,onBack,onNext,saving}){
   return <div>
     <div style={{padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:18}}>
-      <strong style={{color:"#60a5fa"}}>Step 2:</strong> el sistema calcula el costo final por canal usando la calculadora del portal{someUSA?". Hay algún producto USA, así que solo se muestran canales B.":"."} Tu comisión sale del % asignado al cliente y se paga sobre la ganancia neta real al cerrar la op.
-    </div>
-
-    <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>Costo por canal (al cliente)</h3>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:18}}>
-      {visibleChannels.map(c=><div key={c.key} style={{background:"linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:16}}>
-        <p style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:3}}>{c.name}</p>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:14}}>{c.time}</p>
-        {c.error?<p style={{fontSize:11,color:"#f87171"}}>Sin tarifa configurada</p>:<>
-          <div style={{paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-            <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total</span>
-            <span style={{fontSize:20,fontWeight:800,color:GOLD_LIGHT,fontFeatureSettings:'"tnum"'}}>{fmtUSD(c.total)}</span>
-          </div>
-        </>}
-      </div>)}
+      <strong style={{color:"#60a5fa"}}>Step 2:</strong> el sistema calcula el costo operativo por canal{someUSA?". Hay algún producto USA, así que solo se muestran canales B.":"."} Sumá los honorarios que cobrás al cliente por la gestión y el sistema arma el precio final que ve el cliente. Tu comisión como socio se define por separado al cerrar la op.
     </div>
 
     <div style={{padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1.5px solid rgba(184,149,106,0.32)",borderRadius:12,marginBottom:18}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:240}}>
-          <p style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,margin:0}}>Tu comisión por esta operación</p>
-          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",margin:"3px 0 0",lineHeight:1.4}}>% sobre la ganancia neta real al cerrar la op (ingresos − todos los costos). Si la op va a pérdida, asumís tu parte (% sobre la pérdida).</p>
+          <p style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,margin:0}}>Honorarios al cliente</p>
+          <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",margin:"3px 0 0",lineHeight:1.4}}>% que se le cobra al cliente sobre el costo del canal. Es el ingreso por la gestión integral. <strong style={{color:"#fff"}}>Precio al cliente = costo del canal × (1 + honorarios %).</strong></p>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-          <input type="text" inputMode="decimal" value={commissionPct} onChange={e=>{const v=e.target.value;if(v===""||/^\d*\.?\d*$/.test(v))setCommissionPct(v);}} placeholder="0" style={{width:90,padding:"10px 12px",fontSize:18,fontWeight:800,textAlign:"center",border:"1px solid rgba(184,149,106,0.4)",borderRadius:10,background:"rgba(0,0,0,0.25)",color:GOLD_LIGHT,outline:"none",fontFamily:"inherit"}}/>
+          <input type="text" inputMode="decimal" value={honorariosPct} onChange={e=>{const v=e.target.value;if(v===""||/^\d*\.?\d*$/.test(v))setHonorariosPct(v);}} placeholder="0" style={{width:90,padding:"10px 12px",fontSize:18,fontWeight:800,textAlign:"center",border:"1px solid rgba(184,149,106,0.4)",borderRadius:10,background:"rgba(0,0,0,0.25)",color:GOLD_LIGHT,outline:"none",fontFamily:"inherit"}}/>
           <span style={{fontSize:18,fontWeight:700,color:GOLD_LIGHT}}>%</span>
         </div>
       </div>
     </div>
 
-    <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>Estimación de ganancia (por canal)</h3>
-    <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:14,lineHeight:1.5,fontStyle:"italic"}}>Estimaciones aproximadas usando un costo real estimado del 92% del total al cliente. La ganancia y comisión real se calculan al cerrar la op con los costos verdaderos.</p>
+    <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>Precio por canal</h3>
     <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:18}}>
-      {visibleChannels.map(c=>{const p=profitFor(c);return <div key={c.key} style={{background:"linear-gradient(135deg,rgba(34,197,94,0.06),rgba(34,197,94,0.01))",border:"1px solid rgba(34,197,94,0.25)",borderRadius:12,padding:16}}>
-        <p style={{fontSize:13,fontWeight:700,color:"#22c55e",marginBottom:10}}>{c.name}</p>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-          <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.03)",borderRadius:8}}>
-            <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Ganancia neta est.</p>
-            <p style={{fontSize:13,fontWeight:700,fontFeatureSettings:'"tnum"',color:"#fff"}}>{fmtUSD(p.netProfitEst)}</p>
+      {visibleChannels.map(c=><div key={c.key} style={{background:"linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:16}}>
+        <p style={{fontSize:13,fontWeight:700,color:"#fff",marginBottom:3}}>{c.name}</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginBottom:14}}>{c.time}</p>
+        {c.error?<p style={{fontSize:11,color:"#f87171"}}>Sin tarifa configurada</p>:<>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,color:"rgba(255,255,255,0.7)",marginBottom:5}}>
+            <span>Costo operativo</span>
+            <span style={{fontFeatureSettings:'"tnum"',fontWeight:600}}>{fmtUSD(c.cost)}</span>
           </div>
-          <div style={{padding:"10px 12px",background:"rgba(184,149,106,0.06)",borderRadius:8}}>
-            <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Tu comisión {commissionPct||0}%</p>
-            <p style={{fontSize:13,fontWeight:700,fontFeatureSettings:'"tnum"',color:GOLD_LIGHT}}>{fmtUSD(p.commissionEst)}</p>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,color:"#22c55e",marginBottom:10}}>
+            <span>+ Honorarios ({Number(honorariosPct||0)}%)</span>
+            <span style={{fontFeatureSettings:'"tnum"',fontWeight:600}}>{fmtUSD(c.honorariosUsd||0)}</span>
           </div>
-        </div>
-      </div>;})}
+          <div style={{paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+            <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Precio al cliente</span>
+            <span style={{fontSize:20,fontWeight:800,color:GOLD_LIGHT,fontFeatureSettings:'"tnum"'}}>{fmtUSD(c.total)}</span>
+          </div>
+        </>}
+      </div>)}
     </div>
 
     <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>

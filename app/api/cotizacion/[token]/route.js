@@ -55,7 +55,7 @@ export async function POST(req, { params }) {
   if (!validChannels.includes(body.channel)) return Response.json({ error: "Canal inválido" }, { status: 400 });
 
   // Buscar cotización
-  const qRes = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_requests(client_id,assigned_partner_id),gi_quote_products(*)`);
+  const qRes = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_requests(client_id,assigned_partner_id,profiles!assigned_partner_id(gi_partner_pct)),gi_quote_products(*)`);
   if (qRes.status >= 400 || !Array.isArray(qRes.body) || qRes.body.length === 0) {
     return Response.json({ error: "Cotización no encontrada" }, { status: 404 });
   }
@@ -98,11 +98,13 @@ export async function POST(req, { params }) {
     service_type: "gestion_integral",
     status: "en_preparacion",
     budget_total: finalTotal,
-    // Snapshot del socio + % de la cotización para esta op puntual.
+    // Snapshot del socio + su % default para esta op puntual.
     // gi_partner_id viene del request (a quién el admin asignó cotizar).
-    // gi_commission_pct viene del input que el socio ingresó en step 2 del wizard (gi_quotes.honorarios_pct).
+    // gi_commission_pct: % del socio sobre ganancia neta. Default = profiles.gi_partner_pct del socio asignado.
+    // (NO es honorarios_pct: ese es el markup al cliente, no la comisión del socio.)
+    // El admin puede ajustar gi_commission_pct en la op si la realidad es distinta al default.
     gi_partner_id: quote.gi_quote_requests?.assigned_partner_id || null,
-    gi_commission_pct: Number(quote.honorarios_pct || 0) || null,
+    gi_commission_pct: Number(quote.gi_quote_requests?.profiles?.gi_partner_pct || 0) || null,
     gi_admin_owned: false,
     is_collected: false,
     shipping_to_door: body.delivery_zone !== "oficina",
