@@ -551,6 +551,7 @@ function CotizadorWizard({token,requestId,onBack}){
     pkg_width_cm:p?.pkg_width_cm!=null?String(p.pkg_width_cm):"",
     pkg_height_cm:p?.pkg_height_cm!=null?String(p.pkg_height_cm):"",
     pkg_weight_kg:p?.pkg_weight_kg!=null?String(p.pkg_weight_kg):"",
+    supplier_ref:p?.supplier_ref||"",
   });
 
   // Cargar todo: si hay un quote draft existente para este request, usarlo (con sus productos parciales).
@@ -633,6 +634,7 @@ function CotizadorWizard({token,requestId,onBack}){
           pkg_width_cm:p.pkg_width_cm?Number(p.pkg_width_cm):null,
           pkg_height_cm:p.pkg_height_cm?Number(p.pkg_height_cm):null,
           pkg_weight_kg:p.pkg_weight_kg?Number(p.pkg_weight_kg):null,
+          supplier_ref:p.supplier_ref||null,
           display_order:i,
         }});
       }
@@ -646,7 +648,7 @@ function CotizadorWizard({token,requestId,onBack}){
   };
 
   const updateProduct=(i,field,value)=>setProducts(p=>p.map((x,j)=>j===i?{...x,[field]:value}:x));
-  const addProduct=()=>setProducts(p=>[...p,{description:"",notes:"",origin:"china",quantity:"",unit_cost_usd:"",lead_time_days:"",photo_url:"",ncm_code:"",ncm_description:"",import_duty_rate:"",statistics_rate:"",iva_rate:"",ncm_loading:false,ncm_error:false,pkg_count:"1",pkg_length_cm:"",pkg_width_cm:"",pkg_height_cm:"",pkg_weight_kg:""}]);
+  const addProduct=()=>setProducts(p=>[...p,{description:"",notes:"",origin:"china",quantity:"",unit_cost_usd:"",lead_time_days:"",photo_url:"",ncm_code:"",ncm_description:"",import_duty_rate:"",statistics_rate:"",iva_rate:"",ncm_loading:false,ncm_error:false,pkg_count:"1",pkg_length_cm:"",pkg_width_cm:"",pkg_height_cm:"",pkg_weight_kg:"",supplier_ref:""}]);
   const removeProduct=(i)=>setProducts(p=>p.length>1?p.filter((_,j)=>j!==i):p);
 
   const classifyNcm=async(i)=>{
@@ -802,6 +804,7 @@ function CotizadorWizard({token,requestId,onBack}){
           pkg_width_cm:Number(p.pkg_width_cm)||null,
           pkg_height_cm:Number(p.pkg_height_cm)||null,
           pkg_weight_kg:Number(p.pkg_weight_kg)||null,
+          supplier_ref:p.supplier_ref||null,
           display_order:i,
         }});
       }
@@ -865,6 +868,10 @@ function WizStep1({products,onUpdate,onAdd,onRemove,onClassify,onNext,totalFob})
       <div style={{marginBottom:12}}>
         <label style={lblStyle()}>Descripción del producto</label>
         <input value={p.description} onChange={e=>onUpdate(i,"description",e.target.value)} style={inpStyle()}/>
+      </div>
+      <div style={{marginBottom:12}}>
+        <label style={lblStyle()}>Referencia del proveedor (opcional)</label>
+        <input value={p.supplier_ref||""} onChange={e=>onUpdate(i,"supplier_ref",e.target.value)} placeholder="Link Alibaba, nombre del proveedor, WeChat, email, lo que tengas..." style={inpStyle()}/>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:12}}>
         <div><label style={lblStyle()}>Origen</label>
