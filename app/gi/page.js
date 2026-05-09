@@ -218,9 +218,9 @@ function Shell({session,profile,onLogout}){
         {pane==="quotes"&&<PaneQuotes token={token} profileId={profile?.id}/>}
         {pane==="settings"&&<PaneSettings token={token}/>}
         {pane==="operations"&&<PaneOps token={token}/>}
-        {pane==="dashboard"&&<PaneDashboard token={token}/>}
+        {pane==="dashboard"&&<PaneDashboard token={token} profileId={profile?.id} isAdmin={profile?.role==="admin"}/>}
         {pane==="commissions"&&<PaneCommissions token={token}/>}
-        {pane==="ledger"&&<PaneLedger token={token}/>}
+        {pane==="ledger"&&<PaneLedger token={token} profileId={profile?.id} isAdmin={profile?.role==="admin"}/>}
         {pane==="suppliers"&&<ContactsPanel token={token} type="suppliers" title="Proveedores" desc="Listado de proveedores agrupados por rubro." groupBy="rubro" rubroOptions={["Indumentaria","Electrónica","Calzado","Hogar","Cosmética","Juguetería","Deportes","Otros"]} fields={[{k:"name",l:"Nombre",req:true},{k:"rubro",l:"Rubro",select:true},{k:"country",l:"País",options:["China","USA"]},{k:"city",l:"Ciudad"},{k:"email",l:"Email"},{k:"phone",l:"Teléfono"},{k:"wechat",l:"WeChat"},{k:"moq",l:"MOQ",num:true},{k:"lead_time_days",l:"Lead time (días)",num:true},{k:"notes",l:"Notas",textarea:true}]}/>}
         {pane==="agents"&&<ContactsPanel token={token} type="purchase_agents" title="Agentes de compra" desc="Sourcing agents en China/USA." groupBy="rubro" rubroOptions={["Indumentaria","Electrónica","Calzado","General","Otros"]} fields={[{k:"name",l:"Nombre",req:true},{k:"rubro",l:"Rubro",select:true},{k:"base_city",l:"Ciudad base"},{k:"email",l:"Email"},{k:"phone",l:"Teléfono"},{k:"wechat",l:"WeChat"},{k:"commission_pct",l:"Comisión %",num:true},{k:"commission_fixed_usd",l:"Comisión fija USD",num:true},{k:"notes",l:"Notas",textarea:true}]}/>}
         {pane==="forwarders"&&<ContactsPanel token={token} type="forwarders" title="Embarcadores" desc="Forwarders agrupados por ciudad." groupBy="city" rubroOptions={["Shanghái","Guangzhou","Shenzhen","Yiwu","Ningbo","Miami","Los Ángeles","Otros"]} fields={[{k:"name",l:"Nombre",req:true},{k:"city",l:"Ciudad",select:true},{k:"email",l:"Email"},{k:"phone",l:"Teléfono"},{k:"modes_str",l:"Modos (coma separado)",placeholder:"aereo,maritimo"},{k:"notes",l:"Notas",textarea:true}]}/>}
@@ -1497,64 +1497,49 @@ function thStyle(){return {textAlign:"center",padding:"12px 14px",fontSize:10,fo
 // ────────────────────────────────────────────
 // PANE: DASHBOARD (financiero)
 // ────────────────────────────────────────────
-function PaneDashboard({token}){
-  const [ops,setOps]=useState([]);
+function PaneDashboard({token,profileId,isAdmin}){
+  // Dashboard del SOCIO: solo sus comisiones (devengado/cobrado/pendiente).
+  // Los costos de la empresa, deudas TC, etc. quedan en el panel admin.
   const [earnings,setEarnings]=useState([]);
-  const [supPmts,setSupPmts]=useState([]);
-  const [finEntries,setFinEntries]=useState([]);
-  const [cliPmts,setCliPmts]=useState([]);
   const [lo,setLo]=useState(true);
   useEffect(()=>{(async()=>{
     setLo(true);
-    const [opsRes,earnRes,supRes,finRes,cliPmtRes]=await Promise.all([
-      dq("operations",{token,filters:"?service_type=eq.gestion_integral&select=*,clients(first_name,last_name,client_code,gi_partner_id,gi_commission_pct)&order=created_at.desc"}),
-      dq("gi_partner_earnings",{token,filters:"?select=*,operations(operation_code,clients(first_name,last_name))&order=closed_at.desc"}),
-      dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.desc"}),
-      dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),
-      dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.desc"}),
-    ]);
-    setOps(Array.isArray(opsRes)?opsRes:[]);
-    setEarnings(Array.isArray(earnRes)?earnRes:[]);
-    setSupPmts(Array.isArray(supRes)?supRes:[]);
-    setFinEntries(Array.isArray(finRes)?finRes:[]);
-    setCliPmts(Array.isArray(cliPmtRes)?cliPmtRes:[]);
+    const filt=isAdmin||!profileId?"":`partner_id=eq.${profileId}&`;
+    const r=await dq("gi_partner_earnings",{token,filters:`?${filt}select=*,operations(operation_code,clients(first_name,last_name,client_code))&order=closed_at.desc`});
+    setEarnings(Array.isArray(r)?r:[]);
     setLo(false);
-  })();},[token]);
+  })();},[token,profileId,isAdmin]);
 
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>;
 
-  const closed=ops.filter(o=>o.status==="operacion_cerrada");
-  const active=ops.filter(o=>!["operacion_cerrada","cancelada"].includes(o.status));
   const now=new Date();
   const monthStart=new Date(now.getFullYear(),now.getMonth(),1).toISOString();
   const lastMonthStart=new Date(now.getFullYear(),now.getMonth()-1,1).toISOString();
   const lastMonthEnd=monthStart;
 
-  // Comisiones reales (gi_partner_earnings)
+  // Comisiones (gi_partner_earnings)
   const earnThisMonth=earnings.filter(e=>e.closed_at&&e.closed_at>=monthStart).reduce((s,e)=>s+Number(e.commission_usd||0),0);
   const earnLastMonth=earnings.filter(e=>e.closed_at&&e.closed_at>=lastMonthStart&&e.closed_at<lastMonthEnd).reduce((s,e)=>s+Number(e.commission_usd||0),0);
   const earnTotal=earnings.reduce((s,e)=>s+Number(e.commission_usd||0),0);
   const earnPending=earnings.filter(e=>!e.paid_to_partner).reduce((s,e)=>s+Number(e.commission_usd||0),0);
   const earnPaid=earnings.filter(e=>e.paid_to_partner).reduce((s,e)=>s+Number(e.paid_amount_usd||e.commission_usd||0),0);
   const trend=earnLastMonth!==0?((earnThisMonth-earnLastMonth)/Math.abs(earnLastMonth)*100):(earnThisMonth!==0?100:0);
-  const ticketAvg=closed.length>0?earnTotal/closed.length:0;
+  const ticketAvg=earnings.length>0?earnTotal/earnings.length:0;
 
-  // Pendiente de cobro al cliente (suma de saldos de ops activas)
-  const pendingCobro=active.reduce((s,o)=>{
-    const bt=Number(o.budget_total||0);
-    const paid=cliPmts.filter(p=>p.operation_id===o.id).reduce((a,p)=>a+Number(p.amount_usd||0),0);
-    return s+Math.max(0,bt-paid);
-  },0);
+  // Ops con comisión estimada (TC pendiente de dolarizar)
+  const estimadas=earnings.filter(e=>e.is_estimated);
 
-  // Deudas TC pendientes que afectan a las ops del socio
-  const opIds=new Set(ops.map(o=>o.id));
-  const tcOps=ops.filter(o=>o.cost_flete_method==="tarjeta_credito"&&!o.cost_flete_paid_at&&Number(o.cost_flete||0)>0).map(o=>({op:o.operation_code,client:o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—",label:"Flete",amount:Number(o.cost_flete),id:`flete-${o.id}`}));
-  const tcSup=supPmts.filter(p=>opIds.has(p.operation_id)&&p.payment_method==="tarjeta_credito"&&!p.is_paid&&p.type!=="refund").map(p=>{const op=ops.find(o=>o.id===p.operation_id);return {op:op?.operation_code||"—",client:op?.clients?`${op.clients.first_name||""} ${op.clients.last_name||""}`.trim():"—",label:"Pago proveedor",amount:Number(p.amount_usd),id:`sup-${p.id}`};});
-  const tcFin=finEntries.filter(e=>e.operation_id&&opIds.has(e.operation_id)&&e.payment_method==="tarjeta_credito"&&!e.is_paid&&e.type==="gasto").map(e=>{const op=ops.find(o=>o.id===e.operation_id);const usd=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return {op:op?.operation_code||"—",client:op?.clients?`${op.clients.first_name||""} ${op.clients.last_name||""}`.trim():"—",label:e.description||"Gasto",amount:usd,id:`fin-${e.id}`};});
-  const tcAll=[...tcOps,...tcSup,...tcFin];
-  const tcTotal=tcAll.reduce((s,t)=>s+Number(t.amount||0),0);
+  // Top 5 clientes por comisión generada
+  const byClient={};
+  for(const e of earnings){
+    const cn=e.operations?.clients?`${e.operations.clients.first_name||""} ${e.operations.clients.last_name||""}`.trim():"—";
+    if(!byClient[cn])byClient[cn]={name:cn,com:0,ops:0};
+    byClient[cn].com+=Number(e.commission_usd||0);
+    byClient[cn].ops+=1;
+  }
+  const topClients=Object.values(byClient).sort((a,b)=>b.com-a.com).slice(0,5);
 
-  // Chart mensual: comisiones reales últimos 8 meses
+  // Chart mensual: comisiones últimos 8 meses
   const months=[];
   for(let i=7;i>=0;i--){
     const d=new Date(now.getFullYear(),now.getMonth()-i,1);
@@ -1568,51 +1553,18 @@ function PaneDashboard({token}){
 
   return <div>
     <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px",color:"#fff"}}>Dashboard</h1>
-    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>Tu actividad y métricas como socio GI. Las comisiones son reales (calculadas al cerrar cada op).</p>
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>{isAdmin?"Comisiones GI consolidadas de todos los socios.":"Tu actividad y métricas como socio GI. Las comisiones se calculan al cerrar cada op."}</p>
 
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:24}}>
       <Kpi label="Comisión este mes" val={fmtUSD(earnThisMonth)} sub={isFinite(trend)&&earnLastMonth!==0?`${trend>0?"+":""}${trend.toFixed(0)}% vs mes ant.`:"—"} color={earnThisMonth>=0?"#22c55e":"#f87171"}/>
       <Kpi label="Pendiente de cobro" val={fmtUSD(earnPending)} sub={`${earnings.filter(e=>!e.paid_to_partner).length} ops sin liquidar`} color={earnPending>=0?GOLD_LIGHT:"#f87171"}/>
       <Kpi label="Acumulado pagado" val={fmtUSD(earnPaid)} sub={`${earnings.filter(e=>e.paid_to_partner).length} ops liquidadas`}/>
-      <Kpi label="Promedio por op" val={fmtUSD(ticketAvg)} sub={`${closed.length} ops cerradas`}/>
+      <Kpi label="Promedio por op" val={fmtUSD(ticketAvg)} sub={`${earnings.length} ops`}/>
     </div>
 
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:18}}>
-      <div style={{padding:"14px 18px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:12}}>
-        <p style={{fontSize:10.5,fontWeight:700,color:"#60a5fa",textTransform:"uppercase",letterSpacing:"0.08em",margin:0}}>Ops activas</p>
-        <p style={{fontSize:24,fontWeight:800,color:"#fff",margin:"6px 0 2px",fontFeatureSettings:'"tnum"'}}>{active.length}</p>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Pendiente cliente: <strong style={{color:GOLD_LIGHT}}>{fmtUSD(pendingCobro)}</strong></p>
-      </div>
-      <div style={{padding:"14px 18px",background:tcTotal>0?"rgba(168,85,247,0.06)":"rgba(255,255,255,0.025)",border:`1px solid ${tcTotal>0?"rgba(168,85,247,0.25)":"rgba(255,255,255,0.06)"}`,borderRadius:12}}>
-        <p style={{fontSize:10.5,fontWeight:700,color:tcTotal>0?"#a78bfa":"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em",margin:0}}>Deuda TC en tus ops</p>
-        <p style={{fontSize:24,fontWeight:800,color:tcTotal>0?"#a78bfa":"rgba(255,255,255,0.4)",margin:"6px 0 2px",fontFeatureSettings:'"tnum"'}}>{fmtUSD(tcTotal)}</p>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{tcAll.length} {tcAll.length===1?"gasto pendiente de débito":"gastos pendientes de débito"}</p>
-      </div>
-    </div>
-
-    {tcAll.length>0&&<div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>
-      <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 12px"}}>Deudas TC pendientes en tus ops</h3>
-      <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"0 0 12px",lineHeight:1.5}}>Estos gastos tienen método tarjeta de crédito y todavía no se debitaron. Una op no se puede cerrar hasta que estos gastos estén liquidados, porque tu comisión final depende de ellos.</p>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-          <th style={thStyle()}>Op</th>
-          <th style={thStyle()}>Cliente</th>
-          <th style={thStyle()}>Concepto</th>
-          <th style={{...thStyle(),textAlign:"right"}}>Monto</th>
-        </tr></thead>
-        <tbody>
-          {tcAll.map(t=><tr key={t.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-            <td style={{padding:"10px 12px",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:GOLD_LIGHT,whiteSpace:"nowrap"}}>{t.op}</td>
-            <td style={{padding:"10px 12px",color:"#fff",whiteSpace:"nowrap"}}>{t.client}</td>
-            <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.65)"}}>{t.label}</td>
-            <td style={{padding:"10px 12px",textAlign:"right",color:"#a78bfa",fontWeight:700,fontFeatureSettings:'"tnum"'}}>{fmtUSD(t.amount)}</td>
-          </tr>)}
-          <tr style={{borderTop:"1.5px solid rgba(168,85,247,0.3)",background:"rgba(168,85,247,0.04)"}}>
-            <td colSpan={3} style={{padding:"11px 12px",fontWeight:700,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:"0.06em",fontSize:11}}>Total</td>
-            <td style={{padding:"11px 12px",textAlign:"right",fontWeight:800,color:"#a78bfa",fontFeatureSettings:'"tnum"'}}>{fmtUSD(tcTotal)}</td>
-          </tr>
-        </tbody>
-      </table>
+    {estimadas.length>0&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:12,padding:"14px 18px",marginBottom:18}}>
+      <p style={{fontSize:11,fontWeight:700,color:"#fb923c",textTransform:"uppercase",letterSpacing:"0.08em",margin:"0 0 6px"}}>⚠ {estimadas.length} {estimadas.length===1?"comisión estimada":"comisiones estimadas"}</p>
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:0,lineHeight:1.5}}>Hay ops con costos en pesos pendientes de dolarizar (típicamente tarjeta de crédito). El monto se confirma automáticamente cuando esos pagos se debiten. Hasta entonces el admin no puede liquidar esas comisiones.</p>
     </div>}
 
     <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>
@@ -1642,6 +1594,22 @@ function PaneDashboard({token}){
       <div style={{display:"flex",gap:14,marginTop:6}}>{months.map((m,i)=><span key={i} style={{flex:1,textAlign:"center",fontSize:10,color:"rgba(255,255,255,0.45)",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em"}}>{m.label}</span>)}</div>
     </div>
 
+    {topClients.length>0&&<div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>
+      <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 14px"}}>Top clientes por comisión generada</h3>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {topClients.map((c,i)=>{const maxC=topClients[0].com||1;const w=Math.abs(c.com)/Math.abs(maxC)*100;return <div key={i} style={{display:"flex",alignItems:"center",gap:14}}>
+          <div style={{width:24,height:24,borderRadius:"50%",background:i===0?GOLD_GRADIENT:"rgba(255,255,255,0.06)",color:i===0?"#0A1628":"rgba(255,255,255,0.6)",fontWeight:800,fontSize:11,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+              <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{c.name}</span>
+              <span style={{fontSize:13,fontWeight:700,color:c.com>=0?"#22c55e":"#f87171",fontFeatureSettings:'"tnum"'}}>{c.com>=0?"+":"−"}{fmtUSD(Math.abs(c.com))} <span style={{fontSize:10,color:"rgba(255,255,255,0.4)",fontWeight:500}}>· {c.ops} {c.ops===1?"op":"ops"}</span></span>
+            </div>
+            <div style={{height:5,background:"rgba(255,255,255,0.05)",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${w}%`,background:c.com>=0?"linear-gradient(90deg,rgba(34,197,94,0.6),rgba(34,197,94,0.3))":"linear-gradient(90deg,rgba(248,113,113,0.6),rgba(248,113,113,0.3))",borderRadius:3}}/></div>
+          </div>
+        </div>;})}
+      </div>
+    </div>}
+
     {earnings.length>0&&<div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>
       <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 14px"}}>Historial completo de comisiones ({earnings.length})</h3>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
@@ -1658,7 +1626,7 @@ function PaneDashboard({token}){
         </tr></thead>
         <tbody>
           {earnings.map(e=>{const cn=e.operations?.clients?`${e.operations.clients.first_name||""} ${e.operations.clients.last_name||""}`.trim():"—";const com=Number(e.commission_usd||0);return <tr key={e.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-            <td style={{padding:"11px 12px",fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:600,whiteSpace:"nowrap"}}>{e.operations?.operation_code||"—"}</td>
+            <td style={{padding:"11px 12px",fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:600,whiteSpace:"nowrap"}}>{e.operations?.operation_code||"—"}{e.is_estimated&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(251,146,60,0.15)",color:"#fb923c",letterSpacing:"0.05em"}}>EST</span>}</td>
             <td style={{padding:"11px 12px",color:"#fff",fontWeight:600,whiteSpace:"nowrap"}}>{cn}</td>
             <td style={{padding:"11px 12px",color:"rgba(255,255,255,0.55)",fontFeatureSettings:'"tnum"',textAlign:"center",whiteSpace:"nowrap"}}>{fmtDateShort(e.closed_at)}</td>
             <td style={{padding:"11px 12px",textAlign:"right",color:"#22c55e",fontFeatureSettings:'"tnum"'}}>{fmtUSD(e.revenue_usd)}</td>
@@ -1778,8 +1746,11 @@ function PaneCommissions({token}){
   </div>;
 }
 
-function PaneLedger({token}){
-  const [movements,setMovements]=useState([]);
+function PaneLedger({token,profileId,isAdmin}){
+  // Extracto del socio: solo movimientos de comisiones (devengado + cobrado).
+  // Cada earning genera 1 entry "Comisión devengada" en closed_at, y opcionalmente
+  // una entry "Comisión cobrada" en paid_at si paid_to_partner=true.
+  const [earnings,setEarnings]=useState([]);
   const [lo,setLo]=useState(true);
   const [fFrom,setFFrom]=useState("");
   const [fTo,setFTo]=useState("");
@@ -1788,15 +1759,46 @@ function PaneLedger({token}){
 
   useEffect(()=>{(async()=>{
     setLo(true);
-    // Cargar finance_entries relacionados con ops GI
-    const ops=await dq("gi_quotes",{token,filters:"?status=eq.converted&select=operation_id,gi_quote_requests(client_id,clients(first_name,last_name))"});
-    const opIds=(Array.isArray(ops)?ops:[]).filter(q=>q.operation_id).map(q=>q.operation_id);
-    if(opIds.length===0){setMovements([]);setLo(false);return;}
-    const inFilter=opIds.map(id=>`"${id}"`).join(",");
-    const m=await dq("finance_entries",{token,filters:`?operation_id=in.(${inFilter})&select=*,operations(operation_code)&order=date.desc&limit=200`});
-    setMovements(Array.isArray(m)?m:[]);
+    const filt=isAdmin||!profileId?"":`partner_id=eq.${profileId}&`;
+    const r=await dq("gi_partner_earnings",{token,filters:`?${filt}select=*,operations(operation_code,clients(first_name,last_name))&order=closed_at.desc`});
+    setEarnings(Array.isArray(r)?r:[]);
     setLo(false);
-  })();},[token]);
+  })();},[token,profileId,isAdmin]);
+
+  // Construir movimientos a partir de earnings
+  const movements=[];
+  for(const e of earnings){
+    const cn=e.operations?.clients?`${e.operations.clients.first_name||""} ${e.operations.clients.last_name||""}`.trim():"—";
+    const opCode=e.operations?.operation_code||"—";
+    const com=Number(e.commission_usd||0);
+    if(e.closed_at){
+      movements.push({
+        id:`d-${e.id}`,
+        date:e.closed_at.slice(0,10),
+        op:opCode,
+        client:cn,
+        type:com>=0?"devengado":"perdida_absorbida",
+        description:com>=0?`Comisión devengada · ${e.is_estimated?"ESTIMADA · ":""}${e.commission_pct||0}% sobre USD ${Number(e.net_profit_usd||0).toFixed(2)}`:`Absorción de pérdida · ${Math.abs(e.commission_pct||0)}% sobre USD ${Number(e.net_profit_usd||0).toFixed(2)}`,
+        amount:com,
+        is_estimated:e.is_estimated,
+      });
+    }
+    if(e.paid_to_partner&&e.paid_at){
+      const paidAmt=Number(e.paid_amount_usd||e.commission_usd||0);
+      movements.push({
+        id:`p-${e.id}`,
+        date:e.paid_at.slice(0,10),
+        op:opCode,
+        client:cn,
+        type:"cobrado",
+        description:`Comisión cobrada del admin`,
+        amount:-paidAmt, // egreso del "saldo a cobrar" del socio
+        is_estimated:false,
+      });
+    }
+  }
+  // Ordenar por fecha desc
+  movements.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
 
   const filtered=movements.filter(m=>{
     if(fFrom&&m.date<fFrom)return false;
@@ -1804,67 +1806,63 @@ function PaneLedger({token}){
     if(fType&&m.type!==fType)return false;
     if(fSearch){
       const s=fSearch.toLowerCase();
-      const c=String(m.description||"").toLowerCase();
-      const op=String(m.operations?.operation_code||"").toLowerCase();
-      if(!c.includes(s)&&!op.includes(s))return false;
+      if(!String(m.description||"").toLowerCase().includes(s)&&!String(m.op||"").toLowerCase().includes(s)&&!String(m.client||"").toLowerCase().includes(s))return false;
     }
     return true;
   });
 
-  const totalIn=filtered.filter(m=>Number(m.amount||0)>0).reduce((s,m)=>s+Number(m.amount||0),0);
-  const totalOut=filtered.filter(m=>Number(m.amount||0)<0).reduce((s,m)=>s+Math.abs(Number(m.amount||0)),0);
+  const totalDevengado=movements.filter(m=>m.type==="devengado").reduce((s,m)=>s+m.amount,0);
+  const totalAbsorbido=movements.filter(m=>m.type==="perdida_absorbida").reduce((s,m)=>s+m.amount,0); // negativo
+  const totalCobrado=movements.filter(m=>m.type==="cobrado").reduce((s,m)=>s+Math.abs(m.amount),0);
+  const saldoActual=totalDevengado+totalAbsorbido-totalCobrado;
 
   return <div>
     <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Libro diario</h1>
-    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>Movimientos financieros de tus operaciones GI. Filtrá por fecha, op o tipo.</p>
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>{isAdmin?"Extracto consolidado de comisiones de todos los socios.":"Tus comisiones devengadas, cobradas y saldo pendiente. Cada op cerrada genera un movimiento."}</p>
+
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18}}>
+      <Kpi label="Comisiones devengadas" val={fmtUSD(totalDevengado)} color="#22c55e" sub={`${movements.filter(m=>m.type==="devengado").length} ops`}/>
+      <Kpi label="Pérdidas absorbidas" val={fmtUSD(Math.abs(totalAbsorbido))} color={totalAbsorbido<0?"#f87171":"rgba(255,255,255,0.4)"} sub={`${movements.filter(m=>m.type==="perdida_absorbida").length} ops`}/>
+      <Kpi label="Cobrado del admin" val={fmtUSD(totalCobrado)} color="#60a5fa" sub={`${movements.filter(m=>m.type==="cobrado").length} liquidaciones`}/>
+      <Kpi label="Saldo a cobrar" val={fmtUSD(saldoActual)} color={saldoActual>=0?GOLD_LIGHT:"#f87171"}/>
+    </div>
 
     <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
-      <input value={fSearch} onChange={e=>setFSearch(e.target.value)} placeholder="Buscar por op o concepto..." style={{...inpStyle(),background:"rgba(255,255,255,0.04)",minWidth:240,flex:1,padding:"9px 12px",fontSize:12}}/>
+      <input value={fSearch} onChange={e=>setFSearch(e.target.value)} placeholder="Buscar por op, cliente o concepto..." style={{...inpStyle(),background:"rgba(255,255,255,0.04)",minWidth:240,flex:1,padding:"9px 12px",fontSize:12}}/>
       <input type="date" value={fFrom} onChange={e=>setFFrom(e.target.value)} style={{...inpStyle(),background:"rgba(255,255,255,0.04)",padding:"9px 12px",fontSize:12,minWidth:140,width:"auto"}}/>
       <span style={{color:"rgba(255,255,255,0.4)",fontSize:12}}>→</span>
       <input type="date" value={fTo} onChange={e=>setFTo(e.target.value)} style={{...inpStyle(),background:"rgba(255,255,255,0.04)",padding:"9px 12px",fontSize:12,minWidth:140,width:"auto"}}/>
       <select value={fType} onChange={e=>setFType(e.target.value)} style={{...inpStyle(),background:"rgba(255,255,255,0.04)",padding:"9px 12px",fontSize:12,width:"auto",minWidth:160}}>
         <option value="">Todos los tipos</option>
-        <option value="cobro">Cobros</option>
-        <option value="pago_proveedor">Pagos proveedor</option>
-        <option value="pago_flete">Pagos flete</option>
-        <option value="pago_aduana">Pagos aduana</option>
-        <option value="comision">Comisión</option>
+        <option value="devengado">Devengadas</option>
+        <option value="perdida_absorbida">Pérdidas absorbidas</option>
+        <option value="cobrado">Cobradas</option>
       </select>
       <button onClick={()=>{setFFrom("");setFTo("");setFSearch("");setFType("");}} style={{padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer",fontFamily:"inherit"}}>Limpiar</button>
     </div>
 
-    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:18}}>
-      <Kpi label="Ingresos del filtro" val={fmtUSD(totalIn)} color="#22c55e"/>
-      <Kpi label="Egresos del filtro" val={fmtUSD(totalOut)} color="#f87171"/>
-      <Kpi label="Movimientos" val={String(filtered.length)}/>
-    </div>
-
-    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"3rem 0"}}>No hay movimientos en este filtro. {movements.length===0&&"Cuando empieces a registrar cobros y pagos, aparecen acá."}</p>:
+    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"3rem 0"}}>{movements.length===0?"Cuando se cierre tu primera op cotizada, aparece tu primera comisión acá.":"No hay movimientos con este filtro."}</p>:
       <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.22)"}}>
-            <th style={thStyle()}>Fecha</th>
-            <th style={thStyle()}>Op</th>
-            <th style={thStyle()}>Concepto</th>
-            <th style={thStyle()}>Tipo</th>
+            <th style={{...thStyle(),textAlign:"left"}}>Fecha</th>
+            <th style={{...thStyle(),textAlign:"left"}}>Op</th>
+            <th style={{...thStyle(),textAlign:"left"}}>Cliente</th>
+            <th style={{...thStyle(),textAlign:"left"}}>Concepto</th>
             <th style={{...thStyle(),textAlign:"right"}}>Monto</th>
           </tr></thead>
           <tbody>
-            {filtered.map(m=>{const amt=Number(m.amount||0);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-              <td style={{padding:"11px 12px",color:"rgba(255,255,255,0.55)",fontFamily:"'JetBrains Mono',monospace"}}>{fmtDate(m.date)}</td>
-              <td style={{padding:"11px 12px",fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:600}}>{m.operations?.operation_code||"—"}</td>
-              <td style={{padding:"11px 12px",color:"rgba(255,255,255,0.85)"}}>{m.description||"—"}</td>
-              <td style={{padding:"11px 12px"}}><span style={{fontSize:10,padding:"2px 7px",borderRadius:5,background:amt>0?"rgba(34,197,94,0.10)":"rgba(248,113,113,0.10)",color:amt>0?"#22c55e":"#f87171",fontWeight:600,textTransform:"capitalize"}}>{(m.type||"").replace(/_/g," ")}</span></td>
-              <td style={{padding:"11px 12px",textAlign:"right",fontWeight:700,fontFeatureSettings:'"tnum"',color:amt>0?"#22c55e":"#f87171"}}>{amt>0?"+":""}{fmtUSD(amt)}</td>
+            {filtered.map(m=>{const amt=Number(m.amount||0);const isCobro=m.type==="cobrado";return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+              <td style={{padding:"11px 12px",color:"rgba(255,255,255,0.55)",fontFamily:"'JetBrains Mono',monospace",whiteSpace:"nowrap"}}>{fmtDate(m.date)}</td>
+              <td style={{padding:"11px 12px",fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:600,whiteSpace:"nowrap"}}>{m.op}{m.is_estimated&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(251,146,60,0.15)",color:"#fb923c",letterSpacing:"0.05em"}}>EST</span>}</td>
+              <td style={{padding:"11px 12px",color:"rgba(255,255,255,0.85)",fontWeight:600}}>{m.client}</td>
+              <td style={{padding:"11px 12px",color:"rgba(255,255,255,0.7)"}}>{m.description}</td>
+              <td style={{padding:"11px 12px",textAlign:"right",fontWeight:700,fontFeatureSettings:'"tnum"',color:isCobro?"#60a5fa":(amt>=0?"#22c55e":"#f87171"),whiteSpace:"nowrap"}}>{amt>=0?"+":"−"}{fmtUSD(Math.abs(amt))}</td>
             </tr>;})}
           </tbody>
         </table>
       </div>
     }
-    {movements.length===0&&!lo&&<div style={{padding:"14px 18px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12,color:"rgba(255,255,255,0.8)",lineHeight:1.5,marginTop:12}}>
-      <strong style={{color:"#60a5fa"}}>Sin movimientos todavía.</strong> Cuando se registren cobros y pagos en las ops convertidas (desde el panel admin), van a aparecer acá filtrados solo por las tuyas.
-    </div>}
   </div>;
 }
 
