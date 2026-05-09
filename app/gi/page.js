@@ -964,7 +964,8 @@ function PaneOps({token}){
   const calcComision=(op)=>{
     const earn=earningByOpId[op.id];
     if(earn)return {amount:Number(earn.commission_usd||0),real:true,pct:Number(earn.commission_pct||0)};
-    const pct=Number(op.clients?.gi_commission_pct||0);
+    // Prioridad: override por op > % del cliente
+    const pct=Number(op.gi_commission_pct!=null?op.gi_commission_pct:(op.clients?.gi_commission_pct||0));
     const total=Number(op.budget_total||0);
     const netEst=total*0.08;
     const est=netEst*pct/100;
@@ -1093,9 +1094,10 @@ function OpDetail({token,opId,onBack,calcComision}){
       <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,padding:"5px 12px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap"}}><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c}}/>{st.l}</span>
     </div>
 
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginTop:18,marginBottom:24}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginTop:18,marginBottom:24}}>
       <Kpi label="Canal" val={chLabel} sub={op.origin?`Origen ${op.origin}`:""}/>
       <Kpi label="Total cliente" val={fmtUSD(op.budget_total)} sub={`Cobrado: ${fmtUSD(totalPaid)}`} color={GOLD_LIGHT}/>
+      <Kpi label={op.is_collected?"Saldo":"Pendiente cobro"} val={(()=>{const saldo=Math.max(0,Number(op.budget_total||0)-totalPaid);return op.is_collected?(saldo<0.01?"Cobrada":fmtUSD(saldo)):fmtUSD(saldo);})()} color={(()=>{const saldo=Math.max(0,Number(op.budget_total||0)-totalPaid);return op.is_collected&&saldo<0.01?"#22c55e":(saldo>0?"#fbbf24":"#fff");})()} sub={op.is_collected?"Marcada cobrada":"Por cobrar al cliente"}/>
       <Kpi label={com.real?"Tu comisión":"Comisión est."} val={com.pct>0?fmtUSD(com.amount):"—"} sub={com.pct>0?`${com.pct}%${com.real?" sobre neto real":" estimada"}`:"Cliente sin %"} color={com.real?"#22c55e":GOLD_LIGHT}/>
       <Kpi label="ETA" val={op.eta?fmtDate(op.eta):"—"} sub={op.closed_at?`Cerrada: ${fmtDate(op.closed_at)}`:""}/>
     </div>

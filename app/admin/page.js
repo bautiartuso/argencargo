@@ -6248,15 +6248,18 @@ function FinanceDashboard({token}){
       const raw=Number(o.collected_amount||o.budget_total||0);
       const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
       const cash=isArs&&rate>0?raw/rate:raw;
-      // Cap cash al budget_total: el excedente fue a CC, no es ingreso de op
       const bt=Number(o.budget_total||0);
       const cashForOp=bt>0?Math.min(cash,bt):cash;
       baseIng=cashForOp+Number(o.credit_applied_usd||0);
     } else {
       baseIng=Number(o.budget_total||0);
     }
-    const costProducto=o.service_type==="gestion_integral"?Number(o.cost_producto_usd||0):0;
-    const baseCost=Number(o.cost_flete||0)+costProducto+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
+    // GI ops: NO sumar cost_producto_usd como costo separado — los pagos al proveedor (supplier_payments) ya cubren ese gasto.
+    // Si lo sumáramos acá, sería doble conteo (una vez en cost_producto, otra en cada supplier_payment registrado).
+    // Para GI usamos suma de supplier_payments efectivos.
+    const isGI=o.service_type==="gestion_integral";
+    const supplierPaid=isGI?(supplierPmts||[]).filter(p=>p.operation_id===o.id&&p.is_paid).reduce((s,p)=>{const sgn=p.type==="refund"?-1:1;return s+sgn*Number(p.amount_usd||0);},0):0;
+    const baseCost=Number(o.cost_flete||0)+supplierPaid+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
     const pmts=pmtsByOp[o.id]||[];
     const pmtIng=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
     const pmtCost=pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);
