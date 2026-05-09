@@ -375,11 +375,14 @@ function PaneQuotes({token,profileId}){
     setShowClientList(false);
   };
 
+  // Las pestañas miran el estado de la quote (no del request). El draft del wizard puede estar en
+  // distintas etapas (draft = sin enviar, sent = link al cliente, accepted/converted = aceptada).
+  const qStatusOf=(r)=>{const q=Array.isArray(r.gi_quotes)?r.gi_quotes[0]:null;return q?.status||null;};
   const tabs=[
-    {k:"pending",l:"Pendientes",f:r=>["pending","quoting"].includes(r.status)},
-    {k:"quoted",l:"Cotizadas",f:r=>r.status==="quoted"},
-    {k:"sent",l:"Enviadas a cliente",f:r=>r.status==="sent"},
-    {k:"accepted",l:"Aceptadas",f:r=>r.status==="accepted"||r.status==="converted"},
+    {k:"pending",l:"Pendientes",f:r=>!qStatusOf(r)&&["pending","quoting"].includes(r.status)},
+    {k:"draft",l:"Borradores",f:r=>qStatusOf(r)==="draft"},
+    {k:"sent",l:"Enviadas a cliente",f:r=>qStatusOf(r)==="sent"},
+    {k:"accepted",l:"Aceptadas",f:r=>["accepted","converted"].includes(qStatusOf(r))||["accepted","converted"].includes(r.status)},
     {k:"rejected",l:"Rechazadas/Expiradas",f:r=>["rejected","expired"].includes(r.status)},
   ];
   const filtered=reqs.filter(tabs.find(t=>t.k===tab).f);
@@ -477,15 +480,15 @@ function PaneQuotes({token,profileId}){
 function RequestDetail({token,requestId,onBack,onStartWizard}){
   const [req,setReq]=useState(null);
   const [draftProducts,setDraftProducts]=useState([]);
+  const [quoteRow,setQuoteRow]=useState(null);
   const [lo,setLo]=useState(true);
   useEffect(()=>{(async()=>{
     const [r,q]=await Promise.all([
       dq("gi_quote_requests",{token,filters:`?id=eq.${requestId}&select=*,clients(*),gi_quote_request_products(*)`}),
-      // Si arrancó como draft directo desde panel GI, los productos están en gi_quote_products
-      dq("gi_quotes",{token,filters:`?request_id=eq.${requestId}&select=id,status,gi_quote_products(*)&order=created_at.desc&limit=1`}),
+      dq("gi_quotes",{token,filters:`?request_id=eq.${requestId}&select=id,status,public_token,gi_quote_products(*)&order=created_at.desc&limit=1`}),
     ]);
     setReq(Array.isArray(r)?r[0]:null);
-    if(Array.isArray(q)&&q[0]?.gi_quote_products)setDraftProducts(q[0].gi_quote_products);
+    if(Array.isArray(q)&&q[0]){setQuoteRow(q[0]);if(q[0].gi_quote_products)setDraftProducts(q[0].gi_quote_products);}
     setLo(false);
   })();},[requestId,token]);
 
@@ -506,7 +509,10 @@ function RequestDetail({token,requestId,onBack,onStartWizard}){
         <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}><span style={{color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.04em"}}>{req.request_code}</span> · {cn}</h1>
         <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Pedida {fmtDate(req.created_at)}{req.expires_at?` · Vence ${fmtDate(req.expires_at)}`:""}</p>
       </div>
-      <button onClick={onStartWizard} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>Armar cotización →</button>
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        {quoteRow?.public_token&&quoteRow.status==="sent"&&<button onClick={()=>{const url=`${window.location.origin}/cotizacion/${quoteRow.public_token}`;navigator.clipboard?.writeText(url);alert("Link copiado:\n"+url);}} title="Copiar link al cliente" style={{padding:"10px 14px",fontSize:12,fontWeight:700,borderRadius:10,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",fontFamily:"inherit"}}>📋 Copiar link</button>}
+        <button onClick={onStartWizard} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>{quoteRow?.status==="sent"?"Editar cotización →":quoteRow?.status==="draft"?"Continuar borrador →":"Armar cotización →"}</button>
+      </div>
     </div>
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:18}}>
@@ -607,7 +613,8 @@ function CotizadorWizard({token,requestId,onBack}){
       dq("gi_quote_requests",{token,filters:`?id=eq.${requestId}&select=*,clients(*),gi_quote_request_products(*)`}),
       dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),
       dq("calc_config",{token,filters:"?select=*"}),
-      dq("gi_quotes",{token,filters:`?request_id=eq.${requestId}&status=eq.draft&select=*,gi_quote_products(*)&order=created_at.desc&limit=1`}),
+      // Cargar la cotización más reciente para este request, esté en draft o sent. Si está accepted/converted, no se reedita.
+      dq("gi_quotes",{token,filters:`?request_id=eq.${requestId}&status=in.(draft,sent)&select=*,gi_quote_products(*)&order=created_at.desc&limit=1`}),
     ]);
     if(Array.isArray(reqRes)&&reqRes[0]){
       const r=reqRes[0];

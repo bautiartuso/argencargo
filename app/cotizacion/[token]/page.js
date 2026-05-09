@@ -8,11 +8,22 @@ const fmtUSD = (n) => "USD " + Number(n || 0).toLocaleString("es-AR", { minimumF
 const fmtUSD2 = (n) => "USD " + Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const CHANNEL_LABELS = {
-  aereo_negro: { name: "Aéreo Courier Comercial", time: "7 a 10 días hábiles", costKey: "cost_courier_total_usd" },
-  aereo_blanco: { name: "Aéreo Integral AC", time: "10 a 15 días hábiles", costKey: "cost_aereo_int_total_usd" },
-  maritimo_negro: { name: "Marítimo LCL / FCL", time: "~ 60 días", costKey: "cost_maritimo_lcl_total_usd" },
-  maritimo_blanco: { name: "Marítimo Integral AC", time: "~ 60 días", costKey: "cost_maritimo_int_total_usd" },
+  aereo_negro: { name: "Aéreo Courier Comercial", transitMin: 7, transitMax: 10, transitUnit: "días hábiles", costKey: "cost_courier_total_usd" },
+  aereo_blanco: { name: "Aéreo Integral AC", transitMin: 10, transitMax: 15, transitUnit: "días hábiles", costKey: "cost_aereo_int_total_usd" },
+  maritimo_negro: { name: "Marítimo LCL / FCL", transitMin: 60, transitMax: 60, transitUnit: "días", costKey: "cost_maritimo_lcl_total_usd" },
+  maritimo_blanco: { name: "Marítimo Integral AC", transitMin: 60, transitMax: 60, transitUnit: "días", costKey: "cost_maritimo_int_total_usd" },
 };
+
+// Texto del tiempo total: producción + tránsito
+function channelTimeText(c, maxLead) {
+  const tMin = c.transitMin || 0, tMax = c.transitMax || 0;
+  const lead = Number(maxLead) || 0;
+  const totMin = lead + tMin, totMax = lead + tMax;
+  const transitStr = tMin === tMax ? `~${tMax}` : `${tMin} a ${tMax}`;
+  const totalStr = totMin === totMax ? `~${totMax}` : `${totMin} a ${totMax}`;
+  if (lead > 0) return `${lead}d producción + ${transitStr}d tránsito ≈ ${totalStr} ${c.transitUnit}`;
+  return `${transitStr} ${c.transitUnit}`;
+}
 
 export default function CotizacionPublica({ params }) {
   // En Next 14 params es un objeto plano. En Next 15 es Promise — soportar ambos sin React.use().
@@ -127,9 +138,10 @@ export default function CotizacionPublica({ params }) {
               {products.map((p, i) => {
                 const sub = Number(p.unit_cost_usd || 0) * Number(p.quantity || 0);
                 return <div key={p.id || i} style={qdProdRowStyle(i === 0)}>
-                  <div style={{ width: 46, height: 46, borderRadius: 7, background: "linear-gradient(135deg,#f3eadb,#e7d8b8)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0, border: "1px solid #d4c5a0" }}>📦</div>
+                  {p.photo_url ? <img src={p.photo_url} alt={p.description || ""} style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0, border: "1px solid #d4c5a0", background: "#f3eadb" }} onError={e => { e.currentTarget.style.display = "none"; }}/>
+                    : <div style={{ width: 56, height: 56, borderRadius: 8, background: "linear-gradient(135deg,#f3eadb,#e7d8b8)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, border: "1px solid #d4c5a0" }}>📦</div>}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", marginBottom: 1 }}>{p.description}</p>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", marginBottom: 1, lineHeight: 1.35 }}>{p.description}</p>
                     {p.lead_time_days > 0 && <p style={{ fontSize: 10.5, color: "#B8956A", fontWeight: 600, marginTop: 3 }}>⏱ Producción {p.lead_time_days} días</p>}
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -144,7 +156,7 @@ export default function CotizacionPublica({ params }) {
               <p style={qdSecTitleStyle()}>Elegí qué servicio preferís</p>
               <p style={{ fontSize: 11, color: "#888", margin: "-4px 0 8px", lineHeight: 1.5 }}>El precio cambia según modo de transporte. Todos incluyen flete internacional, gestión aduanera y entrega final.</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
-                {channels.map((c, i) => <SvcRow key={c.key} channel={c} selected={selectedChannel === c.key} onClick={() => setSelectedChannel(c.key)} recommended={i === 0 && channels.length > 1}/>)}
+                {channels.map((c, i) => <SvcRow key={c.key} channel={c} maxLead={maxLead} selected={selectedChannel === c.key} onClick={() => setSelectedChannel(c.key)} recommended={i === 0 && channels.length > 1}/>)}
               </div>
             </div>
           </div>
@@ -182,7 +194,7 @@ export default function CotizacionPublica({ params }) {
               <p style={qdSecTitleStyle()}>Tiempos estimados</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                 <TimeStep n="1" name="Producción" meta={maxLead > 0 ? `Hasta ${maxLead} días hábiles` : "Según producto"}/>
-                <TimeStep n="2" name="Envío y arribo" meta={selChannel?.time || "—"}/>
+                <TimeStep n="2" name="Envío y arribo" meta={selChannel ? channelTimeText(selChannel, maxLead) : "—"}/>
                 <TimeStep n="3" name="Entrega final" meta={selectedDelivery === "oficina" ? `Retiro · ${settings?.office_locality || "Recoleta CABA"}` : `Envío a ${selectedDelivery}`}/>
               </div>
             </div>
@@ -215,7 +227,7 @@ export default function CotizacionPublica({ params }) {
   </div>;
 }
 
-function SvcRow({ channel, selected, onClick, recommended }) {
+function SvcRow({ channel, maxLead, selected, onClick, recommended }) {
   return <label onClick={onClick} style={{ cursor: "pointer", display: "block", borderRadius: 9, border: `1.5px solid ${selected ? "#B8956A" : "#e6e6e6"}`, background: selected ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fafaf7", boxShadow: selected ? "0 3px 10px rgba(184,149,106,0.18)" : "none", transition: "all 150ms" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px" }}>
       <span style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${selected ? "#B8956A" : "#c4b59a"}`, flexShrink: 0, background: selected ? "#B8956A" : "transparent", boxShadow: selected ? "inset 0 0 0 3.5px #fff" : "none" }}/>
@@ -224,7 +236,7 @@ function SvcRow({ channel, selected, onClick, recommended }) {
           {channel.name}
           {recommended && <span style={{ fontSize: 8.5, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "linear-gradient(135deg,#22c55e,#16a34a)", color: "#fff", letterSpacing: "0.08em", textTransform: "uppercase" }}>Recomendado</span>}
         </p>
-        <p style={{ fontSize: 10.5, color: "#777" }}>{channel.time}</p>
+        <p style={{ fontSize: 10.5, color: "#777" }}>{channelTimeText(channel, maxLead)}</p>
       </div>
       <p style={{ fontSize: 13.5, fontWeight: 800, color: "#B8956A", fontFeatureSettings: '"tnum"', whiteSpace: "nowrap" }}>{fmtUSD(channel.total)}</p>
     </div>
@@ -278,7 +290,7 @@ function AcceptedView({ quote, accepted, cn, settings, products, client }) {
 
 function formatDate(d) { if (!d) return "—"; const s = String(d).slice(0, 10); const [y, m, day] = s.split("-"); return new Date(y, m - 1, day).toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" }); }
 
-function pageStyle() { return { minHeight: "100vh", background: "#1a1f2e", padding: "28px 20px", display: "flex", justifyContent: "center", fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", color: "#fff" }; }
+function pageStyle() { return { minHeight: "100vh", background: "#1a1f2e", padding: "28px 20px", display: "flex", flexDirection: "column", alignItems: "center", fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", color: "#fff" }; }
 function qdStyle() { return { maxWidth: 1180, width: "100%", background: "#fafaf7", borderRadius: 12, overflow: "hidden", boxShadow: "0 24px 80px rgba(0,0,0,0.55)", color: "#1a1a1a", display: "flex", flexDirection: "column" }; }
 function qdHeadStyle() { return { background: "#0A1628", color: "#fff", padding: "20px 30px 18px", position: "relative" }; }
 function qdLblStyle() { return { fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", color: "rgba(232,208,152,0.65)", textTransform: "uppercase", marginBottom: 3 }; }
