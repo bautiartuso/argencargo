@@ -714,7 +714,7 @@ function CotizadorWizard({token,requestId,onBack}){
       if(d.fallback||d.error){
         setProducts(prods=>prods.map((x,j)=>j===i?{...x,ncm_loading:false,ncm_error:true}:x));
       } else {
-        setProducts(prods=>prods.map((x,j)=>j===i?{...x,ncm_loading:false,ncm_error:false,ncm_code:d.ncm_code||"",ncm_description:d.ncm_description||"",import_duty_rate:String(d.import_duty_rate||""),statistics_rate:String(d.statistics_rate||""),iva_rate:String(d.iva_rate||"")}:x));
+        setProducts(prods=>prods.map((x,j)=>j===i?{...x,ncm_loading:false,ncm_error:false,ncm_code:d.ncm_code||"",ncm_description:d.ncm_description||"",import_duty_rate:d.import_duty_rate!=null?String(d.import_duty_rate):"",statistics_rate:d.statistics_rate!=null?String(d.statistics_rate):"",iva_rate:d.iva_rate!=null?String(d.iva_rate):""}:x));
       }
     } catch(e){
       setProducts(prods=>prods.map((x,j)=>j===i?{...x,ncm_loading:false,ncm_error:true}:x));
@@ -949,9 +949,9 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
               <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",marginBottom:3}}>Clasificación NCM</p>
               <p style={{fontSize:13,fontWeight:700,color:"#fff"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#60a5fa"}}>{p.ncm_code}</span> · {p.ncm_description}</p>
               <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
-                <Tag>DI {p.import_duty_rate}%</Tag>
-                <Tag>IVA {p.iva_rate}%</Tag>
-                <Tag>Tasa Estad. {p.statistics_rate}%</Tag>
+                <Tag>DI {p.import_duty_rate===""||p.import_duty_rate==null?0:p.import_duty_rate}%</Tag>
+                <Tag>IVA {p.iva_rate===""||p.iva_rate==null?0:p.iva_rate}%</Tag>
+                <Tag>Tasa Estad. {p.statistics_rate===""||p.statistics_rate==null?0:p.statistics_rate}%</Tag>
               </div>
             </>:<p style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>{p.ncm_error?<span style={{color:"#fbbf24"}}>⚠ No se pudo clasificar. Cargá los aranceles a mano abajo.</span>:"Apretá clasificar para que el sistema busque NCM y aranceles."}</p>}
           </div>
