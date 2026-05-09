@@ -38,6 +38,16 @@ const saveSession=(d)=>{try{localStorage.setItem("ac_gi_s",JSON.stringify(d));}c
 const loadSession=()=>{try{const d=localStorage.getItem("ac_gi_s");return d?JSON.parse(d):null;}catch(e){return null;}};
 const clearSession=()=>{try{localStorage.removeItem("ac_gi_s");}catch(e){}};
 const fmtDate=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);const[y,m,day]=s.split("-");return new Date(y,m-1,day).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});};
+// Upload de fotos de producto al bucket package-photos (es público + multi-uso)
+const uploadProductPhoto=async(file,token)=>{
+  if(!file)return null;
+  const ext=(file.name?.split(".").pop()||"jpg").toLowerCase();
+  const path=`gi-prod/${Date.now()}_${Math.random().toString(36).slice(2,9)}.${ext}`;
+  const fresh=await ensureFresh(token);
+  const r=await fetch(`${SB_URL}/storage/v1/object/package-photos/${path}`,{method:"POST",headers:{Authorization:`Bearer ${fresh}`,apikey:SB_KEY,"Content-Type":file.type||"image/jpeg"},body:file});
+  if(!r.ok){console.error("upload failed",await r.text());return null;}
+  return `${SB_URL}/storage/v1/object/public/package-photos/${path}`;
+};
 const fmtDateShort=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return `${day}/${m}/${y.slice(2)}`;}const dd=new Date(d);return `${String(dd.getDate()).padStart(2,"0")}/${String(dd.getMonth()+1).padStart(2,"0")}/${String(dd.getFullYear()).slice(2)}`;};
 const fmtUSD=(n)=>"USD "+Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
 
@@ -851,13 +861,13 @@ function CotizadorWizard({token,requestId,onBack}){
       <Step n={3} label="Link al cliente" active={step===3} done={false}/>
     </div>
 
-    {step===1&&<WizStep1 products={products} onUpdate={updateProduct} onAdd={addProduct} onRemove={removeProduct} onClassify={classifyNcm} onNext={()=>goStep(2)} totalFob={totalFob}/>}
+    {step===1&&<WizStep1 token={token} products={products} onUpdate={updateProduct} onAdd={addProduct} onRemove={removeProduct} onClassify={classifyNcm} onNext={()=>goStep(2)} totalFob={totalFob}/>}
     {step===2&&<WizStep2 visibleChannels={visibleChannels} someUSA={someUSA} clientCommissionPct={clientCommissionPct} client={client} paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} profitFor={profitFor} onBack={()=>setStep(1)} onNext={generateLink} saving={saving}/>}
     {step===3&&<WizStep3 generatedQuote={generatedQuote} onBack={onBack}/>}
   </div>;
 }
 
-function WizStep1({products,onUpdate,onAdd,onRemove,onClassify,onNext,totalFob}){
+function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,totalFob}){
   return <div>
     <div style={{padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:18}}>
       <strong style={{color:"#60a5fa"}}>Step 1:</strong> cargá cada producto con su packing. Si origen es <strong>China</strong> apretá "Clasificar NCM" para que el sistema busque el código y los aranceles. Si es <strong>USA</strong>, va canal B automáticamente.
@@ -867,13 +877,18 @@ function WizStep1({products,onUpdate,onAdd,onRemove,onClassify,onNext,totalFob})
         <h4 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>Producto {i+1}</h4>
         <button onClick={()=>onRemove(i)} disabled={products.length<=1} style={{padding:"5px 10px",fontSize:10.5,fontWeight:600,borderRadius:6,border:"1px solid rgba(248,113,113,0.3)",background:"transparent",color:products.length<=1?"rgba(255,255,255,0.2)":"#f87171",cursor:products.length<=1?"not-allowed":"pointer",fontFamily:"inherit"}}>✕ Quitar</button>
       </div>
-      <div style={{marginBottom:12}}>
-        <label style={lblStyle()}>Descripción del producto</label>
-        <input value={p.description} onChange={e=>onUpdate(i,"description",e.target.value)} style={inpStyle()}/>
-      </div>
-      <div style={{marginBottom:12}}>
-        <label style={lblStyle()}>Referencia del proveedor (opcional)</label>
-        <input value={p.supplier_ref||""} onChange={e=>onUpdate(i,"supplier_ref",e.target.value)} placeholder="Link Alibaba, nombre del proveedor, WeChat, email, lo que tengas..." style={inpStyle()}/>
+      <div style={{display:"grid",gridTemplateColumns:"160px 1fr",gap:14,marginBottom:12}}>
+        <PhotoUpload value={p.photo_url} onChange={url=>onUpdate(i,"photo_url",url)} token={token}/>
+        <div>
+          <div style={{marginBottom:12}}>
+            <label style={lblStyle()}>Descripción del producto</label>
+            <input value={p.description} onChange={e=>onUpdate(i,"description",e.target.value)} style={inpStyle()}/>
+          </div>
+          <div>
+            <label style={lblStyle()}>Referencia del proveedor (opcional)</label>
+            <input value={p.supplier_ref||""} onChange={e=>onUpdate(i,"supplier_ref",e.target.value)} placeholder="Link Alibaba, nombre, WeChat, email..." style={inpStyle()}/>
+          </div>
+        </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:12}}>
         <div><label style={lblStyle()}>Origen</label>
@@ -1026,6 +1041,47 @@ function WizStep3({generatedQuote,onBack}){
 function lblStyle(){return {fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:5};}
 function inpStyle(){return {width:"100%",padding:"8px 10px",fontSize:12.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit"};}
 function Tag({children}){return <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.12)",color:"#60a5fa",letterSpacing:"0.04em"}}>{children}</span>;}
+
+// Componente de upload con drag & drop, click para elegir archivo, preview con eliminar.
+function PhotoUpload({value,onChange,token}){
+  const [drag,setDrag]=useState(false);
+  const [uploading,setUploading]=useState(false);
+  const handleFile=async(file)=>{
+    if(!file||!file.type?.startsWith("image/")){alert("Solo imágenes (JPG/PNG/WebP)");return;}
+    if(file.size>10*1024*1024){alert("Máximo 10 MB");return;}
+    setUploading(true);
+    try{
+      const url=await uploadProductPhoto(file,token);
+      if(url)onChange(url);
+      else alert("No se pudo subir la imagen");
+    } catch(e){alert("Error: "+e.message);}
+    setUploading(false);
+  };
+  const onDrop=(e)=>{e.preventDefault();setDrag(false);const f=e.dataTransfer.files?.[0];if(f)handleFile(f);};
+  const onDragOver=(e)=>{e.preventDefault();if(!drag)setDrag(true);};
+  const onDragLeave=(e)=>{e.preventDefault();setDrag(false);};
+  const onPaste=(e)=>{const items=e.clipboardData?.items||[];for(const it of items){if(it.type.startsWith("image/")){const f=it.getAsFile();if(f){handleFile(f);return;}}}};
+
+  return <div>
+    <label style={lblStyle()}>Foto del producto</label>
+    {value?
+      <div style={{position:"relative",borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,0.12)",background:"#000",height:140,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <img src={value} alt="Producto" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}/>
+        <button onClick={()=>onChange("")} title="Quitar foto" style={{position:"absolute",top:6,right:6,padding:"5px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(248,113,113,0.5)",background:"rgba(0,0,0,0.7)",color:"#f87171",cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+      </div>:
+      <label onDrop={onDrop} onDragOver={onDragOver} onDragLeave={onDragLeave} onPaste={onPaste} tabIndex={0} style={{height:140,border:`2px dashed ${drag?"rgba(184,149,106,0.6)":"rgba(255,255,255,0.18)"}`,borderRadius:10,background:drag?"rgba(184,149,106,0.08)":"rgba(0,0,0,0.18)",cursor:uploading?"wait":"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,transition:"all 150ms",outline:"none"}}>
+        <input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);e.target.value="";}} style={{display:"none"}} disabled={uploading}/>
+        {uploading?<>
+          <div style={{fontSize:24}}>⏳</div>
+          <p style={{fontSize:11,color:GOLD_LIGHT,fontWeight:600,margin:0}}>Subiendo…</p>
+        </>:<>
+          <div style={{fontSize:28,opacity:0.6}}>📷</div>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.65)",fontWeight:600,margin:0,textAlign:"center",lineHeight:1.4}}>Arrastrá una imagen<br/><span style={{color:"rgba(255,255,255,0.4)",fontSize:10,fontWeight:500}}>o click para elegir · Cmd+V para pegar</span></p>
+        </>}
+      </label>
+    }
+  </div>;
+}
 
 // ────────────────────────────────────────────
 // PANE: OPERACIONES GI
