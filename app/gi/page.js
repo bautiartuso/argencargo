@@ -1177,8 +1177,21 @@ function OpDetail({token,opId,onBack,calcComision}){
   const cn=op.clients?`${op.clients.first_name||""} ${op.clients.last_name||""}`.trim():"—";
   const st=STATUS_MAP[op.status]||{l:op.status,c:"#999"};
   const chLabel=CHANNEL_DEFS.find(c=>c.key===op.channel)?.name||op.channel;
-  const com=calcComision(op);
   const totalPaid=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+  // Costos reales de la op (mismo cálculo que el KPI de ganancia neta)
+  const _cFix=Number(op.cost_flete||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0);
+  const _cSupplier=supPmts.filter(p=>p.is_paid).reduce((s,p)=>{const sgn=p.type==="refund"?-1:1;return s+sgn*Number(p.amount_usd||0);},0);
+  const _cFin=finEntries.filter(e=>e.type==="gasto"&&e.category!=="comisiones_socio").reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
+  const _totalCost=_cFix+_cSupplier+_cFin;
+  const _netProfit=totalPaid-_totalCost;
+  // Comisión: si hay earning real, usarlo. Sino estimar con netProfit real (no mock 8%).
+  const com=(()=>{
+    if(earning)return {amount:Number(earning.commission_usd||0),real:true,pct:Number(earning.commission_pct||0)};
+    const pct=Number(op.gi_commission_pct!=null?op.gi_commission_pct:(op.clients?.gi_commission_pct||0));
+    if(pct<=0)return{amount:0,real:false,pct:0};
+    const net=Math.max(0,_netProfit);
+    return {amount:net*pct/100,real:false,pct};
+  })();
   const totalProducts=items.reduce((s,i)=>s+Number(i.unit_price_usd||0)*Number(i.quantity||0),0);
   const totalKg=pkgs.reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);
   const totalCBM=pkgs.reduce((s,p)=>{const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0),q=Number(p.quantity||1);return s+(l&&w&&h?(l*w*h/1000000)*q:0);},0);
@@ -1194,20 +1207,11 @@ function OpDetail({token,opId,onBack,calcComision}){
     </div>
 
     {(()=>{
-      // Ganancia neta de la op = revenue cobrado - todos los costos pagados/registrados
-      const revenue=totalPaid; // lo que efectivamente cobramos
-      // Costos: cost_flete + cost_seguro + cost_flete_local + cost_otros + cost_impuestos + cost_gasto_doc + supplier_payments + finance_entries gastos
-      const cFix=Number(op.cost_flete||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0);
-      const cSupplier=supPmts.filter(p=>p.is_paid).reduce((s,p)=>{const sgn=p.type==="refund"?-1:1;return s+sgn*Number(p.amount_usd||0);},0);
-      const cFin=finEntries.filter(e=>e.type==="gasto").reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
-      const totalCost=cFix+cSupplier+cFin;
-      const netProfit=revenue-totalCost;
-      // Pendiente cobro
       const pendienteCobro=Math.max(0,Number(op.budget_total||0)-totalPaid);
       return <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginTop:18,marginBottom:24}}>
         <Kpi label="Canal" val={chLabel} sub={op.origin?`Origen ${op.origin}`:""}/>
         <Kpi label="Total cliente" val={fmtUSD(op.budget_total)} sub={pendienteCobro>0.01?`Pendiente: ${fmtUSD(pendienteCobro)}`:`Cobrado completo`} color={GOLD_LIGHT}/>
-        <Kpi label="Ganancia neta op" val={fmtUSD(netProfit)} sub={`Revenue ${fmtUSD(revenue)} − costos ${fmtUSD(totalCost)}`} color={netProfit>=0?"#22c55e":"#f87171"}/>
+        <Kpi label="Ganancia neta op" val={fmtUSD(_netProfit)} sub={`Revenue ${fmtUSD(totalPaid)} − costos ${fmtUSD(_totalCost)}`} color={_netProfit>=0?"#22c55e":"#f87171"}/>
         <Kpi label={com.real?"Tu comisión":"Comisión est."} val={com.pct>0?fmtUSD(com.amount):"—"} sub={com.pct>0?`${com.pct}%${com.real?" sobre neto real":" estimada"}`:"Cliente sin %"} color={com.real?"#22c55e":GOLD_LIGHT}/>
         <Kpi label="ETA" val={op.eta?fmtDate(op.eta):"—"} sub={op.closed_at?`Cerrada: ${fmtDate(op.closed_at)}`:""}/>
       </div>;
