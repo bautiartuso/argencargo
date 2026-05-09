@@ -431,7 +431,10 @@ function PaneQuotes({token,profileId}){
                 <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.65)",fontFeatureSettings:'"tnum"'}}>{totalQty>0?`${totalQty} u.`:"—"}</td>
                 <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.5)"}}>{fmtDate(r.created_at)}</td>
                 <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.5)"}}>{r.expires_at?fmtDate(r.expires_at):"—"}</td>
-                <td style={{padding:"13px 14px",textAlign:"right"}}><button style={{padding:"5px 10px",fontSize:10.5,fontWeight:700,borderRadius:6,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>Ver →</button></td>
+                <td style={{padding:"13px 14px",textAlign:"right",whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
+                  <button onClick={()=>setSelDetail(r.id)} style={{padding:"5px 10px",fontSize:10.5,fontWeight:700,borderRadius:6,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit",marginRight:4}}>Ver →</button>
+                  <button onClick={async()=>{if(!confirm(`¿Eliminar la cotización ${r.request_code}? Esta acción no se puede deshacer.`))return;await dq("gi_quote_requests",{method:"DELETE",token,filters:`?id=eq.${r.id}`});load();}} title="Eliminar cotización" style={{padding:"5px 8px",fontSize:11,borderRadius:6,border:"1px solid rgba(248,113,113,0.3)",background:"transparent",color:"#f87171",cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+                </td>
               </tr>;
             })}
           </tbody>
@@ -521,49 +524,126 @@ function CotizadorWizard({token,requestId,onBack}){
   const [lo,setLo]=useState(true);
   const [generatedQuote,setGeneratedQuote]=useState(null);
   const [saving,setSaving]=useState(false);
+  const [savingDraft,setSavingDraft]=useState(false);
+  const [draftQuoteId,setDraftQuoteId]=useState(null);
+  const [lastSavedAt,setLastSavedAt]=useState(null);
   const [msg,setMsg]=useState("");
   const flash=(t)=>{setMsg(t);setTimeout(()=>setMsg(""),3500);};
 
-  // Cargar todo
+  const emptyProductFrom=(p,i)=>({
+    _id:p?.id,
+    description:p?.description||"",
+    notes:p?.notes||"",
+    origin:p?.origin||"china",
+    quantity:p?.quantity!=null?String(p.quantity):"",
+    unit_cost_usd:p?.unit_cost_usd!=null?String(p.unit_cost_usd):"",
+    lead_time_days:p?.lead_time_days!=null?String(p.lead_time_days):"",
+    photo_url:p?.photo_url||"",
+    ncm_code:p?.ncm_code||"",
+    ncm_description:p?.ncm_description||"",
+    import_duty_rate:p?.ncm_di_pct!=null?String(p.ncm_di_pct):"",
+    statistics_rate:p?.ncm_estad_pct!=null?String(p.ncm_estad_pct):"",
+    iva_rate:p?.ncm_iva_pct!=null?String(p.ncm_iva_pct):"",
+    ncm_loading:false,
+    ncm_error:false,
+    pkg_count:p?.pkg_count!=null?String(p.pkg_count):"1",
+    pkg_length_cm:p?.pkg_length_cm!=null?String(p.pkg_length_cm):"",
+    pkg_width_cm:p?.pkg_width_cm!=null?String(p.pkg_width_cm):"",
+    pkg_height_cm:p?.pkg_height_cm!=null?String(p.pkg_height_cm):"",
+    pkg_weight_kg:p?.pkg_weight_kg!=null?String(p.pkg_weight_kg):"",
+  });
+
+  // Cargar todo: si hay un quote draft existente para este request, usarlo (con sus productos parciales).
+  // Sino, usar los productos crudos del request (lo que pidió el admin) como base.
   useEffect(()=>{(async()=>{
     setLo(true);
-    const [reqRes,tar,cfg]=await Promise.all([
+    const [reqRes,tar,cfg,draftRes]=await Promise.all([
       dq("gi_quote_requests",{token,filters:`?id=eq.${requestId}&select=*,clients(*),gi_quote_request_products(*)`}),
       dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),
-      dq("calc_config",{token,filters:"?select=*"})
+      dq("calc_config",{token,filters:"?select=*"}),
+      dq("gi_quotes",{token,filters:`?request_id=eq.${requestId}&status=eq.draft&select=*,gi_quote_products(*)&order=created_at.desc&limit=1`}),
     ]);
     if(Array.isArray(reqRes)&&reqRes[0]){
       const r=reqRes[0];
       setRequest(r);
       setClient(r.clients);
-      const rawProds=(r.gi_quote_request_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
-      setProducts(rawProds.map((p,i)=>({
-        _id:p.id,
-        description:p.description||"",
-        notes:p.notes||"",
-        origin:"china",
-        quantity:String(p.quantity||""),
-        unit_cost_usd:"",
-        lead_time_days:"",
-        photo_url:p.photo_url||"",
-        ncm_code:"",
-        ncm_description:"",
-        import_duty_rate:"",
-        statistics_rate:"",
-        iva_rate:"",
-        ncm_loading:false,
-        ncm_error:false,
-        pkg_count:"1",
-        pkg_length_cm:"",
-        pkg_width_cm:"",
-        pkg_height_cm:"",
-        pkg_weight_kg:"",
-      })));
+    }
+    // Si hay draft, usarlo
+    const draft=Array.isArray(draftRes)&&draftRes[0]?draftRes[0]:null;
+    if(draft){
+      setDraftQuoteId(draft.id);
+      if(draft.payment_plan)setPaymentPlan(typeof draft.payment_plan==="string"?JSON.parse(draft.payment_plan):draft.payment_plan);
+      const draftProds=(draft.gi_quote_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
+      if(draftProds.length>0){
+        setProducts(draftProds.map(emptyProductFrom));
+      } else if(Array.isArray(reqRes)&&reqRes[0]){
+        const rawProds=(reqRes[0].gi_quote_request_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
+        setProducts(rawProds.map(p=>emptyProductFrom({description:p.description,notes:p.notes,quantity:p.quantity,photo_url:p.photo_url})));
+      }
+      setLastSavedAt(draft.updated_at||draft.created_at);
+    } else if(Array.isArray(reqRes)&&reqRes[0]){
+      const rawProds=(reqRes[0].gi_quote_request_products||[]).sort((a,b)=>(a.display_order||0)-(b.display_order||0));
+      setProducts(rawProds.map(p=>emptyProductFrom({description:p.description,notes:p.notes,quantity:p.quantity,photo_url:p.photo_url})));
     }
     setTariffs(Array.isArray(tar)?tar:[]);
     const cfgObj={};(Array.isArray(cfg)?cfg:[]).forEach(r=>{cfgObj[r.key]=Number(r.value);});setConfig(cfgObj);
     setLo(false);
   })();},[requestId,token]);
+
+  // Persiste el state actual como draft (UPSERT del gi_quote + reemplaza productos).
+  const saveDraft=async({silent=false}={})=>{
+    if(savingDraft||lo)return;
+    setSavingDraft(true);
+    try{
+      let quoteId=draftQuoteId;
+      if(!quoteId){
+        // Crear quote en draft
+        const inserted=await dq("gi_quotes",{method:"POST",token,body:{
+          request_id:requestId,
+          payment_plan:paymentPlan,
+          status:"draft",
+        }});
+        quoteId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
+        if(!quoteId)throw new Error("No se pudo crear el draft");
+        setDraftQuoteId(quoteId);
+      } else {
+        // Update payment_plan (los costos por canal se calculan al final, no en draft)
+        await dq("gi_quotes",{method:"PATCH",token,filters:`?id=eq.${quoteId}`,body:{payment_plan:paymentPlan}});
+      }
+      // Reemplazar productos: borrar todos los existentes y reinsertar
+      await dq("gi_quote_products",{method:"DELETE",token,filters:`?quote_id=eq.${quoteId}`});
+      for(let i=0;i<products.length;i++){
+        const p=products[i];
+        // Insertar incluso si está incompleto (es draft)
+        await dq("gi_quote_products",{method:"POST",token,body:{
+          quote_id:quoteId,
+          description:p.description||null,
+          origin:p.origin||"china",
+          quantity:p.quantity?Number(p.quantity):null,
+          unit_cost_usd:p.unit_cost_usd?Number(p.unit_cost_usd):null,
+          ncm_code:p.ncm_code||null,
+          ncm_description:p.ncm_description||null,
+          ncm_di_pct:p.import_duty_rate?Number(p.import_duty_rate):null,
+          ncm_iva_pct:p.iva_rate?Number(p.iva_rate):null,
+          ncm_estad_pct:p.statistics_rate?Number(p.statistics_rate):null,
+          lead_time_days:p.lead_time_days?Number(p.lead_time_days):null,
+          photo_url:p.photo_url||null,
+          pkg_count:p.pkg_count?Number(p.pkg_count):null,
+          pkg_length_cm:p.pkg_length_cm?Number(p.pkg_length_cm):null,
+          pkg_width_cm:p.pkg_width_cm?Number(p.pkg_width_cm):null,
+          pkg_height_cm:p.pkg_height_cm?Number(p.pkg_height_cm):null,
+          pkg_weight_kg:p.pkg_weight_kg?Number(p.pkg_weight_kg):null,
+          display_order:i,
+        }});
+      }
+      setLastSavedAt(new Date().toISOString());
+      if(!silent)flash(`✓ Borrador guardado (${products.length} productos)`);
+    } catch(e){
+      alert("Error al guardar borrador: "+e.message);
+    } finally {
+      setSavingDraft(false);
+    }
+  };
 
   const updateProduct=(i,field,value)=>setProducts(p=>p.map((x,j)=>j===i?{...x,[field]:value}:x));
   const addProduct=()=>setProducts(p=>[...p,{description:"",notes:"",origin:"china",quantity:"",unit_cost_usd:"",lead_time_days:"",photo_url:"",ncm_code:"",ncm_description:"",import_duty_rate:"",statistics_rate:"",iva_rate:"",ncm_loading:false,ncm_error:false,pkg_count:"1",pkg_length_cm:"",pkg_width_cm:"",pkg_height_cm:"",pkg_weight_kg:""}]);
@@ -679,18 +759,29 @@ function CotizadorWizard({token,requestId,onBack}){
         return acc;
       },{});
       const expDate=new Date(Date.now()+7*86400000).toISOString().slice(0,10);
-      const inserted=await dq("gi_quotes",{method:"POST",token,body:{
+      const body={
         request_id:requestId,
-        honorarios_pct:clientCommissionPct, // snapshot del % del cliente al cotizar
+        honorarios_pct:clientCommissionPct,
         payment_plan:paymentPlan,
         ...ch,
-        status:"draft",
+        status:"sent",
         expires_at:expDate,
-      }});
-      const quoteId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
-      const publicToken=Array.isArray(inserted)?inserted[0]?.public_token:inserted?.public_token;
-      if(!quoteId)throw new Error("No se pudo crear la cotización");
-      // Insert productos
+      };
+      let quoteId, publicToken;
+      if(draftQuoteId){
+        // Update existing draft quote → finalizar
+        const updated=await dq("gi_quotes",{method:"PATCH",token,filters:`?id=eq.${draftQuoteId}`,body});
+        quoteId=draftQuoteId;
+        publicToken=Array.isArray(updated)?updated[0]?.public_token:updated?.public_token;
+        // Borrar productos viejos del draft, vamos a reinsertarlos con todos los datos completos
+        await dq("gi_quote_products",{method:"DELETE",token,filters:`?quote_id=eq.${quoteId}`});
+      } else {
+        const inserted=await dq("gi_quotes",{method:"POST",token,body});
+        quoteId=Array.isArray(inserted)?inserted[0]?.id:inserted?.id;
+        publicToken=Array.isArray(inserted)?inserted[0]?.public_token:inserted?.public_token;
+      }
+      if(!quoteId)throw new Error("No se pudo guardar la cotización");
+      // Insert productos finales
       for(let i=0;i<products.length;i++){
         const p=products[i];
         await dq("gi_quote_products",{method:"POST",token,body:{
@@ -741,9 +832,10 @@ function CotizadorWizard({token,requestId,onBack}){
 
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:14,marginBottom:6}}>
       <div>
-        <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Cotizador <span style={{color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.04em"}}>{request.request_code}</span></h1>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Cliente: <strong style={{color:"#fff"}}>{cn}</strong></p>
+        <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px",color:"#fff"}}>Cotizador <span style={{color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.04em"}}>{request.request_code}</span></h1>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Cliente: <strong style={{color:"#fff"}}>{cn}</strong>{lastSavedAt&&<span style={{marginLeft:10,fontSize:11,color:"rgba(255,255,255,0.4)"}}>· Borrador guardado {fmtDate(lastSavedAt)}</span>}</p>
       </div>
+      <button onClick={()=>saveDraft({})} disabled={savingDraft||lo} style={{padding:"9px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.4)",background:savingDraft?"rgba(96,165,250,0.2)":"rgba(96,165,250,0.10)",color:"#60a5fa",cursor:savingDraft?"wait":"pointer",fontFamily:"inherit",letterSpacing:"0.02em"}}>{savingDraft?"Guardando…":"💾 Guardar borrador"}</button>
     </div>
 
     <div style={{display:"flex",alignItems:"center",gap:12,marginTop:18,marginBottom:24,padding:"14px 18px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12}}>
@@ -1187,7 +1279,7 @@ function OpDetail({token,opId,onBack,calcComision}){
       const cOtros=Number(op.cost_otros||0);if(cOtros>0)gastos.push({date:op.cost_otros_paid_at?.slice(0,10)||null,label:"Otros",amount:cOtros,paid:!!op.cost_otros_paid_at});
       const cImp=Number(op.cost_impuestos_reales||0);if(cImp>0)gastos.push({date:null,label:"Impuestos reales",amount:cImp,paid:false});
       const cGastoDoc=Number(op.cost_gasto_documental||0);if(cGastoDoc>0)gastos.push({date:null,label:"Gasto documental",amount:cGastoDoc,paid:false});
-      const cProd=op.service_type==="gestion_integral"?Number(op.cost_producto_usd||0):0;if(cProd>0)gastos.push({date:null,label:"Producto (FOB)",amount:cProd,paid:!!op.cost_producto_paid});
+      // GI: NO sumar cost_producto_usd como gasto separado — los pagos al proveedor (supplier_payments) lo cubren detalladamente.
       // Pagos a proveedor (GI)
       supPmts.forEach(p=>{const isRefund=p.type==="refund";gastos.push({date:p.payment_date,label:isRefund?`↩ Reembolso proveedor`:`Pago a proveedor${p.notes?` · ${p.notes}`:""}`,amount:isRefund?-Number(p.amount_usd||0):Number(p.amount_usd||0),paid:!!p.is_paid,method:p.payment_method||"—"});});
       // Finance entries (impuestos/gasto doc auto-generadas + manuales linkeadas a la op)
