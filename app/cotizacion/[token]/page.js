@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, use } from "react";
+import { useState, useEffect } from "react";
 import { printGiAcceptedPdf } from "../../../lib/pdf-templates";
 
 const LOGO = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png";
@@ -15,7 +15,8 @@ const CHANNEL_LABELS = {
 };
 
 export default function CotizacionPublica({ params }) {
-  const { token } = use(params);
+  // En Next 14 params es un objeto plano. En Next 15 es Promise — soportar ambos sin React.use().
+  const token = params?.token;
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);

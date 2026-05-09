@@ -943,7 +943,7 @@ function CotizadorWizard({token,requestId,onBack}){
 
     {step===1&&<WizStep1 token={token} products={products} onUpdate={updateProduct} onAdd={addProduct} onRemove={removeProduct} onClassify={classifyNcm} onNext={()=>goStep(2)} totalFob={totalFob}/>}
     {step===2&&<WizStep2 visibleChannels={visibleChannels} someUSA={someUSA} honorariosPct={honorariosPct} setHonorariosPct={setHonorariosPct} paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} totalFob={totalFob} supplierDepositPct={supplierDepositPct} setSupplierDepositPct={setSupplierDepositPct} onBack={()=>setStep(1)} onNext={generateLink} saving={saving}/>}
-    {step===3&&<WizStep3 generatedQuote={generatedQuote} onBack={onBack}/>}
+    {step===3&&<WizStep3 generatedQuote={generatedQuote} client={client} request={request} onBack={onBack}/>}
   </div>;
 }
 
@@ -1174,20 +1174,34 @@ function WizStep2({visibleChannels,someUSA,honorariosPct,setHonorariosPct,paymen
   </div>;
 }
 
-function WizStep3({generatedQuote,onBack}){
+function WizStep3({generatedQuote,client,request,onBack}){
   const [copied,setCopied]=useState(false);
   if(!generatedQuote)return <p style={{color:"rgba(255,255,255,0.5)"}}>Sin cotización generada</p>;
   const url=`${typeof window!=="undefined"?window.location.origin:"https://argencargo.com.ar"}/cotizacion/${generatedQuote.public_token}`;
   const copy=()=>{navigator.clipboard?.writeText(url);setCopied(true);setTimeout(()=>setCopied(false),2000);};
+  // WhatsApp: limpiar número (solo dígitos, +54 si arranca con 0/15) y armar mensaje preset.
+  const cleanWa=(raw)=>{if(!raw)return "";let s=String(raw).replace(/[^0-9]/g,"");if(s.startsWith("0"))s=s.slice(1);if(s.startsWith("15"))s="54911"+s.slice(2);if(!s.startsWith("54"))s="54"+s;return s;};
+  const waNumber=cleanWa(client?.whatsapp||client?.phone||"");
+  const firstName=client?.first_name||"";
+  const code=request?.request_code||"";
+  const waMsg=encodeURIComponent(`Hola${firstName?` ${firstName}`:""}! Te dejo la cotización${code?` ${code}`:""} de Gestión Integral lista para que la revises:\n\n${url}\n\nDesde el link podés elegir el modo de envío y la entrega final, y aceptarla cuando quieras. Cualquier duda escribime por acá.`);
+  const waUrl=waNumber?`https://wa.me/${waNumber}?text=${waMsg}`:`https://wa.me/?text=${waMsg}`;
   return <div>
     <div style={{textAlign:"center",padding:"40px 30px",background:"linear-gradient(135deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.3)",borderRadius:14,marginBottom:18}}>
       <div style={{fontSize:48,marginBottom:8}}>🔗</div>
       <h2 style={{fontSize:20,fontWeight:800,marginBottom:8}}>Cotización lista</h2>
       <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",marginBottom:20}}>Compartile este link al cliente. Puede elegir servicio + entrega y aceptar online.</p>
-      <div style={{display:"flex",alignItems:"center",gap:10,maxWidth:600,margin:"0 auto",padding:"12px 16px",background:"rgba(0,0,0,0.3)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,maxWidth:600,margin:"0 auto 14px",padding:"12px 16px",background:"rgba(0,0,0,0.3)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:10}}>
         <span style={{flex:1,fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:GOLD_LIGHT,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{url}</span>
         <button onClick={copy} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"none",background:copied?"#22c55e":GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{copied?"✓ Copiado":"📋 Copiar"}</button>
       </div>
+      <div style={{display:"flex",justifyContent:"center",gap:10,flexWrap:"wrap",maxWidth:600,margin:"0 auto"}}>
+        <a href={waUrl} target="_blank" rel="noopener noreferrer" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"11px 20px",fontSize:13,fontWeight:700,borderRadius:10,background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(37,211,102,0.3)"}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
+          Enviar por WhatsApp{client?.whatsapp&&waNumber?` a ${firstName||"cliente"}`:""}
+        </a>
+      </div>
+      {!waNumber&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",marginTop:10,fontStyle:"italic"}}>El cliente no tiene WhatsApp cargado — el botón te abre WhatsApp sin destinatario para que elijas a quién mandárselo.</p>}
     </div>
     <div style={{padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:18}}>
       <strong style={{color:"#60a5fa"}}>Próximo paso:</strong> el cliente abre el link, elige servicio + entrega y acepta. Cuando acepta, se convierte automáticamente en una operación AC-XXXX en el panel admin.
