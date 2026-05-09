@@ -38,6 +38,7 @@ const saveSession=(d)=>{try{localStorage.setItem("ac_gi_s",JSON.stringify(d));}c
 const loadSession=()=>{try{const d=localStorage.getItem("ac_gi_s");return d?JSON.parse(d):null;}catch(e){return null;}};
 const clearSession=()=>{try{localStorage.removeItem("ac_gi_s");}catch(e){}};
 const fmtDate=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);const[y,m,day]=s.split("-");return new Date(y,m-1,day).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});};
+const fmtDateShort=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return `${day}/${m}/${y.slice(2)}`;}const dd=new Date(d);return `${String(dd.getDate()).padStart(2,"0")}/${String(dd.getMonth()+1).padStart(2,"0")}/${String(dd.getFullYear()).slice(2)}`;};
 const fmtUSD=(n)=>"USD "+Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
 
 // ────────────────────────────────────────────
@@ -1019,18 +1020,18 @@ function PaneOps({token}){
             <th style={thStyle()}>Estado</th>
             <th style={thStyle()}>ETA</th>
             <th style={{...thStyle(),textAlign:"right"}}>Total</th>
-            <th style={{...thStyle(),textAlign:"right"}}>Tu comisión</th>
+            <th style={thStyle()}>Comisión</th>
           </tr></thead>
           <tbody>
             {filtered.map(op=>{const st=STATUS_MAP[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name||""} ${op.clients.last_name||""}`.trim():"—";const com=calcComision(op);const chLabel=CHANNEL_DEFS.find(c=>c.key===op.channel)?.name||op.channel;return <tr key={op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-              <td style={{padding:"13px 14px",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:GOLD_LIGHT,fontSize:12.5,letterSpacing:"0.04em"}}>{op.operation_code}</td>
-              <td style={{padding:"13px 14px",color:"#fff",fontWeight:600}}>{cn}</td>
+              <td style={{padding:"13px 14px",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:GOLD_LIGHT,fontSize:12.5,letterSpacing:"0.04em",whiteSpace:"nowrap"}}>{op.operation_code}</td>
+              <td style={{padding:"13px 14px",color:"#fff",fontWeight:600,whiteSpace:"nowrap"}}>{cn}</td>
               <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.6)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{op.description||"—"}</td>
-              <td style={{padding:"13px 14px"}}><span style={{fontSize:10,padding:"3px 8px",borderRadius:6,background:"rgba(184,149,106,0.10)",color:GOLD_LIGHT,fontWeight:600,letterSpacing:"0.03em"}}>{chLabel}</span></td>
-              <td style={{padding:"13px 14px"}}><span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,letterSpacing:"0.05em",textTransform:"uppercase",display:"inline-flex",alignItems:"center",gap:5}}><span style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:st.c}}/>{st.l}</span></td>
-              <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.5)"}}>{op.eta?fmtDate(op.eta):"—"}</td>
-              <td style={{padding:"13px 14px",textAlign:"right",color:"#fff",fontWeight:600,fontFeatureSettings:'"tnum"'}}>{fmtUSD(op.budget_total)}</td>
-              <td style={{padding:"13px 14px",textAlign:"right",color:com.real?"#22c55e":"rgba(255,255,255,0.5)",fontWeight:700,fontFeatureSettings:'"tnum"'}} title={com.real?`Comisión real: ${com.pct}% sobre ganancia neta`:`Estimación con ${com.pct}% del cliente`}>{com.pct>0?fmtUSD(com.amount):"—"}{!com.real&&com.pct>0&&<span style={{fontSize:9,marginLeft:4,opacity:0.6}}>est.</span>}</td>
+              <td style={{padding:"13px 14px",whiteSpace:"nowrap"}}><span style={{display:"inline-block",fontSize:10,padding:"3px 9px",borderRadius:6,background:"rgba(184,149,106,0.10)",color:GOLD_LIGHT,fontWeight:600,letterSpacing:"0.03em",whiteSpace:"nowrap"}}>{chLabel}</span></td>
+              <td style={{padding:"13px 14px",whiteSpace:"nowrap"}}><span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap"}}><span style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:st.c,flexShrink:0}}/>{st.l}</span></td>
+              <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.55)",fontFeatureSettings:'"tnum"',textAlign:"center",whiteSpace:"nowrap"}}>{op.eta?fmtDateShort(op.eta):"—"}</td>
+              <td style={{padding:"13px 14px",textAlign:"right",color:"#fff",fontWeight:600,fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}}>{fmtUSD(op.budget_total)}</td>
+              <td style={{padding:"13px 14px",textAlign:"right",color:com.real?"#22c55e":"rgba(255,255,255,0.5)",fontWeight:700,fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}} title={com.real?`Comisión real: ${com.pct}% sobre ganancia neta`:`Estimación con ${com.pct}% del cliente`}>{com.pct>0?fmtUSD(com.amount):"—"}{!com.real&&com.pct>0&&<span style={{fontSize:9,marginLeft:4,opacity:0.6}}>est.</span>}</td>
             </tr>;})}
           </tbody>
         </table>
@@ -1039,7 +1040,7 @@ function PaneOps({token}){
   </div>;
 }
 
-function thStyle(){return {textAlign:"left",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"};}
+function thStyle(){return {textAlign:"center",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"};}
 
 // ────────────────────────────────────────────
 // PANE: DASHBOARD (financiero)
