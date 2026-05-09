@@ -324,7 +324,7 @@ function PaneQuotes({token,profileId}){
   const load=async()=>{
     setLo(true);
     const [r,cl]=await Promise.all([
-      dq("gi_quote_requests",{token,filters:"?select=*,clients(first_name,last_name,client_code),gi_quote_request_products(*)&order=created_at.desc"}),
+      dq("gi_quote_requests",{token,filters:"?select=*,clients(first_name,last_name,client_code),gi_quote_request_products(*),gi_quotes(id,status,cost_courier_total_usd,cost_aereo_int_total_usd,cost_maritimo_lcl_total_usd,cost_maritimo_int_total_usd,honorarios_pct,gi_quote_products(quantity,unit_cost_usd))&order=created_at.desc"}),
       dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"}),
     ]);
     setReqs(Array.isArray(r)?r:[]);
@@ -429,18 +429,36 @@ function PaneQuotes({token,profileId}){
             <th style={{textAlign:"left",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Código</th>
             <th style={{textAlign:"left",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Cliente</th>
             <th style={{textAlign:"left",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Productos</th>
-            <th style={{textAlign:"left",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Cantidad</th>
+            <th style={{textAlign:"right",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>FOB</th>
+            <th style={{textAlign:"right",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Pot. ganancia</th>
             <th style={{textAlign:"left",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Recibida</th>
             <th style={{textAlign:"left",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Vence</th>
             <th></th>
           </tr></thead>
           <tbody>
-            {filtered.map(r=>{const cn=r.clients?`${r.clients.first_name||""} ${r.clients.last_name||""}`.trim():"—";const pcount=r.gi_quote_request_products?.length||0;const totalQty=(r.gi_quote_request_products||[]).reduce((s,p)=>s+Number(p.quantity||0),0);
+            {filtered.map(r=>{
+              const cn=r.clients?`${r.clients.first_name||""} ${r.clients.last_name||""}`.trim():"—";
+              // Para mostrar productos/FOB/ganancia: priorizamos los del draft (gi_quote_products) si existe; sino los del request.
+              const draft=Array.isArray(r.gi_quotes)?r.gi_quotes[0]:null;
+              const draftProds=draft?.gi_quote_products||[];
+              const reqProds=r.gi_quote_request_products||[];
+              const useDraft=draftProds.length>0;
+              const products=useDraft?draftProds:reqProds;
+              const pcount=products.length;
+              const totalFob=useDraft?draftProds.reduce((s,p)=>s+Number(p.unit_cost_usd||0)*Number(p.quantity||0),0):0;
+              // Potencial ganancia ~ honorarios_pct sobre el canal más barato (proxy)
+              let potGain=0;
+              if(draft&&Number(draft.honorarios_pct||0)>0){
+                const totals=[draft.cost_courier_total_usd,draft.cost_aereo_int_total_usd,draft.cost_maritimo_lcl_total_usd,draft.cost_maritimo_int_total_usd].map(v=>Number(v||0)).filter(v=>v>0);
+                const minTotal=totals.length>0?Math.min(...totals):0;
+                potGain=minTotal*(Number(draft.honorarios_pct)/100);
+              }
               return <tr key={r.id} onClick={()=>setSelDetail(r.id)} style={{cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.04)",transition:"background 120ms"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(184,149,106,0.05)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                 <td style={{padding:"13px 14px",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:GOLD_LIGHT,letterSpacing:"0.04em"}}>{r.request_code}</td>
                 <td style={{padding:"13px 14px",fontWeight:600,color:"#fff"}}>{cn}{r.clients?.client_code&&<span style={{marginLeft:6,fontSize:10,color:"rgba(255,255,255,0.4)"}}>· {r.clients.client_code}</span>}</td>
-                <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.65)"}}>{pcount} {pcount===1?"producto":"productos"}</td>
-                <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.65)",fontFeatureSettings:'"tnum"'}}>{totalQty>0?`${totalQty} u.`:"—"}</td>
+                <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.65)"}}>{pcount} {pcount===1?"producto":"productos"}{useDraft&&pcount>0&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,padding:"1px 5px",borderRadius:3,background:"rgba(96,165,250,0.12)",color:"#60a5fa"}}>BORRADOR</span>}</td>
+                <td style={{padding:"13px 14px",textAlign:"right",color:totalFob>0?"#fff":"rgba(255,255,255,0.4)",fontFeatureSettings:'"tnum"',fontWeight:600}}>{totalFob>0?fmtUSD(totalFob):"—"}</td>
+                <td style={{padding:"13px 14px",textAlign:"right",color:potGain>0?"#22c55e":"rgba(255,255,255,0.4)",fontFeatureSettings:'"tnum"',fontWeight:600}}>{potGain>0?fmtUSD(potGain):"—"}</td>
                 <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.5)"}}>{fmtDate(r.created_at)}</td>
                 <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.5)"}}>{r.expires_at?fmtDate(r.expires_at):"—"}</td>
                 <td style={{padding:"13px 14px",textAlign:"right",whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
