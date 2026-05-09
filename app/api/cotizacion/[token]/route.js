@@ -20,7 +20,7 @@ export async function GET(req, { params }) {
   if (!token) return Response.json({ error: "Token requerido" }, { status: 400 });
 
   // Cotización + productos + cliente + tarifas + settings
-  const qRes = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_requests(request_code,client_id,clients(first_name,last_name,client_code)),gi_quote_products(*)`);
+  const qRes = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_requests(request_code,client_id,clients(first_name,last_name,client_code,city,province)),gi_quote_products(*)`);
   if (qRes.status >= 400 || !Array.isArray(qRes.body) || qRes.body.length === 0) {
     return Response.json({ error: "Cotización no encontrada o expirada" }, { status: 404 });
   }

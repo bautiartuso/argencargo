@@ -115,8 +115,22 @@ export default function CotizacionPublica({ params }) {
     totalKg += w; totalCbm += vol;
   }
   const activeRates = rates.filter(r => r.cost_usd && Number(r.cost_usd) > 0);
-  // Filtrar zonas según la declarada por el socio en el wizard. Si "Interior", "a coordinar". Si no setea, mostrar todas.
-  const declaredZone = quote.delivery_zone || null;
+  // Filtrar zonas según la declarada por el socio en el wizard.
+  // Si delivery_zone está vacía, intentar inferir por la ficha del cliente.
+  const inferZoneFromClient = () => {
+    const cl = quote.gi_quote_requests?.clients || {};
+    const txt = `${cl.city || ""} ${cl.province || ""}`.toLowerCase();
+    if (!txt.trim()) return null;
+    if (/\bcaba\b|capital federal|ciudad aut[oó]noma/.test(txt)) return "CABA";
+    if (/buenos aires|gba|provincia/.test(txt)) {
+      if (/(san isidro|vicente l[oó]pez|tigre|pilar|escobar|martinez|olivos|nordelta|beccar|acassuso|san fernando|del viso)/.test(txt)) return "GBA Norte";
+      if (/(lomas|quilmes|avellaneda|berazategui|lan[uú]s|florencio varela|adrogu[eé])/.test(txt)) return "GBA Sur";
+      if (/(mor[oó]n|matanza|merlo|moreno|ituzaing[oó]|hurlingham|ramos mej[ií]a|haedo|caseros)/.test(txt)) return "GBA Oeste";
+      return null; // no inferimos GBA genérico — mejor dejar que el socio elija
+    }
+    return "Interior";
+  };
+  const declaredZone = quote.delivery_zone || inferZoneFromClient();
   const zoneOptions = {};
   if (declaredZone === "Interior") {
     // No mostramos opciones — el cliente ve un mensaje "a coordinar" más abajo.
