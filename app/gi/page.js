@@ -1094,13 +1094,25 @@ function OpDetail({token,opId,onBack,calcComision}){
       <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,padding:"5px 12px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap"}}><span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c}}/>{st.l}</span>
     </div>
 
-    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginTop:18,marginBottom:24}}>
-      <Kpi label="Canal" val={chLabel} sub={op.origin?`Origen ${op.origin}`:""}/>
-      <Kpi label="Total cliente" val={fmtUSD(op.budget_total)} sub={`Cobrado: ${fmtUSD(totalPaid)}`} color={GOLD_LIGHT}/>
-      <Kpi label={op.is_collected?"Saldo":"Pendiente cobro"} val={(()=>{const saldo=Math.max(0,Number(op.budget_total||0)-totalPaid);return op.is_collected?(saldo<0.01?"Cobrada":fmtUSD(saldo)):fmtUSD(saldo);})()} color={(()=>{const saldo=Math.max(0,Number(op.budget_total||0)-totalPaid);return op.is_collected&&saldo<0.01?"#22c55e":(saldo>0?"#fbbf24":"#fff");})()} sub={op.is_collected?"Marcada cobrada":"Por cobrar al cliente"}/>
-      <Kpi label={com.real?"Tu comisión":"Comisión est."} val={com.pct>0?fmtUSD(com.amount):"—"} sub={com.pct>0?`${com.pct}%${com.real?" sobre neto real":" estimada"}`:"Cliente sin %"} color={com.real?"#22c55e":GOLD_LIGHT}/>
-      <Kpi label="ETA" val={op.eta?fmtDate(op.eta):"—"} sub={op.closed_at?`Cerrada: ${fmtDate(op.closed_at)}`:""}/>
-    </div>
+    {(()=>{
+      // Ganancia neta de la op = revenue cobrado - todos los costos pagados/registrados
+      const revenue=totalPaid; // lo que efectivamente cobramos
+      // Costos: cost_flete + cost_seguro + cost_flete_local + cost_otros + cost_impuestos + cost_gasto_doc + supplier_payments + finance_entries gastos
+      const cFix=Number(op.cost_flete||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0);
+      const cSupplier=supPmts.filter(p=>p.is_paid).reduce((s,p)=>{const sgn=p.type==="refund"?-1:1;return s+sgn*Number(p.amount_usd||0);},0);
+      const cFin=finEntries.filter(e=>e.type==="gasto").reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
+      const totalCost=cFix+cSupplier+cFin;
+      const netProfit=revenue-totalCost;
+      // Pendiente cobro
+      const pendienteCobro=Math.max(0,Number(op.budget_total||0)-totalPaid);
+      return <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginTop:18,marginBottom:24}}>
+        <Kpi label="Canal" val={chLabel} sub={op.origin?`Origen ${op.origin}`:""}/>
+        <Kpi label="Total cliente" val={fmtUSD(op.budget_total)} sub={pendienteCobro>0.01?`Pendiente: ${fmtUSD(pendienteCobro)}`:`Cobrado completo`} color={GOLD_LIGHT}/>
+        <Kpi label="Ganancia neta op" val={fmtUSD(netProfit)} sub={`Revenue ${fmtUSD(revenue)} − costos ${fmtUSD(totalCost)}`} color={netProfit>=0?"#22c55e":"#f87171"}/>
+        <Kpi label={com.real?"Tu comisión":"Comisión est."} val={com.pct>0?fmtUSD(com.amount):"—"} sub={com.pct>0?`${com.pct}%${com.real?" sobre neto real":" estimada"}`:"Cliente sin %"} color={com.real?"#22c55e":GOLD_LIGHT}/>
+        <Kpi label="ETA" val={op.eta?fmtDate(op.eta):"—"} sub={op.closed_at?`Cerrada: ${fmtDate(op.closed_at)}`:""}/>
+      </div>;
+    })()}
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:18}}>
       <Card title={`Productos (${items.length})`}>

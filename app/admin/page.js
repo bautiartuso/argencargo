@@ -645,6 +645,28 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     // En ops GI el budget_total lo maneja un trigger DB (sync_gi_budget_total = SUM items).
     // Si el state tiene un valor stale, lo sacamos del PATCH para no pisar al trigger.
     if(op.service_type==="gestion_integral"){delete rest.budget_total;}
+    // BLOQUEO: GI op no puede cerrarse si hay gastos con tarjeta de crédito pendientes de débito
+    if(rest.status==="operacion_cerrada"&&op.service_type==="gestion_integral"&&rest.status!==initOp.status){
+      const tcPending=[];
+      // Costos op en TC pendiente
+      if(op.cost_flete_method==="tarjeta_credito"&&!op.cost_flete_paid_at&&Number(op.cost_flete||0)>0)tcPending.push(`Flete USD ${Number(op.cost_flete).toFixed(2)}`);
+      // Pagos a proveedor TC
+      const supTcPend=(supplierPayments||[]).filter(p=>p.payment_method==="tarjeta_credito"&&!p.is_paid);
+      supTcPend.forEach(p=>tcPending.push(`Pago proveedor USD ${Number(p.amount_usd).toFixed(2)}`));
+      // Gestión de pagos: giros TC pendientes
+      const pmTcPend=(payments||[]).filter(p=>p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid&&Number(p.giro_amount_usd||0)>0);
+      pmTcPend.forEach(p=>tcPending.push(`Giro USD ${Number(p.giro_amount_usd).toFixed(2)}`));
+      // finance_entries linkeadas a la op con TC pendiente
+      try{
+        const feTcPend=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&type=eq.gasto&payment_method=eq.tarjeta_credito&is_paid=eq.false&select=description,amount,currency,amount_ars`});
+        if(Array.isArray(feTcPend))feTcPend.forEach(e=>tcPending.push(`${e.description||"Gasto"} ${e.currency==="ARS"?`ARS ${Number(e.amount_ars||e.amount).toFixed(2)}`:`USD ${Number(e.amount).toFixed(2)}`}`));
+      }catch(e){}
+      if(tcPending.length>0){
+        setSaving(false);
+        alert(`⚠ No se puede cerrar la op de Gestión Integral todavía.\n\nTenés ${tcPending.length} gasto${tcPending.length>1?"s":""} con tarjeta de crédito pendiente${tcPending.length>1?"s":""} de débito:\n\n• ${tcPending.join("\n• ")}\n\nMarcalos como pagados (cuando se debiten en el resumen) o cambialos a otro método antes de cerrar la operación. Esto asegura que la comisión del socio se calcule sobre la ganancia neta REAL.`);
+        return;
+      }
+    }
     if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();
     if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
