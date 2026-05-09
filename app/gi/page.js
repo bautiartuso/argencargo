@@ -1405,100 +1405,182 @@ function thStyle(){return {textAlign:"center",padding:"12px 14px",fontSize:10,fo
 // PANE: DASHBOARD (financiero)
 // ────────────────────────────────────────────
 function PaneDashboard({token}){
-  const [data,setData]=useState(null);
+  const [ops,setOps]=useState([]);
+  const [earnings,setEarnings]=useState([]);
+  const [supPmts,setSupPmts]=useState([]);
+  const [finEntries,setFinEntries]=useState([]);
+  const [cliPmts,setCliPmts]=useState([]);
+  const [lo,setLo]=useState(true);
   useEffect(()=>{(async()=>{
-    const r=await dq("gi_quotes",{token,filters:"?status=eq.converted&select=*,operations(id,operation_code,status,budget_total,closed_at,is_collected,collected_amount)&order=accepted_at.desc"});
-    setData(Array.isArray(r)?r.filter(q=>q.operations):[]);
+    setLo(true);
+    const [opsRes,earnRes,supRes,finRes,cliPmtRes]=await Promise.all([
+      dq("operations",{token,filters:"?service_type=eq.gestion_integral&select=*,clients(first_name,last_name,client_code,gi_partner_id,gi_commission_pct)&order=created_at.desc"}),
+      dq("gi_partner_earnings",{token,filters:"?select=*,operations(operation_code,clients(first_name,last_name))&order=closed_at.desc"}),
+      dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.desc"}),
+      dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),
+      dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.desc"}),
+    ]);
+    setOps(Array.isArray(opsRes)?opsRes:[]);
+    setEarnings(Array.isArray(earnRes)?earnRes:[]);
+    setSupPmts(Array.isArray(supRes)?supRes:[]);
+    setFinEntries(Array.isArray(finRes)?finRes:[]);
+    setCliPmts(Array.isArray(cliPmtRes)?cliPmtRes:[]);
+    setLo(false);
   })();},[token]);
 
-  if(!data)return <p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>;
+  if(lo)return <p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>;
 
-  const calcGan=(q)=>{
-    const op=q.operations;if(!op)return 0;
-    const total=Number(op.budget_total||0);
-    const honoraires=total*Number(q.honorarios_pct||0)/100;
-    const realKey={aereo_negro:"cost_courier_real_usd",aereo_blanco:"cost_aereo_int_real_usd",maritimo_negro:"cost_maritimo_lcl_real_usd",maritimo_blanco:"cost_maritimo_int_real_usd"}[q.selected_channel];
-    const real=realKey?Number(q[realKey]||0):total*0.92;
-    const spread=Math.max(0,total-real-honoraires);
-    return honoraires+spread;
-  };
-
-  const closed=data.filter(q=>q.operations?.status==="operacion_cerrada");
-  const active=data.filter(q=>!["operacion_cerrada","cancelada"].includes(q.operations?.status));
-
-  // Mes actual
+  const closed=ops.filter(o=>o.status==="operacion_cerrada");
+  const active=ops.filter(o=>!["operacion_cerrada","cancelada"].includes(o.status));
   const now=new Date();
   const monthStart=new Date(now.getFullYear(),now.getMonth(),1).toISOString();
-  const thisMonth=closed.filter(q=>q.operations?.closed_at&&q.operations.closed_at>=monthStart);
-  const lastMonth=closed.filter(q=>{const c=q.operations?.closed_at;if(!c)return false;const d=new Date(c);return d.getMonth()===(now.getMonth()===0?11:now.getMonth()-1)&&d.getFullYear()===(now.getMonth()===0?now.getFullYear()-1:now.getFullYear());});
+  const lastMonthStart=new Date(now.getFullYear(),now.getMonth()-1,1).toISOString();
+  const lastMonthEnd=monthStart;
 
-  const ganMes=thisMonth.reduce((s,q)=>s+calcGan(q),0);
-  const ganLastMes=lastMonth.reduce((s,q)=>s+calcGan(q),0);
-  const ganAcum=closed.reduce((s,q)=>s+calcGan(q),0);
-  const pendingCobro=active.reduce((s,q)=>{
-    const op=q.operations;
-    if(!op)return s;
-    const t=Number(op.budget_total||0)-Number(op.collected_amount||0);
-    return s+Math.max(0,t);
+  // Comisiones reales (gi_partner_earnings)
+  const earnThisMonth=earnings.filter(e=>e.closed_at&&e.closed_at>=monthStart).reduce((s,e)=>s+Number(e.commission_usd||0),0);
+  const earnLastMonth=earnings.filter(e=>e.closed_at&&e.closed_at>=lastMonthStart&&e.closed_at<lastMonthEnd).reduce((s,e)=>s+Number(e.commission_usd||0),0);
+  const earnTotal=earnings.reduce((s,e)=>s+Number(e.commission_usd||0),0);
+  const earnPending=earnings.filter(e=>!e.paid_to_partner).reduce((s,e)=>s+Number(e.commission_usd||0),0);
+  const earnPaid=earnings.filter(e=>e.paid_to_partner).reduce((s,e)=>s+Number(e.paid_amount_usd||e.commission_usd||0),0);
+  const trend=earnLastMonth!==0?((earnThisMonth-earnLastMonth)/Math.abs(earnLastMonth)*100):(earnThisMonth!==0?100:0);
+  const ticketAvg=closed.length>0?earnTotal/closed.length:0;
+
+  // Pendiente de cobro al cliente (suma de saldos de ops activas)
+  const pendingCobro=active.reduce((s,o)=>{
+    const bt=Number(o.budget_total||0);
+    const paid=cliPmts.filter(p=>p.operation_id===o.id).reduce((a,p)=>a+Number(p.amount_usd||0),0);
+    return s+Math.max(0,bt-paid);
   },0);
-  const trend=ganLastMes>0?((ganMes-ganLastMes)/ganLastMes*100):(ganMes>0?100:0);
-  const ticketAvg=closed.length>0?ganAcum/closed.length:0;
 
-  // Chart mensual (últimos 8 meses)
+  // Deudas TC pendientes que afectan a las ops del socio
+  const opIds=new Set(ops.map(o=>o.id));
+  const tcOps=ops.filter(o=>o.cost_flete_method==="tarjeta_credito"&&!o.cost_flete_paid_at&&Number(o.cost_flete||0)>0).map(o=>({op:o.operation_code,client:o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—",label:"Flete",amount:Number(o.cost_flete),id:`flete-${o.id}`}));
+  const tcSup=supPmts.filter(p=>opIds.has(p.operation_id)&&p.payment_method==="tarjeta_credito"&&!p.is_paid&&p.type!=="refund").map(p=>{const op=ops.find(o=>o.id===p.operation_id);return {op:op?.operation_code||"—",client:op?.clients?`${op.clients.first_name||""} ${op.clients.last_name||""}`.trim():"—",label:"Pago proveedor",amount:Number(p.amount_usd),id:`sup-${p.id}`};});
+  const tcFin=finEntries.filter(e=>e.operation_id&&opIds.has(e.operation_id)&&e.payment_method==="tarjeta_credito"&&!e.is_paid&&e.type==="gasto").map(e=>{const op=ops.find(o=>o.id===e.operation_id);const usd=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return {op:op?.operation_code||"—",client:op?.clients?`${op.clients.first_name||""} ${op.clients.last_name||""}`.trim():"—",label:e.description||"Gasto",amount:usd,id:`fin-${e.id}`};});
+  const tcAll=[...tcOps,...tcSup,...tcFin];
+  const tcTotal=tcAll.reduce((s,t)=>s+Number(t.amount||0),0);
+
+  // Chart mensual: comisiones reales últimos 8 meses
   const months=[];
   for(let i=7;i>=0;i--){
     const d=new Date(now.getFullYear(),now.getMonth()-i,1);
     const start=d.toISOString();
     const end=new Date(d.getFullYear(),d.getMonth()+1,1).toISOString();
-    const monthClosed=closed.filter(q=>q.operations?.closed_at&&q.operations.closed_at>=start&&q.operations.closed_at<end);
-    const total=monthClosed.reduce((s,q)=>s+calcGan(q),0);
+    const monthEarn=earnings.filter(e=>e.closed_at&&e.closed_at>=start&&e.closed_at<end);
+    const total=monthEarn.reduce((s,e)=>s+Number(e.commission_usd||0),0);
     months.push({label:d.toLocaleDateString("es-AR",{month:"short"}),val:total});
   }
-  const maxBar=Math.max(...months.map(m=>m.val),100);
+  const maxAbsBar=Math.max(...months.map(m=>Math.abs(m.val)),100);
 
   return <div>
-    <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Dashboard</h1>
-    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>Tus ganancias y métricas como socio GI.</p>
+    <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px",color:"#fff"}}>Dashboard</h1>
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>Tu actividad y métricas como socio GI. Las comisiones son reales (calculadas al cerrar cada op).</p>
 
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:24}}>
-      <Kpi label="Ganancia este mes" val={fmtUSD(ganMes)} sub={isFinite(trend)?`${trend>0?"+":""}${trend.toFixed(0)}% vs mes anterior`:"—"} color="#22c55e"/>
-      <Kpi label="Acumulado total" val={fmtUSD(ganAcum)} sub={`${closed.length} ops cerradas`} color={GOLD_LIGHT}/>
-      <Kpi label="Pendiente de cobro" val={fmtUSD(pendingCobro)} sub={`${active.length} ops activas`}/>
-      <Kpi label="Ticket promedio" val={fmtUSD(ticketAvg)} sub="Ganancia / op cerrada"/>
+      <Kpi label="Comisión este mes" val={fmtUSD(earnThisMonth)} sub={isFinite(trend)&&earnLastMonth!==0?`${trend>0?"+":""}${trend.toFixed(0)}% vs mes ant.`:"—"} color={earnThisMonth>=0?"#22c55e":"#f87171"}/>
+      <Kpi label="Pendiente de cobro" val={fmtUSD(earnPending)} sub={`${earnings.filter(e=>!e.paid_to_partner).length} ops sin liquidar`} color={earnPending>=0?GOLD_LIGHT:"#f87171"}/>
+      <Kpi label="Acumulado pagado" val={fmtUSD(earnPaid)} sub={`${earnings.filter(e=>e.paid_to_partner).length} ops liquidadas`}/>
+      <Kpi label="Promedio por op" val={fmtUSD(ticketAvg)} sub={`${closed.length} ops cerradas`}/>
     </div>
 
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:18}}>
+      <div style={{padding:"14px 18px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:12}}>
+        <p style={{fontSize:10.5,fontWeight:700,color:"#60a5fa",textTransform:"uppercase",letterSpacing:"0.08em",margin:0}}>Ops activas</p>
+        <p style={{fontSize:24,fontWeight:800,color:"#fff",margin:"6px 0 2px",fontFeatureSettings:'"tnum"'}}>{active.length}</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Pendiente cliente: <strong style={{color:GOLD_LIGHT}}>{fmtUSD(pendingCobro)}</strong></p>
+      </div>
+      <div style={{padding:"14px 18px",background:tcTotal>0?"rgba(168,85,247,0.06)":"rgba(255,255,255,0.025)",border:`1px solid ${tcTotal>0?"rgba(168,85,247,0.25)":"rgba(255,255,255,0.06)"}`,borderRadius:12}}>
+        <p style={{fontSize:10.5,fontWeight:700,color:tcTotal>0?"#a78bfa":"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em",margin:0}}>Deuda TC en tus ops</p>
+        <p style={{fontSize:24,fontWeight:800,color:tcTotal>0?"#a78bfa":"rgba(255,255,255,0.4)",margin:"6px 0 2px",fontFeatureSettings:'"tnum"'}}>{fmtUSD(tcTotal)}</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{tcAll.length} {tcAll.length===1?"gasto pendiente de débito":"gastos pendientes de débito"}</p>
+      </div>
+    </div>
+
+    {tcAll.length>0&&<div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>
+      <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 12px"}}>Deudas TC pendientes en tus ops</h3>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"0 0 12px",lineHeight:1.5}}>Estos gastos tienen método tarjeta de crédito y todavía no se debitaron. Una op no se puede cerrar hasta que estos gastos estén liquidados, porque tu comisión final depende de ellos.</p>
+      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+          <th style={thStyle()}>Op</th>
+          <th style={thStyle()}>Cliente</th>
+          <th style={thStyle()}>Concepto</th>
+          <th style={{...thStyle(),textAlign:"right"}}>Monto</th>
+        </tr></thead>
+        <tbody>
+          {tcAll.map(t=><tr key={t.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{padding:"10px 12px",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:GOLD_LIGHT,whiteSpace:"nowrap"}}>{t.op}</td>
+            <td style={{padding:"10px 12px",color:"#fff",whiteSpace:"nowrap"}}>{t.client}</td>
+            <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.65)"}}>{t.label}</td>
+            <td style={{padding:"10px 12px",textAlign:"right",color:"#a78bfa",fontWeight:700,fontFeatureSettings:'"tnum"'}}>{fmtUSD(t.amount)}</td>
+          </tr>)}
+          <tr style={{borderTop:"1.5px solid rgba(168,85,247,0.3)",background:"rgba(168,85,247,0.04)"}}>
+            <td colSpan={3} style={{padding:"11px 12px",fontWeight:700,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:"0.06em",fontSize:11}}>Total</td>
+            <td style={{padding:"11px 12px",textAlign:"right",fontWeight:800,color:"#a78bfa",fontFeatureSettings:'"tnum"'}}>{fmtUSD(tcTotal)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>}
+
     <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>
-      <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 14px"}}>Ganancia mensual</h3>
-      <div style={{display:"flex",alignItems:"flex-end",gap:14,height:200,padding:"10px 0"}}>
-        {months.map((m,i)=><div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",height:"100%",justifyContent:"flex-end"}}>
-          <div style={{width:"100%",height:`${(m.val/maxBar)*100}%`,minHeight:m.val>0?6:0,background:"linear-gradient(180deg,rgba(184,149,106,0.6),rgba(184,149,106,0.2))",borderRadius:"6px 6px 0 0",border:"1px solid rgba(184,149,106,0.3)",borderBottom:"none",display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:6}}>
-            {m.val>0&&<span style={{fontSize:10,fontWeight:700,color:GOLD_LIGHT,fontFeatureSettings:'"tnum"'}}>{m.val>=1000?(m.val/1000).toFixed(1)+"k":m.val.toFixed(0)}</span>}
+      <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 14px"}}>Comisión mensual (últimos 8 meses)</h3>
+      <div style={{display:"flex",alignItems:"flex-end",gap:14,height:200,padding:"10px 0",position:"relative"}}>
+        <div style={{position:"absolute",left:0,right:0,top:"50%",borderTop:"1px dashed rgba(255,255,255,0.08)",transform:"translateY(-0.5px)",pointerEvents:"none"}}/>
+        {months.map((m,i)=>{const isPos=m.val>=0;const h=maxAbsBar>0?(Math.abs(m.val)/maxAbsBar)*45:0;return <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",height:"100%",justifyContent:"center"}}>
+          <div style={{width:"100%",height:"100%",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+            {isPos?<>
+              <div style={{flex:1,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+                <div style={{width:"100%",height:`${h}%`,minHeight:m.val>0?6:0,background:"linear-gradient(180deg,rgba(34,197,94,0.6),rgba(34,197,94,0.2))",borderRadius:"6px 6px 0 0",border:"1px solid rgba(34,197,94,0.3)",borderBottom:"none",display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:6}}>
+                  {m.val>0&&<span style={{fontSize:10,fontWeight:700,color:"#22c55e",fontFeatureSettings:'"tnum"'}}>{m.val>=1000?(m.val/1000).toFixed(1)+"k":m.val.toFixed(0)}</span>}
+                </div>
+              </div>
+              <div style={{flex:1}}/>
+            </>:<>
+              <div style={{flex:1}}/>
+              <div style={{flex:1,display:"flex",alignItems:"flex-start",justifyContent:"center"}}>
+                <div style={{width:"100%",height:`${h}%`,minHeight:6,background:"linear-gradient(0deg,rgba(248,113,113,0.6),rgba(248,113,113,0.2))",borderRadius:"0 0 6px 6px",border:"1px solid rgba(248,113,113,0.3)",borderTop:"none",display:"flex",alignItems:"flex-end",justifyContent:"center",paddingBottom:4}}>
+                  <span style={{fontSize:10,fontWeight:700,color:"#f87171",fontFeatureSettings:'"tnum"'}}>{Math.abs(m.val)>=1000?(Math.abs(m.val)/1000).toFixed(1)+"k":Math.abs(m.val).toFixed(0)}</span>
+                </div>
+              </div>
+            </>}
           </div>
-        </div>)}
+        </div>;})}
       </div>
       <div style={{display:"flex",gap:14,marginTop:6}}>{months.map((m,i)=><span key={i} style={{flex:1,textAlign:"center",fontSize:10,color:"rgba(255,255,255,0.45)",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em"}}>{m.label}</span>)}</div>
     </div>
 
-    {closed.length>0&&<div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>
-      <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 14px"}}>Ops cerradas — ganancia detallada</h3>
+    {earnings.length>0&&<div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:20,marginBottom:18}}>
+      <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 14px"}}>Historial completo de comisiones ({earnings.length})</h3>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
           <th style={thStyle()}>Op</th>
+          <th style={thStyle()}>Cliente</th>
           <th style={thStyle()}>Cerrada</th>
-          <th style={{...thStyle(),textAlign:"right"}}>Total op</th>
-          <th style={{...thStyle(),textAlign:"right"}}>Honorarios %</th>
-          <th style={{...thStyle(),textAlign:"right"}}>Tu ganancia</th>
+          <th style={{...thStyle(),textAlign:"right"}}>Revenue</th>
+          <th style={{...thStyle(),textAlign:"right"}}>Costos</th>
+          <th style={{...thStyle(),textAlign:"right"}}>Neto</th>
+          <th style={thStyle()}>%</th>
+          <th style={{...thStyle(),textAlign:"right"}}>Comisión</th>
+          <th style={thStyle()}>Estado</th>
         </tr></thead>
         <tbody>
-          {closed.slice(0,10).map(q=>{const op=q.operations;const gan=calcGan(q);return <tr key={q.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-            <td style={{padding:"11px 12px",fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:600}}>{op.operation_code}</td>
-            <td style={{padding:"11px 12px",color:"rgba(255,255,255,0.55)"}}>{fmtDate(op.closed_at)}</td>
-            <td style={{padding:"11px 12px",textAlign:"right",fontFeatureSettings:'"tnum"'}}>{fmtUSD(op.budget_total)}</td>
-            <td style={{padding:"11px 12px",textAlign:"right",fontFeatureSettings:'"tnum"',color:"rgba(255,255,255,0.6)"}}>{q.honorarios_pct||0}%</td>
-            <td style={{padding:"11px 12px",textAlign:"right",color:"#22c55e",fontWeight:700,fontFeatureSettings:'"tnum"'}}>{fmtUSD(gan)}</td>
+          {earnings.map(e=>{const cn=e.operations?.clients?`${e.operations.clients.first_name||""} ${e.operations.clients.last_name||""}`.trim():"—";const com=Number(e.commission_usd||0);return <tr key={e.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            <td style={{padding:"11px 12px",fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:600,whiteSpace:"nowrap"}}>{e.operations?.operation_code||"—"}</td>
+            <td style={{padding:"11px 12px",color:"#fff",fontWeight:600,whiteSpace:"nowrap"}}>{cn}</td>
+            <td style={{padding:"11px 12px",color:"rgba(255,255,255,0.55)",fontFeatureSettings:'"tnum"',textAlign:"center",whiteSpace:"nowrap"}}>{fmtDateShort(e.closed_at)}</td>
+            <td style={{padding:"11px 12px",textAlign:"right",color:"#22c55e",fontFeatureSettings:'"tnum"'}}>{fmtUSD(e.revenue_usd)}</td>
+            <td style={{padding:"11px 12px",textAlign:"right",color:"#f87171",fontFeatureSettings:'"tnum"'}}>{fmtUSD(e.total_costs_usd)}</td>
+            <td style={{padding:"11px 12px",textAlign:"right",color:Number(e.net_profit_usd||0)>=0?"#fff":"#f87171",fontWeight:600,fontFeatureSettings:'"tnum"'}}>{fmtUSD(e.net_profit_usd)}</td>
+            <td style={{padding:"11px 12px",textAlign:"center",color:"rgba(255,255,255,0.7)"}}>{e.commission_pct}%</td>
+            <td style={{padding:"11px 12px",textAlign:"right",color:com>=0?"#22c55e":"#f87171",fontWeight:700,fontFeatureSettings:'"tnum"'}}>{com>=0?"+":"−"}{fmtUSD(Math.abs(com))}</td>
+            <td style={{padding:"11px 12px",textAlign:"center"}}>{e.paid_to_partner?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:5,background:"rgba(34,197,94,0.10)",color:"#22c55e"}}>Pagada</span>:<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:5,background:"rgba(251,191,36,0.10)",color:"#fbbf24"}}>Pendiente</span>}</td>
           </tr>;})}
         </tbody>
       </table>
+    </div>}
+
+    {earnings.length===0&&<div style={{padding:"30px",textAlign:"center",background:"rgba(255,255,255,0.025)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:14,color:"rgba(255,255,255,0.4)",fontSize:13}}>
+      Cuando se cierre tu primera op, las métricas aparecen acá.
     </div>}
   </div>;
 }
