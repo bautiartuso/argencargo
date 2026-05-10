@@ -155,6 +155,20 @@ export default function CotizacionPublica({ params }) {
   const deliveryCost = selectedDelivery === "oficina" ? 0 : (zoneOptions[selectedDelivery]?.cost_usd ? Number(zoneOptions[selectedDelivery].cost_usd) : 0);
   const finalTotal = channelTotal + deliveryCost;
 
+  // Distribuir el total del canal proporcional al FOB de cada producto.
+  // Esto convierte el "costo en origen" en "precio puesto en BsAs (con todo)".
+  const totalFobPub = products.reduce((s, p) => s + Number(p.unit_cost_usd || 0) * Number(p.quantity || 0), 0);
+  const landedSubtotal = (p) => {
+    if (!channelTotal || !totalFobPub) return Number(p.unit_cost_usd || 0) * Number(p.quantity || 0);
+    const fob = Number(p.unit_cost_usd || 0) * Number(p.quantity || 0);
+    return channelTotal * (fob / totalFobPub);
+  };
+  const landedUnit = (p) => {
+    const qty = Number(p.quantity || 0);
+    if (!qty) return 0;
+    return landedSubtotal(p) / qty;
+  };
+
   // Plan de pagos
   const plan = Array.isArray(quote.payment_plan) ? quote.payment_plan : (typeof quote.payment_plan === "string" ? JSON.parse(quote.payment_plan) : []);
 
@@ -194,8 +208,10 @@ export default function CotizacionPublica({ params }) {
           <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 12 : 14, minWidth: 0 }}>
             <div style={qdSecCardStyle()}>
               <p style={qdSecTitleStyle()}>Productos</p>
+              <p style={{ fontSize: 11, color: "#888", margin: "-4px 0 6px", lineHeight: 1.5 }}>Precios <strong style={{ color: "#0A1628" }}>puestos en Buenos Aires</strong> (incluye flete, aduana, impuestos y honorarios) según el servicio seleccionado.</p>
               {products.map((p, i) => {
-                const sub = Number(p.unit_cost_usd || 0) * Number(p.quantity || 0);
+                const subLanded = landedSubtotal(p);
+                const unitLanded = landedUnit(p);
                 return <div key={p.id || i} style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 8 : 12, alignItems: isMobile ? "stretch" : "center", padding: "10px 0", borderBottom: "1px solid #ebe6db", paddingTop: i === 0 ? 4 : 12 }}>
                   <div style={{ display: "flex", gap: 12, alignItems: "center", flex: 1, minWidth: 0 }}>
                     {p.photo_url ? <img src={p.photo_url} alt={p.description || ""} style={{ width: isMobile ? 48 : 56, height: isMobile ? 48 : 56, borderRadius: 8, objectFit: "cover", flexShrink: 0, border: "1px solid #d4c5a0", background: "#f3eadb" }} onError={e => { e.currentTarget.style.display = "none"; }}/>
@@ -206,8 +222,8 @@ export default function CotizacionPublica({ params }) {
                     </div>
                   </div>
                   <div style={{ textAlign: isMobile ? "right" : "right", flexShrink: 0, paddingLeft: isMobile ? 60 : 0 }}>
-                    <p style={{ fontSize: 11, color: "#666", fontFeatureSettings: '"tnum"', marginBottom: 2 }}>{p.quantity} u. × {fmtUSD2(p.unit_cost_usd)}</p>
-                    <p style={{ fontSize: 14, fontWeight: 800, color: "#0A1628", fontFeatureSettings: '"tnum"', letterSpacing: "-0.01em" }}>{fmtUSD2(sub)}</p>
+                    <p style={{ fontSize: 11, color: "#666", fontFeatureSettings: '"tnum"', marginBottom: 2 }}>{p.quantity} u. × {fmtUSD2(unitLanded)}</p>
+                    <p style={{ fontSize: 14, fontWeight: 800, color: "#0A1628", fontFeatureSettings: '"tnum"', letterSpacing: "-0.01em" }}>{fmtUSD2(subLanded)}</p>
                   </div>
                 </div>;
               })}
