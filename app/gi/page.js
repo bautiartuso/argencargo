@@ -670,8 +670,9 @@ function CommunicationsTab({token,quoteId,requestId,profileId,clientName,clientW
 const CHANNEL_DEFS=[
   {key:"aereo_negro",name:"Aéreo Courier Comercial",time:"7 a 10 días hábiles"},
   {key:"aereo_blanco",name:"Aéreo Integral AC",time:"10 a 15 días hábiles"},
-  {key:"maritimo_negro",name:"Marítimo LCL/FCL",time:"~ 60 días"},
-  {key:"maritimo_blanco",name:"Marítimo Integral AC",time:"~ 60 días"},
+  // maritimo_blanco internamente = LCL/FCL (min 1 m³). maritimo_negro = Integral AC (sin mínimo).
+  {key:"maritimo_blanco",name:"Marítimo LCL/FCL",time:"~ 60 días"},
+  {key:"maritimo_negro",name:"Marítimo Integral AC",time:"~ 60 días"},
 ];
 
 function CotizadorWizard({token,requestId,profileId,onBack}){

@@ -10,8 +10,10 @@ const fmtUSD2 = (n) => "USD " + Number(n || 0).toLocaleString("es-AR", { minimum
 const CHANNEL_LABELS = {
   aereo_negro: { name: "Aéreo Courier Comercial", transitMin: 7, transitMax: 10, transitUnit: "días hábiles", costKey: "cost_courier_total_usd" },
   aereo_blanco: { name: "Aéreo Integral AC", transitMin: 10, transitMax: 15, transitUnit: "días hábiles", costKey: "cost_aereo_int_total_usd" },
-  maritimo_negro: { name: "Marítimo LCL / FCL", transitMin: 60, transitMax: 60, transitUnit: "días", costKey: "cost_maritimo_lcl_total_usd" },
-  maritimo_blanco: { name: "Marítimo Integral AC", transitMin: 60, transitMax: 60, transitUnit: "días", costKey: "cost_maritimo_int_total_usd" },
+  // OJO con las keys: maritimo_blanco internamente apunta a LCL/FCL (con min 1 m³)
+  // y maritimo_negro al servicio Integral AC (sin mínimo).
+  maritimo_blanco: { name: "Marítimo LCL / FCL", transitMin: 60, transitMax: 60, transitUnit: "días", costKey: "cost_maritimo_int_total_usd" },
+  maritimo_negro: { name: "Marítimo Integral AC", transitMin: 60, transitMax: 60, transitUnit: "días", costKey: "cost_maritimo_lcl_total_usd" },
 };
 
 // Texto resumido del tiempo total (producción + tránsito) — usado en la lista de servicios.
