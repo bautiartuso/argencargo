@@ -2560,21 +2560,29 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {rw("Cobro bruto",cobro)}{comision>0&&rw(`Comisión transferencia (${feePct}%)`,-comision,false,"#ff6b6b")}{rw("Cobro neto",ingresoNeto)}{discountApplied>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Descuento aplicado (no cobrado)</span><span style={{fontSize:12,fontWeight:600,color:"#fbbf24"}}>USD {discountApplied.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>}
         {costProducto>0&&<>{rw("Costo producto",costProducto,false,"#c084fc")}<div style={{height:6}}/></>}
         {(()=>{
-          // Bloques presu vs costo real por concepto. Saldo = presu - costo (positivo = ganancia respecto al presupuestado).
+          // Bloques presu vs costo real por concepto. Si el cobro neto al cliente difiere del
+          // presupuestado, prorrateo la diferencia entre los conceptos (con factor = cobro/presu).
+          // Así Saldo refleja la realidad del cobro, no un presu teórico.
           const bFlete=Number(op.budget_flete||0);
           const bTax=Number(op.budget_taxes||0);
           const bSeg=Number(op.budget_seguro||0);
+          const presuTotal=bFlete+bTax+bSeg;
+          const factor=presuTotal>0&&ingresoNeto>0?(ingresoNeto/presuTotal):1;
+          const adj=(b)=>b*factor;
           const cTax=costImp+costDoc; // impuestos reales + gasto documental se compara contra budget_taxes
-          const presuLabel="Presupuestado";const costoLabel="Costo real";
-          const block=(title,presu,costo)=>{const saldo=presu-costo;const ok=saldo>=0;return <div style={{padding:"10px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+          const presuLabel=factor!==1?"Presu (ajustado)":"Presupuestado";const costoLabel="Costo real";
+          const block=(title,presuRaw,costo)=>{const presu=adj(presuRaw);const saldo=presu-costo;const ok=saldo>=0;return <div style={{padding:"10px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
             <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.04em"}}>{title}</p>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-              <div><p style={{fontSize:9.5,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{presuLabel}</p><p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.7)",margin:0,fontFeatureSettings:'"tnum"'}}>USD {presu.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+              <div><p style={{fontSize:9.5,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{presuLabel}</p><p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.7)",margin:0,fontFeatureSettings:'"tnum"'}}>USD {presu.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>{factor!==1&&presuRaw>0&&<p style={{fontSize:9,color:"rgba(255,255,255,0.35)",margin:"2px 0 0",fontStyle:"italic"}}>Original: USD {presuRaw.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}</div>
               <div><p style={{fontSize:9.5,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{costoLabel}</p><p style={{fontSize:13,fontWeight:600,color:"#ff9b9b",margin:0,fontFeatureSettings:'"tnum"'}}>USD {costo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
               <div style={{textAlign:"right"}}><p style={{fontSize:9.5,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Saldo</p><p style={{fontSize:13,fontWeight:700,color:ok?"#22c55e":"#ff6b6b",margin:0,fontFeatureSettings:'"tnum"'}}>{saldo>=0?"+":"−"}USD {Math.abs(saldo).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
             </div>
           </div>;};
           return <>
+            {factor!==1&&presuTotal>0&&<div style={{padding:"8px 12px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:8,fontSize:11,color:"rgba(255,255,255,0.7)",margin:"0 0 8px"}}>
+              <strong style={{color:"#60a5fa"}}>Presu ajustado al cobro real:</strong> el cliente {ingresoNeto>presuTotal?"pagó más":"pagó menos"} que lo presupuestado, así que cada concepto se prorratea con factor <strong>×{factor.toFixed(3)}</strong>. Saldo refleja la realidad del cobro.
+            </div>}
             {block("Flete",bFlete,costFlete)}
             {block("Impuestos",bTax,cTax)}
             {block("Seguro",bSeg,costSeg)}

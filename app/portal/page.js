@@ -2500,7 +2500,8 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
     {/* Desktop sidebar */}
     <div className="sidebar-desktop" style={{width:240,position:"fixed",top:0,left:0,bottom:0,background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",borderRight:"1px solid rgba(255,255,255,0.07)",display:"flex",flexDirection:"column",zIndex:10,overflow:"auto"}}>{sidebarContent}</div>
     <div className="main-content" style={{marginLeft:240,minHeight:"100vh",position:"relative",zIndex:1}}>
-      <div className="desktop-notif-bar" style={{position:"sticky",top:0,zIndex:20,display:"flex",alignItems:"center",justifyContent:"flex-end",padding:"12px 32px",gap:12,background:"rgba(10,22,40,0.65)",backdropFilter:"blur(16px)",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>{token&&<NotifBell token={token}/>}</div>
+      {/* Bell flotante en lugar de sticky bar — alineado con el saludo del cabezal de cada página. */}
+      {token&&<div className="desktop-notif-bell" style={{position:"absolute",top:30,right:32,zIndex:20}}><NotifBell token={token}/></div>}
       <div className="main-inner" style={{maxWidth:1200,margin:"0 auto",padding:"30px 32px"}}>{children}</div></div>
     <WhatsAppFab message={`Hola Argencargo! 👋 Soy ${client?.first_name||""} ${client?.last_name||""}${client?.client_code?` (${client.client_code})`:""}, tengo una consulta.`}/>
     {/* Bottom nav mobile (≤768px) — 5 acciones más usadas. El resto via "más" → sidebar */}
