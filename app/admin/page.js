@@ -2558,8 +2558,32 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <div style={{background:"rgba(255,80,80,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(255,80,80,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>COSTOS</p><p style={{fontSize:18,fontWeight:700,color:"#ff6b6b",margin:0}}>USD {totalCostos.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
         </div>
         {rw("Cobro bruto",cobro)}{comision>0&&rw(`Comisión transferencia (${feePct}%)`,-comision,false,"#ff6b6b")}{rw("Cobro neto",ingresoNeto)}{discountApplied>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Descuento aplicado (no cobrado)</span><span style={{fontSize:12,fontWeight:600,color:"#fbbf24"}}>USD {discountApplied.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>}
+        {costProducto>0&&<>{rw("Costo producto",costProducto,false,"#c084fc")}<div style={{height:6}}/></>}
+        {(()=>{
+          // Bloques presu vs costo real por concepto. Saldo = presu - costo (positivo = ganancia respecto al presupuestado).
+          const bFlete=Number(op.budget_flete||0);
+          const bTax=Number(op.budget_taxes||0);
+          const bSeg=Number(op.budget_seguro||0);
+          const cTax=costImp+costDoc; // impuestos reales + gasto documental se compara contra budget_taxes
+          const presuLabel="Presupuestado";const costoLabel="Costo real";
+          const block=(title,presu,costo)=>{const saldo=presu-costo;const ok=saldo>=0;return <div style={{padding:"10px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.04em"}}>{title}</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+              <div><p style={{fontSize:9.5,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{presuLabel}</p><p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.7)",margin:0,fontFeatureSettings:'"tnum"'}}>USD {presu.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+              <div><p style={{fontSize:9.5,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{costoLabel}</p><p style={{fontSize:13,fontWeight:600,color:"#ff9b9b",margin:0,fontFeatureSettings:'"tnum"'}}>USD {costo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+              <div style={{textAlign:"right"}}><p style={{fontSize:9.5,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Saldo</p><p style={{fontSize:13,fontWeight:700,color:ok?"#22c55e":"#ff6b6b",margin:0,fontFeatureSettings:'"tnum"'}}>{saldo>=0?"+":"−"}USD {Math.abs(saldo).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+            </div>
+          </div>;};
+          return <>
+            {block("Flete",bFlete,costFlete)}
+            {block("Impuestos",bTax,cTax)}
+            {block("Seguro",bSeg,costSeg)}
+            {block("Flete local",0,costLocal)}
+            {costOtros>0&&block("Otros",0,costOtros)}
+          </>;
+        })()}
         <div style={{height:8}}/>
-        {costProducto>0&&rw("Costo producto",costProducto,false,"#c084fc")}{rw("Costo flete",costFlete)}{rw("Impuestos reales",costImp)}{rw("Gasto documental",costDoc)}{costSeg>0&&rw("Seguro",costSeg)}{costLocal>0&&rw("Flete local",costLocal)}{costOtros>0&&rw("Otros",costOtros)}{rw("TOTAL COSTOS",totalCostos,true,"#ff6b6b")}
+        {rw("TOTAL COSTOS",totalCostos,true,"#ff6b6b")}
         {payments.length>0&&<><div style={{height:8}}/>
           <div style={{borderTop:"1px solid rgba(184,149,106,0.2)",paddingTop:10,marginTop:4}}><p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 6px",textTransform:"uppercase"}}>Gestión de Pagos</p></div>
           {rw("Cobrado al cliente",pmtRevenue)}
