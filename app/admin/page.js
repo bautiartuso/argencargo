@@ -2317,20 +2317,36 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           cost_producto_paid_at:op.cost_producto_paid_at||null,
         };
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:costBody});
-        // CC deduction for flete if new
+        // CC deduction for flete — solo si no está cubierta ya por la deducción del vuelo.
+        // Cuando la op está despachada en un flight con payment_method=cuenta_corriente,
+        // la deducción ya fue creada con flight_id. Crear una segunda con operation_id sería doble cobro.
         if(fleteMethod==="cuenta_corriente"&&fleteAmt>0&&op.created_by_agent_id){
-          // Deducción en la CC del agente asignado a esta op (alineado con panel Agentes)
-          const existing=await dq("agent_account_movements",{token,filters:`?operation_id=eq.${id}&type=eq.deduccion&select=id,amount_usd`});
-          if(!Array.isArray(existing)||existing.length===0){
-            await dq("agent_account_movements",{method:"POST",token,body:{agent_id:op.created_by_agent_id,type:"deduccion",amount_usd:fleteAmt,description:`Flete ${op.operation_code}`,operation_id:id,date:new Date().toISOString().slice(0,10)}});
-          } else if(Number(existing[0].amount_usd)!==fleteAmt){
-            // Si cambió el monto del flete, actualizar la deducción existente
-            await dq("agent_account_movements",{method:"PATCH",token,filters:`?id=eq.${existing[0].id}`,body:{amount_usd:fleteAmt,description:`Flete ${op.operation_code}`}});
+          // ¿La op pertenece a un vuelo CC? Si sí, la deducción ya está hecha del lado del vuelo.
+          let coveredByFlight=false;
+          try{
+            const fos=await dq("flight_operations",{token,filters:`?operation_id=eq.${id}&select=flight_id,flights!inner(payment_method)`});
+            if(Array.isArray(fos)&&fos.some(x=>x.flights?.payment_method==="cuenta_corriente"))coveredByFlight=true;
+          }catch(e){console.error("flight cover check",e);}
+          if(coveredByFlight){
+            // Limpiar cualquier deducción por op que pudiera haber quedado (legacy / pre-fix).
+            const orphan=await dq("agent_account_movements",{token,filters:`?operation_id=eq.${id}&type=eq.deduccion&flight_id=is.null&select=id`});
+            if(Array.isArray(orphan)&&orphan.length>0){
+              for(const o of orphan)await dq("agent_account_movements",{method:"DELETE",token,filters:`?id=eq.${o.id}`});
+              await loadCCBalance();
+            }
+          } else {
+            // No hay vuelo CC que la cubra → mantener deducción por op.
+            const existing=await dq("agent_account_movements",{token,filters:`?operation_id=eq.${id}&type=eq.deduccion&flight_id=is.null&select=id,amount_usd`});
+            if(!Array.isArray(existing)||existing.length===0){
+              await dq("agent_account_movements",{method:"POST",token,body:{agent_id:op.created_by_agent_id,type:"deduccion",amount_usd:fleteAmt,description:`Flete ${op.operation_code}`,operation_id:id,date:new Date().toISOString().slice(0,10)}});
+            } else if(Number(existing[0].amount_usd)!==fleteAmt){
+              await dq("agent_account_movements",{method:"PATCH",token,filters:`?id=eq.${existing[0].id}`,body:{amount_usd:fleteAmt,description:`Flete ${op.operation_code}`}});
+            }
+            await loadCCBalance();
           }
-          await loadCCBalance();
         } else if(fleteMethod!=="cuenta_corriente"){
-          // Si cambió de CC a otro método, eliminar deducción huérfana
-          const existing=await dq("agent_account_movements",{token,filters:`?operation_id=eq.${id}&type=eq.deduccion&select=id`});
+          // Si cambió de CC a otro método, eliminar deducción por op (no toca la del vuelo).
+          const existing=await dq("agent_account_movements",{token,filters:`?operation_id=eq.${id}&type=eq.deduccion&flight_id=is.null&select=id`});
           if(Array.isArray(existing)&&existing.length>0){
             await dq("agent_account_movements",{method:"DELETE",token,filters:`?id=eq.${existing[0].id}`});
             await loadCCBalance();
