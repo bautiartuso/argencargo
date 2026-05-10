@@ -5132,7 +5132,7 @@ function AgentsPanel({token}){
           <tbody>{movs.map(m=>{const fl=flights.find(f=>f.id===m.flight_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)"}}>{formatDate(m.date)}</td>
             <td style={{padding:"8px 12px"}}>{(()=>{const cfg=m.type==="anticipo"?{lbl:"ANTICIPO",bg:"rgba(34,197,94,0.15)",fg:"#22c55e"}:m.type==="refund"?{lbl:"DEVOLUCIÓN",bg:"rgba(96,165,250,0.15)",fg:"#60a5fa"}:{lbl:"DEDUCCIÓN",bg:"rgba(255,80,80,0.15)",fg:"#ff6b6b"};return <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:cfg.bg,color:cfg.fg}}>{cfg.lbl}</span>;})()}</td>
-            <td style={{padding:"8px 12px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":m.type==="refund"?"#60a5fa":"#ff6b6b"}}>{(m.type==="anticipo"||m.type==="refund")?"+":"-"}{usd(m.amount_usd)}</td>
+            <td style={{padding:"8px 12px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":m.type==="refund"?"#60a5fa":"#ff6b6b"}}>{(()=>{const isCredit=m.type==="anticipo"||m.type==="refund";const monto=isCredit&&m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);return `${isCredit?"+":"-"}${usd(monto)}`;})()}</td>
             <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)"}}>{m.description||"—"}</td>
             <td style={{padding:"8px 12px",fontFamily:"monospace",color:IC,fontSize:11}}>{fl?fl.flight_code:"—"}</td>
           </tr>;})}</tbody>

@@ -733,7 +733,13 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
   const reloadPackages=reloadAll;
   const flash=(m)=>{setFlashMsg(m);setTimeout(()=>setFlashMsg(""),3000);const v=/error|fail/i.test(m)?"error":"success";toast(m,v);};
-  const balance=account.reduce((s,m)=>s+(m.type==="anticipo"?Number(m.amount_usd):-Number(m.amount_usd)),0);
+  // Balance: para anticipos/refunds usar amount_received_usd (lo que efectivamente recibió el agente).
+  // amount_usd es el costo total para Argencargo (incluye comisión del giro), no debe afectar la CC del agente.
+  const balance=account.reduce((s,m)=>{
+    const isCredit=m.type==="anticipo"||m.type==="refund";
+    const amt=isCredit&&m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);
+    return s+(isCredit?amt:-amt);
+  },0);
   const usdF=(v)=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   if(loading)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:BG,color:"rgba(255,255,255,0.4)"}}>...</div>;
@@ -1047,7 +1053,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
           <tbody>{account.map(m=>{const fl=flights.find(f=>f.id===m.flight_id);return <tr key={m.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{new Date(m.date).toLocaleDateString("es-AR")}</td>
             <td style={{padding:"10px 14px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,fontWeight:700,background:m.type==="anticipo"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:m.type==="anticipo"?"#22c55e":"#ff6b6b",textTransform:"uppercase"}}>{m.type==="anticipo"?t.movement_anticipo:t.movement_deduccion}</span></td>
-            <td style={{padding:"10px 14px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":"#ff6b6b"}}>{m.type==="anticipo"?"+":"-"}{usdF(m.amount_usd)}</td>
+            <td style={{padding:"10px 14px",fontWeight:700,color:m.type==="anticipo"?"#22c55e":"#ff6b6b"}}>{(()=>{const isCredit=m.type==="anticipo";const monto=isCredit&&m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);return `${isCredit?"+":"-"}${usdF(monto)}`;})()}</td>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{m.description||"—"}</td>
             <td style={{padding:"10px 14px",fontFamily:"monospace",color:IC,fontSize:11}}>{fl?fl.flight_code:"—"}</td>
           </tr>;})}</tbody>
