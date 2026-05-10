@@ -221,9 +221,9 @@ export default function CotizacionPublica({ params }) {
                       {p.lead_time_days > 0 && <p style={{ fontSize: 10.5, color: "#B8956A", fontWeight: 600, marginTop: 3 }}>⏱ Producción {p.lead_time_days} días</p>}
                     </div>
                   </div>
-                  <div style={{ textAlign: isMobile ? "right" : "right", flexShrink: 0, paddingLeft: isMobile ? 60 : 0 }}>
-                    <p style={{ fontSize: 11, color: "#666", fontFeatureSettings: '"tnum"', marginBottom: 2 }}>{p.quantity} u. × {fmtUSD2(unitLanded)}</p>
-                    <p style={{ fontSize: 14, fontWeight: 800, color: "#0A1628", fontFeatureSettings: '"tnum"', letterSpacing: "-0.01em" }}>{fmtUSD2(subLanded)}</p>
+                  <div style={{ textAlign: "right", flexShrink: 0, paddingLeft: isMobile ? 60 : 0 }}>
+                    <p style={{ fontSize: 16, fontWeight: 800, color: "#0A1628", fontFeatureSettings: '"tnum"', letterSpacing: "-0.01em", lineHeight: 1.1 }}>{fmtUSD2(unitLanded)} <span style={{ fontSize: 10, fontWeight: 600, color: "#888", letterSpacing: 0 }}>/ unidad</span></p>
+                    <p style={{ fontSize: 10.5, color: "#888", fontFeatureSettings: '"tnum"', marginTop: 3 }}>{p.quantity} u. · subtotal {fmtUSD2(subLanded)}</p>
                   </div>
                 </div>;
               })}
