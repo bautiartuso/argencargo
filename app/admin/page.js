@@ -1182,11 +1182,19 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       totalTax=0;
       if(isBlanco){items.forEach(it=>{const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const pct=totalFob>0?itemFob/totalFob:1;
         const iCert=certFlAmt*pct;const iSeg=(itemFob+iCert)*0.01;const iCif=itemFob+iCert+iSeg;
-        const dr=Number(it.import_duty_rate||0)/100;const te=Number(it.statistics_rate||0)/100;const ivaR=Number(it.iva_rate||21)/100;
+        // OJO: chequear null/"" — un 0 explícito es válido (admin lo seteó). El ||N trataba 0 como falsy.
+        const dr=(it.import_duty_rate==null||it.import_duty_rate==="")?0:Number(it.import_duty_rate)/100;
+        const te=(it.statistics_rate==null||it.statistics_rate==="")?0:Number(it.statistics_rate)/100;
+        const ivaR=(it.iva_rate==null||it.iva_rate==="")?0.21:Number(it.iva_rate)/100;
         const die=iCif*dr;const tasa=iCif*te;const bi=iCif+die+tasa;const iva=bi*ivaR;
         let t=die+tasa+iva;
-        if(isMaritimo){const ivaAdicR=Number(it.iva_additional_rate||20)/100;const iiggR=Number(it.iigg_rate||6)/100;const iibbR=Number(it.iibb_rate||5)/100;t+=bi*ivaAdicR+bi*iiggR+bi*iibbR;}
-        else{const desemb=getDesembolso(cif)*pct;t+=desemb+desemb*0.21;}
+        if(isMaritimo){
+          const ivaAdicR=(it.iva_additional_rate==null||it.iva_additional_rate==="")?0.20:Number(it.iva_additional_rate)/100;
+          const iiggR=(it.iigg_rate==null||it.iigg_rate==="")?0.06:Number(it.iigg_rate)/100;
+          const iibbR=(it.iibb_rate==null||it.iibb_rate==="")?0.05:Number(it.iibb_rate)/100;
+          t+=bi*ivaAdicR+bi*iiggR+bi*iibbR;
+        }
+        else{const desemb=getDesembolso(cif)*pct;t+=desemb+desemb*ivaR;}
         totalTax+=t;});}
       const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
       // Recargo por valor mercadería (solo canal B)
@@ -3056,11 +3064,15 @@ function Calculator({token,clients}){
       // Per-item tax helper (returns breakdown)
       const calcItemTax=(p,certFl,isMar,totalCif)=>{const itemFob=Number(p.unit_price||0)*Number(p.quantity||1);const pct=totalFob>0?itemFob/totalFob:1;
         const iCert=certFl*pct;const iSeg=(itemFob+iCert)*0.01;const iCif=itemFob+iCert+iSeg;
-        const dr=Number(p.ncm?.import_duty_rate||0)/100;const te_r=Number(p.ncm?.statistics_rate||0)/100;const ivaR=Number(p.ncm?.iva_rate||21)/100;
+        // null/"" → defaults; 0 explícito → 0 (antes ||N caía al default por falsy).
+        const drRaw=p.ncm?.import_duty_rate;const teRaw=p.ncm?.statistics_rate;const ivaRaw=p.ncm?.iva_rate;
+        const dr=(drRaw==null||drRaw==="")?0:Number(drRaw)/100;
+        const te_r=(teRaw==null||teRaw==="")?0:Number(teRaw)/100;
+        const ivaR=(ivaRaw==null||ivaRaw==="")?0.21:Number(ivaRaw)/100;
         const die=iCif*dr;const te=iCif*te_r;const bi=iCif+die+te;const iva=bi*ivaR;let tot=die+te+iva;
-        const br={desc:p.description||"Producto",fob:itemFob,cif:iCif,seguro:iSeg,derechos:die,tasa_e:te,iva,drPct:p.ncm?.import_duty_rate||0,tePct:p.ncm?.statistics_rate||0,ivaPct:p.ncm?.iva_rate||21,ivaAdic:0,iigg:0,iibb:0,desembolso:0,ivaDesemb:0};
+        const br={desc:p.description||"Producto",fob:itemFob,cif:iCif,seguro:iSeg,derechos:die,tasa_e:te,iva,drPct:Number(drRaw||0),tePct:Number(teRaw||0),ivaPct:(ivaRaw==null||ivaRaw==="")?21:Number(ivaRaw),ivaAdic:0,iigg:0,iibb:0,desembolso:0,ivaDesemb:0};
         if(isMar){const ia=bi*0.20;const ig=bi*0.06;const ib=bi*0.05;tot+=ia+ig+ib;br.ivaAdic=ia;br.iigg=ig;br.iibb=ib;}
-        else{const tasa=getDesembolso(totalCif)*pct;tot+=tasa+tasa*0.21;br.desembolso=tasa;br.ivaDesemb=tasa*0.21;}
+        else{const tasa=getDesembolso(totalCif)*pct;const ivaDesemb=tasa*ivaR;tot+=tasa+ivaDesemb;br.desembolso=tasa;br.ivaDesemb=ivaDesemb;}
         br.totalImp=tot;
         return br;};
       const sumItems=(items,k)=>items.reduce((s,it)=>s+(it[k]||0),0);
