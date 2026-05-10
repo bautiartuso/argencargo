@@ -1547,7 +1547,7 @@ function PaneOps({token}){
             <td style={{padding:"13px 14px",whiteSpace:"nowrap"}}><span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap"}}><span style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:st.c,flexShrink:0}}/>{st.l}</span></td>
             <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.55)",fontFeatureSettings:'"tnum"',textAlign:"center",whiteSpace:"nowrap"}}>{op.eta?fmtDateShort(op.eta):"—"}</td>
             <td style={{padding:"13px 14px",textAlign:"right",color:"#fff",fontWeight:600,fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}}>{fmtUSD(op.budget_total)}</td>
-            <td style={{padding:"13px 14px",textAlign:"right",color:com.real?"#22c55e":"rgba(255,255,255,0.5)",fontWeight:700,fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}} title={com.real?`Comisión real: ${com.pct}% sobre ganancia neta`:`Estimación con ${com.pct}% del cliente`}>{com.pct>0?fmtUSD(com.amount):"—"}{!com.real&&com.pct>0&&<span style={{fontSize:9,marginLeft:4,opacity:0.6}}>est.</span>}</td>
+            <td style={{padding:"13px 14px",textAlign:"right",color:com.real?(Number(com.amount)<0?"#f87171":"#22c55e"):"rgba(255,255,255,0.5)",fontWeight:700,fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}} title={com.real?(Number(com.amount)<0?`Op a pérdida — ${com.pct}% absorbido por el socio`:`Comisión real: ${com.pct}% sobre ganancia neta`):`Estimación con ${com.pct}% del cliente`}>{com.pct>0?fmtUSD(com.amount):"—"}{!com.real&&com.pct>0&&<span style={{fontSize:9,marginLeft:4,opacity:0.6}}>est.</span>}</td>
           </tr>;})}
         </tbody>
       </table>
@@ -1570,7 +1570,7 @@ function PaneOps({token}){
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginTop:30,marginBottom:10,flexWrap:"wrap",gap:10}}>
         <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.1em",margin:0}}>Cerradas <span style={{color:"rgba(255,255,255,0.55)",marginLeft:4}}>({cerradas.length})</span></h3>
-        {cerradas.length>0&&<span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Comisión real cerrada: <strong style={{color:"#22c55e"}}>{fmtUSD(totalClosedCommission)}</strong></span>}
+        {cerradas.length>0&&<span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Comisión real cerrada: <strong style={{color:Number(totalClosedCommission)<0?"#f87171":"#22c55e"}}>{fmtUSD(totalClosedCommission)}</strong></span>}
       </div>
       {renderTable(cerradas)}
     </>}
@@ -1649,7 +1649,7 @@ function OpDetail({token,opId,onBack,calcComision}){
         <Kpi label="Canal" val={chLabel} sub={op.origin?`Origen ${op.origin}`:""}/>
         <Kpi label="Total cliente" val={fmtUSD(op.budget_total)} sub={pendienteCobro>0.01?`Pendiente: ${fmtUSD(pendienteCobro)}`:`Cobrado completo`} color={GOLD_LIGHT}/>
         <Kpi label="Ganancia neta op" val={fmtUSD(_netProfit)} sub={`Ingresos ${fmtUSD(totalPaid)} − costos ${fmtUSD(_totalCost)}`} color={_netProfit>=0?"#22c55e":"#f87171"}/>
-        <Kpi label={com.real?"Tu comisión":"Comisión est."} val={com.pct>0?fmtUSD(com.amount):"—"} sub={com.pct>0?`${com.pct}%${com.real?" sobre neto real":" estimada"}`:"Cliente sin %"} color={com.real?"#22c55e":GOLD_LIGHT}/>
+        <Kpi label={com.real?(Number(com.amount)<0?"Pérdida absorbida":"Tu comisión"):"Comisión est."} val={com.pct>0?fmtUSD(com.amount):"—"} sub={com.pct>0?`${com.pct}%${com.real?(Number(com.amount)<0?" sobre la pérdida":" sobre neto real"):" estimada"}`:"Cliente sin %"} color={com.real?(Number(com.amount)<0?"#f87171":"#22c55e"):GOLD_LIGHT}/>
         <Kpi label="ETA" val={op.eta?fmtDate(op.eta):"—"} sub={op.closed_at?`Cerrada: ${fmtDate(op.closed_at)}`:""}/>
       </div>;
     })()}
@@ -1770,7 +1770,7 @@ function OpDetail({token,opId,onBack,calcComision}){
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Ingresos</p><p style={{fontSize:14,fontWeight:700,color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(earning.revenue_usd)}</p></div>
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Costos</p><p style={{fontSize:14,fontWeight:700,color:"#f87171",fontFeatureSettings:'"tnum"'}}>{fmtUSD(earning.total_costs_usd)}</p></div>
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Ganancia neta</p><p style={{fontSize:14,fontWeight:700,color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(earning.net_profit_usd)}</p></div>
-        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Tu comisión {earning.commission_pct}%</p><p style={{fontSize:18,fontWeight:800,color:"#22c55e",fontFeatureSettings:'"tnum"'}}>{fmtUSD(earning.commission_usd)}</p></div>
+        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>{Number(earning.commission_usd||0)<0?"Pérdida absorbida":"Tu comisión"} {earning.commission_pct}%</p><p style={{fontSize:18,fontWeight:800,color:Number(earning.commission_usd||0)<0?"#f87171":"#22c55e",fontFeatureSettings:'"tnum"'}}>{fmtUSD(earning.commission_usd)}</p></div>
       </div>
       <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:12}}>{earning.paid_to_partner?`✓ Pagada el ${fmtDate(earning.paid_at)}`:"⏳ Pendiente de pago al socio"}</p>
     </Card>}

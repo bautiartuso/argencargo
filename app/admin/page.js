@@ -1194,7 +1194,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const iibbR=(it.iibb_rate==null||it.iibb_rate==="")?0.05:Number(it.iibb_rate)/100;
           t+=bi*ivaAdicR+bi*iiggR+bi*iibbR;
         }
-        else{const desemb=getDesembolso(cif)*pct;t+=desemb+desemb*ivaR;}
+        else{const desemb=getDesembolso(cif)*pct;t+=desemb+desemb*0.21;}
         totalTax+=t;});}
       const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
       // Recargo por valor mercadería (solo canal B)
@@ -3072,7 +3072,7 @@ function Calculator({token,clients}){
         const die=iCif*dr;const te=iCif*te_r;const bi=iCif+die+te;const iva=bi*ivaR;let tot=die+te+iva;
         const br={desc:p.description||"Producto",fob:itemFob,cif:iCif,seguro:iSeg,derechos:die,tasa_e:te,iva,drPct:Number(drRaw||0),tePct:Number(teRaw||0),ivaPct:(ivaRaw==null||ivaRaw==="")?21:Number(ivaRaw),ivaAdic:0,iigg:0,iibb:0,desembolso:0,ivaDesemb:0};
         if(isMar){const ia=bi*0.20;const ig=bi*0.06;const ib=bi*0.05;tot+=ia+ig+ib;br.ivaAdic=ia;br.iigg=ig;br.iibb=ib;}
-        else{const tasa=getDesembolso(totalCif)*pct;const ivaDesemb=tasa*ivaR;tot+=tasa+ivaDesemb;br.desembolso=tasa;br.ivaDesemb=ivaDesemb;}
+        else{const tasa=getDesembolso(totalCif)*pct;tot+=tasa+tasa*0.21;br.desembolso=tasa;br.ivaDesemb=tasa*0.21;}
         br.totalImp=tot;
         return br;};
       const sumItems=(items,k)=>items.reduce((s,it)=>s+(it[k]||0),0);
