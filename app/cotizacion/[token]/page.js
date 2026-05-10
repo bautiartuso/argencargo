@@ -157,13 +157,14 @@ export default function CotizacionPublica({ params }) {
   const deliveryCost = selectedDelivery === "oficina" ? 0 : (zoneOptions[selectedDelivery]?.cost_usd ? Number(zoneOptions[selectedDelivery].cost_usd) : 0);
   const finalTotal = channelTotal + deliveryCost;
 
-  // Distribuir el total del canal proporcional al FOB de cada producto.
-  // Esto convierte el "costo en origen" en "precio puesto en BsAs (con todo)".
+  // Distribuir el total del canal + envío proporcional al FOB de cada producto.
+  // Si el cliente eligió envío a domicilio, el costo del envío también se prorratea.
   const totalFobPub = products.reduce((s, p) => s + Number(p.unit_cost_usd || 0) * Number(p.quantity || 0), 0);
   const landedSubtotal = (p) => {
-    if (!channelTotal || !totalFobPub) return Number(p.unit_cost_usd || 0) * Number(p.quantity || 0);
+    const baseTotal = channelTotal + deliveryCost; // incluye envío si aplica
+    if (!baseTotal || !totalFobPub) return Number(p.unit_cost_usd || 0) * Number(p.quantity || 0);
     const fob = Number(p.unit_cost_usd || 0) * Number(p.quantity || 0);
-    return channelTotal * (fob / totalFobPub);
+    return baseTotal * (fob / totalFobPub);
   };
   const landedUnit = (p) => {
     const qty = Number(p.quantity || 0);
@@ -210,7 +211,7 @@ export default function CotizacionPublica({ params }) {
           <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 12 : 14, minWidth: 0 }}>
             <div style={qdSecCardStyle()}>
               <p style={qdSecTitleStyle()}>Productos</p>
-              <p style={{ fontSize: 11, color: "#888", margin: "-4px 0 6px", lineHeight: 1.5 }}>Precios <strong style={{ color: "#0A1628" }}>puestos en Buenos Aires</strong> (incluye flete, aduana, impuestos y honorarios) según el servicio seleccionado.</p>
+              <p style={{ fontSize: 11, color: "#888", margin: "-4px 0 6px", lineHeight: 1.5 }}>Precios <strong style={{ color: "#0A1628" }}>puestos en Buenos Aires</strong> (incluye flete, aduana, impuestos{deliveryCost > 0 ? ", envío a domicilio" : ""} y honorarios) según el servicio{deliveryCost > 0 ? " y entrega" : ""} seleccionado.</p>
               {products.map((p, i) => {
                 const subLanded = landedSubtotal(p);
                 const unitLanded = landedUnit(p);
