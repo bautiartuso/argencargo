@@ -4085,14 +4085,32 @@ function FinancePanel({token}){
       const usdTotSup=(cardDebt.supTcUsd||[]).reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const usdTot=usdTotEntries+usdTotPmts+usdTotSup;
       const arsTot=cardDebt.ars.reduce((s,e)=>s+Number(e.amount_ars||0),0);
-      // Agrupar por fecha de cierre mezclando: gastos USD + giros al exterior + costos GI USD
+      // Agrupar por (TARJETA, fecha de cierre). Cada tarjeta tiene su propio grupo
+      // aunque coincida la fecha de cierre con otra tarjeta.
       const groups={};
-      cardDebt.usd.forEach(e=>{const k=e.card_closing_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:Number(e.amount||0),dateLoad:e.date,op:e.operations?.operation_code,card:e.credit_cards});});
-      cardDebt.pmts.forEach(p=>{const k=p.giro_tarjeta_due_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"pmt",id:p.id,desc:`Giro al exterior${p.operations?.operation_code?` — ${p.operations.operation_code}`:""}`,detail:p.description||"",amt:Number(p.giro_amount_usd||0),dateLoad:p.created_at?String(p.created_at).slice(0,10):null,op:p.operations?.operation_code,card:p.credit_cards});});
-      (cardDebt.supTcUsd||[]).forEach(p=>{const k=p.card_closing_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"supplier",id:p.id,desc:`Costo op ${p.operations?.operation_code||"—"} (GI)`,detail:p.notes||p.reference||"",amt:Number(p.amount_usd||0),dateLoad:p.payment_date,op:p.operations?.operation_code,operation_id:p.operation_id,card:p.credit_cards});});
-      const sortedGroups=Object.values(groups).sort((a,b)=>{if(a.date==="sin_fecha")return 1;if(b.date==="sin_fecha")return -1;return a.date.localeCompare(b.date);});
+      const pushItem=(item,cardObj,closingDate)=>{
+        const cardKey=cardObj?.id||"sin_tarjeta";
+        const dateKey=closingDate||"sin_fecha";
+        const k=`${cardKey}__${dateKey}`;
+        if(!groups[k])groups[k]={key:k,date:dateKey,card:cardObj||null,items:[]};
+        groups[k].items.push(item);
+      };
+      cardDebt.usd.forEach(e=>pushItem({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:Number(e.amount||0),dateLoad:e.date,op:e.operations?.operation_code,card:e.credit_cards},e.credit_cards,e.card_closing_date));
+      cardDebt.pmts.forEach(p=>pushItem({source:"pmt",id:p.id,desc:`Giro al exterior${p.operations?.operation_code?` — ${p.operations.operation_code}`:""}`,detail:p.description||"",amt:Number(p.giro_amount_usd||0),dateLoad:p.created_at?String(p.created_at).slice(0,10):null,op:p.operations?.operation_code,card:p.credit_cards},p.credit_cards,p.giro_tarjeta_due_date));
+      (cardDebt.supTcUsd||[]).forEach(p=>pushItem({source:"supplier",id:p.id,desc:`Costo op ${p.operations?.operation_code||"—"} (GI)`,detail:p.notes||p.reference||"",amt:Number(p.amount_usd||0),dateLoad:p.payment_date,op:p.operations?.operation_code,operation_id:p.operation_id,card:p.credit_cards},p.credit_cards,p.card_closing_date));
+      // Orden: primero por nombre de tarjeta, después por fecha de cierre.
+      const sortedGroups=Object.values(groups).sort((a,b)=>{
+        const an=(a.card?.name||"~zsin tarjeta").toLowerCase();
+        const bn=(b.card?.name||"~zsin tarjeta").toLowerCase();
+        if(an!==bn)return an.localeCompare(bn);
+        if(a.date==="sin_fecha")return 1;if(b.date==="sin_fecha")return -1;
+        return a.date.localeCompare(b.date);
+      });
       // Dentro de cada grupo, ordenar items por fecha de carga ascendente.
       sortedGroups.forEach(g=>g.items.sort((a,b)=>(a.dateLoad||"").localeCompare(b.dateLoad||"")));
+      // Totales por tarjeta para mostrar arriba.
+      const totalsPorTarjeta={};
+      sortedGroups.forEach(g=>{const k=g.card?.id||"sin_tarjeta";if(!totalsPorTarjeta[k]){totalsPorTarjeta[k]={card:g.card,total:0,count:0};}totalsPorTarjeta[k].total+=g.items.reduce((s,it)=>s+it.amt,0);totalsPorTarjeta[k].count+=g.items.length;});
       const todayStr=new Date().toISOString().slice(0,10);
       const markPaid=async(item)=>{
         if(!confirm(`¿Marcar "${item.desc}" como debitada de la tarjeta? Esto la resta del cash real.`))return;
@@ -4124,14 +4142,28 @@ function FinancePanel({token}){
             <button onClick={()=>setTab("dollar")} style={{marginTop:10,fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>Ir a Dollarización →</button>
           </div>}
         </div>
-        {/* Grupos por fecha de cierre */}
+        {/* Totales por tarjeta */}
+        {Object.keys(totalsPorTarjeta).length>0&&<div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:18}}>
+          {Object.values(totalsPorTarjeta).sort((a,b)=>b.total-a.total).map((t,i)=>{const brandColor=t.card?.brand==="visa"?"#1a1f71":t.card?.brand==="mastercard"?"#eb001b":t.card?.brand==="amex"?"#006fcf":"#666";const brandLbl=t.card?.brand==="visa"?"VISA":t.card?.brand==="mastercard"?"Mastercard":t.card?.brand==="amex"?"American Express":"Sin tarjeta";return <div key={i} style={{flex:"1 1 220px",minWidth:200,padding:"12px 16px",background:`${brandColor}15`,border:`1px solid ${brandColor}40`,borderRadius:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+              <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:`${brandColor}33`,color:"#fff",letterSpacing:"0.05em"}}>{brandLbl}</span>
+              <p style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.85)",margin:0}}>{t.card?.name||"Sin tarjeta"}</p>
+            </div>
+            <p style={{fontSize:22,fontWeight:800,color:"#fb923c",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {t.total.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            <p style={{fontSize:10.5,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>{t.count} {t.count===1?"gasto pendiente":"gastos pendientes"}</p>
+          </div>;})}
+        </div>}
+        {/* Grupos por (tarjeta, fecha de cierre) */}
         {sortedGroups.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.5)",padding:"3rem 0",fontSize:14}}>🎉 Sin deuda de tarjeta pendiente</p>}
         {sortedGroups.map(g=>{
           const gTotal=g.items.reduce((s,i)=>s+i.amt,0);
           const overdue=g.date!=="sin_fecha"&&g.date<todayStr;
           const soon=g.date!=="sin_fecha"&&!overdue&&(new Date(g.date)-new Date(todayStr))/86400000<=7;
           const color=overdue?"#ff6b6b":soon?"#fbbf24":IC;
-          return <Card key={g.date} title={<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          const brandColor=g.card?.brand==="visa"?"#1a1f71":g.card?.brand==="mastercard"?"#eb001b":g.card?.brand==="amex"?"#006fcf":"#666";
+          const brandLbl=g.card?.brand==="visa"?"VISA":g.card?.brand==="mastercard"?"Mastercard":g.card?.brand==="amex"?"AMEX":"Sin tarjeta";
+          return <Card key={g.key} title={<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:`${brandColor}33`,color:"#fff",border:`1px solid ${brandColor}66`,letterSpacing:"0.05em",whiteSpace:"nowrap"}}>{brandLbl}{g.card?.name?` · ${g.card.name}`:""}</span>
             <span style={{color}}>{g.date==="sin_fecha"?"📅 Sin fecha de cierre":`📅 Cierre ${formatDate(g.date)}`}</span>
             {overdue&&<span style={{fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,80,80,0.15)",color:"#ff6b6b",border:"1px solid rgba(255,80,80,0.3)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Vencido</span>}
             {soon&&<span style={{fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Próximos 7d</span>}
