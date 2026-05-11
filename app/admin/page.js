@@ -1956,7 +1956,21 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     })()}
 
     {tab==="finance"&&!isGI&&(()=>{
-      const costFlete=Number(op.cost_flete||0);const costImp=Number(op.cost_impuestos_reales||0);const costDoc=Number(op.cost_gasto_documental||0);const costSeg=Number(op.cost_seguro||0);const costLocal=Number(op.cost_flete_local||0);const costOtros=Number(op.cost_otros||0);
+      // Live USD recalculation para impuestos y gasto documental (contado): si los ARS/TC del form
+      // están más actualizados que el cost_*_reales persistido (porque el usuario aún no guardó),
+      // usamos la conversión en vivo para que la rentabilidad no quede desfasada.
+      const impArsLive=Number(op.cost_impuestos_ars||0);
+      const impRateLive=Number(op.cost_impuestos_exchange_rate||0);
+      const impIsEf=(op.cost_impuestos_method||"tarjeta_credito")==="efectivo";
+      const costImpLive=impIsEf&&impArsLive>0&&impRateLive>0?(impArsLive/impRateLive):null;
+      const docArsLive=Number(op.cost_gasto_documental_ars||0);
+      const docRateLive=Number(op.cost_gasto_doc_exchange_rate||0);
+      const docIsEf=(op.cost_gasto_doc_method||"tarjeta_credito")==="efectivo";
+      const costDocLive=docIsEf&&docArsLive>0&&docRateLive>0?(docArsLive/docRateLive):null;
+      const costFlete=Number(op.cost_flete||0);
+      const costImp=costImpLive!=null?costImpLive:Number(op.cost_impuestos_reales||0);
+      const costDoc=costDocLive!=null?costDocLive:Number(op.cost_gasto_documental||0);
+      const costSeg=Number(op.cost_seguro||0);const costLocal=Number(op.cost_flete_local||0);const costOtros=Number(op.cost_otros||0);
       const costProducto=op.service_type==="gestion_integral"?Number(op.cost_producto_usd||0):0;
       const totalCostos=costFlete+costImp+costDoc+costSeg+costLocal+costOtros+costProducto;
       const presupuesto=Number(op.budget_total||0);
