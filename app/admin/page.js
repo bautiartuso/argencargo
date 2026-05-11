@@ -514,7 +514,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     try{
       const body={operation_id:op.id,payment_date:addPaymentForm.payment_date,amount_usd:finalAmtUsd,currency:addPaymentForm.currency,payment_method:addPaymentForm.payment_method,notes:addPaymentForm.notes||null};
       if(addPaymentForm.currency==="ARS"){body.amount_ars=amtArs;body.exchange_rate=rate;}
-      await dq("operation_client_payments",{method:"POST",token,body});
+      const ins1=await dq("operation_client_payments",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
+      const inserted1=Array.isArray(ins1)?ins1[0]:ins1;
+      if(!inserted1||!inserted1.id){const msg=inserted1?.message||inserted1?.error||"El pago no se pudo guardar.";alert("❌ "+msg);setSavingAddPayment(false);return;}
       const prevTotal=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const newTotal=prevTotal+finalAmtUsd;
       const opUpdate={collected_amount:newTotal};
@@ -1838,7 +1840,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             if(!amt||amt<=0||!newCliPmt.payment_date)return;
             const body={operation_id:op.id,payment_date:newCliPmt.payment_date,amount_usd:amt,currency:newCliPmt.currency||"USD",payment_method:newCliPmt.payment_method,notes:newCliPmt.notes||null};
             if(newCliPmt.currency==="ARS"){body.amount_ars=Number(newCliPmt.amount_ars||0)||null;body.exchange_rate=Number(newCliPmt.exchange_rate||0)||null;}
-            await dq("operation_client_payments",{method:"POST",token,body});
+            const insGi=await dq("operation_client_payments",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
+            const insertedGi=Array.isArray(insGi)?insGi[0]:insGi;
+            if(!insertedGi||!insertedGi.id){alert("❌ "+(insertedGi?.message||insertedGi?.error||"El pago no se pudo guardar."));return;}
             // Si el cliente ya cubrió el total, marcar op cobrada
             const newTotalCli=totalCobrado+amt;
             if(newTotalCli>=totalIngreso&&totalIngreso>0){
@@ -1970,7 +1974,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           if(!newCliPmt.payment_date)return;
           const body={operation_id:op.id,payment_date:newCliPmt.payment_date,amount_usd:finalAmtUsd,currency:newCliPmt.currency,payment_method:newCliPmt.payment_method,notes:newCliPmt.notes||null};
           if(newCliPmt.currency==="ARS"){body.amount_ars=amtArs;body.exchange_rate=rate;}
-          await dq("operation_client_payments",{method:"POST",token,body});
+          const insertRes=await dq("operation_client_payments",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
+          // Validar que el INSERT pasó (sino constraints / errores quedan silenciosos)
+          const inserted=Array.isArray(insertRes)?insertRes[0]:insertRes;
+          if(!inserted||!inserted.id){
+            const msg=inserted?.message||inserted?.error||"El pago no se pudo guardar. Verificá los datos (montos, método, fecha).";
+            alert("❌ "+msg);
+            return;
+          }
           // Sync total_anticipos y si se completa, marcar is_collected
           const newTotal=totalCli+finalAmtUsd;
           const opUpdate={total_anticipos:newTotal};
