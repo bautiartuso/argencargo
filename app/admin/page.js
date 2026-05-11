@@ -893,7 +893,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const debtApp=Number(op.debt_applied_usd||0); // deuda anterior sumada a esta op
     // Saldo real = (budget + deuda anterior) - (anticipos + cobros + saldo a favor aplicado)
     const saldo=Math.max(0,bt+debtApp-totAnt-collected-creditApp);
-    const saldoTxt=saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toFixed(2)}*`:"";
+    const creditTxt=creditApp>0?`\n\n_Se debitó USD ${creditApp.toFixed(2)} del saldo a favor que tenías en tu cuenta._`:"";
+    const saldoTxt=(saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toFixed(2)}*`:"")+creditTxt;
     // Si la op tiene envío a domicilio, usar template wa_envio (con desglose) en lugar de wa_retiro.
     const useEnvio=trigger==="retiro"&&op.shipping_to_door&&envioCost>0;
     const tplKey=useEnvio?"wa_envio":`wa_${trigger}`;
@@ -7144,8 +7145,12 @@ function ComunicacionesPanel({token}){
     const portalLink=`https://argencargo.com.ar/portal?op=${opCode}`;
     const bt=Number(op.budget_total||0);
     const totAnt=Number(op.total_anticipos||0);
-    const saldo=bt-totAnt;
-    const saldoTxt=saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toFixed(2)}*`:"";
+    const collected=Number(op.collected_amount||0);
+    const creditApp=Number(op.credit_applied_usd||0);
+    const debtApp=Number(op.debt_applied_usd||0);
+    const saldo=Math.max(0,bt+debtApp-totAnt-collected-creditApp);
+    const creditTxt=creditApp>0?`\n\n_Se debitó USD ${creditApp.toFixed(2)} del saldo a favor que tenías en tu cuenta._`:"";
+    const saldoTxt=(saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toFixed(2)}*`:"")+creditTxt;
     const data={firstName,opCode,desc,portalLink,saldoTxt};
     const key=`wa_${trigger}`;
     const tpl=templates.find(t=>t.key===key);
