@@ -82,10 +82,14 @@ async function classifyWithClaude(description) {
   return parseClaudeResponse(text);
 }
 
-async function classifyWithClaudeVision(imageBase64, description) {
+async function classifyWithClaudeVision(imageBase64, description, mimeHint) {
   // Imagen en base64 (con o sin prefijo data:). Si tiene prefijo lo limpiamos.
   const cleanB64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, "");
-  const mediaType = imageBase64.match(/^data:(image\/[a-z]+);base64,/)?.[1] || "image/jpeg";
+  // Prioridad: mime del front (image_mime) > prefijo data: en el b64 > fallback jpeg.
+  const mediaType =
+    (mimeHint && /^image\/(png|jpeg|jpg|gif|webp)$/.test(mimeHint) ? (mimeHint === "image/jpg" ? "image/jpeg" : mimeHint) : null) ||
+    imageBase64.match(/^data:(image\/[a-z]+);base64,/)?.[1] ||
+    "image/jpeg";
   const userPrompt = description?.trim()
     ? `Analizá la foto del producto y clasificá. Descripción adicional del usuario: "${description}"`
     : `Analizá la foto del producto y clasificá. No hay descripción adicional, basate solo en la imagen.`;
@@ -144,7 +148,7 @@ function checkOverride(description) {
 
 export async function POST(req) {
   try {
-    const { description, image } = await req.json();
+    const { description, image, image_mime } = await req.json();
     if (!description && !image) return Response.json({ error: "Description or image required" }, { status: 400 });
 
     // Si NO hay imagen, primero probar overrides por descripción (rápido y barato)
@@ -155,7 +159,7 @@ export async function POST(req) {
 
     // Clasificar: con imagen → vision, sin imagen → texto
     const claudeResult = image
-      ? await classifyWithClaudeVision(image, description).catch(e => { console.error("Claude vision error:", e.message); return null; })
+      ? await classifyWithClaudeVision(image, description, image_mime).catch(e => { console.error("Claude vision error:", e?.status||"", e.message); return null; })
       : await classifyWithClaude(description).catch(e => { console.error("Claude error:", e.message); return null; });
 
     if (claudeResult?.ncm_code) {

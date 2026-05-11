@@ -1153,11 +1153,24 @@ function CalculatorPage({token,client}){
     if(file.size>5*1024*1024){alert("La imagen es muy grande. Máximo 5 MB.");return;}
     setProducts(pr=>pr.map((x,j)=>j===idx?{...x,ncmLoading:true,ncmError:false}:x));
     try{
-      // File → base64
+      // Re-encodear a JPEG max 1600px si el formato no es soportado por Claude o pesa mucho.
+      const needsRecode=file.size>1024*1024||!/^image\/(png|jpe?g|gif|webp)$/.test(file.type);
+      let finalBlob=file;let finalMime=file.type||"image/jpeg";
+      if(needsRecode){
+        const bmp=await createImageBitmap(file).catch(()=>null);
+        if(bmp){
+          const maxDim=1600;const scale=Math.min(1,maxDim/Math.max(bmp.width,bmp.height));
+          const w=Math.round(bmp.width*scale),h=Math.round(bmp.height*scale);
+          const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
+          canvas.getContext("2d").drawImage(bmp,0,0,w,h);
+          finalBlob=await new Promise(res=>canvas.toBlob(res,"image/jpeg",0.85));
+          finalMime="image/jpeg";
+        }
+      }
       const reader=new FileReader();
-      const base64=await new Promise((res,rej)=>{reader.onload=ev=>res(ev.target.result);reader.onerror=rej;reader.readAsDataURL(file);});
+      const base64=await new Promise((res,rej)=>{reader.onload=ev=>res(ev.target.result);reader.onerror=rej;reader.readAsDataURL(finalBlob);});
       const currentDesc=products[idx]?.description||"";
-      const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:base64,description:currentDesc})});
+      const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:base64,description:currentDesc,image_mime:finalMime})});
       const d=await r.json();
       if(d.fallback||d.error){setProducts(pr=>pr.map((x,j)=>j===idx?{...x,ncmLoading:false,ncmError:true,ncm:null}:x));return;}
       // Si vino guess_description y no había descripción, rellenamos

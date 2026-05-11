@@ -863,14 +863,30 @@ function CotizadorWizard({token,requestId,profileId,onBack}){
     if(!p.description?.trim()&&!p.photo_url)return;
     updateProduct(i,"ncm_loading",true);updateProduct(i,"ncm_error",false);
     try{
-      // Si hay foto, convertirla a base64 y mandarla junto con la descripción.
+      // Si hay foto, convertirla a base64 + comprimirla si es muy grande, y mandar el mime explícito.
       let body={description:p.description||""};
       if(p.photo_url){
         try{
           const imgR=await fetch(p.photo_url);
           const blob=await imgR.blob();
-          const b64=await new Promise((resolve,reject)=>{const fr=new FileReader();fr.onload=()=>resolve(fr.result.split(",")[1]);fr.onerror=reject;fr.readAsDataURL(blob);});
+          // Comprimir / re-encodear a JPEG si la imagen es >1MB o tiene formato no soportado (heic, webp viejo, etc).
+          // Claude acepta PNG/JPEG/GIF/WEBP, pero JPEG max 1600px da el mejor balance tamaño/precisión.
+          const needsRecode=blob.size>1024*1024||!/^image\/(png|jpe?g|gif|webp)$/.test(blob.type);
+          let finalBlob=blob;let finalMime=blob.type||"image/jpeg";
+          if(needsRecode){
+            const bmp=await createImageBitmap(blob).catch(()=>null);
+            if(bmp){
+              const maxDim=1600;const scale=Math.min(1,maxDim/Math.max(bmp.width,bmp.height));
+              const w=Math.round(bmp.width*scale),h=Math.round(bmp.height*scale);
+              const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
+              canvas.getContext("2d").drawImage(bmp,0,0,w,h);
+              finalBlob=await new Promise(res=>canvas.toBlob(res,"image/jpeg",0.85));
+              finalMime="image/jpeg";
+            }
+          }
+          const b64=await new Promise((resolve,reject)=>{const fr=new FileReader();fr.onload=()=>resolve(fr.result.split(",")[1]);fr.onerror=reject;fr.readAsDataURL(finalBlob);});
           body.image=b64;
+          body.image_mime=finalMime;
         } catch(e){console.warn("No pude leer foto para NCM",e);}
       }
       const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
