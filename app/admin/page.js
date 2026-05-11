@@ -3794,8 +3794,10 @@ function FinancePanel({token}){
     // Comisión de giro: SIEMPRE se cuenta como gasto de contado (no depende del método del giro).
     // Representa el costo financiero que se paga al recibir la transferencia del cliente.
     if(p.giro_status==="confirmado"&&Number(p.cost_comision_giro||0)>0){ledger.push({date:p.giro_date||p.client_paid_date||"—",type:"gasto",origen:"pmt",code,desc:`Comisión financiera ${code} — ${cc}`,amount:Number(p.cost_comision_giro),detail:"Costo por recibir la transferencia"});}
-    // Giro al exterior: sólo aparece cuando el giro se pagó realmente (o tarjeta debitada).
-    if(p.giro_status==="confirmado"&&!tarjetaPendiente&&Number(p.giro_amount_usd||0)>0){ledger.push({date:(p.giro_tarjeta_paid_at?p.giro_tarjeta_paid_at.slice(0,10):p.giro_date)||"—",type:"gasto",origen:"pmt",code,desc:`Giro exterior ${code} — ${cc}`,amount:Number(p.giro_amount_usd),detail:p.description||""});}
+    // Giro al exterior: aparece cuando el giro se pagó (efectivo/transferencia) o la tarjeta se debitó.
+    // El ledger usa SIEMPRE giro_date (fecha del giro original), NO la fecha en que se marcó debitada.
+    // Si se usa giro_tarjeta_paid_at, marcar un grupo TC mueve todas las entradas a hoy y descuadra el devengado.
+    if(p.giro_status==="confirmado"&&!tarjetaPendiente&&Number(p.giro_amount_usd||0)>0){ledger.push({date:p.giro_date||p.client_paid_date||"—",type:"gasto",origen:"pmt",code,desc:`Giro exterior ${code} — ${cc}`,amount:Number(p.giro_amount_usd),detail:p.description||""});}
   });
   entries.forEach(e=>{
     // Gastos con tarjeta: solo aparecen cuando is_paid=true
