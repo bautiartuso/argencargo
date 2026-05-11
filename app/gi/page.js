@@ -1153,6 +1153,23 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
         <div><label style={lblStyle()}>Alto (cm)</label><input type="text" inputMode="decimal" value={p.pkg_height_cm} onChange={e=>onUpdate(i,"pkg_height_cm",e.target.value.replace(/[^0-9.]/g,""))} style={inpStyle()}/></div>
         <div><label style={lblStyle()}>Peso bulto (kg)</label><input type="text" inputMode="decimal" value={p.pkg_weight_kg} onChange={e=>onUpdate(i,"pkg_weight_kg",e.target.value.replace(/[^0-9.]/g,""))} style={inpStyle()}/></div>
       </div>
+      {/* Preview en vivo: CBM total y peso facturable (aéreo y marítimo) calculados desde los inputs de embalaje. */}
+      {(()=>{
+        const cnt=Number(p.pkg_count||0);const L=Number(p.pkg_length_cm||0);const W=Number(p.pkg_width_cm||0);const H=Number(p.pkg_height_cm||0);const kg=Number(p.pkg_weight_kg||0);
+        if(!cnt||!L||!W||!H||!kg)return null;
+        const cbm=(L*W*H*cnt)/1000000;
+        const pesoReal=kg*cnt;
+        const pesoVolAereo=(L*W*H*cnt)/5000;
+        const pesoFactAereo=Math.max(pesoReal,pesoVolAereo);
+        const pesoFactMar=Math.max(pesoReal,cbm*1000); // marítimo: 1 m³ = 1.000 kg facturables
+        return <div style={{display:"flex",flexWrap:"wrap",gap:14,padding:"10px 12px",marginTop:8,background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:8,fontSize:11,color:"rgba(255,255,255,0.65)",fontFeatureSettings:'"tnum"'}}>
+          <span>CBM total: <strong style={{color:"#fff"}}>{cbm.toFixed(4)} m³</strong></span>
+          <span>Peso real: <strong style={{color:"#fff"}}>{pesoReal.toFixed(2)} kg</strong></span>
+          <span>Peso vol. aéreo (÷5000): <strong style={{color:"#fff"}}>{pesoVolAereo.toFixed(2)} kg</strong></span>
+          <span>Facturable aéreo: <strong style={{color:"#22c55e"}}>{pesoFactAereo.toFixed(2)} kg</strong></span>
+          <span>Facturable marítimo: <strong style={{color:"#60a5fa"}}>{pesoFactMar.toFixed(2)} kg</strong></span>
+        </div>;
+      })()}
     </div>)}
     <button onClick={onAdd} style={{padding:"7px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer",fontFamily:"inherit",marginBottom:18}}>+ Agregar producto</button>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10}}>
