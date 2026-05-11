@@ -2025,6 +2025,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           setOp(p=>({...p,...opUpdate}));
           flash(`Deuda registrada: -USD ${saldoCli.toFixed(2)}`);
         };
+        // 3a opción: dejar saldo pendiente dentro de la misma op (el cliente va a pagar el resto acá, no traspasa a CC).
+        // No marca is_collected=true; no toca CC del cliente; no aplica descuento. La op queda visible como
+        // "saldo pendiente" hasta que cargues los cobros adicionales que cierran la diferencia.
+        const keepSaldoInOp=()=>{
+          if(saldoCli<=0.01)return;
+          if(!confirm(`La op queda con saldo pendiente de USD ${saldoCli.toFixed(2)} dentro de esta misma operación.\n\nNO se registra como deuda en la cuenta corriente del cliente ni como descuento. Cuando el cliente pague el resto, cargás otro cobro acá y se cierra.\n\n¿Confirmás?`))return;
+          flash(`Saldo pendiente: USD ${saldoCli.toFixed(2)} — cargá el resto cuando llegue.`);
+        };
         return <Card title="Anticipos / Pagos del cliente">
           <div style={{display:"flex",gap:16,marginBottom:12,flexWrap:"wrap",alignItems:"center",justifyContent:"space-between"}}>
             <div style={{display:"flex",gap:20,fontSize:12,color:"rgba(255,255,255,0.7)",flexWrap:"wrap"}}>
@@ -2035,8 +2043,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               {Number(op.discount_applied_usd||0)>0&&<span style={{color:GOLD_LIGHT,fontWeight:700}}>🎟 Descuento USD {Number(op.discount_applied_usd).toFixed(2)}</span>}
             </div>
             {saldoCli>0.01&&totalCli>0&&!op.is_collected&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <Btn onClick={keepSaldoInOp} variant="secondary" small title="El saldo queda pendiente dentro de esta misma op. No traspasa a la CC del cliente.">⏳ Dejar saldo en op</Btn>
               <Btn onClick={closeWithDiscount} variant="secondary" small>🎟 Cerrar con descuento</Btn>
-              <Btn onClick={registerDebt} variant="secondary" small>Cerrar y registrar deuda</Btn>
+              <Btn onClick={registerDebt} variant="secondary" small>Cerrar y registrar deuda en CC</Btn>
             </div>}
           </div>
           {budgetTot>0&&<div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden",marginBottom:14}}>
