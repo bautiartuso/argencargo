@@ -4025,6 +4025,11 @@ function FinancePanel({token}){
 
 function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceItems,depositPkgs,onReload,onFlash,onBack,usd}){
   const a=signups.find(s=>s.auth_user_id===flight.agent_id);
+  // Peso facturable por paquete (max bruto vs volumétrico) — usado para $/kg y reparto de cost_share.
+  const VOL_DIV=Number(a?.volumetric_divisor)||5000;
+  const pkgFact=(p)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0)*q;const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const vol=l&&w&&h?((l*w*h)/VOL_DIV)*q:0;return Math.max(gw,vol);};
+  const opFact=(opId)=>(depositPkgs||[]).filter(p=>p.operation_id===opId).reduce((s,p)=>s+pkgFact(p),0);
+  const totalFactKg=flightOps.reduce((s,fo)=>s+opFact(fo.operation_id),0);
   // Ops del vuelo: buscar en depositOps/allOps, y si no están (porque cambiaron de status), cargar directo
   const [flightOpsData,setFlightOpsData]=useState([]);
   useEffect(()=>{(async()=>{
@@ -4235,13 +4240,12 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         await dq("operations",{method:"PATCH",token,filters:`?id=in.(${opIds.join(",")})`,body:opPatch});
       }
     }
-    // Recalcular share por peso ya guardado en flight_operations
+    // Recalcular share por peso FACTURABLE (max bruto vs volumétrico) de cada op.
     for(const fo of flightOps){
-      const opW=Number(fo.weight_kg||0);
-      const share=newWeight>0?(opW/newWeight)*newCost:0;
-      // Mapeo: cuenta_corriente queda igual; alibaba se setea provisional (admin completa después con TC/débito en el banner HOY)
+      const opFactKg=opFact(fo.operation_id);
+      const share=totalFactKg>0?(opFactKg/totalFactKg)*newCost:0;
       const cflMethod=newPmt==="alibaba"?"alibaba":newPmt;
-      await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{cost_share_usd:share}});
+      await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{cost_share_usd:share,weight_kg:opFactKg}});
       await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{cost_flete:share,cost_flete_method:cflMethod}});
     }
     // Sincronizar movimiento de CC del agente (creado en dispatch si era cuenta_corriente)
@@ -4517,8 +4521,8 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,fontSize:12}}>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>CARRIER</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.international_carrier||"—"}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>TRACKING</p><p style={{fontSize:14,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.international_tracking||"—"}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PESO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.total_weight_kg?`${flight.total_weight_kg} kg`:"—"}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>COSTO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{usd(flight.total_cost_usd||0)}{flight.total_weight_kg?<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginLeft:6}}>· {usd((flight.total_cost_usd||0)/flight.total_weight_kg)}/kg</span>:null}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PESO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.total_weight_kg?`${flight.total_weight_kg} kg`:"—"}{totalFactKg>0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginLeft:6}}>· {totalFactKg.toFixed(2)} kg fact.</span>}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>COSTO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{usd(flight.total_cost_usd||0)}{totalFactKg>0?<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginLeft:6}}>· {usd((flight.total_cost_usd||0)/totalFactKg)}/kg fact.</span>:null}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PAGO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.payment_method||"—"}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>DESPACHADO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{formatDate(flight.dispatched_at)}</p></div>
         </div>
@@ -4541,7 +4545,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             <option value="alibaba" style={{background:"#142038"}}>Alibaba (pendiente de completar)</option>
           </select>
         </div>
-        {Number(costForm.total_cost_usd)>0&&Number(costForm.total_weight_kg)>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"0 0 10px"}}>Tarifa resultante: <strong style={{color:IC}}>{usd(Number(costForm.total_cost_usd)/Number(costForm.total_weight_kg))}/kg</strong></p>}
+        {Number(costForm.total_cost_usd)>0&&totalFactKg>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"0 0 10px"}}>Tarifa resultante (peso facturable {totalFactKg.toFixed(2)} kg): <strong style={{color:IC}}>{usd(Number(costForm.total_cost_usd)/totalFactKg)}/kg</strong></p>}
         <div style={{display:"flex",gap:8}}>
           <Btn small onClick={requestSaveCost} disabled={savingCost}>{savingCost?"Guardando…":"💾 Guardar y recalcular"}</Btn>
           <Btn small variant="secondary" onClick={()=>setEditCost(false)} disabled={savingCost}>Cancelar</Btn>

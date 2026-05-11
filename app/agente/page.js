@@ -942,7 +942,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     </>}
 
     {/* Flight detail (shared by active_flights + history) */}
-    {(tab==="active_flights"||tab==="history")&&selFlight&&(()=>{const f=flights.find(x=>x.id===selFlight);if(!f)return null;const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <FlightDetail token={token} flight={f} flightOps={ops} packages={packages} t={t} onBack={()=>setSelFlight(null)} onDispatched={()=>{reloadAll();setSelFlight(null);flash(t.success);}}/>;})()}
+    {(tab==="active_flights"||tab==="history")&&selFlight&&(()=>{const f=flights.find(x=>x.id===selFlight);if(!f)return null;const ops=flightOps.filter(fo=>fo.flight_id===f.id);return <FlightDetail token={token} flight={f} flightOps={ops} packages={packages} signup={signup} t={t} onBack={()=>setSelFlight(null)} onDispatched={()=>{reloadAll();setSelFlight(null);flash(t.success);}}/>;})()}
 
     {/* TAB 4: Estadísticas */}
     {tab==="stats"&&(()=>{
@@ -1077,11 +1077,16 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   </SimpleShell>;
 }
 
-function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
+function FlightDetail({token,flight,flightOps,packages,signup,t,onBack,onDispatched}){
   const [invoiceItems,setInvoiceItems]=useState([]);
   const [lightboxPhoto,setLightboxPhoto]=useState(null);
-  // Peso total calculado automáticamente desde los bultos
+  // Peso facturable por paquete (max bruto vs volumétrico) — usado para $/kg y reparto.
+  const VOL_DIV=Number(signup?.volumetric_divisor)||5000;
+  const pkgFact=(p)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0)*q;const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const vol=l&&w&&h?((l*w*h)/VOL_DIV)*q:0;return Math.max(gw,vol);};
+  // Peso total calculado automáticamente desde los bultos (bruto) — sigue siendo lo que el agente entra al carrier.
   const autoWeight=flightOps.reduce((s,fo)=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);return s+opPkgs.reduce((a,p)=>a+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);},0);
+  // Peso facturable total para el reparto de cost_share.
+  const autoFact=flightOps.reduce((s,fo)=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);return s+opPkgs.reduce((a,p)=>a+pkgFact(p),0);},0);
   const [totalCost,setTotalCost]=useState(flight.total_cost_usd||"");
   const [tracking,setTracking]=useState(flight.international_tracking||"");
   const [carrier,setCarrier]=useState(flight.international_carrier||"DHL");
@@ -1188,12 +1193,12 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
     const flightPatch={total_weight_kg:w,total_cost_usd:c,international_tracking:tracking,international_carrier:carrier,payment_method:pmtMethod,status:"despachado",dispatched_at:new Date().toISOString()};
     if(isAlibaba){flightPatch.awaiting_alibaba_payment=true;flightPatch.alibaba_base_cost_usd=c;}
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:flightPatch});
-    // 2. Distribute cost by weight + update each operation (Alibaba usa el base provisional, se recalcula cuando admin completa)
+    // 2. Distribuir costo según peso FACTURABLE (max bruto vs volumétrico) de cada op.
     for(const fo of flightOps){
       const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);
-      const opW=opPkgs.reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);
-      const share=w>0?(opW/w)*c:0;
-      await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{weight_kg:opW,cost_share_usd:share}});
+      const opFactW=opPkgs.reduce((s,p)=>s+pkgFact(p),0);
+      const share=autoFact>0?(opFactW/autoFact)*c:0;
+      await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{weight_kg:opFactW,cost_share_usd:share}});
       await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"en_transito",international_tracking:tracking,international_carrier:carrier,cost_flete:share,cost_flete_method:pmtMethod}});
     }
     // 3. Registrar pago según método
@@ -1292,9 +1297,19 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
     </div>}
     {flight.status==="preparando"&&flight.invoice_presented_at&&<Card title={t.dispatch_form}>
       {err&&<div style={{padding:"10px 14px",background:"rgba(255,80,80,0.12)",border:"1px solid rgba(255,80,80,0.25)",borderRadius:10,fontSize:13,color:"#ff6b6b",marginBottom:14}}>{err}</div>}
-      <div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:8,padding:"10px 14px",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{t.weight_from_packages}</span>
-        <span style={{fontSize:16,fontWeight:700,color:IC}}>{autoWeight.toFixed(2)} kg</span>
+      <div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{t.weight_from_packages}</span>
+          <span style={{fontSize:16,fontWeight:700,color:IC}}>{autoWeight.toFixed(2)} kg</span>
+        </div>
+        {autoFact>autoWeight+0.01&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,paddingTop:6,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Peso facturable (vol &gt; bruto) · usado para $/kg y reparto</span>
+          <span style={{fontSize:13,fontWeight:700,color:"#fb923c"}}>{autoFact.toFixed(2)} kg</span>
+        </div>}
+        {Number(totalCost)>0&&autoFact>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,paddingTop:6,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Tarifa resultante</span>
+          <span style={{fontSize:13,fontWeight:700,color:IC}}>{usdF(Number(totalCost)/autoFact)}/kg fact.</span>
+        </div>}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
         <Inp label={t.total_cost} type="number" value={totalCost} onChange={setTotalCost} req placeholder="500"/>
