@@ -2672,7 +2672,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const bOtros=costOtros;
           const bDoc=costDoc; // gasto documental — base = costo real
           const presuTotal=bFlete+bTax+bSeg+bLocal+bOtros+bDoc;
-          const factor=presuTotal>0&&ingresoNeto>0?(ingresoNeto/presuTotal):1;
+          // Solo prorratear cuando hay cobro real registrado. Si la op aún no tiene cobro,
+          // `cobro` cae al presupuesto como fallback pero la comisión sigue restando, dando factor < 1 falso.
+          const hasRealCobro=(cobroUsd+creditApplied)>0.01;
+          const factor=hasRealCobro&&presuTotal>0&&ingresoNeto>0?(ingresoNeto/presuTotal):1;
           const adj=(b)=>b*factor;
           const presuLabel=factor!==1?"Presu (ajustado)":"Presupuestado";const costoLabel="Costo real";
           const block=(title,presuRaw,costo)=>{const presu=adj(presuRaw);const saldo=presu-costo;const ok=saldo>=0;return <div style={{padding:"10px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
