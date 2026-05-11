@@ -4079,7 +4079,10 @@ function FinancePanel({token}){
       const usdTotPmts=cardDebt.pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
       const usdTotSup=(cardDebt.supTcUsd||[]).reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const usdTot=usdTotEntries+usdTotPmts+usdTotSup;
-      const arsTot=cardDebt.ars.reduce((s,e)=>s+Number(e.amount_ars||0),0);
+      // ARS pendientes = finance_entries ARS + supplier_payments ARS (estos también dolarizan al cierre).
+      const arsTotEntries=cardDebt.ars.reduce((s,e)=>s+Number(e.amount_ars||0),0);
+      const arsTotSup=(cardDebt.supTcArs||[]).reduce((s,p)=>s+Number(p.amount_ars||0),0);
+      const arsTot=arsTotEntries+arsTotSup;
       // Agrupar por (TARJETA, fecha de cierre). Cada tarjeta tiene su propio grupo
       // aunque coincida la fecha de cierre con otra tarjeta.
       const groups={};
@@ -4134,6 +4137,7 @@ function FinancePanel({token}){
           {arsTot>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:12,padding:"18px 22px"}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",letterSpacing:"0.05em"}}>💳 DEUDA TARJETA ARS (sin dollarizar)</p>
             <p style={{fontSize:28,fontWeight:700,color:IC,margin:0}}>ARS {arsTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"6px 0 0"}}>{cardDebt.ars.length} gasto{cardDebt.ars.length!==1?"s":""} del negocio{arsTotEntries>0?` (ARS ${arsTotEntries.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}{(cardDebt.supTcArs||[]).length>0?` · ${cardDebt.supTcArs.length} costo${cardDebt.supTcArs.length!==1?"s":""} GI (ARS ${arsTotSup.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}</p>
             <button onClick={()=>setTab("dollar")} style={{marginTop:10,fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>Ir a Dollarización →</button>
           </div>}
         </div>
