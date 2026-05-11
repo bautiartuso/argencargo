@@ -66,15 +66,10 @@ async function callCarrier(route, trackingNumber) {
   return { error: `carrier desconocido: ${route}` };
 }
 
-async function syncOne(op) {
-  const route = carrierRoute(op.international_carrier);
-  if (!route) return { op: op.operation_code, skipped: "carrier desconocido" };
-  if (!isCarrierConfigured(route)) {
-    await updateSyncStatus(op.id, route, 0, `${route.toUpperCase()} API no configurada`);
-    return { op: op.operation_code, skipped: `${route} no configurada` };
-  }
-
-  const d = await callCarrier(route, op.international_tracking);
+// Procesa una sola op dada la respuesta del carrier ya consultada (puede ser compartida
+// con otras ops si tienen el mismo tracking). Antes hacíamos una llamada al carrier por op
+// y dos ops con el mismo tracking generaban rate-limit/fallas silenciosas.
+async function applyEventsToOp(op, route, d) {
   if (d.error) {
     await updateSyncStatus(op.id, route, 0, d.error);
     return { op: op.operation_code, error: d.error };
@@ -180,6 +175,18 @@ async function syncOne(op) {
   return { op: op.operation_code, inserted, carrier: route, eta_from_carrier: d.eta || null, eta_patch: patch.eta || null, eta_patch_result: patchResult, errors: errors.length ? errors : undefined };
 }
 
+// Wrapper para casos individuales (botón manual): llama al carrier y aplica.
+async function syncOne(op) {
+  const route = carrierRoute(op.international_carrier);
+  if (!route) return { op: op.operation_code, skipped: "carrier desconocido" };
+  if (!isCarrierConfigured(route)) {
+    await updateSyncStatus(op.id, route, 0, `${route.toUpperCase()} API no configurada`);
+    return { op: op.operation_code, skipped: `${route} no configurada` };
+  }
+  const d = await callCarrier(route, op.international_tracking);
+  return await applyEventsToOp(op, route, d);
+}
+
 async function runSync(req) {
   const auth = req.headers.get("authorization") || new URL(req.url).searchParams.get("secret") || "";
   const expected = process.env.CRON_SECRET || "";
@@ -202,11 +209,47 @@ async function runSync(req) {
   const ops = await fetchActiveOps(operationId);
   if (!Array.isArray(ops)) return Response.json({ error: "failed to fetch ops", detail: ops }, { status: 500 });
 
-  // Procesar ops en paralelo con Promise.allSettled (mucho más rápido que secuencial)
-  const settled = await Promise.allSettled(ops.map(op => syncOne(op)));
-  const results = settled.map((s, i) => s.status === "fulfilled" ? s.value : { op: ops[i].operation_code, error: String(s.reason?.message || s.reason) });
+  // Agrupar por (carrier_route, tracking_number) para no hacer dos llamadas al carrier
+  // por el mismo waybill cuando 2+ ops comparten tracking (consolidaciones). Antes el
+  // paralelismo + rate-limits del carrier hacía que una op se sincronizara y otra fallara.
+  const groups = new Map();
+  for (const op of ops) {
+    const route = carrierRoute(op.international_carrier);
+    const tracking = (op.international_tracking || "").trim();
+    if (!route || !tracking) {
+      // Sync individual igual (devuelve "skipped" / sin tracking).
+      continue;
+    }
+    const key = `${route}::${tracking}`;
+    if (!groups.has(key)) groups.set(key, { route, tracking, ops: [] });
+    groups.get(key).ops.push(op);
+  }
 
-  return Response.json({ synced: results.length, results });
+  // Una sola llamada al carrier por grupo, luego apply a cada op del grupo en paralelo.
+  const groupSettled = await Promise.allSettled(Array.from(groups.values()).map(async g => {
+    if (!isCarrierConfigured(g.route)) {
+      await Promise.all(g.ops.map(o => updateSyncStatus(o.id, g.route, 0, `${g.route.toUpperCase()} API no configurada`)));
+      return g.ops.map(o => ({ op: o.operation_code, skipped: `${g.route} no configurada` }));
+    }
+    const d = await callCarrier(g.route, g.tracking);
+    // Aplicar a cada op del grupo (en paralelo; el carrier ya fue llamado una sola vez).
+    return await Promise.all(g.ops.map(o => applyEventsToOp(o, g.route, d)));
+  }));
+  const grouped = groupSettled.flatMap((s, i) => {
+    if (s.status === "fulfilled") return s.value;
+    const g = Array.from(groups.values())[i];
+    return g.ops.map(o => ({ op: o.operation_code, error: String(s.reason?.message || s.reason) }));
+  });
+
+  // Ops descartadas en el agrupamiento (sin tracking o carrier desconocido) → sync individual.
+  const groupedOpIds = new Set();
+  for (const g of groups.values()) for (const o of g.ops) groupedOpIds.add(o.id);
+  const orphans = ops.filter(o => !groupedOpIds.has(o.id));
+  const orphanSettled = await Promise.allSettled(orphans.map(o => syncOne(o)));
+  const orphanRes = orphanSettled.map((s, i) => s.status === "fulfilled" ? s.value : { op: orphans[i].operation_code, error: String(s.reason?.message || s.reason) });
+
+  const results = [...grouped, ...orphanRes];
+  return Response.json({ synced: results.length, groups: groups.size, results });
 }
 
 // GET y POST → mismo comportamiento. Vercel Cron usa GET por defecto.
