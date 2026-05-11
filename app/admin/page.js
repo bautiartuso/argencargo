@@ -1529,6 +1529,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <div style={{display:"flex",gap:6}}><Btn onClick={()=>savePkg(pk)} small variant="secondary">Guardar</Btn><Btn onClick={()=>movePkgToOp(pk)} small variant="secondary" title="Mover este bulto a otra operación (cliente equivocado)">↪ Mover</Btn><Btn onClick={()=>delPkg(pk.id)} small variant="danger">Eliminar</Btn></div>
         </div>
         <Inp label="Seguimiento nacional" value={pk.national_tracking} onChange={v=>chPkg(i,"national_tracking",v)} placeholder="Código de seguimiento nacional" small/>
+        {Array.isArray(pk.consolidated_from_trackings)&&pk.consolidated_from_trackings.length>0&&<div style={{margin:"-4px 0 8px",padding:"6px 10px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:6,display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
+          <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.04em"}}>Originales consolidados:</span>
+          {pk.consolidated_from_trackings.map((tr,k)=><span key={k} style={{fontSize:10.5,padding:"2px 7px",borderRadius:4,background:"rgba(96,165,250,0.14)",color:"#60a5fa",fontFamily:"monospace"}}>{tr}</span>)}
+        </div>}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 12px"}}>
           <Inp label="Cantidad" type="number" value={pk.quantity} onChange={v=>chPkg(i,"quantity",v?parseInt(v):1)} small/>
           <Inp label="Largo cm" type="number" value={pk.length_cm} onChange={v=>chPkg(i,"length_cm",v)} step="0.1" small/>

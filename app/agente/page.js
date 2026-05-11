@@ -769,7 +769,15 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   // Computed: paquetes en depósito (op no asignada a ningún vuelo)
   const flightOpIds=new Set(flightOps.map(fo=>fo.operation_id));
   const depositPkgsAll=packages.filter(p=>!flightOpIds.has(p.operation_id));
-  const depositPkgs=depositPkgsAll.filter(p=>!depositSearch||[p.operations?.operation_code,p.operations?.clients?.client_code,p.national_tracking].some(v=>(v||"").toLowerCase().includes(depositSearch.toLowerCase())));
+  const depositPkgs=depositPkgsAll.filter(p=>{
+    if(!depositSearch)return true;
+    const q=depositSearch.toLowerCase();
+    const fields=[p.operations?.operation_code,p.operations?.clients?.client_code,p.national_tracking];
+    if(fields.some(v=>(v||"").toLowerCase().includes(q)))return true;
+    // También permitir buscar por trackings originales si fue un repack.
+    if(Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.some(tr=>(tr||"").toLowerCase().includes(q)))return true;
+    return false;
+  });
   const depositTotalKg=depositPkgsAll.reduce((s,p)=>s+Number(p.gross_weight_kg||0),0).toFixed(2);
   const activeFlights=flights.filter(f=>f.status==="preparando");
   const historyFlights=flights.filter(f=>f.status==="despachado"||f.status==="recibido");
@@ -897,7 +905,13 @@ function Dashboard({session,onLogout,lang,setLang,t}){
             return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"10px 14px",fontFamily:"monospace",fontWeight:600,color:"#fff"}}>{p.operations?.operation_code||"—"}</td>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)"}}>{p.operations?.clients?.client_code||"—"}</td>
-            <td style={{padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{p.national_tracking||"—"}</td>
+            <td style={{padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:"rgba(255,255,255,0.6)"}}>
+              {p.national_tracking||"—"}
+              {Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.length>0&&<div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:3}} title={`Trackings originales consolidados: ${p.consolidated_from_trackings.join(", ")}`}>
+                {p.consolidated_from_trackings.slice(0,3).map((tr,k)=><span key={k} style={{fontSize:9.5,padding:"1px 5px",borderRadius:3,background:"rgba(96,165,250,0.12)",color:"#60a5fa",fontFamily:"monospace"}}>{tr}</span>)}
+                {p.consolidated_from_trackings.length>3&&<span style={{fontSize:9.5,padding:"1px 5px",borderRadius:3,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)"}}>+{p.consolidated_from_trackings.length-3}</span>}
+              </div>}
+            </td>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums"}}>{bruto?`${bruto.toFixed(2)} kg`:"—"}</td>
             <td style={{padding:"10px 14px",color:isVolBigger?"#fb923c":"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{vol?`${vol.toFixed(2)} kg`:"—"}</td>
             <td style={{padding:"10px 14px",color:fact>0?IC:"rgba(255,255,255,0.3)",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{fact?`${fact.toFixed(2)} kg`:"—"}</td>
@@ -1401,11 +1415,14 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
     if(!confirm(`Vas a REEMPLAZAR los ${packages.length} bultos viejos por estos ${newBultos.length} nuevos.\n\nEsta acción no se puede deshacer. ¿Confirmás?`))return;
     setSaving(true);
     try{
+      // Listado de TODOS los trackings originales que se consolidan en este repack.
+      // Lo guardamos en cada nuevo bulto para que cualquier consulta posterior los vea.
+      const origTrackings=(packages||[]).map(p=>p.national_tracking).filter(t=>t&&!String(t).startsWith("REPACK-"));
       // 1. DELETE TODOS los bultos viejos de esta op
       for(const p of packages){
         await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});
       }
-      // 2. INSERT los nuevos con tracking auto-generado REPACK-XXXX-N
+      // 2. INSERT los nuevos con tracking auto-generado REPACK-XXXX-N + listado de originales
       let nn=0;
       for(const b of newBultos){
         nn++;
@@ -1413,6 +1430,7 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
           operation_id:opId,package_number:nn,quantity:1,
           gross_weight_kg:Number(b.weight),length_cm:Number(b.length),width_cm:Number(b.width),height_cm:Number(b.height),
           national_tracking:refFor(nn-1),
+          consolidated_from_trackings:origTrackings.length>0?origTrackings:null,
         }});
       }
       // 3. Marcar request como done
