@@ -6486,27 +6486,27 @@ function FinanceDashboard({token}){
       </div>
     </div>
 
-    {/* ═══ KPIs PRINCIPALES — más grandes, son lo más importante ═══ */}
-    <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr 1fr 1fr",gap:18,marginBottom:20}}>
-      <div style={{background:totalGan>=0?"linear-gradient(135deg,rgba(34,197,94,0.14),rgba(34,197,94,0.04))":"linear-gradient(135deg,rgba(255,80,80,0.14),rgba(255,80,80,0.04))",border:`1.5px solid ${totalGan>=0?"rgba(34,197,94,0.32)":"rgba(255,80,80,0.32)"}`,borderRadius:16,padding:"26px 28px"}}>
+    {/* ═══ KPIs PRINCIPALES ═══ Todos al mismo tamaño para evitar desborde del número. */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4, minmax(0, 1fr))",gap:14,marginBottom:20}}>
+      <div style={{background:totalGan>=0?"linear-gradient(135deg,rgba(34,197,94,0.14),rgba(34,197,94,0.04))":"linear-gradient(135deg,rgba(255,80,80,0.14),rgba(255,80,80,0.04))",border:`1.5px solid ${totalGan>=0?"rgba(34,197,94,0.32)":"rgba(255,80,80,0.32)"}`,borderRadius:16,padding:"22px 22px",minWidth:0}}>
         <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Ganancia neta del período</p>
-        <p style={{fontSize:42,fontWeight:800,color:totalGan>=0?"#22c55e":"#ff6b6b",margin:0,lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{usd(totalGan)}</p>
-        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"10px 0 0"}}>Todo el libro diario · ingresos − gastos del período</p>
+        <p style={{fontSize:30,fontWeight:800,color:totalGan>=0?"#22c55e":"#ff6b6b",margin:0,lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{usd(totalGan)}</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"10px 0 0",lineHeight:1.3}}>Ingresos − gastos del libro diario</p>
       </div>
-      <div style={{background:"linear-gradient(135deg,rgba(34,197,94,0.06),rgba(34,197,94,0.01))",border:"1.5px solid rgba(34,197,94,0.25)",borderRadius:16,padding:"26px 28px"}}>
+      <div style={{background:"linear-gradient(135deg,rgba(34,197,94,0.06),rgba(34,197,94,0.01))",border:"1.5px solid rgba(34,197,94,0.25)",borderRadius:16,padding:"22px 22px",minWidth:0}}>
         <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Ingresos</p>
-        <p style={{fontSize:34,fontWeight:800,color:"#22c55e",margin:0,lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{usd(totalIng)}</p>
-        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"10px 0 0"}}>Cobros + anticipos + reembolsos</p>
+        <p style={{fontSize:30,fontWeight:800,color:"#22c55e",margin:0,lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{usd(totalIng)}</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"10px 0 0",lineHeight:1.3}}>Cobros + anticipos + reembolsos</p>
       </div>
-      <div style={{background:"linear-gradient(135deg,rgba(255,80,80,0.06),rgba(255,80,80,0.01))",border:"1.5px solid rgba(255,80,80,0.25)",borderRadius:16,padding:"26px 28px"}}>
+      <div style={{background:"linear-gradient(135deg,rgba(255,80,80,0.06),rgba(255,80,80,0.01))",border:"1.5px solid rgba(255,80,80,0.25)",borderRadius:16,padding:"22px 22px",minWidth:0}}>
         <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Costos</p>
-        <p style={{fontSize:34,fontWeight:800,color:"#ff6b6b",margin:0,lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{usd(totalCost)}</p>
-        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"10px 0 0"}}>Costos op + gastos fijos + comisiones</p>
+        <p style={{fontSize:30,fontWeight:800,color:"#ff6b6b",margin:0,lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{usd(totalCost)}</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"10px 0 0",lineHeight:1.3}}>Costos op + gastos fijos + comisiones</p>
       </div>
-      <div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.08),rgba(184,149,106,0.02))",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:16,padding:"26px 28px"}}>
+      <div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.08),rgba(184,149,106,0.02))",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:16,padding:"22px 22px",minWidth:0}}>
         <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Margen</p>
-        <p style={{fontSize:34,fontWeight:800,color:margen>=20?"#22c55e":margen>=0?"#fbbf24":"#ff6b6b",margin:0,lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums"}}>{margen.toFixed(1)}%</p>
-        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"10px 0 0"}}>{margen>=20?"Saludable":margen>=0?"Ajustado":"En rojo"}</p>
+        <p style={{fontSize:30,fontWeight:800,color:margen>=20?"#22c55e":margen>=0?"#fbbf24":"#ff6b6b",margin:0,lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{margen.toFixed(1)}%</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"10px 0 0",lineHeight:1.3}}>{margen>=20?"Saludable":margen>=0?"Ajustado":"En rojo"}</p>
       </div>
     </div>
 
@@ -6553,30 +6553,58 @@ function FinanceDashboard({token}){
       const deudaTCUsdSup=supplierPmts.filter(p=>p.payment_method==="tarjeta_credito"&&!p.is_paid&&(p.currency==="USD"||!p.currency)&&p.type!=="refund").reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const deudaTCUsd=deudaTCUsdFinance+deudaTCUsdPmts+deudaTCUsdSup;
       const cashDisponible=totCobrado-totCostosTotales;
+      // Ops listas para entregar (status=entregada) sin cobro completo: lo que falta cobrar al cliente.
+      const opsListasParaEntregar=ops.filter(o=>o.status==="entregada").map(o=>{
+        const bt=Number(o.budget_total||0);
+        const pmtsPaid=(clientPmts||[]).filter(p=>p.operation_id===o.id).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+        const colCash=o.is_collected?Number(o.collected_amount||0):0;
+        const totalPagado=Math.max(pmtsPaid,colCash);
+        const falta=Math.max(0,bt-totalPagado);
+        return {code:o.operation_code,client:o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—",bt,pagado:totalPagado,falta};
+      }).filter(x=>x.falta>0);
+      const pendienteListas=opsListasParaEntregar.reduce((s,x)=>s+x.falta,0);
       return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:24}}>
-        {/* Cash disponible — compacto */}
-        <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.08),rgba(34,197,94,0.02))":"linear-gradient(135deg,rgba(255,80,80,0.08),rgba(255,80,80,0.02))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,borderRadius:12,padding:"14px 18px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>Cash disponible</p>
-            <p style={{fontSize:22,fontWeight:700,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:0,fontVariantNumeric:"tabular-nums"}}>{usd(cashDisponible)}</p>
+        {/* Cash disponible */}
+        <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.08),rgba(34,197,94,0.02))":"linear-gradient(135deg,rgba(255,80,80,0.08),rgba(255,80,80,0.02))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.22)":"rgba(255,80,80,0.22)"}`,borderRadius:14,padding:"16px 20px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:10}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>💵 Cash disponible</p>
+            <p style={{fontSize:26,fontWeight:800,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{usd(cashDisponible)}</p>
           </div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:10,marginTop:8}}>
-            {deudaTCUsd>0&&<span style={{fontSize:10,color:"#a78bfa"}}>💳 {usd(deudaTCUsd)} deuda TC pendiente (no descontada)</span>}
-            {girosColgados>0&&<span style={{fontSize:10,color:"#fb923c"}} title={girosColgadosDetail.map(d=>`${d.code}: ${usd(d.real)}`).join("\n")}>⚠ {usd(girosColgados)} pendiente cobrar</span>}
-            {girosPendientes>0&&<span style={{fontSize:10,color:"#60a5fa"}}>⏳ {usd(girosPendientes)} giro pendiente</span>}
-          </div>
+          {(deudaTCUsd>0||girosColgados>0||girosPendientes>0||pendienteListas>0)&&<div style={{display:"flex",flexDirection:"column",gap:5,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+            {pendienteListas>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}} title={opsListasParaEntregar.map(o=>`${o.code} · ${o.client}: ${usd(o.falta)}`).join("\n")}>
+              <span style={{color:"#fbbf24"}}>📦 Por cobrar (ops listas para entregar)</span>
+              <span style={{color:"#fbbf24",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>+{usd(pendienteListas)}</span>
+            </div>}
+            {girosColgados>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}} title={girosColgadosDetail.map(d=>`${d.code}: ${usd(d.real)}`).join("\n")}>
+              <span style={{color:"#fb923c"}}>⚠ Por cobrar (giros sin cobrar)</span>
+              <span style={{color:"#fb923c",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>+{usd(girosColgados)}</span>
+            </div>}
+            {girosPendientes>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}}>
+              <span style={{color:"#60a5fa"}}>⏳ Giro pendiente de enviar</span>
+              <span style={{color:"#60a5fa",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>−{usd(girosPendientes)}</span>
+            </div>}
+            {deudaTCUsd>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}}>
+              <span style={{color:"#a78bfa"}}>💳 Deuda TC (no descontada todavía)</span>
+              <span style={{color:"#a78bfa",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>−{usd(deudaTCUsd)}</span>
+            </div>}
+          </div>}
         </div>
-        {/* Deuda TC — compacto */}
-        <div style={{background:deudaTCArs>0||deudaTCUsd>0?"rgba(251,146,60,0.06)":"rgba(255,255,255,0.025)",border:`1px solid ${deudaTCArs>0||deudaTCUsd>0?"rgba(251,146,60,0.2)":"rgba(255,255,255,0.06)"}`,borderRadius:12,padding:"14px 18px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>Deuda tarjeta de crédito</p>
-            <div style={{textAlign:"right"}}>
-              {deudaTCUsd>0?<p style={{fontSize:18,fontWeight:700,color:"#fb923c",margin:0,lineHeight:1.15,fontVariantNumeric:"tabular-nums"}}>USD {deudaTCUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>:null}
-              {deudaTCArs>0?<p style={{fontSize:18,fontWeight:700,color:"#fb923c",margin:"2px 0 0",lineHeight:1.15,fontVariantNumeric:"tabular-nums"}}>ARS {deudaTCArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>:null}
-              {deudaTCArs===0&&deudaTCUsd===0&&<p style={{fontSize:18,fontWeight:600,color:"rgba(255,255,255,0.35)",margin:0}}>Sin deuda</p>}
-            </div>
+        {/* Deuda Tarjeta de Crédito */}
+        <div style={{background:deudaTCArs>0||deudaTCUsd>0?"linear-gradient(135deg,rgba(251,146,60,0.08),rgba(251,146,60,0.02))":"rgba(255,255,255,0.025)",border:`1px solid ${deudaTCArs>0||deudaTCUsd>0?"rgba(251,146,60,0.22)":"rgba(255,255,255,0.06)"}`,borderRadius:14,padding:"16px 20px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:10}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>💳 Deuda Tarjeta de Crédito</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>{deudaTCArs>0||deudaTCUsd>0?"Pendiente débito":"Al día ✓"}</p>
           </div>
-          <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"6px 0 0"}}>{deudaTCArs>0||deudaTCUsd>0?"Pendiente de débito":"Todo al día ✓"}</p>
+          {(deudaTCUsd>0||deudaTCArs>0)?<div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {deudaTCUsd>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.6)"}}>USD</span>
+              <span style={{fontSize:22,fontWeight:800,color:"#fb923c",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {deudaTCUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+            </div>}
+            {deudaTCArs>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.6)"}}>ARS</span>
+              <span style={{fontSize:22,fontWeight:800,color:"#fb923c",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>ARS {deudaTCArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+            </div>}
+          </div>:<p style={{fontSize:22,fontWeight:600,color:"rgba(255,255,255,0.3)",margin:0,textAlign:"center",padding:"10px 0"}}>Sin deuda</p>}
         </div>
       </div>;
     })()}
