@@ -946,14 +946,15 @@ function CotizadorWizard({token,requestId,profileId,onBack}){
     // impoOnly = precio al cliente si SOLO hace la impo con nosotros (sin GI).
     //            Ya incluye nuestra ganancia logística (spread vs. costo real).
     // total    = precio al cliente con Gestión Integral = impoOnly × (1 + honorarios%).
-    // real     = costo real para Argencargo (lo que efectivamente pagamos).
-    //            Mock 92% del impoOnly hasta que tengamos costos reales por canal.
+    // real     = costo real para Argencargo (lo que efectivamente pagamos):
+    //              totalFob (al proveedor) + realCost (flete cost + impuestos + seguro + ship pass-through).
+    //              Margen logístico = (flete - fleteCost) + surcharge (canal B).
     // gainLogistica = impoOnly − real (ganancia ya capturada en la impo regular)
     // gainHonorarios = total − impoOnly (markup adicional por la gestión integral)
     // gainTotal = gainLogistica + gainHonorarios = ganancia neta de la empresa por canal.
     const impoOnly=r.totalAbonar+totalFob;
     const total=impoOnly*honorariosFactor;
-    const real=impoOnly*0.92;
+    const real=totalFob+(r.realCost||0);
     const honorariosUsd=total-impoOnly;
     const gainLogistica=impoOnly-real;
     const gainHonorarios=honorariosUsd;
