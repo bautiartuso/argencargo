@@ -1098,13 +1098,64 @@ function CotizadorWizard({token,requestId,profileId,onBack}){
       <Step n={3} label="Link al cliente" active={step===3} done={false}/>
     </div>
 
-    {step===1&&<WizStep1 token={token} products={products} onUpdate={updateProduct} onAdd={addProduct} onRemove={removeProduct} onClassify={classifyNcm} onNext={()=>goStep(2)} totalFob={totalFob}/>}
+    {step===1&&<WizStep1 token={token} products={products} onUpdate={updateProduct} onAdd={addProduct} onRemove={removeProduct} onClassify={classifyNcm} onNext={()=>goStep(2)} totalFob={totalFob} visibleChannels={visibleChannels} tariffs={tariffs} config={config} client={client}/>}
     {step===2&&<WizStep2 token={token} visibleChannels={visibleChannels} someUSA={someUSA} honorariosPct={honorariosPct} setHonorariosPct={setHonorariosPct} paymentPlan={paymentPlan} setPaymentPlan={setPaymentPlan} totalFob={totalFob} supplierDepositPct={supplierDepositPct} setSupplierDepositPct={setSupplierDepositPct} deliveryZone={deliveryZone} setDeliveryZone={setDeliveryZone} client={client} onBack={()=>setStep(1)} onNext={generateLink} saving={saving}/>}
     {step===3&&<WizStep3 generatedQuote={generatedQuote} client={client} request={request} onBack={onBack}/>}
   </div>;
 }
 
-function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,totalFob}){
+function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,totalFob,visibleChannels,tariffs,config,client}){
+  // Desglose impositivo per-item per-canal: replica la lógica de lib/calc.js prorrateando por FOB del item.
+  // Para cada producto devuelve { byChannel: { [channelKey]: { fob, die, te, iva, desemb, ivaAdic, iigg, iibb, total } } }.
+  const computeItemBreakdown=(productIdx)=>{
+    const out={};
+    if(!visibleChannels||!tariffs)return out;
+    const p=products[productIdx];
+    const itemFob=Number(p.unit_cost_usd||0)*Number(p.quantity||0);
+    if(itemFob<=0)return out;
+    const pct=totalFob>0?itemFob/totalFob:1;
+    // Sumar pkgs globales (igual que computeChannel)
+    let pf=0,totCBM=0,totGW=0;
+    products.forEach(x=>{
+      if(!x.pkg_count||!x.pkg_length_cm)return;
+      const q=Number(x.pkg_count||1),gw=Number(x.pkg_weight_kg||0),l=Number(x.pkg_length_cm||0),w=Number(x.pkg_width_cm||0),h=Number(x.pkg_height_cm||0);
+      pf+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);
+      totGW+=gw*q;
+      totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;
+    });
+    const totalFobAll=products.reduce((s,x)=>s+Number(x.unit_cost_usd||0)*Number(x.quantity||0),0);
+    const isRI=client?.tax_condition==="responsable_inscripto";
+    visibleChannels.forEach(ch=>{
+      const isBlanco=ch.key?.includes("blanco");
+      if(!isBlanco){out[ch.key]={fob:itemFob,die:0,te:0,iva:0,desemb:0,ivaAdic:0,iigg:0,iibb:0,total:0,notBlanco:true};return;}
+      const isAereo=ch.key?.includes("aereo");
+      const isMaritimo=ch.key?.includes("maritimo");
+      const certRate=isAereo?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
+      const certFlAmt=isAereo?(isRI?totGW*certRate:pf*certRate):totCBM*certRate;
+      const segTotal=(totalFobAll+certFlAmt)*0.01;
+      const cifTotal=totalFobAll+certFlAmt+segTotal;
+      const iCert=certFlAmt*pct;
+      const iSeg=(itemFob+iCert)*0.01;
+      const iCif=itemFob+iCert+iSeg;
+      const dr=p.import_duty_rate===""||p.import_duty_rate==null?0:Number(p.import_duty_rate)/100;
+      const te=p.statistics_rate===""||p.statistics_rate==null?0:Number(p.statistics_rate)/100;
+      const ivaR=p.iva_rate===""||p.iva_rate==null?0.21:Number(p.iva_rate)/100;
+      const die=iCif*dr;const tasa=iCif*te;const bi=iCif+die+tasa;const iva=bi*ivaR;
+      let total=die+tasa+iva;let desemb=0,ivaAdic=0,iigg=0,iibb=0;
+      if(isMaritimo){
+        const ivaAdR=p.iva_additional_rate===""||p.iva_additional_rate==null?0.20:Number(p.iva_additional_rate)/100;
+        const iiggR=p.iigg_rate===""||p.iigg_rate==null?0.06:Number(p.iigg_rate)/100;
+        const iibbR=p.iibb_rate===""||p.iibb_rate==null?0.05:Number(p.iibb_rate)/100;
+        ivaAdic=bi*ivaAdR;iigg=bi*iiggR;iibb=bi*iibbR;total+=ivaAdic+iigg+iibb;
+      } else {
+        const tbl=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];
+        let d=120;for(const [m,a] of tbl){if(cifTotal<m){d=a;break;}}
+        desemb=(d*pct)*1.21;total+=desemb;
+      }
+      out[ch.key]={fob:itemFob,certFl:iCert,seguro:iSeg,cif:iCif,die,te:tasa,iva,desemb,ivaAdic,iigg,iibb,total};
+    });
+    return out;
+  };
   return <div>
     <div style={{padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:10,fontSize:12.5,color:"rgba(255,255,255,0.85)",lineHeight:1.5,marginBottom:18}}>
       <strong style={{color:"#60a5fa"}}>Step 1:</strong> cargá cada producto con su packing. Si origen es <strong>China</strong> apretá "Clasificar NCM" para que el sistema busque el código y los aranceles. Si es <strong>USA</strong>, va canal B automáticamente.
@@ -1186,12 +1237,63 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
           <span>Facturable marítimo: <strong style={{color:"#60a5fa"}}>{pesoFactMar.toFixed(2)} kg</strong></span>
         </div>;
       })()}
+      {/* Desglose impositivo por producto y por canal (solo canal A blanco — el B negro es tarifa plana sin impuestos prorrateados) */}
+      {(()=>{
+        const bd=computeItemBreakdown(i);
+        const blancos=Object.entries(bd).filter(([,v])=>!v.notBlanco);
+        if(blancos.length===0)return null;
+        const fmt=n=>Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+        return <div style={{marginTop:10,padding:"10px 12px",background:"rgba(96,165,250,0.04)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:8}}>
+          <p style={{fontSize:9.5,fontWeight:700,color:"rgba(96,165,250,0.85)",textTransform:"uppercase",letterSpacing:"0.08em",margin:"0 0 8px"}}>Desglose impositivo del producto (canal A · prorrateado por FOB)</p>
+          <div style={{display:"grid",gridTemplateColumns:`repeat(${blancos.length},1fr)`,gap:10}}>
+            {blancos.map(([k,v])=>{
+              const lbl=k==="aereo_blanco"?"Aéreo A":k==="maritimo_blanco"?"Marítimo A (LCL/FCL)":k;
+              return <div key={k} style={{background:"rgba(0,0,0,0.18)",borderRadius:6,padding:"8px 10px",fontSize:11,color:"rgba(255,255,255,0.7)",fontFeatureSettings:'"tnum"'}}>
+                <p style={{fontSize:10.5,fontWeight:700,color:"#60a5fa",margin:"0 0 6px"}}>{lbl}</p>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>FOB</span><span>USD {fmt(v.fob)}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>+ Cert. flete</span><span>USD {fmt(v.certFl)}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>+ Seguro (1%)</span><span>USD {fmt(v.seguro)}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",borderTop:"1px solid rgba(255,255,255,0.06)",marginTop:3,paddingTop:5}}><span style={{color:"rgba(255,255,255,0.5)"}}>CIF item</span><span style={{color:"#fff",fontWeight:600}}>USD {fmt(v.cif)}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0",marginTop:5}}><span>DIE</span><span>USD {fmt(v.die)}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>Tasa estad.</span><span>USD {fmt(v.te)}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>IVA</span><span>USD {fmt(v.iva)}</span></div>
+                {v.desemb>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>Desemb.×1.21</span><span>USD {fmt(v.desemb)}</span></div>}
+                {v.ivaAdic>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>IVA Adic.</span><span>USD {fmt(v.ivaAdic)}</span></div>}
+                {v.iigg>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>IIGG</span><span>USD {fmt(v.iigg)}</span></div>}
+                {v.iibb>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span>IIBB</span><span>USD {fmt(v.iibb)}</span></div>}
+                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0 0",borderTop:"1px solid rgba(96,165,250,0.25)",marginTop:5,fontWeight:700}}><span style={{color:"#fff"}}>Total impuestos</span><span style={{color:"#22c55e"}}>USD {fmt(v.total)}</span></div>
+              </div>;
+            })}
+          </div>
+        </div>;
+      })()}
     </div>)}
     <button onClick={onAdd} style={{padding:"7px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer",fontFamily:"inherit",marginBottom:18}}>+ Agregar producto</button>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10}}>
-      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",margin:0}}>Subtotal FOB: <strong style={{color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(totalFob)}</strong></p>
-      <button onClick={onNext} style={{padding:"10px 20px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>Continuar a costos →</button>
-    </div>
+    {(()=>{
+      // Totales globales para el subtotal
+      let totCBM=0,pesoRealAll=0,pfAll=0;
+      products.forEach(x=>{
+        const cnt=Number(x.pkg_count||0),L=Number(x.pkg_length_cm||0),W=Number(x.pkg_width_cm||0),H=Number(x.pkg_height_cm||0),kg=Number(x.pkg_weight_kg||0);
+        if(!cnt||!L||!W||!H||!kg)return;
+        totCBM+=(L*W*H*cnt)/1000000;
+        pesoRealAll+=kg*cnt;
+        pfAll+=Math.max(kg*cnt,(L*W*H*cnt)/5000);
+      });
+      const pesoFactMarAll=Math.max(pesoRealAll,totCBM*1000);
+      const cbmCharge=Math.max(totCBM,1); // marítimo blanco mínimo 1 m³
+      return <div style={{padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          <p style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",margin:0}}>Subtotal FOB: <strong style={{color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(totalFob)}</strong></p>
+          <button onClick={onNext} style={{padding:"10px 20px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>Continuar a costos →</button>
+        </div>
+        {pesoRealAll>0&&<div style={{display:"flex",flexWrap:"wrap",gap:14,fontSize:11,color:"rgba(255,255,255,0.65)",fontFeatureSettings:'"tnum"',paddingTop:8,borderTop:"1px solid rgba(184,149,106,0.18)"}}>
+          <span>CBM total: <strong style={{color:"#fff"}}>{totCBM.toFixed(4)} m³</strong>{totCBM<1?<span style={{color:"#fbbf24",marginLeft:4,fontSize:10}}>(min 1 m³ marítimo LCL/FCL → cobra {cbmCharge.toFixed(2)} m³)</span>:""}</span>
+          <span>Peso real total: <strong style={{color:"#fff"}}>{pesoRealAll.toFixed(2)} kg</strong></span>
+          <span>Facturable aéreo total: <strong style={{color:"#22c55e"}}>{pfAll.toFixed(2)} kg</strong></span>
+          <span>Facturable marítimo total: <strong style={{color:"#60a5fa"}}>{pesoFactMarAll.toFixed(2)} kg</strong></span>
+        </div>}
+      </div>;
+    })()}
   </div>;
 }
 
