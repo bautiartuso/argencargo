@@ -4149,10 +4149,13 @@ function FinancePanel({token}){
         const items=groups[closingDate];
         // Para recomputar cost_producto_usd después, trackeamos ops afectadas
         const affectedGiOps=new Set();
+        const nowIso=new Date().toISOString();
         for(const item of items){
           const usdAmt=Math.round((item.amount_ars/rate)*100)/100;
           if(item.source==="entry"){
-            await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{amount:usdAmt,exchange_rate:rate,dollarized_at:new Date().toISOString(),is_paid:true}});
+            // card_paid_at = hoy → libro diario lo refleja con la fecha de la dolarización (cash flow real).
+            // currency:"USD" → si era auto_generated, ahora pasa el filtro autoEntries (currency=USD) y vuelve a aparecer.
+            await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{amount:usdAmt,exchange_rate:rate,dollarized_at:nowIso,is_paid:true,currency:"USD",card_paid_at:nowIso}});
             if(item.operation_id){
               const field=item.description?.includes("Impuestos")?"cost_impuestos_reales":"cost_gasto_documental";
               await dq("operations",{method:"PATCH",token,filters:`?id=eq.${item.operation_id}`,body:{[field]:usdAmt}});
