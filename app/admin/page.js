@@ -2622,17 +2622,17 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           // Bloques presu vs costo real por concepto. Si el cobro neto al cliente difiere del
           // presupuestado, prorrateo la diferencia entre los conceptos (con factor = cobro/presu).
           // Así Saldo refleja la realidad del cobro, no un presu teórico.
-          // Flete local y Otros no tienen columna de budget propia → usamos su costo real como presu base
+          // Flete local, Otros y Gasto documental no tienen columna de budget propia → usamos su costo real como presu base
           // para que entren en la base del prorrateo (sino el factor sale inflado y desfasa todo).
           const bFlete=Number(op.budget_flete||0);
           const bTax=Number(op.budget_taxes||0);
           const bSeg=Number(op.budget_seguro||0);
           const bLocal=costLocal; // sin columna de budget — base = costo real
           const bOtros=costOtros;
-          const presuTotal=bFlete+bTax+bSeg+bLocal+bOtros;
+          const bDoc=costDoc; // gasto documental — base = costo real
+          const presuTotal=bFlete+bTax+bSeg+bLocal+bOtros+bDoc;
           const factor=presuTotal>0&&ingresoNeto>0?(ingresoNeto/presuTotal):1;
           const adj=(b)=>b*factor;
-          const cTax=costImp+costDoc; // impuestos reales + gasto documental se compara contra budget_taxes
           const presuLabel=factor!==1?"Presu (ajustado)":"Presupuestado";const costoLabel="Costo real";
           const block=(title,presuRaw,costo)=>{const presu=adj(presuRaw);const saldo=presu-costo;const ok=saldo>=0;return <div style={{padding:"10px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
             <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.04em"}}>{title}</p>
@@ -2647,7 +2647,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               <strong style={{color:"#60a5fa"}}>Presu ajustado al cobro real:</strong> el cliente {ingresoNeto>presuTotal?"pagó más":"pagó menos"} que lo presupuestado, así que cada concepto se prorratea con factor <strong>×{factor.toFixed(3)}</strong>. Saldo refleja la realidad del cobro.
             </div>}
             {block("Flete",bFlete,costFlete)}
-            {block("Impuestos",bTax,cTax)}
+            {block("Impuestos",bTax,costImp)}
+            {(bDoc>0||costDoc>0)&&block("Gasto documental",bDoc,costDoc)}
             {block("Seguro",bSeg,costSeg)}
             {(bLocal>0||costLocal>0)&&block("Flete local",bLocal,costLocal)}
             {(bOtros>0||costOtros>0)&&block("Otros",bOtros,costOtros)}
