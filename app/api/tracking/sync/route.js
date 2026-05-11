@@ -210,34 +210,58 @@ async function runSync(req) {
   if (!Array.isArray(ops)) return Response.json({ error: "failed to fetch ops", detail: ops }, { status: 500 });
 
   // Agrupar por (carrier_route, tracking_number) para no hacer dos llamadas al carrier
-  // por el mismo waybill cuando 2+ ops comparten tracking (consolidaciones). Antes el
-  // paralelismo + rate-limits del carrier hacía que una op se sincronizara y otra fallara.
+  // por el mismo waybill cuando 2+ ops comparten tracking (consolidaciones).
   const groups = new Map();
   for (const op of ops) {
     const route = carrierRoute(op.international_carrier);
     const tracking = (op.international_tracking || "").trim();
-    if (!route || !tracking) {
-      // Sync individual igual (devuelve "skipped" / sin tracking).
-      continue;
-    }
+    if (!route || !tracking) continue;
     const key = `${route}::${tracking}`;
     if (!groups.has(key)) groups.set(key, { route, tracking, ops: [] });
     groups.get(key).ops.push(op);
   }
 
-  // Una sola llamada al carrier por grupo, luego apply a cada op del grupo en paralelo.
-  const groupSettled = await Promise.allSettled(Array.from(groups.values()).map(async g => {
+  // Procesar un grupo: una llamada al carrier + apply a todas las ops del grupo.
+  const processGroup = async (g) => {
     if (!isCarrierConfigured(g.route)) {
       await Promise.all(g.ops.map(o => updateSyncStatus(o.id, g.route, 0, `${g.route.toUpperCase()} API no configurada`)));
       return g.ops.map(o => ({ op: o.operation_code, skipped: `${g.route} no configurada` }));
     }
     const d = await callCarrier(g.route, g.tracking);
-    // Aplicar a cada op del grupo (en paralelo; el carrier ya fue llamado una sola vez).
     return await Promise.all(g.ops.map(o => applyEventsToOp(o, g.route, d)));
-  }));
-  const grouped = groupSettled.flatMap((s, i) => {
+  };
+
+  // Separar por carrier:
+  //  - DHL tier gratuito: 1 req/segundo. Serializamos con throttle de 1100ms entre llamadas.
+  //  - FedEx / UPS: rate-limits más permisivos, paralelo OK.
+  const dhlGroups = [];
+  const otherGroups = [];
+  for (const g of groups.values()) {
+    if (g.route === "dhl") dhlGroups.push(g);
+    else otherGroups.push(g);
+  }
+
+  // Carriers permisivos en paralelo
+  const otherSettled = await Promise.allSettled(otherGroups.map(processGroup));
+
+  // DHL en serie con throttle (~1100ms entre llamadas para quedar por debajo del límite).
+  const DHL_THROTTLE_MS = 1100;
+  const dhlResults = [];
+  for (let i = 0; i < dhlGroups.length; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, DHL_THROTTLE_MS));
+    try {
+      const res = await processGroup(dhlGroups[i]);
+      dhlResults.push({ status: "fulfilled", value: res });
+    } catch (e) {
+      dhlResults.push({ status: "rejected", reason: e });
+    }
+  }
+
+  const allSettled = [...otherSettled, ...dhlResults];
+  const allGroupList = [...otherGroups, ...dhlGroups];
+  const grouped = allSettled.flatMap((s, i) => {
     if (s.status === "fulfilled") return s.value;
-    const g = Array.from(groups.values())[i];
+    const g = allGroupList[i];
     return g.ops.map(o => ({ op: o.operation_code, error: String(s.reason?.message || s.reason) }));
   });
 
