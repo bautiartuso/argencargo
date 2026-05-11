@@ -1342,11 +1342,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         if(!amt||amt<=0||!newSupPmt.payment_date)return;
         const isTC=newSupPmt.payment_method==="tarjeta_credito";
         const isArs=newSupPmt.currency==="ARS";
-        // ARS + TC: amount_usd queda 0 hasta que se dolarice en tab Dolarización.
-        //           amount_ars se guarda con el monto real.
-        // ARS + no-TC (efectivo/transf): debería llevar un exchange_rate para convertir a USD,
-        //           pero por ahora lo dejamos como ARS pendiente también.
-        // USD: amount_usd = amt, amount_ars = null.
+        if(isTC&&!newSupPmt.credit_card_id){alert("Elegí qué tarjeta usaste");return;}
         const isRefund=newSupPmt.type==="refund";
         const body={
           operation_id:op.id,
@@ -1359,6 +1355,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           reference:newSupPmt.reference||null,
           currency:newSupPmt.currency||"USD",
           card_closing_date:isTC&&newSupPmt.card_closing_date?newSupPmt.card_closing_date:null,
+          credit_card_id:isTC?newSupPmt.credit_card_id:null,
           paid_at:newSupPmt.is_paid&&!isArs?new Date(newSupPmt.payment_date+"T12:00:00Z").toISOString():null,
           type:newSupPmt.type||"payment"
         };
@@ -1498,9 +1495,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <Inp label="Referencia (opcional)" value={newSupPmt.reference||""} onChange={v=>setNewSupPmt(p=>({...p,reference:v}))} placeholder="Nº orden / comprobante"/>
           </div>
           {/* Fila 3: condicional — si TC, mostrar fecha cierre */}
-          {newSupPmt.payment_method==="tarjeta_credito"&&<div style={{display:"grid",gridTemplateColumns:"180px 1fr",gap:10,alignItems:"end",marginBottom:12,padding:"10px 14px",background:"rgba(167,139,250,0.06)",border:"1px solid rgba(167,139,250,0.18)",borderRadius:8}}>
+          {newSupPmt.payment_method==="tarjeta_credito"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,alignItems:"end",marginBottom:12,padding:"10px 14px",background:"rgba(167,139,250,0.06)",border:"1px solid rgba(167,139,250,0.18)",borderRadius:8}}>
+            <CreditCardPicker token={token} value={newSupPmt.credit_card_id} onChange={v=>setNewSupPmt(p=>({...p,credit_card_id:v}))} required/>
             <Inp label="Cierre de tarjeta" type="date" value={newSupPmt.card_closing_date||""} onChange={v=>setNewSupPmt(p=>({...p,card_closing_date:v}))}/>
-            <p style={{fontSize:11,color:"rgba(167,139,250,0.85)",margin:0,paddingBottom:8,lineHeight:1.5}}>💳 Con tarjeta: el débito ocurre en la fecha de cierre. Hasta entonces, la plata está en el bolsillo pero es deuda TC del dashboard.</p>
+            <p style={{gridColumn:"1/-1",fontSize:11,color:"rgba(167,139,250,0.85)",margin:0,lineHeight:1.5}}>💳 Con tarjeta: el débito ocurre en la fecha de cierre. Hasta entonces, la plata está en el bolsillo pero es deuda TC del dashboard.</p>
           </div>}
           {/* Fila 4: toggle "ya está pagado" + botón agregar */}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,flexWrap:"wrap",paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
@@ -1617,7 +1615,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const totalGirado=payments.filter(p=>p.giro_status==="confirmado").reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
       const totalGanPagos=payments.reduce((s,p)=>{const cli=p.client_paid?Number(p.client_paid_amount_usd??p.client_amount_usd??0):Number(p.client_amount_usd||0);return s+cli-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0);},0);
       const savePmt=async()=>{if(!newPmt.client_amount_usd)return;setSaving(true);
-        const body={...newPmt,client_amount_usd:Number(newPmt.client_amount_usd),giro_amount_usd:Number(newPmt.giro_amount_usd||0),cost_comision_giro:Number(newPmt.cost_comision_giro||0),operation_id:op.id,client_id:op.client_id,giro_payment_method:newPmt.giro_payment_method||"efectivo",giro_tarjeta_due_date:newPmt.giro_payment_method==="tarjeta_credito"?(newPmt.giro_tarjeta_due_date||null):null};
+        const isGiroTC=newPmt.giro_payment_method==="tarjeta_credito";
+        if(isGiroTC&&!newPmt.giro_credit_card_id){alert("Elegí qué tarjeta usaste para el giro");setSaving(false);return;}
+        const body={...newPmt,client_amount_usd:Number(newPmt.client_amount_usd),giro_amount_usd:Number(newPmt.giro_amount_usd||0),cost_comision_giro:Number(newPmt.cost_comision_giro||0),operation_id:op.id,client_id:op.client_id,giro_payment_method:newPmt.giro_payment_method||"efectivo",giro_tarjeta_due_date:isGiroTC?(newPmt.giro_tarjeta_due_date||null):null,giro_credit_card_id:isGiroTC?newPmt.giro_credit_card_id:null};
         await dq("payment_management",{method:"POST",token,body});
         const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
         setShowNewPmt(false);setNewPmt({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente",giro_payment_method:"efectivo",giro_tarjeta_due_date:""});flash("Pago creado");setSaving(false);};
@@ -1750,6 +1750,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <Sel label="Cómo pagaste el giro" value={newPmt.giro_payment_method||"efectivo"} onChange={v=>setNewPmt(p=>({...p,giro_payment_method:v}))} options={[{value:"efectivo",label:"Efectivo"},{value:"transferencia",label:"Transferencia"},{value:"tarjeta_credito",label:"💳 Tarjeta de crédito"}]}/>
           {newPmt.giro_payment_method==="tarjeta_credito"&&<Inp label="Fecha de débito estimada" type="date" value={newPmt.giro_tarjeta_due_date||""} onChange={v=>setNewPmt(p=>({...p,giro_tarjeta_due_date:v}))}/>}
         </div>
+        {newPmt.giro_payment_method==="tarjeta_credito"&&<div style={{marginBottom:12}}>
+          <CreditCardPicker token={token} value={newPmt.giro_credit_card_id} onChange={v=>setNewPmt(p=>({...p,giro_credit_card_id:v}))} required/>
+        </div>}
         {newPmt.giro_payment_method==="tarjeta_credito"&&Number(newPmt.giro_amount_usd||0)>0&&<div style={{background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8,padding:"10px 14px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span style={{fontSize:12,color:"#fbbf24",fontWeight:600}}>💳 Se debitará de tu tarjeta</span>
           <span style={{fontSize:14,fontWeight:700,color:"#fbbf24"}}>{usdF(newPmt.giro_amount_usd||0)}</span>
@@ -3345,6 +3348,88 @@ function AuditLogCard({token}){
 }
 
 // Gestión de feriados China/USA (calendario preventivo para clientes)
+// Helper compartido: selector de tarjeta de crédito. Carga las tarjetas activas
+// y devuelve un dropdown. Si solo hay una tarjeta, la usa por default.
+function CreditCardPicker({token,value,onChange,label="Tarjeta",small=true,required=false}){
+  const [cards,setCards]=useState([]);
+  useEffect(()=>{(async()=>{const r=await dq("credit_cards",{token,filters:"?active=eq.true&select=id,name,brand&order=brand.asc,name.asc"});setCards(Array.isArray(r)?r:[]);})();},[token]);
+  useEffect(()=>{if(!value&&cards.length===1)onChange(cards[0].id);},[cards,value,onChange]);
+  return <div>
+    <label style={{fontSize:small?10:11,fontWeight:700,color:"rgba(255,255,255,0.5)",display:"block",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}{required?" *":""}</label>
+    <select value={value||""} onChange={e=>onChange(e.target.value||null)} style={{width:"100%",padding:small?"7px 10px":"9px 12px",fontSize:12.5,border:`1px solid ${required&&!value?"rgba(255,80,80,0.4)":"rgba(255,255,255,0.1)"}`,borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>
+      <option value="" style={{background:"#142038"}}>— Elegir tarjeta —</option>
+      {cards.map(c=><option key={c.id} value={c.id} style={{background:"#142038"}}>{(c.brand==="visa"?"VISA · ":c.brand==="mastercard"?"MC · ":c.brand==="amex"?"AMEX · ":"")+c.name}</option>)}
+    </select>
+    {cards.length===0&&<p style={{fontSize:10,color:"#fbbf24",margin:"4px 0 0"}}>⚠ No hay tarjetas cargadas — andá a Ajustes para crear una.</p>}
+  </div>;
+}
+
+function CreditCardsCard({token}){
+  const [cards,setCards]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [editId,setEditId]=useState(null);
+  const [form,setForm]=useState({name:"",brand:"mastercard",closing_day_of_month:"",due_day_of_month:"",notes:""});
+  const [saving,setSaving]=useState(false);
+  const [msg,setMsg]=useState("");
+  const load=async()=>{setLo(true);const r=await dq("credit_cards",{token,filters:"?select=*&order=active.desc,brand.asc,name.asc"});setCards(Array.isArray(r)?r:[]);setLo(false);};
+  useEffect(()=>{load();},[token]);
+  const startNew=()=>{setEditId("new");setForm({name:"",brand:"mastercard",closing_day_of_month:"",due_day_of_month:"",notes:""});};
+  const startEdit=(c)=>{setEditId(c.id);setForm({name:c.name||"",brand:c.brand||"mastercard",closing_day_of_month:String(c.closing_day_of_month||""),due_day_of_month:String(c.due_day_of_month||""),notes:c.notes||""});};
+  const save=async()=>{
+    const cd=parseInt(form.closing_day_of_month),dd=parseInt(form.due_day_of_month||"0");
+    if(!form.name.trim()){setMsg("Nombre requerido");return;}
+    if(!cd||cd<1||cd>31){setMsg("Día de cierre entre 1 y 31");return;}
+    if(form.due_day_of_month&&(dd<1||dd>31)){setMsg("Día de vencimiento entre 1 y 31");return;}
+    setSaving(true);
+    const body={name:form.name.trim(),brand:form.brand,closing_day_of_month:cd,due_day_of_month:dd||null,notes:form.notes||null,updated_at:new Date().toISOString()};
+    if(editId==="new")await dq("credit_cards",{method:"POST",token,body});
+    else await dq("credit_cards",{method:"PATCH",token,filters:`?id=eq.${editId}`,body});
+    setEditId(null);setMsg("");load();setSaving(false);
+  };
+  const toggleActive=async(c)=>{await dq("credit_cards",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body:{active:!c.active}});load();};
+  const del=async(c)=>{if(!confirm(`¿Eliminar la tarjeta "${c.name}"? Los gastos asignados a ella quedarán sin tarjeta. Si tiene historial, mejor desactivala en vez de borrarla.`))return;await dq("credit_cards",{method:"DELETE",token,filters:`?id=eq.${c.id}`});load();};
+  const brandIcon=(b)=>b==="visa"?"💳 VISA":b==="mastercard"?"💳 Mastercard":b==="amex"?"💳 Amex":"💳 Otro";
+  const brandColor=(b)=>b==="visa"?"#1a1f71":b==="mastercard"?"#eb001b":b==="amex"?"#006fcf":"#666";
+  return <Card title="Tarjetas de crédito" actions={<Btn small onClick={startNew}>+ Nueva tarjeta</Btn>}>
+    <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>Cada tarjeta con su día de cierre y vencimiento. Al cargar un gasto pagado con tarjeta de crédito, podés elegir cuál. Los resúmenes y la deuda TC se agrupan automáticamente por tarjeta + fecha de cierre.</p>
+    {editId&&<div style={{background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",gap:"0 12px",marginBottom:10}}>
+        <Inp label="Nombre (ej. Mastercard Galicia)" value={form.name} onChange={v=>setForm(p=>({...p,name:v}))}/>
+        <div><label style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",display:"block",margin:"0 0 4px"}}>Marca</label>
+          <select value={form.brand} onChange={e=>setForm(p=>({...p,brand:e.target.value}))} style={{width:"100%",padding:"7px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff"}}>
+            <option value="visa" style={{background:"#142038"}}>VISA</option>
+            <option value="mastercard" style={{background:"#142038"}}>Mastercard</option>
+            <option value="amex" style={{background:"#142038"}}>American Express</option>
+            <option value="otro" style={{background:"#142038"}}>Otra</option>
+          </select>
+        </div>
+        <Inp label="Día cierre" type="number" value={form.closing_day_of_month} onChange={v=>setForm(p=>({...p,closing_day_of_month:v}))} small/>
+        <Inp label="Día vencimiento (opc.)" type="number" value={form.due_day_of_month} onChange={v=>setForm(p=>({...p,due_day_of_month:v}))} small/>
+      </div>
+      <Inp label="Notas (opcional)" value={form.notes} onChange={v=>setForm(p=>({...p,notes:v}))}/>
+      {msg&&<p style={{fontSize:11,color:"#ff6b6b",margin:"6px 0"}}>{msg}</p>}
+      <div style={{display:"flex",gap:8,marginTop:8}}>
+        <Btn small onClick={save} disabled={saving}>{saving?"Guardando...":(editId==="new"?"Crear tarjeta":"Guardar cambios")}</Btn>
+        <Btn small variant="secondary" onClick={()=>{setEditId(null);setMsg("");}}>Cancelar</Btn>
+      </div>
+    </div>}
+    {lo?<p style={{color:"rgba(255,255,255,0.4)",fontSize:12}}>Cargando…</p>:cards.length===0?<p style={{color:"rgba(255,255,255,0.4)",fontSize:12,textAlign:"center",padding:"1rem 0"}}>Sin tarjetas cargadas todavía.</p>:
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {cards.map(c=><div key={c.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:c.active?"rgba(255,255,255,0.03)":"rgba(255,255,255,0.015)",border:`1px solid ${c.active?"rgba(255,255,255,0.06)":"rgba(255,255,255,0.03)"}`,borderRadius:10,opacity:c.active?1:0.5,flexWrap:"wrap"}}>
+          <span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:5,background:`${brandColor(c.brand)}22`,color:"#fff",border:`1px solid ${brandColor(c.brand)}55`,minWidth:90,textAlign:"center"}}>{brandIcon(c.brand)}</span>
+          <div style={{flex:1,minWidth:140}}>
+            <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{c.name}</p>
+            <p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>Cierra día {c.closing_day_of_month}{c.due_day_of_month?` · Vence día ${c.due_day_of_month}`:""}{c.notes?` · ${c.notes}`:""}</p>
+          </div>
+          <Btn small variant="secondary" onClick={()=>startEdit(c)}>Editar</Btn>
+          <Btn small variant="secondary" onClick={()=>toggleActive(c)}>{c.active?"Desactivar":"Activar"}</Btn>
+          <Btn small variant="danger" onClick={()=>del(c)}>✕</Btn>
+        </div>)}
+      </div>
+    }
+  </Card>;
+}
+
 function HolidaysCard({token}){
   const [holidays,setHolidays]=useState([]);
   const [lo,setLo]=useState(true);
@@ -3538,6 +3623,7 @@ function AdminSettings({token,session}){
       </div>
     </Card>
     <HolidaysCard token={token}/>
+    <CreditCardsCard token={token}/>
     <MarketingCampaignCard token={token}/>
     <AuditLogCard token={token}/>
     <Card title="Retención de fotos de bultos">
@@ -3559,7 +3645,7 @@ const CAT_LBL={marketing:"Marketing",software:"Software",salarios:"Salarios",ofi
 const CAT_COLOR={marketing:"#fb923c",software:"#a78bfa",salarios:"#22c55e",oficina:"#60a5fa",comisiones:"#fbbf24",otros:"#94a3b8"};
 function FinancePanel({token}){
   const [entries,setEntries]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("fixed");const [showAdd,setShowAdd]=useState(false);const [msg,setMsg]=useState("");
-  const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:""});
+  const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});
   const [allOps,setAllOps]=useState([]);const [allPmts,setAllPmts]=useState([]);
   const [dollarPending,setDollarPending]=useState([]);const [dollarRates,setDollarRates]=useState({});
   const [cardDebt,setCardDebt]=useState({usd:[],ars:[],pmts:[]});
@@ -3578,15 +3664,15 @@ function FinancePanel({token}){
     dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),
     dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"}),
     // Deuda tarjeta USD: finance_entries USD pendientes
-    dq("finance_entries",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&currency=eq.USD&order=card_closing_date.asc"}),
+    dq("finance_entries",{token,filters:"?select=*,operations(operation_code),credit_cards(id,name,brand)&payment_method=eq.tarjeta_credito&is_paid=eq.false&currency=eq.USD&order=card_closing_date.asc"}),
     // Deuda tarjeta ARS: finance_entries ARS pendientes (mostrar resumen, detalle en Dollarización)
     dq("finance_entries",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&currency=eq.ARS&order=card_closing_date.asc"}),
     // Giros al exterior con TC pendientes (payment_management)
-    dq("payment_management",{token,filters:"?select=*,operations(operation_code)&giro_payment_method=eq.tarjeta_credito&giro_tarjeta_paid=eq.false&order=giro_tarjeta_due_date.asc"}),
+    dq("payment_management",{token,filters:"?select=*,operations(operation_code),credit_cards:giro_credit_card_id(id,name,brand)&giro_payment_method=eq.tarjeta_credito&giro_tarjeta_paid=eq.false&order=giro_tarjeta_due_date.asc"}),
     // Costos GI con TC + ARS pendientes (dolarización) — NO incluir refunds (no son deuda)
-    dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&currency=eq.ARS&type=neq.refund&order=card_closing_date.asc"}),
+    dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code),credit_cards(id,name,brand)&payment_method=eq.tarjeta_credito&is_paid=eq.false&currency=eq.ARS&type=neq.refund&order=card_closing_date.asc"}),
     // Costos GI con TC + USD pendientes (deuda tarjeta USD) — NO incluir refunds
-    dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code)&payment_method=eq.tarjeta_credito&is_paid=eq.false&or=(currency.eq.USD,currency.is.null)&type=neq.refund&order=card_closing_date.asc"}),
+    dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code),credit_cards(id,name,brand)&payment_method=eq.tarjeta_credito&is_paid=eq.false&or=(currency.eq.USD,currency.is.null)&type=neq.refund&order=card_closing_date.asc"}),
     // Auto-generated entries (impuestos/gasto doc dolarizados desde ops). Van al libro diario, no al panel "Gastos del Negocio".
     dq("finance_entries",{token,filters:"?select=*&auto_generated=eq.true&currency=eq.USD&is_paid=eq.true&order=date.desc"}),
     // Movimientos CC del cliente vinculados a una op (overpayment / applied / debt). Para reflejar el cash real en libro diario.
@@ -3604,7 +3690,8 @@ function FinancePanel({token}){
     if(!isARS&&!newEntry.amount){flash("Falta monto USD");return;}
     // ARS + no TC → necesita tipo de cambio para dollarizar ya
     if(isARS&&!isTC&&!newEntry.exchange_rate){flash("Falta tipo de cambio");return;}
-    let body={date:newEntry.date,type:"gasto",description:CAT_LBL[newEntry.category]+(newEntry.detail?` — ${newEntry.detail}`:""),detail:newEntry.detail||null,category:newEntry.category,payment_method:newEntry.payment_method,is_paid:!isTC,card_closing_date:isTC?newEntry.card_closing_date:null,auto_generated:false};
+    if(isTC&&!newEntry.credit_card_id){flash("Elegí qué tarjeta usaste");return;}
+    let body={date:newEntry.date,type:"gasto",description:CAT_LBL[newEntry.category]+(newEntry.detail?` — ${newEntry.detail}`:""),detail:newEntry.detail||null,category:newEntry.category,payment_method:newEntry.payment_method,is_paid:!isTC,card_closing_date:isTC?newEntry.card_closing_date:null,credit_card_id:isTC?newEntry.credit_card_id:null,auto_generated:false};
     if(isARS){
       const ars=Number(newEntry.amount_ars);
       if(isTC){
@@ -3621,7 +3708,7 @@ function FinancePanel({token}){
       body={...body,amount:Number(newEntry.amount),currency:"USD"};
     }
     const r=await dq("finance_entries",{method:"POST",token,body});
-    if(r?.id||Array.isArray(r)){load();setShowAdd(false);setNewEntry({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:""});flash("Gasto agregado");}
+    if(r?.id||Array.isArray(r)){load();setShowAdd(false);setNewEntry({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});flash("Gasto agregado");}
   };
   const delEntry=async(id)=>{if(!confirm("¿Eliminar este movimiento?"))return;await dq("finance_entries",{method:"DELETE",token,filters:`?id=eq.${id}`});setEntries(p=>p.filter(e=>e.id!==id));flash("Eliminado");};
   const usd=v=>`USD ${Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
@@ -3846,7 +3933,10 @@ function FinancePanel({token}){
         </div>}
       <Inp label={`Detalle ${newEntry.category==="otros"?"(obligatorio)":"(opcional)"}`} value={newEntry.detail} onChange={v=>setNewEntry(p=>({...p,detail:v}))} placeholder="Ej: Meta ads campaña abril · Vercel Pro · Sueldo Marzo"/>
       {newEntry.payment_method==="tarjeta_credito"&&<>
-        <Inp label="Fecha de cierre / débito de tarjeta" type="date" value={newEntry.card_closing_date} onChange={v=>setNewEntry(p=>({...p,card_closing_date:v}))}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px",marginBottom:8}}>
+          <CreditCardPicker token={token} value={newEntry.credit_card_id} onChange={v=>setNewEntry(p=>({...p,credit_card_id:v}))} required/>
+          <Inp label="Fecha de cierre / débito" type="date" value={newEntry.card_closing_date} onChange={v=>setNewEntry(p=>({...p,card_closing_date:v}))}/>
+        </div>
         <div style={{background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8,padding:"10px 14px",marginBottom:12}}>
           <p style={{fontSize:12,color:"#fbbf24",margin:0,fontWeight:500}}>💳 Este gasto queda pendiente de débito y suma a la <strong>Deuda Tarjeta</strong> del dashboard hasta que se debite el día de cierre.{newEntry.currency==="ARS"?" Se dollariza al TC del día del débito (en la tab Dollarización).":""}</p>
         </div>
@@ -3951,10 +4041,12 @@ function FinancePanel({token}){
       const arsTot=cardDebt.ars.reduce((s,e)=>s+Number(e.amount_ars||0),0);
       // Agrupar por fecha de cierre mezclando: gastos USD + giros al exterior + costos GI USD
       const groups={};
-      cardDebt.usd.forEach(e=>{const k=e.card_closing_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:Number(e.amount||0),dateLoad:e.date,op:e.operations?.operation_code});});
-      cardDebt.pmts.forEach(p=>{const k=p.giro_tarjeta_due_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"pmt",id:p.id,desc:`Giro al exterior${p.operations?.operation_code?` — ${p.operations.operation_code}`:""}`,detail:p.description||"",amt:Number(p.giro_amount_usd||0),dateLoad:p.created_at?String(p.created_at).slice(0,10):null,op:p.operations?.operation_code});});
-      (cardDebt.supTcUsd||[]).forEach(p=>{const k=p.card_closing_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"supplier",id:p.id,desc:`Costo op ${p.operations?.operation_code||"—"} (GI)`,detail:p.notes||p.reference||"",amt:Number(p.amount_usd||0),dateLoad:p.payment_date,op:p.operations?.operation_code,operation_id:p.operation_id});});
+      cardDebt.usd.forEach(e=>{const k=e.card_closing_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:Number(e.amount||0),dateLoad:e.date,op:e.operations?.operation_code,card:e.credit_cards});});
+      cardDebt.pmts.forEach(p=>{const k=p.giro_tarjeta_due_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"pmt",id:p.id,desc:`Giro al exterior${p.operations?.operation_code?` — ${p.operations.operation_code}`:""}`,detail:p.description||"",amt:Number(p.giro_amount_usd||0),dateLoad:p.created_at?String(p.created_at).slice(0,10):null,op:p.operations?.operation_code,card:p.credit_cards});});
+      (cardDebt.supTcUsd||[]).forEach(p=>{const k=p.card_closing_date||"sin_fecha";if(!groups[k])groups[k]={date:k,items:[]};groups[k].items.push({source:"supplier",id:p.id,desc:`Costo op ${p.operations?.operation_code||"—"} (GI)`,detail:p.notes||p.reference||"",amt:Number(p.amount_usd||0),dateLoad:p.payment_date,op:p.operations?.operation_code,operation_id:p.operation_id,card:p.credit_cards});});
       const sortedGroups=Object.values(groups).sort((a,b)=>{if(a.date==="sin_fecha")return 1;if(b.date==="sin_fecha")return -1;return a.date.localeCompare(b.date);});
+      // Dentro de cada grupo, ordenar items por fecha de carga ascendente.
+      sortedGroups.forEach(g=>g.items.sort((a,b)=>(a.dateLoad||"").localeCompare(b.dateLoad||"")));
       const todayStr=new Date().toISOString().slice(0,10);
       const markPaid=async(item)=>{
         if(!confirm(`¿Marcar "${item.desc}" como debitada de la tarjeta? Esto la resta del cash real.`))return;
@@ -3999,10 +4091,11 @@ function FinancePanel({token}){
             {soon&&<span style={{fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Próximos 7d</span>}
           </div>} actions={<Btn small variant="secondary" onClick={()=>markGroupPaid(g)}>✓ Marcar grupo debitado</Btn>}>
             <div style={{marginBottom:10}}>
-              {g.items.map((it,i)=><div key={it.source+it.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<g.items.length-1?"1px solid rgba(255,255,255,0.04)":"none",flexWrap:"wrap"}}>
+              {g.items.map((it,i)=>{const brandColor=it.card?.brand==="visa"?"#1a1f71":it.card?.brand==="mastercard"?"#eb001b":it.card?.brand==="amex"?"#006fcf":"#666";const brandLbl=it.card?.brand==="visa"?"VISA":it.card?.brand==="mastercard"?"MC":it.card?.brand==="amex"?"AMEX":"";return <div key={it.source+it.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<g.items.length-1?"1px solid rgba(255,255,255,0.04)":"none",flexWrap:"wrap"}}>
                 <div style={{flex:1,minWidth:200}}>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                     <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:it.source==="pmt"?"rgba(168,85,247,0.15)":"rgba(184,149,106,0.15)",color:it.source==="pmt"?"#c084fc":IC,textTransform:"uppercase",letterSpacing:"0.05em"}}>{it.source==="pmt"?"Giro":"Gasto"}</span>
+                    {it.card&&<span title={it.card.name} style={{fontSize:9.5,fontWeight:700,padding:"2px 6px",borderRadius:4,background:`${brandColor}22`,color:"#fff",border:`1px solid ${brandColor}66`,letterSpacing:"0.04em"}}>{brandLbl||"Otro"}</span>}
                     <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>{it.desc}</p>
                   </div>
                   {it.detail&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{it.detail}</p>}
@@ -4010,7 +4103,7 @@ function FinancePanel({token}){
                 </div>
                 <span style={{fontSize:14,fontWeight:700,color:"#fff",minWidth:120,textAlign:"right"}}>USD {it.amt.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
                 <button onClick={()=>markPaid(it)} style={{fontSize:10,fontWeight:700,padding:"6px 12px",borderRadius:6,border:"none",background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>✓ Debitada</button>
-              </div>)}
+              </div>;})}
             </div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",borderTop:"1px solid rgba(255,255,255,0.08)"}}>
               <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>Total del cierre</span>
