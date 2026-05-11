@@ -3368,20 +3368,17 @@ function CreditCardsCard({token}){
   const [cards,setCards]=useState([]);
   const [lo,setLo]=useState(true);
   const [editId,setEditId]=useState(null);
-  const [form,setForm]=useState({name:"",brand:"mastercard",closing_day_of_month:"",due_day_of_month:"",notes:""});
+  const [form,setForm]=useState({name:"",brand:"mastercard",notes:""});
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState("");
   const load=async()=>{setLo(true);const r=await dq("credit_cards",{token,filters:"?select=*&order=active.desc,brand.asc,name.asc"});setCards(Array.isArray(r)?r:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
-  const startNew=()=>{setEditId("new");setForm({name:"",brand:"mastercard",closing_day_of_month:"",due_day_of_month:"",notes:""});};
-  const startEdit=(c)=>{setEditId(c.id);setForm({name:c.name||"",brand:c.brand||"mastercard",closing_day_of_month:String(c.closing_day_of_month||""),due_day_of_month:String(c.due_day_of_month||""),notes:c.notes||""});};
+  const startNew=()=>{setEditId("new");setForm({name:"",brand:"mastercard",notes:""});};
+  const startEdit=(c)=>{setEditId(c.id);setForm({name:c.name||"",brand:c.brand||"mastercard",notes:c.notes||""});};
   const save=async()=>{
-    const cd=parseInt(form.closing_day_of_month),dd=parseInt(form.due_day_of_month||"0");
     if(!form.name.trim()){setMsg("Nombre requerido");return;}
-    if(!cd||cd<1||cd>31){setMsg("Día de cierre entre 1 y 31");return;}
-    if(form.due_day_of_month&&(dd<1||dd>31)){setMsg("Día de vencimiento entre 1 y 31");return;}
     setSaving(true);
-    const body={name:form.name.trim(),brand:form.brand,closing_day_of_month:cd,due_day_of_month:dd||null,notes:form.notes||null,updated_at:new Date().toISOString()};
+    const body={name:form.name.trim(),brand:form.brand,notes:form.notes||null,updated_at:new Date().toISOString()};
     if(editId==="new")await dq("credit_cards",{method:"POST",token,body});
     else await dq("credit_cards",{method:"PATCH",token,filters:`?id=eq.${editId}`,body});
     setEditId(null);setMsg("");load();setSaving(false);
@@ -3391,9 +3388,9 @@ function CreditCardsCard({token}){
   const brandIcon=(b)=>b==="visa"?"💳 VISA":b==="mastercard"?"💳 Mastercard":b==="amex"?"💳 Amex":"💳 Otro";
   const brandColor=(b)=>b==="visa"?"#1a1f71":b==="mastercard"?"#eb001b":b==="amex"?"#006fcf":"#666";
   return <Card title="Tarjetas de crédito" actions={<Btn small onClick={startNew}>+ Nueva tarjeta</Btn>}>
-    <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>Cada tarjeta con su día de cierre y vencimiento. Al cargar un gasto pagado con tarjeta de crédito, podés elegir cuál. Los resúmenes y la deuda TC se agrupan automáticamente por tarjeta + fecha de cierre.</p>
+    <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>Lista de tarjetas para asignar a cada gasto pagado con TC. La <strong style={{color:"#fff"}}>fecha de cierre se carga en cada gasto puntual</strong> (varía mes a mes según feriados / fin de semana).</p>
     {editId&&<div style={{background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
-      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",gap:"0 12px",marginBottom:10}}>
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:"0 12px",marginBottom:10}}>
         <Inp label="Nombre (ej. Mastercard Galicia)" value={form.name} onChange={v=>setForm(p=>({...p,name:v}))}/>
         <div><label style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",display:"block",margin:"0 0 4px"}}>Marca</label>
           <select value={form.brand} onChange={e=>setForm(p=>({...p,brand:e.target.value}))} style={{width:"100%",padding:"7px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff"}}>
@@ -3403,8 +3400,6 @@ function CreditCardsCard({token}){
             <option value="otro" style={{background:"#142038"}}>Otra</option>
           </select>
         </div>
-        <Inp label="Día cierre" type="number" value={form.closing_day_of_month} onChange={v=>setForm(p=>({...p,closing_day_of_month:v}))} small/>
-        <Inp label="Día vencimiento (opc.)" type="number" value={form.due_day_of_month} onChange={v=>setForm(p=>({...p,due_day_of_month:v}))} small/>
       </div>
       <Inp label="Notas (opcional)" value={form.notes} onChange={v=>setForm(p=>({...p,notes:v}))}/>
       {msg&&<p style={{fontSize:11,color:"#ff6b6b",margin:"6px 0"}}>{msg}</p>}
@@ -3419,7 +3414,7 @@ function CreditCardsCard({token}){
           <span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:5,background:`${brandColor(c.brand)}22`,color:"#fff",border:`1px solid ${brandColor(c.brand)}55`,minWidth:90,textAlign:"center"}}>{brandIcon(c.brand)}</span>
           <div style={{flex:1,minWidth:140}}>
             <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{c.name}</p>
-            <p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>Cierra día {c.closing_day_of_month}{c.due_day_of_month?` · Vence día ${c.due_day_of_month}`:""}{c.notes?` · ${c.notes}`:""}</p>
+            {c.notes&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{c.notes}</p>}
           </div>
           <Btn small variant="secondary" onClick={()=>startEdit(c)}>Editar</Btn>
           <Btn small variant="secondary" onClick={()=>toggleActive(c)}>{c.active?"Desactivar":"Activar"}</Btn>
