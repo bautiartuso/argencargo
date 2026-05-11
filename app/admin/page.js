@@ -2671,7 +2671,19 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const bSeg=Number(op.budget_seguro||0);
           const bLocal=costLocal; // sin columna de budget — base = costo real
           const bOtros=costOtros;
-          const bDoc=costDoc; // gasto documental — base = costo real
+          // Gasto documental presupuestado: recalculamos desde items+pkgs con la tabla CIF (igual que el form Productos).
+          // Solo aplica para canal aéreo blanco (igual que en el cotizador). Fallback al costo real si no se puede calcular.
+          const bDoc=(()=>{
+            if(!isAereo||!isBlanco)return costDoc;
+            const totalFob=items.reduce((s,x)=>s+Number(x.unit_price_usd||0)*Number(x.quantity||1),0);
+            if(totalFob<=0)return costDoc;
+            let pf=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);pf+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});
+            const certFl=pf*(config.cert_flete_aereo_ficticio||3.5);
+            const cif=(totalFob+certFl)*1.01;
+            const tbl=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];
+            let desemb=120;for(const [max,amt] of tbl){if(cif<max){desemb=amt;break;}}
+            return desemb*1.21; // desembolso + IVA 21%
+          })();
           const presuTotal=bFlete+bTax+bSeg+bLocal+bOtros+bDoc;
           // Solo prorratear cuando hay cobro real registrado. Si la op aún no tiene cobro,
           // `cobro` cae al presupuesto como fallback pero la comisión sigue restando, dando factor < 1 falso.
