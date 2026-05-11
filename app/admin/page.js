@@ -5820,6 +5820,7 @@ function AlibabaPendingBanner({flights,token,onDone}){
   const [open,setOpen]=useState(null); // flight.id que está siendo completado
   const [method,setMethod]=useState("tarjeta_credito");
   const [closing,setClosing]=useState("");
+  const [paidAt,setPaidAt]=useState(new Date().toISOString().slice(0,10));
   const [realCostInput,setRealCostInput]=useState("");
   const [userEdited,setUserEdited]=useState(false);
   const [saving,setSaving]=useState(false);
@@ -5828,25 +5829,28 @@ function AlibabaPendingBanner({flights,token,onDone}){
   const autoCost=Math.round(base*1.03*(method==="tarjeta_credito"?1.012:1)*100)/100;
   // Auto-calcular cuando cambia el método o el flight, salvo que el usuario haya editado manualmente.
   useEffect(()=>{if(!userEdited&&open)setRealCostInput(String(autoCost));},[autoCost,open,userEdited]);
-  const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");setUserEdited(false);};
+  const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");setPaidAt(new Date().toISOString().slice(0,10));setUserEdited(false);};
   const complete=async(flight)=>{
     if(method==="tarjeta_credito"&&!closing){alert("Falta fecha de cierre de tarjeta");return;}
+    if(!paidAt){alert("Falta fecha de pago");return;}
     const realCost=Number(realCostInput||0);
     if(!realCost||realCost<=0){alert("Cargá un costo real válido");return;}
     setSaving(true);
     const isTC=method==="tarjeta_credito";
+    // Fecha de pago a ISO (mediodía UTC para evitar problemas de timezone).
+    const paidAtIso=new Date(paidAt+"T12:00:00Z").toISOString();
     // 1) Update flight con datos del pago + nuevo total_cost_usd (para que las distribuciones queden coherentes)
-    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{awaiting_alibaba_payment:false,alibaba_payment_method:method,alibaba_card_closing_date:isTC?closing:null,alibaba_real_cost_usd:realCost,alibaba_paid_at:new Date().toISOString(),total_cost_usd:realCost}});
+    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{awaiting_alibaba_payment:false,alibaba_payment_method:method,alibaba_card_closing_date:isTC?closing:null,alibaba_real_cost_usd:realCost,alibaba_paid_at:paidAtIso,total_cost_usd:realCost}});
     // 2) Recalcular cost_share por op (prorrateado por peso) y actualizar cost_flete en cada op
     const fos=await dq("flight_operations",{token,filters:`?flight_id=eq.${flight.id}&select=*`});
     const totalW=(Array.isArray(fos)?fos:[]).reduce((s,fo)=>s+Number(fo.weight_kg||0),0);
     for(const fo of (Array.isArray(fos)?fos:[])){
       const share=totalW>0?(Number(fo.weight_kg||0)/totalW)*realCost:0;
       await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{cost_share_usd:share}});
-      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{cost_flete:share,cost_flete_method:isTC?"tarjeta_credito":"tarjeta_debito",cost_flete_paid_at:isTC?null:new Date().toISOString()}});
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{cost_flete:share,cost_flete_method:isTC?"tarjeta_credito":"tarjeta_debito",cost_flete_paid_at:isTC?null:paidAtIso}});
     }
-    // 3) Crear finance_entry: TC pendiente con card_closing_date, débito pagado al día.
-    await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Flete vuelo ${flight.flight_code} (Alibaba ${isTC?"TC":"débito"})`,amount:realCost,currency:"USD",payment_method:isTC?"tarjeta_credito":"transferencia",card_closing_date:isTC?closing:null,is_paid:!isTC,auto_generated:true,flight_id:flight.id}});
+    // 3) Crear finance_entry con la fecha de pago indicada por el admin (no la de hoy).
+    await dq("finance_entries",{method:"POST",token,body:{date:paidAt,type:"gasto",description:`Flete vuelo ${flight.flight_code} (Alibaba ${isTC?"TC":"débito"})`,amount:realCost,currency:"USD",payment_method:isTC?"tarjeta_credito":"transferencia",card_closing_date:isTC?closing:null,is_paid:!isTC,auto_generated:true,flight_id:flight.id}});
     setSaving(false);setOpen(null);onDone();
   };
   return <div style={{marginBottom:18,padding:"16px 20px",background:"linear-gradient(135deg,rgba(96,165,250,0.12),rgba(96,165,250,0.04))",border:"1.5px solid rgba(96,165,250,0.4)",borderRadius:12}}>
@@ -5866,8 +5870,9 @@ function AlibabaPendingBanner({flights,token,onDone}){
           {!isOpen&&<button onClick={()=>startEdit(f)} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.12)",color:"#60a5fa",cursor:"pointer"}}>Completar pago</button>}
         </div>
         {isOpen&&<>
-          <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:method==="tarjeta_credito"?"1fr 1fr 1fr":"1fr 1fr",gap:10,alignItems:"end"}}>
+          <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:method==="tarjeta_credito"?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr",gap:10,alignItems:"end"}}>
             <Sel label="Método de pago" value={method} onChange={v=>{setMethod(v);setUserEdited(false);}} options={[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"tarjeta_debito",label:"Tarjeta de Débito"}]}/>
+            <Inp label="Fecha de pago" type="date" value={paidAt} onChange={setPaidAt}/>
             {method==="tarjeta_credito"&&<Inp label="Cierre de tarjeta" type="date" value={closing} onChange={setClosing}/>}
             <Inp label={`Costo real (auto: USD ${autoCost.toFixed(2)})`} type="number" step="0.01" value={realCostInput} onChange={v=>{setRealCostInput(v);setUserEdited(true);}}/>
           </div>
