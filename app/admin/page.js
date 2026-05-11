@@ -3761,20 +3761,26 @@ function FinancePanel({token}){
     const otDate=pickDate(o.cost_otros_paid_at);
     if(Number(o.cost_otros||0)>0&&otDate)ledger.push({date:otDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Otros ${o.operation_code} — ${cc}`,amount:Number(o.cost_otros)});
   });
-  // Gestión Integral: cada pago parcial al proveedor aparece en su fecha (no en closed_at)
+  // Gestión Integral: cada pago al proveedor aparece en su fecha de salida de cash.
+  // Si fue TC, la fecha en el ledger es la del débito (paid_at), no la de la operación.
+  // La fecha original (devengado) queda en el detail.
   supplierPmts.filter(p=>p.is_paid).forEach(p=>{
     const op=allOps.find(o=>o.id===p.operation_id);
     const code=op?.operation_code||"";
     const cc=op?.clients?.client_code||"";
     const isRefund=p.type==="refund";
+    const isTC=p.payment_method==="tarjeta_credito";
+    const cashDate=isTC&&p.paid_at?p.paid_at.slice(0,10):p.payment_date;
+    const baseDetail=p.notes||(isRefund?"Reembolso del proveedor (Gestión Integral)":"Pago al proveedor (Gestión Integral)");
+    const tcSuffix=isTC&&p.paid_at&&p.payment_date!==cashDate?` · 💳 generado el ${formatDate(p.payment_date)}`:"";
     ledger.push({
-      date:p.payment_date,
+      date:cashDate,
       type:isRefund?"ingreso":"gasto",
       origen:"supplier_pmt",
       code,
       desc:isRefund?`↩ Reembolso ${code} — ${cc}`:`Pago producto ${code} — ${cc}`,
       amount:Number(p.amount_usd||0),
-      detail:p.notes||(isRefund?"Reembolso del proveedor (Gestión Integral)":"Pago al proveedor (Gestión Integral)")
+      detail:baseDetail+tcSuffix
     });
   });
   // Pagos parciales del cliente (anticipos) → cada uno es un ingreso en su fecha
@@ -3794,21 +3800,34 @@ function FinancePanel({token}){
     // Comisión de giro: SIEMPRE se cuenta como gasto de contado (no depende del método del giro).
     // Representa el costo financiero que se paga al recibir la transferencia del cliente.
     if(p.giro_status==="confirmado"&&Number(p.cost_comision_giro||0)>0){ledger.push({date:p.giro_date||p.client_paid_date||"—",type:"gasto",origen:"pmt",code,desc:`Comisión financiera ${code} — ${cc}`,amount:Number(p.cost_comision_giro),detail:"Costo por recibir la transferencia"});}
-    // Giro al exterior: aparece cuando el giro se pagó (efectivo/transferencia) o la tarjeta se debitó.
-    // El ledger usa SIEMPRE giro_date (fecha del giro original), NO la fecha en que se marcó debitada.
-    // Si se usa giro_tarjeta_paid_at, marcar un grupo TC mueve todas las entradas a hoy y descuadra el devengado.
-    if(p.giro_status==="confirmado"&&!tarjetaPendiente&&Number(p.giro_amount_usd||0)>0){ledger.push({date:p.giro_date||p.client_paid_date||"—",type:"gasto",origen:"pmt",code,desc:`Giro exterior ${code} — ${cc}`,amount:Number(p.giro_amount_usd),detail:p.description||""});}
+    // Giro al exterior: aparece cuando se pagó (efectivo/transferencia) o se debitó la TC.
+    // En libro diario usamos la fecha en que SALIÓ el cash (cash flow real):
+    //  - efectivo / transferencia → giro_date (cuando se hizo el giro)
+    //  - TC ya debitada → giro_tarjeta_paid_at (cuando salió la plata del bolsillo)
+    // La fecha del giro original queda en el detail para trackear devengado.
+    if(p.giro_status==="confirmado"&&!tarjetaPendiente&&Number(p.giro_amount_usd||0)>0){
+      const isGiroTC=p.giro_payment_method==="tarjeta_credito";
+      const cashDate=isGiroTC&&p.giro_tarjeta_paid_at?p.giro_tarjeta_paid_at.slice(0,10):(p.giro_date||p.client_paid_date||"—");
+      const tcSuffix=isGiroTC&&p.giro_tarjeta_paid_at&&p.giro_date&&p.giro_date!==cashDate?` · 💳 giro generado el ${formatDate(p.giro_date)}`:"";
+      ledger.push({date:cashDate,type:"gasto",origen:"pmt",code,desc:`Giro exterior ${code} — ${cc}`,amount:Number(p.giro_amount_usd),detail:(p.description||"")+tcSuffix});
+    }
   });
   entries.forEach(e=>{
     // Gastos con tarjeta: solo aparecen cuando is_paid=true
     const tarjetaPendiente=e.payment_method==="tarjeta_credito"&&!e.is_paid;
     if(tarjetaPendiente)return;
-    ledger.push({date:e.date,type:e.type,origen:"manual",code:"",desc:e.description,amount:Number(e.amount||0),detail:e.detail||"",cat:e.category,recurring:e.is_recurring,id:e.id});
+    const isTC=e.payment_method==="tarjeta_credito";
+    const cashDate=isTC&&e.card_paid_at?e.card_paid_at.slice(0,10):e.date;
+    const tcSuffix=isTC&&e.card_paid_at&&e.date&&e.date!==cashDate?` · 💳 gasto generado el ${formatDate(e.date)}`:"";
+    ledger.push({date:cashDate,type:e.type,origen:"manual",code:"",desc:e.description,amount:Number(e.amount||0),detail:(e.detail||"")+tcSuffix,cat:e.category,recurring:e.is_recurring,id:e.id});
   });
   // Auto-generated entries de ops (impuestos/gasto doc dolarizados): aparecen como "op" para que se distingan de gastos manuales del negocio.
   autoEntries.forEach(e=>{
     if(e.payment_method==="tarjeta_credito"&&!e.is_paid)return;
-    ledger.push({date:e.date,type:e.type,origen:"op",code:"",desc:e.description,amount:Number(e.amount||0),detail:e.detail||"",id:e.id});
+    const isTC=e.payment_method==="tarjeta_credito";
+    const cashDate=isTC&&e.card_paid_at?e.card_paid_at.slice(0,10):e.date;
+    const tcSuffix=isTC&&e.card_paid_at&&e.date&&e.date!==cashDate?` · 💳 gasto generado el ${formatDate(e.date)}`:"";
+    ledger.push({date:cashDate,type:e.type,origen:"op",code:"",desc:e.description,amount:Number(e.amount||0),detail:(e.detail||"")+tcSuffix,id:e.id});
   });
   agentMvs.filter(m=>m.type==="anticipo").forEach(m=>{const ag=agentSignups.find(a=>a.auth_user_id===m.agent_id);const agName=ag?`${ag.first_name} ${ag.last_name}`:"agente";const paid=Number(m.amount_usd||0);const recv=m.amount_received_usd!=null?Number(m.amount_received_usd):paid;const com=Math.max(0,paid-recv);
     // Solo se cuenta lo que recibió el agente (el resto va como gasto comisión separado en finance_entries para no duplicar)
@@ -4112,19 +4131,22 @@ function FinancePanel({token}){
       const totalsPorTarjeta={};
       sortedGroups.forEach(g=>{const k=g.card?.id||"sin_tarjeta";if(!totalsPorTarjeta[k]){totalsPorTarjeta[k]={card:g.card,total:0,count:0};}totalsPorTarjeta[k].total+=g.items.reduce((s,it)=>s+it.amt,0);totalsPorTarjeta[k].count+=g.items.length;});
       const todayStr=new Date().toISOString().slice(0,10);
+      const nowIso=()=>new Date().toISOString();
       const markPaid=async(item)=>{
         if(!confirm(`¿Marcar "${item.desc}" como debitada de la tarjeta? Esto la resta del cash real.`))return;
-        if(item.source==="finance"){await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true}});}
-        else if(item.source==="supplier"){await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,paid_at:new Date().toISOString()}});}
-        else{await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});}
+        const t=nowIso();
+        if(item.source==="finance"){await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,card_paid_at:t}});}
+        else if(item.source==="supplier"){await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,paid_at:t}});}
+        else{await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:t}});}
         load();flash("Marcada como debitada");
       };
       const markGroupPaid=async(g)=>{
         if(!confirm(`¿Marcar las ${g.items.length} deudas de ${g.date==="sin_fecha"?"sin fecha":formatDate(g.date)} como debitadas? Total: USD ${g.items.reduce((s,i)=>s+i.amt,0).toFixed(2)}`))return;
+        const t=nowIso();
         for(const item of g.items){
-          if(item.source==="finance")await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true}});
-          else if(item.source==="supplier")await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,paid_at:new Date().toISOString()}});
-          else await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});
+          if(item.source==="finance")await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,card_paid_at:t}});
+          else if(item.source==="supplier")await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,paid_at:t}});
+          else await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:t}});
         }
         load();flash(`${g.items.length} deudas marcadas como debitadas`);
       };
