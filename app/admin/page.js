@@ -512,12 +512,43 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const budgetTot=Number(op.budget_total||0);
     setSavingAddPayment(true);
     try{
+      // FIX data-loss: si la op tiene collected_amount cargado via legacy form pero NO hay partials,
+      // convertir ese monto en un partial payment primero para no perderlo al sincronizar collected_amount.
+      let prevTotal=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      const legacyCollected=(()=>{
+        const raw=Number(op.collected_amount||0);
+        const isArs=op.collection_currency==="ARS";
+        const r=Number(op.collection_exchange_rate||0);
+        return isArs&&r>0?raw/r:raw;
+      })();
+      if(clientPayments.length===0&&legacyCollected>0.01){
+        const legacyBody={
+          operation_id:op.id,
+          payment_date:op.collection_date||addPaymentForm.payment_date,
+          amount_usd:legacyCollected,
+          currency:op.collection_currency||"USD",
+          payment_method:op.collection_method||"transferencia",
+          notes:"Cobro previo (migrado del registro legacy)",
+        };
+        if(op.collection_currency==="ARS"&&Number(op.collection_exchange_rate||0)>0){
+          legacyBody.amount_ars=Number(op.collected_amount||0);
+          legacyBody.exchange_rate=Number(op.collection_exchange_rate||0);
+        }
+        const insLegacy=await dq("operation_client_payments",{method:"POST",token,body:legacyBody,headers:{Prefer:"return=representation"}});
+        const insertedLegacy=Array.isArray(insLegacy)?insLegacy[0]:insLegacy;
+        if(!insertedLegacy||!insertedLegacy.id){
+          const msg=insertedLegacy?.message||insertedLegacy?.error||"No se pudo preservar el cobro previo.";
+          alert("❌ "+msg);
+          setSavingAddPayment(false);
+          return;
+        }
+        prevTotal=legacyCollected;
+      }
       const body={operation_id:op.id,payment_date:addPaymentForm.payment_date,amount_usd:finalAmtUsd,currency:addPaymentForm.currency,payment_method:addPaymentForm.payment_method,notes:addPaymentForm.notes||null};
       if(addPaymentForm.currency==="ARS"){body.amount_ars=amtArs;body.exchange_rate=rate;}
       const ins1=await dq("operation_client_payments",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
       const inserted1=Array.isArray(ins1)?ins1[0]:ins1;
       if(!inserted1||!inserted1.id){const msg=inserted1?.message||inserted1?.error||"El pago no se pudo guardar.";alert("❌ "+msg);setSavingAddPayment(false);return;}
-      const prevTotal=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const newTotal=prevTotal+finalAmtUsd;
       const opUpdate={collected_amount:newTotal};
       if(budgetTot>0&&newTotal>=budgetTot-0.01){
@@ -2190,7 +2221,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         };
         const totalParciales=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
         const saldoParciales=budgetTot-totalParciales;
-        return <Card title="Cobro" actions={<div style={{display:"flex",gap:6}}><Btn small variant="secondary" onClick={()=>{setAddPaymentForm({amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",payment_date:new Date().toISOString().slice(0,10),notes:""});setShowAddPayment(true);}}>+ Cobro adicional</Btn><Btn onClick={saveCobro} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
+        const hasPartials=clientPayments.length>0;
+        return <Card title="Cobro" actions={<div style={{display:"flex",gap:6}}><Btn small variant="secondary" onClick={()=>{setAddPaymentForm({amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",payment_date:new Date().toISOString().slice(0,10),notes:""});setShowAddPayment(true);}}>+ Cobro adicional</Btn>{!hasPartials&&<Btn onClick={saveCobro} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}</div>}>
         {/* Banner: cliente con saldo a favor */}
         {creditBal>0.01&&!op.is_collected&&budgetTot>0&&<div style={{marginBottom:12,padding:"12px 16px",background:"linear-gradient(90deg, rgba(34,197,94,0.1), rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div>
@@ -2224,13 +2256,13 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           </div>
           <button onClick={async()=>{if(!confirm("¿Limpiar el cargo extra? Solo borra el flag, no modifica el monto cobrado."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{extra_charge_usd:0}});setOp(p=>({...p,extra_charge_usd:0}));flash("Cargo extra limpiado");}} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:6,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar</button>
         </div>}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
+        {hasPartials?<div style={{padding:"10px 14px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:8,marginBottom:8,fontSize:11,color:"rgba(255,255,255,0.55)"}}>Esta op usa cobros parciales. El monto total y el método se sincronizan automáticamente desde los pagos registrados — para modificarlos, agregá/eliminá pagos parciales abajo.</div>:<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
           {/* Fix bug: NO usar fallback a budget_total en value — confunde porque parece cargado pero el state está en 0.
              Mostrarlo como placeholder para que el admin sepa el monto sugerido sin inducir error. */}
           <Inp label={`Monto cobrado (${op.collection_currency||"USD"})`} type="number" value={op.collected_amount} onChange={chOp("collected_amount")} step="0.01" placeholder={Number(op.budget_total)?`${Number(op.budget_total).toFixed(2)} (presupuesto)`:"0.00"}/>
           <Sel label="Método de cobro" value={op.collection_method||"transferencia"} onChange={chOp("collection_method")} options={[{value:"efectivo",label:"Efectivo"},{value:"transferencia",label:"Transferencia"},{value:"cripto",label:"Cripto"}]}/>
           <Sel label="Moneda" value={op.collection_currency||"USD"} onChange={chOp("collection_currency")} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]}/>
-        </div>
+        </div>}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
           {(op.collection_method==="transferencia")&&<Inp label="Comisión transferencia %" type="number" value={op.collection_fee_pct||""} onChange={chOp("collection_fee_pct")} step="0.1" placeholder="0"/>}
           {op.collection_currency==="ARS"&&<Inp label="Tipo de cambio (ARS/USD)" type="number" value={op.collection_exchange_rate} onChange={chOp("collection_exchange_rate")} step="0.01" placeholder="Ej: 1200"/>}
@@ -2590,10 +2622,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           // Bloques presu vs costo real por concepto. Si el cobro neto al cliente difiere del
           // presupuestado, prorrateo la diferencia entre los conceptos (con factor = cobro/presu).
           // Así Saldo refleja la realidad del cobro, no un presu teórico.
+          // Flete local y Otros no tienen columna de budget propia → usamos su costo real como presu base
+          // para que entren en la base del prorrateo (sino el factor sale inflado y desfasa todo).
           const bFlete=Number(op.budget_flete||0);
           const bTax=Number(op.budget_taxes||0);
           const bSeg=Number(op.budget_seguro||0);
-          const presuTotal=bFlete+bTax+bSeg;
+          const bLocal=costLocal; // sin columna de budget — base = costo real
+          const bOtros=costOtros;
+          const presuTotal=bFlete+bTax+bSeg+bLocal+bOtros;
           const factor=presuTotal>0&&ingresoNeto>0?(ingresoNeto/presuTotal):1;
           const adj=(b)=>b*factor;
           const cTax=costImp+costDoc; // impuestos reales + gasto documental se compara contra budget_taxes
@@ -2613,8 +2649,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             {block("Flete",bFlete,costFlete)}
             {block("Impuestos",bTax,cTax)}
             {block("Seguro",bSeg,costSeg)}
-            {block("Flete local",0,costLocal)}
-            {costOtros>0&&block("Otros",0,costOtros)}
+            {(bLocal>0||costLocal>0)&&block("Flete local",bLocal,costLocal)}
+            {(bOtros>0||costOtros>0)&&block("Otros",bOtros,costOtros)}
           </>;
         })()}
         <div style={{height:8}}/>
