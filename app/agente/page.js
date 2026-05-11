@@ -1256,6 +1256,11 @@ function FlightDetail({token,flight,flightOps,packages,t,onBack,onDispatched}){
                 {p.photo_url?<img src={p.photo_url} alt="" onClick={()=>setLightboxPhoto(p.photo_url)} style={{width:38,height:38,objectFit:"cover",borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in"}}/>:<div style={{width:38,height:38,borderRadius:6,border:"1px dashed rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"rgba(255,255,255,0.25)"}}>📦</div>}
                 <span style={{minWidth:22,color:IC,fontWeight:700}}>#{p.package_number||i+1}</span>
                 {nt&&<span style={{fontFamily:"monospace",background:"rgba(184,149,106,0.1)",padding:"2px 7px",borderRadius:4,color:IC,fontSize:10,border:"1px solid rgba(184,149,106,0.2)"}}>{nt}</span>}
+                {Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.length>0&&<>
+                  <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>←</span>
+                  {p.consolidated_from_trackings.slice(0,4).map((tr,k)=><span key={k} style={{fontFamily:"monospace",fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.25)"}}>{tr}</span>)}
+                  {p.consolidated_from_trackings.length>4&&<span title={p.consolidated_from_trackings.join(", ")} style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)",cursor:"help"}}>+{p.consolidated_from_trackings.length-4}</span>}
+                </>}
               </div>
               <span style={{color:"rgba(255,255,255,0.55)",textAlign:"right"}}>{q>1?`${q}× `:""}{hasDims?`${l}×${wd}×${h} cm`:"— cm"}{gw>0?` · ${gw.toFixed(2)} kg`:""}</span>
             </div>;})}
