@@ -3920,7 +3920,8 @@ function FinancePanel({token}){
     const isTC=e.payment_method==="tarjeta_credito";
     const cashDate=isTC&&e.card_paid_at?e.card_paid_at.slice(0,10):e.date;
     const tcSuffix=isTC&&e.card_paid_at&&e.date&&e.date!==cashDate?` · 💳 gasto generado el ${formatDate(e.date)}`:"";
-    ledger.push({date:cashDate,type:e.type,origen:"manual",code:"",desc:e.description,amount:Number(e.amount||0),detail:(e.detail||"")+tcSuffix,cat:e.category,recurring:e.is_recurring,id:e.id});
+    const arsSuffix=Number(e.amount_ars||0)>0&&Number(e.exchange_rate||0)>0?` · ARS ${Number(e.amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} @ ${Number(e.exchange_rate).toFixed(2)}`:"";
+    ledger.push({date:cashDate,type:e.type,origen:"manual",code:"",desc:e.description,amount:Number(e.amount||0),detail:(e.detail||"")+tcSuffix+arsSuffix,cat:e.category,recurring:e.is_recurring,id:e.id});
   });
   // Auto-generated entries de ops (impuestos/gasto doc dolarizados): aparecen como "op" para que se distingan de gastos manuales del negocio.
   autoEntries.forEach(e=>{
@@ -3928,7 +3929,8 @@ function FinancePanel({token}){
     const isTC=e.payment_method==="tarjeta_credito";
     const cashDate=isTC&&e.card_paid_at?e.card_paid_at.slice(0,10):e.date;
     const tcSuffix=isTC&&e.card_paid_at&&e.date&&e.date!==cashDate?` · 💳 gasto generado el ${formatDate(e.date)}`:"";
-    ledger.push({date:cashDate,type:e.type,origen:"op",code:"",desc:e.description,amount:Number(e.amount||0),detail:(e.detail||"")+tcSuffix,id:e.id});
+    const arsSuffix=Number(e.amount_ars||0)>0&&Number(e.exchange_rate||0)>0?` · ARS ${Number(e.amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} @ ${Number(e.exchange_rate).toFixed(2)}`:"";
+    ledger.push({date:cashDate,type:e.type,origen:"op",code:"",desc:e.description,amount:Number(e.amount||0),detail:(e.detail||"")+tcSuffix+arsSuffix,id:e.id});
   });
   agentMvs.filter(m=>m.type==="anticipo").forEach(m=>{const ag=agentSignups.find(a=>a.auth_user_id===m.agent_id);const agName=ag?`${ag.first_name} ${ag.last_name}`:"agente";const paid=Number(m.amount_usd||0);const recv=m.amount_received_usd!=null?Number(m.amount_received_usd):paid;const com=Math.max(0,paid-recv);
     // Solo se cuenta lo que recibió el agente (el resto va como gasto comisión separado en finance_entries para no duplicar)
