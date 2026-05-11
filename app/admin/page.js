@@ -3645,6 +3645,8 @@ const CAT_LBL={marketing:"Marketing",software:"Software",salarios:"Salarios",ofi
 const CAT_COLOR={marketing:"#fb923c",software:"#a78bfa",salarios:"#22c55e",oficina:"#60a5fa",comisiones:"#fbbf24",otros:"#94a3b8"};
 function FinancePanel({token}){
   const [entries,setEntries]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("fixed");const [showAdd,setShowAdd]=useState(false);const [msg,setMsg]=useState("");
+  // Filtros del libro diario
+  const [ledFrom,setLedFrom]=useState("");const [ledTo,setLedTo]=useState("");const [ledType,setLedType]=useState("");const [ledSearch,setLedSearch]=useState("");const [ledOrigen,setLedOrigen]=useState("");
   const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});
   const [allOps,setAllOps]=useState([]);const [allPmts,setAllPmts]=useState([]);
   const [dollarPending,setDollarPending]=useState([]);const [dollarRates,setDollarRates]=useState({});
@@ -3961,20 +3963,64 @@ function FinancePanel({token}){
         </table>
         {entries.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>Sin gastos cargados. Agregá Meta ads, Vercel, Claude, salarios, etc.</p>}
       </div></>)}
-    {tab==="ledger"&&(lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:<div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>{["Fecha","Tipo","Origen","Descripción","Detalle","Monto"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
-        <tbody>{ledger.map((l,i)=><tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-          <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{l.date==="—"?"—":formatDate(l.date)}</td>
-          <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,fontWeight:700,background:l.type==="ingreso"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:l.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{l.type==="ingreso"?"INGRESO":"GASTO"}</span></td>
-          <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.028)",color:"rgba(255,255,255,0.5)"}}>{l.origen==="op"?"Operación":l.origen==="pmt"?"Gestión de pagos":l.origen==="agente"?"Anticipo agente":"Gasto fijo"}</span></td>
-          <td style={{padding:"10px 12px",color:"#fff"}}>{l.desc}</td>
-          <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{l.detail||(l.cat?CAT_LBL[l.cat]:"")}</td>
-          <td style={{padding:"10px 12px",fontWeight:700,color:l.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{l.type==="gasto"?"-":""}{usd(l.amount)}</td>
-        </tr>)}</tbody>
-      </table>
-      {ledger.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>No hay movimientos</p>}
-    </div>)}
+    {tab==="ledger"&&(lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:(()=>{
+      // Filtros
+      const ledFiltered=ledger.filter(l=>{
+        if(ledFrom&&l.date!=="—"&&l.date<ledFrom)return false;
+        if(ledTo&&l.date!=="—"&&l.date>ledTo)return false;
+        if(ledType&&l.type!==ledType)return false;
+        if(ledOrigen&&l.origen!==ledOrigen)return false;
+        if(ledSearch){const s=ledSearch.toLowerCase();const txt=`${l.desc||""} ${l.detail||""} ${l.cat?CAT_LBL[l.cat]:""}`.toLowerCase();if(!txt.includes(s))return false;}
+        return true;
+      });
+      const subIng=ledFiltered.filter(l=>l.type==="ingreso").reduce((s,l)=>s+Number(l.amount||0),0);
+      const subGst=ledFiltered.filter(l=>l.type==="gasto").reduce((s,l)=>s+Number(l.amount||0),0);
+      const clear=()=>{setLedFrom("");setLedTo("");setLedType("");setLedOrigen("");setLedSearch("");};
+      const hasFilters=ledFrom||ledTo||ledType||ledOrigen||ledSearch;
+      return <>
+        {/* Barra de filtros */}
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:14,padding:"12px 14px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10}}>
+          <input value={ledSearch} onChange={e=>setLedSearch(e.target.value)} placeholder="🔍 Buscar por descripción..." style={{flex:1,minWidth:200,padding:"8px 12px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+          <input type="date" value={ledFrom} onChange={e=>setLedFrom(e.target.value)} title="Desde" style={{padding:"8px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+          <span style={{color:"rgba(255,255,255,0.35)",fontSize:12}}>→</span>
+          <input type="date" value={ledTo} onChange={e=>setLedTo(e.target.value)} title="Hasta" style={{padding:"8px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+          <select value={ledType} onChange={e=>setLedType(e.target.value)} style={{padding:"8px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",cursor:"pointer"}}>
+            <option value="" style={{background:"#142038"}}>Todos los tipos</option>
+            <option value="ingreso" style={{background:"#142038"}}>Solo ingresos</option>
+            <option value="gasto" style={{background:"#142038"}}>Solo gastos</option>
+          </select>
+          <select value={ledOrigen} onChange={e=>setLedOrigen(e.target.value)} style={{padding:"8px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",cursor:"pointer"}}>
+            <option value="" style={{background:"#142038"}}>Todos los orígenes</option>
+            <option value="op" style={{background:"#142038"}}>Operación</option>
+            <option value="pmt" style={{background:"#142038"}}>Gestión de pagos</option>
+            <option value="agente" style={{background:"#142038"}}>Anticipo agente</option>
+            <option value="manual" style={{background:"#142038"}}>Gasto fijo</option>
+          </select>
+          {hasFilters&&<button onClick={clear} style={{padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer"}}>Limpiar</button>}
+        </div>
+        {/* Subtotales del filtro */}
+        {hasFilters&&<div style={{display:"flex",gap:14,marginBottom:14,padding:"10px 14px",background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,flexWrap:"wrap",fontSize:12}}>
+          <span style={{color:"rgba(255,255,255,0.55)"}}>Resultado del filtro: <strong style={{color:"#fff"}}>{ledFiltered.length}</strong> movimientos</span>
+          <span style={{marginLeft:"auto",color:"#22c55e"}}>Ingresos: <strong>{usd(subIng)}</strong></span>
+          <span style={{color:"#ff6b6b"}}>Gastos: <strong>{usd(subGst)}</strong></span>
+          <span style={{color:subIng-subGst>=0?"#22c55e":"#ff6b6b"}}>Neto: <strong>{usd(subIng-subGst)}</strong></span>
+        </div>}
+        <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>{["Fecha","Tipo","Origen","Descripción","Detalle","Monto"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
+            <tbody>{ledFiltered.map((l,i)=><tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+              <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{l.date==="—"?"—":formatDate(l.date)}</td>
+              <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,fontWeight:700,background:l.type==="ingreso"?"rgba(34,197,94,0.15)":"rgba(255,80,80,0.15)",color:l.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{l.type==="ingreso"?"INGRESO":"GASTO"}</span></td>
+              <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.028)",color:"rgba(255,255,255,0.5)"}}>{l.origen==="op"?"Operación":l.origen==="pmt"?"Gestión de pagos":l.origen==="agente"?"Anticipo agente":"Gasto fijo"}</span></td>
+              <td style={{padding:"10px 12px",color:"#fff"}}>{l.desc}</td>
+              <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{l.detail||(l.cat?CAT_LBL[l.cat]:"")}</td>
+              <td style={{padding:"10px 12px",fontWeight:700,color:l.type==="ingreso"?"#22c55e":"#ff6b6b"}}>{l.type==="gasto"?"-":""}{usd(l.amount)}</td>
+            </tr>)}</tbody>
+          </table>
+          {ledFiltered.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>{ledger.length===0?"No hay movimientos":"No hay movimientos con esos filtros"}</p>}
+        </div>
+      </>;
+    })())}
     {tab==="dollar"&&(()=>{
       // Dos fuentes: (1) finance_entries (gastos del negocio + impuestos/gasto doc de ops)
       //              (2) operation_supplier_payments (costos de ops GI con TC+ARS)
