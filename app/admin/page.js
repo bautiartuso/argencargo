@@ -4245,9 +4245,12 @@ function FinancePanel({token}){
         if(!groups[k])groups[k]={key:k,date:dateKey,card:cardObj||null,items:[]};
         groups[k].items.push(item);
       };
-      cardDebt.usd.forEach(e=>pushItem({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:Number(e.amount||0),dateLoad:e.date,op:e.operations?.operation_code,card:e.credit_cards},e.credit_cards,e.card_closing_date));
-      cardDebt.pmts.forEach(p=>pushItem({source:"pmt",id:p.id,desc:`Giro al exterior${p.operations?.operation_code?` — ${p.operations.operation_code}`:""}`,detail:p.description||"",amt:Number(p.giro_amount_usd||0),dateLoad:p.created_at?String(p.created_at).slice(0,10):null,op:p.operations?.operation_code,card:p.credit_cards},p.credit_cards,p.giro_tarjeta_due_date));
-      (cardDebt.supTcUsd||[]).forEach(p=>pushItem({source:"supplier",id:p.id,desc:`Costo op ${p.operations?.operation_code||"—"} (GI)`,detail:p.notes||p.reference||"",amt:Number(p.amount_usd||0),dateLoad:p.payment_date,op:p.operations?.operation_code,operation_id:p.operation_id,card:p.credit_cards},p.credit_cards,p.card_closing_date));
+      cardDebt.usd.forEach(e=>pushItem({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:Number(e.amount||0),amtArs:0,currency:"USD",dateLoad:e.date,op:e.operations?.operation_code,card:e.credit_cards},e.credit_cards,e.card_closing_date));
+      cardDebt.pmts.forEach(p=>pushItem({source:"pmt",id:p.id,desc:`Giro al exterior${p.operations?.operation_code?` — ${p.operations.operation_code}`:""}`,detail:p.description||"",amt:Number(p.giro_amount_usd||0),amtArs:0,currency:"USD",dateLoad:p.created_at?String(p.created_at).slice(0,10):null,op:p.operations?.operation_code,card:p.credit_cards},p.credit_cards,p.giro_tarjeta_due_date));
+      (cardDebt.supTcUsd||[]).forEach(p=>pushItem({source:"supplier",id:p.id,desc:`Costo op ${p.operations?.operation_code||"—"} (GI)`,detail:p.notes||p.reference||"",amt:Number(p.amount_usd||0),amtArs:0,currency:"USD",dateLoad:p.payment_date,op:p.operations?.operation_code,operation_id:p.operation_id,card:p.credit_cards},p.credit_cards,p.card_closing_date));
+      // Entradas ARS pendientes de dolarizar — antes no se mostraban en el grouping per-tarjeta y los totales por tarjeta salían en $0.
+      cardDebt.ars.forEach(e=>pushItem({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:0,amtArs:Number(e.amount_ars||0),currency:"ARS",pendingDolar:true,dateLoad:e.date,op:e.operations?.operation_code,card:e.credit_cards},e.credit_cards,e.card_closing_date));
+      (cardDebt.supTcArs||[]).forEach(p=>pushItem({source:"supplier",id:p.id,desc:`Costo op ${p.operations?.operation_code||"—"} (GI)`,detail:p.notes||p.reference||"",amt:0,amtArs:Number(p.amount_ars||0),currency:"ARS",pendingDolar:true,dateLoad:p.payment_date,op:p.operations?.operation_code,operation_id:p.operation_id,card:p.credit_cards},p.credit_cards,p.card_closing_date));
       // Orden: primero por nombre de tarjeta, después por fecha de cierre.
       const sortedGroups=Object.values(groups).sort((a,b)=>{
         const an=(a.card?.name||"~zsin tarjeta").toLowerCase();
@@ -4260,7 +4263,7 @@ function FinancePanel({token}){
       sortedGroups.forEach(g=>g.items.sort((a,b)=>(a.dateLoad||"").localeCompare(b.dateLoad||"")));
       // Totales por tarjeta para mostrar arriba.
       const totalsPorTarjeta={};
-      sortedGroups.forEach(g=>{const k=g.card?.id||"sin_tarjeta";if(!totalsPorTarjeta[k]){totalsPorTarjeta[k]={card:g.card,total:0,count:0};}totalsPorTarjeta[k].total+=g.items.reduce((s,it)=>s+it.amt,0);totalsPorTarjeta[k].count+=g.items.length;});
+      sortedGroups.forEach(g=>{const k=g.card?.id||"sin_tarjeta";if(!totalsPorTarjeta[k]){totalsPorTarjeta[k]={card:g.card,total:0,totalArs:0,count:0};}totalsPorTarjeta[k].total+=g.items.reduce((s,it)=>s+Number(it.amt||0),0);totalsPorTarjeta[k].totalArs+=g.items.reduce((s,it)=>s+Number(it.amtArs||0),0);totalsPorTarjeta[k].count+=g.items.length;});
       const todayStr=new Date().toISOString().slice(0,10);
       const nowIso=()=>new Date().toISOString();
       const markPaid=async(item)=>{
@@ -4298,19 +4301,21 @@ function FinancePanel({token}){
         </div>
         {/* Totales por tarjeta */}
         {Object.keys(totalsPorTarjeta).length>0&&<div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:18}}>
-          {Object.values(totalsPorTarjeta).sort((a,b)=>b.total-a.total).map((t,i)=>{const brandColor=t.card?.brand==="visa"?"#1a1f71":t.card?.brand==="mastercard"?"#eb001b":t.card?.brand==="amex"?"#006fcf":"#666";const brandLbl=t.card?.brand==="visa"?"VISA":t.card?.brand==="mastercard"?"Mastercard":t.card?.brand==="amex"?"American Express":"Sin tarjeta";return <div key={i} style={{flex:"1 1 220px",minWidth:200,padding:"12px 16px",background:`${brandColor}15`,border:`1px solid ${brandColor}40`,borderRadius:10}}>
+          {Object.values(totalsPorTarjeta).sort((a,b)=>(b.total+b.totalArs/1000)-(a.total+a.totalArs/1000)).map((t,i)=>{const brandColor=t.card?.brand==="visa"?"#1a1f71":t.card?.brand==="mastercard"?"#eb001b":t.card?.brand==="amex"?"#006fcf":"#666";const brandLbl=t.card?.brand==="visa"?"VISA":t.card?.brand==="mastercard"?"Mastercard":t.card?.brand==="amex"?"American Express":"Sin tarjeta";return <div key={i} style={{flex:"1 1 220px",minWidth:200,padding:"12px 16px",background:`${brandColor}15`,border:`1px solid ${brandColor}40`,borderRadius:10}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
               <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:`${brandColor}33`,color:"#fff",letterSpacing:"0.05em"}}>{brandLbl}</span>
               <p style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.85)",margin:0}}>{t.card?.name||"Sin tarjeta"}</p>
             </div>
-            <p style={{fontSize:22,fontWeight:800,color:"#fb923c",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {t.total.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            {t.total>0&&<p style={{fontSize:22,fontWeight:800,color:"#fb923c",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {t.total.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+            {t.totalArs>0&&<p style={{fontSize:t.total>0?16:22,fontWeight:800,color:IC,margin:t.total>0?"4px 0 0":0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>ARS {t.totalArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}{t.totalArs>0&&t.total===0?<span style={{fontSize:10,color:"rgba(255,255,255,0.5)",fontWeight:500,marginLeft:6}}>· pendiente dolarizar</span>:""}</p>}
             <p style={{fontSize:10.5,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>{t.count} {t.count===1?"gasto pendiente":"gastos pendientes"}</p>
           </div>;})}
         </div>}
         {/* Grupos por (tarjeta, fecha de cierre) */}
         {sortedGroups.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.5)",padding:"3rem 0",fontSize:14}}>🎉 Sin deuda de tarjeta pendiente</p>}
         {sortedGroups.map(g=>{
-          const gTotal=g.items.reduce((s,i)=>s+i.amt,0);
+          const gTotal=g.items.reduce((s,i)=>s+Number(i.amt||0),0);
+          const gTotalArs=g.items.reduce((s,i)=>s+Number(i.amtArs||0),0);
           const overdue=g.date!=="sin_fecha"&&g.date<todayStr;
           const soon=g.date!=="sin_fecha"&&!overdue&&(new Date(g.date)-new Date(todayStr))/86400000<=7;
           const color=overdue?"#ff6b6b":soon?"#fbbf24":IC;
@@ -4333,13 +4338,13 @@ function FinancePanel({token}){
                   {it.detail&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{it.detail}</p>}
                   {it.dateLoad&&<p style={{fontSize:10,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Cargado {formatDate(it.dateLoad)}</p>}
                 </div>
-                <span style={{fontSize:14,fontWeight:700,color:"#fff",minWidth:120,textAlign:"right"}}>USD {it.amt.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                <span style={{fontSize:14,fontWeight:700,color:"#fff",minWidth:120,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{it.currency==="ARS"?<>ARS {Number(it.amtArs||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}<span style={{display:"block",fontSize:9,color:"#fbbf24",fontWeight:500,marginTop:2}}>pendiente dolarizar</span></>:`USD ${Number(it.amt||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</span>
                 <button onClick={()=>markPaid(it)} style={{fontSize:10,fontWeight:700,padding:"6px 12px",borderRadius:6,border:"none",background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>✓ Debitada</button>
               </div>;})}
             </div>
-            <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",borderTop:"1px solid rgba(255,255,255,0.08)",flexWrap:"wrap",gap:6}}>
               <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>Total del cierre</span>
-              <span style={{fontSize:17,fontWeight:700,color}}>USD {gTotal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+              <span style={{fontSize:17,fontWeight:700,color,fontVariantNumeric:"tabular-nums",textAlign:"right"}}>{gTotal>0?<>USD {gTotal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</>:""}{gTotalArs>0?<span style={{display:"block",fontSize:14,marginTop:2}}>ARS {gTotalArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>:""}</span>
             </div>
           </Card>;
         })}
