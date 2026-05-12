@@ -162,7 +162,7 @@ export async function GET(req) {
     }
     if (byChannel[0]) bullets.push(`📦 Canal preferido: ${byChannel[0].key} (${byChannel[0].count}/${opsArr.length} ops).`);
     if (topItems[0] && topItems[0].count >= 2) bullets.push(`🔁 Producto recurrente: "${topItems[0].description}" (${topItems[0].count}× · USD ${Math.round(topItems[0].total_fob)}).`);
-    if (avgTicket > 0) bullets.push(`💵 Ticket promedio USD ${Math.round(avgTicket).toLocaleString("en-US")} · ${closed.length} ops cerradas de ${opsArr.length}.`);
+    if (avgTicket > 0) bullets.push(`💵 Ticket promedio USD ${Math.round(avgTicket).toLocaleString("es-AR")} · ${closed.length} ops cerradas de ${opsArr.length}.`);
     if (daysSinceLast !== null && prediction?.median_interval_days && daysSinceLast > prediction.median_interval_days * 1.5) {
       bullets.push(`⚠️ Pasaron ${daysSinceLast} días desde su última op (50% más que su cadencia) — posible churn, contactar ya.`);
     }

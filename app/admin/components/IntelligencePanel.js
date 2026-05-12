@@ -12,7 +12,7 @@ const Card = ({ title, children, actions }) => (
     {children}
   </div>
 );
-const fmt$ = n => `USD ${Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+const fmt$ = n => `USD ${Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 const fmtDate = d => d ? new Date(d).toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
 export default function IntelligencePanel({ token, allClients = [] }) {

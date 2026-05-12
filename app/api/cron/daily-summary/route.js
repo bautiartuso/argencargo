@@ -32,7 +32,7 @@ async function isAuth(req) {
   } catch { return false; }
 }
 
-const usd = (n) => `USD ${Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const usd = (n) => `USD ${Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const NAVY = "#152D54", AC = "#3B7DD8", GOLD = "#B8956A", GOLD_LIGHT = "#D4B17A";
 

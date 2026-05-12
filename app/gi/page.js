@@ -1243,7 +1243,7 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
         const bd=computeItemBreakdown(i);
         const blancos=Object.entries(bd).filter(([,v])=>!v.notBlanco);
         if(blancos.length===0)return null;
-        const fmt=n=>Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+        const fmt=n=>Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
         return <div style={{marginTop:10,padding:"10px 12px",background:"rgba(96,165,250,0.04)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:8}}>
           <p style={{fontSize:9.5,fontWeight:700,color:"rgba(96,165,250,0.85)",textTransform:"uppercase",letterSpacing:"0.08em",margin:"0 0 8px"}}>Desglose impositivo del producto (canal A · prorrateado por FOB)</p>
           <div style={{display:"grid",gridTemplateColumns:`repeat(${blancos.length},1fr)`,gap:10}}>

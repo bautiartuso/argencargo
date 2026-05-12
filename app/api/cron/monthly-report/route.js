@@ -19,7 +19,7 @@ async function sb(path) {
   return r.ok ? r.json() : [];
 }
 
-function usd(n) { return `USD ${Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+function usd(n) { return `USD ${Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 
 function buildReport(ops, clientPayments, supplierPayments, financeEntries, periodStart, periodEnd) {
   const periodMs = (d) => new Date(d).getTime();

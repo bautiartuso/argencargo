@@ -740,7 +740,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     const amt=isCredit&&m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);
     return s+(isCredit?amt:-amt);
   },0);
-  const usdF=(v)=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const usdF=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   if(loading)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:BG,color:"rgba(255,255,255,0.4)"}}>...</div>;
 
@@ -836,7 +836,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
         {label:t.stat_today_pkgs||"Paquetes hoy",value:pkgsToday,color:GOLD_LIGHT,icon:"📦"},
         {label:t.stat_in_deposit||"En depósito",value:depositPkgsAll.length,color:"#60a5fa",icon:"🏬",sub:`${depositTotalKg} kg`},
         {label:t.stat_active_flights||"Vuelos activos",value:activeFlights.length,color:"#fbbf24",icon:"✈️"},
-        {label:t.stat_balance||"Saldo CC",value:balance,color:balance>=0?"#22c55e":"#ef4444",icon:"💰",fmt:v=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0})}`},
+        {label:t.stat_balance||"Saldo CC",value:balance,color:balance>=0?"#22c55e":"#ef4444",icon:"💰",fmt:v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}`},
       ].map((s,i)=><div key={i} className="ac-hover-card ac-bento-cell" data-span={3} style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"14px 16px",position:"relative",overflow:"hidden",minHeight:90}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
           <span style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.08em"}}>{s.label}</span>
@@ -1095,7 +1095,7 @@ function FlightDetail({token,flight,flightOps,packages,signup,t,onBack,onDispatc
   const [err,setErr]=useState("");
   const [confirmDispatch,setConfirmDispatch]=useState(false);
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
-  const usdF=(v)=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const usdF=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   useEffect(()=>{(async()=>{const r=await dq("flight_invoice_items",{token,filters:`?flight_id=eq.${flight.id}&select=*&order=sort_order.asc`});setInvoiceItems(Array.isArray(r)?r:[]);})();},[flight.id,token]);
   // Generar factura PDF con info comercial de la mercadería: descripción, cantidad, valor, NCM, dirección destino
   const downloadInvoicePdf=async()=>{
@@ -1109,7 +1109,7 @@ function FlightDetail({token,flight,flightOps,packages,signup,t,onBack,onDispatc
       const opData=await dq("operation_items",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=*,operations(operation_code,ncm_code,clients(client_code,first_name,last_name))&order=created_at.asc`});
       items=(Array.isArray(opData)?opData:[]).map(it=>({...it,unit_price_declared_usd:it.unit_price_usd,hs_code:it.ncm_code}));
     }
-    const fmt=v=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
     const today=new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"});
     const priceOf=it=>Number(it.unit_price_declared_usd??it.unit_price_usd??0);
     const hsOf=it=>it.hs_code||it.ncm_code||it.operations?.ncm_code||"—";

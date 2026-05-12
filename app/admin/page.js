@@ -349,13 +349,13 @@ function OperationsList({token,onSelect,onNew}){
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12.5}}>{op.description||"—"}</td>
           <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}><span style={{fontSize:10.5,padding:"3px 9px",borderRadius:999,background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",border:"1px solid rgba(255,255,255,0.06)"}}>{CM[op.channel]||op.channel}</span></td>
           <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>{(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);const limit=STALE_DAYS[op.status];const since=daysSince(op.updated_at||op.created_at);const isStale=limit&&since>=limit;return <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px `:"none"}}/>{st.l}</span>{isStale&&<span title={`Hace ${since} días en este estado`} style={{fontSize:9,fontWeight:700,padding:"3px 6px",borderRadius:4,background:"rgba(248,113,113,0.15)",color:"#f87171",border:"1px solid rgba(248,113,113,0.4)"}}>⚠ {since}d</span>}</span>;})()}</td>
-          {showGanancia?<td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{formatDateShort(op.collection_date||op.closed_at)}</td>:<><td style={{padding:"14px 16px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{formatDateShort(op.eta)}</td><td style={{padding:"14px 24px 14px 16px",whiteSpace:"nowrap",fontSize:12.5,fontWeight:700,fontVariantNumeric:"tabular-nums",textAlign:"right",color:saldo===null?"rgba(255,255,255,0.35)":saldo===0?"#22c55e":GOLD_LIGHT}}>{saldo===null?<span style={{fontWeight:500}}>—</span>:saldo===0?"Cobrada":`USD ${saldo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</td></>}
+          {showGanancia?<td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{formatDateShort(op.collection_date||op.closed_at)}</td>:<><td style={{padding:"14px 16px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{formatDateShort(op.eta)}</td><td style={{padding:"14px 24px 14px 16px",whiteSpace:"nowrap",fontSize:12.5,fontWeight:700,fontVariantNumeric:"tabular-nums",textAlign:"right",color:saldo===null?"rgba(255,255,255,0.35)":saldo===0?"#22c55e":GOLD_LIGHT}}>{saldo===null?<span style={{fontWeight:500}}>—</span>:saldo===0?"Cobrada":`USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</td></>}
           {showGanancia&&<td style={{padding:"14px 24px 14px 16px",fontWeight:700,textAlign:"right",color:gan>0?"#22c55e":gan<0?"#ff6b6b":"rgba(255,255,255,0.4)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{(()=>{
             const realIng=op.is_collected?Number(op.collected_amount||op.budget_total||0):Number(op.budget_total||0);
             const hasData=realIng>0||Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)>0;
             if(!hasData)return "—";
             const sign=gan<0?"-":"";
-            return `${sign}USD ${Math.abs(gan).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+            return `${sign}USD ${Math.abs(gan).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
           })()}</td>}
         </tr>})}</tbody>
       </table>
@@ -367,7 +367,7 @@ function OperationsList({token,onSelect,onNew}){
     const closedPaged=closed.slice((safePage-1)*CLOSED_PER_PAGE,safePage*CLOSED_PER_PAGE);
     const renderPagination=()=>{if(totalPagesClosed<=1)return null;const pages=[];const maxVisible=7;let start=Math.max(1,safePage-3);let end=Math.min(totalPagesClosed,start+maxVisible-1);if(end-start<maxVisible-1)start=Math.max(1,end-maxVisible+1);for(let i=start;i<=end;i++)pages.push(i);const btnStyle=(active,disabled)=>({minWidth:32,height:32,padding:"0 10px",fontSize:12,fontWeight:active?700:500,borderRadius:8,border:`1px solid ${active?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.08)"}`,background:active?"rgba(184,149,106,0.14)":"transparent",color:disabled?"rgba(255,255,255,0.2)":active?GOLD_LIGHT:"rgba(255,255,255,0.65)",cursor:disabled?"not-allowed":"pointer",transition:"all 150ms",display:"inline-flex",alignItems:"center",justifyContent:"center"});return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:16,gap:12,flexWrap:"wrap"}}><span style={{fontSize:11,color:"rgba(255,255,255,0.45)",letterSpacing:"0.03em"}}>Mostrando {(safePage-1)*CLOSED_PER_PAGE+1}–{Math.min(safePage*CLOSED_PER_PAGE,closed.length)} de {closed.length}</span><div style={{display:"flex",gap:4,alignItems:"center"}}><button disabled={safePage===1} onClick={()=>setPageClosed(safePage-1)} style={btnStyle(false,safePage===1)}>←</button>{start>1&&<><button onClick={()=>setPageClosed(1)} style={btnStyle(false)}>1</button>{start>2&&<span style={{color:"rgba(255,255,255,0.3)",padding:"0 4px"}}>…</span>}</>}{pages.map(p=><button key={p} onClick={()=>setPageClosed(p)} style={btnStyle(p===safePage)}>{p}</button>)}{end<totalPagesClosed&&<>{end<totalPagesClosed-1&&<span style={{color:"rgba(255,255,255,0.3)",padding:"0 4px"}}>…</span>}<button onClick={()=>setPageClosed(totalPagesClosed)} style={btnStyle(false)}>{totalPagesClosed}</button></>}<button disabled={safePage===totalPagesClosed} onClick={()=>setPageClosed(safePage+1)} style={btnStyle(false,safePage===totalPagesClosed)}>→</button></div></div>;};
     return <>{active.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones activas <span style={{color:GOLD_LIGHT,marginLeft:4}}>({active.length})</span></h3>{renderTable(active,false)}</>}
-    {closed.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"32px 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones cerradas <span style={{color:"rgba(255,255,255,0.55)",marginLeft:4}}>({closed.length})</span> {totalGanancia!==0&&<span style={{fontSize:12,fontWeight:700,color:totalGanancia>0?"#22c55e":"#ff6b6b",marginLeft:12,letterSpacing:"0.04em"}}>Ganancia total: USD {totalGanancia.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}</h3>{renderTable(closedPaged,true)}{renderPagination()}</>}
+    {closed.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"32px 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones cerradas <span style={{color:"rgba(255,255,255,0.55)",marginLeft:4}}>({closed.length})</span> {totalGanancia!==0&&<span style={{fontSize:12,fontWeight:700,color:totalGanancia>0?"#22c55e":"#ff6b6b",marginLeft:12,letterSpacing:"0.04em"}}>Ganancia total: USD {totalGanancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}</h3>{renderTable(closedPaged,true)}{renderPagination()}</>}
     {active.length===0&&closed.length===0&&<EmptyState icon="box" title={search||fStatuses.length>0||fChannel?"Sin resultados":"No hay operaciones"} description={search||fStatuses.length>0||fChannel?"Ninguna operación coincide con los filtros activos.":"Creá tu primera operación para comenzar."} cta={search||fStatuses.length>0||fChannel?null:"+ Nueva operación"} ctaOnClick={search||fStatuses.length>0||fChannel?null:onNew}/>}</>;})()}
 
     {bulkAction&&<div onClick={()=>!bulkRunning&&setBulkAction(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -899,7 +899,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const useEnvio=trigger==="retiro"&&op.shipping_to_door&&envioCost>0;
     const tplKey=useEnvio?"wa_envio":`wa_${trigger}`;
     const tpl=waTpls.find(t=>t.key===tplKey);
-    const fmt=v=>Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const fmt=v=>Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
     const data={firstName,opCode,desc,portalLink,saldoTxt,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
     const msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Av. Callao 1137.${saldoTxt}`;
@@ -1119,7 +1119,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>ORIGEN</p><p style={{fontSize:14,color:"#fff",margin:0}}>{op.origin||"—"}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>PRODUCTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{items.length}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>BULTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{pkgs.length}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>VALOR FOB</p><p style={{fontSize:14,color:"#fff",margin:0}}>USD {items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0).toLocaleString("en-US")}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>VALOR FOB</p><p style={{fontSize:14,color:"#fff",margin:0}}>USD {items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0).toLocaleString("es-AR")}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>PESO BRUTO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{pkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0).toFixed(1)} kg</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>CBM</p><p style={{fontSize:14,color:"#fff",margin:0}}>{pkgs.reduce((s,p)=>{const q=Number(p.quantity||1),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);return s+(l&&w&&h?((l*w*h)/1000000)*q:0);},0).toFixed(4)} m³</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>EVENTOS</p><p style={{fontSize:14,color:"#fff",margin:0}}>{events.length}</p></div>
@@ -1244,7 +1244,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       totalAbonar=isBlanco?(totalTax+flete+seguro+shipCost):(flete+surcharge+shipCost);
       }
       const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
-      const rw=(l,v)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>USD {v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
+      const rw=(l,v)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>USD {v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
       return <Card title={`Presupuesto${opClient?` — ${opClient.first_name} ${opClient.last_name} (${isRI?"Resp. Inscripto":"No RI"})`:""}`}>
         {/* Canal B: input para valor de mercadería (base del recargo por valor) */}
         {!isBlanco&&<div style={{marginBottom:14,padding:"12px 14px",background:"rgba(96,165,250,0.05)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10}}>
@@ -1265,7 +1265,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           {surcharge>0&&rw(`Recargo por valor (${surchargePct}%)`,surcharge)}
         </>}
         {shipCost>0&&rw("Envío a domicilio",shipCost)}
-        <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}><span style={{fontSize:16,fontWeight:700,color:"#fff"}}>TOTAL A ABONAR</span><span style={{fontSize:20,fontWeight:700,color:IC}}>USD {totalAbonar.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
+        <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}><span style={{fontSize:16,fontWeight:700,color:"#fff"}}>TOTAL A ABONAR</span><span style={{fontSize:20,fontWeight:700,color:IC}}>USD {totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
         {/* Controles de Envío a domicilio — siempre visibles, auto-save cuando cambian */}
         <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
           {(()=>{
@@ -1309,7 +1309,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       {items.map((it,i)=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);return <div key={it.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:10,gap:10,flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-            <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Producto {i+1} — FOB: USD {fob.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Producto {i+1} — FOB: USD {fob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
             {it.ncm_code?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.25)",fontFamily:"monospace",fontWeight:700}}>NCM {it.ncm_code}</span>:it.description?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.25)",fontWeight:700}}>SIN NCM</span>:null}
           </div>
           <div style={{display:"flex",gap:6}}>
@@ -1430,14 +1430,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         <div style={{display:"flex",gap:20,marginBottom:16,flexWrap:"wrap",padding:"14px 18px",background:"rgba(0,0,0,0.2)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
           <div>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total costos</p>
-            <p style={{fontSize:20,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalCosto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            <p style={{fontSize:20,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalCosto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
             {totalCostoArs>0&&<p style={{fontSize:12,fontWeight:600,color:"#60a5fa",margin:"3px 0 0",fontVariantNumeric:"tabular-nums"}}>+ ARS {totalCostoArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}<span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:6}}>pendiente dolarizar</span></p>}
           </div>
           <div style={{width:1,background:"rgba(255,255,255,0.08)"}}/>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Ya pagado</p><p style={{fontSize:20,fontWeight:800,color:"#22c55e",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalPagadoCosto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Ya pagado</p><p style={{fontSize:20,fontWeight:800,color:"#22c55e",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalPagadoCosto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
           {totalPendCosto>0.01&&<>
             <div style={{width:1,background:"rgba(255,255,255,0.08)"}}/>
-            <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Pendiente pago</p><p style={{fontSize:20,fontWeight:800,color:"#fb923c",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalPendCosto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+            <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Pendiente pago</p><p style={{fontSize:20,fontWeight:800,color:"#fb923c",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalPendCosto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
           </>}
         </div>
 
@@ -1465,7 +1465,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                   {p.currency==="ARS"?<>
                     <span style={{color:isRefund?"#22c55e":"#60a5fa",fontWeight:700}}>{isRefund?"− ":""}ARS {Number(p.amount_ars||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
                     {Number(p.amount_usd||0)>0?<span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.5)",fontWeight:500}}>= USD {Number(p.amount_usd).toFixed(2)} @ {Number(p.exchange_rate||0).toFixed(2)}</span>:<span style={{display:"block",fontSize:10,color:"rgba(251,146,60,0.8)",fontWeight:500}}>pendiente dolarizar</span>}
-                  </>:<span style={{color:isRefund?"#22c55e":"#c084fc",fontWeight:700}}>{isRefund?"− ":""}USD {Number(p.amount_usd).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+                  </>:<span style={{color:isRefund?"#22c55e":"#c084fc",fontWeight:700}}>{isRefund?"− ":""}USD {Number(p.amount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
                 </td>
                 <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.75)"}}>{p.notes||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</td>
                 <td style={{padding:"10px 14px",color:GOLD_LIGHT,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11}}>{p.reference||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</td>
@@ -1682,7 +1682,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         setOp(p=>({...p,total_anticipos:newTotal}));
         setPayments(p=>p.filter(x=>x.id!==pmtId));flash("Eliminado");
       };
-      const usdF=v=>`USD ${Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      const usdF=v=>`USD ${Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
       const GST={pendiente:{l:"Pendiente",c:"#fbbf24"},enviado:{l:"Enviado",c:"#60a5fa"},confirmado:{l:"Confirmado",c:"#22c55e"}};
       return <>
       <Card title="Gestión de Pagos" actions={<Btn onClick={()=>setShowNewPmt(true)} small>+ Nuevo pago</Btn>}>
@@ -1814,7 +1814,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const ganancia=totalIngreso-totalCostos;
       const margen=totalIngreso>0?(ganancia/totalIngreso)*100:0;
       const cashNeto=totalCobrado-costoPagado;
-      const usdF=v=>`USD ${Math.abs(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      const usdF=v=>`USD ${Math.abs(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
       return <div>
         {/* Cards grandes: Ganancia / Ingreso / Costos / Margen */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:14,marginBottom:18}}>
@@ -1900,12 +1900,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           return <Card title="Cobros del cliente">
             {/* Resumen */}
             <div style={{display:"flex",gap:20,marginBottom:16,flexWrap:"wrap",padding:"14px 18px",background:"rgba(0,0,0,0.2)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
-              <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total acordado</p><p style={{fontSize:20,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalIngreso.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+              <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total acordado</p><p style={{fontSize:20,fontWeight:800,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalIngreso.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
               <div style={{width:1,background:"rgba(255,255,255,0.08)"}}/>
-              <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Cobrado</p><p style={{fontSize:20,fontWeight:800,color:"#22c55e",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalCobrado.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+              <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Cobrado</p><p style={{fontSize:20,fontWeight:800,color:"#22c55e",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {totalCobrado.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
               {saldoCliente>0.01&&<>
                 <div style={{width:1,background:"rgba(255,255,255,0.08)"}}/>
-                <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Saldo pendiente</p><p style={{fontSize:20,fontWeight:800,color:"#fb923c",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {saldoCliente.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+                <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Saldo pendiente</p><p style={{fontSize:20,fontWeight:800,color:"#fb923c",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {saldoCliente.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
               </>}
               {saldoCliente<=0.01&&totalIngreso>0&&totalCobrado>0&&<>
                 <div style={{width:1,background:"rgba(255,255,255,0.08)"}}/>
@@ -1925,7 +1925,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                 <tbody>
                   {clientPayments.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
                     <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}</td>
-                    <td style={{padding:"10px 14px",textAlign:"right",color:"#22c55e",fontWeight:700,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>USD {Number(p.amount_usd).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}{p.currency==="ARS"&&p.amount_ars?<span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.4)",fontWeight:400}}>ARS {Number(p.amount_ars).toLocaleString("es-AR")} @ {p.exchange_rate}</span>:null}</td>
+                    <td style={{padding:"10px 14px",textAlign:"right",color:"#22c55e",fontWeight:700,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>USD {Number(p.amount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}{p.currency==="ARS"&&p.amount_ars?<span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.4)",fontWeight:400}}>ARS {Number(p.amount_ars).toLocaleString("es-AR")} @ {p.exchange_rate}</span>:null}</td>
                     <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.6)",textTransform:"capitalize"}}>{(p.payment_method||"—").replace("_"," ")}</td>
                     <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.55)",fontSize:11}}>{p.notes||"—"}</td>
                     <td style={{padding:"10px 14px",textAlign:"right"}}><button onClick={()=>delGiCliPayment(p.id)} style={{padding:"4px 9px",fontSize:11,background:"transparent",border:"1px solid rgba(255,80,80,0.25)",borderRadius:4,color:"rgba(255,100,100,0.7)",cursor:"pointer"}}>✕</button></td>
@@ -1998,7 +1998,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const ganancia=(ingresoNeto-totalCostos)+pmtGanancia;
       const ingresoTotal=ingresoNeto+pmtRevenue;
       const margen=ingresoTotal>0?((ganancia/ingresoTotal)*100):0;
-      const rw=(l,v,bold,color)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:10}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:bold?16:13,fontWeight:bold?700:600,color:color||"#fff"}}>USD {v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
+      const rw=(l,v,bold,color)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:10}:{})}}><span style={{fontSize:13,color:bold?"#fff":"rgba(255,255,255,0.5)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:bold?16:13,fontWeight:bold?700:600,color:color||"#fff"}}>USD {v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
       return <>
       {op.service_type==="gestion_integral"&&(()=>{
         const totalCli=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
@@ -2093,9 +2093,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         return <Card title="Anticipos / Pagos del cliente">
           <div style={{display:"flex",gap:16,marginBottom:12,flexWrap:"wrap",alignItems:"center",justifyContent:"space-between"}}>
             <div style={{display:"flex",gap:20,fontSize:12,color:"rgba(255,255,255,0.7)",flexWrap:"wrap"}}>
-              <span><b style={{color:"rgba(255,255,255,0.5)"}}>Presupuesto:</b> USD {budgetTot.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-              <span><b style={{color:"#22c55e"}}>Cobrado:</b> USD {totalCli.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-              {saldoCli>0.01&&<span><b style={{color:"#fb923c"}}>Saldo:</b> USD {saldoCli.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+              <span><b style={{color:"rgba(255,255,255,0.5)"}}>Presupuesto:</b> USD {budgetTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+              <span><b style={{color:"#22c55e"}}>Cobrado:</b> USD {totalCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+              {saldoCli>0.01&&<span><b style={{color:"#fb923c"}}>Saldo:</b> USD {saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
               {saldoCli<=0.01&&totalCli>0&&<span style={{color:"#22c55e",fontWeight:700}}>✓ Op cobrada</span>}
               {Number(op.discount_applied_usd||0)>0&&<span style={{color:GOLD_LIGHT,fontWeight:700}}>🎟 Descuento USD {Number(op.discount_applied_usd).toFixed(2)}</span>}
             </div>
@@ -2122,7 +2122,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               <tbody>
                 {clientPayments.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
                   <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}</td>
-                  <td style={{padding:"8px 12px",textAlign:"right",color:"#22c55e",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {Number(p.amount_usd).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}{p.currency==="ARS"&&<span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.4)",fontWeight:400}}>ARS {Number(p.amount_ars).toLocaleString("es-AR")} @ {p.exchange_rate}</span>}</td>
+                  <td style={{padding:"8px 12px",textAlign:"right",color:"#22c55e",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {Number(p.amount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}{p.currency==="ARS"&&<span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.4)",fontWeight:400}}>ARS {Number(p.amount_ars).toLocaleString("es-AR")} @ {p.exchange_rate}</span>}</td>
                   <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.6)",textTransform:"capitalize"}}>{p.payment_method}</td>
                   <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)",fontSize:11}}>{p.notes||""}</td>
                   <td style={{padding:"8px 12px",textAlign:"right"}}><button onClick={()=>deleteCliPayment(p.id)} style={{padding:"4px 8px",fontSize:11,background:"transparent",border:"1px solid rgba(255,80,80,0.25)",borderRadius:4,color:"rgba(255,100,100,0.7)",cursor:"pointer"}}>✕</button></td>
@@ -2142,7 +2142,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               {newCliPmt.currency==="USD"?<Inp label="Monto USD" type="number" value={newCliPmt.amount_usd} onChange={v=>setNewCliPmt(p=>({...p,amount_usd:v}))} step="0.01" placeholder="0.00"/>:<>
                 <Inp label="Monto ARS" type="number" value={newCliPmt.amount_ars} onChange={v=>setNewCliPmt(p=>({...p,amount_ars:v}))} step="0.01" placeholder="0"/>
                 <Inp label="Tipo de cambio ARS/USD" type="number" value={newCliPmt.exchange_rate} onChange={v=>setNewCliPmt(p=>({...p,exchange_rate:v}))} step="0.01" placeholder="Ej: 1410"/>
-                <div style={{paddingBottom:6}}><p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>EQUIVALENTE USD</p><p style={{fontSize:14,fontWeight:700,color:"#22c55e",margin:0}}>{Number(newCliPmt.amount_ars||0)>0&&Number(newCliPmt.exchange_rate||0)>0?`USD ${(Number(newCliPmt.amount_ars)/Number(newCliPmt.exchange_rate)).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"}</p></div>
+                <div style={{paddingBottom:6}}><p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>EQUIVALENTE USD</p><p style={{fontSize:14,fontWeight:700,color:"#22c55e",margin:0}}>{Number(newCliPmt.amount_ars||0)>0&&Number(newCliPmt.exchange_rate||0)>0?`USD ${(Number(newCliPmt.amount_ars)/Number(newCliPmt.exchange_rate)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"}</p></div>
               </>}
               <Btn onClick={addCliPayment} small>+ Agregar</Btn>
             </div>
@@ -2524,9 +2524,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
               <p style={{fontSize:11,fontWeight:700,color:"#c084fc",margin:0,textTransform:"uppercase"}}>Costo del producto — Pagos al proveedor (Gestión Integral)</p>
               <div style={{display:"flex",gap:16,fontSize:11,color:"rgba(255,255,255,0.7)"}}>
-                <span><b style={{color:"#fff"}}>Total:</b> USD {totalProducto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-                <span><b style={{color:"#22c55e"}}>Pagado:</b> USD {totalPagado.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-                {totalPendiente>0&&<span><b style={{color:"#fb923c"}}>Pendiente:</b> USD {totalPendiente.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+                <span><b style={{color:"#fff"}}>Total:</b> USD {totalProducto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                <span><b style={{color:"#22c55e"}}>Pagado:</b> USD {totalPagado.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                {totalPendiente>0&&<span><b style={{color:"#fb923c"}}>Pendiente:</b> USD {totalPendiente.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
               </div>
             </div>
             {supplierPayments.length>0&&<div style={{background:"rgba(0,0,0,0.2)",borderRadius:8,padding:"4px 0",marginBottom:10}}>
@@ -2544,7 +2544,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                 <tbody>
                   {supplierPayments.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
                     <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}</td>
-                    <td style={{padding:"8px 12px",textAlign:"right",color:"#c084fc",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {Number(p.amount_usd).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                    <td style={{padding:"8px 12px",textAlign:"right",color:"#c084fc",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {Number(p.amount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                     <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.6)",textTransform:"capitalize"}}>{p.payment_method.replace("_"," ")}</td>
                     <td style={{padding:"8px 12px"}}>{p.is_paid?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>✓ Pagado</span>:<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,146,60,0.15)",color:"#fb923c"}}>Pendiente</span>}</td>
                     <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)",fontSize:11}}>{p.notes||""}</td>
@@ -2590,7 +2590,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           {isCC&&<div style={{paddingTop:22}} title="Cuenta Corriente con el agente asignado a esta op: anticipos suman, fletes en CC restan. Negativo (rojo) = le debés al agente.">
             <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>SALDO AGENTE (CC)</p>
             {op.created_by_agent_id?<>
-              <p style={{fontSize:16,fontWeight:700,color:ccBalance>0?"#22c55e":"#ff6b6b",margin:0}}>USD {ccBalance.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+              <p style={{fontSize:16,fontWeight:700,color:ccBalance>0?"#22c55e":"#ff6b6b",margin:0}}>USD {ccBalance.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
               <p style={{fontSize:9,color:"rgba(255,255,255,0.35)",margin:"2px 0 0",fontStyle:"italic"}}>{ccBalance>=0?"crédito disponible":"deuda con agente"}</p>
             </>:<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:0,fontStyle:"italic"}}>op sin agente asignado</p>}
           </div>}
@@ -2630,7 +2630,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             const shown=livePreview!=null?livePreview:Number(op.cost_impuestos_reales||0);
             const stored=Number(op.cost_impuestos_reales||0);
             const stale=livePreview!=null&&stored>0&&Math.abs(livePreview-stored)>0.01;
-            return <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:(op.cost_impuestos_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (valor previo USD {stored.toFixed(2)})</span>:""}</p>;
+            return <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:(op.cost_impuestos_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (valor previo USD {stored.toFixed(2)})</span>:""}</p>;
           })()}
         </div>
         <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
@@ -2654,7 +2654,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             const shown=livePreview!=null?livePreview:Number(op.cost_gasto_documental||0);
             const stored=Number(op.cost_gasto_documental||0);
             const stale=livePreview!=null&&stored>0&&Math.abs(livePreview-stored)>0.01;
-            return <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:(op.cost_gasto_doc_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (valor previo USD {stored.toFixed(2)})</span>:""}</p>;
+            return <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:(op.cost_gasto_doc_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (valor previo USD {stored.toFixed(2)})</span>:""}</p>;
           })()}
         </div></>}
         <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
@@ -2679,11 +2679,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </Card>
       <Card title="Rentabilidad">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:16}}>
-          <div style={{background:"rgba(184,149,106,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(184,149,106,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>PRESUPUESTO</p><p style={{fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0}}>USD {presupuesto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
-          <div style={{background:"rgba(34,197,94,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(34,197,94,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>COBRO NETO</p><p style={{fontSize:18,fontWeight:700,color:"#22c55e",margin:0}}>USD {ingresoNeto.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
-          <div style={{background:"rgba(255,80,80,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(255,80,80,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>COSTOS</p><p style={{fontSize:18,fontWeight:700,color:"#ff6b6b",margin:0}}>USD {totalCostos.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+          <div style={{background:"rgba(184,149,106,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(184,149,106,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>PRESUPUESTO</p><p style={{fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0}}>USD {presupuesto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+          <div style={{background:"rgba(34,197,94,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(34,197,94,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>COBRO NETO</p><p style={{fontSize:18,fontWeight:700,color:"#22c55e",margin:0}}>USD {ingresoNeto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+          <div style={{background:"rgba(255,80,80,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(255,80,80,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>COSTOS</p><p style={{fontSize:18,fontWeight:700,color:"#ff6b6b",margin:0}}>USD {totalCostos.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
         </div>
-        {rw("Cobro bruto",cobro)}{comision>0&&rw(`Comisión transferencia (${feePct}%)`,-comision,false,"#ff6b6b")}{rw("Cobro neto",ingresoNeto)}{discountApplied>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Descuento aplicado (no cobrado)</span><span style={{fontSize:12,fontWeight:600,color:"#fbbf24"}}>USD {discountApplied.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>}
+        {rw("Cobro bruto",cobro)}{comision>0&&rw(`Comisión transferencia (${feePct}%)`,-comision,false,"#ff6b6b")}{rw("Cobro neto",ingresoNeto)}{discountApplied>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Descuento aplicado (no cobrado)</span><span style={{fontSize:12,fontWeight:600,color:"#fbbf24"}}>USD {discountApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>}
         {costProducto>0&&<>{rw("Costo producto",costProducto,false,"#c084fc")}<div style={{height:6}}/></>}
         {(()=>{
           // Bloques presu vs costo real por concepto. Si el cobro neto al cliente difiere del
@@ -2719,9 +2719,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const block=(title,presuRaw,costo)=>{const presu=adj(presuRaw);const saldo=presu-costo;const ok=saldo>=0;return <div style={{padding:"10px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
             <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.04em"}}>{title}</p>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-              <div><p style={{fontSize:9.5,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{presuLabel}</p><p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.7)",margin:0,fontFeatureSettings:'"tnum"'}}>USD {presu.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>{factor!==1&&presuRaw>0&&<p style={{fontSize:9,color:"rgba(255,255,255,0.35)",margin:"2px 0 0",fontStyle:"italic"}}>Original: USD {presuRaw.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}</div>
-              <div><p style={{fontSize:9.5,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{costoLabel}</p><p style={{fontSize:13,fontWeight:600,color:"#ff9b9b",margin:0,fontFeatureSettings:'"tnum"'}}>USD {costo.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
-              <div style={{textAlign:"right"}}><p style={{fontSize:9.5,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Saldo</p><p style={{fontSize:13,fontWeight:700,color:ok?"#22c55e":"#ff6b6b",margin:0,fontFeatureSettings:'"tnum"'}}>{saldo>=0?"+":"−"}USD {Math.abs(saldo).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+              <div><p style={{fontSize:9.5,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{presuLabel}</p><p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.7)",margin:0,fontFeatureSettings:'"tnum"'}}>USD {presu.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>{factor!==1&&presuRaw>0&&<p style={{fontSize:9,color:"rgba(255,255,255,0.35)",margin:"2px 0 0",fontStyle:"italic"}}>Original: USD {presuRaw.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}</div>
+              <div><p style={{fontSize:9.5,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>{costoLabel}</p><p style={{fontSize:13,fontWeight:600,color:"#ff9b9b",margin:0,fontFeatureSettings:'"tnum"'}}>USD {costo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+              <div style={{textAlign:"right"}}><p style={{fontSize:9.5,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Saldo</p><p style={{fontSize:13,fontWeight:700,color:ok?"#22c55e":"#ff6b6b",margin:0,fontFeatureSettings:'"tnum"'}}>{saldo>=0?"+":"−"}USD {Math.abs(saldo).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
             </div>
           </div>;};
           return <>
@@ -2747,7 +2747,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </>}
         <div style={{marginTop:20,background:ganancia>0?"rgba(34,197,94,0.08)":"rgba(255,80,80,0.08)",borderRadius:12,padding:20,border:`1px solid ${ganancia>0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,textAlign:"center"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>Ganancia neta total</p>
-          <p style={{fontSize:32,fontWeight:700,color:ganancia>0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>USD {ganancia.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+          <p style={{fontSize:32,fontWeight:700,color:ganancia>0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>USD {ganancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
           <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:0}}>{payments.length>0?`Operación: USD ${(ingresoNeto-totalCostos).toFixed(2)} + Gestión pagos: USD ${pmtGanancia.toFixed(2)}`:`Margen: ${margen.toFixed(1)}%`}</p>
         </div>
       </Card>
@@ -3057,7 +3057,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
         <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{cl.first_name} {cl.last_name}</h2>
         {cl.tier&&cl.tier!=="standard"&&(()=>{const ti=getTierInfo(cl.tier);return <span title={cl.tier_achieved_at?`${ti.label} desde ${new Date(cl.tier_achieved_at).toLocaleDateString("es-AR")} · ${cl.lifetime_points_earned||0} pts ganados`:ti.label} style={{fontSize:10,fontWeight:800,padding:"4px 12px",borderRadius:999,background:ti.gradient,color:"#0A1628",letterSpacing:"0.14em",border:`1px solid ${ti.color}`,boxShadow:ti.glow,display:"inline-flex",alignItems:"center",gap:5,textTransform:"uppercase"}}>{ti.icon} {ti.label}</span>;})()}
         {Number(cl.points_balance||0)>0&&<span title={`Balance actual · ${cl.lifetime_points_earned||0} ganados en total`} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,background:"rgba(184,149,106,0.12)",color:GOLD_LIGHT,border:"1px solid rgba(184,149,106,0.3)",letterSpacing:"0.08em",fontVariantNumeric:"tabular-nums"}}>★ {cl.points_balance} PTS</span>}
-        {Number(cl.account_balance_usd||0)!==0&&(()=>{const bal=Number(cl.account_balance_usd||0);const isCredit=bal>0;return <span title={isCredit?"Saldo a favor en cuenta corriente":"Deuda en cuenta corriente"} onClick={()=>setTab("cc")} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,background:isCredit?"rgba(34,197,94,0.14)":"rgba(239,68,68,0.14)",color:isCredit?"#22c55e":"#ef4444",border:`1px solid ${isCredit?"rgba(34,197,94,0.35)":"rgba(239,68,68,0.35)"}`,letterSpacing:"0.06em",fontVariantNumeric:"tabular-nums",cursor:"pointer"}}>{isCredit?"+":""}USD {bal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>;})()}
+        {Number(cl.account_balance_usd||0)!==0&&(()=>{const bal=Number(cl.account_balance_usd||0);const isCredit=bal>0;return <span title={isCredit?"Saldo a favor en cuenta corriente":"Deuda en cuenta corriente"} onClick={()=>setTab("cc")} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,background:isCredit?"rgba(34,197,94,0.14)":"rgba(239,68,68,0.14)",color:isCredit?"#22c55e":"#ef4444",border:`1px solid ${isCredit?"rgba(34,197,94,0.35)":"rgba(239,68,68,0.35)"}`,letterSpacing:"0.06em",fontVariantNumeric:"tabular-nums",cursor:"pointer"}}>{isCredit?"+":""}USD {bal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>;})()}
         {msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600,animation:"ac_fade_in 200ms"}}>✓ {msg}</span>}
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -3107,7 +3107,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
       {/* Hero balance */}
       <div style={{padding:"24px 28px",background:isCredit?"linear-gradient(135deg, rgba(34,197,94,0.12) 0%, rgba(255,255,255,0.02) 100%)":isDebt?"linear-gradient(135deg, rgba(239,68,68,0.12) 0%, rgba(255,255,255,0.02) 100%)":"rgba(255,255,255,0.025)",border:`1px solid ${isCredit?"rgba(34,197,94,0.4)":isDebt?"rgba(239,68,68,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:14,marginBottom:18,boxShadow:isCredit?"0 0 24px rgba(34,197,94,0.15)":isDebt?"0 0 24px rgba(239,68,68,0.15)":"none"}}>
         <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{isCredit?"★ Saldo a favor del cliente":isDebt?"⚠ Deuda del cliente":"Balance de cuenta"}</p>
-        <p style={{fontSize:36,fontWeight:800,color:isCredit?"#22c55e":isDebt?"#ef4444":"#fff",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{isCredit?"+":""}USD {bal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+        <p style={{fontSize:36,fontWeight:800,color:isCredit?"#22c55e":isDebt?"#ef4444":"#fff",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{isCredit?"+":""}USD {bal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
         {isCredit&&<p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"6px 0 0"}}>Se puede aplicar a cualquier operación pendiente de cobro del cliente.</p>}
         {isDebt&&<p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"6px 0 0"}}>El cliente debe este importe — podés aplicarlo a su próxima operación.</p>}
       </div>
@@ -3132,7 +3132,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
             </div>
             {t.description&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.7)",margin:0}}>{t.description}</p>}
           </div>
-          <span style={{fontSize:15,fontWeight:800,color:isPos?"#22c55e":"#ef4444",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em",whiteSpace:"nowrap"}}>{isPos?"+":""}USD {Math.abs(amt).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          <span style={{fontSize:15,fontWeight:800,color:isPos?"#22c55e":"#ef4444",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em",whiteSpace:"nowrap"}}>{isPos?"+":""}USD {Math.abs(amt).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
           {t.deletable&&<button onClick={()=>delMov(t.raw.id)} title="Eliminar movimiento" style={{padding:"4px 8px",fontSize:10,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>✕</button>}
         </div>;})}</div>}
         <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"14px 0 0",fontStyle:"italic",lineHeight:1.5}}>El balance sólo considera los movimientos (saldos a favor, deudas, ajustes). Los cobros y anticipos ya quedaron contabilizados en sus respectivas operaciones.</p>
@@ -3140,7 +3140,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
     </div>;})()}
     {tab==="tariffs"&&<div>{SERVICES.map(svc=>{const svcRates=tariffs.filter(t=>t.service_key===svc.key);if(!svcRates.length)return null;return <Card key={svc.key} title={svc.label}><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"-8px 0 12px"}}>Dejá vacío para usar tarifa base. Poné un valor para aplicar tarifa promocional.</p>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}><th style={{padding:"8px 0",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>RANGO</th><th style={{padding:"8px 0",textAlign:"right",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>TARIFA BASE</th><th style={{padding:"8px 0",textAlign:"right",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>TARIFA CUSTOM</th></tr></thead>
-      <tbody>{svcRates.map(t=>{const ov=getOverride(t.id);return <tr key={t.id} style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}><td style={{padding:"8px 0",color:"rgba(255,255,255,0.6)"}}>{t.label}</td><td style={{padding:"8px 0",textAlign:"right",color:ov?"rgba(255,255,255,0.4)":"#fff",fontWeight:600,textDecoration:ov?"line-through":"none"}}>${Number(t.rate).toLocaleString("en-US")}/{t.unit}</td><td style={{padding:"8px 0",textAlign:"right",display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6}}><input type="number" value={ov?.custom_rate??""} onChange={e=>setOverrideRate(t.id,e.target.value)} placeholder="—" step="0.01" style={{width:80,padding:"4px 8px",fontSize:13,textAlign:"right",border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:ov?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.04)",color:ov?IC:"rgba(255,255,255,0.4)",outline:"none"}}/>{ov&&<button onClick={()=>setOverrideRate(t.id,"")} style={{fontSize:10,padding:"4px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>X</button>}</td></tr>;})}</tbody></table></Card>;})}</div>}
+      <tbody>{svcRates.map(t=>{const ov=getOverride(t.id);return <tr key={t.id} style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}><td style={{padding:"8px 0",color:"rgba(255,255,255,0.6)"}}>{t.label}</td><td style={{padding:"8px 0",textAlign:"right",color:ov?"rgba(255,255,255,0.4)":"#fff",fontWeight:600,textDecoration:ov?"line-through":"none"}}>${Number(t.rate).toLocaleString("es-AR")}/{t.unit}</td><td style={{padding:"8px 0",textAlign:"right",display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6}}><input type="number" value={ov?.custom_rate??""} onChange={e=>setOverrideRate(t.id,e.target.value)} placeholder="—" step="0.01" style={{width:80,padding:"4px 8px",fontSize:13,textAlign:"right",border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:ov?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.04)",color:ov?IC:"rgba(255,255,255,0.4)",outline:"none"}}/>{ov&&<button onClick={()=>setOverrideRate(t.id,"")} style={{fontSize:10,padding:"4px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>X</button>}</td></tr>;})}</tbody></table></Card>;})}</div>}
   </div>;
 }
 
@@ -3293,7 +3293,7 @@ function Calculator({token,clients}){
     setResults({channels,totWeight,totCBM});setStep(4);
   };
 
-  const usd=v=>`USD ${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const usd=v=>`USD ${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const row=(l,v,bold,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:8}:{})}}><span style={{fontSize:12,color:bold?"#fff":"rgba(255,255,255,0.45)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:12,fontWeight:bold?700:600,color:accent?IC:bold?"#fff":"rgba(255,255,255,0.7)"}}>{usd(v)}</span></div>;
   const clName=selClient?clients.find(c=>c.id===selClient):null;
 
@@ -3849,7 +3849,7 @@ function FinancePanel({token}){
     if(r?.id||Array.isArray(r)){load();setShowAdd(false);setNewEntry({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});flash("Gasto agregado");}
   };
   const delEntry=async(id)=>{if(!confirm("¿Eliminar este movimiento?"))return;await dq("finance_entries",{method:"DELETE",token,filters:`?id=eq.${id}`});setEntries(p=>p.filter(e=>e.id!==id));flash("Eliminado");};
-  const usd=v=>`USD ${Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const usd=v=>`USD ${Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   // Totales costos fijos
   const totalFijos=entries.reduce((s,e)=>s+Number(e.amount||0),0);
   const fijosByCategory=entries.reduce((m,e)=>{const k=e.category||"otros";m[k]=(m[k]||0)+Number(e.amount||0);return m;},{});
@@ -4001,7 +4001,7 @@ function FinancePanel({token}){
     const totGOp=gastosOp.reduce((s,l)=>s+l.amount,0);
     const totGF=gastosFijos.reduce((s,l)=>s+l.amount,0);
     const ganancia=totIng-totGOp-totGF;
-    const fmt=(v)=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    const fmt=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
     const monthName=target.toLocaleDateString("es-AR",{month:"long",year:"numeric"});
     // Comparativa mes anterior
     const prevTarget=new Date(year,month-1,1);
@@ -4312,7 +4312,7 @@ function FinancePanel({token}){
         <div style={{display:"grid",gridTemplateColumns:arsTot>0?"1fr 1fr":"1fr",gap:16,marginBottom:20}}>
           <div style={{background:usdTot>0?"rgba(251,146,60,0.06)":"rgba(34,197,94,0.06)",border:`1px solid ${usdTot>0?"rgba(251,146,60,0.2)":"rgba(34,197,94,0.2)"}`,borderRadius:12,padding:"18px 22px"}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",letterSpacing:"0.05em"}}>💳 DEUDA TARJETA USD</p>
-            <p style={{fontSize:28,fontWeight:700,color:usdTot>0?"#fb923c":"#22c55e",margin:0}}>USD {usdTot.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            <p style={{fontSize:28,fontWeight:700,color:usdTot>0?"#fb923c":"#22c55e",margin:0}}>USD {usdTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
             <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>{cardDebt.usd.length} gasto{cardDebt.usd.length!==1?"s":""} del negocio{usdTotEntries>0?` (USD ${usdTotEntries.toFixed(2)})`:""} · {cardDebt.pmts.length} giro{cardDebt.pmts.length!==1?"s":""} al exterior{usdTotPmts>0?` (USD ${usdTotPmts.toFixed(2)})`:""}{(cardDebt.supTcUsd||[]).length>0?` · ${cardDebt.supTcUsd.length} costo${cardDebt.supTcUsd.length!==1?"s":""} GI (USD ${usdTotSup.toFixed(2)})`:""}</p>
           </div>
           {arsTot>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:12,padding:"18px 22px"}}>
@@ -4329,7 +4329,7 @@ function FinancePanel({token}){
               <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:`${brandColor}33`,color:"#fff",letterSpacing:"0.05em"}}>{brandLbl}</span>
               <p style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.85)",margin:0}}>{t.card?.name||"Sin tarjeta"}</p>
             </div>
-            {t.total>0&&<p style={{fontSize:22,fontWeight:800,color:"#fb923c",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {t.total.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+            {t.total>0&&<p style={{fontSize:22,fontWeight:800,color:"#fb923c",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {t.total.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
             {t.totalArs>0&&<p style={{fontSize:t.total>0?16:22,fontWeight:800,color:IC,margin:t.total>0?"4px 0 0":0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>ARS {t.totalArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}{t.totalArs>0&&t.total===0?<span style={{fontSize:10,color:"rgba(255,255,255,0.5)",fontWeight:500,marginLeft:6}}>· pendiente dolarizar</span>:""}</p>}
             <p style={{fontSize:10.5,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>{t.count} {t.count===1?"gasto pendiente":"gastos pendientes"}</p>
           </div>;})}
@@ -4361,13 +4361,13 @@ function FinancePanel({token}){
                   {it.detail&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{it.detail}</p>}
                   {it.dateLoad&&<p style={{fontSize:10,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Cargado {formatDate(it.dateLoad)}</p>}
                 </div>
-                <span style={{fontSize:14,fontWeight:700,color:"#fff",minWidth:120,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{it.currency==="ARS"?<>ARS {Number(it.amtArs||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}<span style={{display:"block",fontSize:9,color:"#fbbf24",fontWeight:500,marginTop:2}}>pendiente dolarizar</span></>:`USD ${Number(it.amt||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</span>
+                <span style={{fontSize:14,fontWeight:700,color:"#fff",minWidth:120,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{it.currency==="ARS"?<>ARS {Number(it.amtArs||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}<span style={{display:"block",fontSize:9,color:"#fbbf24",fontWeight:500,marginTop:2}}>pendiente dolarizar</span></>:`USD ${Number(it.amt||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</span>
                 <button onClick={()=>markPaid(it)} style={{fontSize:10,fontWeight:700,padding:"6px 12px",borderRadius:6,border:"none",background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>✓ Debitada</button>
               </div>;})}
             </div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",borderTop:"1px solid rgba(255,255,255,0.08)",flexWrap:"wrap",gap:6}}>
               <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>Total del cierre</span>
-              <span style={{fontSize:17,fontWeight:700,color,fontVariantNumeric:"tabular-nums",textAlign:"right"}}>{gTotal>0?<>USD {gTotal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</>:""}{gTotalArs>0?<span style={{display:"block",fontSize:14,marginTop:2}}>ARS {gTotalArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>:""}</span>
+              <span style={{fontSize:17,fontWeight:700,color,fontVariantNumeric:"tabular-nums",textAlign:"right"}}>{gTotal>0?<>USD {gTotal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</>:""}{gTotalArs>0?<span style={{display:"block",fontSize:14,marginTop:2}}>ARS {gTotalArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>:""}</span>
             </div>
           </Card>;
         })}
@@ -4680,7 +4680,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const printInvoice=()=>{
     const w=window.open("","_blank");if(!w)return;
     const itemsByOp={};items.forEach(it=>{if(!itemsByOp[it.operation_id])itemsByOp[it.operation_id]=[];itemsByOp[it.operation_id].push(it);});
-    const rows=items.map(it=>`<tr><td>${it.description}</td><td>${it.hs_code||"-"}</td><td style="text-align:right">${Number(it.quantity||0).toLocaleString("en-US")}</td><td style="text-align:right">USD ${Number(it.unit_price_declared_usd||0).toFixed(2)}</td><td style="text-align:right"><strong>USD ${(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toFixed(2)}</strong></td></tr>`).join("");
+    const rows=items.map(it=>`<tr><td>${it.description}</td><td>${it.hs_code||"-"}</td><td style="text-align:right">${Number(it.quantity||0).toLocaleString("es-AR")}</td><td style="text-align:right">USD ${Number(it.unit_price_declared_usd||0).toFixed(2)}</td><td style="text-align:right"><strong>USD ${(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toFixed(2)}</strong></td></tr>`).join("");
     const html=`<!doctype html><html><head><meta charset="utf-8"><title>${flight.flight_code}</title><style>
       body{font-family:Arial,sans-serif;max-width:800px;margin:30px auto;padding:0 20px;color:#222;}
       h1{text-align:center;margin:0 0 4px;font-size:22px}
@@ -5297,7 +5297,7 @@ function AgentsPanel({token}){
   const ST={pending:{l:"Pendiente",c:"#fbbf24"},approved:{l:"Aprobado",c:"#22c55e"},rejected:{l:"Rechazado",c:"#ff6b6b"}};
   const flight=flights.find(f=>f.id===selFlight);
   const flightOpsForSel=flight?flightOps.filter(fo=>fo.flight_id===flight.id):[];
-  const usd=(v)=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const usd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
       <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.02em"}}>Agentes y Vuelos</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:0}}>Depósito, vuelos consolidados, cuentas corrientes y solicitudes</p></div>
@@ -6266,7 +6266,7 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
   const OpsTable=()=>{
     const top=data.opsActive.slice(0,6);
     if(top.length===0)return null;
-    const usd=v=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
     return <div style={{marginTop:24}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
         <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones activas</p>
@@ -6321,7 +6321,7 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
         sub={data.ticketsOpen.length===0?"Sin tickets":data.ticketsOpen.filter(t=>t.priority==="urgent"||t.priority==="high").length>0?`${data.ticketsOpen.filter(t=>t.priority==="urgent"||t.priority==="high").length} prioridad alta`:"Sin urgencias"}/>
 
       <StatCard span={4} label="💵 FOB del mes" value={Math.round(data.fobThisMonth)} color={GOLD_LIGHT}
-        format={v=>v.toLocaleString("en-US")}
+        format={v=>v.toLocaleString("es-AR")}
         sub={`USD · ${data.opsThisMonthCount} ${data.opsThisMonthCount===1?"operación":"operaciones"}`} trend={data.fobTrend}/>
       <StatCard span={3} label="🛂 Aduana +7d" value={data.stuckAduana.length} color={data.stuckAduana.length>0?"#ef4444":"#fff"}
         sub={data.stuckAduana.length===0?"Nada atascado":`${data.stuckAduana.length} op${data.stuckAduana.length>1?"s":""} con +7 días`}/>
@@ -6425,7 +6425,7 @@ function RetentionLTVCard({token}){
     setLo(false);
   })();},[token]);
   if(lo||!data)return <div style={{padding:"3rem",textAlign:"center",color:"rgba(255,255,255,0.4)"}}>Calculando análisis…</div>;
-  const usdF=v=>`USD ${Number(v||0).toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0})}`;
+  const usdF=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}`;
   return <>
     <h2 style={{fontSize:18,fontWeight:700,color:"#fff",margin:"0 0 14px",letterSpacing:"-0.01em"}}>📈 Retención & LTV</h2>
 
@@ -6639,7 +6639,7 @@ function OperationalAnalytics({token}){
   return <div style={{marginBottom:28}}>
     <h2 style={{fontSize:16,fontWeight:700,color:"rgba(255,255,255,0.7)",margin:"20px 0 12px"}}>Analytics operacionales</h2>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12,marginBottom:14}}>
-      <div style={card}><div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase"}}>Forecast activas</div><div style={{fontSize:20,fontWeight:800,color:"#22c55e",marginTop:4}}>USD {data.forecast.toLocaleString("en-US",{maximumFractionDigits:0})}</div><div style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginTop:2}}>{data.activeCount} ops en curso</div></div>
+      <div style={card}><div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase"}}>Forecast activas</div><div style={{fontSize:20,fontWeight:800,color:"#22c55e",marginTop:4}}>USD {data.forecast.toLocaleString("es-AR",{maximumFractionDigits:0})}</div><div style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginTop:2}}>{data.activeCount} ops en curso</div></div>
       <div style={card}><div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase"}}>Ciclo promedio</div><div style={{fontSize:20,fontWeight:800,color:"#fff",marginTop:4}}>{data.avgCycleDays.toFixed(1)} días</div><div style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginTop:2}}>creación → cierre</div></div>
       <div style={card}><div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase"}}>Tasa de review</div><div style={{fontSize:20,fontWeight:800,color:"#fbbf24",marginTop:4}}>{data.reviewRate.toFixed(0)}%</div><div style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginTop:2}}>⭐ {data.avgRating.toFixed(1)} promedio</div></div>
       <div style={card}><div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase"}}>Clientes Plus</div><div style={{fontSize:20,fontWeight:800,color:AC,marginTop:4}}>{data.plusCount}<span style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontWeight:500}}>/{data.totalClients}</span></div><div style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginTop:2}}>loyalty</div></div>
@@ -6648,7 +6648,7 @@ function OperationalAnalytics({token}){
       <div style={card}>
         <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>Top clientes por ganancia (últimos 90 días)</h3>
         {data.topClients.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Sin datos</p>:
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>{data.topClients.map((c,i)=>{const maxAbs=Math.max(...data.topClients.map(x=>Math.abs(x.gan)),1);const pct=(Math.abs(c.gan)/maxAbs)*100;const ganColor=c.gan>=0?"#22c55e":"#ff6b6b";return <div key={i} style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:10,color:"rgba(255,255,255,0.45)",width:18,fontWeight:700}}>#{i+1}</span><div style={{flex:1,minWidth:0}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:3}}><span style={{fontSize:12,color:"#fff",fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name} <span style={{color:"rgba(255,255,255,0.35)",fontFamily:"monospace",fontSize:10}}>({c.code})</span></span><span style={{fontSize:12,fontWeight:700,color:ganColor}}>USD {c.gan.toLocaleString("en-US",{maximumFractionDigits:0})}</span></div><div style={{height:4,background:"rgba(255,255,255,0.06)",borderRadius:2,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",background:c.gan>=0?`linear-gradient(90deg,${NAVY},${AC})`:"#ff6b6b",borderRadius:2}}/></div><div style={{fontSize:9,color:"rgba(255,255,255,0.4)",marginTop:2}}>{c.count} op{c.count!==1?"s":""}</div></div></div>;})}</div>}
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>{data.topClients.map((c,i)=>{const maxAbs=Math.max(...data.topClients.map(x=>Math.abs(x.gan)),1);const pct=(Math.abs(c.gan)/maxAbs)*100;const ganColor=c.gan>=0?"#22c55e":"#ff6b6b";return <div key={i} style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:10,color:"rgba(255,255,255,0.45)",width:18,fontWeight:700}}>#{i+1}</span><div style={{flex:1,minWidth:0}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:3}}><span style={{fontSize:12,color:"#fff",fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name} <span style={{color:"rgba(255,255,255,0.35)",fontFamily:"monospace",fontSize:10}}>({c.code})</span></span><span style={{fontSize:12,fontWeight:700,color:ganColor}}>USD {c.gan.toLocaleString("es-AR",{maximumFractionDigits:0})}</span></div><div style={{height:4,background:"rgba(255,255,255,0.06)",borderRadius:2,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",background:c.gan>=0?`linear-gradient(90deg,${NAVY},${AC})`:"#ff6b6b",borderRadius:2}}/></div><div style={{fontSize:9,color:"rgba(255,255,255,0.4)",marginTop:2}}>{c.count} op{c.count!==1?"s":""}</div></div></div>;})}</div>}
       </div>
       <div style={card}>
         <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 10px"}}>Distribución por canal</h3>
@@ -6826,7 +6826,7 @@ function FinanceDashboard({token}){
   const newClients=clients.filter(c=>{const d=new Date(c.created_at);return d.getMonth()===thisMonth&&d.getFullYear()===thisYear;}).length;
   const pendingQuotes=quotes.filter(q=>q.status==="pending").length;
 
-  const usd=v=>`USD ${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const usd=v=>`USD ${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const stat=(l,v,color,big)=><div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>{l}</p><p style={{fontSize:big?28:20,fontWeight:700,color:color||"#fff",margin:0}}>{v}</p></div>;
   const bar=(pct,color)=><div style={{flex:1,height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden"}}><div style={{width:`${Math.min(Math.max(pct,0),100)}%`,height:"100%",background:color,borderRadius:4,transition:"width 0.3s"}}/></div>;
 
@@ -6956,7 +6956,7 @@ function FinanceDashboard({token}){
           {(deudaTCUsd>0||deudaTCArs>0)?<div style={{display:"flex",flexDirection:"column",gap:6}}>
             {deudaTCUsd>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
               <span style={{fontSize:11,color:"rgba(255,255,255,0.6)"}}>USD</span>
-              <span style={{fontSize:22,fontWeight:800,color:"#fb923c",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {deudaTCUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+              <span style={{fontSize:22,fontWeight:800,color:"#fb923c",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {deudaTCUsd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
             </div>}
             {deudaTCArs>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
               <span style={{fontSize:11,color:"rgba(255,255,255,0.6)"}}>ARS</span>
@@ -7752,13 +7752,13 @@ function QuotesList({token}){
           <td style={{padding:"12px 14px"}}><span style={{fontFamily:"monospace",fontWeight:700,color:IC,fontSize:12}}>{q.client_code}</span><br/><span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{q.client_name}</span></td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{q.origin}</td>
           <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{q.channel_name}<br/><span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{prodDesc?.substring(0,40)}</span></td>
-          <td style={{padding:"12px 14px",color:"#fff",fontWeight:600}}>USD {Number(q.total_fob||0).toLocaleString("en-US")}</td>
-          <td style={{padding:"12px 14px",color:IC,fontWeight:700}}>USD {Number(q.total_cost||0).toLocaleString("en-US")}</td>
+          <td style={{padding:"12px 14px",color:"#fff",fontWeight:600}}>USD {Number(q.total_fob||0).toLocaleString("es-AR")}</td>
+          <td style={{padding:"12px 14px",color:IC,fontWeight:700}}>USD {Number(q.total_cost||0).toLocaleString("es-AR")}</td>
           <td style={{padding:"12px 14px"}}>
             {(()=>{const ageH=(Date.now()-new Date(q.created_at))/3600000;const abandoned=q.status==="pending"&&ageH>=48;return <><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>{st.l}</span>{abandoned&&<span title={`Pendiente hace ${Math.floor(ageH/24)}d ${Math.floor(ageH%24)}h`} style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,color:"#f97316",background:"rgba(249,115,22,0.1)",border:"1px solid rgba(249,115,22,0.3)",marginLeft:6}}>⚠ Abandonada</span>}</>;})()}
           </td>
           <td style={{padding:"12px 14px"}} onClick={e=>e.stopPropagation()}>
-            {(()=>{const cl=q.client_id?clientsMap[q.client_id]:null;const wa=cl?.whatsapp?.replace(/[^0-9]/g,"");const ageH=(Date.now()-new Date(q.created_at))/3600000;const abandoned=q.status==="pending"&&ageH>=48;const prodSummary=Array.isArray(prods)?prods.map(p=>p.description||p.type).join(", "):"";const msg=encodeURIComponent(`Hola ${q.client_name}! Hace unos días cotizaste *${prodSummary}* por *${q.channel_name}* (USD ${Number(q.total_cost||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}).\n\n¿Pudiste revisarla? Si querés avanzar esta semana te agilizo el proceso. Cualquier duda me escribís.`);
+            {(()=>{const cl=q.client_id?clientsMap[q.client_id]:null;const wa=cl?.whatsapp?.replace(/[^0-9]/g,"");const ageH=(Date.now()-new Date(q.created_at))/3600000;const abandoned=q.status==="pending"&&ageH>=48;const prodSummary=Array.isArray(prods)?prods.map(p=>p.description||p.type).join(", "):"";const msg=encodeURIComponent(`Hola ${q.client_name}! Hace unos días cotizaste *${prodSummary}* por *${q.channel_name}* (USD ${Number(q.total_cost||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}).\n\n¿Pudiste revisarla? Si querés avanzar esta semana te agilizo el proceso. Cualquier duda me escribís.`);
             return <div style={{display:"flex",gap:6,alignItems:"center"}}>
               {abandoned&&wa&&<a href={`https://wa.me/${wa}?text=${msg}`} target="_blank" rel="noopener noreferrer" style={{padding:"4px 8px",fontSize:10,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",whiteSpace:"nowrap"}}>📱 Recordar</a>}
               <select value={q.status} onChange={e=>updateStatus(q.id,e.target.value)} style={{padding:"4px 8px",fontSize:11,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>{Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038"}}>{v.l}</option>)}</select>
@@ -7807,8 +7807,8 @@ function QuotesList({token}){
             {/* Cantidad + Unitario + Total FOB */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1.2fr",gap:12,marginBottom:14,padding:"12px 14px",background:"rgba(0,0,0,0.2)",borderRadius:8}}>
               <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Cantidad</p><p style={{fontSize:16,fontWeight:700,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{p.quantity}</p></div>
-              <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Precio unitario</p><p style={{fontSize:16,fontWeight:700,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {Number(p.unit_price||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
-              <div style={{textAlign:"right"}}><p style={{fontSize:9.5,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total FOB</p><p style={{fontSize:18,fontWeight:800,color:GOLD_LIGHT,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>USD {fobItem.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+              <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Precio unitario</p><p style={{fontSize:16,fontWeight:700,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {Number(p.unit_price||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+              <div style={{textAlign:"right"}}><p style={{fontSize:9.5,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total FOB</p><p style={{fontSize:18,fontWeight:800,color:GOLD_LIGHT,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>USD {fobItem.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
             </div>
             {/* NCM + impuestos (editables) */}
             <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Clasificación e impuestos</p>
@@ -7864,7 +7864,7 @@ function QuotesList({token}){
           return <div style={{marginBottom:16}}>
             <h4 style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Costos por canal disponibles</h4>
             <div style={{display:"grid",gridTemplateColumns:channels.length<=2?"1fr 1fr":"1fr 1fr",gap:10}}>
-              {channels.map(ch=>{const isB=ch.type==="aereo_b"||ch.type==="maritimo_b";const isBest=best&&ch.key===best.key&&channels.length>1;const row=(l,v)=><div style={{display:"flex",justifyContent:"space-between",padding:"3px 0",fontSize:11}}><span style={{color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums"}}>USD {Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
+              {channels.map(ch=>{const isB=ch.type==="aereo_b"||ch.type==="maritimo_b";const isBest=best&&ch.key===best.key&&channels.length>1;const row=(l,v)=><div style={{display:"flex",justifyContent:"space-between",padding:"3px 0",fontSize:11}}><span style={{color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums"}}>USD {Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
               return <div key={ch.key} style={{padding:"14px 16px",background:isBest?"linear-gradient(135deg, rgba(184,149,106,0.12) 0%, rgba(255,255,255,0.02) 100%)":"rgba(255,255,255,0.025)",border:`1px solid ${isBest?"rgba(184,149,106,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:12,position:"relative",overflow:"hidden",boxShadow:isBest?GOLD_GLOW:"none"}}>
                 {isBest&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT}}/>}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,gap:8}}>
@@ -7877,14 +7877,14 @@ function QuotesList({token}){
                 {ch.shipCost>0&&row("Envío a domicilio",ch.shipCost)}
                 <div style={{display:"flex",justifyContent:"space-between",padding:"9px 0 0",borderTop:`1px solid ${isBest?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.08)"}`,marginTop:6}}>
                   <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total DDP</span>
-                  <span style={{fontSize:16,fontWeight:800,color:isBest?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>USD {ch.totalAbonar.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                  <span style={{fontSize:16,fontWeight:800,color:isBest?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>USD {ch.totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
                 </div>
               </div>;})}
             </div>
           </div>;})()}
         {(()=>{const cl=q.client_id?clientsMap[q.client_id]:null;const wa=cl?.whatsapp;const prodDesc=Array.isArray(editProds)?editProds.map(p=>p.description||p.type).join(", "):"";
           const waConsulta=encodeURIComponent(`Hola ${q.client_name}! Vi que cotizaste una importación de *${prodDesc}* por *${q.channel_name}* desde *${q.origin}* el ${formatDate(q.created_at)}.\n\n¿Pudiste avanzar con la operación? ¿Necesitás más información?\n\nQuedo a disposición!`);
-          const waUpdate=encodeURIComponent(`Hola ${q.client_name}! Revisamos y ajustamos tu cotización de *${prodDesc}* por *${q.channel_name}* con la clasificación arancelaria precisa.\n\n📄 *Costo total actualizado: USD ${Number(q.total_cost||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}*\n\nEntrá a tu portal para ver el detalle por producto (NCM + derechos + tasa estadística + IVA), o si preferís te paso el PDF.\n\nQuedo a disposición para avanzar!`);
+          const waUpdate=encodeURIComponent(`Hola ${q.client_name}! Revisamos y ajustamos tu cotización de *${prodDesc}* por *${q.channel_name}* con la clasificación arancelaria precisa.\n\n📄 *Costo total actualizado: USD ${Number(q.total_cost||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}*\n\nEntrá a tu portal para ver el detalle por producto (NCM + derechos + tasa estadística + IVA), o si preferís te paso el PDF.\n\nQuedo a disposición para avanzar!`);
           return <div style={{marginTop:20,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
             {savedAt&&!dirty&&<p style={{fontSize:11,color:"#22c55e",margin:"0 0 10px",fontWeight:600}}>✓ Guardado. Ahora podés avisar al cliente.</p>}
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
@@ -8252,7 +8252,7 @@ function GiAdminPanel({token,clients}){
           </div>
           <div style={{textAlign:"right"}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>Total a pagar (neto)</p>
-            <p style={{fontSize:22,fontWeight:800,color:totalGlobal>=0?"#22c55e":"#f87171",fontVariantNumeric:"tabular-nums"}}>{totalGlobal>=0?"":"−"}USD {Math.abs(totalGlobal).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            <p style={{fontSize:22,fontWeight:800,color:totalGlobal>=0?"#22c55e":"#f87171",fontVariantNumeric:"tabular-nums"}}>{totalGlobal>=0?"":"−"}USD {Math.abs(totalGlobal).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
           </div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -8262,7 +8262,7 @@ function GiAdminPanel({token,clients}){
               <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>{d.n} op{d.n>1?"s":""} pendiente{d.n>1?"s":""}{d.neg<0?` · ganancias USD ${d.pos.toFixed(2)} − pérdidas USD ${Math.abs(d.neg).toFixed(2)}`:""}</p>
             </div>
             <div style={{textAlign:"right"}}>
-              <p style={{fontSize:18,fontWeight:800,color:d.total>=0?"#22c55e":"#f87171",fontVariantNumeric:"tabular-nums",margin:0}}>{d.total>=0?"":"−"}USD {Math.abs(d.total).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+              <p style={{fontSize:18,fontWeight:800,color:d.total>=0?"#22c55e":"#f87171",fontVariantNumeric:"tabular-nums",margin:0}}>{d.total>=0?"":"−"}USD {Math.abs(d.total).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
               <p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{d.total>=0?"Le pagás":"Te debe"}</p>
             </div>
             <div style={{display:"flex",gap:6}}>
