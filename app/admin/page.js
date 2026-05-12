@@ -2374,6 +2374,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           cost_flete:numOrNull(op.cost_flete),
           cost_flete_method:op.cost_flete_method||null,
           cost_flete_paid_at:dateOrNull(op.cost_flete_paid_at),
+          cost_flete_card_closing:dateOnly(op.cost_flete_card_closing),
+          cost_flete_credit_card_id:op.cost_flete_method==="tarjeta_credito"?(op.cost_flete_credit_card_id||null):null,
           cost_impuestos_ars:numOrNull(op.cost_impuestos_ars),
           cost_impuestos_method:op.cost_impuestos_method||null,
           cost_impuestos_card_closing:dateOnly(op.cost_impuestos_card_closing),
@@ -2575,11 +2577,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const defaultMethod=isCanalB?"efectivo":"cuenta_corriente";
           const fleteMethod=op.cost_flete_method||defaultMethod;
           const isCC=fleteMethod==="cuenta_corriente";
+          const isTC=fleteMethod==="tarjeta_credito";
+          const isDebito=fleteMethod==="tarjeta_debito";
+          // Para el flete del agente: agregamos opciones de Alibaba (TC/Débito) además de las históricas.
           const fleteOptions=isCanalB
             ?[{value:"efectivo",label:"Contado"}]
-            :[{value:"cuenta_corriente",label:"Cuenta Corriente"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"tarjeta_debito",label:"Tarjeta de Débito"}];
+            :[{value:"cuenta_corriente",label:"Cuenta Corriente (agente)"},{value:"tarjeta_credito",label:"Tarjeta de Crédito (Alibaba)"},{value:"tarjeta_debito",label:"Tarjeta de Débito (Alibaba)"},{value:"transferencia",label:"Transferencia"}];
           return <>
-        <div style={{display:"grid",gridTemplateColumns:isCC?"1fr 1fr 1fr":"1fr 1fr 1fr",gap:"0 16px",marginBottom:isCC?16:8}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px",marginBottom:isCC?16:8}}>
           <Inp label="Costo flete (USD)" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>
           <Sel label="Método de pago" value={fleteMethod} onChange={chOp("cost_flete_method")} options={fleteOptions}/>
           {isCC&&<div style={{paddingTop:22}} title="Cuenta Corriente con el agente asignado a esta op: anticipos suman, fletes en CC restan. Negativo (rojo) = le debés al agente.">
@@ -2589,9 +2594,17 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               <p style={{fontSize:9,color:"rgba(255,255,255,0.35)",margin:"2px 0 0",fontStyle:"italic"}}>{ccBalance>=0?"crédito disponible":"deuda con agente"}</p>
             </>:<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:0,fontStyle:"italic"}}>op sin agente asignado</p>}
           </div>}
-          {!isCC&&Number(op.cost_flete)>0&&<Inp label="Fecha de pago del flete" type="date" value={op.cost_flete_paid_at?String(op.cost_flete_paid_at).slice(0,10):""} onChange={v=>chOp("cost_flete_paid_at")(v?v+"T12:00:00-03":null)}/>}
+          {/* Débito / transferencia / contado → fecha del pago (cash out). TC no la usa: el cash out es cuando se debita la tarjeta. */}
+          {!isCC&&!isTC&&Number(op.cost_flete)>0&&<Inp label="Fecha de pago del flete" type="date" value={op.cost_flete_paid_at?String(op.cost_flete_paid_at).slice(0,10):""} onChange={v=>chOp("cost_flete_paid_at")(v?v+"T12:00:00-03":null)}/>}
+          {/* TC: fecha de cierre + tarjeta. Queda en Deuda Tarjeta hasta que se debite. */}
+          {isTC&&Number(op.cost_flete)>0&&<Inp label="Cierre de tarjeta" type="date" value={op.cost_flete_card_closing?String(op.cost_flete_card_closing).slice(0,10):""} onChange={v=>chOp("cost_flete_card_closing")(v||null)}/>}
         </div>
-        {!isCC&&Number(op.cost_flete)>0&&!op.cost_flete_paid_at&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-6px 0 12px",fontStyle:"italic"}}>⚠ Sin fecha de pago — el libro diario va a usar hoy. Cargá la fecha real del pago si fue otro día.</p>}
+        {isTC&&Number(op.cost_flete)>0&&<div style={{marginBottom:12}}>
+          <CreditCardPicker token={token} value={op.cost_flete_credit_card_id} onChange={v=>chOp("cost_flete_credit_card_id")(v)} required/>
+          <p style={{fontSize:10.5,color:"#a78bfa",margin:"6px 0 0",fontStyle:"italic"}}>💳 Pago con TC (Alibaba): queda como Deuda Tarjeta hasta el débito del cierre.</p>
+        </div>}
+        {isDebito&&Number(op.cost_flete)>0&&!op.cost_flete_paid_at&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-6px 0 12px",fontStyle:"italic"}}>⚠ Sin fecha de pago — el libro diario va a usar hoy. Cargá la fecha real del débito.</p>}
+        {!isCC&&!isTC&&!isDebito&&Number(op.cost_flete)>0&&!op.cost_flete_paid_at&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-6px 0 12px",fontStyle:"italic"}}>⚠ Sin fecha de pago — el libro diario va a usar hoy. Cargá la fecha real del pago si fue otro día.</p>}
         </>;})()}
         {/* Impuestos y Gasto Documental: solo para canal A (blanco). En canal B/negro no aplican. */}
         {!op.channel?.includes("negro")&&<><div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
@@ -3777,7 +3790,7 @@ function FinancePanel({token}){
   const [clientPmts,setClientPmts]=useState([]);
   const [autoEntries,setAutoEntries]=useState([]);
   const [clientAccMvs,setClientAccMvs]=useState([]);
-  const load=async()=>{const [e,o,pm,dp,am,ag,sp,cp,cdUsd,cdArs,cdPmts,supTcArs,supTcUsd,autoE,clMv]=await Promise.all([
+  const load=async()=>{const [e,o,pm,dp,am,ag,sp,cp,cdUsd,cdArs,cdPmts,supTcArs,supTcUsd,fleteTcOps,autoE,clMv]=await Promise.all([
     dq("finance_entries",{token,filters:"?select=*&auto_generated=is.false&order=date.desc,created_at.desc"}),
     dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,credit_applied_usd,debt_applied_usd,extra_charge_usd,closed_at,cost_flete,cost_flete_method,cost_flete_paid_at,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_seguro_paid_at,cost_flete_local,cost_flete_local_paid_at,cost_otros,cost_otros_paid_at,service_type,cost_producto_usd,cost_producto_method,cost_producto_paid,cost_producto_paid_at,clients(first_name,last_name,client_code)&order=created_at.desc"}),
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)"}),
@@ -3796,11 +3809,13 @@ function FinancePanel({token}){
     dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code),credit_cards(id,name,brand)&payment_method=eq.tarjeta_credito&is_paid=eq.false&currency=eq.ARS&type=neq.refund&order=card_closing_date.asc"}),
     // Costos GI con TC + USD pendientes (deuda tarjeta USD) — NO incluir refunds
     dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code),credit_cards(id,name,brand)&payment_method=eq.tarjeta_credito&is_paid=eq.false&or=(currency.eq.USD,currency.is.null)&type=neq.refund&order=card_closing_date.asc"}),
+    // Fletes pagados con TC (Alibaba u otra) pendientes de débito
+    dq("operations",{token,filters:"?select=id,operation_code,cost_flete,cost_flete_card_closing,cost_flete_paid_at,credit_cards:cost_flete_credit_card_id(id,name,brand),clients(client_code)&cost_flete_method=eq.tarjeta_credito&cost_flete_paid_at=is.null&cost_flete=gt.0&order=cost_flete_card_closing.asc"}),
     // Auto-generated entries (impuestos/gasto doc dolarizados desde ops). Van al libro diario, no al panel "Gastos del Negocio".
     dq("finance_entries",{token,filters:"?select=*&auto_generated=eq.true&currency=eq.USD&is_paid=eq.true&order=date.desc"}),
     // Movimientos CC del cliente vinculados a una op (overpayment / applied / debt). Para reflejar el cash real en libro diario.
     dq("client_account_movements",{token,filters:"?select=operation_id,type,amount_usd&operation_id=not.is.null"})
-  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);setCardDebt({usd:Array.isArray(cdUsd)?cdUsd:[],ars:Array.isArray(cdArs)?cdArs:[],pmts:Array.isArray(cdPmts)?cdPmts:[],supTcArs:Array.isArray(supTcArs)?supTcArs:[],supTcUsd:Array.isArray(supTcUsd)?supTcUsd:[]});setAutoEntries(Array.isArray(autoE)?autoE:[]);setClientAccMvs(Array.isArray(clMv)?clMv:[]);setLo(false);};
+  ]);setEntries(Array.isArray(e)?e:[]);setAllOps(Array.isArray(o)?o:[]);setAllPmts(Array.isArray(pm)?pm:[]);setDollarPending(Array.isArray(dp)?dp:[]);setAgentMvs(Array.isArray(am)?am:[]);setAgentSignups(Array.isArray(ag)?ag:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);setCardDebt({usd:Array.isArray(cdUsd)?cdUsd:[],ars:Array.isArray(cdArs)?cdArs:[],pmts:Array.isArray(cdPmts)?cdPmts:[],supTcArs:Array.isArray(supTcArs)?supTcArs:[],supTcUsd:Array.isArray(supTcUsd)?supTcUsd:[],fleteTcOps:Array.isArray(fleteTcOps)?fleteTcOps:[]});setAutoEntries(Array.isArray(autoE)?autoE:[]);setClientAccMvs(Array.isArray(clMv)?clMv:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const addEntry=async()=>{
@@ -3877,8 +3892,12 @@ function FinancePanel({token}){
     const pickDate=(paid)=>paid?.slice(0,10)||closedDate;
     const fleteMethod=o.cost_flete_method||"cuenta_corriente";
     const fleteDate=pickDate(o.cost_flete_paid_at);
+    // - cuenta_corriente: settlement vía CC del agente (no es cash out de Argencargo)
+    // - tarjeta_credito: queda pendiente como Deuda TC hasta que se marque debitada (cost_flete_paid_at = fecha del débito)
+    // - tarjeta_debito / transferencia / efectivo: cash out inmediato en su fecha de pago
     if(fleteMethod!=="cuenta_corriente"&&Number(o.cost_flete||0)>0&&fleteDate){
-      ledger.push({date:fleteDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Flete ${o.operation_code} — ${cc}`,amount:Number(o.cost_flete)});
+      const methodLbl=fleteMethod==="tarjeta_credito"?"TC":fleteMethod==="tarjeta_debito"?"Débito":fleteMethod==="transferencia"?"Transf.":"Contado";
+      ledger.push({date:fleteDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Flete ${o.operation_code} — ${cc}`,amount:Number(o.cost_flete),detail:`Pago vía ${methodLbl}`});
     }
     const segDate=pickDate(o.cost_seguro_paid_at);
     if(Number(o.cost_seguro||0)>0&&segDate)ledger.push({date:segDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Seguro ${o.operation_code} — ${cc}`,amount:Number(o.cost_seguro)});
@@ -4251,6 +4270,8 @@ function FinancePanel({token}){
       // Entradas ARS pendientes de dolarizar — antes no se mostraban en el grouping per-tarjeta y los totales por tarjeta salían en $0.
       cardDebt.ars.forEach(e=>pushItem({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:0,amtArs:Number(e.amount_ars||0),currency:"ARS",pendingDolar:true,dateLoad:e.date,op:e.operations?.operation_code,card:e.credit_cards},e.credit_cards,e.card_closing_date));
       (cardDebt.supTcArs||[]).forEach(p=>pushItem({source:"supplier",id:p.id,desc:`Costo op ${p.operations?.operation_code||"—"} (GI)`,detail:p.notes||p.reference||"",amt:0,amtArs:Number(p.amount_ars||0),currency:"ARS",pendingDolar:true,dateLoad:p.payment_date,op:p.operations?.operation_code,operation_id:p.operation_id,card:p.credit_cards},p.credit_cards,p.card_closing_date));
+      // Fletes TC (Alibaba u otra) pendientes de débito
+      (cardDebt.fleteTcOps||[]).forEach(o=>pushItem({source:"flete_op",id:o.id,desc:`Flete ${o.operation_code}${o.clients?.client_code?` — ${o.clients.client_code}`:""}`,detail:"Pago con TC (Alibaba)",amt:Number(o.cost_flete||0),amtArs:0,currency:"USD",dateLoad:null,op:o.operation_code,card:o.credit_cards},o.credit_cards,o.cost_flete_card_closing));
       // Orden: primero por nombre de tarjeta, después por fecha de cierre.
       const sortedGroups=Object.values(groups).sort((a,b)=>{
         const an=(a.card?.name||"~zsin tarjeta").toLowerCase();
@@ -4271,6 +4292,7 @@ function FinancePanel({token}){
         const t=nowIso();
         if(item.source==="finance"){await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,card_paid_at:t}});}
         else if(item.source==="supplier"){await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,paid_at:t}});}
+        else if(item.source==="flete_op"){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{cost_flete_paid_at:t}});}
         else{await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:t}});}
         load();flash("Marcada como debitada");
       };
@@ -4280,6 +4302,7 @@ function FinancePanel({token}){
         for(const item of g.items){
           if(item.source==="finance")await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,card_paid_at:t}});
           else if(item.source==="supplier")await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,paid_at:t}});
+          else if(item.source==="flete_op")await dq("operations",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{cost_flete_paid_at:t}});
           else await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:t}});
         }
         load();flash(`${g.items.length} deudas marcadas como debitadas`);
