@@ -2377,12 +2377,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           cost_impuestos_ars:numOrNull(op.cost_impuestos_ars),
           cost_impuestos_method:op.cost_impuestos_method||null,
           cost_impuestos_card_closing:dateOnly(op.cost_impuestos_card_closing),
+          cost_impuestos_credit_card_id:op.cost_impuestos_method==="tarjeta_credito"?(op.cost_impuestos_credit_card_id||null):null,
           cost_impuestos_exchange_rate:numOrNull(op.cost_impuestos_exchange_rate),
           cost_impuestos_paid_at:dateOrNull(op.cost_impuestos_paid_at),
           cost_impuestos_reales:numOrNull(op.cost_impuestos_reales),
           cost_gasto_documental_ars:numOrNull(op.cost_gasto_documental_ars),
           cost_gasto_doc_method:op.cost_gasto_doc_method||null,
           cost_gasto_doc_card_closing:dateOnly(op.cost_gasto_doc_card_closing),
+          cost_gasto_doc_credit_card_id:op.cost_gasto_doc_method==="tarjeta_credito"?(op.cost_gasto_doc_credit_card_id||null):null,
           cost_gasto_doc_exchange_rate:numOrNull(op.cost_gasto_doc_exchange_rate),
           cost_gasto_doc_paid_at:dateOrNull(op.cost_gasto_doc_paid_at),
           cost_gasto_documental:numOrNull(op.cost_gasto_documental),
@@ -2450,10 +2452,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               else{await dq("finance_entries",{method:"POST",token,body:feBody});}
               await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{cost_impuestos_reales:usdAmt}});setOp(p=>({...p,cost_impuestos_reales:usdAmt}));}
           } else if(!existsImp){
-            await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Impuestos ${op.operation_code}`,amount_ars:impArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_impuestos_card_closing,is_paid:false,auto_generated:true,operation_id:id}});
+            await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Impuestos ${op.operation_code}`,amount_ars:impArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_impuestos_card_closing,credit_card_id:op.cost_impuestos_credit_card_id||null,is_paid:false,auto_generated:true,operation_id:id}});
           } else {
-            // TC: actualizar el monto ARS y la fecha de cierre si cambiaron
-            await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existImp[0].id}`,body:{amount_ars:impArs,card_closing_date:op.cost_impuestos_card_closing}});
+            // TC: actualizar el monto ARS, fecha de cierre y tarjeta si cambiaron
+            await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existImp[0].id}`,body:{amount_ars:impArs,card_closing_date:op.cost_impuestos_card_closing,credit_card_id:op.cost_impuestos_credit_card_id||null}});
           }
         }
         // Auto-create finance_entry for gasto documental ARS
@@ -2471,9 +2473,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               else{await dq("finance_entries",{method:"POST",token,body:feBody});}
               await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{cost_gasto_documental:usdAmt}});setOp(p=>({...p,cost_gasto_documental:usdAmt}));}
           } else if(!existsDoc){
-            await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Gasto documental ${op.operation_code}`,amount_ars:docArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_gasto_doc_card_closing,is_paid:false,auto_generated:true,operation_id:id}});
+            await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Gasto documental ${op.operation_code}`,amount_ars:docArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_gasto_doc_card_closing,credit_card_id:op.cost_gasto_doc_credit_card_id||null,is_paid:false,auto_generated:true,operation_id:id}});
           } else {
-            await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existDoc[0].id}`,body:{amount_ars:docArs,card_closing_date:op.cost_gasto_doc_card_closing}});
+            await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existDoc[0].id}`,body:{amount_ars:docArs,card_closing_date:op.cost_gasto_doc_card_closing,credit_card_id:op.cost_gasto_doc_credit_card_id||null}});
           }
         }
         // Auto-create/update consolidated "Costos" entry in finanzas (USD costs)
@@ -2594,12 +2596,17 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {/* Impuestos y Gasto Documental: solo para canal A (blanco). En canal B/negro no aplican. */}
         {!op.channel?.includes("negro")&&<><div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Impuestos (ARS)</p>
-          {(()=>{const isEf=(op.cost_impuestos_method||"tarjeta_credito")==="efectivo";return <div style={{display:"grid",gridTemplateColumns:isEf?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr",gap:"0 16px"}}>
-            <Sel label="Método de pago" value={op.cost_impuestos_method||"tarjeta_credito"} onChange={chOp("cost_impuestos_method")} options={[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"}]}/>
-            <Inp label="Monto ARS" type="number" value={op.cost_impuestos_ars} onChange={chOp("cost_impuestos_ars")} step="0.01"/>
-            {isEf?<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_impuestos_exchange_rate||""} onChange={chOp("cost_impuestos_exchange_rate")} step="0.01" placeholder="Ej: 1410"/>:<Inp label="Cierre de tarjeta" type="date" value={op.cost_impuestos_card_closing||""} onChange={chOp("cost_impuestos_card_closing")}/>}
-            {isEf&&<Inp label="Fecha de pago" type="date" value={op.cost_impuestos_paid_at||""} onChange={chOp("cost_impuestos_paid_at")}/>}
-          </div>;})()}
+          {(()=>{const isEf=(op.cost_impuestos_method||"tarjeta_credito")==="efectivo";return <>
+            <div style={{display:"grid",gridTemplateColumns:isEf?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr",gap:"0 16px"}}>
+              <Sel label="Método de pago" value={op.cost_impuestos_method||"tarjeta_credito"} onChange={chOp("cost_impuestos_method")} options={[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"}]}/>
+              <Inp label="Monto ARS" type="number" value={op.cost_impuestos_ars} onChange={chOp("cost_impuestos_ars")} step="0.01"/>
+              {isEf?<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_impuestos_exchange_rate||""} onChange={chOp("cost_impuestos_exchange_rate")} step="0.01" placeholder="Ej: 1410"/>:<Inp label="Cierre de tarjeta" type="date" value={op.cost_impuestos_card_closing||""} onChange={chOp("cost_impuestos_card_closing")}/>}
+              {isEf&&<Inp label="Fecha de pago" type="date" value={op.cost_impuestos_paid_at||""} onChange={chOp("cost_impuestos_paid_at")}/>}
+            </div>
+            {!isEf&&<div style={{marginTop:10}}>
+              <CreditCardPicker token={token} value={op.cost_impuestos_credit_card_id} onChange={v=>chOp("cost_impuestos_credit_card_id")(v)} required/>
+            </div>}
+          </>;})()}
           {(()=>{
             const ars=Number(op.cost_impuestos_ars||0);
             const rate=Number(op.cost_impuestos_exchange_rate||0);
@@ -2615,12 +2622,17 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
         <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Gasto Documental (ARS)</p>
-          {(()=>{const isEf=(op.cost_gasto_doc_method||"tarjeta_credito")==="efectivo";return <div style={{display:"grid",gridTemplateColumns:isEf?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr",gap:"0 16px"}}>
-            <Sel label="Método de pago" value={op.cost_gasto_doc_method||"tarjeta_credito"} onChange={chOp("cost_gasto_doc_method")} options={[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"}]}/>
-            <Inp label="Monto ARS" type="number" value={op.cost_gasto_documental_ars} onChange={chOp("cost_gasto_documental_ars")} step="0.01"/>
-            {isEf?<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_gasto_doc_exchange_rate||""} onChange={chOp("cost_gasto_doc_exchange_rate")} step="0.01" placeholder="Ej: 1410"/>:<Inp label="Cierre de tarjeta" type="date" value={op.cost_gasto_doc_card_closing||""} onChange={chOp("cost_gasto_doc_card_closing")}/>}
-            {isEf&&<Inp label="Fecha de pago" type="date" value={op.cost_gasto_doc_paid_at||""} onChange={chOp("cost_gasto_doc_paid_at")}/>}
-          </div>;})()}
+          {(()=>{const isEf=(op.cost_gasto_doc_method||"tarjeta_credito")==="efectivo";return <>
+            <div style={{display:"grid",gridTemplateColumns:isEf?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr",gap:"0 16px"}}>
+              <Sel label="Método de pago" value={op.cost_gasto_doc_method||"tarjeta_credito"} onChange={chOp("cost_gasto_doc_method")} options={[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"}]}/>
+              <Inp label="Monto ARS" type="number" value={op.cost_gasto_documental_ars} onChange={chOp("cost_gasto_documental_ars")} step="0.01"/>
+              {isEf?<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_gasto_doc_exchange_rate||""} onChange={chOp("cost_gasto_doc_exchange_rate")} step="0.01" placeholder="Ej: 1410"/>:<Inp label="Cierre de tarjeta" type="date" value={op.cost_gasto_doc_card_closing||""} onChange={chOp("cost_gasto_doc_card_closing")}/>}
+              {isEf&&<Inp label="Fecha de pago" type="date" value={op.cost_gasto_doc_paid_at||""} onChange={chOp("cost_gasto_doc_paid_at")}/>}
+            </div>
+            {!isEf&&<div style={{marginTop:10}}>
+              <CreditCardPicker token={token} value={op.cost_gasto_doc_credit_card_id} onChange={v=>chOp("cost_gasto_doc_credit_card_id")(v)} required/>
+            </div>}
+          </>;})()}
           {(()=>{
             const ars=Number(op.cost_gasto_documental_ars||0);
             const rate=Number(op.cost_gasto_doc_exchange_rate||0);
