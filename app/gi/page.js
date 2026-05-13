@@ -444,7 +444,7 @@ function PaneQuotes({token,profileId}){
             <th style={{textAlign:"left",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Código</th>
             <th style={{textAlign:"left",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Cliente</th>
             <th style={{textAlign:"left",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Productos</th>
-            <th style={{textAlign:"right",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>FOB</th>
+            <th style={{textAlign:"right",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Venta</th>
             <th style={{textAlign:"right",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Pot. ganancia</th>
             <th style={{textAlign:"left",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Recibida</th>
             <th style={{textAlign:"left",padding:"12px 14px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Vence</th>
@@ -1236,7 +1236,7 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
         </div>
         <div><label style={lblStyle()}>Lead prod. (días)</label><input type="text" inputMode="numeric" value={p.lead_time_days} onChange={e=>onUpdate(i,"lead_time_days",e.target.value.replace(/[^0-9]/g,""))} style={inpStyle()}/></div>
         <div><label style={lblStyle()}>Cantidad</label><input type="text" inputMode="numeric" value={p.quantity} onChange={e=>onUpdate(i,"quantity",e.target.value.replace(/[^0-9]/g,""))} style={inpStyle()}/></div>
-        <div><label style={lblStyle()}>Costo unit. USD FOB</label><input type="text" inputMode="decimal" value={p.unit_cost_usd} onChange={e=>onUpdate(i,"unit_cost_usd",e.target.value.replace(/[^0-9.]/g,""))} style={inpStyle()}/></div>
+        <div><label style={lblStyle()}>Precio venta unit. USD</label><input type="text" inputMode="decimal" value={p.unit_cost_usd} onChange={e=>onUpdate(i,"unit_cost_usd",e.target.value.replace(/[^0-9.]/g,""))} style={inpStyle()}/></div>
       </div>
 
       {p.origin==="china"&&<div style={{padding:"12px 14px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)",borderRadius:8,marginBottom:12}}>
@@ -1332,7 +1332,7 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
       const cbmCharge=Math.max(totCBM,1); // marítimo blanco mínimo 1 m³
       return <div style={{padding:"14px 18px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,display:"flex",flexDirection:"column",gap:10}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-          <p style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",margin:0}}>Subtotal FOB: <strong style={{color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(totalFob)}</strong></p>
+          <p style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",margin:0}}>Subtotal venta: <strong style={{color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(totalFob)}</strong></p>
           <button onClick={onNext} style={{padding:"10px 20px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>Continuar a costos →</button>
         </div>
         {pesoRealAll>0&&<div style={{display:"flex",flexWrap:"wrap",gap:14,fontSize:11,color:"rgba(255,255,255,0.65)",fontFeatureSettings:'"tnum"',paddingTop:8,borderTop:"1px solid rgba(184,149,106,0.18)"}}>
@@ -1850,7 +1850,7 @@ function OpDetail({token,opId,onBack,calcComision}){
               <p style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,fontFeatureSettings:'"tnum"',marginLeft:10}}>{fmtUSD(sub)}</p>
             </div>;})}
             <div style={{display:"flex",justifyContent:"space-between",padding:"10px 4px",borderTop:"1px solid rgba(255,255,255,0.06)",marginTop:4}}>
-              <span style={{fontSize:11,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Subtotal FOB</span>
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Subtotal venta</span>
               <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFeatureSettings:'"tnum"'}}>{fmtUSD(totalProducts)}</span>
             </div>
           </div>
