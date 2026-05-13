@@ -2979,10 +2979,14 @@ function CloseChecklistModal({op,items,payments,clientPayments,supplierPayments,
   const discount=Number(op.discount_applied_usd||0);
   const bt=Number(op.budget_total||0);
   const saldo=Math.max(0,bt-cliPaid-credit-discount);
-  const pmtTot=(payments||[]).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
-  const ant=Number(op.total_anticipos||0);
-  const exceso=Math.max(0,pmtTot-ant);
-  const totalSaldo=saldo+exceso;
+  // Saldo de gestión de pagos: lo que el cliente todavía no pagó de las gestiones.
+  //  pmtExpected = suma de client_amount_usd (lo que tiene que pagar por las gestiones).
+  //  pmtPaid     = suma de lo que realmente pagó (client_paid_amount_usd cuando client_paid=true).
+  // Saldo pmt = pmtExpected - pmtPaid (mínimo 0).
+  const pmtExpected=(payments||[]).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
+  const pmtPaid=(payments||[]).reduce((s,p)=>s+(p.client_paid?Number(p.client_paid_amount_usd??p.client_amount_usd??0):0),0);
+  const pmtSaldo=Math.max(0,pmtExpected-pmtPaid);
+  const totalSaldo=saldo+pmtSaldo;
   const supPmts=(supplierPayments||[]);
   const supPaid=supPmts.filter(p=>p.is_paid).length;
   const supTotal=supPmts.length;
