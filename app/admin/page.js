@@ -226,7 +226,7 @@ function OperationsList({token,onSelect,onNew}){
   };
   // Peso por estado: mayor valor = más cerca de entrega (aparece arriba)
   const STATUS_WEIGHT={entregada:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
-  useEffect(()=>{(async()=>{const [o,pm,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd"})]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setLo(false);})();},[token]);
+  useEffect(()=>{(async()=>{const [o,pm,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,giro_status,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd"})]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setLo(false);})();},[token]);
   // Saldo pendiente del cliente. Considera:
   // - pagos ya recibidos (collected_amount si la op está cobrada, o operation_client_payments si es GI)
   // - crédito aplicado de CC (credit_applied_usd)
@@ -270,7 +270,15 @@ function OperationsList({token,onSelect,onNew}){
     const costProd=o.service_type==="gestion_integral"?Number(o.cost_producto_usd||0):0;
     const cost=Number(o.cost_flete||0)+costProd+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
     const pmts=pmtsByOp[o.id]||[];
-    const pmtGan=pmts.reduce((s,p)=>{const cli=p.client_paid?Number(p.client_paid_amount_usd??p.client_amount_usd??0):Number(p.client_amount_usd||0);return s+cli-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0);},0);
+    // Gestión de pagos en la ganancia: solo plata real.
+    //  - revenue: cuando client_paid=true.
+    //  - cost: cuando giro_status="confirmado" (lo demás todavía no salió de cash).
+    const pmtGan=pmts.reduce((s,p)=>{
+      const cli=p.client_paid?Number(p.client_paid_amount_usd??p.client_amount_usd??0):0;
+      const giroOk=p.giro_status==="confirmado";
+      const costo=giroOk?(Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0)):0;
+      return s+cli-costo;
+    },0);
     return ing-cost+pmtGan;
   };
   const sorted=[...filtered].sort((a,b)=>{
@@ -6698,7 +6706,7 @@ function OperationalAnalytics({token}){
       dq("operations",{token,filters:"?select=id,operation_code,status,channel,service_type,budget_total,collected_amount,collection_currency,collection_exchange_rate,credit_applied_usd,discount_applied_usd,is_collected,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,cost_producto_usd,created_at,closed_at,client_id,clients(first_name,last_name,client_code)&order=created_at.desc"}),
       dq("op_feedback",{token,filters:"?select=operation_id,rating"}),
       dq("clients",{token,filters:"?select=id,first_name,last_name,client_code,loyalty_level"}),
-      dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro"})
+      dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,giro_status,cost_comision_giro"})
     ]);
     const o=Array.isArray(ops)?ops:[];const fb=Array.isArray(fbs)?fbs:[];const cl=Array.isArray(clients)?clients:[];
     const closed=o.filter(x=>x.status==="operacion_cerrada");
@@ -6733,7 +6741,12 @@ function OperationalAnalytics({token}){
       const costProd=o.service_type==="gestion_integral"?Number(o.cost_producto_usd||0):0;
       const cost=Number(o.cost_flete||0)+costProd+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
       const pm=pmByOp[o.id]||[];
-      const pmGan=pm.reduce((s,p)=>s+Number(p.client_amount_usd||0)-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0),0);
+      const pmGan=pm.reduce((s,p)=>{
+        const cli=p.client_paid?Number(p.client_paid_amount_usd??p.client_amount_usd??0):0;
+        const giroOk=p.giro_status==="confirmado";
+        const costo=giroOk?(Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0)):0;
+        return s+cli-costo;
+      },0);
       return(ing-cost)+pmGan;
     };
     const byCli={};
@@ -6812,8 +6825,9 @@ function FinanceDashboard({token}){
     const supplierPaid=isGI?(supplierPmts||[]).filter(p=>p.operation_id===o.id&&p.is_paid).reduce((s,p)=>{const sgn=p.type==="refund"?-1:1;return s+sgn*Number(p.amount_usd||0);},0):0;
     const baseCost=Number(o.cost_flete||0)+supplierPaid+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
     const pmts=pmtsByOp[o.id]||[];
-    const pmtIng=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
-    const pmtCost=pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);
+    // Solo cash real: revenue cuando client_paid=true, costos cuando giro_status="confirmado".
+    const pmtIng=pmts.reduce((s,p)=>s+(p.client_paid?Number(p.client_paid_amount_usd??p.client_amount_usd??0):0),0);
+    const pmtCost=pmts.reduce((s,p)=>{const giroOk=p.giro_status==="confirmado";return s+(giroOk?Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0):0);},0);
     const ing=baseIng+pmtIng;
     const cost=baseCost+pmtCost;
     return{ing,cost,gan:ing-cost};
