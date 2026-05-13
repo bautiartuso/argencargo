@@ -487,7 +487,7 @@ function OperationNotesPanel({opId,token}){
 }
 
 function OperationEditor({op:initOp,token,onBack,onDelete}){
-  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente"});  const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
+  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",client_amount_ars:"",client_exchange_rate:"",client_currency:"USD",giro_amount_usd:"",giro_amount_ars:"",giro_exchange_rate:"",giro_currency:"USD",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente",giro_payment_method:"efectivo",giro_tarjeta_due_date:"",giro_credit_card_id:"",client_paid_card_closing:"",client_paid_credit_card_id:""});  const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const [pendingRedemptions,setPendingRedemptions]=useState([]);
   const [cancelRedemptionTarget,setCancelRedemptionTarget]=useState(null);
@@ -1651,10 +1651,37 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const savePmt=async()=>{if(!newPmt.client_amount_usd)return;setSaving(true);
         const isGiroTC=newPmt.giro_payment_method==="tarjeta_credito";
         if(isGiroTC&&!newPmt.giro_credit_card_id){alert("Elegí qué tarjeta usaste para el giro");setSaving(false);return;}
-        const body={...newPmt,client_amount_usd:Number(newPmt.client_amount_usd),giro_amount_usd:Number(newPmt.giro_amount_usd||0),cost_comision_giro:Number(newPmt.cost_comision_giro||0),operation_id:op.id,client_id:op.client_id,giro_payment_method:newPmt.giro_payment_method||"efectivo",giro_tarjeta_due_date:isGiroTC?(newPmt.giro_tarjeta_due_date||null):null,giro_credit_card_id:isGiroTC?newPmt.giro_credit_card_id:null};
+        const isClientTC=newPmt.client_payment_method==="tarjeta_credito";
+        // Calcular USD effective: si la moneda es ARS, convertir con el TC ingresado para guardar también el USD equivalente.
+        const cliCcy=newPmt.client_currency||"USD";
+        const cliUsdEff=cliCcy==="ARS"?(Number(newPmt.client_amount_ars||0)&&Number(newPmt.client_exchange_rate||0)?Number(newPmt.client_amount_ars)/Number(newPmt.client_exchange_rate):0):Number(newPmt.client_amount_usd||0);
+        const giroCcy=newPmt.giro_currency||"USD";
+        const giroUsdEff=giroCcy==="ARS"?(Number(newPmt.giro_amount_ars||0)&&Number(newPmt.giro_exchange_rate||0)?Number(newPmt.giro_amount_ars)/Number(newPmt.giro_exchange_rate):0):Number(newPmt.giro_amount_usd||0);
+        const body={
+          operation_id:op.id,client_id:op.client_id,
+          description:newPmt.description||null,
+          // Cobro cliente
+          client_amount_usd:cliUsdEff,
+          client_currency:cliCcy,
+          client_amount_ars:cliCcy==="ARS"?Number(newPmt.client_amount_ars||0):null,
+          client_exchange_rate:cliCcy==="ARS"?Number(newPmt.client_exchange_rate||0):null,
+          client_payment_method:newPmt.client_payment_method||"transferencia",
+          client_paid_card_closing:isClientTC?(newPmt.client_paid_card_closing||null):null,
+          client_paid_credit_card_id:isClientTC?(newPmt.client_paid_credit_card_id||null):null,
+          // Costo / giro
+          giro_amount_usd:giroUsdEff,
+          giro_currency:giroCcy,
+          giro_amount_ars:giroCcy==="ARS"?Number(newPmt.giro_amount_ars||0):null,
+          giro_exchange_rate:giroCcy==="ARS"?Number(newPmt.giro_exchange_rate||0):null,
+          giro_payment_method:newPmt.giro_payment_method||"efectivo",
+          giro_status:newPmt.giro_status||"pendiente",
+          giro_tarjeta_due_date:isGiroTC?(newPmt.giro_tarjeta_due_date||null):null,
+          giro_credit_card_id:isGiroTC?(newPmt.giro_credit_card_id||null):null,
+          cost_comision_giro:Number(newPmt.cost_comision_giro||0),
+        };
         await dq("payment_management",{method:"POST",token,body});
         const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
-        setShowNewPmt(false);setNewPmt({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente",giro_payment_method:"efectivo",giro_tarjeta_due_date:""});flash("Pago creado");setSaving(false);};
+        setShowNewPmt(false);setNewPmt({client_amount_usd:"",client_amount_ars:"",client_exchange_rate:"",client_currency:"USD",giro_amount_usd:"",giro_amount_ars:"",giro_exchange_rate:"",giro_currency:"USD",cost_comision_giro:"",description:"",client_payment_method:"transferencia",giro_status:"pendiente",giro_payment_method:"efectivo",giro_tarjeta_due_date:"",giro_credit_card_id:"",client_paid_card_closing:"",client_paid_credit_card_id:""});flash("Pago creado");setSaving(false);};
       const updatePmt=async(pmtId,field,value)=>{
         await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pmtId}`,body:{[field]:value}});
         // Auto finance entries
@@ -1697,7 +1724,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const gan=cliRealOrExpected-Number(pm.giro_amount_usd||0)-Number(pm.cost_comision_giro||0);
           const gs=GST[pm.giro_status]||{l:pm.giro_status,c:"#999"};
           const isTarj=pm.giro_payment_method==="tarjeta_credito";
-          const markTarjDeb=async()=>{if(!confirm("¿Marcar la tarjeta como ya debitada? Esto restará del cash real."))return;await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});load();};
+          const isCliTC=pm.client_payment_method==="tarjeta_credito";
+          const markTarjDeb=async()=>{if(!confirm("¿Marcar la tarjeta del giro como ya debitada? Esto restará del cash real."))return;await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});load();};
+          const markCliTarjDeb=async()=>{if(!confirm("¿Marcar la tarjeta del cobro como ya debitada? Confirma el ingreso del cobro al cash real."))return;await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{client_paid_tarjeta_paid:true,client_paid_tarjeta_paid_at:new Date().toISOString()}});load();};
           const cycleGiro=()=>{const order=["pendiente","enviado","confirmado"];const idx=order.indexOf(pm.giro_status);const next=order[(idx+1)%order.length];updatePmt(pm.id,"giro_status",next);};
           const toggleCliPaid=async()=>{
             if(pm.client_paid){if(confirm("¿Desmarcar cobro del cliente?")){await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{client_paid:false,client_paid_date:null,client_paid_amount_usd:null}});load();}return;}
@@ -1721,8 +1750,18 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               </div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,fontSize:12,marginBottom:14}}>
-              <div><p style={{color:"rgba(255,255,255,0.4)",margin:"0 0 2px",fontSize:10,fontWeight:700}}>CLIENTE PAGA</p><p style={{color:"#fff",fontWeight:600,margin:0}}>{usdF(pm.client_amount_usd)}</p></div>
-              <div><p style={{color:"rgba(255,255,255,0.4)",margin:"0 0 2px",fontSize:10,fontWeight:700}}>GIRO AL EXTERIOR</p><p style={{color:"#fff",fontWeight:600,margin:0}}>{usdF(pm.giro_amount_usd||0)}</p></div>
+              <div>
+                <p style={{color:"rgba(255,255,255,0.4)",margin:"0 0 2px",fontSize:10,fontWeight:700}}>CLIENTE PAGA</p>
+                <p style={{color:"#fff",fontWeight:600,margin:0}}>{usdF(pm.client_amount_usd)}</p>
+                {pm.client_currency==="ARS"&&pm.client_amount_ars&&<p style={{fontSize:10,color:"#60a5fa",margin:"2px 0 0",fontWeight:500}}>ARS {Number(pm.client_amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} @ {pm.client_exchange_rate}</p>}
+                <p style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",margin:"2px 0 0",fontWeight:500}}>{({transferencia:"Transferencia",efectivo:"Contado",tarjeta_debito:"Débito",tarjeta_credito:"💳 TC",cripto:"Cripto"})[pm.client_payment_method]||pm.client_payment_method}</p>
+              </div>
+              <div>
+                <p style={{color:"rgba(255,255,255,0.4)",margin:"0 0 2px",fontSize:10,fontWeight:700}}>GIRO AL EXTERIOR</p>
+                <p style={{color:"#fff",fontWeight:600,margin:0}}>{usdF(pm.giro_amount_usd||0)}</p>
+                {pm.giro_currency==="ARS"&&pm.giro_amount_ars&&<p style={{fontSize:10,color:"#60a5fa",margin:"2px 0 0",fontWeight:500}}>ARS {Number(pm.giro_amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} @ {pm.giro_exchange_rate}</p>}
+                <p style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",margin:"2px 0 0",fontWeight:500}}>{({efectivo:"Contado",transferencia:"Transferencia",tarjeta_debito:"Débito",tarjeta_credito:"💳 TC"})[pm.giro_payment_method]||pm.giro_payment_method}</p>
+              </div>
               <div><p style={{color:"rgba(255,255,255,0.4)",margin:"0 0 2px",fontSize:10,fontWeight:700}}>COMISIÓN GIRO</p><p style={{color:"#ff6b6b",fontWeight:600,margin:0}}>{usdF(pm.cost_comision_giro||0)}</p></div>
               <div><p style={{color:"rgba(255,255,255,0.4)",margin:"0 0 2px",fontSize:10,fontWeight:700}}>GANANCIA</p><p style={{color:gan>=0?"#22c55e":"#ff6b6b",fontWeight:700,margin:0}}>{usdF(gan)}</p></div>
             </div>
@@ -1752,12 +1791,23 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                 border={`${gs.c}33`}
                 onClick={pm.giro_status!=="confirmado"?cycleGiro:null}
               />
-              {/* Card: Tarjeta (solo si aplica) */}
+              {/* Card: TC del cobro (cliente pagó con su tarjeta de crédito) */}
+              {isCliTC&&<StatusCard
+                label="TC Cobro"
+                value={pm.client_paid_tarjeta_paid?"Debitada":"Pendiente"}
+                sub={pm.client_paid_tarjeta_paid?(pm.client_paid_tarjeta_paid_at?`Cobrado ${formatDate(pm.client_paid_tarjeta_paid_at)}`:null):(pm.client_paid_card_closing?`Cierre ${formatDate(pm.client_paid_card_closing)}`:"Click cuando se acredite")}
+                icon="💳"
+                color={pm.client_paid_tarjeta_paid?"#22c55e":"#fbbf24"}
+                bg={pm.client_paid_tarjeta_paid?"rgba(34,197,94,0.08)":"rgba(251,191,36,0.06)"}
+                border={pm.client_paid_tarjeta_paid?"rgba(34,197,94,0.25)":"rgba(251,191,36,0.25)"}
+                onClick={pm.client_paid_tarjeta_paid?null:markCliTarjDeb}
+              />}
+              {/* Card: TC del giro (Argencargo paga giro con TC) */}
               {isTarj&&<StatusCard
-                label="Tarjeta de crédito"
+                label="TC Giro"
                 value={pm.giro_tarjeta_paid?"Debitada":"Pendiente"}
-                sub={pm.giro_tarjeta_paid?(pm.giro_tarjeta_paid_at?`Debitada ${formatDate(pm.giro_tarjeta_paid_at)}`:null):(pm.giro_tarjeta_due_date?`Débito estimado ${formatDate(pm.giro_tarjeta_due_date)}`:"Click para marcar debitada")}
-                icon={pm.giro_tarjeta_paid?"💳":"💳"}
+                sub={pm.giro_tarjeta_paid?(pm.giro_tarjeta_paid_at?`Debitada ${formatDate(pm.giro_tarjeta_paid_at)}`:null):(pm.giro_tarjeta_due_date?`Cierre ${formatDate(pm.giro_tarjeta_due_date)}`:"Click para marcar debitada")}
+                icon="💳"
                 color={pm.giro_tarjeta_paid?"#22c55e":"#fbbf24"}
                 bg={pm.giro_tarjeta_paid?"rgba(34,197,94,0.08)":"rgba(251,191,36,0.06)"}
                 border={pm.giro_tarjeta_paid?"rgba(34,197,94,0.25)":"rgba(251,191,36,0.25)"}
@@ -1771,28 +1821,57 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {payments.length===0&&!showNewPmt&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>No hay gestiones de pago.</p>}
       </Card>
       {showNewPmt&&<Card title="Nueva gestión de pago">
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
-          <Inp label="Monto que paga el cliente (USD)" type="number" value={newPmt.client_amount_usd} onChange={v=>setNewPmt(p=>({...p,client_amount_usd:v}))} step="0.01"/>
-          <Inp label="Monto a girar al exterior (USD)" type="number" value={newPmt.giro_amount_usd} onChange={v=>setNewPmt(p=>({...p,giro_amount_usd:v}))} step="0.01"/>
-          <Inp label="Comisión del servicio de giro (USD)" type="number" value={newPmt.cost_comision_giro} onChange={v=>setNewPmt(p=>({...p,cost_comision_giro:v}))} step="0.01"/>
+        <Inp label="Descripción" value={newPmt.description} onChange={v=>setNewPmt(p=>({...p,description:v}))} placeholder="Ej: Pago proveedor Alibaba"/>
+        {/* ============ COBRO AL CLIENTE ============ */}
+        <div style={{marginTop:14,padding:"14px 16px",background:"rgba(34,197,94,0.04)",border:"1px solid rgba(34,197,94,0.18)",borderRadius:10}}>
+          <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>💰 Cobro al cliente</p>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 14px"}}>
+            <Sel label="Moneda" value={newPmt.client_currency||"USD"} onChange={v=>setNewPmt(p=>({...p,client_currency:v}))} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]}/>
+            <Sel label="Método" value={newPmt.client_payment_method} onChange={v=>setNewPmt(p=>({...p,client_payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Contado"},{value:"tarjeta_debito",label:"Tarjeta de Débito"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"cripto",label:"Cripto"}]}/>
+            <div/>
+          </div>
+          {newPmt.client_currency==="USD"
+            ?<Inp label="Monto USD" type="number" value={newPmt.client_amount_usd} onChange={v=>setNewPmt(p=>({...p,client_amount_usd:v}))} step="0.01"/>
+            :<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+              <Inp label="Monto ARS" type="number" value={newPmt.client_amount_ars} onChange={v=>setNewPmt(p=>({...p,client_amount_ars:v}))} step="0.01"/>
+              <Inp label="TC ARS/USD" type="number" value={newPmt.client_exchange_rate} onChange={v=>setNewPmt(p=>({...p,client_exchange_rate:v}))} step="0.01" placeholder="Ej: 1420"/>
+            </div>}
+          {newPmt.client_payment_method==="tarjeta_credito"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px",marginTop:8}}>
+            <Inp label="Cierre de tarjeta" type="date" value={newPmt.client_paid_card_closing||""} onChange={v=>setNewPmt(p=>({...p,client_paid_card_closing:v}))}/>
+            <div style={{paddingTop:18}}><CreditCardPicker token={token} value={newPmt.client_paid_credit_card_id} onChange={v=>setNewPmt(p=>({...p,client_paid_credit_card_id:v}))} required/></div>
+          </div>}
+          {newPmt.client_currency==="ARS"&&newPmt.client_payment_method==="tarjeta_credito"&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"6px 0 0",fontStyle:"italic"}}>⚠ ARS con TC: queda pendiente de dolarizar hasta el cierre de la tarjeta.</p>}
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
-          <Inp label="Descripción" value={newPmt.description} onChange={v=>setNewPmt(p=>({...p,description:v}))} placeholder="Ej: Pago proveedor Alibaba"/>
-          <Sel label="Método de pago del cliente" value={newPmt.client_payment_method} onChange={v=>setNewPmt(p=>({...p,client_payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Efectivo"},{value:"cripto",label:"Cripto"}]}/>
+        {/* ============ COSTO (GIRO AL EXTERIOR) ============ */}
+        <div style={{marginTop:12,padding:"14px 16px",background:"rgba(184,149,106,0.04)",border:"1px solid rgba(184,149,106,0.18)",borderRadius:10}}>
+          <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>💸 Costo · Giro al exterior</p>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 14px"}}>
+            <Sel label="Moneda" value={newPmt.giro_currency||"USD"} onChange={v=>setNewPmt(p=>({...p,giro_currency:v}))} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]}/>
+            <Sel label="Método" value={newPmt.giro_payment_method||"efectivo"} onChange={v=>setNewPmt(p=>({...p,giro_payment_method:v}))} options={[{value:"efectivo",label:"Contado"},{value:"transferencia",label:"Transferencia"},{value:"tarjeta_debito",label:"Tarjeta de Débito"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"}]}/>
+            <Inp label="Comisión giro (USD)" type="number" value={newPmt.cost_comision_giro} onChange={v=>setNewPmt(p=>({...p,cost_comision_giro:v}))} step="0.01"/>
+          </div>
+          {newPmt.giro_currency==="USD"
+            ?<Inp label="Monto USD" type="number" value={newPmt.giro_amount_usd} onChange={v=>setNewPmt(p=>({...p,giro_amount_usd:v}))} step="0.01"/>
+            :<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+              <Inp label="Monto ARS" type="number" value={newPmt.giro_amount_ars} onChange={v=>setNewPmt(p=>({...p,giro_amount_ars:v}))} step="0.01"/>
+              <Inp label="TC ARS/USD" type="number" value={newPmt.giro_exchange_rate} onChange={v=>setNewPmt(p=>({...p,giro_exchange_rate:v}))} step="0.01" placeholder="Ej: 1420"/>
+            </div>}
+          {newPmt.giro_payment_method==="tarjeta_credito"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px",marginTop:8}}>
+            <Inp label="Cierre de tarjeta" type="date" value={newPmt.giro_tarjeta_due_date||""} onChange={v=>setNewPmt(p=>({...p,giro_tarjeta_due_date:v}))}/>
+            <div style={{paddingTop:18}}><CreditCardPicker token={token} value={newPmt.giro_credit_card_id} onChange={v=>setNewPmt(p=>({...p,giro_credit_card_id:v}))} required/></div>
+          </div>}
+          {newPmt.giro_currency==="ARS"&&newPmt.giro_payment_method==="tarjeta_credito"&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"6px 0 0",fontStyle:"italic"}}>⚠ ARS con TC: queda pendiente de dolarizar hasta el cierre de la tarjeta.</p>}
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
-          <Sel label="Cómo pagaste el giro" value={newPmt.giro_payment_method||"efectivo"} onChange={v=>setNewPmt(p=>({...p,giro_payment_method:v}))} options={[{value:"efectivo",label:"Efectivo"},{value:"transferencia",label:"Transferencia"},{value:"tarjeta_credito",label:"💳 Tarjeta de crédito"}]}/>
-          {newPmt.giro_payment_method==="tarjeta_credito"&&<Inp label="Fecha de débito estimada" type="date" value={newPmt.giro_tarjeta_due_date||""} onChange={v=>setNewPmt(p=>({...p,giro_tarjeta_due_date:v}))}/>}
-        </div>
-        {newPmt.giro_payment_method==="tarjeta_credito"&&<div style={{marginBottom:12}}>
-          <CreditCardPicker token={token} value={newPmt.giro_credit_card_id} onChange={v=>setNewPmt(p=>({...p,giro_credit_card_id:v}))} required/>
-        </div>}
-        {newPmt.giro_payment_method==="tarjeta_credito"&&Number(newPmt.giro_amount_usd||0)>0&&<div style={{background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8,padding:"10px 14px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span style={{fontSize:12,color:"#fbbf24",fontWeight:600}}>💳 Se debitará de tu tarjeta</span>
-          <span style={{fontSize:14,fontWeight:700,color:"#fbbf24"}}>{usdF(newPmt.giro_amount_usd||0)}</span>
-        </div>}
-        {Number(newPmt.client_amount_usd||0)>0&&Number(newPmt.giro_amount_usd||0)>0&&<div style={{background:"rgba(34,197,94,0.06)",borderRadius:8,padding:12,marginBottom:12,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Ganancia estimada</span><span style={{fontSize:14,fontWeight:700,color:"#22c55e"}}>{usdF(Number(newPmt.client_amount_usd)-Number(newPmt.giro_amount_usd)-Number(newPmt.cost_comision_giro||0))}</span></div>}
-        <div style={{display:"flex",gap:8}}><Btn onClick={savePmt} disabled={saving}>{saving?"Guardando...":"Guardar"}</Btn><Btn variant="secondary" onClick={()=>setShowNewPmt(false)}>Cancelar</Btn></div>
+        {/* Ganancia estimada */}
+        {(()=>{
+          const cliUsd=newPmt.client_currency==="ARS"?(Number(newPmt.client_amount_ars||0)&&Number(newPmt.client_exchange_rate||0)?Number(newPmt.client_amount_ars)/Number(newPmt.client_exchange_rate):0):Number(newPmt.client_amount_usd||0);
+          const giroUsd=newPmt.giro_currency==="ARS"?(Number(newPmt.giro_amount_ars||0)&&Number(newPmt.giro_exchange_rate||0)?Number(newPmt.giro_amount_ars)/Number(newPmt.giro_exchange_rate):0):Number(newPmt.giro_amount_usd||0);
+          const com=Number(newPmt.cost_comision_giro||0);
+          if(!cliUsd||!giroUsd)return null;
+          const gan=cliUsd-giroUsd-com;
+          return <div style={{background:gan>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)",border:`1px solid ${gan>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,borderRadius:8,padding:12,marginTop:12,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>Ganancia estimada</span><span style={{fontSize:14,fontWeight:700,color:gan>=0?"#22c55e":"#ff6b6b"}}>{usdF(gan)}</span></div>;
+        })()}
+        <div style={{display:"flex",gap:8,marginTop:12}}><Btn onClick={savePmt} disabled={saving}>{saving?"Guardando...":"Guardar"}</Btn><Btn variant="secondary" onClick={()=>setShowNewPmt(false)}>Cancelar</Btn></div>
       </Card>}
       </>;
     })()}
