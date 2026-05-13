@@ -199,7 +199,7 @@ function OperationsList({token,onSelect,onNew}){
   const selectAll=(rows)=>setSelectedIds(new Set(rows.map(o=>o.id)));
   const exportCSV=(rows)=>{
     const headers=["Código","Cliente","Descripción","Canal","Estado","ETA","Presupuesto","Cobrado","Cobrada","Ganancia"];
-    const csv=[headers.join(",")].concat(rows.map(o=>{const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"";const gan=calcGan(o);return [o.operation_code,`"${cn.replace(/"/g,'""')}"`,`"${(o.description||"").replace(/"/g,'""')}"`,o.channel||"",o.status||"",o.eta||"",Number(o.budget_total||0).toFixed(2),Number(o.collected_amount||0).toFixed(2),o.is_collected?"Sí":"No",gan.toFixed(2)].join(",");})).join("\n");
+    const csv=[headers.join(",")].concat(rows.map(o=>{const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"";const gan=calcGan(o);return [o.operation_code,`"${cn.replace(/"/g,'""')}"`,`"${(o.description||"").replace(/"/g,'""')}"`,o.channel||"",o.status||"",o.eta||"",Number(o.budget_total||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),Number(o.collected_amount||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),o.is_collected?"Sí":"No",gan.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})].join(",");})).join("\n");
     const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");a.href=url;a.download=`operaciones_${new Date().toISOString().slice(0,10)}.csv`;a.click();
@@ -569,7 +569,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
       setOp(p=>({...p,...opUpdate}));
       await load();
-      setMsg(newTotal>=budgetTot?`✓ Cobro registrado · op cobrada (saldo $0)`:`✓ Cobro registrado · saldo USD ${(budgetTot-newTotal).toFixed(2)}`);
+      setMsg(newTotal>=budgetTot?`✓ Cobro registrado · op cobrada (saldo $0)`:`✓ Cobro registrado · saldo USD ${(budgetTot-newTotal).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
       setTimeout(()=>setMsg(""),4000);
       setShowAddPayment(false);
     }catch(e){alert("Error: "+e.message);}
@@ -577,7 +577,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   };
   const loadRedemptions=async()=>{if(!op.client_id)return;const r=await dq("client_reward_redemptions",{token,filters:`?client_id=eq.${op.client_id}&status=eq.pending&select=*&order=redeemed_at.asc`});setPendingRedemptions(Array.isArray(r)?r:[]);};
   const applyRedemption=async(red)=>{
-    if(!confirm(`Aplicar "${red.reward_name}" a esta operación?\n\nSe va a descontar ${Number(red.value_usd||0).toFixed(2)} USD del flete y el canje quedará marcado como usado.`))return;
+    if(!confirm(`Aplicar "${red.reward_name}" a esta operación?\n\nSe va a descontar ${Number(red.value_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} USD del flete y el canje quedará marcado como usado.`))return;
     const r=await dq("rpc/apply_redemption_to_op",{method:"POST",token,body:{p_redemption_id:red.id,p_op_id:op.id}});
     if(r?.ok){
       // Restar del budget_flete (y del total) si aplica
@@ -698,7 +698,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       try{
         const vr=await dq("rpc/apply_tier_voucher_to_op",{method:"POST",token,body:{p_op_id:op.id}});
         if(vr?.applied){
-          tierVoucherMsg=` · ★ Descuento ${String(vr.tier).toUpperCase()} aplicado: -USD ${Number(vr.discount_usd).toFixed(2)}`;
+          tierVoucherMsg=` · ★ Descuento ${String(vr.tier).toUpperCase()} aplicado: -USD ${Number(vr.discount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
           // Refrescamos op en UI
           const fresh=await dq("operations",{token,filters:`?id=eq.${op.id}&select=*,clients(first_name,last_name,client_code)`});
           if(Array.isArray(fresh)&&fresh[0])setOp(fresh[0]);
@@ -901,8 +901,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const debtApp=Number(op.debt_applied_usd||0); // deuda anterior sumada a esta op
     // Saldo real = (budget + deuda anterior) - (anticipos + cobros + saldo a favor aplicado)
     const saldo=Math.max(0,bt+debtApp-totAnt-collected-creditApp);
-    const creditTxt=creditApp>0?`\n\n_Se debitó USD ${creditApp.toFixed(2)} del saldo a favor que tenías en tu cuenta._`:"";
-    const saldoTxt=(saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toFixed(2)}*`:"")+creditTxt;
+    const creditTxt=creditApp>0?`\n\n_Se debitó USD ${creditApp.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} del saldo a favor que tenías en tu cuenta._`:"";
+    const saldoTxt=(saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}*`:"")+creditTxt;
     // Si la op tiene envío a domicilio, usar template wa_envio (con desglose) en lugar de wa_retiro.
     const useEnvio=trigger==="retiro"&&op.shipping_to_door&&envioCost>0;
     const tplKey=useEnvio?"wa_envio":`wa_${trigger}`;
@@ -940,10 +940,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     // Calcular peso facturable actual usando divisor del agente
     const billable=pkgs.reduce((s,p)=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/agentVolDiv)*q:0;return s+Math.max(b,v);},0);
     const snapshot=pkgs.map(p=>({package_number:p.package_number,quantity:Number(p.quantity||1),gross_weight_kg:p.gross_weight_kg?Number(p.gross_weight_kg):null,length_cm:p.length_cm?Number(p.length_cm):null,width_cm:p.width_cm?Number(p.width_cm):null,height_cm:p.height_cm?Number(p.height_cm):null,national_tracking:p.national_tracking||null}));
-    const r=await dq("repack_requests",{method:"POST",token,body:{operation_id:op.id,status:"pending",reason:reason||null,original_billable_kg:Number(billable.toFixed(2)),original_pkg_count:pkgs.length,original_packages_snapshot:snapshot}});
+    const r=await dq("repack_requests",{method:"POST",token,body:{operation_id:op.id,status:"pending",reason:reason||null,original_billable_kg:Math.round((billable)*100)/100,original_pkg_count:pkgs.length,original_packages_snapshot:snapshot}});
     setRepackReq(Array.isArray(r)?r[0]:r);
     // Auto-log en comms
-    try{await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"note",content:`🔄 Pedido de reempaque al agente.\nPeso facturable actual: ${billable.toFixed(2)} kg (${pkgs.length} bultos)${reason?`\nMotivo: ${reason}`:""}`}});}catch(e){}
+    try{await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"note",content:`🔄 Pedido de reempaque al agente.\nPeso facturable actual: ${billable.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg (${pkgs.length} bultos)${reason?`\nMotivo: ${reason}`:""}`}});}catch(e){}
     // Push al agente
     if(op.created_by_agent_id){try{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:op.created_by_agent_id,title:`🔄 Pedido de reempaque ${op.operation_code}`,body:reason||`Reempaquetar para bajar volumétrico (${billable.toFixed(1)} kg)`,url:`/agente?tab=deposit`})});}catch(e){}}
     flash("✅ Pedido de reempaque enviado al agente");
@@ -1054,7 +1054,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {repackReq&&repackReq.status==="pending"&&<div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.4)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <div style={{flex:1,minWidth:200}}>
         <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:0}}>⏳ Reempaque pendiente — el agente todavía no completó</p>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Pedido el {new Date(repackReq.requested_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})} · Peso original: {Number(repackReq.original_billable_kg||0).toFixed(2)} kg ({repackReq.original_pkg_count} bultos){repackReq.reason?` · "${repackReq.reason}"`:""}</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Pedido el {new Date(repackReq.requested_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})} · Peso original: {Number(repackReq.original_billable_kg||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg ({repackReq.original_pkg_count} bultos){repackReq.reason?` · "${repackReq.reason}"`:""}</p>
       </div>
       <Btn small variant="secondary" onClick={cancelRepack}>Cancelar pedido</Btn>
     </div>}
@@ -1062,11 +1062,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:240}}>
           <p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✅ Reempaque completado por el agente</p>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0"}}>Peso facturable: <strong style={{color:"#fff"}}>{before.toFixed(2)} kg → {after.toFixed(2)} kg</strong>{delta>0&&<span style={{color:"#22c55e",marginLeft:6,fontWeight:700}}>(−{delta.toFixed(2)} kg / −{pct.toFixed(0)}%)</span>}{repackReq.agent_notes?` · ${repackReq.agent_notes}`:""}</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0"}}>Peso facturable: <strong style={{color:"#fff"}}>{before.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg → {after.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong>{delta>0&&<span style={{color:"#22c55e",marginLeft:6,fontWeight:700}}>(−{delta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg / −{pct.toFixed(0)}%)</span>}{repackReq.agent_notes?` · ${repackReq.agent_notes}`:""}</p>
         </div>
         {hasSnap&&<button onClick={()=>setShowRepackDetail(p=>!p)} style={{padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.10)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>{showRepackDetail?"Ocultar detalle":"Ver bultos antes/después"}</button>}
       </div>
-      {hasSnap&&showRepackDetail&&(()=>{const fmt=(p)=>{const dim=p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}cm`:"—";const w=p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—";const q=p.quantity>1?` ×${p.quantity}`:"";return {dim,w,q,trk:p.national_tracking||"—"};};const renderTbl=(snap,label,tone)=>!snap?<div style={{flex:1,padding:12,fontSize:11,color:"rgba(255,255,255,0.45)",fontStyle:"italic",textAlign:"center"}}>Sin snapshot ({label.toLowerCase()})</div>:<div style={{flex:1,minWidth:260}}>
+      {hasSnap&&showRepackDetail&&(()=>{const fmt=(p)=>{const dim=p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}cm`:"—";const w=p.gross_weight_kg?`${Number(p.gross_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—";const q=p.quantity>1?` ×${p.quantity}`:"";return {dim,w,q,trk:p.national_tracking||"—"};};const renderTbl=(snap,label,tone)=>!snap?<div style={{flex:1,padding:12,fontSize:11,color:"rgba(255,255,255,0.45)",fontStyle:"italic",textAlign:"center"}}>Sin snapshot ({label.toLowerCase()})</div>:<div style={{flex:1,minWidth:260}}>
         <p style={{fontSize:10,fontWeight:700,color:tone,margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{label} · {snap.length} bulto{snap.length!==1?"s":""}</p>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{["#","Tracking","Dim","Peso"].map(h=><th key={h} style={{textAlign:"left",padding:"4px 6px",color:"rgba(255,255,255,0.4)",fontWeight:700,fontSize:9,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
@@ -1082,7 +1082,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {pendingRedemptions.length>0&&<div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:10}}>
       <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>⭐ Canje de puntos pendiente{pendingRedemptions.length>1?"s":""}</p>
       {pendingRedemptions.map(r=><div key={r.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"8px 0",borderTop:"1px solid rgba(251,191,36,0.15)",flexWrap:"wrap"}}>
-        <div style={{flex:1,minWidth:200}}><p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>{r.reward_name}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Canjeado {new Date(r.redeemed_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})} · {r.points_spent} pts · {Number(r.value_usd).toFixed(2)} USD</p></div>
+        <div style={{flex:1,minWidth:200}}><p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>{r.reward_name}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Canjeado {new Date(r.redeemed_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})} · {r.points_spent} pts · {Number(r.value_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} USD</p></div>
         <div style={{display:"flex",gap:6}}><Btn small onClick={()=>applyRedemption(r)}>Aplicar a esta op</Btn><Btn small variant="danger" onClick={()=>cancelRedemption(r)}>Cancelar</Btn></div>
       </div>)}
     </div>}
@@ -1156,9 +1156,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         // 4. Creación
         if(op.created_at)items.push({t:"created",at:op.created_at,color:GOLD_LIGHT,title:"Operación creada",kind:"Inicio"});
         // 5. Cobrada
-        if(op.is_collected&&op.collection_date)items.push({t:"collected",at:op.collection_date,color:"#22c55e",title:`Cobrada · USD ${Number(op.collected_amount||op.budget_total||0).toFixed(2)}`,kind:"Cobro"});
+        if(op.is_collected&&op.collection_date)items.push({t:"collected",at:op.collection_date,color:"#22c55e",title:`Cobrada · USD ${Number(op.collected_amount||op.budget_total||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`,kind:"Cobro"});
         // 6. Descuento tier aplicado
-        if(op.tier_discount_applied_usd>0)items.push({t:"discount",at:op.closed_at||op.updated_at,color:"#E8D098",title:`Descuento ${String(op.tier_discount_applied||"").toUpperCase()} aplicado · -USD ${Number(op.tier_discount_applied_usd).toFixed(2)}`,kind:"Beneficio"});
+        if(op.tier_discount_applied_usd>0)items.push({t:"discount",at:op.closed_at||op.updated_at,color:"#E8D098",title:`Descuento ${String(op.tier_discount_applied||"").toUpperCase()} aplicado · -USD ${Number(op.tier_discount_applied_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`,kind:"Beneficio"});
 
         items.sort((a,b)=>new Date(b.at)-new Date(a.at));
         if(items.length===0)return null;
@@ -1257,11 +1257,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {/* Canal B: input para valor de mercadería (base del recargo por valor) */}
         {!isBlanco&&<div style={{marginBottom:14,padding:"12px 14px",background:"rgba(96,165,250,0.05)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:12,alignItems:"end"}}>
-            <Inp label="Valor mercadería (USD) — para cálculo de recargo por valor" type="number" value={op.merchandise_value_usd||""} onChange={v=>chOp("merchandise_value_usd")(v)} step="0.01" placeholder={totalFob>0?`Suma productos: ${totalFob.toFixed(2)}`:"Ej: 15000"} small/>
+            <Inp label="Valor mercadería (USD) — para cálculo de recargo por valor" type="number" value={op.merchandise_value_usd||""} onChange={v=>chOp("merchandise_value_usd")(v)} step="0.01" placeholder={totalFob>0?`Suma productos: ${totalFob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"Ej: 15000"} small/>
             <Btn small variant="secondary" onClick={async()=>{setSaving(true);const mv=Number(op.merchandise_value_usd||0)||null;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{merchandise_value_usd:mv}});setOp(p=>({...p,merchandise_value_usd:mv}));autoSyncBudget();flash("Valor mercadería guardado");setSaving(false);}} disabled={saving}>{saving?"Guardando...":"Guardar y recalcular"}</Btn>
           </div>
           <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"8px 0 0",fontStyle:"italic"}}>
-            {(()=>{const amtForVpu=op.channel?.includes("aereo")?(op.channel==="aereo_negro"?totGW:pf):totCBM;const merchVal=Number(op.merchandise_value_usd||0)||totalFob;if(merchVal<=0||amtForVpu<=0)return "Cargá valor mercadería + bultos para calcular el recargo.";const vpu=merchVal/amtForVpu;const u=op.channel?.includes("aereo")?"kg":"CBM";return `Valor por ${u}: USD ${vpu.toFixed(2)}. ${surchargePct>0?`→ Recargo del ${surchargePct}% aplicado.`:"→ No aplica recargo (valor bajo el umbral)."}`;})()}
+            {(()=>{const amtForVpu=op.channel?.includes("aereo")?(op.channel==="aereo_negro"?totGW:pf):totCBM;const merchVal=Number(op.merchandise_value_usd||0)||totalFob;if(merchVal<=0||amtForVpu<=0)return "Cargá valor mercadería + bultos para calcular el recargo.";const vpu=merchVal/amtForVpu;const u=op.channel?.includes("aereo")?"kg":"CBM";return `Valor por ${u}: USD ${vpu.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}. ${surchargePct>0?`→ Recargo del ${surchargePct}% aplicado.`:"→ No aplica recargo (valor bajo el umbral)."}`;})()}
           </p>
         </div>}
         {isBlanco?<>
@@ -1296,7 +1296,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                   </div>
                   <div>
                     <p style={{fontSize:13,fontWeight:op.shipping_to_door?700:600,color:op.shipping_to_door?"#22c55e":"rgba(255,255,255,0.6)",margin:0,letterSpacing:"0.02em"}}>Envío a domicilio</p>
-                    <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{op.shipping_to_door?`Suma USD ${Number(op.shipping_cost||0).toFixed(2)} al total`:"Retiro por oficina"}</p>
+                    <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{op.shipping_to_door?`Suma USD ${Number(op.shipping_cost||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} al total`:"Retiro por oficina"}</p>
                   </div>
                 </div>
                 {op.shipping_to_door&&<div style={{minWidth:160}}>
@@ -1341,7 +1341,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <p style={{fontSize:11,fontWeight:800,color:"#fbbf24",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.05em"}}>⚠ Posible intervención: {p.intervention.types.join(" · ")}</p>
             {p.intervention.reason&&<p style={{fontSize:11,color:"rgba(255,255,255,0.7)",margin:0}}>{p.intervention.reason}</p>}
           </div>}
-          <p style={{fontSize:11,color:"#a78bfa",margin:"0 0 10px"}}>💰 Impuestos estimados: <strong style={{color:"#fff"}}>USD {taxes.toFixed(2)}</strong> sobre FOB USD {fobX.toFixed(2)}</p>
+          <p style={{fontSize:11,color:"#a78bfa",margin:"0 0 10px"}}>💰 Impuestos estimados: <strong style={{color:"#fff"}}>USD {taxes.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong> sobre FOB USD {fobX.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
           <div style={{display:"flex",gap:8}}>
             <Btn small onClick={()=>applyClassification(it)}>✓ Aplicar y sincronizar presupuesto</Btn>
             <Btn small variant="secondary" onClick={()=>classifyOne(it)}>🔄 Re-clasificar</Btn>
@@ -1358,7 +1358,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <Inp label="DIE %" type="number" value={it.import_duty_rate??0} onChange={v=>chItem(i,"import_duty_rate",v)} step="0.01" small/>
             <Inp label="TE %" type="number" value={it.statistics_rate??0} onChange={v=>chItem(i,"statistics_rate",v)} step="0.01" small/>
             <Inp label="IVA %" type="number" value={it.iva_rate??21} onChange={v=>chItem(i,"iva_rate",v)} step="0.01" small/>
-            {isAereo&&(()=>{const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const totalFob=items.reduce((s,x)=>s+Number(x.unit_price_usd||0)*Number(x.quantity||1),0);const pct=totalFob>0?itemFob/totalFob:1;let pf=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);pf+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});const certFl=pf*(config.cert_flete_aereo_ficticio||3.5);const cif=(totalFob+certFl)*1.01;const desemb=((c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;})(cif);const propDesemb=desemb*pct;const ivaD=propDesemb*0.21;return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>GASTO DOC. (auto)</label><div style={{padding:"8px 10px",fontSize:13,borderRadius:8,background:"rgba(184,149,106,0.08)",border:"1.5px solid rgba(184,149,106,0.2)",color:IC,fontWeight:600}}>USD {(propDesemb+ivaD).toFixed(2)}</div></div>;})()}
+            {isAereo&&(()=>{const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const totalFob=items.reduce((s,x)=>s+Number(x.unit_price_usd||0)*Number(x.quantity||1),0);const pct=totalFob>0?itemFob/totalFob:1;let pf=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);pf+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});const certFl=pf*(config.cert_flete_aereo_ficticio||3.5);const cif=(totalFob+certFl)*1.01;const desemb=((c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;})(cif);const propDesemb=desemb*pct;const ivaD=propDesemb*0.21;return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>GASTO DOC. (auto)</label><div style={{padding:"8px 10px",fontSize:13,borderRadius:8,background:"rgba(184,149,106,0.08)",border:"1.5px solid rgba(184,149,106,0.2)",color:IC,fontWeight:600}}>USD {(propDesemb+ivaD).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>;})()}
             {isMaritimo&&<><Inp label="IVA Adic. %" type="number" value={it.iva_additional_rate} onChange={v=>chItem(i,"iva_additional_rate",v)} step="0.01" small/>
             <Inp label="IIGG %" type="number" value={it.iigg_rate} onChange={v=>chItem(i,"iigg_rate",v)} step="0.01" small/>
             <Inp label="IIBB %" type="number" value={it.iibb_rate} onChange={v=>chItem(i,"iibb_rate",v)} step="0.01" small/></>}
@@ -1472,7 +1472,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                 <td style={{padding:"10px 14px",textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
                   {p.currency==="ARS"?<>
                     <span style={{color:isRefund?"#22c55e":"#60a5fa",fontWeight:700}}>{isRefund?"− ":""}ARS {Number(p.amount_ars||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-                    {Number(p.amount_usd||0)>0?<span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.5)",fontWeight:500}}>= USD {Number(p.amount_usd).toFixed(2)} @ {Number(p.exchange_rate||0).toFixed(2)}</span>:<span style={{display:"block",fontSize:10,color:"rgba(251,146,60,0.8)",fontWeight:500}}>pendiente dolarizar</span>}
+                    {Number(p.amount_usd||0)>0?<span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.5)",fontWeight:500}}>= USD {Number(p.amount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} @ {Number(p.exchange_rate||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>:<span style={{display:"block",fontSize:10,color:"rgba(251,146,60,0.8)",fontWeight:500}}>pendiente dolarizar</span>}
                   </>:<span style={{color:isRefund?"#22c55e":"#c084fc",fontWeight:700}}>{isRefund?"− ":""}USD {Number(p.amount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
                 </td>
                 <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.75)"}}>{p.notes||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</td>
@@ -1599,7 +1599,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
         {(bruto>0||vw>0)&&<div style={{display:"flex",gap:16,marginTop:8,fontSize:11,color:"rgba(255,255,255,0.4)"}}><span>Bruto total: <strong style={{color:"#fff"}}>{bruto.toFixed(1)} kg</strong></span>{vw>0&&<span>Vol: <strong style={{color:"#fff"}}>{vw.toFixed(1)} kg</strong></span>}{cbm>0&&<span>CBM: <strong style={{color:"#fff"}}>{cbm.toFixed(4)} m³</strong></span>}{vw>bruto&&<span style={{color:"#fb923c"}}>Volumétrico mayor</span>}</div>}
       </div>;})}
-      {pkgs.length>0&&(()=>{let pf=0,totGW=0,totCBM=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/agentVolDiv)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});return <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:12,marginTop:8,display:"flex",gap:20,alignItems:"baseline",flexWrap:"wrap"}}><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>PESO FACTURABLE</p><p style={{fontSize:16,fontWeight:700,color:IC,margin:0}}>{pf.toFixed(2)} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>PESO BRUTO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{totGW.toFixed(2)} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>CBM TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{totCBM.toFixed(4)} m³</p></div>{op.created_by_agent_id&&<div style={{marginLeft:"auto"}}><p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:0}}>Divisor agente: <strong style={{color:"#fff"}}>÷{agentVolDiv}</strong></p></div>}</div>;})()}
+      {pkgs.length>0&&(()=>{let pf=0,totGW=0,totCBM=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/agentVolDiv)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});return <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:12,marginTop:8,display:"flex",gap:20,alignItems:"baseline",flexWrap:"wrap"}}><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>PESO FACTURABLE</p><p style={{fontSize:16,fontWeight:700,color:IC,margin:0}}>{pf.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>PESO BRUTO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{totGW.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>CBM TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{totCBM.toFixed(4)} m³</p></div>{op.created_by_agent_id&&<div style={{marginLeft:"auto"}}><p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:0}}>Divisor agente: <strong style={{color:"#fff"}}>÷{agentVolDiv}</strong></p></div>}</div>;})()}
       {pkgs.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>No hay bultos.</p>}
     </Card>}
 
@@ -1723,7 +1723,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const toggleCliPaid=async()=>{
             if(pm.client_paid){if(confirm("¿Desmarcar cobro del cliente?")){await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{client_paid:false,client_paid_date:null,client_paid_amount_usd:null}});load();}return;}
             const expected=Number(pm.client_amount_usd||0);
-            const input=prompt(`¿Cuánto pagó el cliente en USD?\n(Esperado: USD ${expected.toFixed(2)})`,expected.toFixed(2));
+            const input=prompt(`¿Cuánto pagó el cliente en USD?\n(Esperado: USD ${expected.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`,expected.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}));
             if(input===null)return;
             const amt=Number(String(input).replace(",","."));
             if(isNaN(amt)||amt<0){alert("Monto inválido");return;}
@@ -1756,7 +1756,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                   <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>💰 Cobro al cliente</p>
                   <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:5,background:pm.client_paid?"rgba(34,197,94,0.15)":"rgba(251,191,36,0.15)",color:pm.client_paid?"#22c55e":"#fbbf24",textTransform:"uppercase",letterSpacing:"0.04em"}}>{pm.client_paid?"✓ Cobrado":"○ Pendiente"}</span>
                 </div>
-                <p style={{fontSize:24,fontWeight:800,color:"#fff",margin:"0 0 4px",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>USD {Number(pm.client_amount_usd||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+                <p style={{fontSize:24,fontWeight:800,color:"#fff",margin:"0 0 4px",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>USD {Number(pm.client_amount_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
                 {pm.client_currency==="ARS"&&pm.client_amount_ars&&<p style={{fontSize:12,color:"#60a5fa",margin:"0 0 8px",fontWeight:600,fontVariantNumeric:"tabular-nums"}}>ARS {Number(pm.client_amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} @ TC {pm.client_exchange_rate}</p>}
                 <div style={{display:"flex",flexDirection:"column",gap:4,fontSize:11.5,color:"rgba(255,255,255,0.7)",marginTop:6}}>
                   <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:"rgba(255,255,255,0.45)"}}>Método</span><span style={{color:"#fff",fontWeight:600}}>{methodLbl[cliMethod]||cliMethod}</span></div>
@@ -1779,7 +1779,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                   <p style={{fontSize:11,fontWeight:700,color:IC,margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>💸 Costo · Giro al exterior</p>
                   <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:5,background:`${gs.c}22`,color:gs.c,textTransform:"uppercase",letterSpacing:"0.04em"}}>{pm.giro_status==="confirmado"?"✓ ":pm.giro_status==="enviado"?"↗ ":"○ "}{gs.l}</span>
                 </div>
-                <p style={{fontSize:24,fontWeight:800,color:"#fff",margin:"0 0 4px",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>USD {Number(pm.giro_amount_usd||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+                <p style={{fontSize:24,fontWeight:800,color:"#fff",margin:"0 0 4px",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>USD {Number(pm.giro_amount_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
                 {pm.giro_currency==="ARS"&&pm.giro_amount_ars&&<p style={{fontSize:12,color:"#60a5fa",margin:"0 0 8px",fontWeight:600,fontVariantNumeric:"tabular-nums"}}>ARS {Number(pm.giro_amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} @ TC {pm.giro_exchange_rate}</p>}
                 <div style={{display:"flex",flexDirection:"column",gap:4,fontSize:11.5,color:"rgba(255,255,255,0.7)",marginTop:6}}>
                   <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:"rgba(255,255,255,0.45)"}}>Método</span><span style={{color:"#fff",fontWeight:600}}>{methodLbl[giroMethod]||giroMethod}</span></div>
@@ -1980,7 +1980,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <div style={{padding:"14px 18px",background:"rgba(255,80,80,0.05)",border:"1px solid rgba(255,80,80,0.18)",borderRadius:10}}>
               <p style={{fontSize:10,fontWeight:700,color:"#ff6b6b",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Pagado al proveedor</p>
               <p style={{fontSize:20,fontWeight:800,color:"#fff",margin:"0 0 4px",fontVariantNumeric:"tabular-nums"}}>{usdF(costoPagado)}</p>
-              <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:0}}>De USD {totalCostos.toFixed(2)} totales{costoPendiente>0.01?` · ${usdF(costoPendiente)} pendiente de pagar`:" · ✓ todo pagado"}</p>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:0}}>De USD {totalCostos.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} totales{costoPendiente>0.01?` · ${usdF(costoPendiente)} pendiente de pagar`:" · ✓ todo pagado"}</p>
             </div>
           </div>
           <div style={{padding:"14px 18px",background:cashNeto>=0?"rgba(255,255,255,0.03)":"rgba(251,146,60,0.06)",border:`1px solid ${cashNeto>=0?"rgba(255,255,255,0.08)":"rgba(251,146,60,0.2)"}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
@@ -2175,9 +2175,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           // Detectar overpayment → ofrecer registrarlo como saldo a favor en CC
           const diff=newTotal-budgetTot;
           if(budgetTot>0&&diff>0.01&&op.client_id){
-            if(confirm(`El cliente pagó USD ${diff.toFixed(2)} de más.\n\n¿Registrar el excedente como saldo a favor en la cuenta corriente del cliente?`)){
+            if(confirm(`El cliente pagó USD ${diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de más.\n\n¿Registrar el excedente como saldo a favor en la cuenta corriente del cliente?`)){
               await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`});
-              flash(`Saldo a favor registrado: +USD ${diff.toFixed(2)}`);
+              flash(`Saldo a favor registrado: +USD ${diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
             }
           }
           setNewCliPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
@@ -2197,29 +2197,29 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         };
         const closeWithDiscount=async()=>{
           if(saldoCli<=0.01)return;
-          if(!confirm(`Estás por cerrar esta op con un DESCUENTO de USD ${saldoCli.toFixed(2)}.\n\nEl cliente pagó USD ${totalCli.toFixed(2)} sobre un presupuesto de USD ${budgetTot.toFixed(2)}. La diferencia NO queda como deuda — queda como descuento intencional registrado en la op.\n\n¿Confirmás?`))return;
+          if(!confirm(`Estás por cerrar esta op con un DESCUENTO de USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}.\n\nEl cliente pagó USD ${totalCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} sobre un presupuesto de USD ${budgetTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}. La diferencia NO queda como deuda — queda como descuento intencional registrado en la op.\n\n¿Confirmás?`))return;
           const opUpdate={is_collected:true,collected_amount:totalCli,collection_date:new Date().toISOString().slice(0,10),discount_applied_usd:saldoCli};
           if(clientPayments.length>0){opUpdate.collection_method=clientPayments[clientPayments.length-1].payment_method;opUpdate.collection_currency=clientPayments[clientPayments.length-1].currency||"USD";}
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
           setOp(p=>({...p,...opUpdate}));
-          flash(`Op cerrada con descuento de USD ${saldoCli.toFixed(2)}`);
+          flash(`Op cerrada con descuento de USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
         };
         const registerDebt=async()=>{
           if(saldoCli<=0.01||!op.client_id)return;
-          if(!confirm(`El cliente quedó debiendo USD ${saldoCli.toFixed(2)}.\n\nVamos a registrarlo como deuda en su cuenta corriente (se podrá aplicar a próximas operaciones).\n\n¿Confirmás?`))return;
+          if(!confirm(`El cliente quedó debiendo USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}.\n\nVamos a registrarlo como deuda en su cuenta corriente (se podrá aplicar a próximas operaciones).\n\n¿Confirmás?`))return;
           const opUpdate={is_collected:true,collected_amount:totalCli,collection_date:new Date().toISOString().slice(0,10)};
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
           await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"debt",amount_usd:-saldoCli,description:`Deuda pendiente de ${op.operation_code}`});
           setOp(p=>({...p,...opUpdate}));
-          flash(`Deuda registrada: -USD ${saldoCli.toFixed(2)}`);
+          flash(`Deuda registrada: -USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
         };
         // 3a opción: dejar saldo pendiente dentro de la misma op (el cliente va a pagar el resto acá, no traspasa a CC).
         // No marca is_collected=true; no toca CC del cliente; no aplica descuento. La op queda visible como
         // "saldo pendiente" hasta que cargues los cobros adicionales que cierran la diferencia.
         const keepSaldoInOp=()=>{
           if(saldoCli<=0.01)return;
-          if(!confirm(`La op queda con saldo pendiente de USD ${saldoCli.toFixed(2)} dentro de esta misma operación.\n\nNO se registra como deuda en la cuenta corriente del cliente ni como descuento. Cuando el cliente pague el resto, cargás otro cobro acá y se cierra.\n\n¿Confirmás?`))return;
-          flash(`Saldo pendiente: USD ${saldoCli.toFixed(2)} — cargá el resto cuando llegue.`);
+          if(!confirm(`La op queda con saldo pendiente de USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} dentro de esta misma operación.\n\nNO se registra como deuda en la cuenta corriente del cliente ni como descuento. Cuando el cliente pague el resto, cargás otro cobro acá y se cierra.\n\n¿Confirmás?`))return;
+          flash(`Saldo pendiente: USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} — cargá el resto cuando llegue.`);
         };
         return <Card title="Anticipos / Pagos del cliente">
           <div style={{display:"flex",gap:16,marginBottom:12,flexWrap:"wrap",alignItems:"center",justifyContent:"space-between"}}>
@@ -2228,7 +2228,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               <span><b style={{color:"#22c55e"}}>Cobrado:</b> USD {totalCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
               {saldoCli>0.01&&<span><b style={{color:"#fb923c"}}>Saldo:</b> USD {saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
               {saldoCli<=0.01&&totalCli>0&&<span style={{color:"#22c55e",fontWeight:700}}>✓ Op cobrada</span>}
-              {Number(op.discount_applied_usd||0)>0&&<span style={{color:GOLD_LIGHT,fontWeight:700}}>🎟 Descuento USD {Number(op.discount_applied_usd).toFixed(2)}</span>}
+              {Number(op.discount_applied_usd||0)>0&&<span style={{color:GOLD_LIGHT,fontWeight:700}}>🎟 Descuento USD {Number(op.discount_applied_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
             </div>
             {saldoCli>0.01&&totalCli>0&&!op.is_collected&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               <Btn onClick={keepSaldoInOp} variant="secondary" small title="El saldo queda pendiente dentro de esta misma op. No traspasa a la CC del cliente.">⏳ Dejar saldo en op</Btn>
@@ -2307,14 +2307,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                 setOp(p=>({...p,collected_amount:cappedRaw}));
                 await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{collected_amount:cappedRaw,extra_charge_usd:0,is_collected:true,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",collection_fee_pct:Number(op.collection_fee_pct||0),...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
                 await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`});
-                flash(`Cobrada · saldo a favor +USD ${diff.toFixed(2)}`);
+                flash(`Cobrada · saldo a favor +USD ${diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
                 return;
               } else if(choice==="e"){
                 // Cargo extra: collected_amount se mantiene tal como lo cargó el admin (lo raw del form),
                 // se setea extra_charge_usd para trazabilidad. El revenue de la op crece naturalmente.
                 await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{collected_amount:cobroRaw,is_collected:true,extra_charge_usd:diff,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",collection_fee_pct:Number(op.collection_fee_pct||0),...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
                 setOp(p=>({...p,extra_charge_usd:diff,collected_amount:cobroRaw}));
-                flash(`Cobrada · cargo extra +USD ${diff.toFixed(2)} (revenue)`);
+                flash(`Cobrada · cargo extra +USD ${diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (revenue)`);
                 return;
               } else return;
             } else if(diff<-0.01){
@@ -2324,12 +2324,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                 await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{discount_applied_usd:Math.abs(diff)}});
                 setOp(p=>({...p,discount_applied_usd:Math.abs(diff)}));
                 await saveOp();
-                flash(`Cobrada con descuento de USD ${Math.abs(diff).toFixed(2)}`);
+                flash(`Cobrada con descuento de USD ${Math.abs(diff).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
                 return;
               } else if(choice==="c"){
                 await saveOp();
                 await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"debt",amount_usd:diff,description:`Deuda pendiente de ${op.operation_code}`});
-                flash(`Cobrada · deuda registrada -USD ${Math.abs(diff).toFixed(2)}`);
+                flash(`Cobrada · deuda registrada -USD ${Math.abs(diff).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
                 return;
               } else return;
             }
@@ -2340,7 +2340,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           if(creditBal<=0)return;
           const maxToApply=Math.min(creditBal,budgetTot-cobroUsd);
           if(maxToApply<=0){alert("No hay saldo pendiente por cubrir en esta op");return;}
-          const inpStr=window.prompt(`El cliente tiene USD ${creditBal.toFixed(2)} a favor.\n\n¿Cuánto aplicar a esta operación? (máximo USD ${maxToApply.toFixed(2)})`,maxToApply.toFixed(2));
+          const inpStr=window.prompt(`El cliente tiene USD ${creditBal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} a favor.\n\n¿Cuánto aplicar a esta operación? (máximo USD ${maxToApply.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`,maxToApply.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}));
           if(!inpStr)return;
           const amt=Number(inpStr);
           if(!amt||amt<=0||amt>creditBal+0.01){alert("Monto inválido");return;}
@@ -2348,7 +2348,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const newApplied=creditApplied+amt;
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{credit_applied_usd:newApplied}});
           setOp(p=>({...p,credit_applied_usd:newApplied}));
-          flash(`Aplicado USD ${amt.toFixed(2)} del saldo a favor`);
+          flash(`Aplicado USD ${amt.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} del saldo a favor`);
           // refetch client balance
           const fresh=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=account_balance_usd`});
           if(Array.isArray(fresh)&&fresh[0])setOpClient(p=>({...p,account_balance_usd:fresh[0].account_balance_usd}));
@@ -2358,12 +2358,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         const debtApplied=Number(op.debt_applied_usd||0);
         const applyDebt=async()=>{
           if(debtBal<=0)return;
-          if(!confirm(`El cliente debe USD ${debtBal.toFixed(2)} de operaciones anteriores.\n\n¿Sumar al cobro de esta op?\n\nLa deuda se cancelará en su CC y el monto a cobrar será presupuesto + ${debtBal.toFixed(2)}.`))return;
+          if(!confirm(`El cliente debe USD ${debtBal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de operaciones anteriores.\n\n¿Sumar al cobro de esta op?\n\nLa deuda se cancelará en su CC y el monto a cobrar será presupuesto + ${debtBal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}.`))return;
           await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"applied",amount_usd:debtBal,description:`Deuda cancelada en ${op.operation_code}`});
           const newDebtApplied=debtApplied+debtBal;
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{debt_applied_usd:newDebtApplied}});
           setOp(p=>({...p,debt_applied_usd:newDebtApplied}));
-          flash(`Deuda anterior sumada: +USD ${debtBal.toFixed(2)}`);
+          flash(`Deuda anterior sumada: +USD ${debtBal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
           const fresh=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=account_balance_usd`});
           if(Array.isArray(fresh)&&fresh[0])setOpClient(p=>({...p,account_balance_usd:fresh[0].account_balance_usd}));
         };
@@ -2374,18 +2374,18 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {/* Banner: cliente con saldo a favor */}
         {creditBal>0.01&&!op.is_collected&&budgetTot>0&&<div style={{marginBottom:12,padding:"12px 16px",background:"linear-gradient(90deg, rgba(34,197,94,0.1), rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div>
-            <p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>★ Cliente con saldo a favor: USD {creditBal.toFixed(2)}</p>
-            {creditApplied>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Ya aplicaste USD {creditApplied.toFixed(2)} a esta op.</p>}
+            <p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>★ Cliente con saldo a favor: USD {creditBal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            {creditApplied>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Ya aplicaste USD {creditApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} a esta op.</p>}
           </div>
           <Btn onClick={applySaldo} small>Aplicar a esta op →</Btn>
         </div>}
         {/* Banner: cliente con deuda anterior (también permanece visible después de aplicar) */}
         {(debtBal>0.01||debtApplied>0.01)&&!op.is_collected&&budgetTot>0&&<div style={{marginBottom:12,padding:"12px 16px",background:debtApplied>0?"linear-gradient(90deg, rgba(34,197,94,0.10), rgba(34,197,94,0.02))":"linear-gradient(90deg, rgba(251,146,60,0.1), rgba(251,146,60,0.02))",border:debtApplied>0?"1px solid rgba(34,197,94,0.35)":"1px solid rgba(251,146,60,0.35)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div>
-            {debtApplied>0?<p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✓ Deuda anterior sumada: USD {debtApplied.toFixed(2)}</p>:<p style={{fontSize:12,fontWeight:700,color:"#fb923c",margin:0}}>⚠ Cliente con deuda anterior: USD {debtBal.toFixed(2)}</p>}
-            {debtApplied>0?<p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0"}}>Total a cobrar: <strong style={{color:"#fff"}}>USD {(budgetTot+debtApplied).toFixed(2)}</strong> · presupuesto USD {budgetTot.toFixed(2)} + deuda USD {debtApplied.toFixed(2)}</p>:<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si la sumás, el monto a cobrar pasa a USD {(budgetTot+debtBal).toFixed(2)} y la deuda se cancela.</p>}
+            {debtApplied>0?<p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✓ Deuda anterior sumada: USD {debtApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>:<p style={{fontSize:12,fontWeight:700,color:"#fb923c",margin:0}}>⚠ Cliente con deuda anterior: USD {debtBal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+            {debtApplied>0?<p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0"}}>Total a cobrar: <strong style={{color:"#fff"}}>USD {(budgetTot+debtApplied).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong> · presupuesto USD {budgetTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} + deuda USD {debtApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>:<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si la sumás, el monto a cobrar pasa a USD {(budgetTot+debtBal).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} y la deuda se cancela.</p>}
           </div>
-          {debtApplied<=0?<Btn onClick={applyDebt} small>Sumar a esta op →</Btn>:<button onClick={async()=>{if(!confirm(`¿Quitar los USD ${debtApplied.toFixed(2)} de deuda aplicada? La deuda vuelve a la CC del cliente.`))return;
+          {debtApplied<=0?<Btn onClick={applyDebt} small>Sumar a esta op →</Btn>:<button onClick={async()=>{if(!confirm(`¿Quitar los USD ${debtApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de deuda aplicada? La deuda vuelve a la CC del cliente.`))return;
             // Revertir: borrar el movimiento "applied" creado y limpiar debt_applied_usd
             const movs=await dq("client_account_movements",{token,filters:`?operation_id=eq.${op.id}&type=eq.applied&description=ilike.*Deuda%20cancelada*&select=id&order=created_at.desc&limit=1`});
             if(Array.isArray(movs)&&movs[0])await dq("client_account_movements",{method:"DELETE",token,filters:`?id=eq.${movs[0].id}`});
@@ -2399,15 +2399,15 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {/* Banner: cargo extra registrado (cobraste más que el presupuesto, NO es saldo a favor) */}
         {Number(op.extra_charge_usd||0)>0.01&&op.is_collected&&<div style={{marginBottom:12,padding:"10px 14px",background:"linear-gradient(90deg, rgba(167,139,250,0.10), rgba(167,139,250,0.02))",border:"1px solid rgba(167,139,250,0.3)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div>
-            <p style={{fontSize:12,fontWeight:700,color:"#a78bfa",margin:0}}>💰 Cargo extra: USD {Number(op.extra_charge_usd).toFixed(2)}</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Presupuesto USD {budgetTot.toFixed(2)} + extra USD {Number(op.extra_charge_usd).toFixed(2)} = cobrado USD {(budgetTot+Number(op.extra_charge_usd)).toFixed(2)}. Se cuenta como revenue de esta op.</p>
+            <p style={{fontSize:12,fontWeight:700,color:"#a78bfa",margin:0}}>💰 Cargo extra: USD {Number(op.extra_charge_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Presupuesto USD {budgetTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} + extra USD {Number(op.extra_charge_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} = cobrado USD {(budgetTot+Number(op.extra_charge_usd)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}. Se cuenta como revenue de esta op.</p>
           </div>
           <button onClick={async()=>{if(!confirm("¿Limpiar el cargo extra? Solo borra el flag, no modifica el monto cobrado."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{extra_charge_usd:0}});setOp(p=>({...p,extra_charge_usd:0}));flash("Cargo extra limpiado");}} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:6,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar</button>
         </div>}
         {hasPartials?<div style={{padding:"10px 14px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:8,marginBottom:8,fontSize:11,color:"rgba(255,255,255,0.55)"}}>Esta op usa cobros parciales. El monto total y el método se sincronizan automáticamente desde los pagos registrados — para modificarlos, agregá/eliminá pagos parciales abajo.</div>:<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
           {/* Fix bug: NO usar fallback a budget_total en value — confunde porque parece cargado pero el state está en 0.
              Mostrarlo como placeholder para que el admin sepa el monto sugerido sin inducir error. */}
-          <Inp label={`Monto cobrado (${op.collection_currency||"USD"})`} type="number" value={op.collected_amount} onChange={chOp("collected_amount")} step="0.01" placeholder={Number(op.budget_total)?`${Number(op.budget_total).toFixed(2)} (presupuesto)`:"0.00"}/>
+          <Inp label={`Monto cobrado (${op.collection_currency||"USD"})`} type="number" value={op.collected_amount} onChange={chOp("collected_amount")} step="0.01" placeholder={Number(op.budget_total)?`${Number(op.budget_total).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (presupuesto)`:"0.00"}/>
           <Sel label="Método de cobro" value={op.collection_method||"transferencia"} onChange={chOp("collection_method")} options={[{value:"efectivo",label:"Efectivo"},{value:"transferencia",label:"Transferencia"},{value:"cripto",label:"Cripto"}]}/>
           <Sel label="Moneda" value={op.collection_currency||"USD"} onChange={chOp("collection_currency")} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]}/>
         </div>}
@@ -2421,7 +2421,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:"#a78bfa"}}/>
           <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(167,139,250,0.18)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#a78bfa",fontSize:13}}>🎟</div>
           <div style={{flex:1}}>
-            <p style={{margin:0,fontWeight:700,color:"#a78bfa"}}>Descuento intencional aplicado: USD {Number(op.discount_applied_usd).toFixed(2)}</p>
+            <p style={{margin:0,fontWeight:700,color:"#a78bfa"}}>Descuento intencional aplicado: USD {Number(op.discount_applied_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
             <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si fue por error, limpiá el descuento y volvé a cobrar correctamente.</p>
           </div>
           <button onClick={async()=>{if(!confirm("¿Limpiar el descuento aplicado? Esto NO modifica el monto cobrado, solo elimina el flag de descuento."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{discount_applied_usd:0}});setOp(p=>({...p,discount_applied_usd:0}));flash("Descuento limpiado");}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.10)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar descuento</button>
@@ -2436,14 +2436,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(34,197,94,0.18)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#22c55e",fontSize:14,fontWeight:800}}>✓</div>
             <div style={{flex:1}}>
               <p style={{margin:0,fontWeight:700,color:"#22c55e"}}>Monto coincide con el presupuesto</p>
-              {creditApplied>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>USD {cobroUsd.toFixed(2)} cash + USD {creditApplied.toFixed(2)} de saldo CC</p>}
+              {creditApplied>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>USD {cobroUsd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} cash + USD {creditApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de saldo CC</p>}
             </div>
           </div>;
           if(diff>0)return <div style={{...baseStyle,background:"linear-gradient(90deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.25)"}}>
             {accent("#22c55e")}
             <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(34,197,94,0.18)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#22c55e",fontSize:14}}>↑</div>
             <div style={{flex:1}}>
-              <p style={{margin:0,fontWeight:700,color:"#22c55e"}}>Pagó USD {diff.toFixed(2)} de más</p>
+              <p style={{margin:0,fontWeight:700,color:"#22c55e"}}>Pagó USD {diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de más</p>
               <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Al marcar cobrada se registra como saldo a favor en CC.</p>
             </div>
           </div>;
@@ -2451,7 +2451,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             {accent("#fbbf24")}
             <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(251,191,36,0.18)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#fbbf24",fontSize:14}}>!</div>
             <div style={{flex:1}}>
-              <p style={{margin:0,fontWeight:700,color:"#fbbf24"}}>Faltan USD {Math.abs(diff).toFixed(2)}</p>
+              <p style={{margin:0,fontWeight:700,color:"#fbbf24"}}>Faltan USD {Math.abs(diff).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
               <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si el monto cargado no es correcto, ajustalo. Si efectivamente cobraste menos, al guardar elegís: descuento intencional o deuda en CC.</p>
             </div>
           </div>;
@@ -2460,13 +2460,13 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {clientPayments.length>0&&<div style={{background:"rgba(34,197,94,0.04)",border:"1px solid rgba(34,197,94,0.18)",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
             <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>📋 Cobros parciales registrados ({clientPayments.length})</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.6)",margin:0}}>Total: <strong style={{color:"#fff"}}>USD {totalParciales.toFixed(2)}</strong>{budgetTot>0?` · Saldo ${saldoParciales>0.01?`USD ${saldoParciales.toFixed(2)}`:saldoParciales<-0.01?`+USD ${Math.abs(saldoParciales).toFixed(2)} (sobrante)`:`$0 ✓`}`:""}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.6)",margin:0}}>Total: <strong style={{color:"#fff"}}>USD {totalParciales.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>{budgetTot>0?` · Saldo ${saldoParciales>0.01?`USD ${saldoParciales.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:saldoParciales<-0.01?`+USD ${Math.abs(saldoParciales).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (sobrante)`:`$0 ✓`}`:""}</p>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
             {clientPayments.map(p=>{const isArs=p.currency==="ARS";return <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",background:"rgba(0,0,0,0.18)",borderRadius:6,fontSize:12}}>
               <span style={{color:"rgba(255,255,255,0.65)"}}>{formatDate(p.payment_date)} · {p.payment_method||"—"}{p.notes?` · ${p.notes}`:""}</span>
               <span style={{display:"flex",gap:8,alignItems:"center"}}>
-                <span style={{fontFamily:"monospace",color:"#fff",fontWeight:600}}>USD {Number(p.amount_usd).toFixed(2)}{isArs?` (ARS ${Number(p.amount_ars||0).toLocaleString("es-AR")} @ ${p.exchange_rate})`:""}</span>
+                <span style={{fontFamily:"monospace",color:"#fff",fontWeight:600}}>USD {Number(p.amount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}{isArs?` (ARS ${Number(p.amount_ars||0).toLocaleString("es-AR")} @ ${p.exchange_rate})`:""}</span>
                 <button onClick={()=>printReceiptPdf({op,payment:p,client:opClient})} title="Generar recibo PDF para enviar al cliente" style={{background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.3)",color:"#60a5fa",cursor:"pointer",fontSize:10,padding:"3px 8px",borderRadius:4,fontWeight:700}}>📄 Recibo</button>
                 <button onClick={async()=>{if(!confirm("¿Eliminar este cobro parcial?"))return;await dq("operation_client_payments",{method:"DELETE",token,filters:`?id=eq.${p.id}`});const newTot=clientPayments.filter(x=>x.id!==p.id).reduce((s,x)=>s+Number(x.amount_usd||0),0);const upd={collected_amount:newTot,total_anticipos:newTot};if(newTot<budgetTot)upd.is_collected=false;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});setOp(prev=>({...prev,...upd}));await load();flash("Cobro eliminado");}} title="Eliminar este cobro" style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.7)",cursor:"pointer",fontSize:14,padding:"0 4px"}}>×</button>
               </span>
@@ -2763,7 +2763,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             const shown=livePreview!=null?livePreview:Number(op.cost_impuestos_reales||0);
             const stored=Number(op.cost_impuestos_reales||0);
             const stale=livePreview!=null&&stored>0&&Math.abs(livePreview-stored)>0.01;
-            return <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:(op.cost_impuestos_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (valor previo USD {stored.toFixed(2)})</span>:""}</p>;
+            return <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:(op.cost_impuestos_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (valor previo USD {stored.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})</span>:""}</p>;
           })()}
         </div>
         <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
@@ -2787,7 +2787,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             const shown=livePreview!=null?livePreview:Number(op.cost_gasto_documental||0);
             const stored=Number(op.cost_gasto_documental||0);
             const stale=livePreview!=null&&stored>0&&Math.abs(livePreview-stored)>0.01;
-            return <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:(op.cost_gasto_doc_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (valor previo USD {stored.toFixed(2)})</span>:""}</p>;
+            return <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:(op.cost_gasto_doc_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (valor previo USD {stored.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})</span>:""}</p>;
           })()}
         </div></>}
         <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
@@ -2881,7 +2881,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         <div style={{marginTop:20,background:ganancia>0?"rgba(34,197,94,0.08)":"rgba(255,80,80,0.08)",borderRadius:12,padding:20,border:`1px solid ${ganancia>0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,textAlign:"center"}}>
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase"}}>Ganancia neta total</p>
           <p style={{fontSize:32,fontWeight:700,color:ganancia>0?"#22c55e":"#ff6b6b",margin:"0 0 4px"}}>USD {ganancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-          <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:0}}>{payments.length>0?`Operación: USD ${(ingresoNeto-totalCostos).toFixed(2)} + Gestión pagos: USD ${pmtGanancia.toFixed(2)}`:`Margen: ${margen.toFixed(1)}%`}</p>
+          <p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:0}}>{payments.length>0?`Operación: USD ${(ingresoNeto-totalCostos).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} + Gestión pagos: USD ${pmtGanancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:`Margen: ${margen.toFixed(1)}%`}</p>
         </div>
       </Card>
       </>;})()}
@@ -2899,7 +2899,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
         <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,marginBottom:14}}>
           <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.05em",fontWeight:700}}>Operación</p>
-          <p style={{fontSize:13,color:"#fff",margin:0}}><strong style={{color:IC,fontFamily:"monospace"}}>{op.operation_code}</strong> · presupuesto <strong>USD {Number(op.budget_total||0).toFixed(2)}</strong></p>
+          <p style={{fontSize:13,color:"#fff",margin:0}}><strong style={{color:IC,fontFamily:"monospace"}}>{op.operation_code}</strong> · presupuesto <strong>USD {Number(op.budget_total||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></p>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px",marginBottom:8}}>
           <Sel label="Moneda" value={addPaymentForm.currency} onChange={v=>setAddPaymentForm(p=>({...p,currency:v}))} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]} small/>
@@ -2951,7 +2951,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       <div onClick={e=>e.stopPropagation()} style={{maxWidth:520,width:"100%",background:"linear-gradient(180deg,#142038,#0f1a2e)",border:"1px solid rgba(184,149,106,0.28)",borderRadius:16,padding:"24px 26px 20px",boxShadow:"0 32px 80px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.04)"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
           <span style={{fontSize:22}}>{isOver?"⬆️":"⬇️"}</span>
-          <h3 style={{fontSize:17,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>El cliente pagó USD {diff.toFixed(2)} {isOver?"de más":"de menos"}</h3>
+          <h3 style={{fontSize:17,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>El cliente pagó USD {diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} {isOver?"de más":"de menos"}</h3>
         </div>
         <p style={{fontSize:13,color:"rgba(255,255,255,0.55)",margin:"0 0 18px",lineHeight:1.5}}>¿Cómo querés registrarlo?</p>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -2998,7 +2998,7 @@ function CloseChecklistModal({op,items,payments,clientPayments,supplierPayments,
 
   // Checks: cada uno con label, status auto (pasa/no), y opcionalmente acción
   const checks=[
-    {k:"paid",label:"Cliente pagó completo",pass:totalSaldo<0.01,detail:totalSaldo<0.01?"✓ Pagado":`Falta cobrar USD ${totalSaldo.toFixed(2)}`},
+    {k:"paid",label:"Cliente pagó completo",pass:totalSaldo<0.01,detail:totalSaldo<0.01?"✓ Pagado":`Falta cobrar USD ${totalSaldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`},
     ...(isGI?[
       {k:"sup_paid",label:"Pagos al proveedor liquidados",pass:supTotal===0||supPaid===supTotal,detail:supTotal===0?"Sin pagos cargados":`${supPaid}/${supTotal} pagados`},
       {k:"sup_ars",label:"Pagos ARS al proveedor dolarizados",pass:arsSupSinDolarizar===0,detail:arsSupSinDolarizar===0?"✓ Todos dolarizados":`${arsSupSinDolarizar} pendientes`},
@@ -3298,7 +3298,7 @@ function TariffsManager({token}){
     <div style={{flex:1}}><Inp label="Min" type="number" value={t.min_qty} onChange={v=>chT(t.id,"min_qty",v)} step="0.01" small/></div>
     <div style={{flex:1}}><Inp label="Max" type="number" value={t.max_qty} onChange={v=>chT(t.id,"max_qty",v===""?null:v)} step="0.01" small/></div>
     <div style={{flex:1}}><Inp label={t.type==="surcharge"?"% Recargo":(isCost?"Costo":"Precio Venta")} type="number" value={isCost?t.cost:t.rate} onChange={v=>chT(t.id,isCost?"cost":"rate",v)} step="0.01" small/></div>
-    {!isCost&&t.type==="rate"&&<div style={{flex:1,paddingBottom:12,textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.2)",margin:"0 0 2px"}}>GANANCIA</p><p style={{fontSize:13,fontWeight:700,color:Number(t.rate)-Number(t.cost||0)>0?"#22c55e":"#ff6b6b",margin:0}}>${(Number(t.rate)-Number(t.cost||0)).toFixed(2)}</p></div>}
+    {!isCost&&t.type==="rate"&&<div style={{flex:1,paddingBottom:12,textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.2)",margin:"0 0 2px"}}>GANANCIA</p><p style={{fontSize:13,fontWeight:700,color:Number(t.rate)-Number(t.cost||0)>0?"#22c55e":"#ff6b6b",margin:0}}>${(Number(t.rate)-Number(t.cost||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>}
     <div style={{display:"flex",gap:4,paddingBottom:12}}><Btn onClick={()=>saveTariff(t)} small variant="secondary">Guardar</Btn><Btn onClick={()=>delTariff(t.id)} small variant="danger">X</Btn></div>
   </div>;
   // Cert flete config
@@ -4014,9 +4014,9 @@ function FinancePanel({token}){
       if(cashIn>0){
         const detail=[];
         if(isArs)detail.push(`ARS ${amt.toLocaleString("es-AR")} @ ${rate}`);
-        if(creditApp>0)detail.push(`incluye USD ${creditApp.toFixed(2)} de saldo a favor aplicado`);
-        if(overpay>0.01)detail.push(`USD ${overpay.toFixed(2)} a saldo a favor del cliente`);
-        if(extraCharge>0.01)detail.push(`incluye cargo extra USD ${extraCharge.toFixed(2)}`);
+        if(creditApp>0)detail.push(`incluye USD ${creditApp.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de saldo a favor aplicado`);
+        if(overpay>0.01)detail.push(`USD ${overpay.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} a saldo a favor del cliente`);
+        if(extraCharge>0.01)detail.push(`incluye cargo extra USD ${extraCharge.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
         ledger.push({date:o.collection_date||o.closed_at?.slice(0,10)||"—",type:"ingreso",origen:"op",code:o.operation_code,desc:`Cobro ${o.operation_code} — ${o.clients?.client_code||""}`,amount:cashIn,detail:detail.join(" · ")});
       }
     }
@@ -4101,7 +4101,7 @@ function FinancePanel({token}){
     const isTC=e.payment_method==="tarjeta_credito";
     const cashDate=isTC&&e.card_paid_at?e.card_paid_at.slice(0,10):e.date;
     const tcSuffix=isTC&&e.card_paid_at&&e.date&&e.date!==cashDate?` · 💳 gasto generado el ${formatDate(e.date)}`:"";
-    const arsSuffix=Number(e.amount_ars||0)>0&&Number(e.exchange_rate||0)>0?` · ARS ${Number(e.amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} @ ${Number(e.exchange_rate).toFixed(2)}`:"";
+    const arsSuffix=Number(e.amount_ars||0)>0&&Number(e.exchange_rate||0)>0?` · ARS ${Number(e.amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} @ ${Number(e.exchange_rate).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"";
     ledger.push({date:cashDate,type:e.type,origen:"manual",code:"",desc:e.description,amount:Number(e.amount||0),detail:(e.detail||"")+tcSuffix+arsSuffix,cat:e.category,recurring:e.is_recurring,id:e.id});
   });
   // Auto-generated entries de ops (impuestos/gasto doc dolarizados): aparecen como "op" para que se distingan de gastos manuales del negocio.
@@ -4110,7 +4110,7 @@ function FinancePanel({token}){
     const isTC=e.payment_method==="tarjeta_credito";
     const cashDate=isTC&&e.card_paid_at?e.card_paid_at.slice(0,10):e.date;
     const tcSuffix=isTC&&e.card_paid_at&&e.date&&e.date!==cashDate?` · 💳 gasto generado el ${formatDate(e.date)}`:"";
-    const arsSuffix=Number(e.amount_ars||0)>0&&Number(e.exchange_rate||0)>0?` · ARS ${Number(e.amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} @ ${Number(e.exchange_rate).toFixed(2)}`:"";
+    const arsSuffix=Number(e.amount_ars||0)>0&&Number(e.exchange_rate||0)>0?` · ARS ${Number(e.amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} @ ${Number(e.exchange_rate).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"";
     ledger.push({date:cashDate,type:e.type,origen:"op",code:"",desc:e.description,amount:Number(e.amount||0),detail:(e.detail||"")+tcSuffix+arsSuffix,id:e.id});
   });
   agentMvs.filter(m=>m.type==="anticipo").forEach(m=>{const ag=agentSignups.find(a=>a.auth_user_id===m.agent_id);const agName=ag?`${ag.first_name} ${ag.last_name}`:"agente";const paid=Number(m.amount_usd||0);const recv=m.amount_received_usd!=null?Number(m.amount_received_usd):paid;const com=Math.max(0,paid-recv);
@@ -4231,7 +4231,7 @@ function FinancePanel({token}){
         :<div style={{display:"grid",gridTemplateColumns:newEntry.payment_method==="tarjeta_credito"?"1fr":"1fr 1fr",gap:"0 12px"}}>
           <Inp label="Monto ARS" type="number" value={newEntry.amount_ars} onChange={v=>setNewEntry(p=>({...p,amount_ars:v}))} step="0.01" placeholder="0.00"/>
           {newEntry.payment_method!=="tarjeta_credito"&&<Inp label="Tipo de cambio ARS/USD" type="number" value={newEntry.exchange_rate} onChange={v=>setNewEntry(p=>({...p,exchange_rate:v}))} step="0.01" placeholder="Ej: 1410"/>}
-          {newEntry.currency==="ARS"&&newEntry.payment_method!=="tarjeta_credito"&&newEntry.amount_ars&&newEntry.exchange_rate&&<p style={{gridColumn:"1/-1",fontSize:11,color:IC,margin:"-6px 0 8px",fontWeight:600}}>= USD {(Number(newEntry.amount_ars)/Number(newEntry.exchange_rate)).toFixed(2)}</p>}
+          {newEntry.currency==="ARS"&&newEntry.payment_method!=="tarjeta_credito"&&newEntry.amount_ars&&newEntry.exchange_rate&&<p style={{gridColumn:"1/-1",fontSize:11,color:IC,margin:"-6px 0 8px",fontWeight:600}}>= USD {(Number(newEntry.amount_ars)/Number(newEntry.exchange_rate)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
         </div>}
       <Inp label={`Detalle ${newEntry.category==="otros"?"(obligatorio)":"(opcional)"}`} value={newEntry.detail} onChange={v=>setNewEntry(p=>({...p,detail:v}))} placeholder="Ej: Meta ads campaña abril · Vercel Pro · Sueldo Marzo"/>
       {newEntry.payment_method==="tarjeta_credito"&&<>
@@ -4434,7 +4434,7 @@ function FinancePanel({token}){
         load();flash("Marcada como debitada");
       };
       const markGroupPaid=async(g)=>{
-        if(!confirm(`¿Marcar las ${g.items.length} deudas de ${g.date==="sin_fecha"?"sin fecha":formatDate(g.date)} como debitadas? Total: USD ${g.items.reduce((s,i)=>s+i.amt,0).toFixed(2)}`))return;
+        if(!confirm(`¿Marcar las ${g.items.length} deudas de ${g.date==="sin_fecha"?"sin fecha":formatDate(g.date)} como debitadas? Total: USD ${g.items.reduce((s,i)=>s+i.amt,0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`))return;
         const t=nowIso();
         for(const item of g.items){
           if(item.source==="finance")await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,card_paid_at:t}});
@@ -4450,7 +4450,7 @@ function FinancePanel({token}){
           <div style={{background:usdTot>0?"rgba(251,146,60,0.06)":"rgba(34,197,94,0.06)",border:`1px solid ${usdTot>0?"rgba(251,146,60,0.2)":"rgba(34,197,94,0.2)"}`,borderRadius:12,padding:"18px 22px"}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",letterSpacing:"0.05em"}}>💳 DEUDA TARJETA USD</p>
             <p style={{fontSize:28,fontWeight:700,color:usdTot>0?"#fb923c":"#22c55e",margin:0}}>USD {usdTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>{cardDebt.usd.length} gasto{cardDebt.usd.length!==1?"s":""} del negocio{usdTotEntries>0?` (USD ${usdTotEntries.toFixed(2)})`:""} · {cardDebt.pmts.length} giro{cardDebt.pmts.length!==1?"s":""} al exterior{usdTotPmts>0?` (USD ${usdTotPmts.toFixed(2)})`:""}{(cardDebt.supTcUsd||[]).length>0?` · ${cardDebt.supTcUsd.length} costo${cardDebt.supTcUsd.length!==1?"s":""} GI (USD ${usdTotSup.toFixed(2)})`:""}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>{cardDebt.usd.length} gasto{cardDebt.usd.length!==1?"s":""} del negocio{usdTotEntries>0?` (USD ${usdTotEntries.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""} · {cardDebt.pmts.length} giro{cardDebt.pmts.length!==1?"s":""} al exterior{usdTotPmts>0?` (USD ${usdTotPmts.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}{(cardDebt.supTcUsd||[]).length>0?` · ${cardDebt.supTcUsd.length} costo${cardDebt.supTcUsd.length!==1?"s":""} GI (USD ${usdTotSup.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}</p>
           </div>
           {arsTot>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:12,padding:"18px 22px"}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",letterSpacing:"0.05em"}}>💳 DEUDA TARJETA ARS (sin dollarizar)</p>
@@ -4817,7 +4817,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const printInvoice=()=>{
     const w=window.open("","_blank");if(!w)return;
     const itemsByOp={};items.forEach(it=>{if(!itemsByOp[it.operation_id])itemsByOp[it.operation_id]=[];itemsByOp[it.operation_id].push(it);});
-    const rows=items.map(it=>`<tr><td>${it.description}</td><td>${it.hs_code||"-"}</td><td style="text-align:right">${Number(it.quantity||0).toLocaleString("es-AR")}</td><td style="text-align:right">USD ${Number(it.unit_price_declared_usd||0).toFixed(2)}</td><td style="text-align:right"><strong>USD ${(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toFixed(2)}</strong></td></tr>`).join("");
+    const rows=items.map(it=>`<tr><td>${it.description}</td><td>${it.hs_code||"-"}</td><td style="text-align:right">${Number(it.quantity||0).toLocaleString("es-AR")}</td><td style="text-align:right">USD ${Number(it.unit_price_declared_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td style="text-align:right"><strong>USD ${(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></td></tr>`).join("");
     const html=`<!doctype html><html><head><meta charset="utf-8"><title>${flight.flight_code}</title><style>
       body{font-family:Arial,sans-serif;max-width:800px;margin:30px auto;padding:0 20px;color:#222;}
       h1{text-align:center;margin:0 0 4px;font-size:22px}
@@ -4838,7 +4838,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       <table>
         <thead><tr><th>Description</th><th>HS Code</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Amount</th></tr></thead>
         <tbody>${rows}</tbody>
-        <tfoot><tr><td colspan="4" style="text-align:right">TOTAL DECLARED VALUE</td><td style="text-align:right">USD ${totalDeclaredUSD.toFixed(2)}</td></tr></tfoot>
+        <tfoot><tr><td colspan="4" style="text-align:right">TOTAL DECLARED VALUE</td><td style="text-align:right">USD ${totalDeclaredUSD.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr></tfoot>
       </table>
       <p class="foot">This invoice was auto-generated by Argencargo's system</p>
     </body></html>`;
@@ -4876,16 +4876,16 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           return <div key={o.id} style={{padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:pkgs.length>0?6:0,flexWrap:"wrap",gap:6}}>
               <span style={{fontSize:13,color:"#fff"}}><strong style={{fontFamily:"monospace"}}>{o.operation_code}</strong> — {o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
-              <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{pkgs.length} bultos · bruto <strong style={{color:"rgba(255,255,255,0.75)"}}>{totBruto.toFixed(2)} kg</strong> · facturable <strong style={{color:IC}}>{totFact.toFixed(2)} kg</strong>{fo?.cost_share_usd?` · ${usd(fo.cost_share_usd)}`:""}</span>
+              <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{pkgs.length} bultos · bruto <strong style={{color:"rgba(255,255,255,0.75)"}}>{totBruto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong> · facturable <strong style={{color:IC}}>{totFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong>{fo?.cost_share_usd?` · ${usd(fo.cost_share_usd)}`:""}</span>
             </div>
             {pkgs.length>0&&<div style={{marginLeft:16,fontSize:11,color:"rgba(255,255,255,0.4)"}}>
               {pkgRows.map(({p,bruto,vol,fact})=><div key={p.id} style={{display:"flex",gap:12,padding:"2px 0",flexWrap:"wrap"}}>
                 <span style={{minWidth:30}}>#{p.package_number}</span>
                 <span style={{minWidth:120}}>{p.national_tracking||"—"}</span>
                 {p.length_cm&&p.width_cm&&p.height_cm?<span style={{minWidth:90}}>{p.length_cm}×{p.width_cm}×{p.height_cm} cm</span>:<span style={{minWidth:90}}>—</span>}
-                <span style={{minWidth:90}}>bruto: {bruto>0?`${bruto.toFixed(2)} kg`:"—"}</span>
-                <span style={{minWidth:90}}>vol: {vol>0?`${vol.toFixed(2)} kg`:"—"}</span>
-                <span style={{color:fact>0?IC:"rgba(255,255,255,0.3)",fontWeight:600}}>facturable: {fact>0?`${fact.toFixed(2)} kg`:"—"}</span>
+                <span style={{minWidth:90}}>bruto: {bruto>0?`${bruto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
+                <span style={{minWidth:90}}>vol: {vol>0?`${vol.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
+                <span style={{color:fact>0?IC:"rgba(255,255,255,0.3)",fontWeight:600}}>facturable: {fact>0?`${fact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
               </div>)}
             </div>}
           </div>;
@@ -4951,12 +4951,12 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             <span>{it.description}</span>
             <span style={{fontFamily:"monospace"}}>{it.hs_code||"—"}</span>
             <span style={{textAlign:"right"}}>{Number(it.quantity||0)}</span>
-            <span style={{textAlign:"right"}}>USD {Number(it.unit_price_declared_usd||0).toFixed(2)}</span>
-            <span style={{textAlign:"right",fontWeight:700}}>USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toFixed(2)}</span>
+            <span style={{textAlign:"right"}}>USD {Number(it.unit_price_declared_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+            <span style={{textAlign:"right",fontWeight:700}}>USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
           </div>;})}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,marginTop:6}}>
             <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL DECLARADO</span>
-            <span style={{fontSize:16,fontWeight:700,color:IC}}>USD {totalDeclaredUSD.toFixed(2)}</span>
+            <span style={{fontSize:16,fontWeight:700,color:IC}}>USD {totalDeclaredUSD.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
           </div>
         </div>}
       </div>:
@@ -4974,11 +4974,11 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             <Inp label="Cantidad" type="number" value={it.quantity} onChange={v=>chItem(i,"quantity",v)} small/>
             <Inp label="Precio unit. USD (declarado)" type="number" value={it.unit_price_declared_usd} onChange={v=>chItem(i,"unit_price_declared_usd",v)} step="0.01" small/>
           </div>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",textAlign:"right"}}>Subtotal: USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toFixed(2)}</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",textAlign:"right"}}>Subtotal: USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
         </div>;})}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,marginTop:6}}>
           <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL DECLARADO</span>
-          <span style={{fontSize:16,fontWeight:700,color:IC}}>USD {totalDeclaredUSD.toFixed(2)}</span>
+          <span style={{fontSize:16,fontWeight:700,color:IC}}>USD {totalDeclaredUSD.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
         </div>
         {needsCompression&&<div style={{padding:"10px 14px",background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.3)",borderRadius:8,marginTop:10}}>
           <p style={{fontSize:12,color:"#fb923c",margin:0,fontWeight:600}}>⚠ Esta factura tiene <strong>{totalInvoiceItems} items</strong> y el límite RG 5608 es <strong>{MAX_INVOICE_ITEMS}</strong>. Comprimí los items de cada op (botones naranjas abajo) para llegar al límite.</p>
@@ -5011,7 +5011,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,fontSize:12}}>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>CARRIER</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.international_carrier||"—"}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>TRACKING</p><p style={{fontSize:14,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.international_tracking||"—"}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PESO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.total_weight_kg?`${flight.total_weight_kg} kg`:"—"}{totalFactKg>0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginLeft:6}}>· {totalFactKg.toFixed(2)} kg fact.</span>}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PESO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.total_weight_kg?`${flight.total_weight_kg} kg`:"—"}{totalFactKg>0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginLeft:6}}>· {totalFactKg.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg fact.</span>}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>COSTO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{usd(flight.total_cost_usd||0)}{totalFactKg>0?<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginLeft:6}}>· {usd((flight.total_cost_usd||0)/totalFactKg)}/kg fact.</span>:null}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PAGO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.payment_method||"—"}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>DESPACHADO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{formatDate(flight.dispatched_at)}</p></div>
@@ -5035,7 +5035,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             <option value="alibaba" style={{background:"#142038"}}>Alibaba (pendiente de completar)</option>
           </select>
         </div>
-        {Number(costForm.total_cost_usd)>0&&totalFactKg>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"0 0 10px"}}>Tarifa resultante (peso facturable {totalFactKg.toFixed(2)} kg): <strong style={{color:IC}}>{usd(Number(costForm.total_cost_usd)/totalFactKg)}/kg</strong></p>}
+        {Number(costForm.total_cost_usd)>0&&totalFactKg>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"0 0 10px"}}>Tarifa resultante (peso facturable {totalFactKg.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg): <strong style={{color:IC}}>{usd(Number(costForm.total_cost_usd)/totalFactKg)}/kg</strong></p>}
         <div style={{display:"flex",gap:8}}>
           <Btn small onClick={requestSaveCost} disabled={savingCost}>{savingCost?"Guardando…":"💾 Guardar y recalcular"}</Btn>
           <Btn small variant="secondary" onClick={()=>setEditCost(false)} disabled={savingCost}>Cancelar</Btn>
@@ -5059,19 +5059,19 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         {proposed&&<>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
             <div>
-              <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 8px",textTransform:"uppercase"}}>📋 Original ({proposed.original_count}) · USD {proposed.original_fob.toFixed(2)}</p>
+              <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 8px",textTransform:"uppercase"}}>📋 Original ({proposed.original_count}) · USD {proposed.original_fob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
               <div style={{maxHeight:340,overflowY:"auto",background:"rgba(0,0,0,0.2)",borderRadius:6,padding:"6px 8px"}}>
                 {original.map((it,i)=><div key={it.id} style={{padding:"4px 0",fontSize:11,color:"rgba(255,255,255,0.7)",borderBottom:i<original.length-1?"1px solid rgba(255,255,255,0.04)":"none"}}>
-                  <span style={{color:"rgba(255,255,255,0.4)",marginRight:6}}>[{i}]</span>{it.description} · {it.quantity}u × USD {Number(it.unit_price_declared_usd||0).toFixed(2)}{it.hs_code?` · ${it.hs_code}`:""}
+                  <span style={{color:"rgba(255,255,255,0.4)",marginRight:6}}>[{i}]</span>{it.description} · {it.quantity}u × USD {Number(it.unit_price_declared_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}{it.hs_code?` · ${it.hs_code}`:""}
                 </div>)}
               </div>
             </div>
             <div>
-              <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:"0 0 8px",textTransform:"uppercase"}}>✨ Comprimido ({proposed.compressed_count}) · USD {proposed.compressed_fob.toFixed(2)}</p>
+              <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:"0 0 8px",textTransform:"uppercase"}}>✨ Comprimido ({proposed.compressed_count}) · USD {proposed.compressed_fob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
               <div style={{maxHeight:340,overflowY:"auto",background:"rgba(34,197,94,0.06)",borderRadius:6,padding:"6px 8px",border:"1px solid rgba(34,197,94,0.2)"}}>
                 {proposed.groups.map((g,i)=><div key={i} style={{padding:"6px 0",fontSize:11,color:"#fff",borderBottom:i<proposed.groups.length-1?"1px solid rgba(255,255,255,0.06)":"none"}}>
                   <p style={{margin:"0 0 2px",fontWeight:700}}>{g.description}</p>
-                  <p style={{margin:0,color:"rgba(255,255,255,0.55)",fontSize:10}}>{g.quantity}u × USD {g.unit_price_usd.toFixed(2)}{g.hs_code?` · ${g.hs_code}`:""} · merge de [{g.source_indices.join(",")}]</p>
+                  <p style={{margin:0,color:"rgba(255,255,255,0.55)",fontSize:10}}>{g.quantity}u × USD {g.unit_price_usd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}{g.hs_code?` · ${g.hs_code}`:""} · merge de [{g.source_indices.join(",")}]</p>
                 </div>)}
               </div>
             </div>
@@ -5104,15 +5104,15 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
           <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase"}}>Costo total</p>
-            <p style={{fontSize:14,color:"rgba(255,255,255,0.5)",margin:0,textDecoration:"line-through"}}>USD {oldCost.toFixed(2)}</p>
-            <p style={{fontSize:18,fontWeight:700,color:IC,margin:"2px 0 0"}}>USD {newCost.toFixed(2)}</p>
-            {costDelta!==0&&<p style={{fontSize:11,color:costDelta>0?"#fbbf24":"#22c55e",margin:"2px 0 0",fontWeight:600}}>{costDelta>0?"+":""}{costDelta.toFixed(2)}</p>}
+            <p style={{fontSize:14,color:"rgba(255,255,255,0.5)",margin:0,textDecoration:"line-through"}}>USD {oldCost.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            <p style={{fontSize:18,fontWeight:700,color:IC,margin:"2px 0 0"}}>USD {newCost.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            {costDelta!==0&&<p style={{fontSize:11,color:costDelta>0?"#fbbf24":"#22c55e",margin:"2px 0 0",fontWeight:600}}>{costDelta>0?"+":""}{costDelta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
           </div>
           <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase"}}>Peso total</p>
-            <p style={{fontSize:14,color:"rgba(255,255,255,0.5)",margin:0,textDecoration:"line-through"}}>{oldWeight.toFixed(2)} kg</p>
-            <p style={{fontSize:18,fontWeight:700,color:IC,margin:"2px 0 0"}}>{newWeight.toFixed(2)} kg</p>
-            {weightDelta!==0&&<p style={{fontSize:11,color:"#fbbf24",margin:"2px 0 0",fontWeight:600}}>{weightDelta>0?"+":""}{weightDelta.toFixed(2)} kg</p>}
+            <p style={{fontSize:14,color:"rgba(255,255,255,0.5)",margin:0,textDecoration:"line-through"}}>{oldWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p>
+            <p style={{fontSize:18,fontWeight:700,color:IC,margin:"2px 0 0"}}>{newWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p>
+            {weightDelta!==0&&<p style={{fontSize:11,color:"#fbbf24",margin:"2px 0 0",fontWeight:600}}>{weightDelta>0?"+":""}{weightDelta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p>}
           </div>
         </div>
         <div style={{padding:"10px 12px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,marginBottom:14}}>
@@ -5173,7 +5173,7 @@ function AnticipoForm({token,agentId,onSaved}){
       <Inp label="Descripción" value={desc} onChange={setDesc} placeholder="Ej: Pago vuelo FL-0003"/>
       <Btn small onClick={save} disabled={saving||!amount}>{saving?"...":"Guardar"}</Btn>
     </div>
-    {comision>0&&<p style={{fontSize:11,color:"#fbbf24",margin:"8px 0 0"}}>↳ Se generará gasto Comisiones por USD {comision.toFixed(2)}</p>}
+    {comision>0&&<p style={{fontSize:11,color:"#fbbf24",margin:"8px 0 0"}}>↳ Se generará gasto Comisiones por USD {comision.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
   </div>;
 }
 
@@ -5274,8 +5274,8 @@ function AgentsPanel({token}){
     setRepackModal(s=>({...s,sending:true}));
     try{
       const origSnapshot=pkgs.map(p=>({package_number:p.package_number,quantity:Number(p.quantity||1),gross_weight_kg:p.gross_weight_kg?Number(p.gross_weight_kg):null,length_cm:p.length_cm?Number(p.length_cm):null,width_cm:p.width_cm?Number(p.width_cm):null,height_cm:p.height_cm?Number(p.height_cm):null,national_tracking:p.national_tracking||null}));
-      await dq("repack_requests",{method:"POST",token,body:{operation_id:op.id,status:"pending",reason:reason.trim()||null,original_billable_kg:Number(billable.toFixed(2)),original_pkg_count:pkgs.length,original_packages_snapshot:origSnapshot}});
-      try{await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"note",content:`🔄 Pedido de reempaque al agente.\nPeso facturable actual: ${billable.toFixed(2)} kg (${pkgs.length} bultos)${reason.trim()?`\nMotivo: ${reason.trim()}`:""}`}});}catch(e){}
+      await dq("repack_requests",{method:"POST",token,body:{operation_id:op.id,status:"pending",reason:reason.trim()||null,original_billable_kg:Math.round((billable)*100)/100,original_pkg_count:pkgs.length,original_packages_snapshot:origSnapshot}});
+      try{await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"note",content:`🔄 Pedido de reempaque al agente.\nPeso facturable actual: ${billable.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg (${pkgs.length} bultos)${reason.trim()?`\nMotivo: ${reason.trim()}`:""}`}});}catch(e){}
       fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:op.created_by_agent_id,title:`🔄 Pedido de reempaque ${op.operation_code}`,body:reason.trim()||`Reempaquetar para bajar volumétrico (${billable.toFixed(1)} kg)`,url:"/agente?tab=deposit"})}).catch(()=>{});
       setRepackModal(null);
       flash(`✅ Pedido de reempaque enviado al agente para ${op.operation_code}`);
@@ -5508,7 +5508,7 @@ function AgentsPanel({token}){
                   {pkgsCount}
                   {lastPkgAt>0&&<><br/><span title="Fecha del último bulto cargado en depósito" style={{fontSize:10,color:"rgba(255,255,255,0.35)",fontWeight:500}}>{new Date(lastPkgAt).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span></>}
                 </td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)"}}>{w?`${w.toFixed(2)} kg`:"—"}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)"}}>{w?`${w.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
                 <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)"}}>{SM[o.status]?.l||o.status}</span></td>
                 <td style={{padding:"10px 12px"}}>
                   {inFlight?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC}}>EN VUELO</span>:
@@ -5523,7 +5523,7 @@ function AgentsPanel({token}){
                   const origenTxt=o.origin==="USA"?"Estados Unidos":o.origin==="China"?"China":(o.origin||"origen");
                   const pkgs=opPackages(o.id);
                   const opAgent=signups.find(s=>s.auth_user_id===o.created_by_agent_id);const opVolDiv=Number(opAgent?.volumetric_divisor)||5000;
-                  const trackingsDetail=pkgs.filter(p=>p.national_tracking?.trim()).map(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/opVolDiv)*q:0;const pf=Math.max(b,v);return `- Bulto ${p.package_number}${pf>0?` (${pf.toFixed(2)} kg facturables)`:""}: ${p.national_tracking}`;}).join("\n");
+                  const trackingsDetail=pkgs.filter(p=>p.national_tracking?.trim()).map(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/opVolDiv)*q:0;const pf=Math.max(b,v);return `- Bulto ${p.package_number}${pf>0?` (${pf.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg facturables)`:""}: ${p.national_tracking}`;}).join("\n");
                   const msg=`Hola ${clientName}!\n\nRecibimos tu mercadería en nuestro depósito en ${origenTxt}.${trackingsDetail?`\n\n*Tracking del paquete:*\n${trackingsDetail}`:""}\n\nPara avanzar con la operación, necesitamos que completes la documentación de la carga (mercadería, cantidad, valor declarado).\n\nIngresá acá:\nhttps://argencargo.com.ar/portal?op=${o.operation_code}\n\nUna vez completado, te confirmamos el presupuesto final y avanzamos con el envío.\n\nCualquier duda escribime y desde ya muchas gracias!\nArgencargo`;
                   const waUrl=clientWa?`https://api.whatsapp.com/send?phone=${clientWa}&text=${encodeURIComponent(msg)}`:"";
                   return <span style={{display:"inline-flex",alignItems:"center",gap:6}}>
@@ -5548,13 +5548,13 @@ function AgentsPanel({token}){
                       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                         {rpk?.status==="pending"&&<span style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)"}}>⏳ Reempaque pedido</span>}
                         {rpk?.status==="done"&&(()=>{const before=Number(rpk.original_billable_kg||0),after=Number(rpk.new_billable_kg||0),delta=before-after;const hasSnap=Array.isArray(rpk.original_packages_snapshot)||Array.isArray(rpk.new_packages_snapshot);const isOpen=expandedRepack===o.id;return <>
-                          <span title={`${before.toFixed(2)} kg → ${after.toFixed(2)} kg`} style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)"}}>✅ Reempaque hecho{delta>0?` (−${delta.toFixed(1)} kg)`:""}</span>
+                          <span title={`${before.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg → ${after.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`} style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)"}}>✅ Reempaque hecho{delta>0?` (−${delta.toFixed(1)} kg)`:""}</span>
                           {hasSnap&&<button onClick={(e)=>{e.stopPropagation();setExpandedRepack(isOpen?null:o.id);}} style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>{isOpen?"Ocultar detalle":"Ver bultos antes/después"}</button>}
                         </>;})()}
                         {canRepack&&<button onClick={(e)=>{e.stopPropagation();requestRepackForOp(o);}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🔄 Pedir reempaque</button>}
                       </div>
                     </div>
-                    {rpk?.status==="done"&&expandedRepack===o.id&&(()=>{const oSnap=Array.isArray(rpk.original_packages_snapshot)?rpk.original_packages_snapshot:null;const nSnap=Array.isArray(rpk.new_packages_snapshot)?rpk.new_packages_snapshot:null;const fmt=(p)=>{const dim=p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}cm`:"—";const w=p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—";const q=p.quantity>1?` ×${p.quantity}`:"";return{dim,w,q,trk:p.national_tracking||"—"};};const renderTbl=(snap,label,tone)=>!snap?<div style={{flex:1,padding:12,fontSize:11,color:"rgba(255,255,255,0.45)",fontStyle:"italic",textAlign:"center"}}>Sin snapshot ({label.toLowerCase()})</div>:<div style={{flex:1,minWidth:260}}>
+                    {rpk?.status==="done"&&expandedRepack===o.id&&(()=>{const oSnap=Array.isArray(rpk.original_packages_snapshot)?rpk.original_packages_snapshot:null;const nSnap=Array.isArray(rpk.new_packages_snapshot)?rpk.new_packages_snapshot:null;const fmt=(p)=>{const dim=p.length_cm&&p.width_cm&&p.height_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}cm`:"—";const w=p.gross_weight_kg?`${Number(p.gross_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—";const q=p.quantity>1?` ×${p.quantity}`:"";return{dim,w,q,trk:p.national_tracking||"—"};};const renderTbl=(snap,label,tone)=>!snap?<div style={{flex:1,padding:12,fontSize:11,color:"rgba(255,255,255,0.45)",fontStyle:"italic",textAlign:"center"}}>Sin snapshot ({label.toLowerCase()})</div>:<div style={{flex:1,minWidth:260}}>
                       <p style={{fontSize:10,fontWeight:700,color:tone,margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{label} · {snap.length} bulto{snap.length!==1?"s":""}</p>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{["#","Tracking","Dim","Peso"].map(h=><th key={h} style={{textAlign:"left",padding:"4px 6px",color:"rgba(255,255,255,0.4)",fontWeight:700,fontSize:9,textTransform:"uppercase"}}>{h}</th>)}</tr></thead>
@@ -5582,12 +5582,12 @@ function AgentsPanel({token}){
                             <tbody>{itemsOfOp.map(it=><tr key={it.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.8)"}}>{it.description||"—"}</td>
                               <td style={{padding:"6px 10px",textAlign:"right",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>{it.quantity||1}</td>
-                              <td style={{padding:"6px 10px",textAlign:"right",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>USD {Number(it.unit_price_usd||0).toFixed(2)}</td>
-                              <td style={{padding:"6px 10px",textAlign:"right",color:"#fff",fontWeight:600,fontVariantNumeric:"tabular-nums"}}>USD {(Number(it.unit_price_usd||0)*Number(it.quantity||1)).toFixed(2)}</td>
+                              <td style={{padding:"6px 10px",textAlign:"right",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>USD {Number(it.unit_price_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                              <td style={{padding:"6px 10px",textAlign:"right",color:"#fff",fontWeight:600,fontVariantNumeric:"tabular-nums"}}>USD {(Number(it.unit_price_usd||0)*Number(it.quantity||1)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                             </tr>)}</tbody>
                             <tfoot><tr style={{borderTop:"1px solid rgba(184,149,106,0.3)"}}>
                               <td colSpan={3} style={{padding:"6px 10px",textAlign:"right",fontWeight:700,color:"rgba(255,255,255,0.7)",fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total FOB</td>
-                              <td style={{padding:"6px 10px",textAlign:"right",fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>USD {totalFob.toFixed(2)}</td>
+                              <td style={{padding:"6px 10px",textAlign:"right",fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>USD {totalFob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                             </tr></tfoot>
                           </table>
                         </div>
@@ -5607,8 +5607,8 @@ function AgentsPanel({token}){
                               <td style={{padding:"6px 10px"}}>{p.photo_url?<a href={p.photo_url} target="_blank" rel="noopener noreferrer"><img src={p.photo_url} alt="" style={{width:36,height:36,objectFit:"cover",borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in"}}/></a>:<span title="Sin foto" style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.12)",color:"#fbbf24",fontWeight:700}}>📷 Pendiente</span>}</td>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>{q}</td>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>{l&&wi&&h?`${l}×${wi}×${h}`:"—"}</td>
-                              <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{bruto?`${bruto.toFixed(2)} kg`:"—"}</td>
-                              <td style={{padding:"6px 10px",color:fact>0?IC:"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums",fontWeight:600}}>{fact?`${fact.toFixed(2)} kg`:"—"}</td>
+                              <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{bruto?`${bruto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
+                              <td style={{padding:"6px 10px",color:fact>0?IC:"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums",fontWeight:600}}>{fact?`${fact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.5)",fontFamily:"monospace",fontSize:10}}>{p.national_tracking||"—"}</td>
                               <td style={{padding:"6px 10px",textAlign:"right"}}><button onClick={(e)=>{e.stopPropagation();openMoveModal(p,o);}} title="Mover este bulto a otro cliente (el agente lo cargó al equivocado)" style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",fontWeight:600}}>↪ Mover</button></td>
                             </tr>;})}</tbody>
@@ -5638,7 +5638,7 @@ function AgentsPanel({token}){
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{a?(a.first_name+" "+(a.last_name||"")):"—"}</td>
             <td style={{padding:"12px 14px"}}>{(()=>{const ready=f.status==="preparando"&&f.invoice_presented_at;const c=ready?"#22c55e":stColors[f.status];const label=ready?"listo para enviar":f.status;return <span style={{fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,color:c,background:`${c}20`,border:`1px solid ${c}40`,textTransform:"uppercase"}}>{label}</span>;})()}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{ops.length}</td>
-            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_weight_kg?`${Number(f.total_weight_kg).toFixed(2)} kg`:"—"}</td>
+            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_weight_kg?`${Number(f.total_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_cost_usd?usd(f.total_cost_usd):"—"}</td>
             <td style={{padding:"12px 14px",fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.35}}>{f.international_tracking?<><span style={{fontFamily:"monospace"}}>{f.international_tracking}</span>{f.international_carrier&&<><br/><span style={{fontSize:9,fontWeight:700,color:IC,letterSpacing:"0.04em",textTransform:"uppercase"}}>{f.international_carrier}</span></>}</>:"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{formatDate(f.created_at)}</td>
@@ -5691,7 +5691,7 @@ function AgentsPanel({token}){
           <tbody>{unassigned.map(p=><tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"12px 14px",fontFamily:"monospace",fontSize:12,color:"#fff"}}>{p.national_tracking}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>#{p.package_number}</td>
-            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{p.gross_weight_kg?`${Number(p.gross_weight_kg).toFixed(2)} kg`:"—"}</td>
+            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{p.gross_weight_kg?`${Number(p.gross_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",fontSize:11}}>{p.length_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}`:"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{formatDate(p.created_at)}</td>
             <td style={{padding:"12px 14px"}}><select onChange={e=>assignToOp(p,e.target.value)} value="" style={{padding:"6px 10px",fontSize:11,border:"1px solid rgba(184,149,106,0.3)",borderRadius:6,background:"rgba(184,149,106,0.08)",color:"#fff",outline:"none",maxWidth:240}}>
@@ -5766,7 +5766,7 @@ function AgentsPanel({token}){
         </div>
         <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,marginBottom:14}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Estado actual</p>
-          <p style={{fontSize:13,color:"#fff",margin:0}}>{pkgs.length} bultos · peso facturable <strong style={{color:IC}}>{billable.toFixed(2)} kg</strong></p>
+          <p style={{fontSize:13,color:"#fff",margin:0}}>{pkgs.length} bultos · peso facturable <strong style={{color:IC}}>{billable.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></p>
         </div>
         <div style={{marginBottom:14}}>
           <label style={{display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.05em"}}>Motivo del pedido (opcional)</label>
@@ -6185,7 +6185,7 @@ function AlibabaPendingBanner({flights,token,onDone}){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div>
             <span style={{fontFamily:"monospace",color:"#fff",fontWeight:700,fontSize:13}}>{f.flight_code}</span>
-            <span style={{marginLeft:10,fontSize:11,color:"rgba(255,255,255,0.55)"}}>{f.international_carrier||"—"} · base USD {base.toFixed(2)} · despachado {new Date(f.dispatched_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</span>
+            <span style={{marginLeft:10,fontSize:11,color:"rgba(255,255,255,0.55)"}}>{f.international_carrier||"—"} · base USD {base.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} · despachado {new Date(f.dispatched_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</span>
           </div>
           {!isOpen&&<button onClick={()=>startEdit(f)} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.12)",color:"#60a5fa",cursor:"pointer"}}>Completar pago</button>}
         </div>
@@ -6194,7 +6194,7 @@ function AlibabaPendingBanner({flights,token,onDone}){
             <Sel label="Método de pago" value={method} onChange={v=>{setMethod(v);setUserEdited(false);}} options={[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"tarjeta_debito",label:"Tarjeta de Débito"}]}/>
             <Inp label="Fecha de pago" type="date" value={paidAt} onChange={setPaidAt}/>
             {method==="tarjeta_credito"&&<Inp label="Cierre de tarjeta" type="date" value={closing} onChange={setClosing}/>}
-            <Inp label={`Costo real (auto: USD ${autoCost.toFixed(2)})`} type="number" step="0.01" value={realCostInput} onChange={v=>{setRealCostInput(v);setUserEdited(true);}}/>
+            <Inp label={`Costo real (auto: USD ${autoCost.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`} type="number" step="0.01" value={realCostInput} onChange={v=>{setRealCostInput(v);setUserEdited(true);}}/>
           </div>
           <div style={{display:"flex",gap:8,marginTop:10,justifyContent:"flex-end"}}>
             {userEdited&&<button onClick={()=>{setUserEdited(false);setRealCostInput(String(autoCost));}} style={{padding:"6px 12px",fontSize:11,borderRadius:7,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>↻ Usar auto</button>}
@@ -6281,7 +6281,7 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
       })),
       ...pmtArr.map(p=>({
         kind:"pmt",icon:"info",emoji:"💳",
-        title:`Pago recibido USD ${Number(p.amount_usd||0).toFixed(2)} — ${p.operations?.operation_code||""}`,
+        title:`Pago recibido USD ${Number(p.amount_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} — ${p.operations?.operation_code||""}`,
         sub:p.operations?.clients?.client_code||"",
         date:p.payment_date,
       })),
@@ -7344,8 +7344,8 @@ function ComunicacionesPanel({token}){
     const creditApp=Number(op.credit_applied_usd||0);
     const debtApp=Number(op.debt_applied_usd||0);
     const saldo=Math.max(0,bt+debtApp-totAnt-collected-creditApp);
-    const creditTxt=creditApp>0?`\n\n_Se debitó USD ${creditApp.toFixed(2)} del saldo a favor que tenías en tu cuenta._`:"";
-    const saldoTxt=(saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toFixed(2)}*`:"")+creditTxt;
+    const creditTxt=creditApp>0?`\n\n_Se debitó USD ${creditApp.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} del saldo a favor que tenías en tu cuenta._`:"";
+    const saldoTxt=(saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}*`:"")+creditTxt;
     const data={firstName,opCode,desc,portalLink,saldoTxt};
     const key=`wa_${trigger}`;
     const tpl=templates.find(t=>t.key===key);
@@ -7845,7 +7845,7 @@ function QuotesList({token}){
     const prods=editProds.length?editProds:(typeof q.products==="string"?JSON.parse(q.products):q.products||[]);
     const w=window.open("","_blank");if(!w)return;
     const totFob=prods.reduce((s,p)=>s+Number(p.unit_price||0)*Number(p.quantity||1),0);
-    const rows=prods.map(p=>{const fob=Number(p.unit_price||0)*Number(p.quantity||1);const nc=p.ncm||{};return `<tr><td>${p.description||p.type||""}</td><td class="c">${p.quantity||1}</td><td class="r">USD ${Number(p.unit_price||0).toFixed(2)}</td><td class="r">USD ${fob.toFixed(2)}</td><td class="c mono">${nc.ncm_code||"—"}</td><td class="c">${nc.import_duty_rate||0}%</td><td class="c">${nc.statistics_rate||0}%</td><td class="c">${nc.iva_rate||21}%</td></tr>`;}).join("");
+    const rows=prods.map(p=>{const fob=Number(p.unit_price||0)*Number(p.quantity||1);const nc=p.ncm||{};return `<tr><td>${p.description||p.type||""}</td><td class="c">${p.quantity||1}</td><td class="r">USD ${Number(p.unit_price||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td class="r">USD ${fob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td class="c mono">${nc.ncm_code||"—"}</td><td class="c">${nc.import_duty_rate||0}%</td><td class="c">${nc.statistics_rate||0}%</td><td class="c">${nc.iva_rate||21}%</td></tr>`;}).join("");
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Cotización ${q.client_code||""}</title><style>
       *{box-sizing:border-box}body{font-family:'Helvetica Neue',Arial,sans-serif;padding:32px;color:#111;max-width:900px;margin:0 auto}
       h1{font-size:22px;margin:0 0 4px;color:#1B4F8A}.sub{color:#666;font-size:12px;margin-bottom:24px}
@@ -7871,7 +7871,7 @@ function QuotesList({token}){
       </div>
       <h3 style="margin:18px 0 6px;font-size:13px;color:#1B4F8A">Productos y clasificación arancelaria</h3>
       <table><thead><tr><th>Descripción</th><th>Cant</th><th>Unit.</th><th>FOB</th><th>NCM</th><th>Derechos</th><th>TE</th><th>IVA</th></tr></thead><tbody>${rows}</tbody></table>
-      <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${totFob.toFixed(2)}</div></div><div style="text-align:right"><div class="lbl">Costo total estimado (DDP)</div><div class="big">USD ${Number(q.total_cost||0).toFixed(2)}</div></div></div>
+      <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${totFob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div><div style="text-align:right"><div class="lbl">Costo total estimado (DDP)</div><div class="big">USD ${Number(q.total_cost||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div></div>
       <div class="foot">Los valores de NCM, derechos de importación, tasa de estadística e IVA son los aplicables según la normativa vigente al momento de emitir esta cotización. Los costos pueden variar según volumen final, tipo de cambio y gastos documentales. Argencargo — Integral Freight Forwarding.</div>
       <script>setTimeout(()=>window.print(),300)</script>
     </body></html>`);w.document.close();
@@ -7965,12 +7965,12 @@ function QuotesList({token}){
             {/* Desaduanaje prorrateado (sólo aéreo A) */}
             {isAereoA&&<div style={{marginTop:8,padding:"8px 12px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}}>
               <span style={{color:"rgba(255,255,255,0.6)"}}>Desaduanaje (prorrateado · {(share*100).toFixed(1)}% del total)</span>
-              <span style={{color:GOLD_LIGHT,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {desemb.toFixed(2)}</span>
+              <span style={{color:GOLD_LIGHT,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {desemb.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
             </div>}
           </div>;})}
           {isAereoA&&editProds.length>1&&<div style={{marginTop:6,padding:"8px 12px",background:"rgba(255,255,255,0.025)",border:"1px dashed rgba(184,149,106,0.25)",borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}}>
-            <span style={{color:"rgba(255,255,255,0.45)"}}>Desaduanaje total de la operación (USD {desembBase.toFixed(2)} + 21% IVA)</span>
-            <span style={{color:GOLD_LIGHT,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {desembConIVA.toFixed(2)}</span>
+            <span style={{color:"rgba(255,255,255,0.45)"}}>Desaduanaje total de la operación (USD {desembBase.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} + 21% IVA)</span>
+            <span style={{color:GOLD_LIGHT,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {desembConIVA.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
           </div>}
         </div>;})()}
         {/* Bultos editables + totales */}
@@ -7996,9 +7996,9 @@ function QuotesList({token}){
           {/* Totales de bultos */}
           {editPkgs.length>0&&(()=>{const t=computePackagesTotals();return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,padding:"12px 14px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,marginTop:4}}>
             <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>CBM total</p><p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{t.cbm.toFixed(4)} m³</p></div>
-            <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Kg bruto</p><p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{t.gross.toFixed(2)} kg</p></div>
-            <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Kg volumétrico</p><p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{t.volumetric.toFixed(2)} kg</p></div>
-            <div><p style={{fontSize:9.5,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Kg facturable</p><p style={{fontSize:14,fontWeight:800,color:GOLD_LIGHT,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>{t.billable.toFixed(2)} kg</p></div>
+            <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Kg bruto</p><p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{t.gross.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div>
+            <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Kg volumétrico</p><p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{t.volumetric.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div>
+            <div><p style={{fontSize:9.5,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Kg facturable</p><p style={{fontSize:14,fontWeight:800,color:GOLD_LIGHT,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>{t.billable.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div>
           </div>;})()}
         </div>
         {/* COSTOS POR CANAL — las 4 opciones */}
@@ -8210,10 +8210,10 @@ function GiAdminPanel({token,clients}){
     // Bloqueo: no se pueden liquidar comisiones estimadas (con TC ARS pendiente de dolarizar)
     const estimadas=earningIds.map(id=>earnings.find(e=>e.id===id)).filter(e=>e?.is_estimated);
     if(estimadas.length>0){
-      alert(`⚠ No se pueden liquidar comisiones estimadas.\n\n${estimadas.length} op${estimadas.length>1?"s":""} tiene${estimadas.length>1?"n":""} costos en pesos pendientes de dolarizar:\n\n• ${estimadas.map(e=>`${e.operations?.operation_code||"—"} (USD ${Number(e.commission_usd||0).toFixed(2)} estimada)`).join("\n• ")}\n\nDolarizá los pagos pendientes en cada op (cuando se debiten en la TC) y la comisión se confirma automáticamente. Después podés liquidarla.`);
+      alert(`⚠ No se pueden liquidar comisiones estimadas.\n\n${estimadas.length} op${estimadas.length>1?"s":""} tiene${estimadas.length>1?"n":""} costos en pesos pendientes de dolarizar:\n\n• ${estimadas.map(e=>`${e.operations?.operation_code||"—"} (USD ${Number(e.commission_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} estimada)`).join("\n• ")}\n\nDolarizá los pagos pendientes en cada op (cuando se debiten en la TC) y la comisión se confirma automáticamente. Después podés liquidarla.`);
       return;
     }
-    if(!confirm(`¿Marcar como pagadas ${earningIds.length} comisión${earningIds.length>1?"es":""} por USD ${Math.abs(totalAmount).toFixed(2)}?`))return;
+    if(!confirm(`¿Marcar como pagadas ${earningIds.length} comisión${earningIds.length>1?"es":""} por USD ${Math.abs(totalAmount).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}?`))return;
     setPaying(true);
     const now=new Date().toISOString();
     for(const id of earningIds){
@@ -8402,7 +8402,7 @@ function GiAdminPanel({token,clients}){
           {Object.entries(byPartner).map(([pid,d])=><div key={pid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,gap:10,flexWrap:"wrap"}}>
             <div style={{flex:1,minWidth:200}}>
               <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0}}>{partnerEmail(pid)}</p>
-              <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>{d.n} op{d.n>1?"s":""} pendiente{d.n>1?"s":""}{d.neg<0?` · ganancias USD ${d.pos.toFixed(2)} − pérdidas USD ${Math.abs(d.neg).toFixed(2)}`:""}</p>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>{d.n} op{d.n>1?"s":""} pendiente{d.n>1?"s":""}{d.neg<0?` · ganancias USD ${d.pos.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} − pérdidas USD ${Math.abs(d.neg).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:""}</p>
             </div>
             <div style={{textAlign:"right"}}>
               <p style={{fontSize:18,fontWeight:800,color:d.total>=0?"#22c55e":"#f87171",fontVariantNumeric:"tabular-nums",margin:0}}>{d.total>=0?"":"−"}USD {Math.abs(d.total).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
@@ -8438,9 +8438,9 @@ function GiAdminPanel({token,clients}){
             {pending.map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:`1px solid ${e.is_estimated?"rgba(251,146,60,0.35)":"rgba(255,255,255,0.05)"}`,borderRadius:8,fontSize:12.5}}>
               <div style={{flex:1,minWidth:0}}>
                 <p style={{margin:0,color:"#fff"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:600}}>{e.operations?.operation_code||"—"}</span> · {e.operations?.clients?`${e.operations.clients.first_name||""} ${e.operations.clients.last_name||""}`.trim():"—"}{e.is_estimated&&<span title={`Estimada con FX ${e.estimated_fx_rate||"?"}. No se puede liquidar hasta que se dolaricen los TC pendientes.`} style={{marginLeft:8,fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(251,146,60,0.2)",color:"#fb923c",letterSpacing:"0.05em"}}>EST</span>}</p>
-                <p style={{margin:"3px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.5)"}}>{formatDate(e.closed_at)} · Ingresos {`USD ${Number(e.revenue_usd||0).toFixed(2)}`} − Costos {`USD ${Number(e.total_costs_usd||0).toFixed(2)}`} = Neto {`USD ${Number(e.net_profit_usd||0).toFixed(2)}`}{e.is_estimated&&<span style={{color:"#fb923c"}}> · FX {Number(e.estimated_fx_rate||0).toFixed(0)}</span>}</p>
+                <p style={{margin:"3px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.5)"}}>{formatDate(e.closed_at)} · Ingresos {`USD ${Number(e.revenue_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`} − Costos {`USD ${Number(e.total_costs_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`} = Neto {`USD ${Number(e.net_profit_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}{e.is_estimated&&<span style={{color:"#fb923c"}}> · FX {Number(e.estimated_fx_rate||0).toFixed(0)}</span>}</p>
               </div>
-              <p style={{fontSize:14,fontWeight:700,color:Number(e.commission_usd||0)>=0?"#22c55e":"#f87171",fontVariantNumeric:"tabular-nums",margin:0,whiteSpace:"nowrap",marginLeft:14}}>{Number(e.commission_usd||0)>=0?"":"−"}USD {Math.abs(Number(e.commission_usd||0)).toFixed(2)}</p>
+              <p style={{fontSize:14,fontWeight:700,color:Number(e.commission_usd||0)>=0?"#22c55e":"#f87171",fontVariantNumeric:"tabular-nums",margin:0,whiteSpace:"nowrap",marginLeft:14}}>{Number(e.commission_usd||0)>=0?"":"−"}USD {Math.abs(Number(e.commission_usd||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
             </div>)}
           </div>
         </>}
@@ -8449,7 +8449,7 @@ function GiAdminPanel({token,clients}){
           <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:200,overflowY:"auto"}}>
             {paid.map(e=><div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",fontSize:11.5,opacity:0.6}}>
               <span><span style={{fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT}}>{e.operations?.operation_code||"—"}</span> · pagada {e.paid_at?formatDate(e.paid_at):"—"}</span>
-              <span style={{color:"rgba(255,255,255,0.6)"}}>USD {Number(e.commission_usd||0).toFixed(2)}</span>
+              <span style={{color:"rgba(255,255,255,0.6)"}}>USD {Number(e.commission_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
             </div>)}
           </div>
         </>}

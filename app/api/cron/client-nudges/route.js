@@ -75,7 +75,7 @@ export async function GET(req) {
     ...op2.map(o => ({ ...o, kind: "documentation", title: "📋 Completá tu documentación", body: `Tu carga está lista para preparar el envío. Cargá los productos para avanzar.` })),
     ...(Array.isArray(op3) ? op3 : []).map(o => {
       const saldo = Math.max(0, Number(o.budget_total || 0) - Number(o.collected_amount || 0));
-      return { ...o, kind: "payment", title: "💰 Tu carga está lista para retirar", body: `Saldo pendiente: USD ${saldo.toFixed(2)}. Coordinemos el pago para el retiro.` };
+      return { ...o, kind: "payment", title: "💰 Tu carga está lista para retirar", body: `Saldo pendiente: USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}. Coordinemos el pago para el retiro.` };
     }),
   ];
 

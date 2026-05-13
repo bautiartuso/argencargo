@@ -778,7 +778,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     if(Array.isArray(p.consolidated_from_trackings)&&p.consolidated_from_trackings.some(tr=>(tr||"").toLowerCase().includes(q)))return true;
     return false;
   });
-  const depositTotalKg=depositPkgsAll.reduce((s,p)=>s+Number(p.gross_weight_kg||0),0).toFixed(2);
+  const depositTotalKg=depositPkgsAll.reduce((s,p)=>s+Number(p.gross_weight_kg||0),0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
   const activeFlights=flights.filter(f=>f.status==="preparando");
   const historyFlights=flights.filter(f=>f.status==="despachado"||f.status==="recibido");
 
@@ -860,7 +860,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
           <span style={{fontSize:24}}>🔄</span>
           <div>
             <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.repack_pending||"Reempaque pedido"} · <span style={{fontFamily:"monospace",color:"#fbbf24"}}>{r.operations?.operation_code}</span></p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.7)",margin:"3px 0 0",lineHeight:1.5}}>{t.repack_current||"Peso actual"}: <strong>{Number(r.original_billable_kg||0).toFixed(2)} kg</strong> ({r.original_pkg_count} {t.bultos||"bultos"}){r.reason?`\n${r.reason}`:""}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.7)",margin:"3px 0 0",lineHeight:1.5}}>{t.repack_current||"Peso actual"}: <strong>{Number(r.original_billable_kg||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong> ({r.original_pkg_count} {t.bultos||"bultos"}){r.reason?`\n${r.reason}`:""}</p>
           </div>
         </div>
         <button onClick={()=>setRepackOpen(r.operation_id)} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>🔄 {t.repack_open||"Reempaquetar"}</button>
@@ -912,9 +912,9 @@ function Dashboard({session,onLogout,lang,setLang,t}){
                 {p.consolidated_from_trackings.length>3&&<span style={{fontSize:9.5,padding:"1px 5px",borderRadius:3,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)"}}>+{p.consolidated_from_trackings.length-3}</span>}
               </div>}
             </td>
-            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums"}}>{bruto?`${bruto.toFixed(2)} kg`:"—"}</td>
-            <td style={{padding:"10px 14px",color:isVolBigger?"#fb923c":"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{vol?`${vol.toFixed(2)} kg`:"—"}</td>
-            <td style={{padding:"10px 14px",color:fact>0?IC:"rgba(255,255,255,0.3)",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{fact?`${fact.toFixed(2)} kg`:"—"}</td>
+            <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums"}}>{bruto?`${bruto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
+            <td style={{padding:"10px 14px",color:isVolBigger?"#fb923c":"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{vol?`${vol.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
+            <td style={{padding:"10px 14px",color:fact>0?IC:"rgba(255,255,255,0.3)",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{fact?`${fact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"10px 14px"}}><PackagePhotoCell pkg={p} token={token} t={t} onUpdated={reloadAll}/></td>
             <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{new Date(p.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</td>
             <td style={{padding:"10px 14px",textAlign:"right",whiteSpace:"nowrap"}}>
@@ -1163,7 +1163,7 @@ function FlightDetail({token,flight,flightOps,packages,signup,t,onBack,onDispatc
       </div>
       <h3 style="margin:18px 0 0;font-size:13px;color:#1B4F8A;text-transform:uppercase;letter-spacing:0.05em">Items / Goods Description</h3>
       <table><thead><tr><th>Op</th><th>Client</th><th>Description</th><th>HS Code</th><th>Qty</th><th class="r">Unit Value</th><th class="r">Total Value</th></tr></thead><tbody>${rows}</tbody></table>
-      <div class="totals"><div><div class="lbl">Total Quantity</div><div class="big">${totalQty}</div></div><div><div class="lbl">Total Weight</div><div class="big">${(autoWeight||0).toFixed(2)} kg</div></div><div><div class="lbl">Total Commercial Value</div><div class="big">${fmt(totalValue)}</div></div></div>
+      <div class="totals"><div><div class="lbl">Total Quantity</div><div class="big">${totalQty}</div></div><div><div class="lbl">Total Weight</div><div class="big">${(autoWeight||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</div></div><div><div class="lbl">Total Commercial Value</div><div class="big">${fmt(totalValue)}</div></div></div>
       <div class="foot"><img src="${LOGO}" alt="Argencargo"/><div class="info"><b>ARGENCARGO</b><div><span class="lbl">Tel:</span>+54 9 11 2508-8580</div><div><span class="lbl">Email:</span>info@argencargo.com.ar</div><div>Av Callao 1137 — Recoleta, CABA, Argentina</div></div></div>
       <div class="disclaimer">This document is generated for customs and freight forwarding purposes only. Final commercial invoice may differ subject to actual shipment data.</div>
       <script>setTimeout(()=>{try{window.print();}catch(e){}},400)</script>
@@ -1253,7 +1253,7 @@ function FlightDetail({token,flight,flightOps,packages,signup,t,onBack,onDispatc
         {flightOps.map(fo=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);const w=opPkgs.reduce((s,p)=>s+(Number(p.gross_weight_kg||0)*Number(p.quantity||1)),0);const opCode=opPkgs[0]?.operations?.operation_code||"OP";const clientCode=opPkgs[0]?.operations?.clients?.client_code||"";return <div key={fo.id} style={{padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:opPkgs.length>0?8:0}}>
             <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{opCode} — {clientCode}</span>
-            <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{w.toFixed(2)} kg{fo.cost_share_usd?` · ${usdF(fo.cost_share_usd)}`:""}</span>
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{w.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg{fo.cost_share_usd?` · ${usdF(fo.cost_share_usd)}`:""}</span>
           </div>
           {opPkgs.length>0&&<div style={{paddingLeft:12,borderLeft:"2px solid rgba(184,149,106,0.2)",marginLeft:4}}>
             {opPkgs.map((p,i)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0);const l=Number(p.length_cm||0),wd=Number(p.width_cm||0),h=Number(p.height_cm||0);const hasDims=l&&wd&&h;const nt=p.national_tracking||"";return <div key={p.id||i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",fontSize:11,color:"rgba(255,255,255,0.7)",gap:10,flexWrap:"wrap"}}>
@@ -1267,7 +1267,7 @@ function FlightDetail({token,flight,flightOps,packages,signup,t,onBack,onDispatc
                   {p.consolidated_from_trackings.length>4&&<span title={p.consolidated_from_trackings.join(", ")} style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)",cursor:"help"}}>+{p.consolidated_from_trackings.length-4}</span>}
                 </>}
               </div>
-              <span style={{color:"rgba(255,255,255,0.55)",textAlign:"right"}}>{q>1?`${q}× `:""}{hasDims?`${l}×${wd}×${h} cm`:"— cm"}{gw>0?` · ${gw.toFixed(2)} kg`:""}</span>
+              <span style={{color:"rgba(255,255,255,0.55)",textAlign:"right"}}>{q>1?`${q}× `:""}{hasDims?`${l}×${wd}×${h} cm`:"— cm"}{gw>0?` · ${gw.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:""}</span>
             </div>;})}
           </div>}
         </div>;})}
@@ -1282,12 +1282,12 @@ function FlightDetail({token,flight,flightOps,packages,signup,t,onBack,onDispatc
           <span>{it.description}</span>
           <span style={{fontFamily:"monospace"}}>{it.hs_code||"—"}</span>
           <span style={{textAlign:"right"}}>{Number(it.quantity||0)}</span>
-          <span style={{textAlign:"right"}}>USD {Number(it.unit_price_declared_usd||0).toFixed(2)}</span>
-          <span style={{textAlign:"right",fontWeight:700}}>USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toFixed(2)}</span>
+          <span style={{textAlign:"right"}}>USD {Number(it.unit_price_declared_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          <span style={{textAlign:"right",fontWeight:700}}>USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
         </div>)}
         <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 4px",marginTop:4,borderTop:"1px solid rgba(184,149,106,0.3)"}}>
           <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>TOTAL</span>
-          <span style={{fontSize:14,fontWeight:700,color:IC}}>USD {invoiceItems.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_declared_usd||0),0).toFixed(2)}</span>
+          <span style={{fontSize:14,fontWeight:700,color:IC}}>USD {invoiceItems.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_declared_usd||0),0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
         </div>
       </div>
     </Card>}
@@ -1300,11 +1300,11 @@ function FlightDetail({token,flight,flightOps,packages,signup,t,onBack,onDispatc
       <div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{t.weight_from_packages}</span>
-          <span style={{fontSize:16,fontWeight:700,color:IC}}>{autoWeight.toFixed(2)} kg</span>
+          <span style={{fontSize:16,fontWeight:700,color:IC}}>{autoWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</span>
         </div>
         {autoFact>autoWeight+0.01&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,paddingTop:6,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
           <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Peso facturable (vol &gt; bruto) · usado para $/kg y reparto</span>
-          <span style={{fontSize:13,fontWeight:700,color:"#fb923c"}}>{autoFact.toFixed(2)} kg</span>
+          <span style={{fontSize:13,fontWeight:700,color:"#fb923c"}}>{autoFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</span>
         </div>}
         {Number(totalCost)>0&&autoFact>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,paddingTop:6,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
           <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Tarifa resultante</span>
@@ -1456,10 +1456,10 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
       // 3. Marcar request como done
       if(request?.id){
         const newSnapshot=newBultos.map((b,i)=>({package_number:i+1,quantity:1,gross_weight_kg:Number(b.weight)||null,length_cm:Number(b.length)||null,width_cm:Number(b.width)||null,height_cm:Number(b.height)||null,national_tracking:refFor(i)}));
-        await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${request.id}`,body:{status:"done",new_billable_kg:Number(after.toFixed(2)),new_pkg_count:newBultos.length,agent_notes:notes||null,completed_at:new Date().toISOString(),completed_by:userId,new_packages_snapshot:newSnapshot}});
+        await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${request.id}`,body:{status:"done",new_billable_kg:Math.round((after)*100)/100,new_pkg_count:newBultos.length,agent_notes:notes||null,completed_at:new Date().toISOString(),completed_by:userId,new_packages_snapshot:newSnapshot}});
       }
       // 4. Log en comunicaciones
-      try{await dq("op_communications",{method:"POST",token,body:{operation_id:opId,type:"note",content:`✅ Reempaque completado.\nPeso facturable: ${before.toFixed(2)} kg → ${after.toFixed(2)} kg${delta>0?` (−${delta.toFixed(2)} kg)`:""}\nBultos: ${packages.length} → ${newBultos.length}\nNuevas referencias: ${newBultos.map((_,i)=>refFor(i)).join(", ")}${notes?`\nNotas: ${notes}`:""}`}});}catch(e){}
+      try{await dq("op_communications",{method:"POST",token,body:{operation_id:opId,type:"note",content:`✅ Reempaque completado.\nPeso facturable: ${before.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg → ${after.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg${delta>0?` (−${delta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg)`:""}\nBultos: ${packages.length} → ${newBultos.length}\nNuevas referencias: ${newBultos.map((_,i)=>refFor(i)).join(", ")}${notes?`\nNotas: ${notes}`:""}`}});}catch(e){}
       // 5. Push al admin
       try{
         const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
@@ -1496,11 +1496,11 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
       <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:120,padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8}}>
           <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase"}}>Antes / 之前</p>
-          <p style={{fontSize:16,fontWeight:700,color:"#fff",margin:"3px 0 0"}}>{before.toFixed(2)} kg · {packages.length} bultos</p>
+          <p style={{fontSize:16,fontWeight:700,color:"#fff",margin:"3px 0 0"}}>{before.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg · {packages.length} bultos</p>
         </div>
         <div style={{flex:1,minWidth:120,padding:"10px 12px",background:delta>0?"rgba(34,197,94,0.08)":"rgba(255,255,255,0.04)",border:`1px solid ${delta>0?"rgba(34,197,94,0.3)":"rgba(255,255,255,0.08)"}`,borderRadius:8}}>
           <p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase"}}>Ahora / 现在</p>
-          <p style={{fontSize:16,fontWeight:700,color:delta>0?"#22c55e":"#fff",margin:"3px 0 0"}}>{after.toFixed(2)} kg · {newBultos.length} bultos {delta>0&&<span style={{fontSize:11,fontWeight:600,color:"#22c55e"}}>(−{delta.toFixed(1)})</span>}</p>
+          <p style={{fontSize:16,fontWeight:700,color:delta>0?"#22c55e":"#fff",margin:"3px 0 0"}}>{after.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg · {newBultos.length} bultos {delta>0&&<span style={{fontSize:11,fontWeight:600,color:"#22c55e"}}>(−{delta.toFixed(1)})</span>}</p>
         </div>
       </div>
 

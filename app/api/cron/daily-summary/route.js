@@ -165,5 +165,5 @@ export async function GET(req) {
   const j = await r.json().catch(() => null);
   if (!r.ok) return Response.json({ error: "send failed", detail: j }, { status: 500 });
 
-  return Response.json({ ok: true, sent_to: ADMIN_EMAIL, summary: { opsCreatedYesterday, opsCobradasYesterday, montoCobradoYesterday: montoCobradoYesterday.toFixed(2), packagesYesterday, todayPending: todayPending.length, overdueReminders: overdueReminders.length } });
+  return Response.json({ ok: true, sent_to: ADMIN_EMAIL, summary: { opsCreatedYesterday, opsCobradasYesterday, montoCobradoYesterday: montoCobradoYesterday.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}), packagesYesterday, todayPending: todayPending.length, overdueReminders: overdueReminders.length } });
 }

@@ -225,9 +225,9 @@ export async function GET(req) {
     resend_id: j?.id,
     summary: {
       ops_cerradas: report.opsCerradas.length,
-      cobrado: report.cobrosMes.toFixed(2),
-      costos: (report.costosMes + report.costosFijos).toFixed(2),
-      ganancia: report.ganancia.toFixed(2),
+      cobrado: report.cobrosMes.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),
+      costos: (report.costosMes + report.costosFijos).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),
+      ganancia: report.ganancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),
       margen: report.margen.toFixed(1) + "%",
       deudas_pendientes: report.deudasPendientes.length,
     },

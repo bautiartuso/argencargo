@@ -607,7 +607,7 @@ function RequestDetail({token,requestId,profileId,onBack,onStartWizard}){
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end",flexShrink:0,minWidth:90,paddingTop:2}}>
                 {p.quantity>0&&<div style={{textAlign:"right"}}><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>Cant.</p><p style={{fontSize:14,fontWeight:700,color:GOLD_LIGHT,margin:0,fontFeatureSettings:'"tnum"'}}>{p.quantity}</p></div>}
-                {Number(p.unit_cost_usd||0)>0&&<div style={{textAlign:"right",marginTop:2}}><p style={{fontSize:9,fontWeight:600,color:"rgba(255,255,255,0.35)",margin:0}}>Unit USD {Number(p.unit_cost_usd).toFixed(2)}</p><p style={{fontSize:11,fontWeight:700,color:"#fff",margin:"2px 0 0",fontFeatureSettings:'"tnum"'}}>Sub USD {(Number(p.unit_cost_usd)*Number(p.quantity||1)).toFixed(2)}</p></div>}
+                {Number(p.unit_cost_usd||0)>0&&<div style={{textAlign:"right",marginTop:2}}><p style={{fontSize:9,fontWeight:600,color:"rgba(255,255,255,0.35)",margin:0}}>Unit USD {Number(p.unit_cost_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p><p style={{fontSize:11,fontWeight:700,color:"#fff",margin:"2px 0 0",fontFeatureSettings:'"tnum"'}}>Sub USD {(Number(p.unit_cost_usd)*Number(p.quantity||1)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>}
               </div>
             </div>)}
           </div>
@@ -1283,10 +1283,10 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
         const pesoFactMar=Math.max(pesoReal,cbm*1000); // marítimo: 1 m³ = 1.000 kg facturables
         return <div style={{display:"flex",flexWrap:"wrap",gap:14,padding:"10px 12px",marginTop:8,background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:8,fontSize:11,color:"rgba(255,255,255,0.65)",fontFeatureSettings:'"tnum"'}}>
           <span>CBM total: <strong style={{color:"#fff"}}>{cbm.toFixed(4)} m³</strong></span>
-          <span>Peso real: <strong style={{color:"#fff"}}>{pesoReal.toFixed(2)} kg</strong></span>
-          <span>Peso vol. aéreo (÷5000): <strong style={{color:"#fff"}}>{pesoVolAereo.toFixed(2)} kg</strong></span>
-          <span>Facturable aéreo: <strong style={{color:"#22c55e"}}>{pesoFactAereo.toFixed(2)} kg</strong></span>
-          <span>Facturable marítimo: <strong style={{color:"#60a5fa"}}>{pesoFactMar.toFixed(2)} kg</strong></span>
+          <span>Peso real: <strong style={{color:"#fff"}}>{pesoReal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>
+          <span>Peso vol. aéreo (÷5000): <strong style={{color:"#fff"}}>{pesoVolAereo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>
+          <span>Facturable aéreo: <strong style={{color:"#22c55e"}}>{pesoFactAereo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>
+          <span>Facturable marítimo: <strong style={{color:"#60a5fa"}}>{pesoFactMar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>
         </div>;
       })()}
       {/* Desglose impositivo por producto y por canal (solo canal A blanco — el B negro es tarifa plana sin impuestos prorrateados) */}
@@ -1339,10 +1339,10 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
           <button onClick={onNext} style={{padding:"10px 20px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>Continuar a costos →</button>
         </div>
         {pesoRealAll>0&&<div style={{display:"flex",flexWrap:"wrap",gap:14,fontSize:11,color:"rgba(255,255,255,0.65)",fontFeatureSettings:'"tnum"',paddingTop:8,borderTop:"1px solid rgba(184,149,106,0.18)"}}>
-          <span>CBM total: <strong style={{color:"#fff"}}>{totCBM.toFixed(4)} m³</strong>{totCBM<1?<span style={{color:"#fbbf24",marginLeft:4,fontSize:10}}>(min 1 m³ marítimo LCL/FCL → cobra {cbmCharge.toFixed(2)} m³)</span>:""}</span>
-          <span>Peso real total: <strong style={{color:"#fff"}}>{pesoRealAll.toFixed(2)} kg</strong></span>
-          <span>Facturable aéreo total: <strong style={{color:"#22c55e"}}>{pfAll.toFixed(2)} kg</strong></span>
-          <span>Facturable marítimo total: <strong style={{color:"#60a5fa"}}>{pesoFactMarAll.toFixed(2)} kg</strong></span>
+          <span>CBM total: <strong style={{color:"#fff"}}>{totCBM.toFixed(4)} m³</strong>{totCBM<1?<span style={{color:"#fbbf24",marginLeft:4,fontSize:10}}>(min 1 m³ marítimo LCL/FCL → cobra {cbmCharge.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} m³)</span>:""}</span>
+          <span>Peso real total: <strong style={{color:"#fff"}}>{pesoRealAll.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>
+          <span>Facturable aéreo total: <strong style={{color:"#22c55e"}}>{pfAll.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>
+          <span>Facturable marítimo total: <strong style={{color:"#60a5fa"}}>{pesoFactMarAll.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong></span>
         </div>}
       </div>;
     })()}
@@ -2251,7 +2251,7 @@ function PaneLedger({token,profileId,isAdmin}){
         op:opCode,
         client:cn,
         type:com>=0?"devengado":"perdida_absorbida",
-        description:com>=0?`Comisión devengada · ${e.is_estimated?"ESTIMADA · ":""}${e.commission_pct||0}% sobre USD ${Number(e.net_profit_usd||0).toFixed(2)}`:`Absorción de pérdida · ${Math.abs(e.commission_pct||0)}% sobre USD ${Number(e.net_profit_usd||0).toFixed(2)}`,
+        description:com>=0?`Comisión devengada · ${e.is_estimated?"ESTIMADA · ":""}${e.commission_pct||0}% sobre USD ${Number(e.net_profit_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:`Absorción de pérdida · ${Math.abs(e.commission_pct||0)}% sobre USD ${Number(e.net_profit_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`,
         amount:com,
         is_estimated:e.is_estimated,
       });

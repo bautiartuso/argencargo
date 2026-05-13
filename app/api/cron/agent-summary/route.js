@@ -68,7 +68,7 @@ export async function GET() {
       const parts = [];
       if (noPhotoCount > 0) parts.push(`${noPhotoCount} 包裹 sin foto`);
       if (readyCount > 0) parts.push(`${readyCount} op listas para vuelo`);
-      parts.push(`saldo USD ${balance.toFixed(2)}`);
+      parts.push(`saldo USD ${balance.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
 
       const title = `📋 Resumen del día`;
       const body = parts.join(" · ");

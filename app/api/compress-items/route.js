@@ -64,7 +64,7 @@ export async function POST(req) {
 
     const itemsList = items.map((it, i) => `[${i}] desc="${it.description}" qty=${it.quantity} price=${it.unit_price_usd} hs=${it.hs_code || "—"}`).join("\n");
     const totalFob = items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price_usd || 0), 0);
-    const userMsg = `Comprimí estos ${items.length} items a MÁXIMO ${maxItems} grupos. Total FOB original: USD ${totalFob.toFixed(2)} (debe coincidir con la suma del output).\n\n${itemsList}`;
+    const userMsg = `Comprimí estos ${items.length} items a MÁXIMO ${maxItems} grupos. Total FOB original: USD ${totalFob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (debe coincidir con la suma del output).\n\n${itemsList}`;
 
     const text = await callClaudeText({
       system: SYSTEM_PROMPT,
@@ -140,12 +140,12 @@ export async function POST(req) {
 
     // Solo error crítico es FOB delta significativo (no debería pasar con el cálculo en código)
     const criticalErrors = [];
-    if (fobDeltaPct > 1.5) criticalErrors.push(`❌ Diferencia de FOB: USD ${fobDelta.toFixed(2)} (${fobDeltaPct.toFixed(1)}%)`);
+    if (fobDeltaPct > 1.5) criticalErrors.push(`❌ Diferencia de FOB: USD ${fobDelta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (${fobDeltaPct.toFixed(1)}%)`);
 
     const warnings = [
       ...(rescued.length > 0 ? [`La IA dejó ${rescued.length} items sin agrupar (índices: ${rescued.join(",")}) — los agregué como grupos sueltos para no perderlos. Si querés más compresión, tocá Re-comprimir.`] : []),
       ...(aiDuplicates.length > 0 ? [`La IA duplicó ${aiDuplicates.length} índices (los descarté de la 2da ocurrencia).`] : []),
-      ...(fobDelta > 0.5 && fobDeltaPct <= 1.5 ? [`Diferencia menor de FOB: USD ${fobDelta.toFixed(2)} (probable redondeo)`] : []),
+      ...(fobDelta > 0.5 && fobDeltaPct <= 1.5 ? [`Diferencia menor de FOB: USD ${fobDelta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (probable redondeo)`] : []),
       ...(groups.length > maxItems ? [`Quedaron ${groups.length} grupos (objetivo era ${maxItems}). Tocá Re-comprimir si necesitás reducir más.`] : []),
     ];
 
@@ -154,9 +154,9 @@ export async function POST(req) {
       groups,
       original_count: items.length,
       compressed_count: groups.length,
-      original_fob: Number(totalFob.toFixed(2)),
-      compressed_fob: Number(newTotalFob.toFixed(2)),
-      fob_delta: Number(fobDelta.toFixed(2)),
+      original_fob: Math.round((totalFob)*100)/100,
+      compressed_fob: Math.round((newTotalFob)*100)/100,
+      fob_delta: Math.round((fobDelta)*100)/100,
       critical_errors: criticalErrors,
       warnings,
       can_apply: criticalErrors.length === 0,
