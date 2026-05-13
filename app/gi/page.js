@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { calcOpBudget } from "../../lib/calc";
+import { printGiQuotePdf } from "../../lib/pdf-templates";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -537,11 +538,13 @@ function RequestDetail({token,requestId,profileId,onBack,onStartWizard}){
         <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}><span style={{color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.04em"}}>{req.request_code}</span> · {cn}</h1>
         <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Pedida {fmtDate(req.created_at)}{req.expires_at?` · Vence ${fmtDate(req.expires_at)}`:""}</p>
       </div>
-      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         {quoteRow?.public_token&&quoteRow.status==="sent"&&<button onClick={()=>{const url=`${window.location.origin}/cotizacion/${quoteRow.public_token}`;navigator.clipboard?.writeText(url);alert("Link copiado:\n"+url);}} title="Copiar link al cliente" style={{padding:"10px 14px",fontSize:12,fontWeight:700,borderRadius:10,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",fontFamily:"inherit"}}>📋 Copiar link</button>}
+        {/* Extraer PDF: disponible siempre que haya una cotización armada */}
+        {quoteRow&&Array.isArray(quoteRow.gi_quote_products)&&quoteRow.gi_quote_products.length>0&&<button onClick={()=>printGiQuotePdf({quote:quoteRow,products:quoteRow.gi_quote_products,client:req.clients,settings:null,requestCode:req.request_code})} title="Descargar PDF de la cotización" style={{padding:"10px 14px",fontSize:12,fontWeight:700,borderRadius:10,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:"pointer",fontFamily:"inherit"}}>📄 Extraer PDF</button>}
         {quoteRow?.status==="accepted"&&<button onClick={convertToOp} disabled={converting} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:converting?"#444":"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",cursor:converting?"wait":"pointer",fontFamily:"inherit"}}>{converting?"Creando op…":"✓ Convertir a operación"}</button>}
         {quoteRow?.status==="converted"&&<span style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,background:"rgba(34,197,94,0.12)",border:"1px solid rgba(34,197,94,0.35)",color:"#22c55e"}}>✓ Convertida en op</span>}
-        {quoteRow?.status!=="converted"&&<button onClick={onStartWizard} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>{quoteRow?.status==="sent"?"Editar cotización →":quoteRow?.status==="draft"?"Continuar borrador →":quoteRow?.status==="accepted"?"Ver cotización →":"Armar cotización →"}</button>}
+        {quoteRow?.status!=="converted"&&<button onClick={onStartWizard} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>{quoteRow?.status==="sent"?"Editar cotización →":quoteRow?.status==="draft"?"Continuar borrador →":quoteRow?.status==="accepted"?"✎ Modificar cotización":"Armar cotización →"}</button>}
       </div>
     </div>
 
