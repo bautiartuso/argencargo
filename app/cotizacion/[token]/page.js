@@ -51,6 +51,7 @@ export default function CotizacionPublica({ params }) {
   const [selectedDelivery, setSelectedDelivery] = useState("oficina");
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(null);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     const check = () => setIsMobile(typeof window !== "undefined" && window.innerWidth < 760);
@@ -77,9 +78,9 @@ export default function CotizacionPublica({ params }) {
     })();
   }, [token]);
 
+  const openConfirm = () => { if (!selectedChannel) return; setShowConfirm(true); };
   const accept = async () => {
-    if (!selectedChannel) return;
-    if (!confirm("¿Confirmar la aceptación de la cotización? Se va a generar tu operación y vas a recibir las instrucciones para el primer pago.")) return;
+    setShowConfirm(false);
     setAccepting(true);
     const r = await fetch(`/api/cotizacion/${token}`, {
       method: "POST",
@@ -285,8 +286,26 @@ export default function CotizacionPublica({ params }) {
               <div style={{ paddingTop: 8, marginTop: 8, borderTop: "1px solid #ebe6db", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{settings.terms_and_conditions}</div>
             </details>}
 
-            <button onClick={accept} disabled={accepting || !selectedChannel} style={{ width: "100%", padding: "14px 22px", background: accepting ? "#444" : "#0A1628", color: "#fff", border: "none", borderRadius: 10, fontSize: 13.5, fontWeight: 700, cursor: accepting ? "wait" : "pointer", letterSpacing: "0.04em", fontFamily: "inherit" }}>{accepting ? "Procesando…" : "Aceptar y comenzar producción"}</button>
+            <button onClick={openConfirm} disabled={accepting || !selectedChannel} style={{ width: "100%", padding: "14px 22px", background: accepting ? "#444" : "#0A1628", color: "#fff", border: "none", borderRadius: 10, fontSize: 13.5, fontWeight: 700, cursor: accepting ? "wait" : "pointer", letterSpacing: "0.04em", fontFamily: "inherit" }}>{accepting ? "Procesando…" : "Aceptar y comenzar producción"}</button>
             <p style={{ textAlign: "center", fontSize: 10, color: "#888", marginTop: 6 }}>Al aceptar, recibís un email con instrucciones para el primer pago.</p>
+
+            {showConfirm && <div onClick={() => setShowConfirm(false)} style={{ position: "fixed", inset: 0, background: "rgba(8,12,24,0.78)", backdropFilter: "blur(10px)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+              <div onClick={e => e.stopPropagation()} style={{ maxWidth: 480, width: "100%", background: "linear-gradient(180deg,#fefcf6 0%,#fdf9ed 100%)", borderRadius: 16, padding: "28px 28px 22px", border: "1px solid rgba(184,149,106,0.3)", boxShadow: "0 30px 80px rgba(0,0,0,0.45)", color: "#1a1a1a", fontFamily: "inherit" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: "linear-gradient(135deg,#B8956A,#E8D098)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>✓</div>
+                  <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, letterSpacing: "-0.01em", color: "#0A1628" }}>Confirmar aceptación</h2>
+                </div>
+                <p style={{ margin: "0 0 18px", fontSize: 13.5, lineHeight: 1.55, color: "#4a4a4a" }}>Al confirmar se genera tu operación y te enviamos por email las instrucciones del primer pago para arrancar la producción.</p>
+                <div style={{ padding: "12px 14px", background: "rgba(184,149,106,0.10)", border: "1px solid rgba(184,149,106,0.3)", borderRadius: 10, marginBottom: 18 }}>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: "#8b6f4a", margin: 0, textTransform: "uppercase", letterSpacing: "0.08em" }}>Servicio elegido</p>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: "#0A1628", margin: "4px 0 0" }}>{(rates.find(r => r.key === selectedChannel) || {}).name || "—"}</p>
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button onClick={() => setShowConfirm(false)} style={{ flex: 1, padding: "12px 20px", background: "transparent", color: "#0A1628", border: "1.5px solid rgba(10,22,40,0.2)", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Cancelar</button>
+                  <button onClick={accept} style={{ flex: 1.5, padding: "12px 20px", background: "#0A1628", color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.04em" }}>Confirmar y aceptar</button>
+                </div>
+              </div>
+            </div>}
           </div>
         </div>
       </div>
