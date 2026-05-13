@@ -66,9 +66,15 @@ export default function CotizacionPublica({ params }) {
         const d = await r.json();
         if (!r.ok) { setErr(d.error || "No se pudo cargar la cotización"); setLoading(false); return; }
         setData(d);
-        // Pre-seleccionar canal: si hay producto USA, primer canal B; sino el "Recomendado" (aereo_blanco)
+        // Pre-seleccionar el canal MÁS BARATO disponible para el cliente (filtrando por origen).
         const someUSA = (d.quote.gi_quote_products || []).some(p => p.origin === "usa");
-        const def = someUSA ? "aereo_negro" : "aereo_blanco";
+        const channelDefs = CHANNEL_LABELS;
+        const available = Object.entries(channelDefs)
+          .filter(([k]) => !someUSA || k.includes("negro") || k === "maritimo_blanco")
+          .map(([key, def]) => ({ key, total: Number(d.quote[def.costKey] || 0) }))
+          .filter(c => c.total > 0)
+          .sort((a, b) => a.total - b.total);
+        const def = available[0]?.key || (someUSA ? "aereo_negro" : "aereo_blanco");
         setSelectedChannel(def);
         setLoading(false);
       } catch (e) {
