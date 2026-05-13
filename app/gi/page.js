@@ -495,15 +495,30 @@ function RequestDetail({token,requestId,profileId,onBack,onStartWizard}){
   const [quoteRow,setQuoteRow]=useState(null);
   const [subTab,setSubTab]=useState("detail");
   const [lo,setLo]=useState(true);
-  useEffect(()=>{(async()=>{
+  const [converting,setConverting]=useState(false);
+  const loadDetail=async()=>{
     const [r,q]=await Promise.all([
       dq("gi_quote_requests",{token,filters:`?id=eq.${requestId}&select=*,clients(*),gi_quote_request_products(*)`}),
-      dq("gi_quotes",{token,filters:`?request_id=eq.${requestId}&select=id,status,public_token,gi_quote_products(*)&order=created_at.desc&limit=1`}),
+      dq("gi_quotes",{token,filters:`?request_id=eq.${requestId}&select=*,gi_quote_products(*)&order=created_at.desc&limit=1`}),
     ]);
     setReq(Array.isArray(r)?r[0]:null);
     if(Array.isArray(q)&&q[0]){setQuoteRow(q[0]);if(q[0].gi_quote_products)setDraftProducts(q[0].gi_quote_products);}
     setLo(false);
-  })();},[requestId,token]);
+  };
+  useEffect(()=>{loadDetail();},[requestId,token]);
+  const convertToOp=async()=>{
+    if(!quoteRow?.id)return;
+    if(!confirm(`¿Convertir esta cotización aceptada en una operación AC-XXXX?\n\nSe va a crear la op con los productos, presupuesto y canal seleccionado por el cliente.`))return;
+    setConverting(true);
+    try{
+      const r=await fetch("/api/gi/convert-quote",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({quote_id:quoteRow.id})});
+      const d=await r.json();
+      if(!r.ok){alert(d.error||"Error al convertir");setConverting(false);return;}
+      alert(`✓ Operación ${d.operation_code} creada.\n\nAhora podés cargar costos y empezar la producción.`);
+      await loadDetail();
+    }catch(e){alert("Error: "+e.message);}
+    setConverting(false);
+  };
 
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>;
   if(!req)return <p style={{color:"rgba(255,255,255,0.4)"}}>Solicitud no encontrada</p>;
@@ -524,9 +539,35 @@ function RequestDetail({token,requestId,profileId,onBack,onStartWizard}){
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
         {quoteRow?.public_token&&quoteRow.status==="sent"&&<button onClick={()=>{const url=`${window.location.origin}/cotizacion/${quoteRow.public_token}`;navigator.clipboard?.writeText(url);alert("Link copiado:\n"+url);}} title="Copiar link al cliente" style={{padding:"10px 14px",fontSize:12,fontWeight:700,borderRadius:10,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",fontFamily:"inherit"}}>📋 Copiar link</button>}
-        <button onClick={onStartWizard} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>{quoteRow?.status==="sent"?"Editar cotización →":quoteRow?.status==="draft"?"Continuar borrador →":"Armar cotización →"}</button>
+        {quoteRow?.status==="accepted"&&<button onClick={convertToOp} disabled={converting} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:converting?"#444":"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",cursor:converting?"wait":"pointer",fontFamily:"inherit"}}>{converting?"Creando op…":"✓ Convertir a operación"}</button>}
+        {quoteRow?.status==="converted"&&<span style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,background:"rgba(34,197,94,0.12)",border:"1px solid rgba(34,197,94,0.35)",color:"#22c55e"}}>✓ Convertida en op</span>}
+        {quoteRow?.status!=="converted"&&<button onClick={onStartWizard} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",fontFamily:"inherit"}}>{quoteRow?.status==="sent"?"Editar cotización →":quoteRow?.status==="draft"?"Continuar borrador →":quoteRow?.status==="accepted"?"Ver cotización →":"Armar cotización →"}</button>}
       </div>
     </div>
+
+    {/* Banner cuando está aceptada: aviso prominente para que el admin sepa que tiene que convertir */}
+    {quoteRow?.status==="accepted"&&(()=>{
+      const total=Number(quoteRow.selected_delivery_cost_usd||0)+Number(({aereo_negro:"cost_courier_total_usd",aereo_blanco:"cost_aereo_int_total_usd",maritimo_negro:"cost_maritimo_lcl_total_usd",maritimo_blanco:"cost_maritimo_int_total_usd"})[quoteRow.selected_channel]?quoteRow[({aereo_negro:"cost_courier_total_usd",aereo_blanco:"cost_aereo_int_total_usd",maritimo_negro:"cost_maritimo_lcl_total_usd",maritimo_blanco:"cost_maritimo_int_total_usd"})[quoteRow.selected_channel]]||0:0);
+      const plan=Array.isArray(quoteRow.payment_plan)?quoteRow.payment_plan:[{label:"Inicio",pct:30},{label:"Fin producción",pct:20},{label:"Contra entrega",pct:50}];
+      const chLabel={aereo_negro:"Aéreo Courier Comercial",aereo_blanco:"Aéreo Integral AC",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC"}[quoteRow.selected_channel]||quoteRow.selected_channel;
+      return <div style={{margin:"18px 0",padding:"18px 22px",background:"linear-gradient(135deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))",border:"1.5px solid rgba(34,197,94,0.35)",borderRadius:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12,marginBottom:12}}>
+          <div>
+            <p style={{fontSize:11,fontWeight:800,color:"#22c55e",margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>✓ Cliente aceptó · pendiente de conversión</p>
+            <p style={{fontSize:13,color:"rgba(255,255,255,0.75)",margin:"4px 0 0"}}>Canal elegido: <strong style={{color:"#fff"}}>{chLabel}</strong> · Total <strong style={{color:"#fff"}}>USD {total.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></p>
+          </div>
+          <p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:0}}>Aceptada {quoteRow.accepted_at?fmtDate(quoteRow.accepted_at):"—"}</p>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${plan.length},1fr)`,gap:8,marginTop:8}}>
+          {plan.map((s,i)=><div key={i} style={{padding:"10px 12px",background:i===0?"rgba(184,149,106,0.12)":"rgba(0,0,0,0.18)",border:i===0?"1px solid rgba(184,149,106,0.35)":"1px solid rgba(255,255,255,0.05)",borderRadius:8}}>
+            <p style={{fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>{i+1}. {s.label}{i===0?<span style={{marginLeft:5,color:"#E8D098"}}>· cobrar primero</span>:""}</p>
+            <p style={{fontSize:14,fontWeight:800,color:i===0?"#E8D098":"#fff",margin:"3px 0 0",fontVariantNumeric:"tabular-nums"}}>USD {((total*Number(s.pct||0))/100).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{s.pct}%</p>
+          </div>)}
+        </div>
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.65)",margin:"12px 0 0",lineHeight:1.5}}>Revisá los productos abajo, mandale al cliente las instrucciones del <strong>primer pago</strong> (USD {((total*Number(plan[0]?.pct||0))/100).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}), y cuando confirme el pago apretá <strong style={{color:"#22c55e"}}>"Convertir a operación"</strong> para crear la AC-XXXX y arrancar la producción.</p>
+      </div>;
+    })()}
 
     {/* Sub-tabs */}
     <div style={{display:"flex",gap:0,borderBottom:"1px solid rgba(255,255,255,0.06)",marginTop:18,marginBottom:18}}>
@@ -551,13 +592,20 @@ function RequestDetail({token,requestId,profileId,onBack,onStartWizard}){
         {usingDraft&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"-4px 0 10px",fontStyle:"italic"}}>Estos productos provienen del borrador del cotizador (no había pedido del cliente).</p>}
         {products.length===0?<p style={{color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin productos cargados</p>:
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {products.map((p,i)=><div key={p.id} style={{display:"flex",gap:14,alignItems:"center",padding:"12px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10}}>
-              <div style={{width:34,height:34,borderRadius:"50%",background:"rgba(184,149,106,0.15)",color:GOLD_LIGHT,fontWeight:800,fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
+            {products.map((p,i)=><div key={p.id} style={{display:"flex",gap:14,alignItems:"flex-start",padding:"12px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10}}>
+              {p.photo_url
+                ?<a href={p.photo_url} target="_blank" rel="noopener" title="Ver foto" style={{flexShrink:0,display:"block"}}><img src={p.photo_url} alt="" style={{width:48,height:48,objectFit:"cover",borderRadius:8,border:"1px solid rgba(255,255,255,0.08)"}}/></a>
+                :<div style={{width:34,height:34,marginTop:4,borderRadius:"50%",background:"rgba(184,149,106,0.15)",color:GOLD_LIGHT,fontWeight:800,fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>}
               <div style={{flex:1,minWidth:0}}>
                 <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0}}>{p.description||"—"}</p>
                 {p.notes&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>{p.notes}</p>}
+                {p.supplier_ref&&<a href={p.supplier_ref} target="_blank" rel="noopener" style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,color:"#60a5fa",fontWeight:600,margin:"5px 0 0",textDecoration:"none",padding:"3px 8px",background:"rgba(96,165,250,0.08)",border:"1px solid rgba(96,165,250,0.25)",borderRadius:6}}>🔗 Link proveedor (Alibaba/etc) ↗</a>}
+                {p.ncm_code&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",fontFamily:"monospace"}}>NCM {p.ncm_code}{p.ncm_di_pct?` · DI ${p.ncm_di_pct}%`:""}{p.ncm_iva_pct?` · IVA ${p.ncm_iva_pct}%`:""}</p>}
               </div>
-              {p.quantity>0&&<div style={{textAlign:"right",flexShrink:0}}><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Cant.</p><p style={{fontSize:15,fontWeight:700,color:GOLD_LIGHT,fontFeatureSettings:'"tnum"'}}>{p.quantity}</p></div>}
+              <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end",flexShrink:0,minWidth:90,paddingTop:2}}>
+                {p.quantity>0&&<div style={{textAlign:"right"}}><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>Cant.</p><p style={{fontSize:14,fontWeight:700,color:GOLD_LIGHT,margin:0,fontFeatureSettings:'"tnum"'}}>{p.quantity}</p></div>}
+                {Number(p.unit_cost_usd||0)>0&&<div style={{textAlign:"right",marginTop:2}}><p style={{fontSize:9,fontWeight:600,color:"rgba(255,255,255,0.35)",margin:0}}>Unit USD {Number(p.unit_cost_usd).toFixed(2)}</p><p style={{fontSize:11,fontWeight:700,color:"#fff",margin:"2px 0 0",fontFeatureSettings:'"tnum"'}}>Sub USD {(Number(p.unit_cost_usd)*Number(p.quantity||1)).toFixed(2)}</p></div>}
+              </div>
             </div>)}
           </div>
         }

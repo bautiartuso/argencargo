@@ -78,7 +78,7 @@ export async function POST(req, { params }) {
   if (!validChannels.includes(body.channel)) return Response.json({ error: "Canal inválido" }, { status: 400 });
 
   // Buscar cotización
-  const qRes = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_requests(client_id,assigned_partner_id,profiles!assigned_partner_id(gi_partner_pct)),gi_quote_products(*)`);
+  const qRes = await sbFetch(`/gi_quotes?public_token=eq.${encodeURIComponent(token)}&select=*,gi_quote_products(*)`);
   if (qRes.status >= 400 || !Array.isArray(qRes.body) || qRes.body.length === 0) {
     return Response.json({ error: "Cotización no encontrada" }, { status: 404 });
   }
@@ -104,83 +104,26 @@ export async function POST(req, { params }) {
   }
   const finalTotal = channelTotal + deliveryCost;
 
-  // 1. Crear operación AC-XXXX
-  const clientId = quote.gi_quote_requests?.client_id;
-  if (!clientId) return Response.json({ error: "Cliente no asociado a la cotización" }, { status: 500 });
-
-  // Generar código AC-XXXX
-  const codeRes = await sbFetch(`/rpc/next_operation_code`, { method: "POST", body: JSON.stringify({}) });
-  const opCode = (typeof codeRes.body === "string") ? codeRes.body : (codeRes.body?.[0] || `AC-${Date.now()}`);
-
-  const opBody = {
-    operation_code: opCode,
-    client_id: clientId,
-    channel: body.channel,
-    origin: "China",
-    description: `Gestión Integral · ${quote.gi_quote_products?.length || 0} productos`,
-    service_type: "gestion_integral",
-    status: "en_preparacion",
-    budget_total: finalTotal,
-    // Snapshot del socio + su % default para esta op puntual.
-    // gi_partner_id viene del request (a quién el admin asignó cotizar).
-    // gi_commission_pct: % del socio sobre ganancia neta. Default = profiles.gi_partner_pct del socio asignado.
-    // (NO es honorarios_pct: ese es el markup al cliente, no la comisión del socio.)
-    // El admin puede ajustar gi_commission_pct en la op si la realidad es distinta al default.
-    gi_partner_id: quote.gi_quote_requests?.assigned_partner_id || null,
-    gi_commission_pct: Number(quote.gi_quote_requests?.profiles?.gi_partner_pct || 0) || null,
-    gi_admin_owned: false,
-    is_collected: false,
-    shipping_to_door: body.delivery_zone !== "oficina",
-    shipping_cost: deliveryCost,
-  };
-  // Si hay producto USA, ajustar origin
-  const someUSA = (quote.gi_quote_products || []).some(p => p.origin === "usa");
-  if (someUSA) opBody.origin = "USA";
-
-  const opRes = await sbFetch(`/operations?select=*`, { method: "POST", body: JSON.stringify(opBody), headers: { Prefer: "return=representation" } });
-  if (opRes.status >= 400 || !Array.isArray(opRes.body) || opRes.body.length === 0) {
-    console.error("[POST cotizacion] op create failed", opRes);
-    return Response.json({ error: "No se pudo crear la operación" }, { status: 500 });
-  }
-  const opId = opRes.body[0].id;
-
-  // 2. Crear operation_items a partir de gi_quote_products
-  for (const p of (quote.gi_quote_products || [])) {
-    await sbFetch(`/operation_items`, {
-      method: "POST",
-      body: JSON.stringify({
-        operation_id: opId,
-        description: p.description,
-        quantity: p.quantity,
-        unit_price_usd: p.unit_cost_usd,
-        ncm_code: p.ncm_code,
-        import_duty_rate: p.ncm_di_pct,
-        statistics_rate: p.ncm_estad_pct,
-        iva_rate: p.ncm_iva_pct,
-      }),
-    });
-  }
-
-  // 3. Update quote como aceptada + linkear op
+  // NO crear operación todavía. Solo marcar cotización como "accepted".
+  // El admin debe revisar y convertirla manualmente desde el panel GI (con review de productos, links Alibaba, etc).
   await sbFetch(`/gi_quotes?id=eq.${quote.id}`, {
     method: "PATCH",
     body: JSON.stringify({
-      status: "converted",
+      status: "accepted",
       selected_channel: body.channel,
       selected_delivery_zone: body.delivery_zone,
       selected_delivery_cost_usd: deliveryCost,
       accepted_at: new Date().toISOString(),
-      operation_id: opId,
     }),
   });
 
-  // 4. Update request status
+  // Update request status → accepted (no aún converted)
   await sbFetch(`/gi_quote_requests?id=eq.${quote.request_id}`, {
     method: "PATCH",
-    body: JSON.stringify({ status: "converted" }),
+    body: JSON.stringify({ status: "accepted" }),
   });
 
-  // 5. Log evento "accepted"
+  // Log evento "accepted"
   try {
     await sbFetch(`/gi_quote_communications`, {
       method: "POST",
@@ -188,10 +131,17 @@ export async function POST(req, { params }) {
         quote_id: quote.id,
         request_id: quote.request_id,
         type: "accepted",
-        meta: { channel: body.channel, delivery_zone: body.delivery_zone, operation_code: opCode, total: finalTotal },
+        meta: { channel: body.channel, delivery_zone: body.delivery_zone, total: finalTotal },
       }),
     });
   } catch (e) { console.error("[POST cotizacion] log accept failed", e.message); }
 
-  return Response.json({ ok: true, operation_code: opCode, operation_id: opId, total: finalTotal });
+  return Response.json({
+    ok: true,
+    total: finalTotal,
+    channel: body.channel,
+    delivery_zone: body.delivery_zone,
+    payment_plan: quote.payment_plan || null,
+    pending_conversion: true,
+  });
 }

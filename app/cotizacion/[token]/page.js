@@ -370,26 +370,69 @@ function TimeStep({ n, name, meta }) {
 }
 
 function AcceptedView({ quote, accepted, cn, settings, products, client }) {
-  const opCode = accepted?.operation_code || (quote.operation_id ? "asignada" : null);
   const downloadPdf = () => {
     printGiAcceptedPdf({
       quote: { ...quote, request_code: quote.gi_quote_requests?.request_code || quote.request_code },
       products: products || [],
       client: client || quote.gi_quote_requests?.clients,
       settings,
-      operationCode: accepted?.operation_code,
+      operationCode: null,
     });
   };
+  const total = Number(accepted?.total || 0);
+  const plan = Array.isArray(accepted?.payment_plan) ? accepted.payment_plan : (Array.isArray(quote.payment_plan) ? quote.payment_plan : []);
+  const stages = plan.length > 0 ? plan : [
+    { label: "Inicio de producción", pct: 30 },
+    { label: "Producción terminada", pct: 20 },
+    { label: "Contra entrega", pct: 50 },
+  ];
+  const stageAmount = (pct) => (total * (Number(pct) || 0)) / 100;
   return <div style={pageStyle()}>
-    <div style={{ maxWidth: 600, padding: "40px 30px", background: "#fafaf7", color: "#1a1a1a", borderRadius: 16, textAlign: "center", boxShadow: "0 24px 80px rgba(0,0,0,0.55)" }}>
-      <div style={{ fontSize: 60, marginBottom: 14, color: "#22c55e" }}>✓</div>
-      <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em", marginBottom: 8 }}>¡Cotización aceptada!</h1>
-      <p style={{ fontSize: 14, color: "#444", marginBottom: 20, lineHeight: 1.6 }}>
-        Hola <strong>{cn}</strong>, recibimos tu confirmación. {accepted?.operation_code && <>Tu operación es <strong style={{ fontFamily: "'JetBrains Mono',monospace", color: "#B8956A" }}>{accepted.operation_code}</strong>.</>}
-      </p>
-      <p style={{ fontSize: 13, color: "#666", lineHeight: 1.6, marginBottom: 22 }}>En las próximas horas te enviamos por email las instrucciones para el primer pago. Cualquier duda escribinos a <strong>info@argencargo.com.ar</strong>.</p>
-      <button onClick={downloadPdf} style={{ padding: "12px 24px", background: "#0A1628", color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", letterSpacing: "0.04em", fontFamily: "inherit" }}>📄 Descargar PDF de la cotización</button>
-      {settings?.office_phone && <p style={{ fontSize: 12, color: "#888", marginTop: 14 }}>Tel: {settings.office_phone}</p>}
+    <div style={{ maxWidth: 640, width: "100%", padding: "36px 32px", background: "#fafaf7", color: "#1a1a1a", borderRadius: 16, boxShadow: "0 24px 80px rgba(0,0,0,0.55)" }}>
+      <div style={{ textAlign: "center", marginBottom: 22 }}>
+        <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg,#22c55e,#16a34a)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 32, color: "#fff", marginBottom: 12 }}>✓</div>
+        <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em", margin: "0 0 6px" }}>¡Cotización aceptada!</h1>
+        <p style={{ fontSize: 13.5, color: "#555", margin: 0, lineHeight: 1.55 }}>Hola <strong>{cn}</strong>, recibimos tu confirmación. En las próximas horas un asesor revisa tu pedido y te confirma el inicio.</p>
+      </div>
+
+      {/* Plan de pagos */}
+      <div style={{ padding: "18px 20px", background: "#fff", border: "1px solid #ebe6db", borderRadius: 12, marginBottom: 16 }}>
+        <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", color: "#8b6f4a", textTransform: "uppercase", margin: "0 0 10px" }}>Plan de pagos</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {stages.map((s, i) => {
+            const isFirst = i === 0;
+            return <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: isFirst ? "linear-gradient(90deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))" : "#faf8f3", border: isFirst ? "1.5px solid rgba(184,149,106,0.4)" : "1px solid #ebe6db", borderRadius: 9 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 26, height: 26, borderRadius: "50%", background: isFirst ? "linear-gradient(135deg,#B8956A,#E8D098)" : "#e5e1d6", color: isFirst ? "#0A1628" : "#666", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800 }}>{i + 1}</div>
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: "#0A1628", margin: 0 }}>{s.label}{isFirst && <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: "#0A1628", color: "#E8D098", marginLeft: 8, letterSpacing: "0.08em" }}>PRIMER PAGO</span>}</p>
+                  <p style={{ fontSize: 11, color: "#666", margin: "2px 0 0" }}>{s.pct}% del total</p>
+                </div>
+              </div>
+              <p style={{ fontSize: 15, fontWeight: 800, color: isFirst ? "#B8956A" : "#0A1628", margin: 0, fontVariantNumeric: "tabular-nums" }}>USD {stageAmount(s.pct).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            </div>;
+          })}
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 12, marginTop: 10, borderTop: "1px solid #ebe6db" }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: "#666", margin: 0, textTransform: "uppercase", letterSpacing: "0.08em" }}>Total</p>
+          <p style={{ fontSize: 16, fontWeight: 800, color: "#0A1628", margin: 0, fontVariantNumeric: "tabular-nums" }}>USD {total.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+        </div>
+      </div>
+
+      {/* Próximos pasos */}
+      <div style={{ padding: "14px 16px", background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.3)", borderRadius: 11, marginBottom: 18 }}>
+        <p style={{ fontSize: 11, fontWeight: 800, color: "#1d4ed8", margin: "0 0 8px", textTransform: "uppercase", letterSpacing: "0.08em" }}>Próximos pasos</p>
+        <ol style={{ fontSize: 12.5, color: "#1a1a1a", lineHeight: 1.65, margin: 0, paddingLeft: 18 }}>
+          <li>Un asesor revisa tu pedido y te confirma por email/WhatsApp.</li>
+          <li>Te enviamos las instrucciones para el <strong>primer pago</strong> (USD {stageAmount(stages[0].pct).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) — con ese pago arranca la producción.</li>
+          <li>Una vez que pagás, te creamos la operación y vas a poder seguirla en tu portal.</li>
+        </ol>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+        <button onClick={downloadPdf} style={{ padding: "12px 24px", background: "#0A1628", color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", letterSpacing: "0.04em", fontFamily: "inherit" }}>📄 Descargar cotización en PDF</button>
+        <p style={{ fontSize: 11.5, color: "#888", margin: 0 }}>Cualquier duda: <strong style={{ color: "#0A1628" }}>info@argencargo.com.ar</strong>{settings?.office_phone ? ` · Tel ${settings.office_phone}` : ""}</p>
+      </div>
     </div>
   </div>;
 }
