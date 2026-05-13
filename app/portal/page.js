@@ -269,7 +269,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
               <p className="name">{ti.label}</p>
             </div>
           </div>
-          {!isStandard&&<p className="desc">Tenés <b>+{ti.bonus}% bonus</b> en puntos{ti.discount?<> y <b>{ti.discount}% off</b> en flete</>:""}</p>}
+          {!isStandard&&<p className="desc">Tenés <b>+{ti.bonus}% bonus</b> en puntos siempre{ti.discount?<> · <b>USD {ti.discount} de bonificación</b> al alcanzar {ti.label} (se aplica una vez)</>:""}</p>}
           {nextTier?<div className="bar-wrap">
             <div className="bar-info">
               <span>En <b>{ptsToNext} pts</b> llegás a <b>{nextTier.label}</b> {nextTierIcon}</span>
