@@ -2108,9 +2108,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       // La comisión solo aplica al cash real que recibiste por transferencia (no al crédito de CC ni descuento)
       const comision=isTransf?cobroUsd*(feePct/100):0;
       const ingresoNeto=cobro-comision;
-      // Gestión de pagos: ganancia = cliente paga - giro - comision giro
-      const pmtRevenue=payments.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
-      const pmtCosts=payments.reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);
+      // Gestión de pagos: solo contar plata real (cobros confirmados y giros confirmados).
+      //  - pmtRevenue: client_paid_amount_usd (o budgeted) cuando client_paid=true. Sino 0.
+      //  - pmtCosts: giro_amount_usd solo si giro_status="confirmado". Comisión: idem (sale cuando el giro se hace).
+      const pmtRevenue=payments.reduce((s,p)=>s+(p.client_paid?Number(p.client_paid_amount_usd??p.client_amount_usd??0):0),0);
+      const pmtCosts=payments.reduce((s,p)=>{const giroOk=p.giro_status==="confirmado";return s+(giroOk?Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0):0);},0);
       const pmtGanancia=pmtRevenue-pmtCosts;
       const ganancia=(ingresoNeto-totalCostos)+pmtGanancia;
       const ingresoTotal=ingresoNeto+pmtRevenue;
