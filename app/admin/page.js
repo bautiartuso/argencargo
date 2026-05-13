@@ -2301,17 +2301,19 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               const choice=await askCobroDecision("overpay",diff);
               if(choice===null)return;
               if(choice==="s"){
-                // Capear collected_amount al budget efectivo (incluye deuda aplicada): el excedente queda en CC, no infla la ganancia
-                setOp(p=>({...p,collected_amount:budgetEffective}));
-                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{collected_amount:budgetEffective,extra_charge_usd:0,is_collected:true,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
+                // Capear collected_amount al budget efectivo (incluye deuda aplicada): el excedente queda en CC, no infla la ganancia.
+                // En ARS: budgetEffective está en USD, así que multiplicamos por TC para guardar el ARS coherente.
+                const cappedRaw=isArsCol&&colRate?budgetEffective*colRate:budgetEffective;
+                setOp(p=>({...p,collected_amount:cappedRaw}));
+                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{collected_amount:cappedRaw,extra_charge_usd:0,is_collected:true,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",collection_fee_pct:Number(op.collection_fee_pct||0),...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
                 await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`});
                 flash(`Cobrada · saldo a favor +USD ${diff.toFixed(2)}`);
                 return;
               } else if(choice==="e"){
-                // Cargo extra: collected_amount queda tal cual (no se capea), se setea extra_charge_usd para trazabilidad,
-                // NO se crea overpayment movement, el revenue de la op crece naturalmente.
-                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{is_collected:true,extra_charge_usd:diff,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
-                setOp(p=>({...p,extra_charge_usd:diff}));
+                // Cargo extra: collected_amount se mantiene tal como lo cargó el admin (lo raw del form),
+                // se setea extra_charge_usd para trazabilidad. El revenue de la op crece naturalmente.
+                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{collected_amount:cobroRaw,is_collected:true,extra_charge_usd:diff,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",collection_fee_pct:Number(op.collection_fee_pct||0),...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
+                setOp(p=>({...p,extra_charge_usd:diff,collected_amount:cobroRaw}));
                 flash(`Cobrada · cargo extra +USD ${diff.toFixed(2)} (revenue)`);
                 return;
               } else return;
