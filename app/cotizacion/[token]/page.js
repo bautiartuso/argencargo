@@ -180,7 +180,7 @@ export default function CotizacionPublica({ params }) {
   };
 
   // Plan de pagos
-  const plan = Array.isArray(quote.payment_plan) ? quote.payment_plan : (typeof quote.payment_plan === "string" ? JSON.parse(quote.payment_plan) : []);
+  const plan = (Array.isArray(quote.payment_plan) ? quote.payment_plan : (typeof quote.payment_plan === "string" ? JSON.parse(quote.payment_plan) : [])).filter(s => Number(s.pct || 0) > 0);
 
   const totalQty = products.reduce((s, p) => s + Number(p.quantity || 0), 0);
   const maxLead = products.reduce((m, p) => Math.max(m, Number(p.lead_time_days || 0)), 0);
@@ -380,7 +380,7 @@ function AcceptedView({ quote, accepted, cn, settings, products, client }) {
     });
   };
   const total = Number(accepted?.total || 0);
-  const plan = Array.isArray(accepted?.payment_plan) ? accepted.payment_plan : (Array.isArray(quote.payment_plan) ? quote.payment_plan : []);
+  const plan = (Array.isArray(accepted?.payment_plan) ? accepted.payment_plan : (Array.isArray(quote.payment_plan) ? quote.payment_plan : [])).filter(s => Number(s.pct || 0) > 0);
   const stages = plan.length > 0 ? plan : [
     { label: "Inicio de producción", pct: 30 },
     { label: "Producción terminada", pct: 20 },
