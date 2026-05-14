@@ -699,6 +699,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const [tab,setTab]=useState("deposit");
   const [selFlight,setSelFlight]=useState(null);
   const [depositSearch,setDepositSearch]=useState("");
+  const [showTutorial,setShowTutorial]=useState(false);
   const [statsPeriod,setStatsPeriod]=useState("month");
 
   const reloadAll=async()=>{
@@ -822,12 +823,17 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const greeting=(()=>{const h=new Date().getHours();return h<12?(t.greet_morning||"Buen día"):h<19?(t.greet_afternoon||"Buenas tardes"):(t.greet_night||"Buenas noches");})();
 
   return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token}>
+    {/* Tutorial overlay — primera vez para agentes aprobados o cuando piden volver a verlo */}
+    {(showTutorial||(signup&&signup.status==="approved"&&!signup.tutorial_completed))&&<AgentTutorialOverlay signup={signup} token={token} lang={lang} onClose={()=>setShowTutorial(false)} onComplete={()=>{signup.tutorial_completed=true;}}/>}
     <div style={{marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
       <div>
         <h2 style={{fontSize:28,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.025em"}}>👋 {greeting}, {signup.first_name||signup.email}</h2>
         <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0,display:"inline-flex",alignItems:"center",gap:6}}><span className="ac-live-dot" style={{display:"inline-block",width:7,height:7,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 8px rgba(34,197,94,0.6)"}}/>{t.active_in} <span style={{color:GOLD_LIGHT,fontWeight:600}}>{signup.country||"China"}</span></p>
       </div>
-      {!showForm&&<Btn onClick={()=>{setTab("deposit");setShowForm(true);}}>+ {t.register_pkg}</Btn>}
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <button onClick={()=>setShowTutorial(true)} title={lang==="zh"?"再次观看教程":"Ver tutorial de nuevo"} style={{padding:"8px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>🎓 {lang==="zh"?"教程":"Tutorial"}</button>
+        {!showForm&&<Btn onClick={()=>{setTab("deposit");setShowForm(true);}}>+ {t.register_pkg}</Btn>}
+      </div>
     </div>
 
     {/* Mini stat cards — visión rápida del día */}
@@ -2143,6 +2149,135 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
     <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:12,marginTop:10}}>
       <Btn variant="secondary" onClick={onCancel}>{t.cancel}</Btn>
       <Btn onClick={save} disabled={saving||!clientId||!tracking}>{saving?t.saving:t.save}</Btn>
+    </div>
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TUTORIAL ONBOARDING DEL AGENTE — primera vez que entra un agente
+// nuevo aprobado (agent_signups.tutorial_completed=false). 12 pasos
+// cubriendo todo el flujo operativo: depósito, vuelos, repack,
+// cuenta corriente, etc. i18n ES/ZH.
+// ═══════════════════════════════════════════════════════════════
+const AGENT_TUT_I18N = {
+  es: {
+    skip: "Saltar tutorial ✕",
+    back: "Atrás",
+    finish: "Finalizar",
+    next: "Siguiente",
+    start: "Empezar",
+    saving: "Guardando...",
+    steps: [
+      { icon: "👋", subtitle: "Bienvenido a Argencargo",
+        title: (n) => `¡Hola ${n}!`,
+        body: "Antes de empezar te muestro cómo funciona el sistema en 2 minutos. Vas a aprender a registrar paquetes, armar vuelos y comunicarte con nosotros. Podés saltar el tour cuando quieras y volver a verlo después." },
+      { icon: "📦", subtitle: "Tab Depósito", title: "Acá llega tu trabajo",
+        body: "Cada vez que recibís un paquete, lo registrás acá con el código de cliente (ej: FAIVOR), foto, peso y dimensiones. El cliente y el admin ven inmediatamente que llegó. Es lo más importante: cargá todo apenas lo recibís." },
+      { icon: "📷", subtitle: "Foto obligatoria", title: "La foto es clave",
+        body: "Cada paquete necesita una foto clara del exterior. Es la prueba de recepción y nos permite verificar daños o errores. Sin foto, el paquete no se considera recibido en el sistema." },
+      { icon: "✈️", subtitle: "Tab Vuelos Activos", title: "Vuelos en preparación",
+        body: "Cuando varios paquetes están listos, el admin arma un vuelo y consolida. Vas a ver acá los vuelos asignados a vos. Tu trabajo: confirmar dimensiones finales, cargar tracking del courier (DHL/FedEx/UPS) y despachar." },
+      { icon: "📋", subtitle: "Factura comercial", title: "Documentación",
+        body: "Antes de despachar un vuelo te llega la factura comercial lista para imprimir. Pegala a la caja junto con los datos del destinatario. Si algo falta, escribinos antes de armar el envío." },
+      { icon: "🚚", subtitle: "Entrega al courier", title: "Tiempos importantes",
+        body: "Para cargas sin baterías: **mismo día** que cargás el vuelo. Para Hong Kong con baterías: **máximo 3 días hábiles**. Cargá el tracking del courier en cuanto te lo dan." },
+      { icon: "🔄", subtitle: "Reempaque", title: "Cuando piden re-empacar",
+        body: "El admin puede pedir que reempaques bultos para optimizar peso volumétrico. Te aparece una notificación arriba. Abrís el modal, ajustás los bultos finales con sus dimensiones y subís fotos. Te paga compensación por este trabajo." },
+      { icon: "📜", subtitle: "Tab Historial", title: "Tus vuelos pasados",
+        body: "Acá ves todos los vuelos despachados con peso facturado, costo y comisión que ganaste. Sirve para revisar tu volumen mensual." },
+      { icon: "📊", subtitle: "Tab Estadísticas", title: "Cómo venís",
+        body: "Paquetes por día, peso total, vuelos consolidados, tiempos promedio. Si vemos demoras frecuentes te avisamos por acá." },
+      { icon: "💰", subtitle: "Tab Cuenta", title: "Tu cuenta corriente",
+        body: "Saldo a favor o en contra tuya. Te depositamos anticipos cuando hace falta, y se descuentan los costos de los vuelos. Si el saldo queda muy en rojo, lo regularizamos por transferencia o Alibaba." },
+      { icon: "💬", subtitle: "Comunicación", title: "Hablamos por WhatsApp",
+        body: "El admin te escribe por WhatsApp para cualquier urgencia. Te pedimos respuesta rápida en dos ventanas: **9-11 AM Argentina** (tu noche) y **9 PM - 12 AM Argentina** (tu mañana). Fuera de eso, respuesta en menos de 24 horas." },
+      { icon: "✅", subtitle: "¡Listo!", title: "Bienvenido al equipo",
+        body: "Cualquier duda escribinos. Vamos a estar pendientes para responderte rápido durante los primeros vuelos. ¡A trabajar!" }
+    ]
+  },
+  zh: {
+    skip: "跳过教程 ✕",
+    back: "上一步",
+    finish: "完成",
+    next: "下一步",
+    start: "开始",
+    saving: "保存中...",
+    steps: [
+      { icon: "👋", subtitle: "欢迎来到 Argencargo",
+        title: (n) => `${n} 您好！`,
+        body: "在开始之前，我会用 2 分钟向您介绍系统如何运作。您将学习如何登记包裹、组织航班以及与我们沟通。您可以随时跳过教程，之后再回来查看。" },
+      { icon: "📦", subtitle: "仓库标签页", title: "工作从这里开始",
+        body: "每次收到包裹，您都要在此登记客户代码（例如 FAIVOR）、照片、重量和尺寸。客户和管理员会立即看到包裹到货。最重要的是：收到后立即上传所有信息。" },
+      { icon: "📷", subtitle: "必须拍照", title: "照片至关重要",
+        body: "每个包裹都需要清晰的外观照片。这是收件凭证，让我们能够验证损坏或错误。没有照片，系统不会视为已收到包裹。" },
+      { icon: "✈️", subtitle: "活跃航班标签页", title: "准备中的航班",
+        body: "当多个包裹准备好时，管理员会创建航班并合并发货。您会在这里看到分配给您的航班。您的工作：确认最终尺寸、上传快递公司的追踪号（DHL/FedEx/UPS）并发货。" },
+      { icon: "📋", subtitle: "商业发票", title: "文件资料",
+        body: "在发货之前，您会收到可打印的商业发票。把它和收件人信息一起贴在箱子上。如果缺少任何东西，发货前请联系我们。" },
+      { icon: "🚚", subtitle: "交付给快递公司", title: "重要的时间",
+        body: "无电池货物：**当天**完成航班登记后交付。香港含电池货物：**最多 3 个工作日**。一拿到快递追踪号就立即上传。" },
+      { icon: "🔄", subtitle: "重新包装", title: "需要重新打包时",
+        body: "管理员可能会要求您重新包装以优化体积重量。您会在顶部看到通知。打开弹窗，调整最终包裹的尺寸并上传照片。这项工作会有额外补偿。" },
+      { icon: "📜", subtitle: "历史记录标签页", title: "您过往的航班",
+        body: "这里显示所有已发出的航班，包括计费重量、成本和您赚到的佣金。可用于查看每月发货量。" },
+      { icon: "📊", subtitle: "统计标签页", title: "您的表现",
+        body: "每日包裹数、总重量、合并航班、平均时间。如果发现频繁延误，我们会在这里通知您。" },
+      { icon: "💰", subtitle: "账户标签页", title: "您的往来账户",
+        body: "您的应付或应收余额。我们会在必要时预付款给您，航班成本会自动扣除。如果余额过于负数，我们会通过转账或 Alibaba 结算。" },
+      { icon: "💬", subtitle: "沟通方式", title: "通过 WhatsApp 联系",
+        body: "管理员通过 WhatsApp 处理紧急事项。我们希望您在两个时段快速回复：**阿根廷时间上午 9-11 点**（您的夜晚）和**阿根廷时间晚上 9 点至凌晨 12 点**（您的早晨）。其他时间，请在 24 小时内回复。" },
+      { icon: "✅", subtitle: "完成！", title: "欢迎加入团队",
+        body: "有任何问题随时联系我们。前几次航班期间我们会密切关注，确保及时回复您。开始工作吧！" }
+    ]
+  }
+};
+
+function AgentTutorialOverlay({ signup, token, lang, onClose, onComplete }) {
+  const [i, setI] = useState(0);
+  const [closing, setClosing] = useState(false);
+  const L = AGENT_TUT_I18N[lang === "zh" ? "zh" : "es"];
+  const fn = signup?.first_name || "";
+  const steps = L.steps;
+  const cur = steps[i];
+  const last = i === steps.length - 1;
+  const next = () => { if (last) { finish(); return; } setI(i + 1); };
+  const finish = async () => {
+    setClosing(true);
+    try {
+      if (signup?.id && token) {
+        await fetch(`${SB_URL}/rest/v1/agent_signups?id=eq.${signup.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", apikey: SB_KEY, Authorization: `Bearer ${token}`, Prefer: "return=minimal" },
+          body: JSON.stringify({ tutorial_completed: true })
+        });
+      }
+    } catch (e) { console.error("tutorial save", e); }
+    onComplete?.();
+    onClose?.();
+  };
+  const skip = () => finish();
+  const title = typeof cur.title === "function" ? cur.title(fn) : cur.title;
+
+  return <div style={{ position: "fixed", inset: 0, zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, background: "rgba(10,22,40,0.78)", backdropFilter: "blur(8px)" }}>
+    <style dangerouslySetInnerHTML={{ __html: `
+      @keyframes agTutFadeIn{from{opacity:0}to{opacity:1}}
+      @keyframes agTutSlideIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+      .ag-tut-card{animation:agTutSlideIn 260ms cubic-bezier(0.34,1.56,0.64,1)}
+    ` }}/>
+    <div className="ag-tut-card" key={i} style={{ maxWidth: 560, width: "100%", background: "linear-gradient(160deg,#152849 0%,#0F1E3D 100%)", border: "1px solid rgba(184,149,106,0.22)", borderRadius: 20, padding: "36px 32px 28px", boxShadow: "0 30px 60px rgba(0,0,0,0.45), 0 0 80px rgba(184,149,106,0.08)", position: "relative" }}>
+      <button onClick={skip} disabled={closing} style={{ position: "absolute", top: 14, right: 14, background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "6px 10px", borderRadius: 6 }}>{L.skip}</button>
+      <div style={{ display: "flex", gap: 6, marginBottom: 22, marginTop: 4 }}>{steps.map((_, idx) => <div key={idx} style={{ flex: 1, height: 4, borderRadius: 2, background: idx <= i ? GOLD_GRADIENT : "rgba(255,255,255,0.08)", transition: "background 220ms" }}/>)}</div>
+      <div style={{ width: 72, height: 72, borderRadius: 20, background: "linear-gradient(135deg,rgba(184,149,106,0.18),rgba(232,208,152,0.06))", border: "1px solid rgba(184,149,106,0.28)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36, marginBottom: 18, boxShadow: "0 0 30px rgba(184,149,106,0.2)" }}>{cur.icon}</div>
+      <p style={{ fontSize: 11, fontWeight: 700, color: GOLD_LIGHT, textTransform: "uppercase", letterSpacing: "0.12em", margin: "0 0 6px" }}>{cur.subtitle}</p>
+      <h2 style={{ fontSize: 26, fontWeight: 700, color: "#fff", margin: "0 0 12px", letterSpacing: "-0.02em", lineHeight: 1.15 }}>{title}</h2>
+      <p style={{ fontSize: 14, color: "rgba(255,255,255,0.7)", lineHeight: 1.6, margin: "0 0 28px", whiteSpace: "pre-line" }} dangerouslySetInnerHTML={{ __html: cur.body.replace(/\*\*(.+?)\*\*/g, '<strong style="color:#E8D098">$1</strong>') }}/>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600, letterSpacing: "0.05em" }}>{i + 1} / {steps.length}</span>
+        <div style={{ display: "flex", gap: 8 }}>
+          {i > 0 && <button onClick={() => setI(i - 1)} disabled={closing} style={{ padding: "11px 20px", fontSize: 13, fontWeight: 600, borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "rgba(255,255,255,0.65)", cursor: "pointer" }}>{L.back}</button>}
+          <button onClick={next} disabled={closing} style={{ padding: "11px 24px", fontSize: 13, fontWeight: 700, borderRadius: 10, border: "none", background: GOLD_GRADIENT, color: "#0A1628", cursor: "pointer", letterSpacing: "0.04em", boxShadow: GOLD_GLOW }}>{closing ? L.saving : (i === 0 ? L.start : last ? L.finish : L.next)} {!last && "→"}</button>
+        </div>
+      </div>
     </div>
   </div>;
 }
