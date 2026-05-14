@@ -8869,19 +8869,6 @@ function MaritimePanel({token,allClients=[]}){
 
     {editingWh&&<WarehouseForm token={token} editing={editingWh.id?editingWh:null} onSave={()=>{setEditingWh(null);load();}} onCancel={()=>setEditingWh(null)}/>}
 
-    {/* Depósitos registrados */}
-    {whs.length>0&&<div style={{marginBottom:18,padding:"12px 16px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12}}>
-      <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Depósitos registrados ({whs.length})</p>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        {whs.map(w=>{const cnt=shipments.filter(s=>s.warehouse===w.name).length;return <div key={w.id} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8}}>
-          <span style={{fontSize:12,fontWeight:600,color:"#fff"}}>{w.origin==="usa"?"🇺🇸":"🇨🇳"} {w.name}</span>
-          <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>· {cnt} pedido{cnt!==1?"s":""}</span>
-          <button onClick={()=>setEditingWh(w)} title="Editar" style={{padding:"2px 6px",fontSize:10,fontWeight:600,borderRadius:4,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>✎</button>
-          <button onClick={()=>delWarehouse(w)} title="Eliminar" style={{padding:"2px 6px",fontSize:10,fontWeight:600,borderRadius:4,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
-        </div>;})}
-      </div>
-    </div>}
-
     {/* Filtros */}
     <div style={{display:"flex",gap:14,marginBottom:18,flexWrap:"wrap",alignItems:"center"}}>
       <div style={{display:"flex",gap:4,background:"rgba(255,255,255,0.04)",borderRadius:8,padding:4,border:"1px solid rgba(255,255,255,0.06)"}}>
