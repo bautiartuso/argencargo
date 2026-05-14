@@ -700,6 +700,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   const [selFlight,setSelFlight]=useState(null);
   const [depositSearch,setDepositSearch]=useState("");
   const [showTutorial,setShowTutorial]=useState(false);
+  const [tutorialDone,setTutorialDone]=useState(false);
   const [statsPeriod,setStatsPeriod]=useState("month");
 
   const reloadAll=async()=>{
@@ -824,7 +825,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
 
   return <SimpleShell lang={lang} setLang={setLang} t={t} onLogout={onLogout} token={token}>
     {/* Tutorial overlay — primera vez para agentes aprobados o cuando piden volver a verlo */}
-    {(showTutorial||(signup&&signup.status==="approved"&&!signup.tutorial_completed))&&<AgentTutorialOverlay signup={signup} token={token} lang={lang} onClose={()=>setShowTutorial(false)} onComplete={()=>{signup.tutorial_completed=true;}}/>}
+    {(showTutorial||(signup&&signup.status==="approved"&&!signup.tutorial_completed&&!tutorialDone))&&<AgentTutorialOverlay signup={signup} token={token} lang={lang} onClose={()=>setShowTutorial(false)} onComplete={()=>{setTutorialDone(true);signup.tutorial_completed=true;}}/>}
     <div style={{marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
       <div>
         <h2 style={{fontSize:28,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.025em"}}>👋 {greeting}, {signup.first_name||signup.email}</h2>
@@ -2243,17 +2244,23 @@ function AgentTutorialOverlay({ signup, token, lang, onClose, onComplete }) {
   const next = () => { if (last) { finish(); return; } setI(i + 1); };
   const finish = async () => {
     setClosing(true);
+    // Cerrar primero el overlay, persistir en DB después (no bloquear al usuario si la red es lenta o RLS rechaza).
+    onComplete?.();
+    onClose?.();
     try {
       if (signup?.id && token) {
+        // Timeout 4s para evitar promesa que cuelga si la red está mal.
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 4000);
         await fetch(`${SB_URL}/rest/v1/agent_signups?id=eq.${signup.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json", apikey: SB_KEY, Authorization: `Bearer ${token}`, Prefer: "return=minimal" },
-          body: JSON.stringify({ tutorial_completed: true })
+          body: JSON.stringify({ tutorial_completed: true }),
+          signal: ctrl.signal
         });
+        clearTimeout(tid);
       }
     } catch (e) { console.error("tutorial save", e); }
-    onComplete?.();
-    onClose?.();
   };
   const skip = () => finish();
   const title = typeof cur.title === "function" ? cur.title(fn) : cur.title;
