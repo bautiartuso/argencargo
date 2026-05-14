@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { printGiAcceptedPdf } from "../../../lib/pdf-templates";
+import { printGiQuotePdf } from "../../../lib/pdf-templates";
 
 const LOGO = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png";
 
@@ -371,12 +371,13 @@ function TimeStep({ n, name, meta }) {
 
 function AcceptedView({ quote, accepted, cn, settings, products, client }) {
   const downloadPdf = () => {
-    printGiAcceptedPdf({
+    // Mismo PDF que descarga el admin desde el panel GI — UNDW style con precio venta al cliente.
+    printGiQuotePdf({
       quote: { ...quote, request_code: quote.gi_quote_requests?.request_code || quote.request_code },
       products: products || [],
       client: client || quote.gi_quote_requests?.clients,
       settings,
-      operationCode: null,
+      requestCode: quote.gi_quote_requests?.request_code || quote.request_code,
     });
   };
   const total = Number(accepted?.total || 0);
