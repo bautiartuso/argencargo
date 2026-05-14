@@ -8977,10 +8977,14 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     if(!selectedWh){alert("Elegí o creá un depósito");return;}
     if(!productDescription.trim()){alert("Cargá la mercadería");return;}
     setSaving(true);
-    // Auto-generar shipment_code como #N por depósito (sólo si es nuevo)
+    // Auto-generar shipment_code como #N por depósito
+    // - Si es nuevo: siguiente número del depósito
+    // - Si es edición y cambió de depósito: renumerar al siguiente del nuevo depósito
+    // - Si es edición y se mantiene el depósito: conservar el código
     let code=editing?.shipment_code||null;
-    if(!editing){
-      const existingInWh=shipments.filter(s=>s.warehouse===selectedWh.name).length;
+    const changedWh=editing&&editing.warehouse!==selectedWh.name;
+    if(!editing||changedWh){
+      const existingInWh=shipments.filter(s=>s.warehouse===selectedWh.name&&s.id!==editing?.id).length;
       code=`#${existingInWh+1}`;
     }
     const body={
