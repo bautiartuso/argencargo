@@ -785,8 +785,9 @@ function CotizadorWizard({token,requestId,profileId,onBack}){
       dq("gi_quote_requests",{token,filters:`?id=eq.${requestId}&select=*,clients(*),gi_quote_request_products(*)`}),
       dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),
       dq("calc_config",{token,filters:"?select=*"}),
-      // Cargar la cotización más reciente para este request, esté en draft o sent. Si está accepted/converted, no se reedita.
-      dq("gi_quotes",{token,filters:`?request_id=eq.${requestId}&status=in.(draft,sent)&select=*,gi_quote_products(*)&order=created_at.desc&limit=1`}),
+      // Cargar la cotización más reciente para este request. Incluye 'accepted' (el cliente aceptó, todavía se puede modificar
+       // antes de convertir a op). 'converted' queda excluida — una vez creada la op, la quote es solo histórica.
+      dq("gi_quotes",{token,filters:`?request_id=eq.${requestId}&status=in.(draft,sent,accepted)&select=*,gi_quote_products(*)&order=created_at.desc&limit=1`}),
     ]);
     if(Array.isArray(reqRes)&&reqRes[0]){
       const r=reqRes[0];
