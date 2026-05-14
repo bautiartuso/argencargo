@@ -5504,7 +5504,7 @@ function AgentsPanel({token}){
           <div style={{background:"rgba(255,255,255,0.028)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
               <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                {["✓","Op","Cliente","Mercadería","Bultos","Peso","Estado","Consolidación","WA"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+                {["✓","Op","Cliente","Mercadería","Bultos","Peso","Consolidación","WA"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
               </tr></thead>
               <tbody>{grp.ops.map(o=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const opPkgs=opPackages(o.id);const pkgsCount=opPkgs.length;const lastPkgAt=opPkgs.reduce((mx,p)=>{const t=p.created_at?new Date(p.created_at).getTime():0;return t>mx?t:mx;},0);const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;const isExpanded=expandedOp===o.id;return <Fragment key={o.id}><tr style={{borderBottom:isExpanded?"none":"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:inFlight?0.5:0.7,cursor:"pointer",background:isExpanded?"rgba(184,149,106,0.06)":"transparent",transition:"background 150ms"}} onClick={(e)=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button"))return;setExpandedOp(isExpanded?null:o.id);}} onMouseEnter={e=>{if(!isExpanded)e.currentTarget.style.background="rgba(255,255,255,0.03)";}} onMouseLeave={e=>{if(!isExpanded)e.currentTarget.style.background="transparent";}}>
                 <td style={{padding:"10px 12px"}}>{canSelect?(()=>{const isChecked=selectedOps.includes(o.id);return <label onClick={e=>e.stopPropagation()} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",width:20,height:20}}>
@@ -5525,12 +5525,8 @@ function AgentsPanel({token}){
                   const fullList=opItems.map(it=>it.description||"—").join(" · ");
                   return <span title={fullList} style={{display:"block"}}><span style={{display:"inline-block",maxWidth:more>0?160:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",verticalAlign:"middle"}}>{first}</span>{more>0&&<span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,marginLeft:6,verticalAlign:"middle"}}>+{more}</span>}</span>;
                 })()}</td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",lineHeight:1.3}}>
-                  {pkgsCount}
-                  {lastPkgAt>0&&<><br/><span title="Fecha del último bulto cargado en depósito" style={{fontSize:10,color:"rgba(255,255,255,0.35)",fontWeight:500}}>{new Date(lastPkgAt).toLocaleString("es-AR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span></>}
-                </td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)"}}>{w?`${w.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
-                <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)"}}>{SM[o.status]?.l||o.status}</span></td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{pkgsCount}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{w?`${w.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
                 <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>
                   {inFlight?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,whiteSpace:"nowrap"}}>EN VUELO</span>:
                   o.consolidation_confirmed&&opsWithDocs.has(o.id)?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",whiteSpace:"nowrap"}}>✓ LISTO</span>:
