@@ -8825,6 +8825,8 @@ function MaritimePanel({token,allClients=[]}){
   const warehouses=whs.map(w=>w.name);
   const byWarehouse={};
   filtered.forEach(s=>{const k=s.warehouse||"Sin depósito";if(!byWarehouse[k])byWarehouse[k]=[];byWarehouse[k].push(s);});
+  const codeNum=c=>{const m=String(c||"").match(/\d+/);return m?Number(m[0]):9999;};
+  Object.keys(byWarehouse).forEach(k=>{byWarehouse[k].sort((a,b)=>codeNum(a.shipment_code)-codeNum(b.shipment_code));});
 
   const cbmOf=(shId)=>packages.filter(p=>p.shipment_id===shId).reduce((s,p)=>s+Number(p.cbm||0),0);
   const bultosOf=(shId)=>packages.filter(p=>p.shipment_id===shId).length;
@@ -8836,7 +8838,7 @@ function MaritimePanel({token,allClients=[]}){
       shipment_code:s.shipment_code||`#${idx+1}`,
       packages:packages.filter(p=>p.shipment_id===s.id),
       items:items.filter(it=>it.shipment_id===s.id),
-    }));
+    })).sort((a,b)=>codeNum(a.shipment_code)-codeNum(b.shipment_code));
     if(wsShipments.length===0){alert("No hay pedidos para ese depósito/origen");return;}
     const wh=whByName[warehouse];
     const rotulo=wh?.rotulo||`MARÍTIMO ${warehouse.toUpperCase()} (código cliente)`;
@@ -8959,6 +8961,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   const defaultWh=editing?warehouses.find(w=>w.name===editing.warehouse):warehouses[0];
   const [warehouseId,setWarehouseId]=useState(defaultWh?.id||"");
   const [trackingNumber,setTrackingNumber]=useState(editing?.tracking_number||"");
+  const [receivedAt,setReceivedAt]=useState(editing?.received_at||"");
   const [productDescription,setProductDescription]=useState(editing?.product_description||"");
   const [clientId,setClientId]=useState(editing?.client_id||"");
   const [clientName,setClientName]=useState(editing?.client_name_snapshot||"");
@@ -8983,6 +8986,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     const body={
       shipment_code:code,
       tracking_number:trackingNumber.trim()||null,
+      received_at:receivedAt||null,
       product_description:productDescription.trim(),
       origin:selectedWh.origin||"china",
       warehouse:selectedWh.name,
@@ -9016,7 +9020,10 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       <div style={{marginBottom:12}}><Btn small variant="secondary" onClick={onCreateWarehouse}>+ Nuevo depósito</Btn></div>
     </div>
     {selectedWh?.rotulo&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"-6px 0 12px",fontStyle:"italic"}}>Rótulo del depósito: <span style={{color:IC,fontWeight:600}}>{selectedWh.rotulo}</span></p>}
-    <Inp label="Código de seguimiento" value={trackingNumber} onChange={setTrackingNumber} placeholder="SF... / KY..."/>
+    <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr",gap:"0 14px"}}>
+      <Inp label="Código de seguimiento" value={trackingNumber} onChange={setTrackingNumber} placeholder="SF... / KY..."/>
+      <Inp label="Fecha de recepción en depósito" type="date" value={receivedAt} onChange={setReceivedAt}/>
+    </div>
     <Inp label="Mercadería" value={productDescription} onChange={setProductDescription} placeholder="Ej: Simuladores de videojuegos"/>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
       <Sel label="Cliente" value={clientId} onChange={v=>{setClientId(v);const c=allClients.find(x=>x.id===v);if(c)setClientName(`${c.first_name||""} ${c.last_name||""}`.trim());}} options={[{value:"",label:"— Seleccioná —"},...allClients.map(c=>({value:c.id,label:`${c.client_code||""} - ${c.first_name||""} ${c.last_name||""}`.trim()}))]}/>
