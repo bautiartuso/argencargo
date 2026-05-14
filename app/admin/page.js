@@ -4513,6 +4513,47 @@ function FinancePanel({token}){
   </div>;
 }
 
+// Block para registrar/editar la fecha en la que el carrier recolectó el paquete.
+// UPS = input manual (con DatePicker del sistema). DHL/FedEx = se muestra automático desde el sync de tracking.
+function CarrierPickupBlock({flight,token,onReload}){
+  const car=(flight.international_carrier||"").toLowerCase();
+  const isUps=car==="ups";
+  // Local state para reflejar cambios optimistas (sino el input no refresca tras patch).
+  const [localPickup,setLocalPickup]=useState(flight.carrier_pickup_at?String(flight.carrier_pickup_at).slice(0,10):"");
+  useEffect(()=>{setLocalPickup(flight.carrier_pickup_at?String(flight.carrier_pickup_at).slice(0,10):"");},[flight.carrier_pickup_at]);
+  const [saving,setSaving]=useState(false);
+  const demora=localPickup?((new Date(localPickup+"T12:00:00")-new Date(flight.dispatched_at))/86400000):null;
+  const color=demora==null?"rgba(255,255,255,0.4)":demora<=1?"#22c55e":demora<=2?"#fbbf24":"#f87171";
+  const savePickup=async(v)=>{
+    setLocalPickup(v||"");
+    setSaving(true);
+    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{carrier_pickup_at:v?v+"T12:00:00-03":null,carrier_pickup_source:v?"manual_ups":null}});
+    setSaving(false);
+    onReload();
+  };
+  return <div style={{marginTop:14,padding:"12px 14px",background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.18)",borderRadius:10}}>
+    <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>⏱ Recolección del carrier</p>
+    <div style={{display:"flex",alignItems:"flex-end",gap:14,flexWrap:"wrap"}}>
+      {isUps?<>
+        <div style={{minWidth:200}}>
+          <Inp label="Fecha de recolección (manual UPS)" type="date" value={localPickup} onChange={savePickup}/>
+          {saving&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",fontStyle:"italic"}}>Guardando...</p>}
+        </div>
+      </>:<>
+        <div>
+          <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700}}>{car.toUpperCase()}</p>
+          <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>{flight.carrier_pickup_at?formatDate(flight.carrier_pickup_at):<span style={{color:"#fbbf24"}}>Pendiente · esperando 1er evento del carrier</span>}</p>
+          <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"3px 0 0",fontStyle:"italic"}}>Se completa automáticamente con la API</p>
+        </div>
+      </>}
+      {demora!=null&&<div style={{padding:"6px 12px",borderRadius:8,background:`${color}18`,border:`1px solid ${color}55`}}>
+        <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Demora</p>
+        <p style={{fontSize:14,fontWeight:800,color,margin:0,fontFeatureSettings:'"tnum"'}}>{demora.toFixed(1)} días</p>
+      </div>}
+    </div>
+  </div>;
+}
+
 function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceItems,depositPkgs,onReload,onFlash,onBack,usd}){
   const a=signups.find(s=>s.auth_user_id===flight.agent_id);
   // Peso facturable por paquete (max bruto vs volumétrico) — usado para $/kg y reparto de cost_share.
@@ -5017,26 +5058,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>DESPACHADO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{formatDate(flight.dispatched_at)}</p></div>
         </div>
         {/* Pickup del carrier: auto para DHL/FedEx (vía API), manual para UPS */}
-        {flight.dispatched_at&&(()=>{
-          const car=(flight.international_carrier||"").toLowerCase();
-          const isUps=car==="ups";
-          const pickupDate=flight.carrier_pickup_at?String(flight.carrier_pickup_at).slice(0,10):"";
-          const demora=flight.carrier_pickup_at?((new Date(flight.carrier_pickup_at)-new Date(flight.dispatched_at))/86400000):null;
-          const color=demora==null?"rgba(255,255,255,0.4)":demora<=1?"#22c55e":demora<=2?"#fbbf24":"#f87171";
-          return <div style={{marginTop:14,padding:"12px 14px",background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.18)",borderRadius:10}}>
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>⏱ Recolección del carrier</p>
-            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-              {isUps?<>
-                <input type="date" value={pickupDate} onChange={async(e)=>{const v=e.target.value;await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{carrier_pickup_at:v?v+"T12:00:00-03":null,carrier_pickup_source:v?"manual_ups":null}});onReload();}} style={{padding:"7px 10px",fontSize:12,fontWeight:600,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,color:"#fff",fontFamily:"inherit"}}/>
-                <span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>UPS · cargar manualmente la fecha en que el courier recolectó el paquete</span>
-              </>:<>
-                <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>{flight.carrier_pickup_at?formatDate(flight.carrier_pickup_at):<span style={{color:"#fbbf24"}}>Pendiente · esperando 1er evento del carrier</span>}</p>
-                <span style={{fontSize:10,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>{car.toUpperCase()} · se completa automáticamente con la API</span>
-              </>}
-              {demora!=null&&<span style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:700,background:`${color}22`,color,border:`1px solid ${color}55`}}>Demora: {demora.toFixed(1)} días</span>}
-            </div>
-          </div>;
-        })()}
+        {flight.dispatched_at&&<CarrierPickupBlock flight={flight} token={token} onReload={onReload}/>}
         {flight.status==="despachado"&&<div style={{marginTop:14}}><Btn small onClick={markReceived}>✓ Marcar como recibido en Bs As</Btn></div>}
       </>:<>
         <div style={{background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8,padding:"10px 12px",marginBottom:12}}>
@@ -5670,7 +5692,7 @@ function AgentsPanel({token}){
             return <tr key={f.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:700,color:"#fff"}}>{f.flight_code}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{a?(a.first_name+" "+(a.last_name||"")):"—"}</td>
-            <td style={{padding:"12px 14px"}}>{(()=>{const ready=f.status==="preparando"&&f.invoice_presented_at;const c=ready?"#22c55e":stColors[f.status];const label=ready?"listo para enviar":f.status;return <span style={{fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,color:c,background:`${c}20`,border:`1px solid ${c}40`,textTransform:"uppercase"}}>{label}</span>;})()}</td>
+            <td style={{padding:"12px 14px"}}>{(()=>{const ready=f.status==="preparando"&&f.invoice_presented_at;const c=ready?"#ec4899":stColors[f.status];const label=ready?"⚡ listo para enviar":f.status;return <span style={{fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:4,color:c,background:`${c}22`,border:`1px solid ${c}66`,textTransform:"uppercase",boxShadow:ready?`0 0 12px ${c}55`:"none",letterSpacing:"0.04em"}}>{label}</span>;})()}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{ops.length}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_weight_kg?`${Number(f.total_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_cost_usd?usd(f.total_cost_usd):"—"}</td>
