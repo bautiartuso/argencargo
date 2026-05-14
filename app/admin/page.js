@@ -5651,20 +5651,21 @@ function AgentsPanel({token}){
             {["Código","Agente","Estado","Ops","Peso","Costo","Tracking","Demora","Creado",""].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
           </tr></thead>
           <tbody>{flights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const a=signups.find(s=>s.auth_user_id===f.agent_id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
-            // Demora del agente: días entre dispatched_at (cuando el agente despachó con tracking)
-            // y carrier_pickup_at (primer evento del carrier). Auto para DHL/FedEx, manual para UPS.
+            // Demora del agente: días entre dispatched_at y carrier_pickup_at.
+            // Auto para DHL/FedEx (vía API), manual para UPS (cargado por admin).
             const demoraInfo=(()=>{
-              if(!f.dispatched_at)return {txt:"—",color:"rgba(255,255,255,0.3)",sub:""};
+              if(!f.dispatched_at)return {txt:"—",color:"rgba(255,255,255,0.3)"};
               if(!f.carrier_pickup_at){
                 const car=(f.international_carrier||"").toLowerCase();
-                if(car==="ups")return {txt:"Cargar",color:"#a78bfa",sub:"manual"};
-                return {txt:"Pendiente",color:"#fbbf24",sub:"esperando 1er evento"};
+                // UPS sin cargar → ? que invita a completar manualmente
+                if(car==="ups")return {txt:"?",color:"#a78bfa",title:"UPS · cargar fecha de pickup manual desde el detalle del vuelo"};
+                // DHL/FedEx esperando primer evento del carrier
+                return {txt:"—",color:"rgba(255,255,255,0.3)",title:"Esperando primer evento del carrier"};
               }
               const ms=new Date(f.carrier_pickup_at)-new Date(f.dispatched_at);
               const days=ms/86400000;
               const color=days<=1?"#22c55e":days<=2?"#fbbf24":"#f87171";
-              const sub=f.carrier_pickup_source==="manual_ups"?"manual":(f.carrier_pickup_source?.replace("auto_","")||"auto");
-              return {txt:`${days.toFixed(1)} d`,color,sub};
+              return {txt:`${days.toFixed(1)} d`,color};
             })();
             return <tr key={f.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:700,color:"#fff"}}>{f.flight_code}</td>
@@ -5674,7 +5675,7 @@ function AgentsPanel({token}){
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_weight_kg?`${Number(f.total_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_cost_usd?usd(f.total_cost_usd):"—"}</td>
             <td style={{padding:"12px 14px",fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.35}}>{f.international_tracking?<><span style={{fontFamily:"monospace"}}>{f.international_tracking}</span>{f.international_carrier&&<><br/><span style={{fontSize:9,fontWeight:700,color:IC,letterSpacing:"0.04em",textTransform:"uppercase"}}>{f.international_carrier}</span></>}</>:"—"}</td>
-            <td style={{padding:"12px 14px",fontSize:11.5,fontWeight:700,color:demoraInfo.color,lineHeight:1.3}} title={f.dispatched_at?`Dispatched: ${formatDate(f.dispatched_at)}${f.carrier_pickup_at?` · Pickup: ${formatDate(f.carrier_pickup_at)}`:""}`:""}>{demoraInfo.txt}{demoraInfo.sub&&<><br/><span style={{fontSize:9,color:"rgba(255,255,255,0.4)",fontWeight:500}}>{demoraInfo.sub}</span></>}</td>
+            <td style={{padding:"12px 14px",fontSize:13,fontWeight:700,color:demoraInfo.color,whiteSpace:"nowrap"}} title={demoraInfo.title||(f.dispatched_at?`Dispatched: ${formatDate(f.dispatched_at)}${f.carrier_pickup_at?` · Pickup: ${formatDate(f.carrier_pickup_at)}`:""}`:"")}>{demoraInfo.txt}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{formatDate(f.created_at)}</td>
             <td style={{padding:"12px 14px"}}><button onClick={()=>setSelFlight(f.id)} style={{color:IC,fontSize:11,fontWeight:600,background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:6,padding:"5px 10px",cursor:"pointer"}}>Ver →</button></td>
           </tr>;})}</tbody>
