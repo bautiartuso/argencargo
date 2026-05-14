@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, Fragment } from "react";
 import { calcOpBudget } from "../../lib/calc";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
-import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printSimplifiedDeclaration } from "../../lib/pdf-templates";
+import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printSimplifiedDeclaration, printMaritimePdf } from "../../lib/pdf-templates";
 import IntelligencePanel from "./components/IntelligencePanel";
 import TicketsPanel from "./components/TicketsPanel";
 
@@ -8660,7 +8660,7 @@ function GiAdminPanel({token,clients}){
 }
 
 function AdminDashboard({session,onLogout}){
-  const [page,setPage]=useState("today");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);const [mobOpen,setMobOpen]=useState(false);
+  const [page,setPage]=useState("operations");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);const [mobOpen,setMobOpen]=useState(false);
   const token=session.token;
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
   // Nav agrupado por secciones (estilo Linear/Notion). Cada item: {key, label, p (svg paths)}
@@ -8668,9 +8668,9 @@ function AdminDashboard({session,onLogout}){
   // accesibles vía URL pero NO aparecen en sidebar.
   const navSections=[
     {section:"Operativa",items:[
-      {key:"today",label:"Hoy",p:["M12 2L3 7l9 5 9-5-9-5z","M3 17l9 5 9-5","M3 12l9 5 9-5"]},
       {key:"operations",label:"Operaciones",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},
       {key:"agents",label:"Agentes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},
+      {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
       {key:"tasks",label:"Tareas",p:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"]},
       {key:"purchase_notifs",label:"Avisos de compra",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},
       {key:"quotes",label:"Cotizaciones",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},
@@ -8771,6 +8771,7 @@ function AdminDashboard({session,onLogout}){
       {page==="tickets"&&<TicketsPanel token={token} allClients={allClients}/>}
       {page==="dashboard"&&<><FinanceDashboard token={token}/><OperationalAnalytics token={token}/><DashboardKPIs token={token}/><RetentionLTVCard token={token}/></>}
       {page==="agents"&&<AgentsPanel token={token}/>}
+      {page==="maritime"&&<MaritimePanel token={token} allClients={allClients}/>}
       {page==="purchase_notifs"&&<PurchaseNotificationsAdmin token={token} allClients={allClients} onCreateOp={op=>{setPage("operations");setSelOp(op);}}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
@@ -8779,6 +8780,261 @@ function AdminDashboard({session,onLogout}){
       {page==="gi_requests"&&<GiAdminPanel token={token} clients={allClients}/>}
       {page==="settings"&&<AdminSettings token={token} session={session}/>}
     </div></div>
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARITIME PANEL · pedidos marítimos en tránsito agrupados por depósito y origen.
+// ABM de shipments + bultos + items. Genera PDF por depósito (no mezcla).
+// ═══════════════════════════════════════════════════════════════
+function MaritimePanel({token,allClients=[]}){
+  const [shipments,setShipments]=useState([]);
+  const [packages,setPackages]=useState([]);
+  const [items,setItems]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [originFilter,setOriginFilter]=useState("china");
+  const [warehouseFilter,setWarehouseFilter]=useState("all");
+  const [showNew,setShowNew]=useState(false);
+  const [editingId,setEditingId]=useState(null);
+  const [expanded,setExpanded]=useState(new Set());
+
+  const load=async()=>{
+    setLo(true);
+    const [sh,pk,it]=await Promise.all([
+      dq("maritime_shipments",{token,filters:"?select=*&order=created_at.desc"}),
+      dq("maritime_packages",{token,filters:"?select=*&order=bulto_number.asc"}),
+      dq("maritime_items",{token,filters:"?select=*&order=sort_order.asc"}),
+    ]);
+    setShipments(Array.isArray(sh)?sh:[]);
+    setPackages(Array.isArray(pk)?pk:[]);
+    setItems(Array.isArray(it)?it:[]);
+    setLo(false);
+  };
+  useEffect(()=>{load();},[token]);
+
+  // Agrupar por (warehouse, origin)
+  const filtered=shipments.filter(s=>(originFilter==="all"||s.origin===originFilter)&&(warehouseFilter==="all"||s.warehouse===warehouseFilter));
+  const warehouses=Array.from(new Set(shipments.map(s=>s.warehouse).filter(Boolean))).sort();
+  const byWarehouse={};
+  filtered.forEach(s=>{const k=s.warehouse||"Sin depósito";if(!byWarehouse[k])byWarehouse[k]=[];byWarehouse[k].push(s);});
+
+  const cbmOf=(shId)=>packages.filter(p=>p.shipment_id===shId).reduce((s,p)=>s+Number(p.cbm||0),0);
+  const bultosOf=(shId)=>packages.filter(p=>p.shipment_id===shId).length;
+
+  const downloadPdf=(warehouse,origin)=>{
+    const wsShipments=shipments.filter(s=>s.warehouse===warehouse&&s.origin===origin).map((s,idx)=>{
+      const code=s.shipment_code||`#${String(idx+1).padStart(2,"0")}`;
+      return {
+        ...s,
+        shipment_code:code,
+        packages:packages.filter(p=>p.shipment_id===s.id),
+        items:items.filter(it=>it.shipment_id===s.id),
+      };
+    });
+    if(wsShipments.length===0){alert("No hay pedidos para ese depósito/origen");return;}
+    const rotulo=origin==="china"?`MARÍTIMO ${warehouse.toUpperCase()} (código cliente)`:`MARÍTIMO USA ${warehouse.toUpperCase()} (código cliente)`;
+    printMaritimePdf({warehouse,origin,shipments:wsShipments,rotulo});
+  };
+
+  const delShipment=async(id)=>{
+    if(!confirm("¿Eliminar este pedido marítimo? Se borran los bultos e items asociados."))return;
+    await dq("maritime_shipments",{method:"DELETE",token,filters:`?id=eq.${id}`});
+    load();
+  };
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:18,flexWrap:"wrap",gap:14}}>
+      <div>
+        <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.02em"}}>Marítimos en tránsito</h2>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:0}}>Listado de pedidos consolidados por depósito · {filtered.length} pedido{filtered.length!==1?"s":""}</p>
+      </div>
+      <Btn onClick={()=>{setEditingId(null);setShowNew(true);}}>+ Nuevo pedido marítimo</Btn>
+    </div>
+
+    {/* Filtros */}
+    <div style={{display:"flex",gap:14,marginBottom:18,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{display:"flex",gap:4,background:"rgba(255,255,255,0.04)",borderRadius:8,padding:4,border:"1px solid rgba(255,255,255,0.06)"}}>
+        {[{k:"china",l:"🇨🇳 China"},{k:"usa",l:"🇺🇸 USA"},{k:"all",l:"Todos"}].map(o=><button key={o.k} onClick={()=>setOriginFilter(o.k)} style={{padding:"6px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:6,cursor:"pointer",background:originFilter===o.k?GOLD_GRADIENT:"transparent",color:originFilter===o.k?"#0A1628":"rgba(255,255,255,0.6)"}}>{o.l}</button>)}
+      </div>
+      {warehouses.length>0&&<div style={{display:"flex",gap:4,background:"rgba(255,255,255,0.04)",borderRadius:8,padding:4,border:"1px solid rgba(255,255,255,0.06)"}}>
+        <button onClick={()=>setWarehouseFilter("all")} style={{padding:"6px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:6,cursor:"pointer",background:warehouseFilter==="all"?"rgba(96,165,250,0.2)":"transparent",color:warehouseFilter==="all"?"#60a5fa":"rgba(255,255,255,0.6)"}}>Todos depósitos</button>
+        {warehouses.map(w=><button key={w} onClick={()=>setWarehouseFilter(w)} style={{padding:"6px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:6,cursor:"pointer",background:warehouseFilter===w?"rgba(96,165,250,0.2)":"transparent",color:warehouseFilter===w?"#60a5fa":"rgba(255,255,255,0.6)"}}>📦 {w}</button>)}
+      </div>}
+    </div>
+
+    {/* Form nuevo / editar */}
+    {showNew&&<MaritimeForm token={token} editing={editingId?shipments.find(s=>s.id===editingId):null} packages={editingId?packages.filter(p=>p.shipment_id===editingId):[]} items={editingId?items.filter(it=>it.shipment_id===editingId):[]} allClients={allClients} onSave={()=>{setShowNew(false);setEditingId(null);load();}} onCancel={()=>{setShowNew(false);setEditingId(null);}}/>}
+
+    {lo&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>}
+
+    {!lo&&Object.keys(byWarehouse).length===0&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"3rem 0"}}>No hay pedidos marítimos en este filtro.</p>}
+
+    {!lo&&Object.entries(byWarehouse).sort(([a],[b])=>a.localeCompare(b)).map(([wh,wsList])=>{
+      const totalCbm=wsList.reduce((s,sh)=>s+cbmOf(sh.id),0);
+      const totalBultos=wsList.reduce((s,sh)=>s+bultosOf(sh.id),0);
+      const pending=wsList.filter(sh=>cbmOf(sh.id)===0).length;
+      return <div key={wh} style={{marginBottom:24,background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
+        <div style={{padding:"14px 18px",background:"rgba(96,165,250,0.06)",borderBottom:"1px solid rgba(96,165,250,0.18)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          <div>
+            <p style={{fontSize:11,fontWeight:800,color:"#60a5fa",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>📦 Depósito {wh}</p>
+            <p style={{fontSize:13,color:"rgba(255,255,255,0.75)",margin:0}}>{wsList.length} pedido{wsList.length!==1?"s":""} · {totalBultos} bulto{totalBultos!==1?"s":""} · <strong style={{color:"#fff"}}>CBM {totalCbm.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{pending>0?` (+ ${pending} pendiente${pending!==1?"s":""})`:""}</p>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {(originFilter==="all"?["china","usa"]:[originFilter]).map(o=>{const cnt=wsList.filter(s=>s.origin===o).length;return cnt>0?<button key={o} onClick={()=>downloadPdf(wh,o)} title={`PDF de pedidos ${o==="usa"?"USA":"China"} en ${wh}`} style={{padding:"7px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.1)",color:IC,cursor:"pointer",fontFamily:"inherit"}}>📄 PDF {o==="usa"?"USA":"China"} ({cnt})</button>:null;})}
+          </div>
+        </div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.2)"}}>
+            {["#","Producto","Cliente","Origen","Tracking","Bultos","CBM","Estado",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{h}</th>)}
+          </tr></thead>
+          <tbody>{wsList.map((sh,idx)=>{
+            const cbm=cbmOf(sh.id);
+            const bcount=bultosOf(sh.id);
+            const isExp=expanded.has(sh.id);
+            const code=sh.shipment_code||`#${String(idx+1).padStart(2,"0")}`;
+            const shItems=items.filter(it=>it.shipment_id===sh.id);
+            const shPkgs=packages.filter(p=>p.shipment_id===sh.id);
+            return <Fragment key={sh.id}>
+              <tr onClick={()=>setExpanded(prev=>{const n=new Set(prev);if(n.has(sh.id))n.delete(sh.id);else n.add(sh.id);return n;})} style={{borderBottom:isExp?"none":"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}}>
+                <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:700,color:IC}}>{code}</td>
+                <td style={{padding:"10px 12px",color:"#fff",fontWeight:600}}>{sh.product_description}{sh.is_fragile&&<span style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.18)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.4)",letterSpacing:"0.05em",marginLeft:6,display:"inline-block",verticalAlign:"middle"}}>FRÁGIL</span>}{sh.is_repack&&<span style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(251,146,60,0.18)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.4)",letterSpacing:"0.05em",marginLeft:6,display:"inline-block",verticalAlign:"middle"}}>REENVÍO</span>}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.65)"}}>{sh.client_name_snapshot||"—"}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)"}}>{sh.origin==="usa"?"🇺🇸 USA":"🇨🇳 China"}</td>
+                <td style={{padding:"10px 12px",fontSize:11,fontFamily:"monospace",color:"rgba(255,255,255,0.55)"}}>{sh.tracking_number||<span style={{fontStyle:"italic",color:"rgba(255,255,255,0.3)"}}>sin código</span>}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",fontFeatureSettings:'"tnum"'}}>{bcount}</td>
+                <td style={{padding:"10px 12px",color:cbm>0?"#fff":"#fbbf24",fontWeight:700,fontFeatureSettings:'"tnum"'}}>{cbm>0?cbm.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4}):"Pendiente"}</td>
+                <td style={{padding:"10px 12px"}}>{sh.in_warehouse?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",whiteSpace:"nowrap"}}>EN DEPÓSITO</span>:<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(96,165,250,0.15)",color:"#60a5fa",whiteSpace:"nowrap"}}>EN TRÁNSITO</span>}</td>
+                <td style={{padding:"10px 12px",textAlign:"right",whiteSpace:"nowrap"}}>
+                  <button onClick={e=>{e.stopPropagation();setEditingId(sh.id);setShowNew(true);}} style={{padding:"5px 10px",fontSize:10,fontWeight:600,marginRight:4,borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>✎</button>
+                  <button onClick={e=>{e.stopPropagation();delShipment(sh.id);}} style={{padding:"5px 10px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
+                </td>
+              </tr>
+              {isExp&&<tr><td colSpan={9} style={{padding:"0 12px 14px",background:"rgba(184,149,106,0.04)",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginTop:10}}>
+                  <div>
+                    <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Bultos ({shPkgs.length})</p>
+                    {shPkgs.length===0?<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin bultos cargados</p>:<table style={{width:"100%",fontSize:11.5,borderCollapse:"collapse"}}><tbody>{shPkgs.map((p,i)=><tr key={p.id} style={{borderBottom:i<shPkgs.length-1?"1px solid rgba(255,255,255,0.04)":"none"}}><td style={{padding:"3px 0",color:"rgba(255,255,255,0.7)"}}>{p.label||`Bulto ${p.bulto_number||i+1}`}</td><td style={{padding:"3px 0",color:"rgba(255,255,255,0.55)"}}>{p.length_cm}×{p.width_cm}×{p.height_cm} cm</td><td style={{padding:"3px 0",textAlign:"right",color:GOLD_LIGHT,fontFeatureSettings:'"tnum"',fontWeight:600}}>{Number(p.cbm||0).toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</td></tr>)}</tbody></table>}
+                  </div>
+                  <div>
+                    <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Mercadería ({shItems.length})</p>
+                    {shItems.length===0?<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin detalle cargado</p>:<table style={{width:"100%",fontSize:11.5,borderCollapse:"collapse"}}><tbody>{shItems.map((it,i)=><tr key={it.id} style={{borderBottom:i<shItems.length-1?"1px solid rgba(255,255,255,0.04)":"none"}}><td style={{padding:"3px 0",color:"rgba(255,255,255,0.7)"}}>{it.description}</td><td style={{padding:"3px 0",color:"rgba(255,255,255,0.55)",textAlign:"right",whiteSpace:"nowrap"}}>{it.quantity} u. × {usd(it.unit_price_usd)}</td><td style={{padding:"3px 0",textAlign:"right",color:GOLD_LIGHT,fontFeatureSettings:'"tnum"',fontWeight:600,whiteSpace:"nowrap"}}>{usd(Number(it.quantity||0)*Number(it.unit_price_usd||0))}</td></tr>)}</tbody></table>}
+                  </div>
+                </div>
+                {sh.notes&&<p style={{fontSize:11,color:"#fbbf24",fontStyle:"italic",margin:"10px 0 0",padding:"6px 10px",background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:6}}>■ {sh.notes}</p>}
+              </td></tr>}
+            </Fragment>;
+          })}</tbody>
+        </table>
+      </div>;
+    })}
+  </div>;
+}
+
+function MaritimeForm({token,editing,packages=[],items=[],allClients=[],onSave,onCancel}){
+  const [shipmentCode,setShipmentCode]=useState(editing?.shipment_code||"");
+  const [trackingNumber,setTrackingNumber]=useState(editing?.tracking_number||"");
+  const [productDescription,setProductDescription]=useState(editing?.product_description||"");
+  const [origin,setOrigin]=useState(editing?.origin||"china");
+  const [warehouse,setWarehouse]=useState(editing?.warehouse||"Viejo");
+  const [clientId,setClientId]=useState(editing?.client_id||"");
+  const [clientName,setClientName]=useState(editing?.client_name_snapshot||"");
+  const [isFragile,setIsFragile]=useState(!!editing?.is_fragile);
+  const [isRepack,setIsRepack]=useState(!!editing?.is_repack);
+  const [inWarehouse,setInWarehouse]=useState(!!editing?.in_warehouse);
+  const [notes,setNotes]=useState(editing?.notes||"");
+  const [pkgs,setPkgs]=useState(packages.length>0?packages.map(p=>({...p,length_cm:p.length_cm||"",width_cm:p.width_cm||"",height_cm:p.height_cm||"",label:p.label||""})):[{label:"",length_cm:"",width_cm:"",height_cm:""}]);
+  const [its,setIts]=useState(items.length>0?items.map(i=>({...i,quantity:i.quantity||"",unit_price_usd:i.unit_price_usd||""})):[]);
+  const [saving,setSaving]=useState(false);
+
+  const save=async()=>{
+    if(!productDescription.trim()){alert("Cargá la descripción del producto");return;}
+    setSaving(true);
+    const body={
+      shipment_code:shipmentCode.trim()||null,
+      tracking_number:trackingNumber.trim()||null,
+      product_description:productDescription.trim(),
+      origin,
+      warehouse:warehouse.trim()||"Viejo",
+      client_id:clientId||null,
+      client_name_snapshot:clientName.trim()||null,
+      is_fragile:isFragile,
+      is_repack:isRepack,
+      in_warehouse:inWarehouse,
+      notes:notes.trim()||null,
+      updated_at:new Date().toISOString(),
+    };
+    let shId=editing?.id;
+    if(editing){
+      await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
+      await dq("maritime_packages",{method:"DELETE",token,filters:`?shipment_id=eq.${editing.id}`});
+      await dq("maritime_items",{method:"DELETE",token,filters:`?shipment_id=eq.${editing.id}`});
+    } else {
+      const res=await dq("maritime_shipments",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
+      shId=(Array.isArray(res)?res[0]:res)?.id;
+    }
+    if(shId){
+      const validPkgs=pkgs.filter(p=>p.length_cm&&p.width_cm&&p.height_cm).map((p,i)=>({shipment_id:shId,bulto_number:i+1,label:p.label||null,length_cm:Number(p.length_cm),width_cm:Number(p.width_cm),height_cm:Number(p.height_cm)}));
+      if(validPkgs.length>0)await dq("maritime_packages",{method:"POST",token,body:validPkgs});
+      const validItems=its.filter(it=>it.description?.trim()).map((it,i)=>({shipment_id:shId,description:it.description.trim(),quantity:Number(it.quantity||1),unit_price_usd:Number(it.unit_price_usd||0),notes:it.notes||null,sort_order:i}));
+      if(validItems.length>0)await dq("maritime_items",{method:"POST",token,body:validItems});
+    }
+    setSaving(false);
+    onSave();
+  };
+
+  return <div style={{marginBottom:20,padding:18,background:"rgba(96,165,250,0.04)",border:"1.5px solid rgba(96,165,250,0.25)",borderRadius:12}}>
+    <h3 style={{fontSize:14,fontWeight:700,color:"#60a5fa",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{editing?"✎ Editar pedido marítimo":"+ Nuevo pedido marítimo"}</h3>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 14px"}}>
+      <Inp label="Código (DV #01, PP #02...)" value={shipmentCode} onChange={setShipmentCode} placeholder="Auto si lo dejás vacío"/>
+      <Inp label="Tracking" value={trackingNumber} onChange={setTrackingNumber} placeholder="SF... / KY..."/>
+      <Sel label="Origen" value={origin} onChange={setOrigin} options={[{value:"china",label:"🇨🇳 China"},{value:"usa",label:"🇺🇸 USA"}]}/>
+      <Inp label="Depósito" value={warehouse} onChange={setWarehouse} placeholder="Viejo / Phoenix Sourcing"/>
+    </div>
+    <Inp label="Producto / Mercadería" value={productDescription} onChange={setProductDescription} placeholder="Ej: Simuladores de videojuegos"/>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+      <Sel label="Cliente" value={clientId} onChange={v=>{setClientId(v);const c=allClients.find(x=>x.id===v);if(c)setClientName(`${c.first_name||""} ${c.last_name||""}`.trim());}} options={[{value:"",label:"— Seleccioná —"},...allClients.map(c=>({value:c.id,label:`${c.client_code||""} - ${c.first_name||""} ${c.last_name||""}`.trim()}))]}/>
+      <Inp label="Nombre cliente (override)" value={clientName} onChange={setClientName} placeholder="Si no está cargado el cliente"/>
+    </div>
+    <div style={{display:"flex",gap:14,marginBottom:10,flexWrap:"wrap"}}>
+      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"rgba(255,255,255,0.7)",cursor:"pointer"}}><input type="checkbox" checked={isFragile} onChange={e=>setIsFragile(e.target.checked)}/>📦 Frágil</label>
+      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"rgba(255,255,255,0.7)",cursor:"pointer"}}><input type="checkbox" checked={isRepack} onChange={e=>setIsRepack(e.target.checked)}/>↩ Reenvío</label>
+      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"rgba(255,255,255,0.7)",cursor:"pointer"}}><input type="checkbox" checked={inWarehouse} onChange={e=>setInWarehouse(e.target.checked)}/>✓ Ya en depósito</label>
+    </div>
+    <Inp label="Notas (opcional · aclaraciones, fragilidad detallada, etc.)" value={notes} onChange={setNotes}/>
+
+    {/* Bultos */}
+    <div style={{marginTop:12,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>📦 Bultos</p>
+        <button onClick={()=>setPkgs(p=>[...p,{label:"",length_cm:"",width_cm:"",height_cm:""}])} style={{padding:"4px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"transparent",color:IC,cursor:"pointer"}}>+ Bulto</button>
+      </div>
+      {pkgs.map((p,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr auto",gap:8,marginBottom:6,alignItems:"end"}}>
+        <Inp label={i===0?"Label (opcional)":""} value={p.label} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,label:v}:x))} placeholder={`Bulto ${i+1}`} small/>
+        <Inp label={i===0?"Largo (cm)":""} type="number" value={p.length_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,length_cm:v}:x))} small/>
+        <Inp label={i===0?"Ancho (cm)":""} type="number" value={p.width_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,width_cm:v}:x))} small/>
+        <Inp label={i===0?"Alto (cm)":""} type="number" value={p.height_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,height_cm:v}:x))} small/>
+        <button onClick={()=>setPkgs(arr=>arr.filter((_,j)=>j!==i))} style={{padding:"7px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff6b6b",cursor:"pointer",height:36}}>×</button>
+      </div>)}
+    </div>
+
+    {/* Items */}
+    <div style={{marginTop:12,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>📋 Detalle de mercadería (factura)</p>
+        <button onClick={()=>setIts(p=>[...p,{description:"",quantity:1,unit_price_usd:0}])} style={{padding:"4px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"transparent",color:IC,cursor:"pointer"}}>+ Item</button>
+      </div>
+      {its.length===0?<p style={{fontSize:11,color:"rgba(255,255,255,0.35)",fontStyle:"italic",textAlign:"center",padding:"8px 0"}}>Sin items cargados (opcional)</p>:its.map((it,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"2.5fr 0.8fr 1fr auto",gap:8,marginBottom:6,alignItems:"end"}}>
+        <Inp label={i===0?"Descripción":""} value={it.description} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,description:v}:x))} small/>
+        <Inp label={i===0?"Cant.":""} type="number" value={it.quantity} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x))} small/>
+        <Inp label={i===0?"USD c/u":""} type="number" value={it.unit_price_usd} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,unit_price_usd:v}:x))} small/>
+        <button onClick={()=>setIts(arr=>arr.filter((_,j)=>j!==i))} style={{padding:"7px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff6b6b",cursor:"pointer",height:36}}>×</button>
+      </div>)}
+    </div>
+
+    <div style={{display:"flex",gap:10,marginTop:14,justifyContent:"flex-end"}}>
+      <Btn variant="secondary" onClick={onCancel}>Cancelar</Btn>
+      <Btn onClick={save} disabled={saving}>{saving?"Guardando...":(editing?"Guardar cambios":"Crear pedido")}</Btn>
+    </div>
   </div>;
 }
 
