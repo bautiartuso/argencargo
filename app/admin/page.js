@@ -5514,7 +5514,7 @@ function AgentsPanel({token}){
                   </span>
                 </label>;})():<span style={{color:"rgba(255,255,255,0.3)",fontSize:14}}>{isExpanded?"▾":"▸"}</span>}</td>
                 <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12}}>{o.operation_code}</td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)"}}>{o.clients?<span style={{display:"inline-flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{`${o.clients.client_code} - ${o.clients.first_name}`}{o.clients.tax_condition==="responsable_inscripto"&&<span title="Cliente Responsable Inscripto" style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.18)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.05em"}}>RI</span>}</span>:"—"}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}>{o.clients?<span style={{display:"inline-flex",alignItems:"center",gap:6}}>{`${o.clients.client_code} - ${o.clients.first_name}`}{o.clients.tax_condition==="responsable_inscripto"&&<span title="Cliente Responsable Inscripto" style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.18)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.05em",flexShrink:0}}>RI</span>}</span>:"—"}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",maxWidth:240}}>{(()=>{
                   // Si la op tiene description manual, usala. Si no, usar items declarados por el cliente.
                   if(o.description&&o.description.trim())return <span title={o.description} style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.description}</span>;
@@ -5531,11 +5531,11 @@ function AgentsPanel({token}){
                 </td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)"}}>{w?`${w.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
                 <td style={{padding:"10px 12px"}}><span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)"}}>{SM[o.status]?.l||o.status}</span></td>
-                <td style={{padding:"10px 12px"}}>
-                  {inFlight?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC}}>EN VUELO</span>:
-                  o.consolidation_confirmed&&opsWithDocs.has(o.id)?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>✓ LISTO</span>:
-                  o.consolidation_confirmed&&!opsWithDocs.has(o.id)?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(249,115,22,0.15)",color:"#f97316"}}>📋 DOCS PENDIENTES</span>:
-                  <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24"}}>⏳ ESPERANDO</span>}
+                <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>
+                  {inFlight?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,whiteSpace:"nowrap"}}>EN VUELO</span>:
+                  o.consolidation_confirmed&&opsWithDocs.has(o.id)?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",whiteSpace:"nowrap"}}>✓ LISTO</span>:
+                  o.consolidation_confirmed&&!opsWithDocs.has(o.id)?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(249,115,22,0.15)",color:"#f97316",whiteSpace:"nowrap"}}>📋 DOCS PENDIENTES</span>:
+                  <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",whiteSpace:"nowrap"}}>⏳ ESPERANDO</span>}
                 </td>
                 <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{(()=>{
                   const clientWa=o.clients?.whatsapp?String(o.clients.whatsapp).replace(/[^0-9]/g,""):"";
