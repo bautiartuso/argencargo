@@ -352,6 +352,30 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
   const [items,setItems]=useState([]);
   const [selected,setSelected]=useState({});
   const fileRef=useRef(null);
+  const [pasteHint,setPasteHint]=useState(false);
+
+  // Soporte para pegar archivo desde portapapeles (Cmd/Ctrl+V) cuando la zona de drop está visible.
+  useEffect(()=>{
+    if(stage!=="idle")return;
+    const onPaste=(e)=>{
+      const items=e.clipboardData?.items;
+      if(!items||items.length===0)return;
+      for(const it of items){
+        if(it.kind==="file"){
+          const f=it.getAsFile();
+          if(f){
+            e.preventDefault();
+            setPasteHint(true);
+            setTimeout(()=>setPasteHint(false),900);
+            handleFile(f);
+            return;
+          }
+        }
+      }
+    };
+    window.addEventListener("paste",onPaste);
+    return ()=>window.removeEventListener("paste",onPaste);
+  },[stage]);
 
   // Convierte un File de imagen (jpg/png/heic/webp) a dataURL JPEG con un cap de tamaño
   // razonable. La API de OCR espera images como dataURL (mismo formato que PDF rendered).
@@ -470,10 +494,10 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
   // idle / error
   return <div>
     <input ref={fileRef} type="file" accept=".pdf,application/pdf,image/*,.jpg,.jpeg,.png,.webp,.heic" onChange={e=>handleFile(e.target.files?.[0])} style={{display:"none"}}/>
-    <div onClick={()=>fileRef.current?.click()} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=GOLD;e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";e.currentTarget.style.background="rgba(184,149,106,0.04)";}} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";handleFile(e.dataTransfer.files?.[0]);}} style={{border:"2px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.04)",borderRadius:12,padding:"32px 20px",textAlign:"center",cursor:"pointer",transition:"all 200ms"}}>
-      <div style={{fontSize:42,marginBottom:8}}>📄</div>
-      <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"0 0 4px"}}>{L.drop_or_pick}</p>
-      <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>PDF (max 10 páginas) o imagen JPG/PNG · facturas chinas o USA</p>
+    <div onClick={()=>fileRef.current?.click()} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor=GOLD;e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";e.currentTarget.style.background="rgba(184,149,106,0.04)";}} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(184,149,106,0.3)";handleFile(e.dataTransfer.files?.[0]);}} style={{border:`2px dashed ${pasteHint?GOLD:"rgba(184,149,106,0.3)"}`,background:pasteHint?"rgba(184,149,106,0.15)":"rgba(184,149,106,0.04)",borderRadius:12,padding:"32px 20px",textAlign:"center",cursor:"pointer",transition:"all 200ms"}}>
+      <div style={{fontSize:42,marginBottom:8}}>{pasteHint?"📥":"📄"}</div>
+      <p style={{fontSize:13,fontWeight:600,color:"#fff",margin:"0 0 4px"}}>{pasteHint?"¡Pegado!":L.drop_or_pick}</p>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:0}}>PDF (max 10 páginas) o imagen JPG/PNG · también podés <strong style={{color:GOLD_LIGHT}}>pegar (Cmd/Ctrl+V)</strong> directamente</p>
     </div>
     {error&&<p style={{fontSize:12,color:"#ff6b6b",margin:"10px 0 0",textAlign:"center"}}>{error}</p>}
     {onCancel&&<div style={{display:"flex",justifyContent:"center",marginTop:10}}>
