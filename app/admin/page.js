@@ -8826,6 +8826,7 @@ function MaritimePanel({token,allClients=[]}){
 
   const cbmOf=(shId)=>packages.filter(p=>p.shipment_id===shId).reduce((s,p)=>s+Number(p.cbm||0),0);
   const bultosOf=(shId)=>packages.filter(p=>p.shipment_id===shId).length;
+  const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   const downloadPdf=(warehouse,origin)=>{
     const wsShipments=shipments.filter(s=>s.warehouse===warehouse&&s.origin===origin).map((s,idx)=>({
