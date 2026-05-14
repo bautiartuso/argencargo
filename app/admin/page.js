@@ -5016,6 +5016,27 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PAGO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.payment_method||"—"}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>DESPACHADO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{formatDate(flight.dispatched_at)}</p></div>
         </div>
+        {/* Pickup del carrier: auto para DHL/FedEx (vía API), manual para UPS */}
+        {flight.dispatched_at&&(()=>{
+          const car=(flight.international_carrier||"").toLowerCase();
+          const isUps=car==="ups";
+          const pickupDate=flight.carrier_pickup_at?String(flight.carrier_pickup_at).slice(0,10):"";
+          const demora=flight.carrier_pickup_at?((new Date(flight.carrier_pickup_at)-new Date(flight.dispatched_at))/86400000):null;
+          const color=demora==null?"rgba(255,255,255,0.4)":demora<=1?"#22c55e":demora<=2?"#fbbf24":"#f87171";
+          return <div style={{marginTop:14,padding:"12px 14px",background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.18)",borderRadius:10}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>⏱ Recolección del carrier</p>
+            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+              {isUps?<>
+                <input type="date" value={pickupDate} onChange={async(e)=>{const v=e.target.value;await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{carrier_pickup_at:v?v+"T12:00:00-03":null,carrier_pickup_source:v?"manual_ups":null}});onReload();}} style={{padding:"7px 10px",fontSize:12,fontWeight:600,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,color:"#fff",fontFamily:"inherit"}}/>
+                <span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>UPS · cargar manualmente la fecha en que el courier recolectó el paquete</span>
+              </>:<>
+                <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>{flight.carrier_pickup_at?formatDate(flight.carrier_pickup_at):<span style={{color:"#fbbf24"}}>Pendiente · esperando 1er evento del carrier</span>}</p>
+                <span style={{fontSize:10,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>{car.toUpperCase()} · se completa automáticamente con la API</span>
+              </>}
+              {demora!=null&&<span style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:700,background:`${color}22`,color,border:`1px solid ${color}55`}}>Demora: {demora.toFixed(1)} días</span>}
+            </div>
+          </div>;
+        })()}
         {flight.status==="despachado"&&<div style={{marginTop:14}}><Btn small onClick={markReceived}>✓ Marcar como recibido en Bs As</Btn></div>}
       </>:<>
         <div style={{background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8,padding:"10px 12px",marginBottom:12}}>
@@ -5631,9 +5652,25 @@ function AgentsPanel({token}){
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-            {["Código","Agente","Estado","Ops","Peso","Costo","Tracking","Creado",""].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+            {["Código","Agente","Estado","Ops","Peso","Costo","Tracking","Demora","Creado",""].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
           </tr></thead>
-          <tbody>{flights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const a=signups.find(s=>s.auth_user_id===f.agent_id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};return <tr key={f.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <tbody>{flights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const a=signups.find(s=>s.auth_user_id===f.agent_id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
+            // Demora del agente: días entre dispatched_at (cuando el agente despachó con tracking)
+            // y carrier_pickup_at (primer evento del carrier). Auto para DHL/FedEx, manual para UPS.
+            const demoraInfo=(()=>{
+              if(!f.dispatched_at)return {txt:"—",color:"rgba(255,255,255,0.3)",sub:""};
+              if(!f.carrier_pickup_at){
+                const car=(f.international_carrier||"").toLowerCase();
+                if(car==="ups")return {txt:"Cargar",color:"#a78bfa",sub:"manual"};
+                return {txt:"Pendiente",color:"#fbbf24",sub:"esperando 1er evento"};
+              }
+              const ms=new Date(f.carrier_pickup_at)-new Date(f.dispatched_at);
+              const days=ms/86400000;
+              const color=days<=1?"#22c55e":days<=2?"#fbbf24":"#f87171";
+              const sub=f.carrier_pickup_source==="manual_ups"?"manual":(f.carrier_pickup_source?.replace("auto_","")||"auto");
+              return {txt:`${days.toFixed(1)} d`,color,sub};
+            })();
+            return <tr key={f.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:700,color:"#fff"}}>{f.flight_code}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{a?(a.first_name+" "+(a.last_name||"")):"—"}</td>
             <td style={{padding:"12px 14px"}}>{(()=>{const ready=f.status==="preparando"&&f.invoice_presented_at;const c=ready?"#22c55e":stColors[f.status];const label=ready?"listo para enviar":f.status;return <span style={{fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:4,color:c,background:`${c}20`,border:`1px solid ${c}40`,textTransform:"uppercase"}}>{label}</span>;})()}</td>
@@ -5641,6 +5678,7 @@ function AgentsPanel({token}){
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_weight_kg?`${Number(f.total_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_cost_usd?usd(f.total_cost_usd):"—"}</td>
             <td style={{padding:"12px 14px",fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.35}}>{f.international_tracking?<><span style={{fontFamily:"monospace"}}>{f.international_tracking}</span>{f.international_carrier&&<><br/><span style={{fontSize:9,fontWeight:700,color:IC,letterSpacing:"0.04em",textTransform:"uppercase"}}>{f.international_carrier}</span></>}</>:"—"}</td>
+            <td style={{padding:"12px 14px",fontSize:11.5,fontWeight:700,color:demoraInfo.color,lineHeight:1.3}} title={f.dispatched_at?`Dispatched: ${formatDate(f.dispatched_at)}${f.carrier_pickup_at?` · Pickup: ${formatDate(f.carrier_pickup_at)}`:""}`:""}>{demoraInfo.txt}{demoraInfo.sub&&<><br/><span style={{fontSize:9,color:"rgba(255,255,255,0.4)",fontWeight:500}}>{demoraInfo.sub}</span></>}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{formatDate(f.created_at)}</td>
             <td style={{padding:"12px 14px"}}><button onClick={()=>setSelFlight(f.id)} style={{color:IC,fontSize:11,fontWeight:600,background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:6,padding:"5px 10px",cursor:"pointer"}}>Ver →</button></td>
           </tr>;})}</tbody>

@@ -98,6 +98,35 @@ async function applyEventsToOp(op, route, d) {
   }
   if (skippedOld > 0) console.log(`[sync] ${op.operation_code}: skipped ${skippedOld} eventos pre-creación (tracking reusado)`);
 
+  // Actualizar carrier_pickup_at en el vuelo asociado (si hay): primer evento del carrier
+  // posterior al dispatch del vuelo. Sirve para medir demora del agente en entregar al carrier.
+  if (inserted > 0) {
+    try {
+      // Buscar vuelos asociados a esta op
+      const foRes = await fetch(`${SB_URL}/rest/v1/flight_operations?operation_id=eq.${op.id}&select=flight_id,flights(id,dispatched_at,carrier_pickup_at,international_carrier)`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+      const fos = await foRes.json();
+      for (const fo of (Array.isArray(fos) ? fos : [])) {
+        const fl = fo.flights;
+        // Solo update si no hay pickup_at todavía, el vuelo tiene dispatched_at, y el carrier es auto-sync (DHL/FedEx/UPS).
+        if (!fl || fl.carrier_pickup_at || !fl.dispatched_at) continue;
+        const carrierLow = (fl.international_carrier || "").toLowerCase();
+        // UPS la maneja manualmente el admin (per pedido del usuario); solo auto DHL/FedEx
+        if (!["dhl", "fedex"].includes(carrierLow)) continue;
+        // Buscar primer evento del carrier para esta op posterior al dispatched_at
+        const evRes = await fetch(`${SB_URL}/rest/v1/tracking_events?operation_id=eq.${op.id}&occurred_at=gte.${encodeURIComponent(fl.dispatched_at)}&order=occurred_at.asc&limit=1&select=occurred_at,source`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+        const evs = await evRes.json();
+        const first = Array.isArray(evs) && evs[0];
+        if (first) {
+          await fetch(`${SB_URL}/rest/v1/flights?id=eq.${fl.id}`, {
+            method: "PATCH",
+            headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+            body: JSON.stringify({ carrier_pickup_at: first.occurred_at, carrier_pickup_source: `auto_${carrierLow}` })
+          });
+        }
+      }
+    } catch (e) { console.error("[sync] carrier_pickup_at update failed", e.message); }
+  }
+
   // ETA / fecha entrega real → operations.eta (y status si ya llegó al courier)
   // operations.eta es tipo DATE, así que truncamos el timestamp a YYYY-MM-DD.
   const patch = {};
