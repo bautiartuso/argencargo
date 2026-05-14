@@ -8938,16 +8938,12 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],onSave,o
   const [warehouse,setWarehouse]=useState(editing?.warehouse||"Viejo");
   const [clientId,setClientId]=useState(editing?.client_id||"");
   const [clientName,setClientName]=useState(editing?.client_name_snapshot||"");
-  const [isFragile,setIsFragile]=useState(!!editing?.is_fragile);
-  const [isRepack,setIsRepack]=useState(!!editing?.is_repack);
-  const [inWarehouse,setInWarehouse]=useState(!!editing?.in_warehouse);
-  const [notes,setNotes]=useState(editing?.notes||"");
   const [pkgs,setPkgs]=useState(packages.length>0?packages.map(p=>({...p,length_cm:p.length_cm||"",width_cm:p.width_cm||"",height_cm:p.height_cm||"",label:p.label||""})):[{label:"",length_cm:"",width_cm:"",height_cm:""}]);
   const [its,setIts]=useState(items.length>0?items.map(i=>({...i,quantity:i.quantity||"",unit_price_usd:i.unit_price_usd||""})):[]);
   const [saving,setSaving]=useState(false);
 
   const save=async()=>{
-    if(!productDescription.trim()){alert("Cargá la descripción del producto");return;}
+    if(!productDescription.trim()){alert("Cargá la mercadería");return;}
     setSaving(true);
     const body={
       shipment_code:shipmentCode.trim()||null,
@@ -8957,10 +8953,6 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],onSave,o
       warehouse:warehouse.trim()||"Viejo",
       client_id:clientId||null,
       client_name_snapshot:clientName.trim()||null,
-      is_fragile:isFragile,
-      is_repack:isRepack,
-      in_warehouse:inWarehouse,
-      notes:notes.trim()||null,
       updated_at:new Date().toISOString(),
     };
     let shId=editing?.id;
@@ -8984,23 +8976,17 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],onSave,o
 
   return <div style={{marginBottom:20,padding:18,background:"rgba(96,165,250,0.04)",border:"1.5px solid rgba(96,165,250,0.25)",borderRadius:12}}>
     <h3 style={{fontSize:14,fontWeight:700,color:"#60a5fa",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{editing?"✎ Editar pedido marítimo":"+ Nuevo pedido marítimo"}</h3>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 14px"}}>
-      <Inp label="Código (DV #01, PP #02...)" value={shipmentCode} onChange={setShipmentCode} placeholder="Auto si lo dejás vacío"/>
-      <Inp label="Tracking" value={trackingNumber} onChange={setTrackingNumber} placeholder="SF... / KY..."/>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 14px"}}>
+      <Inp label="Rótulo (opcional)" value={shipmentCode} onChange={setShipmentCode} placeholder="DV #01, PP #02... (auto si lo dejás vacío)"/>
       <Sel label="Origen" value={origin} onChange={setOrigin} options={[{value:"china",label:"🇨🇳 China"},{value:"usa",label:"🇺🇸 USA"}]}/>
       <Inp label="Depósito" value={warehouse} onChange={setWarehouse} placeholder="Viejo / Phoenix Sourcing"/>
     </div>
-    <Inp label="Producto / Mercadería" value={productDescription} onChange={setProductDescription} placeholder="Ej: Simuladores de videojuegos"/>
+    <Inp label="Código de seguimiento" value={trackingNumber} onChange={setTrackingNumber} placeholder="SF... / KY..."/>
+    <Inp label="Mercadería" value={productDescription} onChange={setProductDescription} placeholder="Ej: Simuladores de videojuegos"/>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
       <Sel label="Cliente" value={clientId} onChange={v=>{setClientId(v);const c=allClients.find(x=>x.id===v);if(c)setClientName(`${c.first_name||""} ${c.last_name||""}`.trim());}} options={[{value:"",label:"— Seleccioná —"},...allClients.map(c=>({value:c.id,label:`${c.client_code||""} - ${c.first_name||""} ${c.last_name||""}`.trim()}))]}/>
       <Inp label="Nombre cliente (override)" value={clientName} onChange={setClientName} placeholder="Si no está cargado el cliente"/>
     </div>
-    <div style={{display:"flex",gap:14,marginBottom:10,flexWrap:"wrap"}}>
-      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"rgba(255,255,255,0.7)",cursor:"pointer"}}><input type="checkbox" checked={isFragile} onChange={e=>setIsFragile(e.target.checked)}/>📦 Frágil</label>
-      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"rgba(255,255,255,0.7)",cursor:"pointer"}}><input type="checkbox" checked={isRepack} onChange={e=>setIsRepack(e.target.checked)}/>↩ Reenvío</label>
-      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"rgba(255,255,255,0.7)",cursor:"pointer"}}><input type="checkbox" checked={inWarehouse} onChange={e=>setInWarehouse(e.target.checked)}/>✓ Ya en depósito</label>
-    </div>
-    <Inp label="Notas (opcional · aclaraciones, fragilidad detallada, etc.)" value={notes} onChange={setNotes}/>
 
     {/* Bultos */}
     <div style={{marginTop:12,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
