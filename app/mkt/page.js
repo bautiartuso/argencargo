@@ -78,6 +78,10 @@ const MOCK_SOURCES = [
   { id: "s5", name: "CIRA — Cámara Importadores Rep. Argentina", url: "https://www.cira.org.ar/" },
   { id: "s6", name: "Comex Online", url: "https://comexonline.com.ar/" },
   { id: "s7", name: "Trade News", url: "https://tradenews.com.ar/" },
+  { id: "s8", name: "CACE — Cámara Argentina Comercio Electrónico", url: "https://www.cace.org.ar/" },
+  { id: "s9", name: "Ministerio de Economía — Comercio", url: "https://www.argentina.gob.ar/economia/comercio" },
+  { id: "s10", name: "Ámbito Financiero — Comex", url: "https://www.ambito.com/contenidos/comercio-exterior.html" },
+  { id: "s11", name: "El Cronista — Comex", url: "https://www.cronista.com/seccion/comercio-exterior/" },
 ];
 
 const MOCK_RADAR = [
@@ -126,42 +130,50 @@ export default function MktPreview() {
 
 function Header() {
   return (
-    <header style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", padding: "18px 28px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(7,12,26,0.65)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ width: 38, height: 38, borderRadius: 10, background: GOLD_GRADIENT, display: "flex", alignItems: "center", justifyContent: "center", color: "#0A1628", fontWeight: 900, fontSize: 17, boxShadow: "0 4px 16px rgba(184,149,106,0.35)" }}>AC</div>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 16, fontWeight: 800, letterSpacing: "0.02em" }}>Argencargo <span style={{ color: GOLD_LIGHT, fontWeight: 500 }}>— Marketing</span></h1>
+    <header style={{ padding: "22px 28px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(7,12,26,0.55)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ width: 34, height: 34, borderRadius: 8, background: GOLD_GRADIENT, display: "flex", alignItems: "center", justifyContent: "center", color: "#0A1628", fontWeight: 900, fontSize: 14, letterSpacing: "0.02em" }}>AC</div>
+        <div style={{ borderLeft: "1px solid rgba(255,255,255,0.1)", paddingLeft: 14 }}>
+          <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, color: GOLD_LIGHT, letterSpacing: "0.18em", textTransform: "uppercase" }}>Marketing</p>
           <p style={{ margin: "2px 0 0", fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
             {today.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" }).replace(/^./, c => c.toUpperCase())}
           </p>
         </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px 6px 6px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 999, fontSize: 12 }}>
-        <div style={{ width: 28, height: 28, borderRadius: "50%", background: GOLD_GRADIENT, color: "#0A1628", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11 }}>BA</div>
-        <span style={{ color: "rgba(255,255,255,0.85)", paddingRight: 4 }}>Bauti</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "5px 14px 5px 5px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 999, fontSize: 12 }}>
+        <div style={{ width: 26, height: 26, borderRadius: "50%", background: GOLD_GRADIENT, color: "#0A1628", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 10.5 }}>BA</div>
+        <span style={{ color: "rgba(255,255,255,0.85)" }}>Bauti</span>
       </div>
     </header>
   );
 }
 
 function Tabs({ tab, setTab }) {
+  const items = [
+    { k: "hoy", l: "Hoy", e: "◐" },
+    { k: "plan", l: "Plan del mes", e: "▦" },
+    { k: "radar", l: "Radar aduanero", e: "◎" },
+    { k: "reactivos", l: "Reactivos", e: "◆" },
+    { k: "brief", l: "Brief copy", e: "✎" },
+  ];
   return (
-    <nav style={{ display: "flex", gap: 4, padding: "14px 28px 0", borderBottom: "1px solid rgba(255,255,255,0.05)", maxWidth: 1320, margin: "0 auto", overflowX: "auto" }}>
-      {[
-        { k: "hoy", l: "Hoy", e: "🌅" },
-        { k: "plan", l: "Plan del mes", e: "🗓️" },
-        { k: "radar", l: "Radar aduanero", e: "📡" },
-        { k: "reactivos", l: "Reactivos", e: "🔥" },
-        { k: "brief", l: "Brief copy", e: "✍️" },
-      ].map(t => (
+    <nav style={{ display: "flex", justifyContent: "center", gap: 0, padding: "0 28px", borderBottom: "1px solid rgba(255,255,255,0.05)", maxWidth: 1320, margin: "0 auto", overflowX: "auto" }}>
+      {items.map(t => (
         <button key={t.k} onClick={() => setTab(t.k)} style={{
-          padding: "11px 18px", fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer",
-          background: "transparent", color: tab === t.k ? "#fff" : "rgba(255,255,255,0.5)",
+          padding: "16px 26px", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer",
+          background: "transparent",
+          color: tab === t.k ? "#fff" : "rgba(255,255,255,0.45)",
           borderBottom: tab === t.k ? `2px solid ${GOLD_LIGHT}` : "2px solid transparent",
-          marginBottom: -1, whiteSpace: "nowrap", transition: "color 150ms",
-          display: "flex", alignItems: "center", gap: 7,
-        }}>
-          <span style={{ fontSize: 14 }}>{t.e}</span>
+          marginBottom: -1, whiteSpace: "nowrap",
+          transition: "color 180ms",
+          display: "flex", alignItems: "center", gap: 10,
+          textTransform: "uppercase",
+          letterSpacing: "0.18em",
+          fontFamily: "-apple-system, system-ui, sans-serif",
+        }}
+          onMouseEnter={e => { if (tab !== t.k) e.currentTarget.style.color = "rgba(255,255,255,0.75)"; }}
+          onMouseLeave={e => { if (tab !== t.k) e.currentTarget.style.color = "rgba(255,255,255,0.45)"; }}>
+          <span style={{ fontSize: 13, color: tab === t.k ? GOLD_LIGHT : "inherit", letterSpacing: 0 }}>{t.e}</span>
           <span>{t.l}</span>
         </button>
       ))}
@@ -217,15 +229,24 @@ function Hoy({ posts, radar, reactives }) {
             <h2 style={{ margin: "4px 0 0", fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em" }}>{today.toLocaleDateString("es-AR", { weekday: "long" }).replace(/^./, c => c.toUpperCase())}, {today.getDate()}</h2>
             <p style={{ margin: "4px 0 0", fontSize: 13, color: "rgba(255,255,255,0.5)" }}>{done} de {allTasks.length} tareas completadas</p>
           </div>
-          <div style={{ minWidth: 260, flex: "0 0 auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Progreso</span>
-              <span style={{ fontSize: 22, fontWeight: 800, color: pct === 100 ? "#22c55e" : GOLD_LIGHT, fontFeatureSettings: '"tnum"' }}>{pct}%</span>
-            </div>
-            <div style={{ height: 8, background: "rgba(255,255,255,0.06)", borderRadius: 4, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${pct}%`, background: pct === 100 ? "linear-gradient(90deg, #22c55e, #4ade80)" : GOLD_GRADIENT, transition: "width 400ms", borderRadius: 4 }} />
-            </div>
-          </div>
+          {(() => {
+            // Color dinámico según %: rojo (0) → naranja (33) → amarillo verdoso (66) → verde (100)
+            // HSL hue: 0 (rojo) a 142 (verde esmeralda)
+            const hue = Math.round(pct * 1.42);
+            const progColor = `hsl(${hue}, 72%, 55%)`;
+            const progColorDark = `hsl(${hue}, 72%, 48%)`;
+            return (
+              <div style={{ minWidth: 260, flex: "0 0 auto" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Progreso</span>
+                  <span style={{ fontSize: 24, fontWeight: 800, color: progColor, fontFeatureSettings: '"tnum"', transition: "color 400ms" }}>{pct}%</span>
+                </div>
+                <div style={{ height: 8, background: "rgba(255,255,255,0.05)", borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg, ${progColorDark}, ${progColor})`, transition: "width 400ms, background 400ms", borderRadius: 4, boxShadow: pct > 0 ? `0 0 12px ${progColor}55` : "none" }} />
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginTop: 18 }}>
