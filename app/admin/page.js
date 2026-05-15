@@ -910,7 +910,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const tplKey=useEnvio?"wa_envio":`wa_${trigger}`;
     const tpl=waTpls.find(t=>t.key===tplKey);
     const fmt=v=>Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
-    const data={firstName,opCode,desc,portalLink,saldoTxt,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
+    // Lista de tracking numbers de los bultos de la op (para template wa_retiro Canal B y otros)
+    let trackingList="";
+    try{
+      const pkgsForList=await dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=package_number,national_tracking&order=package_number.asc`});
+      const tracks=(Array.isArray(pkgsForList)?pkgsForList:[]).map(p=>p.national_tracking).filter(Boolean);
+      trackingList=tracks.length>0?tracks.map(t=>`• ${t}`).join("\n"):"• (sin tracking cargado)";
+    }catch(e){console.error("trackingList",e);trackingList="";}
+    const data={firstName,opCode,desc,portalLink,saldoTxt,trackingList,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
     const msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Av. Callao 1137.${saldoTxt}`;
     // api.whatsapp.com/send maneja mejor emojis multi-byte que wa.me (que a veces los muestra como "?").
@@ -7661,7 +7668,7 @@ function ComunicacionesPanel({token}){
     {/* Plantillas editables */}
     <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem",marginBottom:20}}>
       <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>✏️ Plantillas de mensajes</h3>
-      <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 14px"}}>Edita los textos que se envían a los clientes. Variables disponibles: {"{{firstName}}, {{opCode}}, {{desc}}, {{portalLink}}, {{saldoTxt}} (solo WA retiro)"}</p>
+      <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 14px"}}>Edita los textos que se envían a los clientes. Variables disponibles: {"{{firstName}}, {{opCode}}, {{desc}}, {{portalLink}}, {{totalAbonar}}, {{trackingList}}, {{saldoTxt}}"}</p>
       {templates.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem"}}>Cargando plantillas...</p>:<div>
         {templates.map(t=>{
           const isEditing=editingTpl===t.id;
