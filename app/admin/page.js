@@ -915,7 +915,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     try{
       const pkgsForList=await dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=package_number,national_tracking&order=package_number.asc`});
       const tracks=(Array.isArray(pkgsForList)?pkgsForList:[]).map(p=>p.national_tracking).filter(Boolean);
-      trackingList=tracks.length>0?tracks.map(t=>`• ${t}`).join("\n"):"• (sin tracking cargado)";
+      trackingList=tracks.length>0?tracks.join("\n"):"(sin tracking cargado)";
     }catch(e){console.error("trackingList",e);trackingList="";}
     const data={firstName,opCode,desc,portalLink,saldoTxt,trackingList,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
