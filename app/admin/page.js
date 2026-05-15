@@ -5314,6 +5314,35 @@ function AgentsPanel({token}){
   const opsInFlightIds=new Set(flightOps.map(fo=>fo.operation_id));
   const availableForFlight=depositOps.filter(o=>o.consolidation_confirmed&&!opsInFlightIds.has(o.id)&&opsWithDocs.has(o.id));
   const opPackages=(opId)=>depositPkgs.filter(p=>p.operation_id===opId);
+  // ---- Merge de items duplicados (misma descripción) ----
+  // Suma cantidades y promedia precio unitario ponderado por cantidad → total FOB no cambia.
+  const normDesc=(s)=>String(s||"").trim().toLowerCase().replace(/\s+/g," ");
+  const findMergeableGroups=(items)=>{
+    const groups={};
+    items.forEach(it=>{const k=normDesc(it.description);if(!k)return;(groups[k]=groups[k]||[]).push(it);});
+    return Object.values(groups).filter(g=>g.length>1);
+  };
+  const mergeOpItems=async(opId)=>{
+    const items=depositItems.filter(i=>i.operation_id===opId);
+    const groups=findMergeableGroups(items);
+    if(groups.length===0){alert("No hay items duplicados para mergear.");return;}
+    const totalDuplicates=groups.reduce((s,g)=>s+(g.length-1),0);
+    if(!confirm(`Se van a unificar ${groups.length} grupo${groups.length!==1?"s":""} de items duplicados (${totalDuplicates} fila${totalDuplicates!==1?"s":""} eliminada${totalDuplicates!==1?"s":""}). El total FOB no cambia. ¿Confirmás?`))return;
+    for(const g of groups){
+      const totalQty=g.reduce((s,it)=>s+Number(it.quantity||1),0);
+      const totalAmt=g.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
+      const avgPrice=totalQty>0?Math.round((totalAmt/totalQty)*100)/100:0;
+      // Conservar el más viejo, actualizarlo
+      const keep=[...g].sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")))[0];
+      const toDelete=g.filter(it=>it.id!==keep.id);
+      await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${keep.id}`,body:{quantity:totalQty,unit_price_usd:avgPrice}});
+      for(const it of toDelete){
+        await dq("operation_items",{method:"DELETE",token,filters:`?id=eq.${it.id}`});
+      }
+    }
+    toast(`Mergeados ${groups.length} grupo${groups.length!==1?"s":""}`,"success");
+    await load();
+  };
   // Repack request por op (la más reciente, si existe)
   const repackReqOf=(opId)=>repackReqs.find(r=>r.operation_id===opId);
   // ---- Modal moderno para pedir reempaque (reemplaza el prompt() feo) ----
@@ -5629,7 +5658,10 @@ function AgentsPanel({token}){
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
                     {/* Productos declarados por el cliente */}
                     <div>
-                      <h4 style={{fontSize:10,fontWeight:700,color:IC,margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>📋 Productos declarados ({itemsOfOp.length})</h4>
+                      {(()=>{const groups=findMergeableGroups(itemsOfOp);const dup=groups.reduce((s,g)=>s+(g.length-1),0);return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"0 0 10px",gap:8,flexWrap:"wrap"}}>
+                        <h4 style={{fontSize:10,fontWeight:700,color:IC,margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>📋 Productos declarados ({itemsOfOp.length})</h4>
+                        {dup>0&&<button onClick={(e)=>{e.stopPropagation();mergeOpItems(o.id);}} title={`Unifica ${groups.length} grupo${groups.length!==1?"s":""} con descripción repetida. El total FOB no cambia.`} style={{fontSize:10,padding:"4px 10px",borderRadius:5,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.1)",color:IC,cursor:"pointer",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>⇆ Unificar duplicados ({dup})</button>}
+                      </div>;})()}
                       {itemsOfOp.length===0?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic"}}>Aún no cargó productos</p>:<>
                         <div style={{background:"rgba(0,0,0,0.2)",borderRadius:8,overflow:"hidden"}}>
                           <table style={{width:"100%",fontSize:11,borderCollapse:"collapse"}}>
