@@ -566,25 +566,7 @@ function OperationDetail({op,token,onBack}){
   const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [purchaseNotif,setPurchaseNotif]=useState(null);const [repackInfo,setRepackInfo]=useState(null);const [showRepackDetail,setShowRepackDetail]=useState(false);
   const [docInputMode,setDocInputMode]=useState(null); // 'pdf' | 'manual'
   const [localConfirmed,setLocalConfirmed]=useState(false);
-  const [classifyingHs,setClassifyingHs]=useState(false);
-  const autoClassifyHs=async()=>{
-    const pending=items.filter(it=>it.description&&it.description.trim()&&(!it.ncm_code||!it.ncm_code.trim()));
-    if(pending.length===0)return;
-    setClassifyingHs(true);
-    let ok=0;
-    for(const it of pending){
-      try{
-        const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
-        const d=await r.json();
-        if(d?.ncm_code){
-          await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{ncm_code:d.ncm_code}});
-          ok++;
-        }
-      }catch(e){console.error("ncm error",e);}
-    }
-    setClassifyingHs(false);
-    await loadAll();
-  };
+  const [inFlight,setInFlight]=useState(false);
   const canDocument=op.status==="en_preparacion"||op.status==="en_deposito_origen"||localConfirmed;
   const addDocItem=()=>setDocItems(p=>[...p,{description:"",quantity:"1",unit_price_usd:""}]);
   const rmDocItem=(i)=>setDocItems(p=>p.filter((_,j)=>j!==i));
@@ -596,7 +578,8 @@ function OperationDetail({op,token,onBack}){
   const toggleSection=(s)=>setOpenSections(p=>({...p,[s]:!p[s]}));
   const downloadPdf=()=>printQuotePdf({op,items,pkgs,payments:pmts,cliPmts});
   const downloadClosingPdf=()=>printClosingPdf({op,items,pkgs,cliPmts,events});
-  const loadAll=async()=>{const [it,ev,pk,pm,cp,pn,rk]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("purchase_notifications",{token,filters:`?operation_id=eq.${op.id}&select=tracking_code,origin,shipping_method,description,created_at,confirmed_at&limit=1`}),dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&status=eq.done&order=completed_at.desc&limit=1`})]);
+  const loadAll=async()=>{const [it,ev,pk,pm,cp,pn,rk,fl]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("purchase_notifications",{token,filters:`?operation_id=eq.${op.id}&select=tracking_code,origin,shipping_method,description,created_at,confirmed_at&limit=1`}),dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&status=eq.done&order=completed_at.desc&limit=1`}),dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=flight_id&limit=1`})]);
+  setInFlight(Array.isArray(fl)&&fl.length>0);
   setRepackInfo(Array.isArray(rk)&&rk[0]?rk[0]:null);setItems(Array.isArray(it)?it:[]);setEvents((Array.isArray(ev)?ev:[]).filter(e=>{
   // Filtrar eventos internos auto-generados por cambio de status (ya están en la barra de progreso)
   if(e.source==="internal"&&String(e.title||"").startsWith("Estado actualizado"))return false;
@@ -655,13 +638,14 @@ function OperationDetail({op,token,onBack}){
       </div>
     </div>}
     {(()=>{
-      // Editable mientras la op esté pre-vuelo (en depósito o preparación)
-      const isEditable=op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&items.length>0;
+      // Editable mientras la op esté pre-vuelo (en depósito o preparación) Y todavía no se haya creado un vuelo
+      const isEditable=op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&items.length>0&&!inFlight;
+      // Si la op ya está en un vuelo, los productos quedan congelados y se muestran en el detalle del presupuesto/factura: no repetir la card acá.
+      if(inFlight)return null;
       return !loading&&!isGI&&items.length>0&&<div style={{background:isEditable?"linear-gradient(135deg,rgba(96,165,250,0.10),rgba(96,165,250,0.03))":"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:`1.5px solid ${isEditable?"rgba(96,165,250,0.35)":"rgba(184,149,106,0.3)"}`,borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
         <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>📋 {t("imports.declaredProducts")} {isEditable&&<span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.2)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8}}>✏️ {t("imports.editable")}</span>}</h3>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          {isEditable&&items.some(it=>it.description&&it.description.trim()&&(!it.ncm_code||!it.ncm_code.trim()))&&<button onClick={autoClassifyHs} disabled={classifyingHs} style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.12)",color:"#a78bfa",cursor:classifyingHs?"wait":"pointer",opacity:classifyingHs?0.6:1}}>{classifyingHs?t("imports.classifying"):"✨ "+t("imports.autoHs")}</button>}
           {isEditable&&<button onClick={()=>{setShowDocPanel(true);setDocInputMode(null);if(docItems.length===0)setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);setTimeout(()=>{const el=document.getElementById("ac-doc-panel");if(el)el.scrollIntoView({behavior:"smooth"});},100);}} style={{padding:"7px 12px",fontSize:11,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer"}}>+ {t("imports.addMore")}</button>}
         </div>
       </div>

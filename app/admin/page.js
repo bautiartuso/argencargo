@@ -5470,6 +5470,12 @@ function AgentsPanel({token}){
     const r=await dq("flights",{method:"POST",token,body:{flight_code:newCode,agent_id:agentId,status:"preparando"}});
     const created=Array.isArray(r)?r[0]:r;
     if(!created?.id){alert("Error creando vuelo");return;}
+    // Pre-fetch global data para auto-calcular presupuestos (no varía por op)
+    const [tarFresh,cfgFresh]=await Promise.all([
+      dq("tariffs",{token,filters:"?select=*"}),
+      dq("calc_config",{token,filters:"?select=*"})
+    ]);
+    const configMap={};(Array.isArray(cfgFresh)?cfgFresh:[]).forEach(r=>{configMap[r.key]=Number(r.value);});
     for(const op of ops){const w=opWeight(op.id);
       await dq("flight_operations",{method:"POST",token,body:{flight_id:created.id,operation_id:op.id,weight_kg:w}});
       // Clonar los operation_items del cliente como items de factura (base editable)
@@ -5477,6 +5483,25 @@ function AgentsPanel({token}){
       let sort=0;for(const it of (Array.isArray(items)?items:[])){sort++;
         await dq("flight_invoice_items",{method:"POST",token,body:{flight_id:created.id,operation_id:op.id,source_item_id:it.id,description:it.description||"",quantity:Number(it.quantity||1),unit_price_declared_usd:Number(it.unit_price_usd||0),hs_code:it.ncm_code||"",sort_order:sort}});
       }
+      // Auto-calcular y guardar presupuesto (canal A): ya tenemos items con HS clasificado.
+      try{
+        const [pks,fcl,fop,overr]=await Promise.all([
+          dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*`}),
+          op.client_id?dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*&limit=1`}):Promise.resolve([]),
+          dq("operations",{token,filters:`?id=eq.${op.id}&select=*&limit=1`}),
+          op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([])
+        ]);
+        const client=Array.isArray(fcl)?fcl[0]:null;
+        const opFresh=Array.isArray(fop)?fop[0]:null;
+        const opForCalc={...op,...(opFresh||{})};
+        const its=Array.isArray(items)?items:[];
+        const pkgs=Array.isArray(pks)?pks:[];
+        const isBlanco=opForCalc.channel?.includes("blanco");
+        if((isBlanco&&its.length>0)||(!isBlanco&&pkgs.length>0)){
+          const {totalTax,flete,seguro,totalAbonar,surcharge}=calcOpBudget(opForCalc,its,pkgs,tarFresh||[],configMap,overr||[],client);
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}});
+        }
+      }catch(e){console.error("auto budget on flight create",op.id,e);}
     }
     // Notification #1: notify agent about new flight
     try{await dq("notifications",{method:"POST",token,body:{user_id:agentId,portal:"agente",title:`Nuevo vuelo ${newCode} creado`,body:`${ops.length} operaciones asignadas`,link:"?tab=active_flights"}});}catch(e){console.error("notif error",e);}
