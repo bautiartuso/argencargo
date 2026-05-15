@@ -633,7 +633,7 @@ function OperationDetail({op,token,onBack}){
         {l:t("imports.origin"),v:t("origin."+(op.origin||"china").toLowerCase())||op.origin||"China"},
         {l:t("imports.channel"),v:op.channel?t("channel."+op.channel):"—"},
         ...(isA?[{l:t("imports.grossWeight"),v:totGW?`${totGW.toFixed(1)} kg`:"—"},{l:t("imports.billableWeight"),v:pf?`${pf.toFixed(1)} kg`:"—",a:true}]:[{l:"CBM",v:totCBM?`${totCBM.toFixed(4)} m³`:"—",a:true}]),
-        {l:t("imports.totalToPay"),v:(()=>{const bt=Number(op.budget_total||0);if(bt<=0)return t("common.pending");const pmtTotal=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtAnt=Number(op.total_anticipos||0);const cliPaid=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);const saldo=Math.max(0,bt-cliPaid+Math.max(0,pmtTotal-pmtAnt));return `USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;})(),a:true}
+        {l:t("imports.totalToPay"),v:(()=>{const bt=Number(op.budget_total||0);if(bt<=0)return t("common.pending");const pmtTotal=pmts.filter(p=>!p.client_paid).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtAnt=Number(op.total_anticipos||0);const cliPaid=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);const saldo=Math.max(0,bt-cliPaid+Math.max(0,pmtTotal-pmtAnt));return `USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;})(),a:true}
       ];
       return <div className="op-info" style={{display:"flex",gap:28,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:14,marginTop:4,flexWrap:"wrap"}}>
         {(isGI?giFields:normalFields).map((x,i)=><div key={i}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{x.l}</span><p style={{fontSize:13,fontWeight:600,color:x.a?IC:"#fff",margin:"2px 0 0"}}>{x.v}</p></div>)}
@@ -2653,11 +2653,11 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     const [r,it,pm,cp,tv]=await Promise.all([
       dq("operations",{token,filters:`?client_id=eq.${cId}&select=*&order=created_at.desc`}),
       dq("operation_items",{token,filters:`?select=operation_id,operations!inner(client_id)&operations.client_id=eq.${cId}`}),
-      dq("payment_management",{token,filters:`?select=operation_id,client_amount_usd,operations!inner(client_id)&operations.client_id=eq.${cId}`}),
+      dq("payment_management",{token,filters:`?select=operation_id,client_amount_usd,client_paid,operations!inner(client_id)&operations.client_id=eq.${cId}`}),
       dq("operation_client_payments",{token,filters:`?select=operation_id,amount_usd,operations!inner(client_id)&operations.client_id=eq.${cId}`}),
       dq("tier_rewards",{token,filters:`?client_id=eq.${cId}&status=eq.pending&select=id`})
     ]);
-    const list=Array.isArray(r)?r:[];setOps(list);const m={};(Array.isArray(it)?it:[]).forEach(x=>{m[x.operation_id]=(m[x.operation_id]||0)+1;});setItemsByOp(m);const pmap={};(Array.isArray(pm)?pm:[]).forEach(p=>{pmap[p.operation_id]=(pmap[p.operation_id]||0)+Number(p.client_amount_usd||0);});setPmtsByOp(pmap);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setPendingVouchersCount(Array.isArray(tv)?tv.length:0);setLo(false);
+    const list=Array.isArray(r)?r:[];setOps(list);const m={};(Array.isArray(it)?it:[]).forEach(x=>{m[x.operation_id]=(m[x.operation_id]||0)+1;});setItemsByOp(m);const pmap={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(p.client_paid)return;pmap[p.operation_id]=(pmap[p.operation_id]||0)+Number(p.client_amount_usd||0);});setPmtsByOp(pmap);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setPendingVouchersCount(Array.isArray(tv)?tv.length:0);setLo(false);
     // Deep-link: ?op=AC-XXXX → auto-open that operation
     if(typeof window!=="undefined"){const params=new URLSearchParams(window.location.search);const opCode=params.get("op");if(opCode){const found=list.find(o=>o.operation_code===opCode);if(found){setSelOp(found);setPage("imports");window.history.replaceState({},"",window.location.pathname);}}}
   };
