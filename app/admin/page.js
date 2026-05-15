@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useMemo, Fragment } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { calcOpBudget } from "../../lib/calc";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
@@ -4584,9 +4584,22 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   useEffect(()=>{(async()=>{
     const opIds=flightOps.map(fo=>fo.operation_id).filter(Boolean);
     if(opIds.length===0){setFlightOpsData([]);return;}
-    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name,tax_condition,company_name,cuit)`});
+    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name,tax_condition,company_name,cuit),budget_total`});
     setFlightOpsData(Array.isArray(r)?r:[]);
+    // Auto-recalcular budgets si alguna op del vuelo está en 0 y los items ya tienen HS clasificado
+    const opsNeedingRecalc=(Array.isArray(r)?r:[]).filter(o=>Number(o.budget_total||0)<=0);
+    if(opsNeedingRecalc.length>0){
+      const opIdsNeeding=opsNeedingRecalc.map(o=>o.id);
+      const itemsCheck=await dq("operation_items",{token,filters:`?operation_id=in.(${opIdsNeeding.join(",")})&select=operation_id,ncm_code,import_duty_rate`});
+      const opsWithClassifiedItems=new Set((Array.isArray(itemsCheck)?itemsCheck:[]).filter(i=>i.ncm_code&&i.import_duty_rate!=null).map(i=>i.operation_id));
+      if(opsWithClassifiedItems.size>0){
+        // Hay ops con HS+tasas pero sin budget → recalcular silenciosamente
+        setTimeout(()=>{if(recalcAllBudgetsRef.current)recalcAllBudgetsRef.current();},800);
+      }
+    }
   })();},[flightOps.length,token]);
+  // Ref para que el effect anterior pueda llamar a recalcAllBudgets (que se define más abajo)
+  const recalcAllBudgetsRef=useRef(null);
   const opsUnique=flightOpsData.length>0?flightOpsData:Array.from(new Map([...depositOps,...allOps].filter(o=>flightOps.some(fo=>fo.operation_id===o.id)).map(o=>[o.id,o])).values());
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
   // updateFlight: versión completa (con reload). Usar sólo cuando cambia algo estructural (status, ops, etc.)
@@ -4637,7 +4650,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const saveAllItems=async()=>{for(const it of items){await saveItem(it);}};
   // Recalcular el presupuesto de TODAS las ops del vuelo usando los HS y tasas ya cargadas.
   const [recalcing,setRecalcing]=useState(false);
-  const recalcAllBudgets=async()=>{
+  const recalcAllBudgets=useCallback(async()=>{
     setRecalcing(true);
     let ok=0,err=0;
     try{
@@ -4676,7 +4689,9 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       onFlash(`Presupuestos recalculados: ${ok} OK${err>0?` · ${err} con error/faltantes`:""}`);
       onReload();
     }finally{setRecalcing(false);}
-  };
+  },[items,opsUnique,token,onReload,onFlash]);
+  // Conectar la ref para que el effect de auto-recalc pueda llamarla
+  useEffect(()=>{recalcAllBudgetsRef.current=recalcAllBudgets;},[recalcAllBudgets]);
   const addItem=async()=>{const opId=opsUnique[0]?.id;if(!opId)return;const r=await dq("flight_invoice_items",{method:"POST",token,body:{flight_id:flight.id,operation_id:opId,description:"",quantity:1,unit_price_declared_usd:0,hs_code:"",sort_order:items.length+1}});const created=Array.isArray(r)?r[0]:r;if(created?.id)setItems(p=>[...p,created]);onReload();};
   const delItem=async(id)=>{await dq("flight_invoice_items",{method:"DELETE",token,filters:`?id=eq.${id}`});setItems(p=>p.filter(x=>x.id!==id));onReload();};
   // Auto-clasificar HS Code con IA (sólo rellena hs_code, NO toca derechos/IVA/estadística)
@@ -4793,6 +4808,8 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     }
     setClassifyingHs(false);
     setInterventionWarnings(detectedInterventions);
+    // Recalcular presupuestos automáticamente con los nuevos HS
+    if(ok>0)try{await recalcAllBudgets();}catch(e){console.error("recalc after classify",e);}
     if(detectedInterventions.length>0){
       onFlash(`✨ ${ok}/${pending.length} HS codes · ⚠ ${detectedInterventions.length} con intervención (ver banner abajo)`);
     } else {
@@ -5111,8 +5128,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           <button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button>
           {items.some(it=>it.description&&it.description.trim()&&(!it.hs_code||!it.hs_code.trim()))&&<button onClick={autoClassifyHs} disabled={classifyingHs} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:classifyingHs?"wait":"pointer",opacity:classifyingHs?0.6:1}}>{classifyingHs?"Clasificando…":"✨ Auto-completar HS Code (IA)"}</button>}
           {needsCompression&&!flight.invoice_presented_at&&opsCompressible.map(({opId,opCode,count,target})=><button key={opId} onClick={()=>openCompressFor(opId,target)} title={`Comprimir los ${count} items de ${opCode} a ${target} (otras ops aportan ${totalInvoiceItems-count} al total). Límite RG 5608: ${MAX_INVOICE_ITEMS} por factura.`} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🗜 Comprimir {opCode} ({count} → ≤{target})</button>)}
-          {!flight.invoice_presented_at&&items.length>0&&<button onClick={async()=>{await saveAllItems();onFlash("Cambios guardados");onReload();}} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>💾 Guardar cambios</button>}
-          {items.length>0&&<button onClick={recalcAllBudgets} disabled={recalcing} title="Sincroniza los HS Code al operation_items y recalcula budget_total de cada op del vuelo" style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.1)",color:IC,cursor:recalcing?"wait":"pointer",opacity:recalcing?0.6:1}}>{recalcing?"Recalculando…":"💰 Recalcular presupuestos del vuelo"}</button>}
+          {!flight.invoice_presented_at&&items.length>0&&<button onClick={async()=>{await saveAllItems();onFlash("Guardando y recalculando presupuestos…");await recalcAllBudgets();}} disabled={recalcing} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:recalcing?"wait":"pointer",opacity:recalcing?0.6:1}}>{recalcing?"Recalculando…":"💾 Guardar y recalcular presupuestos"}</button>}
         </div>
       </div>}
       {flight.status==="preparando"&&<div style={{marginTop:16,padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
