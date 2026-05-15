@@ -2,8 +2,9 @@
 import { useState, useMemo } from "react";
 
 // ──────────────────────────────────────────────────────────────────────
-// PREVIEW estático del panel Marketing — sin DB, sin auth. Solo UI.
-// Para validar layout/flujo antes de meterle backend.
+// PREVIEW v2 — Panel Marketing Argencargo
+// Estructura: Hoy (rutina) · Plan mensual · Radar aduanero · Reactivos · Brief
+// Sin DB, sin auth todavía. Solo UI con data mockeada.
 // ──────────────────────────────────────────────────────────────────────
 
 const GOLD = "#B8956A", GOLD_LIGHT = "#E8D098", GOLD_DEEP = "#A68456";
@@ -11,11 +12,66 @@ const GOLD_GRADIENT = "linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 
 const DARK_BG = "linear-gradient(135deg,#070C1A 0%,#0A1628 50%,#0F1F3A 100%)";
 
 const NETWORKS = {
-  instagram: { label: "Instagram", icon: "📷", color: "#E1306C", bg: "rgba(225,48,108,0.12)", bd: "rgba(225,48,108,0.4)" },
-  linkedin: { label: "LinkedIn", icon: "💼", color: "#0A66C2", bg: "rgba(10,102,194,0.12)", bd: "rgba(10,102,194,0.4)" },
-  tiktok: { label: "TikTok", icon: "🎵", color: "#fff", bg: "rgba(255,255,255,0.08)", bd: "rgba(255,255,255,0.3)" },
-  x: { label: "X / Twitter", icon: "𝕏", color: "#fff", bg: "rgba(255,255,255,0.08)", bd: "rgba(255,255,255,0.3)" },
+  instagram: { label: "Instagram", icon: "📷", color: "#E1306C", bg: "rgba(225,48,108,0.12)", bd: "rgba(225,48,108,0.4)", account: "@argencargo", brand: "empresa", line: "Más visual/comercial. Para clientes finales: precios, servicios, casos, behind-the-scenes." },
+  linkedin: { label: "LinkedIn", icon: "💼", color: "#0A66C2", bg: "rgba(10,102,194,0.12)", bd: "rgba(10,102,194,0.4)", account: "@Bautista Artuso", brand: "personal + tag empresa", line: "B2B. Novedades del sector, anuncios, opinión profesional, casos de éxito." },
+  x: { label: "X / Twitter", icon: "𝕏", color: "#fff", bg: "rgba(255,255,255,0.08)", bd: "rgba(255,255,255,0.3)", account: "@Bautista", brand: "personal", line: "Punzante. Novedades, opinión rápida, hilos técnicos, comercio exterior." },
 };
+
+const today = new Date(2026, 4, 14);
+const todayStr = today.toISOString().slice(0, 10);
+const d = (off) => { const x = new Date(today); x.setDate(x.getDate() + off); return x.toISOString().slice(0, 10); };
+
+const MOCK_PIECES = [
+  // IG mayo
+  { id: "ig1", network: "instagram", scheduledDate: d(-12), status: "publicado", copy: "Carrusel: 5 errores al importar de China por primera vez" },
+  { id: "ig2", network: "instagram", scheduledDate: d(-8), status: "publicado", copy: "Reel: día en el depósito de Mr. Shi" },
+  { id: "ig3", network: "instagram", scheduledDate: d(-5), status: "publicado", copy: "Promo: Tier Plata = 10% off flete a partir de 5 ops" },
+  { id: "ig4", network: "instagram", scheduledDate: d(0), status: "programado", copy: "Carrusel: 5 errores que cometen importadores nuevos" },
+  { id: "ig5", network: "instagram", scheduledDate: d(3), status: "revision", copy: "Caso de éxito: Pedevilla SA + 8m³ simuladores" },
+  { id: "ig6", network: "instagram", scheduledDate: d(7), status: "diseno", copy: "Reel: cómo cargás un contenedor — paso a paso" },
+  { id: "ig7", network: "instagram", scheduledDate: d(10), status: "idea", copy: "Foto producto + precio: $15/kg aéreo USA" },
+  { id: "ig8", network: "instagram", scheduledDate: d(14), status: "idea", copy: "Tutorial 1 min: cómo calcular tu volumen CBM" },
+  { id: "ig9", network: "instagram", scheduledDate: d(18), status: "idea", copy: "Detrás de escena: el equipo en oficina" },
+  { id: "ig10", network: "instagram", scheduledDate: d(22), status: "idea", copy: "Pregunta para historias: ¿qué importás hoy?" },
+
+  // LinkedIn
+  { id: "li1", network: "linkedin", scheduledDate: d(-10), status: "publicado", copy: "Nueva ruta directa USA → Argentina, tiempos reducidos 12 días" },
+  { id: "li2", network: "linkedin", scheduledDate: d(-6), status: "publicado", copy: "Por qué medimos el CBM en marítimo (y no el peso)" },
+  { id: "li3", network: "linkedin", scheduledDate: d(-1), status: "publicado", copy: "Reflexión: lo que nadie te dice de importar desde China" },
+  { id: "li4", network: "linkedin", scheduledDate: d(2), status: "guion", copy: "Caso de éxito: importamos 8m³ de simuladores videojuegos" },
+  { id: "li5", network: "linkedin", scheduledDate: d(6), status: "idea", copy: "Análisis: ¿qué pasa con la suba del flete marítimo en 2026?" },
+  { id: "li6", network: "linkedin", scheduledDate: d(9), status: "idea", copy: "Hilo: 7 pasos del comercio exterior explicados" },
+  { id: "li7", network: "linkedin", scheduledDate: d(13), status: "idea", copy: "Anuncio: nueva opción de pago con tarjeta" },
+  { id: "li8", network: "linkedin", scheduledDate: d(17), status: "idea", copy: "Opinión: por qué Argentina necesita más despachantes" },
+  { id: "li9", network: "linkedin", scheduledDate: d(20), status: "idea", copy: "Recomendación de libro/podcast comercio exterior" },
+  { id: "li10", network: "linkedin", scheduledDate: d(25), status: "idea", copy: "Recapitulación: cosas aprendidas este mes" },
+
+  // X
+  { id: "x1", network: "x", scheduledDate: d(-11), status: "publicado", copy: "Hilo: cómo levanté Argencargo desde cero 🧵" },
+  { id: "x2", network: "x", scheduledDate: d(-7), status: "publicado", copy: "Si pensás importar de China y no sabés por dónde empezar, leé esto 👇" },
+  { id: "x3", network: "x", scheduledDate: d(-3), status: "publicado", copy: "Mini hilo: precios actualizados de flete USA→ARG" },
+  { id: "x4", network: "x", scheduledDate: d(1), status: "guion", copy: "Hilo: el sistema de tracking en vivo que armamos" },
+  { id: "x5", network: "x", scheduledDate: d(4), status: "idea", copy: "Opinión: ¿por qué Mercado Libre no compite con un forwarder?" },
+  { id: "x6", network: "x", scheduledDate: d(8), status: "idea", copy: "Dato del día: cuánto pesa un container LCL promedio" },
+  { id: "x7", network: "x", scheduledDate: d(12), status: "idea", copy: "Hilo: 5 mitos del comercio exterior argentino" },
+  { id: "x8", network: "x", scheduledDate: d(15), status: "idea", copy: "Anuncio: ya recibimos cargas desde Europa" },
+  { id: "x9", network: "x", scheduledDate: d(19), status: "idea", copy: "Pregunta abierta a la TL: ¿qué te frena para importar?" },
+  { id: "x10", network: "x", scheduledDate: d(23), status: "idea", copy: "Resumen mensual: qué cargamos en mayo" },
+];
+
+const MOCK_RADAR = [
+  { id: "r1", source: "CDA", title: "Modificación al régimen de importación de muestras sin valor comercial", date: d(0), link: "#", isHot: true },
+  { id: "r2", source: "AFIP", title: "Resolución 5670/2026 — Nuevo régimen de antidumping para textiles", date: d(0), link: "#", isHot: true },
+  { id: "r3", source: "Boletín Oficial", title: "Decreto 282/2026 — Reducción aranceles bienes de capital", date: d(-1), link: "#", isHot: false },
+  { id: "r4", source: "CDA", title: "Curso sobre la nueva DJAI", date: d(-1), link: "#", isHot: false },
+  { id: "r5", source: "AFIP", title: "Aviso: cambio en el sistema MARÍA — actualización requerida", date: d(-2), link: "#", isHot: false },
+];
+
+const MOCK_REACTIVES = [
+  { id: "rx1", source: "AFIP Res 5670/2026", title: "Antidumping textiles", note: "Aprovechar para explicar qué es antidumping y a quién afecta", status: "guion", createdAt: d(0) },
+  { id: "rx2", source: "Decreto 282/2026", title: "Reducción aranceles bienes de capital", note: "Posible alegría para importadores de maquinaria. Reel o hilo X.", status: "idea", createdAt: d(-1) },
+];
+
 const STATUS = {
   idea: { l: "Idea", c: "#94a3b8", bg: "rgba(148,163,184,0.12)" },
   guion: { l: "Guión", c: "#fbbf24", bg: "rgba(251,191,36,0.12)" },
@@ -24,71 +80,31 @@ const STATUS = {
   programado: { l: "Programado", c: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
   publicado: { l: "Publicado", c: "#22c55e", bg: "rgba(34,197,94,0.12)" },
 };
-const FORMATS = ["reel", "carrusel", "story", "feed", "short", "post-text"];
-
-// Mock data
-const MOCK_CAMPAIGNS = [
-  { id: "c1", name: "Lanzamiento Marítimo USA", objective: "Difundir nueva ruta USA→AR", start: "2026-05-10", end: "2026-05-31", color: "#60a5fa" },
-  { id: "c2", name: "Tier rewards Q2", objective: "Promocionar descuentos por volumen", start: "2026-05-01", end: "2026-06-30", color: "#E8D098" },
-  { id: "c3", name: "Casos de éxito Mayo", objective: "Testimonios reales de clientes", start: "2026-05-15", end: "2026-05-30", color: "#22c55e" },
-];
-
-const today = new Date(2026, 4, 14); // 14 mayo 2026
-const d = (off) => { const x = new Date(today); x.setDate(x.getDate() + off); return x.toISOString().slice(0, 10); };
-
-const MOCK_POSTS = [
-  { id: "p1", network: "instagram", format: "reel", scheduledAt: d(-2) + "T18:00", status: "publicado", copy: "🚢 Así llega tu mercadería desde China hasta tu casa. Marítimo Integral AC paso a paso 👇", hashtags: "#importarchina #argencargo #logistica", campaign: "c3", asset: "🎬" },
-  { id: "p2", network: "linkedin", format: "post-text", scheduledAt: d(-1) + "T10:00", status: "publicado", copy: "Nueva ruta directa USA → Argentina. Tiempos de tránsito reducidos en 12 días. ¿Qué necesitás importar?", hashtags: "#comercioexterior #importaciones", campaign: "c1", asset: "📊" },
-  { id: "p3", network: "instagram", format: "carrusel", scheduledAt: d(0) + "T19:30", status: "programado", copy: "5 errores que cometen los importadores nuevos (y cómo evitarlos)", hashtags: "#importarchina #emprendedores", campaign: null, asset: "🎯" },
-  { id: "p4", network: "tiktok", format: "short", scheduledAt: d(0) + "T20:00", status: "revision", copy: "POV: te llega el contenedor y todo entra perfecto 📦✨", hashtags: "#fyp #importadores", campaign: "c1", asset: "🎬" },
-  { id: "p5", network: "instagram", format: "story", scheduledAt: d(1) + "T09:00", status: "diseno", copy: "Encuesta: ¿De qué país importás más? 🌎", hashtags: "", campaign: null, asset: "📷" },
-  { id: "p6", network: "x", format: "post-text", scheduledAt: d(1) + "T15:00", status: "guion", copy: "Hilo: cómo armamos el sistema de tracking en vivo de Argencargo 🧵", hashtags: "", campaign: null, asset: null },
-  { id: "p7", network: "linkedin", format: "carrusel", scheduledAt: d(3) + "T11:00", status: "guion", copy: "Caso de éxito: importamos 8m³ de simuladores de videojuegos para Pedevilla SA", hashtags: "", campaign: "c3", asset: null },
-  { id: "p8", network: "instagram", format: "reel", scheduledAt: d(5) + "T20:00", status: "idea", copy: "Reel detrás de escena: día en el depósito de Mr. Shi (China)", hashtags: "", campaign: "c1", asset: null },
-  { id: "p9", network: "tiktok", format: "short", scheduledAt: d(6) + "T19:00", status: "idea", copy: "Mostrar el unboxing de un cliente al recibir su mercadería", hashtags: "", campaign: "c3", asset: null },
-  { id: "p10", network: "instagram", format: "feed", scheduledAt: d(7) + "T18:00", status: "idea", copy: "Promo Tier Plata: 10% off sobre flete a clientes con +5 ops", hashtags: "", campaign: "c2", asset: null },
-];
-
-const MOCK_ASSETS = [
-  { id: "a1", thumb: "🎬", name: "Reel-llegada-contenedor.mp4", tags: ["maritimo", "china", "proceso"], usedIn: 3 },
-  { id: "a2", thumb: "📊", name: "Infografia-ruta-usa.png", tags: ["usa", "infografia"], usedIn: 1 },
-  { id: "a3", thumb: "🎯", name: "Carrusel-5-errores.psd", tags: ["consejos", "carrusel"], usedIn: 1 },
-  { id: "a4", thumb: "📷", name: "Foto-deposito-china.jpg", tags: ["china", "deposito"], usedIn: 5 },
-  { id: "a5", thumb: "📹", name: "Testimonio-pedevilla.mp4", tags: ["testimonio", "cliente"], usedIn: 2 },
-  { id: "a6", thumb: "🎨", name: "Logo-argencargo-claro.png", tags: ["branding", "logo"], usedIn: 18 },
-  { id: "a7", thumb: "📸", name: "Foto-equipo-2026.jpg", tags: ["equipo", "branding"], usedIn: 4 },
-  { id: "a8", thumb: "🎞️", name: "B-roll-puerto-buenos-aires.mp4", tags: ["broll", "argentina"], usedIn: 2 },
-];
 
 export default function MktPreview() {
-  const [tab, setTab] = useState("calendario");
-  const [briefData, setBriefData] = useState({ objetivo: "", publico: "", tono: "casual", red: "instagram", formato: "reel", cta: "", datos: "" });
+  const [tab, setTab] = useState("hoy");
+  const [briefData, setBriefData] = useState({ red: "instagram", objetivo: "", publico: "", tono: "casual", formato: "feed", cta: "", datos: "" });
 
   return (
     <div style={{ minHeight: "100vh", background: DARK_BG, color: "#fff", fontFamily: "system-ui, -apple-system, sans-serif" }}>
-      {/* Header */}
       <header style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", padding: "16px 28px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.25)", backdropFilter: "blur(8px)", position: "sticky", top: 0, zIndex: 10 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, letterSpacing: "0.04em" }}>ARGENCARGO · <span style={{ color: GOLD_LIGHT }}>Marketing</span></h1>
-          <p style={{ margin: "2px 0 0", fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Preview · sin datos reales · sin auth</p>
+          <p style={{ margin: "2px 0 0", fontSize: 11, color: "rgba(255,255,255,0.4)" }}>Preview v2 · sin backend · {today.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}</p>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, fontSize: 12 }}>
-            <div style={{ width: 28, height: 28, borderRadius: "50%", background: GOLD_GRADIENT, color: "#0A1628", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>BA</div>
-            <span style={{ color: "rgba(255,255,255,0.75)" }}>Bauti</span>
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, fontSize: 12 }}>
+          <div style={{ width: 28, height: 28, borderRadius: "50%", background: GOLD_GRADIENT, color: "#0A1628", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12 }}>BA</div>
+          <span style={{ color: "rgba(255,255,255,0.75)" }}>Bauti</span>
         </div>
       </header>
 
-      {/* Sub-tabs */}
       <nav style={{ display: "flex", gap: 4, padding: "12px 28px", borderBottom: "1px solid rgba(255,255,255,0.06)", overflowX: "auto" }}>
         {[
-          { k: "calendario", l: "📅 Calendario" },
-          { k: "kanban", l: "📋 Kanban" },
-          { k: "campanas", l: "🚀 Campañas" },
-          { k: "biblioteca", l: "🖼️ Biblioteca" },
+          { k: "hoy", l: "🌅 Hoy" },
+          { k: "plan", l: "🗓️ Plan del mes" },
+          { k: "radar", l: "📡 Radar aduanero" },
+          { k: "reactivos", l: "🔥 Reactivos" },
           { k: "brief", l: "✍️ Brief copy" },
-          { k: "recordatorios", l: "🔔 Recordatorios" },
         ].map(t => (
           <button key={t.k} onClick={() => setTab(t.k)} style={{ padding: "9px 16px", fontSize: 13, fontWeight: 600, border: "none", borderRadius: 8, cursor: "pointer", background: tab === t.k ? GOLD_GRADIENT : "transparent", color: tab === t.k ? "#0A1628" : "rgba(255,255,255,0.6)", whiteSpace: "nowrap", transition: "all 150ms" }}>
             {t.l}
@@ -96,260 +112,269 @@ export default function MktPreview() {
         ))}
       </nav>
 
-      <main style={{ padding: "24px 28px", maxWidth: 1400, margin: "0 auto" }}>
-        {/* Banner recordatorio sticky */}
-        {tab !== "recordatorios" && (
-          <div style={{ marginBottom: 18, padding: "10px 16px", background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.25)", borderRadius: 10, display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
-            <span style={{ fontSize: 16 }}>🔔</span>
-            <span style={{ color: "#60a5fa", fontWeight: 600 }}>2 posts</span>
-            <span style={{ color: "rgba(255,255,255,0.7)" }}>se publican hoy · Carrusel IG a las 19:30 y short TikTok a las 20:00</span>
-          </div>
-        )}
-
-        {tab === "calendario" && <Calendario posts={MOCK_POSTS} />}
-        {tab === "kanban" && <Kanban posts={MOCK_POSTS} />}
-        {tab === "campanas" && <Campanas campaigns={MOCK_CAMPAIGNS} posts={MOCK_POSTS} />}
-        {tab === "biblioteca" && <Biblioteca assets={MOCK_ASSETS} />}
-        {tab === "brief" && <BriefCopy data={briefData} setData={setBriefData} />}
-        {tab === "recordatorios" && <Recordatorios posts={MOCK_POSTS} />}
+      <main style={{ padding: "24px 28px", maxWidth: 1280, margin: "0 auto" }}>
+        {tab === "hoy" && <Hoy posts={MOCK_PIECES} radar={MOCK_RADAR} reactives={MOCK_REACTIVES} />}
+        {tab === "plan" && <Plan posts={MOCK_PIECES} />}
+        {tab === "radar" && <Radar items={MOCK_RADAR} />}
+        {tab === "reactivos" && <Reactivos items={MOCK_REACTIVES} />}
+        {tab === "brief" && <Brief data={briefData} setData={setBriefData} />}
       </main>
-
-      <footer style={{ padding: "20px 28px", borderTop: "1px solid rgba(255,255,255,0.06)", textAlign: "center", fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
-        Preview · click en cualquier sub-tab para recorrer la UI propuesta
-      </footer>
     </div>
   );
 }
 
-// ─────── Calendario ───────
-function Calendario({ posts }) {
-  const month = today.getMonth(), year = today.getFullYear();
-  const first = new Date(year, month, 1);
-  const startDow = (first.getDay() + 6) % 7; // lunes=0
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells = [];
-  for (let i = 0; i < startDow; i++) cells.push(null);
-  for (let i = 1; i <= daysInMonth; i++) cells.push(i);
-  while (cells.length % 7 !== 0) cells.push(null);
+// ─────── HOY ───────
+function Hoy({ posts, radar, reactives }) {
+  const [checked, setChecked] = useState({});
+  const togg = (k) => setChecked(p => ({ ...p, [k]: !p[k] }));
 
-  const postsByDate = useMemo(() => {
-    const m = {};
-    posts.forEach(p => { const d = p.scheduledAt.slice(0, 10); m[d] = m[d] || []; m[d].push(p); });
-    return m;
-  }, [posts]);
+  const todayPosts = posts.filter(p => p.scheduledDate === todayStr && p.status !== "publicado");
+  const newRadar = radar.filter(r => r.date === todayStr);
+  const pendingReactives = reactives.filter(r => r.status !== "publicado");
+
+  const tasks = [
+    { id: "t1", icon: "📰", title: "Revisar portales aduaneros", sub: `CDA · AFIP · Boletín Oficial · ${newRadar.length} novedades nuevas hoy`, action: "Ir al radar →", actionTab: "radar" },
+    { id: "t2", icon: "📸", title: "Story IG / Estado WhatsApp del día", sub: "Tema libre — algo del día a día, una pregunta, un dato corto", action: null },
+    { id: "t3", icon: "💬", title: "Responder DMs y comentarios", sub: "IG · LinkedIn · WhatsApp — revisar y responder lo del día", action: null },
+    ...todayPosts.map(p => ({
+      id: "post-" + p.id, icon: NETWORKS[p.network].icon, title: `Publicar ${NETWORKS[p.network].label}`, sub: p.copy, action: "Ver pieza →",
+    })),
+    ...(newRadar.filter(r => r.isHot).length > 0 ? [{ id: "t4", icon: "🔥", title: "Producir contenido reactivo", sub: `Hay ${newRadar.filter(r => r.isHot).length} novedad${newRadar.filter(r => r.isHot).length > 1 ? "es" : ""} importante${newRadar.filter(r => r.isHot).length > 1 ? "s" : ""} sin convertir`, action: "Ver novedades →" }] : []),
+  ];
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.01em" }}>
-            {today.toLocaleDateString("es-AR", { month: "long", year: "numeric" }).replace(/^./, c => c.toUpperCase())}
-          </h2>
-          <p style={{ margin: "2px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>{posts.length} posts en el mes · click un día para agregar</p>
-        </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          <button style={btnSec}>‹ Mes anterior</button>
-          <button style={btnSec}>Hoy</button>
-          <button style={btnSec}>Mes siguiente ›</button>
-          <button style={btnPrimary}>+ Nuevo post</button>
-        </div>
+      <div style={{ marginBottom: 22 }}>
+        <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em" }}>Hoy</h2>
+        <p style={{ margin: "4px 0 0", fontSize: 13, color: "rgba(255,255,255,0.5)" }}>{today.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).replace(/^./, c => c.toUpperCase())} · {tasks.filter(t => checked[t.id]).length}/{tasks.length} completadas</p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 1, background: "rgba(255,255,255,0.06)", borderRadius: 12, overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)" }}>
-        {["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map(d => (
-          <div key={d} style={{ padding: "9px 10px", background: "rgba(0,0,0,0.35)", fontSize: 10, fontWeight: 800, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{d}</div>
+      {/* Resumen rápido */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 22 }}>
+        <Stat label="A publicar hoy" value={todayPosts.length} color={GOLD_LIGHT} />
+        <Stat label="Novedades nuevas" value={newRadar.length} color="#60a5fa" />
+        <Stat label="Reactivos pendientes" value={pendingReactives.length} color="#fb923c" />
+        <Stat label="Piezas mes restantes" value={posts.filter(p => p.status === "idea").length} color="rgba(255,255,255,0.55)" />
+      </div>
+
+      {/* Checklist */}
+      <div style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, overflow: "hidden" }}>
+        <div style={{ padding: "12px 18px", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgba(184,149,106,0.04)" }}>
+          <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: GOLD_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>Rutina del día</p>
+          <p style={{ margin: "3px 0 0", fontSize: 11, color: "rgba(255,255,255,0.4)", fontStyle: "italic" }}>Marcá lo que vayas haciendo. Lo que no aplica, skipealo.</p>
+        </div>
+        {tasks.map((t) => (
+          <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer", transition: "background 120ms", opacity: checked[t.id] ? 0.5 : 1 }} onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+            <input type="checkbox" checked={!!checked[t.id]} onChange={() => togg(t.id)} style={{ width: 18, height: 18, accentColor: GOLD }} />
+            <span style={{ fontSize: 20 }}>{t.icon}</span>
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#fff", textDecoration: checked[t.id] ? "line-through" : "none" }}>{t.title}</p>
+              <p style={{ margin: "2px 0 0", fontSize: 12, color: "rgba(255,255,255,0.5)" }}>{t.sub}</p>
+            </div>
+            {t.action && <button style={btnSec}>{t.action}</button>}
+          </label>
         ))}
-        {cells.map((c, i) => {
-          const ds = c ? `${year}-${String(month + 1).padStart(2, "0")}-${String(c).padStart(2, "0")}` : null;
-          const dayPosts = ds ? postsByDate[ds] || [] : [];
-          const isToday = c === today.getDate();
+      </div>
+
+      <p style={{ marginTop: 16, fontSize: 11, color: "rgba(255,255,255,0.4)", fontStyle: "italic", textAlign: "center" }}>
+        Al día siguiente la lista arranca de nuevo. Lo no hecho queda en la pieza/novedad correspondiente.
+      </p>
+    </div>
+  );
+}
+
+// ─────── PLAN DEL MES ───────
+function Plan({ posts }) {
+  const [redSel, setRedSel] = useState("instagram");
+  const piezasRed = posts.filter(p => p.network === redSel).sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate));
+  const net = NETWORKS[redSel];
+
+  return (
+    <div>
+      <div style={{ marginBottom: 18 }}>
+        <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em" }}>Plan mayo 2026</h2>
+        <p style={{ margin: "4px 0 0", fontSize: 13, color: "rgba(255,255,255,0.5)" }}>10 piezas por red · cada red tiene su propia línea editorial</p>
+      </div>
+
+      {/* Tabs de red */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {Object.entries(NETWORKS).map(([k, n]) => {
+          const pp = posts.filter(p => p.network === k);
+          const pub = pp.filter(p => p.status === "publicado").length;
           return (
-            <div key={i} style={{ minHeight: 110, background: c ? (isToday ? "rgba(184,149,106,0.06)" : "rgba(255,255,255,0.015)") : "rgba(0,0,0,0.2)", padding: 6, cursor: c ? "pointer" : "default", borderTop: isToday ? `2px solid ${GOLD}` : "none" }}>
-              {c && <div style={{ fontSize: 11, fontWeight: 700, color: isToday ? GOLD_LIGHT : "rgba(255,255,255,0.55)", marginBottom: 4 }}>{c}</div>}
-              {dayPosts.slice(0, 3).map(p => {
-                const net = NETWORKS[p.network], st = STATUS[p.status];
-                return (
-                  <div key={p.id} title={p.copy} style={{ fontSize: 10, padding: "3px 6px", marginBottom: 3, borderRadius: 4, background: net.bg, border: `1px solid ${net.bd}`, color: "#fff", fontWeight: 500, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {net.icon} <span style={{ color: st.c, fontSize: 8, fontWeight: 800 }}>●</span> {p.copy.slice(0, 22)}…
-                  </div>
-                );
-              })}
-              {dayPosts.length > 3 && <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 2 }}>+{dayPosts.length - 3} más</div>}
+            <button key={k} onClick={() => setRedSel(k)} style={{ padding: "10px 16px", fontSize: 12.5, fontWeight: 700, border: `1px solid ${redSel === k ? n.bd : "rgba(255,255,255,0.12)"}`, borderRadius: 10, cursor: "pointer", background: redSel === k ? n.bg : "rgba(255,255,255,0.025)", color: redSel === k ? (n.color === "#fff" ? "#fff" : n.color) : "rgba(255,255,255,0.65)", display: "flex", alignItems: "center", gap: 8 }}>
+              <span>{n.icon}</span>
+              <span>{n.label}</span>
+              <span style={{ fontSize: 11, opacity: 0.7 }}>· {pub}/{pp.length}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Header de la red elegida */}
+      <div style={{ padding: "14px 18px", background: net.bg, border: `1px solid ${net.bd}`, borderRadius: 10, marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{net.icon} {net.label} · <span style={{ color: net.color === "#fff" ? "rgba(255,255,255,0.7)" : net.color }}>{net.account}</span></span>
+          <span style={{ fontSize: 10, padding: "2px 8px", background: "rgba(0,0,0,0.3)", borderRadius: 4, color: "rgba(255,255,255,0.7)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{net.brand}</span>
+        </div>
+        <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.65)", fontStyle: "italic" }}>{net.line}</p>
+      </div>
+
+      {/* Lista de 10 piezas */}
+      <div style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, overflow: "hidden" }}>
+        {piezasRed.map((p, i) => {
+          const st = STATUS[p.status];
+          return (
+            <div key={p.id} style={{ display: "grid", gridTemplateColumns: "40px 90px 1fr 110px 110px", gap: 12, alignItems: "center", padding: "11px 16px", borderBottom: i < piezasRed.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none", cursor: "pointer", transition: "background 120ms" }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.4)" }}>#{i + 1}</span>
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", fontFamily: "ui-monospace, monospace" }}>{p.scheduledDate.slice(5)}</span>
+              <span style={{ fontSize: 13, color: "#fff", fontWeight: 500 }}>{p.copy}</span>
+              <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: st.bg, color: st.c, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", textAlign: "center" }}>{st.l}</span>
+              <button style={btnSecMini}>Abrir →</button>
             </div>
           );
         })}
       </div>
 
-      <div style={{ marginTop: 16, padding: "10px 14px", background: "rgba(255,255,255,0.025)", borderRadius: 10, fontSize: 11, color: "rgba(255,255,255,0.5)", display: "flex", gap: 18, flexWrap: "wrap" }}>
-        <span><b style={{ color: "#fff" }}>Leyenda:</b></span>
-        {Object.entries(NETWORKS).map(([k, n]) => <span key={k}>{n.icon} {n.label}</span>)}
-        <span style={{ marginLeft: "auto" }}>● Estado del post</span>
+      <div style={{ marginTop: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <p style={{ margin: 0, fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
+          El 1ro de cada mes el panel te crea automáticamente los 10 slots de cada red.
+        </p>
+        <button style={btnPrimary}>+ Pieza extra</button>
       </div>
     </div>
   );
 }
 
-// ─────── Kanban ───────
-function Kanban({ posts }) {
+// ─────── RADAR ADUANERO ───────
+function Radar({ items }) {
+  const [filt, setFilt] = useState("all");
+  const filtered = items.filter(i => filt === "all" || i.source === filt);
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Producción</h2>
-          <p style={{ margin: "2px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Arrastrá entre columnas para cambiar el estado</p>
-        </div>
-        <button style={btnPrimary}>+ Nuevo post</button>
+      <div style={{ marginBottom: 18 }}>
+        <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em" }}>Radar aduanero</h2>
+        <p style={{ margin: "4px 0 0", fontSize: 13, color: "rgba(255,255,255,0.5)" }}>
+          Headlines de portales relevantes · scrappeo diario automático <span style={{ color: GOLD_LIGHT, fontWeight: 600 }}>(0 costo de API)</span>
+        </p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 10 }}>
-        {Object.entries(STATUS).map(([sk, sv]) => {
-          const colPosts = posts.filter(p => p.status === sk);
-          return (
-            <div key={sk} style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${sv.bg}`, borderRadius: 10, overflow: "hidden" }}>
-              <div style={{ padding: "10px 12px", background: sv.bg, borderBottom: `1px solid ${sv.bg}` }}>
-                <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: sv.c, textTransform: "uppercase", letterSpacing: "0.06em" }}>{sv.l} · {colPosts.length}</p>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {[{ k: "all", l: "Todos" }, { k: "CDA", l: "CDA" }, { k: "AFIP", l: "AFIP" }, { k: "Boletín Oficial", l: "Boletín Oficial" }].map(o => (
+          <button key={o.k} onClick={() => setFilt(o.k)} style={{ padding: "7px 14px", fontSize: 12, fontWeight: 600, border: `1px solid ${filt === o.k ? GOLD_DEEP : "rgba(255,255,255,0.12)"}`, borderRadius: 8, cursor: "pointer", background: filt === o.k ? "rgba(184,149,106,0.12)" : "rgba(255,255,255,0.025)", color: filt === o.k ? GOLD_LIGHT : "rgba(255,255,255,0.65)" }}>{o.l}</button>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {filtered.map(item => (
+          <div key={item.id} style={{ padding: "14px 18px", background: item.isHot ? "rgba(251,146,60,0.06)" : "rgba(255,255,255,0.025)", border: `1px solid ${item.isHot ? "rgba(251,146,60,0.3)" : "rgba(255,255,255,0.08)"}`, borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 280 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: "rgba(96,165,250,0.15)", color: "#60a5fa", textTransform: "uppercase", letterSpacing: "0.06em" }}>{item.source}</span>
+                {item.isHot && <span style={{ fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: "rgba(251,146,60,0.18)", color: "#fb923c" }}>🔥 IMPORTANTE</span>}
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{item.date}</span>
               </div>
-              <div style={{ padding: 8, minHeight: 400, display: "flex", flexDirection: "column", gap: 6 }}>
-                {colPosts.map(p => {
-                  const net = NETWORKS[p.network];
-                  return (
-                    <div key={p.id} style={{ padding: "8px 10px", background: "rgba(0,0,0,0.25)", border: `1px solid ${net.bd}`, borderRadius: 6, cursor: "grab" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: net.color === "#fff" ? "#fff" : net.color }}>{net.icon} {net.label}</span>
-                        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", textTransform: "uppercase" }}>{p.format}</span>
-                      </div>
-                      <p style={{ margin: 0, fontSize: 11, color: "rgba(255,255,255,0.85)", lineHeight: 1.4 }}>{p.copy.slice(0, 70)}{p.copy.length > 70 ? "…" : ""}</p>
-                      <p style={{ margin: "5px 0 0", fontSize: 9.5, color: "rgba(255,255,255,0.4)" }}>📅 {p.scheduledAt.slice(0, 10)} · {p.scheduledAt.slice(11, 16)}</p>
-                    </div>
-                  );
-                })}
-                {colPosts.length === 0 && <p style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontStyle: "italic", textAlign: "center", marginTop: 14 }}>Vacío</p>}
-              </div>
+              <p style={{ margin: 0, fontSize: 14, color: "#fff", fontWeight: 500 }}>{item.title}</p>
             </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─────── Campañas ───────
-function Campanas({ campaigns, posts }) {
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Campañas</h2>
-          <p style={{ margin: "2px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>{campaigns.length} campañas activas</p>
-        </div>
-        <button style={btnPrimary}>+ Nueva campaña</button>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: 14 }}>
-        {campaigns.map(c => {
-          const cp = posts.filter(p => p.campaign === c.id);
-          const pub = cp.filter(p => p.status === "publicado").length;
-          return (
-            <div key={c.id} style={{ padding: "16px 18px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, borderLeft: `3px solid ${c.color}` }}>
-              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#fff" }}>{c.name}</h3>
-              <p style={{ margin: "4px 0 10px", fontSize: 12, color: "rgba(255,255,255,0.55)" }}>{c.objective}</p>
-              <div style={{ display: "flex", gap: 12, fontSize: 11, color: "rgba(255,255,255,0.55)", marginBottom: 10 }}>
-                <span>📅 {c.start} → {c.end}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>{pub}/{cp.length} publicados</span>
-                <span style={{ fontSize: 11, fontWeight: 800, color: c.color }}>{cp.length > 0 ? Math.round(pub / cp.length * 100) : 0}%</span>
-              </div>
-              <div style={{ height: 6, background: "rgba(255,255,255,0.06)", borderRadius: 3, overflow: "hidden" }}>
-                <div style={{ width: `${cp.length > 0 ? pub / cp.length * 100 : 0}%`, height: "100%", background: c.color }} />
-              </div>
-              <div style={{ marginTop: 12, display: "flex", gap: 4, flexWrap: "wrap" }}>
-                {cp.slice(0, 5).map(p => <span key={p.id} title={p.copy} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, background: NETWORKS[p.network].bg, border: `1px solid ${NETWORKS[p.network].bd}` }}>{NETWORKS[p.network].icon}</span>)}
-                {cp.length > 5 && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", padding: "2px 4px" }}>+{cp.length - 5}</span>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─────── Biblioteca ───────
-function Biblioteca({ assets }) {
-  const [q, setQ] = useState("");
-  const filtered = assets.filter(a => !q || a.name.toLowerCase().includes(q.toLowerCase()) || a.tags.some(t => t.includes(q.toLowerCase())));
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Biblioteca de assets</h2>
-          <p style={{ margin: "2px 0 0", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>{assets.length} archivos · fotos, videos, GIFs, plantillas</p>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por nombre o tag..." style={{ padding: "8px 12px", fontSize: 13, border: "1px solid rgba(255,255,255,0.14)", borderRadius: 8, background: "rgba(255,255,255,0.04)", color: "#fff", outline: "none", minWidth: 240 }} />
-          <button style={btnPrimary}>⬆ Subir asset</button>
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 12 }}>
-        {filtered.map(a => (
-          <div key={a.id} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, overflow: "hidden", cursor: "pointer", transition: "border-color 150ms" }}
-            onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(184,149,106,0.4)"}
-            onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"}>
-            <div style={{ height: 130, background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 56 }}>{a.thumb}</div>
-            <div style={{ padding: "8px 10px" }}>
-              <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</p>
-              <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 5 }}>
-                {a.tags.map(t => <span key={t} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(184,149,106,0.12)", color: GOLD_LIGHT }}>{t}</span>)}
-              </div>
-              <p style={{ margin: "6px 0 0", fontSize: 10, color: "rgba(255,255,255,0.4)" }}>Usado en {a.usedIn} post{a.usedIn !== 1 ? "s" : ""}</p>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button style={btnSecMini}>🔗 Abrir</button>
+              <button style={{ ...btnSecMini, color: GOLD_LIGHT, borderColor: "rgba(184,149,106,0.4)" }}>→ Convertir en post</button>
+              <button style={btnSecMini}>✓ Leído</button>
             </div>
           </div>
         ))}
       </div>
+
+      <div style={{ marginTop: 18, padding: "12px 16px", background: "rgba(255,255,255,0.025)", borderRadius: 10, fontSize: 11.5, color: "rgba(255,255,255,0.55)", lineHeight: 1.6 }}>
+        <b style={{ color: GOLD_LIGHT }}>💡 ¿Cómo funciona?</b> Un cron diario a las 8am scrapea los headlines de los portales registrados (sin IA, solo HTML parsing). Cada novedad se muestra acá para que la revises y decidas si se convierte en post reactivo, o solo "leída".<br/>
+        <b style={{ color: GOLD_LIGHT }}>📝 Portales registrados:</b> CDA, AFIP, Boletín Oficial. Editable desde Configuración (más adelante).
+      </div>
     </div>
   );
 }
 
-// ─────── Brief copy ───────
-function BriefCopy({ data, setData }) {
-  const prompt = `Necesito 3 variantes de copy para una publicación en **${NETWORKS[data.red]?.label || "(red)"}**, formato **${data.formato}**.
+// ─────── REACTIVOS ───────
+function Reactivos({ items }) {
+  return (
+    <div>
+      <div style={{ marginBottom: 18 }}>
+        <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em" }}>Bandeja de reactivos</h2>
+        <p style={{ margin: "4px 0 0", fontSize: 13, color: "rgba(255,255,255,0.5)" }}>Ideas que surgieron del radar y se convierten en publicación</p>
+      </div>
 
-**Objetivo:** ${data.objetivo || "(falta)"}
-**Público objetivo:** ${data.publico || "(falta)"}
+      {items.length === 0 ? (
+        <div style={{ padding: "40px 20px", textAlign: "center", color: "rgba(255,255,255,0.4)", fontSize: 13, background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: 12 }}>
+          Sin reactivos pendientes. Cuando convertís una novedad del Radar, aparece acá.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {items.map(it => {
+            const st = STATUS[it.status];
+            return (
+              <div key={it.id} style={{ padding: "14px 18px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, gap: 10, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{it.title}</span>
+                  <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: st.bg, color: st.c, fontWeight: 700, textTransform: "uppercase" }}>{st.l}</span>
+                </div>
+                <p style={{ margin: "0 0 6px", fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Origen: <b>{it.source}</b> · creado {it.createdAt}</p>
+                <p style={{ margin: 0, fontSize: 12.5, color: "rgba(255,255,255,0.75)", fontStyle: "italic" }}>"{it.note}"</p>
+                <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                  <button style={btnSecMini}>Editar</button>
+                  <button style={btnSecMini}>→ Mandar a plan del mes</button>
+                  <button style={btnSecMini}>Descartar</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────── BRIEF COPY ───────
+function Brief({ data, setData }) {
+  const net = NETWORKS[data.red];
+  const prompt = `Necesito una idea de copy para **${net.label}** (${net.account}, línea editorial: ${net.line}).
+
+**Objetivo del post:** ${data.objetivo || "(falta)"}
+**Público:** ${data.publico || "(falta)"}
 **Tono:** ${data.tono}
+**Formato:** ${data.formato}
 **CTA:** ${data.cta || "(falta)"}
 **Datos clave:** ${data.datos || "(falta)"}
 
-Dame 3 variantes claramente diferenciadas en estilo. Para cada una incluí:
-- Copy principal (con saltos de línea bien marcados)
-- Lista de 5-8 hashtags relevantes
-- Sugerencia de visual/asset
+Dame 3 variantes claramente diferenciadas en estilo. Para cada una:
+- Copy principal con saltos de línea bien marcados
+- 5-8 hashtags relevantes (si aplica a la red)
+- Sugerencia visual / asset
 
-Tono Argencargo: claro, directo, profesional pero cercano. Argencargo es una empresa argentina de importaciones desde China y USA.`;
+Tono Argencargo: claro, directo, profesional pero cercano. Empresa argentina de importaciones desde China y USA.`;
 
   return (
     <div>
-      <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Brief para Claude (vía chat)</h2>
-      <p style={{ margin: "2px 0 18px", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Completá los campos → copiá el brief → pegámelo en el chat y te devuelvo 3 variantes de copy. <b style={{ color: GOLD_LIGHT }}>Sin costo de API.</b></p>
+      <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em" }}>Brief copy</h2>
+      <p style={{ margin: "4px 0 18px", fontSize: 13, color: "rgba(255,255,255,0.5)" }}>Completá → copiá → pegámelo en el chat y te tiro 3 variantes. <b style={{ color: GOLD_LIGHT }}>0 costo API.</b></p>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <Field label="Objetivo del post" value={data.objetivo} onChange={v => setData(p => ({ ...p, objetivo: v }))} placeholder="Ej: dar a conocer la ruta marítima USA" />
-          <Field label="Público objetivo" value={data.publico} onChange={v => setData(p => ({ ...p, publico: v }))} placeholder="Ej: emprendedores que importan de USA, 25-40 años" />
+        <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+          <Sel label="Red" value={data.red} onChange={v => setData(p => ({ ...p, red: v }))} options={Object.entries(NETWORKS).map(([k, n]) => ({ v: k, l: `${n.icon} ${n.label}` }))} />
+          <Fld label="Objetivo del post" value={data.objetivo} onChange={v => setData(p => ({ ...p, objetivo: v }))} placeholder="Ej: anunciar la nueva ruta USA" />
+          <Fld label="Público objetivo" value={data.publico} onChange={v => setData(p => ({ ...p, publico: v }))} placeholder="Ej: emprendedores que importan, 25-40 años" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <Select label="Red" value={data.red} onChange={v => setData(p => ({ ...p, red: v }))} options={Object.entries(NETWORKS).map(([k, n]) => ({ v: k, l: `${n.icon} ${n.label}` }))} />
-            <Select label="Formato" value={data.formato} onChange={v => setData(p => ({ ...p, formato: v }))} options={FORMATS.map(f => ({ v: f, l: f }))} />
+            <Sel label="Tono" value={data.tono} onChange={v => setData(p => ({ ...p, tono: v }))} options={[{ v: "casual", l: "Casual" }, { v: "formal", l: "Formal" }, { v: "tecnico", l: "Técnico" }, { v: "divertido", l: "Divertido" }]} />
+            <Sel label="Formato" value={data.formato} onChange={v => setData(p => ({ ...p, formato: v }))} options={["feed", "reel", "carrusel", "story", "hilo", "post-text"].map(f => ({ v: f, l: f }))} />
           </div>
-          <Select label="Tono" value={data.tono} onChange={v => setData(p => ({ ...p, tono: v }))} options={[{ v: "casual", l: "Casual" }, { v: "formal", l: "Formal" }, { v: "tecnico", l: "Técnico" }, { v: "divertido", l: "Divertido" }]} />
-          <Field label="Call to action" value={data.cta} onChange={v => setData(p => ({ ...p, cta: v }))} placeholder="Ej: escribinos para cotizar tu importación" />
-          <Field label="Datos clave" value={data.datos} onChange={v => setData(p => ({ ...p, datos: v }))} placeholder="Ej: USD 4500/CBM, 30-40 días, salidas semanales" multi />
+          <Fld label="Call to action" value={data.cta} onChange={v => setData(p => ({ ...p, cta: v }))} placeholder="Ej: escribinos para cotizar" />
+          <Fld label="Datos clave" value={data.datos} onChange={v => setData(p => ({ ...p, datos: v }))} placeholder="Ej: USD 4500/CBM, 30-40 días, salidas semanales" multi />
         </div>
 
         <div>
-          <p style={{ margin: "0 0 6px", fontSize: 10, fontWeight: 800, color: "rgba(255,255,255,0.55)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Brief generado</p>
-          <pre style={{ background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "14px 16px", fontSize: 12, color: "rgba(255,255,255,0.85)", whiteSpace: "pre-wrap", fontFamily: "ui-monospace, 'SF Mono', monospace", lineHeight: 1.6, maxHeight: 420, overflow: "auto" }}>{prompt}</pre>
+          <p style={{ margin: "0 0 6px", fontSize: 10, fontWeight: 800, color: "rgba(255,255,255,0.55)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Brief armado</p>
+          <pre style={{ background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "14px 16px", fontSize: 12, color: "rgba(255,255,255,0.85)", whiteSpace: "pre-wrap", fontFamily: "ui-monospace, monospace", lineHeight: 1.6, maxHeight: 420, overflow: "auto" }}>{prompt}</pre>
           <button style={{ ...btnPrimary, marginTop: 10, width: "100%" }} onClick={() => { navigator.clipboard?.writeText(prompt); }}>📋 Copiar brief al portapapeles</button>
         </div>
       </div>
@@ -357,53 +382,16 @@ Tono Argencargo: claro, directo, profesional pero cercano. Argencargo es una emp
   );
 }
 
-// ─────── Recordatorios ───────
-function Recordatorios({ posts }) {
-  const upcoming = posts.filter(p => p.status !== "publicado").sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
-  const today_s = today.toISOString().slice(0, 10);
-  const tomorrow_s = d(1);
-  const groups = { hoy: [], manana: [], proximos: [] };
-  upcoming.forEach(p => {
-    const ds = p.scheduledAt.slice(0, 10);
-    if (ds === today_s) groups.hoy.push(p);
-    else if (ds === tomorrow_s) groups.manana.push(p);
-    else if (ds > today_s) groups.proximos.push(p);
-  });
-
+// ─────── Helpers UI ───────
+function Stat({ label, value, color }) {
   return (
-    <div>
-      <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Recordatorios</h2>
-      <p style={{ margin: "2px 0 18px", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Próximos posts a publicar / revisar</p>
-
-      {[{ k: "hoy", l: "📌 Hoy", c: "#fbbf24" }, { k: "manana", l: "📅 Mañana", c: "#60a5fa" }, { k: "proximos", l: "🗓️ Próximos días", c: "rgba(255,255,255,0.6)" }].map(g => (
-        <div key={g.k} style={{ marginBottom: 18 }}>
-          <h3 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 800, color: g.c, textTransform: "uppercase", letterSpacing: "0.08em" }}>{g.l} · {groups[g.k].length}</h3>
-          {groups[g.k].length === 0 ? (
-            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", fontStyle: "italic" }}>Nada pendiente.</p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {groups[g.k].map(p => {
-                const net = NETWORKS[p.network], st = STATUS[p.status];
-                return (
-                  <div key={p.id} style={{ padding: "10px 14px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 14 }}>{net.icon}</span>
-                    <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: st.bg, color: st.c, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>{st.l}</span>
-                    <span style={{ fontSize: 12, color: "#fff", fontWeight: 500, flex: 1, minWidth: 200 }}>{p.copy.slice(0, 80)}{p.copy.length > 80 ? "…" : ""}</span>
-                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>📅 {p.scheduledAt.slice(5, 10)} · {p.scheduledAt.slice(11, 16)}</span>
-                    <button style={btnSec}>Abrir</button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ))}
+    <div style={{ padding: "14px 16px", background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12 }}>
+      <p style={{ margin: 0, fontSize: 10, fontWeight: 800, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</p>
+      <p style={{ margin: "5px 0 0", fontSize: 24, fontWeight: 800, color, fontFeatureSettings: '"tnum"' }}>{value}</p>
     </div>
   );
 }
-
-// ─────── Helpers UI ───────
-function Field({ label, value, onChange, placeholder, multi }) {
+function Fld({ label, value, onChange, placeholder, multi }) {
   const Comp = multi ? "textarea" : "input";
   return (
     <div>
@@ -413,7 +401,7 @@ function Field({ label, value, onChange, placeholder, multi }) {
     </div>
   );
 }
-function Select({ label, value, onChange, options }) {
+function Sel({ label, value, onChange, options }) {
   return (
     <div>
       <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.55)", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>
@@ -424,4 +412,5 @@ function Select({ label, value, onChange, options }) {
   );
 }
 const btnPrimary = { padding: "8px 16px", fontSize: 12.5, fontWeight: 700, borderRadius: 8, border: `1px solid ${GOLD_DEEP}`, background: GOLD_GRADIENT, color: "#0A1628", cursor: "pointer", letterSpacing: "0.02em" };
-const btnSec = { padding: "8px 14px", fontSize: 12, fontWeight: 600, borderRadius: 8, border: "1px solid rgba(255,255,255,0.14)", background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.8)", cursor: "pointer" };
+const btnSec = { padding: "6px 12px", fontSize: 11.5, fontWeight: 600, borderRadius: 8, border: "1px solid rgba(255,255,255,0.14)", background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.8)", cursor: "pointer", whiteSpace: "nowrap" };
+const btnSecMini = { padding: "5px 10px", fontSize: 11, fontWeight: 600, borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.03)", color: "rgba(255,255,255,0.75)", cursor: "pointer", whiteSpace: "nowrap" };
