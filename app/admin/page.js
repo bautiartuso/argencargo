@@ -4629,8 +4629,54 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const [items,setItems]=useState(invoiceItems);
   useEffect(()=>{setItems(invoiceItems);},[invoiceItems]);
   const chItem=(i,f,v)=>setItems(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
-  const saveItem=async(it)=>{await dq("flight_invoice_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{description:it.description,quantity:Number(it.quantity||0),unit_price_declared_usd:Number(it.unit_price_declared_usd||0),hs_code:it.hs_code||"",notes:it.notes||""}});};
+  const saveItem=async(it)=>{
+    await dq("flight_invoice_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{description:it.description,quantity:Number(it.quantity||0),unit_price_declared_usd:Number(it.unit_price_declared_usd||0),hs_code:it.hs_code||"",notes:it.notes||""}});
+    // Propagar HS al operation_item original (si existe) para que el cálculo de budget lo use.
+    if(it.source_item_id&&it.hs_code)await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.source_item_id}`,body:{ncm_code:it.hs_code}});
+  };
   const saveAllItems=async()=>{for(const it of items){await saveItem(it);}};
+  // Recalcular el presupuesto de TODAS las ops del vuelo usando los HS y tasas ya cargadas.
+  const [recalcing,setRecalcing]=useState(false);
+  const recalcAllBudgets=async()=>{
+    setRecalcing(true);
+    let ok=0,err=0;
+    try{
+      // Sincronizar primero todos los HS de flight_invoice_items → operation_items
+      for(const it of items){
+        if(it.source_item_id&&it.hs_code)await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.source_item_id}`,body:{ncm_code:it.hs_code}});
+      }
+      // Pre-fetch tariffs + config (compartidos)
+      const [tarFresh,cfgFresh]=await Promise.all([
+        dq("tariffs",{token,filters:"?select=*"}),
+        dq("calc_config",{token,filters:"?select=*"})
+      ]);
+      const configMap={};(Array.isArray(cfgFresh)?cfgFresh:[]).forEach(r=>{configMap[r.key]=Number(r.value);});
+      // Recalcular cada op
+      for(const op of opsUnique){
+        try{
+          const [its,pks,fcl,fop,overr]=await Promise.all([
+            dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),
+            dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*`}),
+            op.client_id?dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*&limit=1`}):Promise.resolve([]),
+            dq("operations",{token,filters:`?id=eq.${op.id}&select=*&limit=1`}),
+            op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([])
+          ]);
+          const client=Array.isArray(fcl)?fcl[0]:null;
+          const opFresh=Array.isArray(fop)?fop[0]:null;
+          const opForCalc={...op,...(opFresh||{})};
+          const itsArr=Array.isArray(its)?its:[];
+          const pksArr=Array.isArray(pks)?pks:[];
+          const isBlanco=opForCalc.channel?.includes("blanco");
+          if((isBlanco&&itsArr.length===0)||(!isBlanco&&pksArr.length===0)){err++;continue;}
+          const {totalTax,flete,seguro,totalAbonar,surcharge}=calcOpBudget(opForCalc,itsArr,pksArr,tarFresh||[],configMap,overr||[],client);
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}});
+          ok++;
+        }catch(e){console.error("recalc op",op.id,e);err++;}
+      }
+      onFlash(`Presupuestos recalculados: ${ok} OK${err>0?` · ${err} con error/faltantes`:""}`);
+      onReload();
+    }finally{setRecalcing(false);}
+  };
   const addItem=async()=>{const opId=opsUnique[0]?.id;if(!opId)return;const r=await dq("flight_invoice_items",{method:"POST",token,body:{flight_id:flight.id,operation_id:opId,description:"",quantity:1,unit_price_declared_usd:0,hs_code:"",sort_order:items.length+1}});const created=Array.isArray(r)?r[0]:r;if(created?.id)setItems(p=>[...p,created]);onReload();};
   const delItem=async(id)=>{await dq("flight_invoice_items",{method:"DELETE",token,filters:`?id=eq.${id}`});setItems(p=>p.filter(x=>x.id!==id));onReload();};
   // Auto-clasificar HS Code con IA (sólo rellena hs_code, NO toca derechos/IVA/estadística)
@@ -4732,6 +4778,14 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         if(d?.ncm_code){
           await dq("flight_invoice_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:{hs_code:d.ncm_code}});
           setItems(p=>p.map(x=>x.id===it.id?{...x,hs_code:d.ncm_code}:x));
+          // Propagar al operation_item original (HS + tasas) para que el cálculo de budget las use
+          if(it.source_item_id){
+            const opItemBody={ncm_code:d.ncm_code};
+            if(d.import_duty_rate!=null)opItemBody.import_duty_rate=Number(d.import_duty_rate);
+            if(d.statistics_rate!=null)opItemBody.statistics_rate=Number(d.statistics_rate);
+            if(d.iva_rate!=null)opItemBody.iva_rate=Number(d.iva_rate);
+            await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.source_item_id}`,body:opItemBody});
+          }
           ok++;
           if(d.intervention?.required)detectedInterventions.push({description:it.description,ncm:d.ncm_code,types:d.intervention.types||[],reason:d.intervention.reason||null});
         }
@@ -5058,6 +5112,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           {items.some(it=>it.description&&it.description.trim()&&(!it.hs_code||!it.hs_code.trim()))&&<button onClick={autoClassifyHs} disabled={classifyingHs} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:classifyingHs?"wait":"pointer",opacity:classifyingHs?0.6:1}}>{classifyingHs?"Clasificando…":"✨ Auto-completar HS Code (IA)"}</button>}
           {needsCompression&&!flight.invoice_presented_at&&opsCompressible.map(({opId,opCode,count,target})=><button key={opId} onClick={()=>openCompressFor(opId,target)} title={`Comprimir los ${count} items de ${opCode} a ${target} (otras ops aportan ${totalInvoiceItems-count} al total). Límite RG 5608: ${MAX_INVOICE_ITEMS} por factura.`} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🗜 Comprimir {opCode} ({count} → ≤{target})</button>)}
           {!flight.invoice_presented_at&&items.length>0&&<button onClick={async()=>{await saveAllItems();onFlash("Cambios guardados");onReload();}} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>💾 Guardar cambios</button>}
+          {items.length>0&&<button onClick={recalcAllBudgets} disabled={recalcing} title="Sincroniza los HS Code al operation_items y recalcula budget_total de cada op del vuelo" style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.1)",color:IC,cursor:recalcing?"wait":"pointer",opacity:recalcing?0.6:1}}>{recalcing?"Recalculando…":"💰 Recalcular presupuestos del vuelo"}</button>}
         </div>
       </div>}
       {flight.status==="preparando"&&<div style={{marginTop:16,padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
