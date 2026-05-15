@@ -1203,6 +1203,19 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         totalTax=Number(op.budget_taxes||0);flete=Number(op.budget_flete||0);seguro=Number(op.budget_seguro||0);surcharge=Number(op.budget_surcharge||0);
         const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
         totalAbonar=Number(op.budget_total||0);
+        // Aun con presupuesto guardado, derivar surchargePct del VPU+tarifas para que el label informe el tramo
+        if(!isBlanco){
+          const isUSA=op.origin==="USA";
+          const isPhonesBUsaInline=op.channel==="aereo_negro"&&isUSA&&op.has_phones;
+          const svcKey=isPhonesBUsaInline?"aereo_b_usa_celulares":(op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="aereo_negro"?(isUSA?"aereo_b_usa":"aereo_b_china"):op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b");
+          const merchVal=Number(op.merchandise_value_usd||0)||totalFob;
+          const amtForVpu=op.channel?.includes("aereo")?(op.channel==="aereo_negro"?totGW:pf):totCBM;
+          if(merchVal>0&&amtForVpu>0){
+            const vpu=merchVal/amtForVpu;
+            const surchs=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty||0)-Number(a.min_qty||0));
+            for(const s of surchs){if(vpu>=Number(s.min_qty||0)){surchargePct=Number(s.rate||0);break;}}
+          }
+        }
       } else {
       // Flete (uses client custom rate if available)
       const isUSA=op.origin==="USA";
