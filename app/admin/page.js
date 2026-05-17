@@ -8993,7 +8993,7 @@ function MaritimePanel({token,allClients=[]}){
   const bultosOf=(shId)=>packages.filter(p=>p.shipment_id===shId).length;
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
-  const downloadPdf=(warehouse,origin)=>{
+  const downloadPdf=(warehouse,origin,lang="es")=>{
     const wsShipments=shipments.filter(s=>s.warehouse===warehouse&&s.origin===origin).map((s,idx)=>({
       ...s,
       shipment_code:s.shipment_code||`#${idx+1}`,
@@ -9003,7 +9003,7 @@ function MaritimePanel({token,allClients=[]}){
     if(wsShipments.length===0){alert("No hay pedidos para ese depósito/origen");return;}
     const wh=whByName[warehouse];
     const rotulo=wh?.rotulo||`MARÍTIMO ${warehouse.toUpperCase()} (código cliente)`;
-    printMaritimePdf({warehouse,origin,shipments:wsShipments,rotulo});
+    printMaritimePdf({warehouse,origin,shipments:wsShipments,rotulo,lang});
   };
 
   const delShipment=async(id)=>{
@@ -9068,7 +9068,10 @@ function MaritimePanel({token,allClients=[]}){
               <button onClick={()=>setEditingWh(whByName[wh])} title="Editar depósito / rótulo" style={{padding:"5px 9px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>✎ Depósito</button>
               <button onClick={()=>delWarehouse(whByName[wh])} title="Eliminar depósito" style={{padding:"5px 9px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
             </>}
-            {(originFilter==="all"?["china","usa"]:[originFilter]).map(o=>{const cnt=wsList.filter(s=>s.origin===o).length;return cnt>0?<button key={o} onClick={()=>downloadPdf(wh,o)} title={`PDF de pedidos ${o==="usa"?"USA":"China"} en ${wh}`} style={{padding:"7px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.1)",color:IC,cursor:"pointer",fontFamily:"inherit"}}>📄 PDF {o==="usa"?"USA":"China"} ({cnt})</button>:null;})}
+            {(originFilter==="all"?["china","usa"]:[originFilter]).map(o=>{const cnt=wsList.filter(s=>s.origin===o).length;if(cnt===0)return null;const origLbl=o==="usa"?"USA":"China";return <div key={o} style={{display:"inline-flex",alignItems:"center",gap:0,borderRadius:8,border:"1px solid rgba(184,149,106,0.4)",overflow:"hidden",background:"rgba(184,149,106,0.1)"}}>
+              <span style={{padding:"7px 10px",fontSize:11,fontWeight:700,color:IC,borderRight:"1px solid rgba(184,149,106,0.3)"}}>📄 {origLbl} ({cnt})</span>
+              {[{l:"es",t:"ES"},{l:"en",t:"EN"},{l:"zh",t:"中"}].map((L,i)=><button key={L.l} onClick={()=>downloadPdf(wh,o,L.l)} title={`PDF ${origLbl} en ${L.l==="es"?"español":L.l==="en"?"inglés":"chino"}`} style={{padding:"7px 10px",fontSize:11,fontWeight:700,border:"none",borderLeft:i>0?"1px solid rgba(184,149,106,0.2)":"none",background:"transparent",color:IC,cursor:"pointer",fontFamily:"inherit"}}>{L.t}</button>)}
+            </div>;})}
           </div>
         </div>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
