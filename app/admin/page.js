@@ -2857,7 +2857,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const bFlete=Number(op.budget_flete||0);
           const bTax=Number(op.budget_taxes||0);
           const bSeg=Number(op.budget_seguro||0);
-          const bLocal=costLocal; // sin columna de budget — base = costo real
+          // Flete local: solo se le cobra al cliente cuando shipping_to_door=true (envío a domicilio).
+          // Cuando retira en oficina (shipping_to_door=false), el flete local es 100% costo interno
+          // → presupuesto del cliente = 0 → el saldo refleja la pérdida total.
+          const bLocal=op.shipping_to_door?Number(op.shipping_cost||0):0;
           const bOtros=costOtros;
           // Gasto documental presupuestado: recalculamos desde items+pkgs con la tabla CIF (igual que el form Productos).
           // Solo aplica para canal aéreo blanco (igual que en el cotizador). Fallback al costo real si no se puede calcular.
