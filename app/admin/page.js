@@ -2895,7 +2895,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               <strong style={{color:"#60a5fa"}}>Presu ajustado al cobro real:</strong> el cliente {ingresoNeto>presuTotal?"pagó más":"pagó menos"} que lo presupuestado, así que cada concepto se prorratea con factor <strong>×{factor.toFixed(3)}</strong>. Saldo refleja la realidad del cobro.
             </div>}
             {block("Flete",bFlete,costFlete)}
-            {block("Impuestos",bTax,costImp)}
+            {/* Impuestos (presu) incluyen el gasto documental dentro del cálculo del calc.js
+                → al mostrar Impuestos y Gasto documental por separado, restamos bDoc para
+                no doble-contar. Costo real ya viene separado en columnas distintas. */}
+            {block("Impuestos",Math.max(0,bTax-bDoc),costImp)}
             {(bDoc>0||costDoc>0)&&block("Gasto documental",bDoc,costDoc)}
             {block("Seguro",bSeg,costSeg)}
             {(bLocal>0||costLocal>0)&&block("Flete local",bLocal,costLocal)}
