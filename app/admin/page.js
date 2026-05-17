@@ -675,7 +675,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
     const sp=await dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setSupplierPayments(Array.isArray(sp)?sp:[]);
     const cp=await dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setClientPayments(Array.isArray(cp)?cp:[]);
-    await loadCCBalance();setLo(false);};
+    await loadCCBalance();setLo(false);
+    // Auto-sincronizar el presupuesto después de cargar la op (en caso de que esté desactualizado).
+    // El usuario quiere que el budget esté siempre sincronizado, sin botón manual.
+    setTimeout(()=>{autoSyncBudget();},300);
+  };
   // Cargar al montar / cambiar de op. SIN refetch en focus/visibility — pisaba inputs no guardados.
   useEffect(()=>{load();},[op.id]);
   const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
@@ -1335,7 +1339,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic",flex:1}}>Presupuesto cargado manualmente. Si querés recalcular con productos/bultos, limpialo primero.</p>
           <Btn variant="danger" small onClick={async()=>{if(!confirm("¿Limpiar presupuesto guardado? Se borrarán los valores actuales y podrás recargar productos/bultos para recalcular."))return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0}});setOp(p=>({...p,budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0}));flash("Presupuesto limpiado");setSaving(false);}} disabled={saving}>Limpiar presupuesto</Btn>
         </div>}
-        {!hasStoredBudget&&<div style={{display:"flex",gap:12,marginTop:12}}><Btn onClick={async()=>{setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar,shipping_cost:Number(op.shipping_cost||0),shipping_to_door:op.shipping_to_door||false,total_services:0}});setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}));flash("Presupuesto sincronizado");setSaving(false);}} disabled={saving}>{saving?"Guardando...":"Sincronizar presupuesto"}</Btn></div>}
+        {/* El presupuesto se auto-sincroniza al guardar cualquier cambio de items/bultos/configuración.
+            El botón manual se removió — el cálculo siempre refleja el estado actual. */}
       </Card>;})()}
 
     {tab==="items"&&<Card title="Productos" actions={<div style={{display:"flex",gap:6}}>{items.some(it=>it.description&&it.description.trim()&&(!it.ncm_code||it.import_duty_rate==null||it.import_duty_rate===""||it.statistics_rate==null||it.statistics_rate===""||it.iva_rate==null||it.iva_rate===""))&&<button onClick={autoClassifyAll} disabled={classifyingAll} title="Para cada producto: clasifica NCM si falta, y rellena DIE/TE/IVA con la base arancelaria. Sincroniza presupuesto al final." style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.12)",color:"#a78bfa",cursor:classifyingAll?"wait":"pointer",opacity:classifyingAll?0.6:1}}>{classifyingAll?"⏳ Clasificando…":"✨ Clasificar todos los NCM (IA)"}</button>}<Btn onClick={addItem} small>+ Agregar producto</Btn></div>}>
