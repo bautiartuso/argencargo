@@ -9068,16 +9068,12 @@ function MaritimePanel({token,allClients=[]}){
               <button onClick={()=>setEditingWh(whByName[wh])} title="Editar depósito / rótulo" style={{padding:"5px 9px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>✎ Depósito</button>
               <button onClick={()=>delWarehouse(whByName[wh])} title="Eliminar depósito" style={{padding:"5px 9px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
             </>}
-            {(originFilter==="all"?["china","usa"]:[originFilter]).map(o=>{const cnt=wsList.filter(s=>s.origin===o).length;if(cnt===0)return null;const origLbl=o==="usa"?"USA":"China";const langs=[{l:"es",t:"ES"},{l:"en",t:"EN"},{l:"zh",t:"中"}];return <div key={o} style={{display:"flex",flexDirection:"column",gap:4}}>
-              <div style={{display:"inline-flex",alignItems:"center",gap:0,borderRadius:8,border:"1px solid rgba(184,149,106,0.4)",overflow:"hidden",background:"rgba(184,149,106,0.1)"}} title={`Con valores comerciales · ${origLbl} en ${wh}`}>
-                <span style={{padding:"6px 10px",fontSize:10,fontWeight:700,color:IC,borderRight:"1px solid rgba(184,149,106,0.3)"}}>📄 {origLbl} · CON VALORES ({cnt})</span>
-                {langs.map((L,i)=><button key={L.l} onClick={()=>downloadPdf(wh,o,L.l,true)} title={`PDF con valores en ${L.l==="es"?"español":L.l==="en"?"inglés":"chino"}`} style={{padding:"6px 10px",fontSize:11,fontWeight:700,border:"none",borderLeft:i>0?"1px solid rgba(184,149,106,0.2)":"none",background:"transparent",color:IC,cursor:"pointer",fontFamily:"inherit"}}>{L.t}</button>)}
+            {(originFilter==="all"?["china","usa"]:[originFilter]).map(o=>{const cnt=wsList.filter(s=>s.origin===o).length;if(cnt===0)return null;const langs=[{l:"es",t:"ES"},{l:"zh",t:"中"}];const btnGroup=(withVals)=>(
+              <div style={{display:"inline-flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:10.5,fontWeight:700,color:withVals?IC:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:"0.06em",minWidth:88}}>{withVals?"Con valores":"Sin valores"}</span>
+                {langs.map(L=><button key={L.l} onClick={()=>downloadPdf(wh,o,L.l,withVals)} title={`PDF ${withVals?"con":"sin"} valores · ${L.l==="es"?"español":"chino"}`} style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:`1px solid ${withVals?"rgba(184,149,106,0.4)":"rgba(255,255,255,0.14)"}`,background:withVals?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.04)",color:withVals?IC:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit",minWidth:36}}>{L.t}</button>)}
               </div>
-              <div style={{display:"inline-flex",alignItems:"center",gap:0,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",overflow:"hidden",background:"rgba(255,255,255,0.03)"}} title={`Sin valores comerciales · ${origLbl} en ${wh}`}>
-                <span style={{padding:"6px 10px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.65)",borderRight:"1px solid rgba(255,255,255,0.08)"}}>📄 {origLbl} · SIN VALORES</span>
-                {langs.map((L,i)=><button key={L.l} onClick={()=>downloadPdf(wh,o,L.l,false)} title={`PDF sin valores comerciales en ${L.l==="es"?"español":L.l==="en"?"inglés":"chino"}`} style={{padding:"6px 10px",fontSize:11,fontWeight:700,border:"none",borderLeft:i>0?"1px solid rgba(255,255,255,0.08)":"none",background:"transparent",color:"rgba(255,255,255,0.75)",cursor:"pointer",fontFamily:"inherit"}}>{L.t}</button>)}
-              </div>
-            </div>;})}
+            );return <div key={o} style={{display:"flex",flexDirection:"column",gap:5}}>{btnGroup(true)}{btnGroup(false)}</div>;})}
           </div>
         </div>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
