@@ -5699,12 +5699,12 @@ function AgentsPanel({token}){
               <colgroup>
                 <col style={{width:44}}/>
                 <col style={{width:110}}/>
-                <col style={{width:220}}/>
+                <col style={{width:200}}/>
                 <col/>
-                <col style={{width:80}}/>
+                <col style={{width:72}}/>
+                <col style={{width:88}}/>
+                <col style={{width:170}}/>
                 <col style={{width:100}}/>
-                <col style={{width:190}}/>
-                <col style={{width:60}}/>
               </colgroup>
               <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 {["✓","Op","Cliente","Mercadería","Bultos","Peso","Consolidación","WA"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
@@ -5746,10 +5746,10 @@ function AgentsPanel({token}){
                   const trackingsDetail=pkgs.filter(p=>p.national_tracking?.trim()).map(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/opVolDiv)*q:0;const pf=Math.max(b,v);return `- Bulto ${p.package_number}${pf>0?` (${pf.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg facturables)`:""}: ${p.national_tracking}`;}).join("\n");
                   const msg=`Hola ${clientName}!\n\nRecibimos tu mercadería en nuestro depósito en ${origenTxt}.${trackingsDetail?`\n\n*Tracking del paquete:*\n${trackingsDetail}`:""}\n\nPara avanzar con la operación, necesitamos que completes la documentación de la carga (mercadería, cantidad, valor declarado).\n\nIngresá acá:\nhttps://argencargo.com.ar/portal?op=${o.operation_code}\n\nUna vez completado, te confirmamos el presupuesto final y avanzamos con el envío.\n\nCualquier duda escribime y desde ya muchas gracias!\nArgencargo`;
                   const waUrl=clientWa?`https://api.whatsapp.com/send?phone=${clientWa}&text=${encodeURIComponent(msg)}`:"";
-                  return <span style={{display:"inline-flex",alignItems:"center",gap:6}}>
-                    <span style={{fontSize:14}}>❌</span>
-                    <button disabled={!clientWa} title={clientWa?`Enviar WA a ${clientWa}`:"Sin número de WhatsApp"} onClick={async(e)=>{e.stopPropagation();window.open(waUrl,"_blank");await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{deposit_notified:true,deposit_notified_at:new Date().toISOString()}});load();}} style={{padding:"3px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:clientWa?"pointer":"not-allowed",opacity:clientWa?1:0.4,background:"#25D366",color:"#fff",display:"inline-flex",alignItems:"center",gap:4}}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.611.611l4.458-1.495A11.952 11.952 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.336 0-4.512-.767-6.262-2.063l-.437-.341-2.938.985.985-2.938-.341-.437A9.955 9.955 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z"/></svg>
+                  return <span style={{display:"inline-flex",alignItems:"center",gap:4}}>
+                    <span style={{fontSize:13}}>❌</span>
+                    <button disabled={!clientWa} title={clientWa?`Enviar WA a ${clientWa}`:"Sin número de WhatsApp"} onClick={async(e)=>{e.stopPropagation();window.open(waUrl,"_blank");await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{deposit_notified:true,deposit_notified_at:new Date().toISOString()}});load();}} style={{padding:"3px 7px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:clientWa?"pointer":"not-allowed",opacity:clientWa?1:0.4,background:"#25D366",color:"#fff",display:"inline-flex",alignItems:"center",gap:3,whiteSpace:"nowrap"}}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="#fff"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492a.5.5 0 00.611.611l4.458-1.495A11.952 11.952 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-2.336 0-4.512-.767-6.262-2.063l-.437-.341-2.938.985.985-2.938-.341-.437A9.955 9.955 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z"/></svg>
                       WA
                     </button>
                   </span>;
