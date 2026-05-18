@@ -910,8 +910,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const creditTxt=creditApp>0?`\n\n_Se debitó USD ${creditApp.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} del saldo a favor que tenías en tu cuenta._`:"";
     const saldoTxt=(saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}*`:"")+creditTxt;
     // Si la op tiene envío a domicilio, usar template wa_envio (con desglose) en lugar de wa_retiro.
+    // Para retiro: Canal B (negro) usa wa_retiro_b (con lista de tracking). Canal A usa wa_retiro.
     const useEnvio=trigger==="retiro"&&op.shipping_to_door&&envioCost>0;
-    const tplKey=useEnvio?"wa_envio":`wa_${trigger}`;
+    const isCanalB=op.channel?.includes("negro");
+    const tplKey=useEnvio?"wa_envio":(trigger==="retiro"&&isCanalB?"wa_retiro_b":`wa_${trigger}`);
     const tpl=waTpls.find(t=>t.key===tplKey);
     const fmt=v=>Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
     // Lista de tracking numbers de los bultos de la op (para template wa_retiro Canal B y otros)
