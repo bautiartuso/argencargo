@@ -5850,6 +5850,11 @@ function AgentsPanel({token}){
     })()}
 
     {tab==="flights"&&!selFlight&&<div>
+      {/* Banners de pagos pendientes (Alibaba / Alipay) — el agente despachó pero falta cargar cómo se pagó */}
+      {(()=>{const aliPend=flights.filter(f=>f.awaiting_alibaba_payment);const aliPay=flights.filter(f=>f.awaiting_alipay_payment);return <>
+        {aliPend.length>0&&<AlibabaPendingBanner flights={aliPend} token={token} onDone={load}/>}
+        {aliPay.length>0&&<AlipayPendingBanner flights={aliPay} token={token} onDone={load}/>}
+      </>;})()}
       {flights.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay vuelos creados todavía</p>:
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
