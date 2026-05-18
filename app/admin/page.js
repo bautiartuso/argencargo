@@ -2885,7 +2885,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             let desemb=120;for(const [max,amt] of tbl){if(cif<max){desemb=amt;break;}}
             return desemb*1.21; // desembolso + IVA 21%
           })();
-          const presuTotal=bFlete+bTax+bSeg+bLocal+bOtros+bDoc;
+          // bTax viene de DB y YA incluye el desembolso (= bDoc). No sumar bDoc otra vez
+          // o el factor de prorrateo queda inflado y todos los conceptos se sub-ajustan.
+          const presuTotal=bFlete+bTax+bSeg+bLocal+bOtros;
           // Solo prorratear cuando hay cobro real registrado. Si la op aún no tiene cobro,
           // `cobro` cae al presupuesto como fallback pero la comisión sigue restando, dando factor < 1 falso.
           const hasRealCobro=(cobroUsd+creditApplied)>0.01;
