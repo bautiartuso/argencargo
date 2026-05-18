@@ -116,7 +116,10 @@ async function applyEventsToOp(op, route, d) {
         // Filtramos:
         //  - source != internal (los "Estado actualizado a en_transito" son auto y se generan 1s después del dispatch)
         //  - title != "SD" (Shipment Data — solo recepción de tracking info, no pickup real)
-        const evRes = await fetch(`${SB_URL}/rest/v1/tracking_events?operation_id=eq.${op.id}&occurred_at=gte.${encodeURIComponent(fl.dispatched_at)}&source=neq.internal&title=neq.SD&order=occurred_at.asc&limit=1&select=occurred_at,source,title`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+        // Buscamos solo eventos posteriores a dispatched_at + 5 min (un pickup físico real
+        // nunca ocurre tan rápido — si hay algo en <5 min es ruido/sintético).
+        const minPickupTs = new Date(new Date(fl.dispatched_at).getTime() + 5 * 60 * 1000).toISOString();
+        const evRes = await fetch(`${SB_URL}/rest/v1/tracking_events?operation_id=eq.${op.id}&occurred_at=gte.${encodeURIComponent(minPickupTs)}&source=neq.internal&title=neq.SD&order=occurred_at.asc&limit=1&select=occurred_at,source,title`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
         const evs = await evRes.json();
         const first = Array.isArray(evs) && evs[0];
         if (first) {
