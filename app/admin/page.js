@@ -5390,7 +5390,7 @@ function AgentsPanel({token}){
       dq("operations",{token,filters:"?select=id,operation_code,description,client_id,created_by_agent_id,status,consolidation_confirmed,origin,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp,tax_condition,company_name,cuit)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
       dq("operation_packages",{token,filters:"?select=*&order=package_number.asc"}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
-      dq("flight_operations",{token,filters:"?select=*"}),
+      dq("flight_operations",{token,filters:"?select=*,operations(client_id,clients(client_code))"}),
       dq("flight_invoice_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
       dq("operation_items",{token,filters:"?select=*&order=created_at.asc"}),
@@ -5854,7 +5854,7 @@ function AgentsPanel({token}){
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-            {["Código","Agente","Estado","Ops","Peso","Costo","Tracking","Demora","Creado",""].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+            {["Código","Agente","Estado","Ops","Clientes","Peso","Costo","Tracking","Demora"].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
           </tr></thead>
           <tbody>{flights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const a=signups.find(s=>s.auth_user_id===f.agent_id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
             // Demora del agente: días entre dispatched_at y carrier_pickup_at.
@@ -5873,17 +5873,18 @@ function AgentsPanel({token}){
               const color=days<=1?"#22c55e":days<=2?"#fbbf24":"#f87171";
               return {txt:`${days.toFixed(1)} d`,color};
             })();
-            return <tr key={f.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+            // Códigos de cliente para mostrar en la columna Clientes (deduplicados)
+            const clientCodes=Array.from(new Set(ops.map(fo=>fo.operations?.clients?.client_code).filter(Boolean)));
+            return <tr key={f.id} onClick={()=>setSelFlight(f.id)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
             <td style={{padding:"12px 14px",fontFamily:"monospace",fontWeight:700,color:"#fff"}}>{f.flight_code}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{a?(a.first_name+" "+(a.last_name||"")):"—"}</td>
             <td style={{padding:"12px 14px"}}>{(()=>{const ready=f.status==="preparando"&&f.invoice_presented_at;const c=ready?"#ec4899":stColors[f.status];const label=ready?"⚡ listo para enviar":f.status;return <span style={{fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:4,color:c,background:`${c}22`,border:`1px solid ${c}66`,textTransform:"uppercase",boxShadow:ready?`0 0 12px ${c}55`:"none",letterSpacing:"0.04em"}}>{label}</span>;})()}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{ops.length}</td>
+            <td style={{padding:"12px 14px",fontSize:11.5,color:"rgba(255,255,255,0.7)",fontFamily:"monospace",letterSpacing:"0.02em"}} title={clientCodes.join(" / ")}>{clientCodes.length>0?clientCodes.join(" / "):"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_weight_kg?`${Number(f.total_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{f.total_cost_usd?usd(f.total_cost_usd):"—"}</td>
             <td style={{padding:"12px 14px",fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.35}}>{f.international_tracking?<><span style={{fontFamily:"monospace"}}>{f.international_tracking}</span>{f.international_carrier&&<><br/><span style={{fontSize:9,fontWeight:700,color:IC,letterSpacing:"0.04em",textTransform:"uppercase"}}>{f.international_carrier}</span></>}</>:"—"}</td>
             <td style={{padding:"12px 14px",fontSize:13,fontWeight:700,color:demoraInfo.color,whiteSpace:"nowrap"}} title={demoraInfo.title||(f.dispatched_at?`Dispatched: ${formatDate(f.dispatched_at)}${f.carrier_pickup_at?` · Pickup: ${formatDate(f.carrier_pickup_at)}`:""}`:"")}>{demoraInfo.txt}</td>
-            <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.4)",fontSize:11}}>{formatDate(f.created_at)}</td>
-            <td style={{padding:"12px 14px"}}><button onClick={()=>setSelFlight(f.id)} style={{color:IC,fontSize:11,fontWeight:600,background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:6,padding:"5px 10px",cursor:"pointer"}}>Ver →</button></td>
           </tr>;})}</tbody>
         </table>
       </div>}
