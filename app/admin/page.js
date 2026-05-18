@@ -4865,6 +4865,15 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       flightPatch.alibaba_real_cost_usd=null;
       flightPatch.alibaba_paid_at=null;
     }
+    // Idem para Alipay (TC o TD, USD)
+    if(newPmt==="alipay"&&flight.payment_method!=="alipay"){
+      flightPatch.awaiting_alipay_payment=true;
+      flightPatch.alipay_base_cost_usd=newCost;
+      flightPatch.alipay_payment_method=null;
+      flightPatch.alipay_card_closing_date=null;
+      flightPatch.alipay_real_cost_usd=null;
+      flightPatch.alipay_paid_at=null;
+    }
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:flightPatch});
     // PROPAGAR carrier + tracking a TODAS las ops del vuelo. Antes este patch solo
     // tocaba flights.international_tracking, dejando operations.international_tracking
@@ -4882,7 +4891,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     for(const fo of flightOps){
       const opFactKg=opFact(fo.operation_id);
       const share=totalFactKg>0?(opFactKg/totalFactKg)*newCost:0;
-      const cflMethod=newPmt==="alibaba"?"alibaba":newPmt;
+      const cflMethod=(newPmt==="alibaba"||newPmt==="alipay")?newPmt:newPmt;
       await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{cost_share_usd:share,weight_kg:opFactKg}});
       await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{cost_flete:share,cost_flete_method:cflMethod}});
     }
@@ -5183,6 +5192,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             <option value="" style={{background:"#142038"}}>—</option>
             <option value="cuenta_corriente" style={{background:"#142038"}}>Cuenta Corriente</option>
             <option value="alibaba" style={{background:"#142038"}}>Alibaba (pendiente de completar)</option>
+            <option value="alipay" style={{background:"#142038"}}>Alipay (pendiente de completar)</option>
           </select>
         </div>
         {Number(costForm.total_cost_usd)>0&&totalFactKg>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"0 0 10px"}}>Tarifa resultante (peso facturable {totalFactKg.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg): <strong style={{color:IC}}>{usd(Number(costForm.total_cost_usd)/totalFactKg)}/kg</strong></p>}
@@ -6365,6 +6375,73 @@ function ShipmentsTracking({token,onSelectOp}){
   </div>;
 }
 
+// Banner para vuelos Alipay pendientes de completar pago.
+// Alipay se paga sí o sí con TC o TD (USD). No tiene comisiones Alibaba 3% + sellos 1.2% — costo manual.
+function AlipayPendingBanner({flights,token,onDone}){
+  const [open,setOpen]=useState(null);
+  const [method,setMethod]=useState("tarjeta_credito");
+  const [closing,setClosing]=useState("");
+  const [paidAt,setPaidAt]=useState(new Date().toISOString().slice(0,10));
+  const [realCostInput,setRealCostInput]=useState("");
+  const [saving,setSaving]=useState(false);
+  const flight=flights.find(f=>f.id===open);
+  const base=flight?Number(flight.alipay_base_cost_usd||0):0;
+  useEffect(()=>{if(open)setRealCostInput(String(base));},[open,base]);
+  const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");setPaidAt(new Date().toISOString().slice(0,10));setRealCostInput(String(Number(f.alipay_base_cost_usd||0)));};
+  const complete=async(flight)=>{
+    if(method==="tarjeta_credito"&&!closing){alert("Falta fecha de cierre de tarjeta");return;}
+    if(!paidAt){alert("Falta fecha de pago");return;}
+    const realCost=Number(realCostInput||0);
+    if(!realCost||realCost<=0){alert("Cargá un costo real válido");return;}
+    setSaving(true);
+    const isTC=method==="tarjeta_credito";
+    const paidAtIso=new Date(paidAt+"T12:00:00Z").toISOString();
+    await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{awaiting_alipay_payment:false,alipay_payment_method:method,alipay_card_closing_date:isTC?closing:null,alipay_real_cost_usd:realCost,alipay_paid_at:paidAtIso,total_cost_usd:realCost}});
+    const fos=await dq("flight_operations",{token,filters:`?flight_id=eq.${flight.id}&select=*`});
+    const totalW=(Array.isArray(fos)?fos:[]).reduce((s,fo)=>s+Number(fo.weight_kg||0),0);
+    for(const fo of (Array.isArray(fos)?fos:[])){
+      const share=totalW>0?(Number(fo.weight_kg||0)/totalW)*realCost:0;
+      await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{cost_share_usd:share}});
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{cost_flete:share,cost_flete_method:isTC?"tarjeta_credito":"tarjeta_debito",cost_flete_paid_at:isTC?null:paidAtIso}});
+    }
+    await dq("finance_entries",{method:"POST",token,body:{date:paidAt,type:"gasto",description:`Flete vuelo ${flight.flight_code} (Alipay ${isTC?"TC":"débito"})`,amount:realCost,currency:"USD",payment_method:isTC?"tarjeta_credito":"transferencia",card_closing_date:isTC?closing:null,is_paid:!isTC,auto_generated:true,flight_id:flight.id}});
+    setSaving(false);setOpen(null);onDone();
+  };
+  return <div style={{marginBottom:18,padding:"16px 20px",background:"linear-gradient(135deg,rgba(34,197,94,0.10),rgba(34,197,94,0.03))",border:"1.5px solid rgba(34,197,94,0.35)",borderRadius:12}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+      <div>
+        <p style={{fontSize:13,fontWeight:700,color:"#22c55e",margin:0}}>💳 {flights.length} vuelo{flights.length>1?"s":""} Alipay pendiente{flights.length>1?"s":""} de completar pago</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Cargá cómo lo pagaste (TC con fecha de cierre o TD) e importe en USD.</p>
+      </div>
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {flights.map(f=>{const isOpen=open===f.id;return <div key={f.id} style={{padding:"10px 14px",background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div>
+            <p style={{fontSize:12.5,fontWeight:700,color:"#fff",margin:0}}>{f.flight_code} · {f.international_carrier||"—"}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Base USD {Number(f.alipay_base_cost_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} · despachado {f.dispatched_at?new Date(f.dispatched_at).toLocaleDateString("es-AR"):"—"}</p>
+          </div>
+          {!isOpen&&<Btn small onClick={()=>startEdit(f)}>Completar pago</Btn>}
+        </div>
+        {isOpen&&<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.05)",display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <Sel label="Forma de pago" value={method} onChange={setMethod} options={[{value:"tarjeta_credito",label:"Tarjeta de crédito"},{value:"tarjeta_debito",label:"Tarjeta de débito"}]}/>
+            <Inp label="Costo real (USD)" type="number" step="0.01" value={realCostInput} onChange={setRealCostInput}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {method==="tarjeta_credito"&&<Inp label="Fecha cierre TC" type="date" value={closing} onChange={setClosing}/>}
+            <Inp label="Fecha de pago" type="date" value={paidAt} onChange={setPaidAt}/>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <Btn small variant="secondary" onClick={()=>setOpen(null)} disabled={saving}>Cancelar</Btn>
+            <Btn small onClick={()=>complete(f)} disabled={saving}>{saving?"Guardando…":"💾 Confirmar pago"}</Btn>
+          </div>
+        </div>}
+      </div>;})}
+    </div>
+  </div>;
+}
+
 // "Modo Hoy" — Dashboard ejecutivo con TODAS las tareas pendientes que requieren acción del admin.
 // Cards clickeables que navegan a la sección correspondiente.
 function AlibabaPendingBanner({flights,token,onDone}){
@@ -6448,7 +6525,7 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
     const d7agoISO=new Date(Date.now()-7*24*60*60*1000).toISOString();
     const monthStartISO=new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString();
     const lastMonthStartISO=new Date(new Date().getFullYear(),new Date().getMonth()-1,1).toISOString();
-    const [opsAll,purchaseNotifs,repackReqs,ticketsOpen,recentEvents,recentPmts,alibabaPending]=await Promise.all([
+    const [opsAll,purchaseNotifs,repackReqs,ticketsOpen,recentEvents,recentPmts,alibabaPending,alipayPending]=await Promise.all([
       dq("operations",{token,filters:`?select=id,operation_code,status,client_id,description,created_at,eta,channel,budget_total,clients(client_code,first_name,last_name,whatsapp)&order=created_at.desc&limit=500`}),
       dq("purchase_notifications",{token,filters:`?select=id,client_id,description,origin,shipping_method,created_at,clients(client_code,first_name)&status=eq.pending&created_at=lt.${d1agoISO}&order=created_at.asc`}),
       dq("repack_requests",{token,filters:`?select=id,operation_id,requested_at,operations(operation_code,clients(client_code,first_name))&status=eq.pending&order=requested_at.asc`}),
@@ -6459,6 +6536,8 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
       dq("operation_client_payments",{token,filters:`?select=id,operation_id,amount_usd,payment_date,payment_method,operations(operation_code,clients(client_code,first_name))&order=payment_date.desc&limit=10`}).catch(()=>[]),
       // Vuelos Alibaba pendientes de completar pago (admin tiene que cargar TC/débito + fecha cierre)
       dq("flights",{token,filters:`?select=id,flight_code,alibaba_base_cost_usd,dispatched_at,international_carrier&awaiting_alibaba_payment=eq.true&order=dispatched_at.desc`}).catch(()=>[]),
+      // Vuelos Alipay pendientes (siempre TC o TD, USD)
+      dq("flights",{token,filters:`?select=id,flight_code,alipay_base_cost_usd,dispatched_at,international_carrier&awaiting_alipay_payment=eq.true&order=dispatched_at.desc`}).catch(()=>[]),
     ]);
     const opsArr=Array.isArray(opsAll)?opsAll:[];
     // Documentación pendiente cliente +5 días (canal A blanco en preparación sin items)
@@ -6536,6 +6615,7 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
       nextDays,maxDayCount,
       activity,
       alibabaPending:Array.isArray(alibabaPending)?alibabaPending:[],
+      alipayPending:Array.isArray(alipayPending)?alipayPending:[],
     });
     setLo(false);
   };
@@ -6677,6 +6757,7 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
 
     {/* Banner Alibaba pendientes — alta prioridad: bloquea el cálculo de costos reales hasta que se complete */}
     {data.alibabaPending.length>0&&<AlibabaPendingBanner flights={data.alibabaPending} token={token} onDone={load}/>}
+    {data.alipayPending?.length>0&&<AlipayPendingBanner flights={data.alipayPending} token={token} onDone={load}/>}
 
     {/* Bento grid principal */}
     <div className="ac-bento" style={{display:"grid",gridTemplateColumns:"repeat(12,1fr)",gridAutoRows:"minmax(100px,auto)",gap:12,marginBottom:18}}>
