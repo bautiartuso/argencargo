@@ -4452,9 +4452,8 @@ function FinancePanel({token}){
       cardDebt.usd.forEach(e=>pushItem({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:Number(e.amount||0),amtArs:0,currency:"USD",dateLoad:e.date,op:e.operations?.operation_code,card:e.credit_cards},e.credit_cards,e.card_closing_date));
       cardDebt.pmts.forEach(p=>pushItem({source:"pmt",id:p.id,desc:`Giro al exterior${p.operations?.operation_code?` — ${p.operations.operation_code}`:""}`,detail:p.description||"",amt:Number(p.giro_amount_usd||0),amtArs:0,currency:"USD",dateLoad:p.created_at?String(p.created_at).slice(0,10):null,op:p.operations?.operation_code,card:p.credit_cards},p.credit_cards,p.giro_tarjeta_due_date));
       (cardDebt.supTcUsd||[]).forEach(p=>pushItem({source:"supplier",id:p.id,desc:`Costo op ${p.operations?.operation_code||"—"} (GI)`,detail:p.notes||p.reference||"",amt:Number(p.amount_usd||0),amtArs:0,currency:"USD",dateLoad:p.payment_date,op:p.operations?.operation_code,operation_id:p.operation_id,card:p.credit_cards},p.credit_cards,p.card_closing_date));
-      // Entradas ARS pendientes de dolarizar — antes no se mostraban en el grouping per-tarjeta y los totales por tarjeta salían en $0.
-      cardDebt.ars.forEach(e=>pushItem({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:0,amtArs:Number(e.amount_ars||0),currency:"ARS",pendingDolar:true,dateLoad:e.date,op:e.operations?.operation_code,card:e.credit_cards},e.credit_cards,e.card_closing_date));
-      (cardDebt.supTcArs||[]).forEach(p=>pushItem({source:"supplier",id:p.id,desc:`Costo op ${p.operations?.operation_code||"—"} (GI)`,detail:p.notes||p.reference||"",amt:0,amtArs:Number(p.amount_ars||0),currency:"ARS",pendingDolar:true,dateLoad:p.payment_date,op:p.operations?.operation_code,operation_id:p.operation_id,card:p.credit_cards},p.credit_cards,p.card_closing_date));
+      // Los ARS pendientes de dolarización viven solo en la tab Dollarización.
+      // Cuando se dolarizan, el pago de la tarjeta ya se hizo en ese momento → no vuelven a Deuda Tarjeta.
       // Fletes TC (Alibaba u otra) pendientes de débito
       (cardDebt.fleteTcOps||[]).forEach(o=>pushItem({source:"flete_op",id:o.id,desc:`Flete ${o.operation_code}${o.clients?.client_code?` — ${o.clients.client_code}`:""}`,detail:"Pago con TC (Alibaba)",amt:Number(o.cost_flete||0),amtArs:0,currency:"USD",dateLoad:null,op:o.operation_code,card:o.credit_cards},o.credit_cards,o.cost_flete_card_closing));
       // Orden: primero por nombre de tarjeta, después por fecha de cierre.
@@ -4493,19 +4492,16 @@ function FinancePanel({token}){
         load();flash(`${g.items.length} deudas marcadas como debitadas`);
       };
       return <>
-        {/* Resumen arriba */}
-        <div style={{display:"grid",gridTemplateColumns:arsTot>0?"1fr 1fr":"1fr",gap:16,marginBottom:20}}>
+        {/* Resumen arriba — solo USD. Los ARS pendientes son responsabilidad de la tab Dollarización. */}
+        <div style={{marginBottom:20}}>
           <div style={{background:usdTot>0?"rgba(251,146,60,0.06)":"rgba(34,197,94,0.06)",border:`1px solid ${usdTot>0?"rgba(251,146,60,0.2)":"rgba(34,197,94,0.2)"}`,borderRadius:12,padding:"18px 22px"}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",letterSpacing:"0.05em"}}>💳 DEUDA TARJETA USD</p>
             <p style={{fontSize:28,fontWeight:700,color:usdTot>0?"#fb923c":"#22c55e",margin:0}}>USD {usdTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
             <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>{cardDebt.usd.length} gasto{cardDebt.usd.length!==1?"s":""} del negocio{usdTotEntries>0?` (USD ${usdTotEntries.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""} · {cardDebt.pmts.length} giro{cardDebt.pmts.length!==1?"s":""} al exterior{usdTotPmts>0?` (USD ${usdTotPmts.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}{(cardDebt.supTcUsd||[]).length>0?` · ${cardDebt.supTcUsd.length} costo${cardDebt.supTcUsd.length!==1?"s":""} GI (USD ${usdTotSup.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}</p>
+            {arsTot>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"10px 0 0",paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+              + {cardDebt.ars.length+(cardDebt.supTcArs||[]).length} gasto{(cardDebt.ars.length+(cardDebt.supTcArs||[]).length)!==1?"s":""} en ARS pendiente{(cardDebt.ars.length+(cardDebt.supTcArs||[]).length)!==1?"s":""} de dolarizar (ARS {arsTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}). <button onClick={()=>setTab("dollar")} style={{background:"transparent",border:"none",color:IC,fontWeight:700,cursor:"pointer",padding:0,fontSize:11,textDecoration:"underline"}}>Ir a Dollarización →</button>
+            </p>}
           </div>
-          {arsTot>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:12,padding:"18px 22px"}}>
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",letterSpacing:"0.05em"}}>💳 DEUDA TARJETA ARS (sin dollarizar)</p>
-            <p style={{fontSize:28,fontWeight:700,color:IC,margin:0}}>ARS {arsTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"6px 0 0"}}>{cardDebt.ars.length} gasto{cardDebt.ars.length!==1?"s":""} del negocio{arsTotEntries>0?` (ARS ${arsTotEntries.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}{(cardDebt.supTcArs||[]).length>0?` · ${cardDebt.supTcArs.length} costo${cardDebt.supTcArs.length!==1?"s":""} GI (ARS ${arsTotSup.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}</p>
-            <button onClick={()=>setTab("dollar")} style={{marginTop:10,fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>Ir a Dollarización →</button>
-          </div>}
         </div>
         {/* Totales por tarjeta */}
         {Object.keys(totalsPorTarjeta).length>0&&<div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:18}}>
