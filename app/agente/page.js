@@ -1194,7 +1194,9 @@ function FlightDetail({token,flight,flightOps,packages,signup,t,onBack,onDispatc
     if(!totalCost||!tracking){setErr(t.err_generic);return;}
     if(autoWeight<=0){setErr("El peso total es 0 - cargá peso en los bultos primero");return;}
     setSaving(true);setErr("");
-    const w=autoWeight,c=Number(totalCost);
+    // Total del vuelo = peso FACTURABLE (max bruto vs volumétrico), porque es lo que cobra el carrier.
+    // Si el facturable es 0 (sin dims cargadas) fallback al bruto.
+    const w=autoFact>0?autoFact:autoWeight,c=Number(totalCost);
     const isAlibaba=pmtMethod==="alibaba";
     // Para Alibaba: el costo es PROVISIONAL (sin comisiones todavía). Admin completa después método tarjeta y se recalcula.
     const flightPatch={total_weight_kg:w,total_cost_usd:c,international_tracking:tracking,international_carrier:carrier,payment_method:pmtMethod,status:"despachado",dispatched_at:new Date().toISOString()};
