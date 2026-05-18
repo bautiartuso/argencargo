@@ -5877,13 +5877,13 @@ function AgentsPanel({token}){
             // Demora del agente: días entre dispatched_at y carrier_pickup_at.
             // Auto para DHL/FedEx (vía API), manual para UPS (cargado por admin).
             const demoraInfo=(()=>{
-              if(!f.dispatched_at)return {txt:"—",color:"rgba(255,255,255,0.3)"};
+              if(!f.dispatched_at)return {txt:"",color:"rgba(255,255,255,0.3)"};
               if(!f.carrier_pickup_at){
                 const car=(f.international_carrier||"").toLowerCase();
                 // UPS sin cargar → ? que invita a completar manualmente
                 if(car==="ups")return {txt:"?",color:"#a78bfa",title:"UPS · cargar fecha de pickup manual desde el detalle del vuelo"};
-                // DHL/FedEx esperando primer evento del carrier
-                return {txt:"—",color:"rgba(255,255,255,0.3)",title:"Esperando primer evento del carrier"};
+                // DHL/FedEx esperando primer evento del carrier → celda vacía (sin "—" ni "0.0")
+                return {txt:"",color:"rgba(255,255,255,0.3)",title:"Esperando primer evento del carrier"};
               }
               const ms=new Date(f.carrier_pickup_at)-new Date(f.dispatched_at);
               const days=ms/86400000;
