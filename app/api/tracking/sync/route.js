@@ -112,8 +112,11 @@ async function applyEventsToOp(op, route, d) {
         const carrierLow = (fl.international_carrier || "").toLowerCase();
         // UPS la maneja manualmente el admin (per pedido del usuario); solo auto DHL/FedEx
         if (!["dhl", "fedex"].includes(carrierLow)) continue;
-        // Buscar primer evento del carrier para esta op posterior al dispatched_at
-        const evRes = await fetch(`${SB_URL}/rest/v1/tracking_events?operation_id=eq.${op.id}&occurred_at=gte.${encodeURIComponent(fl.dispatched_at)}&order=occurred_at.asc&limit=1&select=occurred_at,source`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+        // Buscar primer evento REAL del carrier para esta op posterior al dispatched_at.
+        // Filtramos:
+        //  - source != internal (los "Estado actualizado a en_transito" son auto y se generan 1s después del dispatch)
+        //  - title != "SD" (Shipment Data — solo recepción de tracking info, no pickup real)
+        const evRes = await fetch(`${SB_URL}/rest/v1/tracking_events?operation_id=eq.${op.id}&occurred_at=gte.${encodeURIComponent(fl.dispatched_at)}&source=neq.internal&title=neq.SD&order=occurred_at.asc&limit=1&select=occurred_at,source,title`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
         const evs = await evRes.json();
         const first = Array.isArray(evs) && evs[0];
         if (first) {
