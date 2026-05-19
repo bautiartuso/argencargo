@@ -982,19 +982,26 @@ function Dashboard({ expenses, cats, currentMonth }) {
 }
 
 // ────────────── Modales ──────────────
+// Paleta cálida para auto-asignar a categorías. Hash determinístico por nombre → mismo nombre, mismo color siempre.
+const CAT_PALETTE = ["#C8941B", "#C8102E", "#E0825C", "#A0855B", "#7FB069", "#5BA8FF", "#C9A4FF", "#FF9F66", "#E8B14B", "#9B5DE5"];
+function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; } return Math.abs(h); }
+const colorForName = (name) => CAT_PALETTE[hashStr(String(name || "").toLowerCase().trim()) % CAT_PALETTE.length];
+
 function CategoryModal({ isExpense, token, editing, onClose, onSaved }) {
   const table = isExpense ? "mp_expense_categories" : "mp_habit_categories";
-  const colors = [T.red, T.gold, "#7FB069", "#FF9F66", "#C9A4FF", "#5BA8FF", "#FFB5A7", "#A0855B"];
   const [name, setName] = useState(editing?.name || "");
-  const [color, setColor] = useState(editing?.color || colors[0]);
   const [icon, setIcon] = useState(editing?.icon || "");
   const [budget, setBudget] = useState(editing?.monthly_budget_ars || "");
   const [saving, setSaving] = useState(false);
 
+  // El color se decide automáticamente. Si la categoría ya tenía uno, lo respetamos al editar.
+  const previewColor = editing?.color || colorForName(name || (isExpense ? "Nueva" : "Nueva"));
+
   const save = async () => {
     if (!name.trim()) return toast.error("Falta el nombre");
     setSaving(true);
-    const body = { name: name.trim(), color, icon: icon || null };
+    const finalColor = editing?.color || colorForName(name);
+    const body = { name: name.trim(), color: finalColor, icon: icon || null };
     if (isExpense) body.monthly_budget_ars = Number(String(budget).replace(/\./g, "").replace(",", ".")) || 0;
     if (editing?.id) await dq(table, { method: "PATCH", token, filters: `?id=eq.${editing.id}`, body });
     else await dq(table, { method: "POST", token, body });
@@ -1005,16 +1012,19 @@ function CategoryModal({ isExpense, token, editing, onClose, onSaved }) {
 
   return (
     <Modal title={editing?.id ? "Editar categoría" : "Nueva categoría"} onClose={onClose}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 14 }}>
+        <span style={{ width: 44, height: 44, borderRadius: 12, background: `linear-gradient(135deg, ${previewColor}, ${previewColor}AA)`, border: `1px solid ${previewColor}55`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, boxShadow: `0 0 12px ${previewColor}40`, flexShrink: 0 }}>
+          {icon || "●"}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: 11, color: T.textMuted, letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 700 }}>Preview</p>
+          <p style={{ margin: "3px 0 0", fontSize: 15, fontWeight: 600, color: T.textPrimary }}>{name || "Sin nombre"}</p>
+        </div>
+      </div>
       <Field label="Nombre"><input autoFocus value={name} onChange={e => setName(e.target.value)} style={inputStyle} placeholder={isExpense ? "Comida, Transporte…" : "Cuerpo, Trabajo, Mente…"} /></Field>
       <Field label="Emoji (opcional)"><input value={icon} onChange={e => setIcon(e.target.value)} style={{ ...inputStyle, width: 100, fontSize: 22, textAlign: "center" }} placeholder="🏋️" maxLength={2} /></Field>
-      <Field label="Color">
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {colors.map(c => (
-            <button key={c} onClick={() => setColor(c)} style={{ width: 32, height: 32, borderRadius: 8, background: c, border: color === c ? `2px solid ${T.textPrimary}` : `1px solid ${T.border}`, cursor: "pointer", padding: 0, boxShadow: color === c ? `0 0 10px ${c}66` : "none" }} />
-          ))}
-        </div>
-      </Field>
       {isExpense && <Field label="Presupuesto mensual (ARS)"><input type="text" inputMode="decimal" value={budget} onChange={e => setBudget(e.target.value)} style={inputStyle} placeholder="0" /></Field>}
+      <p style={{ margin: "0 0 6px", fontSize: 11, color: T.textMuted, lineHeight: 1.5 }}>El color se asigna automáticamente según el nombre. Si querés otro, cambiá el nombre o tocá el ícono.</p>
       <ModalFooter onCancel={onClose} onConfirm={save} loading={saving} confirmLabel={editing?.id ? "Guardar" : "Crear"} />
     </Modal>
   );
