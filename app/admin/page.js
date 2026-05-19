@@ -1094,8 +1094,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </table>
       </div>;return <div style={{display:"flex",gap:14,marginTop:12,paddingTop:12,borderTop:"1px solid rgba(34,197,94,0.2)",flexWrap:"wrap"}}>{renderTbl(oSnap,"Antes","#fbbf24")}{renderTbl(nSnap,"Después","#22c55e")}</div>;})()}
     </div>;})()}
-    {/* Banner global: cliente con saldo a favor / deuda — visible en todos los tabs para no olvidarlo */}
-    {(()=>{const bal=Number(opClient?.account_balance_usd||0);if(Math.abs(bal)<0.01)return null;const isCredit=bal>0;return <div style={{marginBottom:16,padding:"10px 16px",background:isCredit?"linear-gradient(90deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))":"linear-gradient(90deg,rgba(239,68,68,0.10),rgba(239,68,68,0.02))",border:`1.5px solid ${isCredit?"rgba(34,197,94,0.35)":"rgba(239,68,68,0.35)"}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+    {/* Banner global: cliente con saldo a favor / deuda — visible en todos los tabs EXCEPTO Finanzas
+        (en Finanzas ya hay un banner adentro de la card Cobro con el botón "Aplicar a esta op"). */}
+    {tab!=="finance"&&(()=>{const bal=Number(opClient?.account_balance_usd||0);if(Math.abs(bal)<0.01)return null;const isCredit=bal>0;return <div style={{marginBottom:16,padding:"10px 16px",background:isCredit?"linear-gradient(90deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))":"linear-gradient(90deg,rgba(239,68,68,0.10),rgba(239,68,68,0.02))",border:`1.5px solid ${isCredit?"rgba(34,197,94,0.35)":"rgba(239,68,68,0.35)"}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
       <div>
         <p style={{fontSize:12.5,fontWeight:700,color:isCredit?"#22c55e":"#ef4444",margin:0}}>{isCredit?"★":"⚠"} {opClient?.first_name||"Cliente"} {isCredit?"tiene saldo a favor":"tiene deuda anterior"}: USD {Math.abs(bal).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
         <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>{isCredit?"Podés aplicarlo a esta op desde la sección Cobro de Finanzas.":"Podés sumar esta deuda al cobro de esta op desde Finanzas."}</p>
