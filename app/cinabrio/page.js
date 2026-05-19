@@ -57,6 +57,26 @@ function weekDates(startStr) {
 }
 function addDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
 
+// Mantiene una fecha/mes "vivo": cuando la pestaña vuelve a estar visible o pasa medianoche,
+// vuelve a sincronizar al día/mes real (evita que la PWA quede en un mes viejo).
+function useLiveNow() {
+  const [nowDate, setNowDate] = useState(() => todayStr());
+  useEffect(() => {
+    const tick = () => setNowDate(todayStr());
+    tick();
+    const onVis = () => { if (!document.hidden) tick(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", tick);
+    const id = setInterval(tick, 60000);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", tick);
+      clearInterval(id);
+    };
+  }, []);
+  return nowDate;
+}
+
 const GLOBAL_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
   *{box-sizing:border-box}
@@ -230,12 +250,17 @@ function Logo({ size = 48 }) {
 // SECCIÓN HÁBITOS
 // ────────────────────────────────────────────────────────────────────
 function HabitsSection({ token }) {
+  const nowDate = useLiveNow();
   const [habitCats, setHabitCats] = useState([]);
   const [habits, setHabits] = useState([]);
   const [habitLog, setHabitLog] = useState([]);
   const [lo, setLo] = useState(true);
   const [view, setView] = useState("day"); // day | week | manage
-  const [selectedDate, setSelectedDate] = useState(todayStr());
+  const [selectedDate, setSelectedDate] = useState(nowDate);
+  const [touchedDate, setTouchedDate] = useState(false);
+  // Si el usuario no movió la fecha manualmente, mantenela en hoy real.
+  useEffect(() => { if (!touchedDate) setSelectedDate(nowDate); }, [nowDate, touchedDate]);
+  const pickDate = (d) => { setTouchedDate(d !== nowDate); setSelectedDate(d); };
   const [editCat, setEditCat] = useState(null);
   const [editHabit, setEditHabit] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -282,9 +307,9 @@ function HabitsSection({ token }) {
         {view === "manage" && <button onClick={() => setEditHabit({})} style={btnPrimary}>+ Nuevo hábito</button>}
       </div>
 
-      {view === "day" && <DayView habits={habits} cats={habitCats} log={habitLog} date={selectedDate} setDate={setSelectedDate} onToggle={toggle} onNew={() => setEditHabit({})} />}
+      {view === "day" && <DayView habits={habits} cats={habitCats} log={habitLog} date={selectedDate} setDate={pickDate} onToggle={toggle} onNew={() => setEditHabit({})} />}
       {view === "week" && <WeekView habits={habits} cats={habitCats} log={habitLog} onToggle={toggle} />}
-      {view === "month" && <MonthView habits={habits} cats={habitCats} log={habitLog} onPickDay={(d) => { setSelectedDate(d); setView("day"); }} />}
+      {view === "month" && <MonthView habits={habits} cats={habitCats} log={habitLog} onPickDay={(d) => { pickDate(d); setView("day"); }} />}
       {view === "manage" && <ManageView habits={habits} cats={habitCats} onEditHabit={setEditHabit} onDelHabit={delHabit} onEditCat={setEditCat} onDelCat={delCat} onNewCat={() => setEditCat({})} />}
 
       {editCat && <CategoryModal token={token} editing={editCat.id ? editCat : null} onClose={() => setEditCat(null)} onSaved={() => { setEditCat(null); load(); }} />}
@@ -496,10 +521,11 @@ function WeekView({ habits, cats, log, onToggle }) {
 
 // Vista Mes (calendario tipo heatmap con % de cumplimiento)
 function MonthView({ habits, cats, log, onPickDay }) {
-  const [monthCursor, setMonthCursor] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  });
+  const nowDate = useLiveNow();
+  const currentMonth = nowDate.slice(0, 7);
+  const [monthCursor, setMonthCursor] = useState(currentMonth);
+  const [touched, setTouched] = useState(false);
+  useEffect(() => { if (!touched) setMonthCursor(currentMonth); }, [currentMonth, touched]);
   const [y, m] = monthCursor.split("-").map(Number);
   const firstDay = new Date(y, m - 1, 1);
   const lastDay = new Date(y, m, 0);
@@ -513,7 +539,9 @@ function MonthView({ habits, cats, log, onPickDay }) {
 
   const navMonth = (n) => {
     const dt = new Date(y, m - 1 + n, 1);
-    setMonthCursor(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`);
+    const next = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+    setTouched(next !== currentMonth);
+    setMonthCursor(next);
   };
 
   // Compute pct + scheduled for each date
@@ -695,11 +723,15 @@ function ManageView({ habits, cats, onEditHabit, onDelHabit, onEditCat, onDelCat
 // SECCIÓN FINANZAS
 // ────────────────────────────────────────────────────────────────────
 function FinanceSection({ token }) {
+  const nowDate = useLiveNow();
+  const currentMonth = nowDate.slice(0, 7);
   const [expCats, setExpCats] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [withdrawals, setWithdrawals] = useState([]);
   const [lo, setLo] = useState(true);
-  const [month, setMonth] = useState(monthStr());
+  const [month, setMonth] = useState(currentMonth);
+  const [touchedMonth, setTouchedMonth] = useState(false);
+  useEffect(() => { if (!touchedMonth) setMonth(currentMonth); }, [currentMonth, touchedMonth]);
   const [view, setView] = useState("ledger"); // ledger | dashboard | categories
   const [editCat, setEditCat] = useState(null);
   const [editExpense, setEditExpense] = useState(null);
@@ -742,7 +774,9 @@ function FinanceSection({ token }) {
   const navMonth = (d) => {
     const [y, m] = month.split("-").map(Number);
     const dt = new Date(y, m - 1 + d, 1);
-    setMonth(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`);
+    const next = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+    setTouchedMonth(next !== currentMonth);
+    setMonth(next);
   };
 
   if (lo) return <p style={{ textAlign: "center", color: T.textMuted, padding: "80px 0" }}>Cargando finanzas…</p>;
