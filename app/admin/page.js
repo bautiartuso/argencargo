@@ -926,9 +926,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const tracks=(Array.isArray(pkgsForList)?pkgsForList:[]).map(p=>p.national_tracking).filter(Boolean);
       trackingList=tracks.length>0?tracks.join("\n"):"(sin tracking cargado)";
     }catch(e){console.error("trackingList",e);trackingList="";}
-    // Si se aplicó saldo a favor a esta op, lo mostramos al cliente al lado del total.
+    // Si se aplicó saldo a favor / deuda anterior a esta op, lo mostramos al cliente.
     const saldoFavorTxt=creditApp>0?` (ya se descontaron USD ${fmt(creditApp)} que tenías a favor!)`:"";
-    const data={firstName,opCode,desc,portalLink,saldoTxt,saldoFavorTxt,trackingList,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
+    const deudaTxt=debtApp>0?` (incluye USD ${fmt(debtApp)} de deuda anterior)`:"";
+    const data={firstName,opCode,desc,portalLink,saldoTxt,saldoFavorTxt,deudaTxt,trackingList,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
     const msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Av. Callao 1137.${saldoTxt}`;
     // api.whatsapp.com/send maneja mejor emojis multi-byte que wa.me (que a veces los muestra como "?").
