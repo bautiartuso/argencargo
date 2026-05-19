@@ -2877,17 +2877,25 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           // Así Saldo refleja la realidad del cobro, no un presu teórico.
           // Flete local, Otros y Gasto documental no tienen columna de budget propia → usamos su costo real como presu base
           // para que entren en la base del prorrateo (sino el factor sale inflado y desfasa todo).
+          // Canal A (blanco) factura flete + impuestos + seguro + gasto doc al cliente.
+          // Canal B (negro) factura SOLO flete + surcharge + shipping_cost. No hay impuestos
+          // ni seguro ni gasto doc cobrados al cliente — esos quedan en 0 para no inflar el
+          // presupuesto base ni mostrar líneas falsas.
+          const isBlancoOp=op.channel?.includes("blanco");
           const bFlete=Number(op.budget_flete||0);
-          const bTax=Number(op.budget_taxes||0);
-          const bSeg=Number(op.budget_seguro||0);
+          const bTax=isBlancoOp?Number(op.budget_taxes||0):0;
+          const bSeg=isBlancoOp?Number(op.budget_seguro||0):0;
+          const bSurch=isBlancoOp?0:Number(op.budget_surcharge||0);
           // Flete local: solo se le cobra al cliente cuando shipping_to_door=true (envío a domicilio).
           // Cuando retira en oficina (shipping_to_door=false), el flete local es 100% costo interno
           // → presupuesto del cliente = 0 → el saldo refleja la pérdida total.
           const bLocal=op.shipping_to_door?Number(op.shipping_cost||0):0;
           const bOtros=costOtros;
           // Gasto documental presupuestado: recalculamos desde items+pkgs con la tabla CIF (igual que el form Productos).
-          // Solo aplica para canal aéreo blanco (igual que en el cotizador). Fallback al costo real si no se puede calcular.
+          // Solo aplica para canal aéreo blanco (igual que en el cotizador). Para canal B
+          // el gasto documental no se cobra al cliente — lo dejamos en 0.
           const bDoc=(()=>{
+            if(!isBlancoOp)return 0;
             if(!isAereo||!isBlanco)return costDoc;
             const totalFob=items.reduce((s,x)=>s+Number(x.unit_price_usd||0)*Number(x.quantity||1),0);
             if(totalFob<=0)return costDoc;
@@ -2900,7 +2908,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           })();
           // bTax viene de DB y YA incluye el desembolso (= bDoc). No sumar bDoc otra vez
           // o el factor de prorrateo queda inflado y todos los conceptos se sub-ajustan.
-          const presuTotal=bFlete+bTax+bSeg+bLocal+bOtros;
+          // Canal B: sumamos el recargo por valor (bSurch) que es parte del cobro al cliente.
+          const presuTotal=bFlete+bTax+bSeg+bLocal+bOtros+bSurch;
           // Solo prorratear cuando hay cobro real registrado. Si la op aún no tiene cobro,
           // `cobro` cae al presupuesto como fallback pero la comisión sigue restando, dando factor < 1 falso.
           const hasRealCobro=(cobroUsd+creditApplied)>0.01;
@@ -2922,10 +2931,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             {block("Flete",bFlete,costFlete)}
             {/* Impuestos (presu) incluyen el gasto documental dentro del cálculo del calc.js
                 → al mostrar Impuestos y Gasto documental por separado, restamos bDoc para
-                no doble-contar. Costo real ya viene separado en columnas distintas. */}
-            {block("Impuestos",Math.max(0,bTax-bDoc),costImp)}
+                no doble-contar. Solo se muestran cuando hay valor (canal B no aplica). */}
+            {(bTax>0||costImp>0)&&block("Impuestos",Math.max(0,bTax-bDoc),costImp)}
             {(bDoc>0||costDoc>0)&&block("Gasto documental",bDoc,costDoc)}
-            {block("Seguro",bSeg,costSeg)}
+            {(bSeg>0||costSeg>0)&&block("Seguro",bSeg,costSeg)}
+            {bSurch>0&&block("Recargo por valor",bSurch,0)}
             {(bLocal>0||costLocal>0)&&block("Flete local",bLocal,costLocal)}
             {(bOtros>0||costOtros>0)&&block("Otros",bOtros,costOtros)}
           </>;
