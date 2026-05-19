@@ -1422,9 +1422,9 @@ function SimpleShell({children,lang,setLang,t,onLogout,token}){
 }
 
 // Modal de reempaque (versión simplificada para agentes que no usan UIs complejas):
-// no edita los bultos viejos. Hace WIPE: el agente carga los nuevos bultos desde cero,
-// el sistema le da una referencia (REPACK-AC0099-1, -2, …) que tiene que escribir físicamente
-// en cada caja. Al guardar, borra TODOS los bultos viejos y crea los nuevos.
+// no edita los bultos viejos. Hace WIPE: el agente carga los nuevos bultos desde cero.
+// Los nuevos bultos preservan los national_tracking originales unidos con " + "
+// (ej: "SF1234 + SF5678") para que el cliente y el sistema sigan reconociendo los códigos.
 function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDone}){
   const opCode=request?.operations?.operation_code||"OP";
   const [newBultos,setNewBultos]=useState([{weight:"",length:"",width:"",height:""}]);
@@ -1438,37 +1438,39 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
   const ch=(i,f,v)=>setNewBultos(p=>p.map((b,j)=>j===i?{...b,[f]:v}:b));
   const addBulto=()=>setNewBultos(p=>[...p,{weight:"",length:"",width:"",height:""}]);
   const rmBulto=(i)=>setNewBultos(p=>p.length>1?p.filter((_,j)=>j!==i):p);
-  const refFor=(i)=>`REPACK-${opCode.replace("AC-","")}-${i+1}`;
+  // Listado de trackings originales (sin REPACK-* viejos por si se reempaca dos veces).
+  const origTrackingsList=(packages||[]).map(p=>p.national_tracking).filter(t=>t&&!String(t).startsWith("REPACK-"));
+  // Tracking del nuevo bulto: los originales unidos con " + " (mismo string en todos los nuevos bultos si hay varios).
+  // Esto preserva los códigos de seguimiento que el cliente y el sistema ya conocían.
+  const mergedTracking=origTrackingsList.length>0?origTrackingsList.join(" + "):"";
+  const refFor=(i)=>mergedTracking||`Bulto ${i+1}`;
   const allComplete=newBultos.every(b=>Number(b.weight)>0&&Number(b.length)>0&&Number(b.width)>0&&Number(b.height)>0);
   const save=async()=>{
     if(!confirm(`Vas a REEMPLAZAR los ${packages.length} bultos viejos por estos ${newBultos.length} nuevos.\n\nEsta acción no se puede deshacer. ¿Confirmás?`))return;
     setSaving(true);
     try{
-      // Listado de TODOS los trackings originales que se consolidan en este repack.
-      // Lo guardamos en cada nuevo bulto para que cualquier consulta posterior los vea.
-      const origTrackings=(packages||[]).map(p=>p.national_tracking).filter(t=>t&&!String(t).startsWith("REPACK-"));
       // 1. DELETE TODOS los bultos viejos de esta op
       for(const p of packages){
         await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${p.id}`});
       }
-      // 2. INSERT los nuevos con tracking auto-generado REPACK-XXXX-N + listado de originales
+      // 2. INSERT los nuevos con tracking = originales unidos con " + " + array consolidated_from_trackings
       let nn=0;
       for(const b of newBultos){
         nn++;
         await dq("operation_packages",{method:"POST",token,body:{
           operation_id:opId,package_number:nn,quantity:1,
           gross_weight_kg:Number(b.weight),length_cm:Number(b.length),width_cm:Number(b.width),height_cm:Number(b.height),
-          national_tracking:refFor(nn-1),
-          consolidated_from_trackings:origTrackings.length>0?origTrackings:null,
+          national_tracking:mergedTracking||null,
+          consolidated_from_trackings:origTrackingsList.length>0?origTrackingsList:null,
         }});
       }
       // 3. Marcar request como done
       if(request?.id){
-        const newSnapshot=newBultos.map((b,i)=>({package_number:i+1,quantity:1,gross_weight_kg:Number(b.weight)||null,length_cm:Number(b.length)||null,width_cm:Number(b.width)||null,height_cm:Number(b.height)||null,national_tracking:refFor(i)}));
+        const newSnapshot=newBultos.map((b,i)=>({package_number:i+1,quantity:1,gross_weight_kg:Number(b.weight)||null,length_cm:Number(b.length)||null,width_cm:Number(b.width)||null,height_cm:Number(b.height)||null,national_tracking:mergedTracking||null}));
         await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${request.id}`,body:{status:"done",new_billable_kg:Math.round((after)*100)/100,new_pkg_count:newBultos.length,agent_notes:notes||null,completed_at:new Date().toISOString(),completed_by:userId,new_packages_snapshot:newSnapshot}});
       }
       // 4. Log en comunicaciones
-      try{await dq("op_communications",{method:"POST",token,body:{operation_id:opId,type:"note",content:`✅ Reempaque completado.\nPeso facturable: ${before.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg → ${after.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg${delta>0?` (−${delta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg)`:""}\nBultos: ${packages.length} → ${newBultos.length}\nNuevas referencias: ${newBultos.map((_,i)=>refFor(i)).join(", ")}${notes?`\nNotas: ${notes}`:""}`}});}catch(e){}
+      try{await dq("op_communications",{method:"POST",token,body:{operation_id:opId,type:"note",content:`✅ Reempaque completado.\nPeso facturable: ${before.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg → ${after.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg${delta>0?` (−${delta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg)`:""}\nBultos: ${packages.length} → ${newBultos.length}${notes?`\nNotas: ${notes}`:""}`}});}catch(e){}
       // 5. Push al admin
       try{
         const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
@@ -1490,7 +1492,7 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
         <p style={{fontSize:13,color:"#fbbf24",margin:0,fontWeight:700}}>📋 Instrucciones / 操作说明</p>
         <ol style={{fontSize:12,color:"rgba(255,255,255,0.85)",margin:"6px 0 0",paddingLeft:18,lineHeight:1.6}}>
           <li>Reempaquetá las cajas físicamente / 重新打包</li>
-          <li><strong>Escribí con marcador la referencia</strong> que ves abajo en cada caja nueva (ej: <code style={{background:"rgba(0,0,0,0.3)",padding:"1px 6px",borderRadius:3,fontFamily:"monospace"}}>REPACK-{opCode.replace("AC-","")}-1</code>) / 用记号笔在每个新箱子上写参考号</li>
+          <li>Pegá o escribí los tracking originales en la caja nueva — los códigos que vienen del proveedor se conservan / 在新箱子上保留原始追踪号</li>
           <li>Cargá <strong>peso y medidas</strong> de cada caja nueva acá / 输入每个新箱子的重量和尺寸</li>
           <li>Tocá <strong>"Reemplazar bultos"</strong> — los bultos viejos se borran solos / 点击替换 — 旧箱子会自动删除</li>
         </ol>
@@ -1519,7 +1521,7 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8,flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:11,fontWeight:700,color:"#22c55e",background:"rgba(34,197,94,0.15)",padding:"3px 8px",borderRadius:5}}>Caja {i+1} / 箱 {i+1}</span>
-            <span title="Escribí esta referencia en la caja con marcador" style={{fontSize:12,fontWeight:700,fontFamily:"monospace",color:"#fbbf24",background:"rgba(251,191,36,0.12)",padding:"3px 10px",borderRadius:5,border:"1px solid rgba(251,191,36,0.3)"}}>📌 {refFor(i)}</span>
+            {origTrackingsList.length>0&&<span title={`Trackings originales que se preservan: ${mergedTracking}`} style={{fontSize:10.5,fontWeight:600,fontFamily:"monospace",color:"#60a5fa",background:"rgba(96,165,250,0.10)",padding:"3px 8px",borderRadius:5,border:"1px solid rgba(96,165,250,0.25)",maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>📎 {origTrackingsList.length===1?origTrackingsList[0]:`${origTrackingsList[0]} +${origTrackingsList.length-1}`}</span>}
           </div>
           {newBultos.length>1&&<button onClick={()=>rmBulto(i)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>✕</button>}
         </div>
