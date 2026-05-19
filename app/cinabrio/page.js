@@ -257,6 +257,7 @@ function HabitsSection({ token }) {
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <SubTab active={view === "day"} onClick={() => setView("day")}>Hoy</SubTab>
         <SubTab active={view === "week"} onClick={() => setView("week")}>Semana</SubTab>
+        <SubTab active={view === "month"} onClick={() => setView("month")}>Mes</SubTab>
         <SubTab active={view === "manage"} onClick={() => setView("manage")}>Hábitos & categorías</SubTab>
         <div style={{ flex: 1 }} />
         {view === "manage" && <button onClick={() => setEditHabit({})} style={btnPrimary}>+ Nuevo hábito</button>}
@@ -264,6 +265,7 @@ function HabitsSection({ token }) {
 
       {view === "day" && <DayView habits={habits} cats={habitCats} log={habitLog} date={selectedDate} setDate={setSelectedDate} onToggle={toggle} onNew={() => setEditHabit({})} />}
       {view === "week" && <WeekView habits={habits} cats={habitCats} log={habitLog} onToggle={toggle} />}
+      {view === "month" && <MonthView habits={habits} cats={habitCats} log={habitLog} onPickDay={(d) => { setSelectedDate(d); setView("day"); }} />}
       {view === "manage" && <ManageView habits={habits} cats={habitCats} onEditHabit={setEditHabit} onDelHabit={delHabit} onEditCat={setEditCat} onDelCat={delCat} onNewCat={() => setEditCat({})} />}
 
       {editCat && <CategoryModal token={token} editing={editCat.id ? editCat : null} onClose={() => setEditCat(null)} onSaved={() => { setEditCat(null); load(); }} />}
@@ -469,6 +471,140 @@ function WeekView({ habits, cats, log, onToggle }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Vista Mes (calendario tipo heatmap con % de cumplimiento)
+function MonthView({ habits, cats, log, onPickDay }) {
+  const [monthCursor, setMonthCursor] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [y, m] = monthCursor.split("-").map(Number);
+  const firstDay = new Date(y, m - 1, 1);
+  const lastDay = new Date(y, m, 0);
+  const daysInMonth = lastDay.getDate();
+  // Lunes = 0
+  const offset = (firstDay.getDay() + 6) % 7;
+  const cells = [];
+  for (let i = 0; i < offset; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(`${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const navMonth = (n) => {
+    const dt = new Date(y, m - 1 + n, 1);
+    setMonthCursor(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`);
+  };
+
+  // Compute pct + scheduled for each date
+  const stats = cells.map(date => {
+    if (!date) return null;
+    const dow = dowOf(date);
+    const scheduled = habits.filter(h => h.days_of_week & (1 << dow));
+    if (scheduled.length === 0) return { date, pct: null, doneCount: 0, total: 0 };
+    const dayLog = log.filter(l => l.log_date === date);
+    const doneSet = new Set(dayLog.filter(l => l.completed_at).map(l => l.habit_id));
+    const totalW = scheduled.reduce((s, h) => s + (h.weight || 2), 0);
+    const doneW = scheduled.filter(h => doneSet.has(h.id)).reduce((s, h) => s + (h.weight || 2), 0);
+    return { date, pct: totalW > 0 ? Math.round((doneW / totalW) * 100) : 0, doneCount: doneSet.size, total: scheduled.length };
+  });
+
+  // Resumen del mes (solo días con hábitos programados y pasados/hoy)
+  const ts = todayStr();
+  const evaluable = stats.filter(s => s && s.date <= ts && s.total > 0);
+  const avgPct = evaluable.length > 0 ? Math.round(evaluable.reduce((s, x) => s + x.pct, 0) / evaluable.length) : 0;
+  const perfectDays = evaluable.filter(x => x.pct === 100).length;
+  const zeroDays = evaluable.filter(x => x.pct === 0).length;
+
+  const colorFor = (pct) => {
+    if (pct === null) return T.bgSurfaceHi;
+    if (pct === 0) return `${T.red}26`;
+    if (pct < 50) return `${T.red}66`;
+    if (pct < 100) return `${T.gold}88`;
+    return T.gold;
+  };
+
+  const ts2 = todayStr();
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Header */}
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <IconBtn onClick={() => navMonth(-1)} title="Mes anterior">‹</IconBtn>
+            <p style={{ margin: "0 12px", fontSize: 20, fontWeight: 600, color: T.textPrimary, letterSpacing: "-0.01em", minWidth: 180, textAlign: "center", textTransform: "capitalize" }}>
+              {new Date(monthCursor + "-01").toLocaleDateString("es-AR", { month: "long", year: "numeric" })}
+            </p>
+            <IconBtn onClick={() => navMonth(1)} title="Mes siguiente">›</IconBtn>
+          </div>
+          <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
+            <SmallStat label="Promedio" value={`${avgPct}%`} color={avgPct >= 80 ? T.success : avgPct >= 50 ? T.gold : T.red} />
+            <SmallStat label="Días 100%" value={perfectDays} color={T.gold} />
+            <SmallStat label="Días en 0" value={zeroDays} color={T.danger} />
+          </div>
+        </div>
+      </Card>
+
+      {/* Grilla */}
+      <Card>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6 }}>
+          {DAYS.map(d => (
+            <div key={d} style={{ textAlign: "center", fontSize: 10.5, fontWeight: 700, color: T.textMuted, letterSpacing: "0.12em", textTransform: "uppercase", padding: "4px 0" }}>{d}</div>
+          ))}
+          {stats.map((s, i) => {
+            if (!s) return <div key={`empty-${i}`} />;
+            const isToday = s.date === ts2;
+            const isFuture = s.date > ts2;
+            const hasHabits = s.total > 0;
+            const pct = s.pct;
+            const d = Number(s.date.slice(-2));
+            return (
+              <button
+                key={s.date}
+                onClick={() => onPickDay(s.date)}
+                disabled={!hasHabits}
+                style={{
+                  aspectRatio: "1 / 1", border: isToday ? `1.5px solid ${T.gold}` : `1px solid ${T.border}`,
+                  background: hasHabits && !isFuture ? colorFor(pct) : T.bgSurfaceHi,
+                  borderRadius: 10, cursor: hasHabits ? "pointer" : "default",
+                  display: "flex", flexDirection: "column", justifyContent: "space-between",
+                  padding: "6px 8px", color: T.textPrimary, fontFamily: "inherit",
+                  opacity: isFuture ? 0.4 : 1, position: "relative",
+                  transition: "transform 120ms",
+                }}
+                onMouseEnter={e => { if (hasHabits) e.currentTarget.style.transform = "scale(1.04)"; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
+              >
+                <span style={{ fontSize: 12, fontWeight: 700, color: isToday ? T.gold : (pct === null || !hasHabits ? T.textMuted : pct >= 50 ? T.bgBase : T.textPrimary), fontVariantNumeric: "tabular-nums", textAlign: "left" }}>{d}</span>
+                {hasHabits && !isFuture && (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: pct >= 50 ? T.bgBase : T.textPrimary, alignSelf: "flex-end", fontVariantNumeric: "tabular-nums" }}>{pct}%</span>
+                )}
+                {hasHabits && isFuture && (
+                  <span style={{ fontSize: 10, color: T.textMuted, alignSelf: "flex-end" }}>{s.total}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {/* Leyenda */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, justifyContent: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 10.5, color: T.textMuted, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700 }}>0%</span>
+          {[`${T.red}26`, `${T.red}66`, `${T.gold}88`, T.gold].map((c, i) => (
+            <span key={i} style={{ width: 18, height: 18, borderRadius: 4, background: c, border: `1px solid ${T.border}` }} />
+          ))}
+          <span style={{ fontSize: 10.5, color: T.textMuted, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700 }}>100%</span>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function SmallStat({ label, value, color }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <p style={{ margin: 0, fontSize: 9.5, color: T.textMuted, letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 700 }}>{label}</p>
+      <p style={{ margin: "3px 0 0", fontSize: 18, fontWeight: 600, color, letterSpacing: "-0.01em", fontVariantNumeric: "tabular-nums" }}>{value}</p>
     </div>
   );
 }
