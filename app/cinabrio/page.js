@@ -22,9 +22,9 @@ const T = {
   goldHi: "#E0A832",
   goldDeep: "#8A5F1B",
   goldGlow: "0 0 14px rgba(200,148,27,0.45)",
-  textPrimary: "#F4E8D3",
-  textSecondary: "rgba(244,232,211,0.62)",
-  textMuted: "rgba(244,232,211,0.35)",
+  textPrimary: "#F8EFDE",
+  textSecondary: "rgba(248,239,222,0.82)",
+  textMuted: "rgba(248,239,222,0.58)",
   success: "#7FB069",
   danger: "#E8514B",
 };
@@ -37,6 +37,7 @@ const todayStr = () => new Date().toISOString().slice(0, 10);
 const dowOf = (date) => { const d = new Date(date + "T12:00:00").getDay(); return d === 0 ? 6 : d - 1; };
 const todayDow = () => dowOf(todayStr());
 const monthStr = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+const monthLabel = (mm) => { const [y, m] = mm.split("-").map(Number); return new Date(y, m - 1, 15).toLocaleDateString("es-AR", { month: "long", year: "numeric" }).replace(/^./, c => c.toUpperCase()); };
 const fmtArs = (n) => `ARS ${Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 const fmtUsd = (n) => `USD ${Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -81,7 +82,7 @@ const GLOBAL_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
   *{box-sizing:border-box}
   html,body{margin:0;padding:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:${T.bgBase};color:${T.textPrimary};font-feature-settings:'cv11','ss03';-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
-  body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
+  body{min-height:100vh;min-height:100svh}
   ::selection{background:${T.gold}55;color:${T.textPrimary}}
   ::-webkit-scrollbar{width:8px;height:8px}
   ::-webkit-scrollbar-track{background:transparent}
@@ -91,12 +92,12 @@ const GLOBAL_CSS = `
   input,textarea,select{font-family:inherit;font-size:16px}
   @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   @keyframes slideIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-  .cnb-page{padding:6px 14px 80px;max-width:1280px;margin:0 auto}
-  .cnb-header{padding:10px 14px 6px;display:flex;justify-content:center;align-items:center}
-  .cnb-toggle-pill{padding:9px 18px}
+  .cnb-page{padding:6px max(14px, env(safe-area-inset-right)) max(80px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));max-width:1280px;margin:0 auto}
+  .cnb-header{padding:calc(env(safe-area-inset-top) + 10px) max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left));display:flex;justify-content:center;align-items:center;position:relative;z-index:5}
+  .cnb-toggle-pill{padding:10px 20px}
   @media (min-width: 720px){
     .cnb-page{padding:14px 24px 80px}
-    .cnb-header{padding:22px 24px 12px}
+    .cnb-header{padding:calc(env(safe-area-inset-top) + 22px) 24px 12px}
     .cnb-toggle-pill{padding:9px 24px}
   }
   .cnb-row{display:flex;align-items:center;gap:12px;padding:13px 14px;flex-wrap:wrap}
@@ -580,8 +581,8 @@ function MonthView({ habits, cats, log, onPickDay }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <IconBtn onClick={() => navMonth(-1)} title="Mes anterior">‹</IconBtn>
-            <p style={{ margin: "0 12px", fontSize: 20, fontWeight: 600, color: T.textPrimary, letterSpacing: "-0.01em", minWidth: 180, textAlign: "center", textTransform: "capitalize" }}>
-              {new Date(monthCursor + "-01").toLocaleDateString("es-AR", { month: "long", year: "numeric" })}
+            <p style={{ margin: "0 12px", fontSize: 20, fontWeight: 600, color: T.textPrimary, letterSpacing: "-0.01em", minWidth: 180, textAlign: "center" }}>
+              {monthLabel(monthCursor)}
             </p>
             <IconBtn onClick={() => navMonth(1)} title="Mes siguiente">›</IconBtn>
           </div>
@@ -802,7 +803,7 @@ function FinanceSection({ token }) {
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 4 }}>
         <IconBtn onClick={() => navMonth(-1)} title="Mes anterior">‹</IconBtn>
         <p style={{ margin: "0 12px", fontSize: 20, fontWeight: 600, color: T.textPrimary, letterSpacing: "-0.01em", minWidth: 180, textAlign: "center" }}>
-          {new Date(month + "-01").toLocaleDateString("es-AR", { month: "long", year: "numeric" }).replace(/^./, c => c.toUpperCase())}
+          {monthLabel(month)}
         </p>
         <IconBtn onClick={() => navMonth(1)} title="Mes siguiente">›</IconBtn>
       </div>
@@ -911,7 +912,8 @@ function Dashboard({ expenses, cats, currentMonth }) {
 
   const byMonth = months.map(mm => {
     const total = expenses.filter(e => e.expense_date.slice(0, 7) === mm).reduce((s, e) => s + Number(e.amount_ars || 0), 0);
-    const d = new Date(mm + "-01");
+    const [yy, mn] = mm.split("-").map(Number);
+    const d = new Date(yy, mn - 1, 15);
     return { month: mm, total, label: d.toLocaleDateString("es-AR", { month: "short" }).replace(".", "") };
   });
   const maxM = Math.max(1, ...byMonth.map(b => b.total));
@@ -1350,7 +1352,7 @@ function Chip({ children, active, onClick }) {
 }
 
 function SubTab({ children, active, onClick }) {
-  return <button onClick={onClick} style={{ padding: "9px 16px", fontSize: 12.5, fontWeight: 600, borderRadius: 999, border: active ? `1px solid ${T.borderHi}` : "1px solid transparent", background: active ? T.bgSurface : "transparent", color: active ? T.textPrimary : T.textSecondary, cursor: "pointer", transition: "all 160ms", letterSpacing: "0.02em" }}>{children}</button>;
+  return <button onClick={onClick} style={{ padding: "9px 16px", fontSize: 13, fontWeight: 600, borderRadius: 999, border: active ? `1px solid ${T.borderHi}` : "1px solid transparent", background: active ? T.bgSurface : "transparent", color: active ? T.textPrimary : T.textSecondary, cursor: "pointer", transition: "all 160ms", letterSpacing: "0.02em" }}>{children}</button>;
 }
 
 function IconBtn({ children, onClick, title, danger }) {
