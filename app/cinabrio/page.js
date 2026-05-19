@@ -142,24 +142,13 @@ function App({ session, onLogout }) {
 
   return (
     <div style={{ minHeight: "100vh", background: `radial-gradient(ellipse at top, ${T.bgSurface} 0%, ${T.bgBase} 75%)` }}>
-      <TopBar mode={mode} setMode={setMode} onLogout={onLogout} />
-      <main style={{ padding: "20px 24px 60px", maxWidth: 1280, margin: "0 auto" }}>
+      <header style={{ padding: "22px 24px 10px", display: "flex", justifyContent: "center", alignItems: "center" }}>
+        <ModeToggle mode={mode} setMode={setMode} />
+      </header>
+      <main style={{ padding: "10px 24px 60px", maxWidth: 1280, margin: "0 auto" }}>
         {mode === "habits" ? <HabitsSection token={session.token} /> : <FinanceSection token={session.token} />}
       </main>
     </div>
-  );
-}
-
-function TopBar({ mode, setMode, onLogout }) {
-  return (
-    <header style={{ padding: "20px 24px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <Logo size={42} />
-        <p style={{ margin: 0, fontSize: 18, fontWeight: 600, letterSpacing: "-0.02em" }}>Cinabrio</p>
-      </div>
-      <ModeToggle mode={mode} setMode={setMode} />
-      <button onClick={onLogout} style={{ ...btnGhost, padding: "7px 14px", fontSize: 11 }}>Salir</button>
-    </header>
   );
 }
 
@@ -290,7 +279,9 @@ function DayView({ habits, cats, log, date, setDate, onToggle, onNew }) {
   const todaysHabits = habits.filter(h => h.days_of_week & (1 << dow));
   const dayLog = log.filter(l => l.log_date === date);
   const completedIds = new Set(dayLog.filter(l => l.completed_at).map(l => l.habit_id));
-  const pct = todaysHabits.length > 0 ? Math.round(completedIds.size / todaysHabits.length * 100) : 0;
+  const totalW = todaysHabits.reduce((s, h) => s + (h.weight || 2), 0);
+  const doneW = todaysHabits.filter(h => completedIds.has(h.id)).reduce((s, h) => s + (h.weight || 2), 0);
+  const pct = totalW > 0 ? Math.round((doneW / totalW) * 100) : 0;
   const isToday = date === todayStr();
 
   return (
@@ -361,7 +352,7 @@ function Timeline({ habits, cats, completedIds, onToggle }) {
               fontSize: 20, boxShadow: done ? `0 0 14px ${color}66` : "none",
               transition: "all 220ms",
             }}>
-              {h.icon || (cat?.icon) || "●"}
+              {cat?.icon || "●"}
             </div>
             <div style={{ flex: 1, minWidth: 0, paddingLeft: 4 }}>
               <p style={{ margin: 0, fontSize: 15, fontWeight: 500, color: done ? T.textMuted : T.textPrimary, textDecoration: done ? "line-through" : "none", textDecorationColor: color }}>{h.name}</p>
@@ -435,9 +426,9 @@ function WeekView({ habits, cats, log, onToggle }) {
               const cat = cats.find(c => c.id === h.category_id);
               const color = cat?.color || T.gold;
               return (
-                <>
+                <div key={`row-${h.id}`} style={{ display: "contents" }}>
                   <div key={`name-${h.id}`} style={{ padding: "10px 16px", display: "flex", alignItems: "center", gap: 10, borderBottom: hi === habits.length - 1 ? "none" : `1px solid ${T.border}` }}>
-                    <span style={{ width: 32, height: 32, borderRadius: 16, background: T.bgSurfaceHi, border: `1.5px solid ${color}55`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{h.icon || cat?.icon || "●"}</span>
+                    <span style={{ width: 32, height: 32, borderRadius: 16, background: T.bgSurfaceHi, border: `1.5px solid ${color}55`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{cat?.icon || "●"}</span>
                     <div style={{ minWidth: 0 }}>
                       <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: T.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.name}</p>
                       <p style={{ margin: "2px 0 0", fontSize: 10, color: T.textMuted, fontFamily: "ui-monospace, monospace", fontWeight: 500 }}>{h.time ? String(h.time).slice(0, 5) : ""} {cat ? `· ${cat.name}` : ""}</p>
@@ -472,7 +463,7 @@ function WeekView({ habits, cats, log, onToggle }) {
                       </div>
                     );
                   })}
-                </>
+                </div>
               );
             })}
           </div>
@@ -524,7 +515,7 @@ function ManageView({ habits, cats, onEditHabit, onDelHabit, onEditCat, onDelCat
               const cat = cats.find(c => c.id === h.category_id);
               return (
                 <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 20px", borderBottom: i === habits.length - 1 ? "none" : `1px solid ${T.border}` }}>
-                  <span style={{ width: 36, height: 36, borderRadius: 18, background: T.bgSurfaceHi, border: `1.5px solid ${(cat?.color || T.gold) + "55"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{h.icon || cat?.icon || "●"}</span>
+                  <span style={{ width: 36, height: 36, borderRadius: 18, background: T.bgSurfaceHi, border: `1.5px solid ${(cat?.color || T.gold) + "55"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{cat?.icon || "●"}</span>
                   <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: T.textMuted, minWidth: 48, fontWeight: 500 }}>{h.time ? String(h.time).slice(0, 5) : "—"}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.textPrimary }}>{h.name}</p>
@@ -552,27 +543,24 @@ function FinanceSection({ token }) {
   const [expCats, setExpCats] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [withdrawals, setWithdrawals] = useState([]);
-  const [settings, setSettings] = useState({ monthly_salary_usd: 1500 });
   const [lo, setLo] = useState(true);
   const [month, setMonth] = useState(monthStr());
+  const [view, setView] = useState("ledger"); // ledger | dashboard | categories
   const [editCat, setEditCat] = useState(null);
   const [editExpense, setEditExpense] = useState(null);
   const [editWithdraw, setEditWithdraw] = useState(null);
-  const [editSettings, setEditSettings] = useState(false);
   const [confirm, setConfirm] = useState(null);
 
   const load = useCallback(async () => {
     setLo(true);
-    const [ec, e, w, s] = await Promise.all([
+    const [ec, e, w] = await Promise.all([
       dq("mp_expense_categories", { token, filters: "?select=*&order=sort_order.asc,name.asc" }),
-      dq("mp_expenses", { token, filters: `?select=*&expense_date=gte.${addDays(-180)}&order=expense_date.desc` }),
-      dq("mp_salary_withdrawals", { token, filters: `?select=*&withdrawal_date=gte.${addDays(-180)}&order=withdrawal_date.desc` }),
-      dq("mp_settings", { token, filters: "?select=*&id=eq.1" }),
+      dq("mp_expenses", { token, filters: `?select=*&expense_date=gte.${addDays(-365)}&order=expense_date.desc` }),
+      dq("mp_salary_withdrawals", { token, filters: `?select=*&withdrawal_date=gte.${addDays(-365)}&order=withdrawal_date.desc` }),
     ]);
     setExpCats(Array.isArray(ec) ? ec : []);
     setExpenses(Array.isArray(e) ? e : []);
     setWithdrawals(Array.isArray(w) ? w : []);
-    setSettings(Array.isArray(s) && s[0] ? s[0] : { monthly_salary_usd: 1500 });
     setLo(false);
   }, [token]);
   useEffect(() => { load(); }, [load]);
@@ -581,11 +569,20 @@ function FinanceSection({ token }) {
   const monthWdraw = withdrawals.filter(w => w.withdrawal_date.slice(0, 7) === month);
   const totalSpent = monthExp.reduce((s, e) => s + Number(e.amount_ars || 0), 0);
   const totalIn = monthWdraw.reduce((s, w) => s + Number(w.amount_ars || 0), 0);
-  const totalBudget = expCats.reduce((s, c) => s + Number(c.monthly_budget_ars || 0), 0);
+
+  // Libro diario unificado (ingresos + gastos del mes, ordenados por fecha desc)
+  const ledger = useMemo(() => {
+    const rows = [
+      ...monthWdraw.map(w => ({ kind: "in", id: w.id, date: w.withdrawal_date, amount: Number(w.amount_ars || 0), label: `Ingreso · ${fmtUsd(w.amount_usd)} @ ${Number(w.exchange_rate).toLocaleString("es-AR")}`, notes: w.notes, raw: w })),
+      ...monthExp.map(e => ({ kind: "out", id: e.id, date: e.expense_date, amount: Number(e.amount_ars || 0), label: e.description || "(sin descripción)", category: expCats.find(c => c.id === e.category_id), payment_method: e.payment_method, installments: e.installments, raw: e })),
+    ];
+    rows.sort((a, b) => b.date.localeCompare(a.date) || (b.id || "").localeCompare?.(a.id || "") || 0);
+    return rows;
+  }, [monthExp, monthWdraw, expCats]);
 
   const delCat = (c) => setConfirm({ title: "Eliminar categoría", body: `¿Eliminar "${c.name}"?`, danger: true, onConfirm: async () => { await dq("mp_expense_categories", { method: "DELETE", token, filters: `?id=eq.${c.id}` }); toast.success("Categoría eliminada"); load(); } });
   const delExp = (e) => setConfirm({ title: "Eliminar gasto", body: `¿Eliminar este gasto de ${fmtArs(e.amount_ars)}?`, danger: true, onConfirm: async () => { await dq("mp_expenses", { method: "DELETE", token, filters: `?id=eq.${e.id}` }); toast.success("Gasto eliminado"); load(); } });
-  const delWdraw = (w) => setConfirm({ title: "Eliminar retiro", body: `¿Eliminar retiro de ${fmtUsd(w.amount_usd)}?`, danger: true, onConfirm: async () => { await dq("mp_salary_withdrawals", { method: "DELETE", token, filters: `?id=eq.${w.id}` }); toast.success("Retiro eliminado"); load(); } });
+  const delWdraw = (w) => setConfirm({ title: "Eliminar ingreso", body: `¿Eliminar ingreso de ${fmtUsd(w.amount_usd)}?`, danger: true, onConfirm: async () => { await dq("mp_salary_withdrawals", { method: "DELETE", token, filters: `?id=eq.${w.id}` }); toast.success("Ingreso eliminado"); load(); } });
 
   const navMonth = (d) => {
     const [y, m] = month.split("-").map(Number);
@@ -596,35 +593,75 @@ function FinanceSection({ token }) {
   if (lo) return <p style={{ textAlign: "center", color: T.textMuted, padding: "80px 0" }}>Cargando finanzas…</p>;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* Header mes + acciones */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <IconBtn onClick={() => navMonth(-1)} title="Mes anterior">‹</IconBtn>
-          <p style={{ margin: "0 12px", fontSize: 20, fontWeight: 600, color: T.textPrimary, letterSpacing: "-0.01em", minWidth: 180, textAlign: "center" }}>
-            {new Date(month + "-01").toLocaleDateString("es-AR", { month: "long", year: "numeric" }).replace(/^./, c => c.toUpperCase())}
-          </p>
-          <IconBtn onClick={() => navMonth(1)} title="Mes siguiente">›</IconBtn>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <IconBtn onClick={() => setEditSettings(true)} title="Configurar sueldo">⚙</IconBtn>
-          <button onClick={() => setEditWithdraw({})} style={btnSec}>+ Retiro</button>
-          <button onClick={() => setEditExpense({})} style={btnPrimary}>+ Gasto</button>
-        </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {/* Sub-tabs */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <SubTab active={view === "ledger"} onClick={() => setView("ledger")}>Libro diario</SubTab>
+        <SubTab active={view === "dashboard"} onClick={() => setView("dashboard")}>Dashboard</SubTab>
+        <SubTab active={view === "categories"} onClick={() => setView("categories")}>Categorías</SubTab>
+        <div style={{ flex: 1 }} />
+        {view === "ledger" && (
+          <>
+            <button onClick={() => setEditWithdraw({})} style={btnSec}>+ Ingreso</button>
+            <button onClick={() => setEditExpense({})} style={btnPrimary}>+ Gasto</button>
+          </>
+        )}
+        {view === "categories" && <button onClick={() => setEditCat({})} style={btnPrimary}>+ Categoría</button>}
       </div>
 
-      {/* Stats */}
+      {/* Header mes */}
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 4 }}>
+        <IconBtn onClick={() => navMonth(-1)} title="Mes anterior">‹</IconBtn>
+        <p style={{ margin: "0 12px", fontSize: 20, fontWeight: 600, color: T.textPrimary, letterSpacing: "-0.01em", minWidth: 180, textAlign: "center" }}>
+          {new Date(month + "-01").toLocaleDateString("es-AR", { month: "long", year: "numeric" }).replace(/^./, c => c.toUpperCase())}
+        </p>
+        <IconBtn onClick={() => navMonth(1)} title="Mes siguiente">›</IconBtn>
+      </div>
+
+      {/* Stats siempre visibles */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px,1fr))", gap: 14 }}>
-        <StatCard label="Ingresado" value={fmtArs(totalIn)} sub={monthWdraw.length === 0 ? "Sin retiros aún" : `${monthWdraw.length} retiro${monthWdraw.length !== 1 ? "s" : ""}`} accent={T.gold} />
-        <StatCard label="Gastado" value={fmtArs(totalSpent)} sub={totalBudget > 0 ? `${((totalSpent / totalBudget) * 100).toFixed(0)}% del presupuesto` : `${monthExp.length} gasto${monthExp.length !== 1 ? "s" : ""}`} accent={T.red} />
+        <StatCard label="Ingresado" value={fmtArs(totalIn)} sub={monthWdraw.length === 0 ? "Sin ingresos aún" : `${monthWdraw.length} ingreso${monthWdraw.length !== 1 ? "s" : ""}`} accent={T.gold} />
+        <StatCard label="Gastado" value={fmtArs(totalSpent)} sub={`${monthExp.length} gasto${monthExp.length !== 1 ? "s" : ""}`} accent={T.red} />
         <StatCard label="Disponible" value={fmtArs(totalIn - totalSpent)} sub={totalIn - totalSpent >= 0 ? "en mano" : "déficit"} accent={totalIn - totalSpent >= 0 ? T.success : T.danger} />
       </div>
 
-      {/* Categorías */}
-      <div>
-        <SectionHeader title="Categorías y presupuestos" action={<button onClick={() => setEditCat({})} style={btnSec}>+ Categoría</button>} />
-        {expCats.length === 0 ? (
-          <Card><EmptyState text="Definí categorías con presupuesto mensual para controlar el gasto." /></Card>
+      {view === "ledger" && (
+        ledger.length === 0 ? (
+          <Card><EmptyState text="Sin movimientos este mes. Empezá registrando un ingreso o un gasto." /></Card>
+        ) : (
+          <Card padded={false}>
+            {ledger.map((r, i) => (
+              <div key={`${r.kind}-${r.id}`} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 18px", borderBottom: i === ledger.length - 1 ? "none" : `1px solid ${T.border}` }}>
+                <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: T.textMuted, minWidth: 50, fontWeight: 500 }}>{r.date.slice(5).split("-").reverse().join("/")}</span>
+                <span style={{
+                  width: 28, height: 28, borderRadius: 14, flexShrink: 0,
+                  background: r.kind === "in" ? `${T.gold}1F` : `${T.red}1F`,
+                  border: `1px solid ${r.kind === "in" ? T.gold + "55" : T.red + "55"}`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: r.kind === "in" ? T.gold : T.red, fontSize: 16, fontWeight: 700, lineHeight: 1,
+                }}>{r.kind === "in" ? "↓" : "↑"}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.label}</p>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 3, flexWrap: "wrap" }}>
+                    {r.category && <span style={{ fontSize: 11, color: r.category.color || T.gold, fontWeight: 600 }}>{r.category.icon ? `${r.category.icon} ` : ""}{r.category.name}</span>}
+                    {r.payment_method && <span style={{ fontSize: 10.5, color: T.textMuted, padding: "1px 7px", borderRadius: 999, border: `1px solid ${T.border}` }}>{r.payment_method}{r.installments > 1 ? ` · ${r.installments}x` : ""}</span>}
+                    {r.notes && <span style={{ fontSize: 10.5, color: T.textMuted }}>{r.notes}</span>}
+                  </div>
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 600, color: r.kind === "in" ? T.gold : T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{r.kind === "in" ? "+" : "−"} {fmtArs(r.amount)}</span>
+                <IconBtn onClick={() => r.kind === "in" ? setEditWithdraw(r.raw) : setEditExpense(r.raw)} title="Editar">✎</IconBtn>
+                <IconBtn onClick={() => r.kind === "in" ? delWdraw(r.raw) : delExp(r.raw)} title="Eliminar" danger>×</IconBtn>
+              </div>
+            ))}
+          </Card>
+        )
+      )}
+
+      {view === "dashboard" && <Dashboard expenses={expenses} cats={expCats} currentMonth={month} />}
+
+      {view === "categories" && (
+        expCats.length === 0 ? (
+          <Card><EmptyState text="Definí categorías con presupuesto mensual para controlar el gasto." action={<button onClick={() => setEditCat({})} style={btnPrimary}>+ Crear primera</button>} /></Card>
         ) : (
           <Card>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -637,6 +674,7 @@ function FinanceSection({ token }) {
                   <div key={c.id} style={{ padding: "12px 14px", background: T.bgSurfaceHi, borderRadius: 10, border: `1px solid ${T.border}` }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7, gap: 10 }}>
                       <span style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600, color: T.textPrimary }}>
+                        {c.icon && <span style={{ fontSize: 16 }}>{c.icon}</span>}
                         <span style={{ width: 9, height: 9, borderRadius: 2, background: c.color || T.gold }} /> {c.name}
                       </span>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -655,62 +693,96 @@ function FinanceSection({ token }) {
               })}
             </div>
           </Card>
-        )}
-      </div>
-
-      {/* Retiros */}
-      <div>
-        <SectionHeader title={`Retiros del sueldo (${monthWdraw.length})`} />
-        {monthWdraw.length === 0 ? (
-          <Card><EmptyState text="Sin retiros este mes." /></Card>
-        ) : (
-          <Card padded={false}>
-            {monthWdraw.map((w, i) => (
-              <div key={w.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 18px", borderBottom: i === monthWdraw.length - 1 ? "none" : `1px solid ${T.border}` }}>
-                <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: T.textMuted, minWidth: 78, fontWeight: 500 }}>{w.withdrawal_date.slice(5).split("-").reverse().join("/")}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{fmtUsd(w.amount_usd)} → {fmtArs(w.amount_ars)}</p>
-                  <p style={{ margin: "2px 0 0", fontSize: 11, color: T.textMuted }}>TC ${Number(w.exchange_rate).toLocaleString("es-AR")}{w.notes ? ` · ${w.notes}` : ""}</p>
-                </div>
-                <IconBtn onClick={() => setEditWithdraw(w)} title="Editar">✎</IconBtn>
-                <IconBtn onClick={() => delWdraw(w)} title="Eliminar" danger>×</IconBtn>
-              </div>
-            ))}
-          </Card>
-        )}
-      </div>
-
-      {/* Gastos */}
-      <div>
-        <SectionHeader title={`Gastos del mes (${monthExp.length})`} />
-        {monthExp.length === 0 ? (
-          <Card><EmptyState text="Aún sin gastos este mes." /></Card>
-        ) : (
-          <Card padded={false}>
-            {monthExp.map((e, i) => {
-              const cat = expCats.find(c => c.id === e.category_id);
-              return (
-                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 18px", borderBottom: i === monthExp.length - 1 ? "none" : `1px solid ${T.border}` }}>
-                  <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: T.textMuted, minWidth: 50, fontWeight: 500 }}>{e.expense_date.slice(5).split("-").reverse().join("/")}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.description || "(sin descripción)"}</p>
-                    {cat && <p style={{ margin: "2px 0 0", fontSize: 11, color: cat.color || T.gold, fontWeight: 600 }}>{cat.name}</p>}
-                  </div>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{fmtArs(e.amount_ars)}</span>
-                  <IconBtn onClick={() => setEditExpense(e)} title="Editar">✎</IconBtn>
-                  <IconBtn onClick={() => delExp(e)} title="Eliminar" danger>×</IconBtn>
-                </div>
-              );
-            })}
-          </Card>
-        )}
-      </div>
+        )
+      )}
 
       {editCat && <CategoryModal isExpense token={token} editing={editCat.id ? editCat : null} onClose={() => setEditCat(null)} onSaved={() => { setEditCat(null); load(); }} />}
       {editExpense && <ExpenseModal token={token} editing={editExpense.id ? editExpense : null} categories={expCats} onClose={() => setEditExpense(null)} onSaved={() => { setEditExpense(null); load(); }} />}
       {editWithdraw && <WithdrawalModal token={token} editing={editWithdraw.id ? editWithdraw : null} onClose={() => setEditWithdraw(null)} onSaved={() => { setEditWithdraw(null); load(); }} />}
-      {editSettings && <SettingsModal token={token} settings={settings} onClose={() => setEditSettings(false)} onSaved={() => { setEditSettings(false); load(); }} />}
       {confirm && <ConfirmModal {...confirm} onClose={() => setConfirm(null)} />}
+    </div>
+  );
+}
+
+// Dashboard: gastos por mes + top conceptos
+function Dashboard({ expenses, cats, currentMonth }) {
+  // Últimos 6 meses incluyendo current
+  const months = useMemo(() => {
+    const arr = [];
+    const [y, m] = currentMonth.split("-").map(Number);
+    for (let i = 5; i >= 0; i--) {
+      const dt = new Date(y, m - 1 - i, 1);
+      arr.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`);
+    }
+    return arr;
+  }, [currentMonth]);
+
+  const byMonth = months.map(mm => {
+    const total = expenses.filter(e => e.expense_date.slice(0, 7) === mm).reduce((s, e) => s + Number(e.amount_ars || 0), 0);
+    const d = new Date(mm + "-01");
+    return { month: mm, total, label: d.toLocaleDateString("es-AR", { month: "short" }).replace(".", "") };
+  });
+  const maxM = Math.max(1, ...byMonth.map(b => b.total));
+
+  // Top conceptos del mes actual por categoría
+  const monthExp = expenses.filter(e => e.expense_date.slice(0, 7) === currentMonth);
+  const byCat = cats.map(c => ({
+    cat: c,
+    total: monthExp.filter(e => e.category_id === c.id).reduce((s, e) => s + Number(e.amount_ars || 0), 0),
+  })).filter(x => x.total > 0).sort((a, b) => b.total - a.total);
+  const totalMonth = byCat.reduce((s, x) => s + x.total, 0);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <Card>
+        <SectionHeader title="Gasto mensual · últimos 6 meses" />
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 160, padding: "6px 4px 0" }}>
+          {byMonth.map((b, i) => {
+            const h = b.total > 0 ? Math.max(4, (b.total / maxM) * 130) : 4;
+            const isCurrent = b.month === currentMonth;
+            return (
+              <div key={b.month} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 10.5, color: isCurrent ? T.gold : T.textMuted, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>
+                  {b.total > 0 ? `${(b.total / 1000).toFixed(0)}k` : "—"}
+                </span>
+                <div style={{
+                  width: "100%", height: h, borderRadius: "6px 6px 2px 2px",
+                  background: isCurrent ? `linear-gradient(180deg, ${T.goldHi}, ${T.gold})` : `linear-gradient(180deg, ${T.redDeep}, ${T.red}AA)`,
+                  boxShadow: isCurrent ? T.goldGlow : "none", transition: "all 200ms",
+                }} />
+                <span style={{ fontSize: 11, color: isCurrent ? T.textPrimary : T.textMuted, fontWeight: 600, textTransform: "capitalize", letterSpacing: "0.04em" }}>{b.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      <Card>
+        <SectionHeader title="Top categorías del mes" />
+        {byCat.length === 0 ? (
+          <p style={{ margin: 0, color: T.textMuted, fontSize: 13, fontStyle: "italic", padding: "20px 0", textAlign: "center" }}>Sin gastos categorizados este mes.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {byCat.map(({ cat, total }) => {
+              const pct = totalMonth > 0 ? (total / totalMonth) * 100 : 0;
+              return (
+                <div key={cat.id}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5, gap: 10 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 500, color: T.textPrimary }}>
+                      {cat.icon && <span style={{ fontSize: 14 }}>{cat.icon}</span>}
+                      {cat.name}
+                    </span>
+                    <span style={{ fontSize: 12.5, color: T.textSecondary, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{fmtArs(total)} <span style={{ color: T.textMuted, marginLeft: 6 }}>{pct.toFixed(0)}%</span></span>
+                  </div>
+                  <div style={{ height: 6, background: T.bgSurfaceHi, borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ width: `${pct}%`, height: "100%", background: cat.color || T.gold, transition: "width 300ms" }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
@@ -757,10 +829,10 @@ function CategoryModal({ isExpense, token, editing, onClose, onSaved }) {
 function HabitModal({ token, editing, categories, onClose, onSaved }) {
   const [name, setName] = useState(editing?.name || "");
   const [catId, setCatId] = useState(editing?.category_id || categories[0]?.id || "");
-  const [icon, setIcon] = useState(editing?.icon || "");
   const [time, setTime] = useState(editing?.time?.slice(0, 5) || "");
   const [duration, setDuration] = useState(editing?.duration_min || "");
   const [days, setDays] = useState(editing?.days_of_week ?? 31);
+  const [weight, setWeight] = useState(editing?.weight ?? 2);
   const [notify, setNotify] = useState(editing?.notify_enabled ?? false);
   const [saving, setSaving] = useState(false);
 
@@ -771,7 +843,7 @@ function HabitModal({ token, editing, categories, onClose, onSaved }) {
     if (!name.trim()) return toast.error("Falta el nombre");
     if (days === 0) return toast.error("Elegí al menos un día");
     setSaving(true);
-    const body = { name: name.trim(), category_id: catId || null, time: time || null, days_of_week: days, notify_enabled: notify, icon: icon || null, duration_min: Number(duration) || null };
+    const body = { name: name.trim(), category_id: catId || null, time: time || null, days_of_week: days, notify_enabled: notify, duration_min: Number(duration) || null, weight };
     if (editing?.id) await dq("mp_habits", { method: "PATCH", token, filters: `?id=eq.${editing.id}`, body });
     else await dq("mp_habits", { method: "POST", token, body });
     setSaving(false);
@@ -781,20 +853,38 @@ function HabitModal({ token, editing, categories, onClose, onSaved }) {
 
   return (
     <Modal title={editing?.id ? "Editar hábito" : "Nuevo hábito"} onClose={onClose}>
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-        <Field label="Emoji"><input value={icon} onChange={e => setIcon(e.target.value)} style={{ ...inputStyle, width: 72, fontSize: 22, textAlign: "center" }} placeholder="🏋️" maxLength={2} /></Field>
-        <div style={{ flex: 1 }}><Field label="Nombre"><input autoFocus value={name} onChange={e => setName(e.target.value)} style={inputStyle} placeholder="Ej: Gym empuje" /></Field></div>
-      </div>
+      <Field label="Nombre"><input autoFocus value={name} onChange={e => setName(e.target.value)} style={inputStyle} placeholder="Ej: Gym empuje" /></Field>
       <Field label="Categoría">
         <select value={catId} onChange={e => setCatId(e.target.value)} style={inputStyle}>
           <option value="">— Sin categoría —</option>
-          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {categories.map(c => <option key={c.id} value={c.id}>{c.icon ? `${c.icon}  ` : ""}{c.name}</option>)}
         </select>
+        <p style={{ margin: "6px 2px 0", fontSize: 10.5, color: T.textMuted, letterSpacing: "0.04em" }}>El emoji se hereda de la categoría.</p>
       </Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Horario"><input type="time" value={time} onChange={e => setTime(e.target.value)} style={inputStyle} /></Field>
         <Field label="Duración (min, opcional)"><input type="number" value={duration} onChange={e => setDuration(e.target.value)} style={inputStyle} placeholder="30" /></Field>
       </div>
+      <Field label="Importancia">
+        <div style={{ display: "flex", gap: 6 }}>
+          {[{ v: 1, label: "Baja", desc: "1 pt" }, { v: 2, label: "Normal", desc: "2 pts" }, { v: 3, label: "Alta", desc: "3 pts" }].map(o => {
+            const active = weight === o.v;
+            return (
+              <button key={o.v} onClick={() => setWeight(o.v)} style={{
+                flex: 1, padding: "10px 8px", fontSize: 12, fontWeight: 700,
+                borderRadius: 8, border: active ? `1px solid ${T.gold}` : `1px solid ${T.border}`,
+                background: active ? `linear-gradient(135deg, ${T.goldHi}, ${T.gold})` : "transparent",
+                color: active ? T.bgBase : T.textSecondary, cursor: "pointer", transition: "all 150ms",
+                letterSpacing: "0.04em", display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+              }}>
+                <span>{o.label}</span>
+                <span style={{ fontSize: 10, opacity: 0.7, fontWeight: 600 }}>{o.desc}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p style={{ margin: "6px 2px 0", fontSize: 10.5, color: T.textMuted }}>Define cuánto pesa este hábito en el % del día.</p>
+      </Field>
       <Field label="Días de la semana">
         <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
           <Chip onClick={() => setPreset(127)} active={days === 127}>Todos</Chip>
@@ -815,11 +905,29 @@ function HabitModal({ token, editing, categories, onClose, onSaved }) {
           })}
         </div>
       </Field>
-      <Field>
-        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13, color: T.textPrimary }}>
-          <input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)} style={{ accentColor: T.gold, width: 16, height: 16 }} />
-          Recordatorio push a la hora del hábito (próximamente)
-        </label>
+      <Field label="Recordatorio">
+        <button onClick={() => setNotify(v => !v)} style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+          padding: "11px 14px", borderRadius: 8, border: `1px solid ${T.border}`,
+          background: T.bgSurfaceHi, color: T.textPrimary, cursor: "pointer",
+          fontSize: 13, fontWeight: 500, fontFamily: "inherit",
+        }}>
+          <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
+            <span>Recordatorio push a la hora</span>
+            <span style={{ fontSize: 10.5, color: T.textMuted, letterSpacing: "0.04em" }}>Próximamente</span>
+          </span>
+          <span style={{
+            width: 36, height: 20, borderRadius: 999, position: "relative",
+            background: notify ? `linear-gradient(135deg, ${T.goldHi}, ${T.gold})` : T.bgSurface,
+            border: `1px solid ${notify ? T.gold : T.border}`, transition: "all 200ms", flexShrink: 0,
+          }}>
+            <span style={{
+              position: "absolute", top: 1, left: notify ? 17 : 1,
+              width: 16, height: 16, borderRadius: "50%", background: notify ? T.bgBase : T.textMuted,
+              transition: "left 220ms cubic-bezier(0.4,0,0.2,1)",
+            }} />
+          </span>
+        </button>
       </Field>
       <ModalFooter onCancel={onClose} onConfirm={save} loading={saving} confirmLabel={editing?.id ? "Guardar" : "Crear"} />
     </Modal>
@@ -831,20 +939,31 @@ function ExpenseModal({ token, editing, categories, onClose, onSaved }) {
   const [amount, setAmount] = useState(editing?.amount_ars || "");
   const [desc, setDesc] = useState(editing?.description || "");
   const [date, setDate] = useState(editing?.expense_date || todayStr());
+  const [pm, setPm] = useState(editing?.payment_method || "Efectivo");
+  const [inst, setInst] = useState(editing?.installments || 1);
   const [notes, setNotes] = useState(editing?.notes || "");
   const [saving, setSaving] = useState(false);
 
+  const isCredit = pm === "Tarjeta de crédito";
+  const totalN = Number(String(amount).replace(/\./g, "").replace(",", ".")) || 0;
+  const perInst = isCredit && inst > 1 ? totalN / inst : null;
+
   const save = async () => {
-    const n = Number(String(amount).replace(/\./g, "").replace(",", "."));
-    if (!isFinite(n) || n <= 0) return toast.error("Monto inválido");
+    if (!isFinite(totalN) || totalN <= 0) return toast.error("Monto inválido");
     setSaving(true);
-    const body = { category_id: catId || null, amount_ars: n, description: desc.trim() || null, expense_date: date, notes: notes.trim() || null };
+    const body = {
+      category_id: catId || null, amount_ars: totalN, description: desc.trim() || null,
+      expense_date: date, notes: notes.trim() || null,
+      payment_method: pm, installments: isCredit ? Number(inst) || 1 : 1,
+    };
     if (editing?.id) await dq("mp_expenses", { method: "PATCH", token, filters: `?id=eq.${editing.id}`, body });
     else await dq("mp_expenses", { method: "POST", token, body });
     setSaving(false);
     toast.success(editing?.id ? "Actualizado" : "Registrado");
     onSaved();
   };
+
+  const methods = ["Efectivo", "Débito", "Transferencia", "Tarjeta de crédito"];
 
   return (
     <Modal title={editing?.id ? "Editar gasto" : "Registrar gasto"} onClose={onClose}>
@@ -854,10 +973,37 @@ function ExpenseModal({ token, editing, categories, onClose, onSaved }) {
         <Field label="Categoría">
           <select value={catId} onChange={e => setCatId(e.target.value)} style={inputStyle}>
             <option value="">— Sin categoría —</option>
-            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {categories.map(c => <option key={c.id} value={c.id}>{c.icon ? `${c.icon}  ` : ""}{c.name}</option>)}
           </select>
         </Field>
       </div>
+      <Field label="Medio de pago">
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {methods.map(m => (
+            <button key={m} onClick={() => setPm(m)} style={{
+              flex: "1 1 calc(50% - 3px)", padding: "9px 10px", fontSize: 12, fontWeight: 600,
+              borderRadius: 8, border: pm === m ? `1px solid ${T.gold}` : `1px solid ${T.border}`,
+              background: pm === m ? `linear-gradient(135deg, ${T.goldHi}, ${T.gold})` : "transparent",
+              color: pm === m ? T.bgBase : T.textSecondary, cursor: "pointer", transition: "all 150ms",
+            }}>{m}</button>
+          ))}
+        </div>
+      </Field>
+      {isCredit && (
+        <Field label="Cuotas">
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {[1, 3, 6, 12, 18, 24].map(n => (
+              <button key={n} onClick={() => setInst(n)} style={{
+                flex: 1, minWidth: 56, padding: "9px 8px", fontSize: 12, fontWeight: 700,
+                borderRadius: 8, border: inst === n ? `1px solid ${T.gold}` : `1px solid ${T.border}`,
+                background: inst === n ? `linear-gradient(135deg, ${T.goldHi}, ${T.gold})` : "transparent",
+                color: inst === n ? T.bgBase : T.textSecondary, cursor: "pointer", transition: "all 150ms",
+              }}>{n === 1 ? "1 (sin cuotas)" : `${n}x`}</button>
+            ))}
+          </div>
+          {perInst && inst > 1 && <p style={{ margin: "6px 2px 0", fontSize: 11, color: T.textMuted }}>≈ {fmtArs(perInst)} por cuota</p>}
+        </Field>
+      )}
       <Field label="Fecha"><input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} /></Field>
       <Field label="Notas (opcional)"><input value={notes} onChange={e => setNotes(e.target.value)} style={inputStyle} /></Field>
       <ModalFooter onCancel={onClose} onConfirm={save} loading={saving} confirmLabel={editing?.id ? "Guardar" : "Registrar"} />
@@ -889,7 +1035,7 @@ function WithdrawalModal({ token, editing, onClose, onSaved }) {
   };
 
   return (
-    <Modal title={editing?.id ? "Editar retiro" : "Registrar retiro de sueldo"} onClose={onClose}>
+    <Modal title={editing?.id ? "Editar ingreso" : "Registrar ingreso"} onClose={onClose}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="USD retirados"><input autoFocus type="text" inputMode="decimal" value={usd} onChange={e => setUsd(e.target.value)} style={inputStyle} placeholder="500" /></Field>
         <Field label="TC del día"><input type="text" inputMode="decimal" value={rate} onChange={e => setRate(e.target.value)} style={inputStyle} placeholder="1250" /></Field>
@@ -901,27 +1047,6 @@ function WithdrawalModal({ token, editing, onClose, onSaved }) {
       <Field label="Fecha"><input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} /></Field>
       <Field label="Notas (opcional)"><input value={notes} onChange={e => setNotes(e.target.value)} style={inputStyle} placeholder="Ej: Mitad del sueldo del mes" /></Field>
       <ModalFooter onCancel={onClose} onConfirm={save} loading={saving} confirmLabel={editing?.id ? "Guardar" : "Registrar"} />
-    </Modal>
-  );
-}
-
-function SettingsModal({ token, settings, onClose, onSaved }) {
-  const [salary, setSalary] = useState(settings.monthly_salary_usd || 1500);
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    setSaving(true);
-    await dq("mp_settings", { method: "PATCH", token, filters: "?id=eq.1", body: { monthly_salary_usd: Number(salary), updated_at: new Date().toISOString() } });
-    setSaving(false);
-    toast.success("Guardado");
-    onSaved();
-  };
-
-  return (
-    <Modal title="Configuración" onClose={onClose}>
-      <Field label="Sueldo mensual (USD)"><input autoFocus type="number" value={salary} onChange={e => setSalary(e.target.value)} style={inputStyle} /></Field>
-      <p style={{ fontSize: 11.5, color: T.textMuted, margin: "8px 0 12px", lineHeight: 1.5 }}>El sueldo que te asignás desde Argencargo. Referencia para el panel mensual.</p>
-      <ModalFooter onCancel={onClose} onConfirm={save} loading={saving} confirmLabel="Guardar" />
     </Modal>
   );
 }

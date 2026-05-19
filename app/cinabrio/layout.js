@@ -1,5 +1,5 @@
 export const metadata = {
-  title: "Cinabrio",
+  title: { absolute: "Cinabrio" },
   description: "Hábitos y finanzas personales",
   manifest: "/cinabrio/manifest.webmanifest",
   themeColor: "#C8102E",
