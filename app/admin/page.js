@@ -506,6 +506,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const [savingAddPayment,setSavingAddPayment]=useState(false);
   const [cobroDecision,setCobroDecision]=useState(null); // {kind:"overpay"|"underpay", diff, resolve}
   const askCobroDecision=(kind,diff)=>new Promise(resolve=>setCobroDecision({kind,diff,resolve}));
+  // Modal genérico para pedir un monto (reemplaza window.prompt). Devuelve Promise<number|null>.
+  const [amountModal,setAmountModal]=useState(null); // {title, subtitle, defaultValue, max, resolve}
+  const askAmount=(cfg)=>new Promise(resolve=>setAmountModal({...cfg,resolve}));
   const [addPaymentForm,setAddPaymentForm]=useState({amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",payment_date:new Date().toISOString().slice(0,10),notes:""});
   const submitAddPayment=async()=>{
     const amtUsd=Number(addPaymentForm.amount_usd);
@@ -2380,11 +2383,17 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         const applySaldo=async()=>{
           if(creditBal<=0)return;
           const maxToApply=Math.min(creditBal,budgetTot-cobroUsd);
-          if(maxToApply<=0){alert("No hay saldo pendiente por cubrir en esta op");return;}
-          const inpStr=window.prompt(`El cliente tiene USD ${creditBal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} a favor.\n\n¿Cuánto aplicar a esta operación? (máximo USD ${maxToApply.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`,maxToApply.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}));
-          if(!inpStr)return;
-          const amt=Number(inpStr);
-          if(!amt||amt<=0||amt>creditBal+0.01){alert("Monto inválido");return;}
+          if(maxToApply<=0){flash("⚠ No hay saldo pendiente por cubrir en esta op");return;}
+          const amt=await askAmount({
+            title:"Aplicar saldo a favor",
+            subtitle:`El cliente tiene USD ${creditBal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} a favor. ¿Cuánto aplicar a esta op?`,
+            defaultValue:maxToApply,
+            max:Math.min(creditBal,maxToApply),
+            currency:"USD",
+            confirmLabel:"Aplicar",
+          });
+          if(amt==null)return;
+          if(!amt||amt<=0||amt>creditBal+0.01){flash("⚠ Monto inválido");return;}
           await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"applied",amount_usd:-amt,description:`Aplicado a ${op.operation_code}`}});
           const newApplied=creditApplied+amt;
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{credit_applied_usd:newApplied}});
@@ -3017,6 +3026,36 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
       </div>
     </div>;})()}
+    {amountModal&&<AmountModal data={amountModal} onClose={()=>{amountModal.resolve(null);setAmountModal(null);}} onConfirm={(v)=>{amountModal.resolve(v);setAmountModal(null);}}/>}
+  </div>;
+}
+
+// Modal reusable para pedir un monto (reemplazo de window.prompt). Soporta coma decimal es-AR.
+function AmountModal({data,onClose,onConfirm}){
+  const fmt=(v)=>Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const [val,setVal]=useState(data.defaultValue!=null?fmt(data.defaultValue):"");
+  const [err,setErr]=useState("");
+  const submit=()=>{
+    const n=Number(String(val).replace(/\./g,"").replace(",",".")); // 1.234,56 → 1234.56
+    if(!isFinite(n)||n<=0){setErr("Ingresá un monto válido");return;}
+    if(data.max!=null&&n>data.max+0.01){setErr(`Máximo permitido: ${data.currency||""} ${fmt(data.max)}`);return;}
+    onConfirm(n);
+  };
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(8,12,20,0.78)",backdropFilter:"blur(8px)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div onClick={e=>e.stopPropagation()} style={{maxWidth:440,width:"100%",background:"linear-gradient(180deg,#142038,#0f1a2e)",border:"1px solid rgba(184,149,106,0.28)",borderRadius:16,padding:"22px 24px 18px",boxShadow:"0 32px 80px rgba(0,0,0,0.65)"}}>
+      <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>{data.title||"Ingresar monto"}</h3>
+      {data.subtitle&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",margin:"6px 0 16px",lineHeight:1.5}}>{data.subtitle}</p>}
+      <div style={{display:"flex",alignItems:"stretch",gap:0,marginBottom:6}}>
+        {data.currency&&<span style={{display:"flex",alignItems:"center",padding:"0 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.12)",borderRight:"none",borderRadius:"8px 0 0 8px",fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,0.55)",letterSpacing:"0.04em"}}>{data.currency}</span>}
+        <input autoFocus type="text" inputMode="decimal" value={val} onChange={e=>{setErr("");setVal(e.target.value);}} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="0,00" style={{flex:1,padding:"11px 14px",fontSize:15,fontWeight:600,border:"1px solid rgba(255,255,255,0.12)",borderRadius:data.currency?"0 8px 8px 0":"8px",background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFeatureSettings:'"tnum"'}}/>
+      </div>
+      {data.max!=null&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Máximo: {data.currency||""} {fmt(data.max)}</p>}
+      {err&&<p style={{fontSize:11.5,color:"#f87171",margin:"6px 0 0",fontWeight:600}}>⚠ {err}</p>}
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:18,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+        <button onClick={onClose} style={{padding:"8px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.10)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>Cancelar</button>
+        <button onClick={submit} style={{padding:"9px 20px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>{data.confirmLabel||"Confirmar"}</button>
+      </div>
+    </div>
   </div>;
 }
 
