@@ -5137,7 +5137,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             <Inp label="Descripción" value={it.description} onChange={v=>chItem(i,"description",v)} small/>
             <Inp label="HS Code" value={it.hs_code} onChange={v=>chItem(i,"hs_code",v)} placeholder="8517.62" small/>
             <Inp label="Cantidad" type="number" value={it.quantity} onChange={v=>chItem(i,"quantity",v)} small/>
-            <Inp label="Precio unit. USD (declarado)" type="number" value={it.unit_price_declared_usd} onChange={v=>chItem(i,"unit_price_declared_usd",v)} step="0.01" small/>
+            <Inp label="Precio unit. USD" type="number" value={it.unit_price_declared_usd} onChange={v=>chItem(i,"unit_price_declared_usd",v)} step="0.01" small/>
           </div>
           <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",textAlign:"right"}}>Subtotal: USD {(Number(it.quantity||0)*Number(it.unit_price_declared_usd||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
         </div>;})}
