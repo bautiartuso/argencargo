@@ -81,8 +81,8 @@ function useLiveNow() {
 const GLOBAL_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
   *{box-sizing:border-box}
-  html,body{margin:0;padding:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:${T.bgBase};color:${T.textPrimary};font-feature-settings:'cv11','ss03';-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
-  body{min-height:100vh;min-height:100svh}
+  html,body{margin:0;padding:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:${T.bgBase};color:${T.textPrimary};font-feature-settings:'cv11','ss03';-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+  body{min-height:100vh}
   ::selection{background:${T.gold}55;color:${T.textPrimary}}
   ::-webkit-scrollbar{width:8px;height:8px}
   ::-webkit-scrollbar-track{background:transparent}
