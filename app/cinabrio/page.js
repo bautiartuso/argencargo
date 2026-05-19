@@ -60,16 +60,34 @@ function addDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return d
 const GLOBAL_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
   *{box-sizing:border-box}
-  html,body{margin:0;padding:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:${T.bgBase};color:${T.textPrimary};font-feature-settings:'cv11','ss03'}
+  html,body{margin:0;padding:0;font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:${T.bgBase};color:${T.textPrimary};font-feature-settings:'cv11','ss03';-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
+  body{padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
   ::selection{background:${T.gold}55;color:${T.textPrimary}}
   ::-webkit-scrollbar{width:8px;height:8px}
   ::-webkit-scrollbar-track{background:transparent}
   ::-webkit-scrollbar-thumb{background:${T.border};border-radius:4px}
   ::-webkit-scrollbar-thumb:hover{background:${T.borderHi}}
-  button{font-family:inherit}
-  input,textarea,select{font-family:inherit}
+  button{font-family:inherit;-webkit-tap-highlight-color:transparent}
+  input,textarea,select{font-family:inherit;font-size:16px}
   @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   @keyframes slideIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .cnb-page{padding:6px 14px 80px;max-width:1280px;margin:0 auto}
+  .cnb-header{padding:10px 14px 6px;display:flex;justify-content:center;align-items:center}
+  .cnb-toggle-pill{padding:9px 18px}
+  @media (min-width: 720px){
+    .cnb-page{padding:14px 24px 80px}
+    .cnb-header{padding:22px 24px 12px}
+    .cnb-toggle-pill{padding:9px 24px}
+  }
+  .cnb-row{display:flex;align-items:center;gap:12px;padding:13px 14px;flex-wrap:wrap}
+  .cnb-row-main{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
+  .cnb-row-tail{display:flex;align-items:center;gap:6px;margin-left:auto}
+  .cnb-grid-stats{display:grid;grid-template-columns:1fr;gap:10px}
+  @media (min-width: 560px){.cnb-grid-stats{grid-template-columns:repeat(3,1fr)}}
+  .cnb-section-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .cnb-section-bar::-webkit-scrollbar{display:none}
+  .cnb-card{padding:16px}
+  @media (min-width: 720px){.cnb-card{padding:20px 22px}}
 `;
 
 // ─────── Root ───────
@@ -142,10 +160,10 @@ function App({ session, onLogout }) {
 
   return (
     <div style={{ minHeight: "100vh", background: `radial-gradient(ellipse at top, ${T.bgSurface} 0%, ${T.bgBase} 75%)` }}>
-      <header style={{ padding: "22px 24px 10px", display: "flex", justifyContent: "center", alignItems: "center" }}>
+      <header className="cnb-header">
         <ModeToggle mode={mode} setMode={setMode} />
       </header>
-      <main style={{ padding: "10px 24px 60px", maxWidth: 1280, margin: "0 auto" }}>
+      <main className="cnb-page">
         {mode === "habits" ? <HabitsSection token={session.token} /> : <FinanceSection token={session.token} />}
       </main>
     </div>
@@ -156,6 +174,7 @@ function ModeToggle({ mode, setMode }) {
   const isFinance = mode === "finance";
   return (
     <button
+      className="cnb-toggle"
       onClick={() => setMode(isFinance ? "habits" : "finance")}
       style={{
         display: "inline-flex", alignItems: "center", gap: 0, padding: 4,
@@ -167,15 +186,15 @@ function ModeToggle({ mode, setMode }) {
         fontFamily: "inherit",
       }}
     >
-      <span style={{
-        position: "relative", padding: "9px 22px", fontSize: 12, fontWeight: 700,
+      <span className="cnb-toggle-pill" style={{
+        position: "relative", fontSize: 12, fontWeight: 700,
         color: !isFinance ? T.bgBase : T.textMuted,
-        letterSpacing: "0.12em", textTransform: "uppercase", zIndex: 2, transition: "color 220ms",
+        letterSpacing: "0.1em", textTransform: "uppercase", zIndex: 2, transition: "color 220ms",
       }}>HÁBITOS</span>
-      <span style={{
-        position: "relative", padding: "9px 22px", fontSize: 12, fontWeight: 700,
+      <span className="cnb-toggle-pill" style={{
+        position: "relative", fontSize: 12, fontWeight: 700,
         color: isFinance ? T.bgBase : T.textMuted,
-        letterSpacing: "0.12em", textTransform: "uppercase", zIndex: 2, transition: "color 220ms",
+        letterSpacing: "0.1em", textTransform: "uppercase", zIndex: 2, transition: "color 220ms",
       }}>FINANZAS</span>
       <span style={{
         position: "absolute", top: 4, bottom: 4,
@@ -306,20 +325,20 @@ function DayHeader({ date, setDate, pct, completed, total, isToday }) {
 
   return (
     <Card>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
-        <div>
-          <p style={{ margin: 0, fontSize: 11, color: T.gold, letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 700 }}>{isToday ? "Hoy" : DAYS_FULL[dowOf(date)]}</p>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 4, flexWrap: "wrap" }}>
-            <p style={{ margin: 0, fontSize: 30, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1, color: T.textPrimary }}>{d.toLocaleDateString("es-AR", { day: "numeric", month: "long" })}</p>
-            <div style={{ display: "flex", gap: 4 }}>
-              <IconBtn onClick={() => navDay(-1)} title="Día anterior">‹</IconBtn>
-              {!isToday && <IconBtn onClick={() => setDate(todayStr())} title="Hoy">⌂</IconBtn>}
-              <IconBtn onClick={() => navDay(1)} title="Día siguiente">›</IconBtn>
-            </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <p style={{ margin: 0, fontSize: 11, color: T.gold, letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 700 }}>{isToday ? "Hoy" : DAYS_FULL[dowOf(date)]}</p>
+            <p style={{ margin: "4px 0 0", fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.1, color: T.textPrimary }}>{d.toLocaleDateString("es-AR", { day: "numeric", month: "long" })}</p>
+            <p style={{ margin: "6px 0 0", fontSize: 12.5, color: T.textSecondary }}>{completed} de {total} hábitos completados</p>
           </div>
-          <p style={{ margin: "8px 0 0", fontSize: 13, color: T.textSecondary }}>{completed} de {total} hábitos completados</p>
+          <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+            <IconBtn onClick={() => navDay(-1)} title="Día anterior">‹</IconBtn>
+            {!isToday && <IconBtn onClick={() => setDate(todayStr())} title="Hoy">⌂</IconBtn>}
+            <IconBtn onClick={() => navDay(1)} title="Día siguiente">›</IconBtn>
+          </div>
         </div>
-        <div style={{ minWidth: 200, flex: 1, maxWidth: 320, alignSelf: "stretch", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
             <span style={{ fontSize: 10.5, color: T.textMuted, letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 700 }}>Progreso</span>
             <span style={{ fontSize: 22, fontWeight: 600, color: pct === 100 ? T.success : T.gold, fontVariantNumeric: "tabular-nums" }}>{pct}%</span>
@@ -767,26 +786,29 @@ function FinanceSection({ token }) {
         ) : (
           <Card padded={false}>
             {ledger.map((r, i) => (
-              <div key={`${r.kind}-${r.id}`} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 18px", borderBottom: i === ledger.length - 1 ? "none" : `1px solid ${T.border}` }}>
-                <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: T.textMuted, minWidth: 50, fontWeight: 500 }}>{r.date.slice(5).split("-").reverse().join("/")}</span>
+              <div key={`${r.kind}-${r.id}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: i === ledger.length - 1 ? "none" : `1px solid ${T.border}` }}>
                 <span style={{
-                  width: 28, height: 28, borderRadius: 14, flexShrink: 0,
+                  width: 32, height: 32, borderRadius: 16, flexShrink: 0,
                   background: r.kind === "in" ? `${T.gold}1F` : `${T.red}1F`,
                   border: `1px solid ${r.kind === "in" ? T.gold + "55" : T.red + "55"}`,
                   display: "flex", alignItems: "center", justifyContent: "center",
                   color: r.kind === "in" ? T.gold : T.red, fontSize: 16, fontWeight: 700, lineHeight: 1,
                 }}>{r.kind === "in" ? "↓" : "↑"}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.label}</p>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 3, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{r.label}</p>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: r.kind === "in" ? T.gold : T.textPrimary, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", flexShrink: 0 }}>{r.kind === "in" ? "+" : "−"} {fmtArs(r.amount)}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
+                    <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: T.textMuted, fontWeight: 500 }}>{r.date.slice(5).split("-").reverse().join("/")}</span>
                     {r.category && <span style={{ fontSize: 11, color: r.category.color || T.gold, fontWeight: 600 }}>{r.category.icon ? `${r.category.icon} ` : ""}{r.category.name}</span>}
                     {r.payment_method && <span style={{ fontSize: 10.5, color: T.textMuted, padding: "1px 7px", borderRadius: 999, border: `1px solid ${T.border}` }}>{r.payment_method}{r.installments > 1 ? ` · ${r.installments}x` : ""}</span>}
-                    {r.notes && <span style={{ fontSize: 10.5, color: T.textMuted }}>{r.notes}</span>}
+                    {r.notes && <span style={{ fontSize: 10.5, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.notes}</span>}
+                    <span style={{ flex: 1 }} />
+                    <IconBtn onClick={() => r.kind === "in" ? setEditWithdraw(r.raw) : setEditExpense(r.raw)} title="Editar">✎</IconBtn>
+                    <IconBtn onClick={() => r.kind === "in" ? delWdraw(r.raw) : delExp(r.raw)} title="Eliminar" danger>×</IconBtn>
                   </div>
                 </div>
-                <span style={{ fontSize: 14, fontWeight: 600, color: r.kind === "in" ? T.gold : T.textPrimary, fontVariantNumeric: "tabular-nums" }}>{r.kind === "in" ? "+" : "−"} {fmtArs(r.amount)}</span>
-                <IconBtn onClick={() => r.kind === "in" ? setEditWithdraw(r.raw) : setEditExpense(r.raw)} title="Editar">✎</IconBtn>
-                <IconBtn onClick={() => r.kind === "in" ? delWdraw(r.raw) : delExp(r.raw)} title="Eliminar" danger>×</IconBtn>
               </div>
             ))}
           </Card>
@@ -1254,7 +1276,7 @@ function ConfirmModal({ title, body, onConfirm, onClose, danger }) {
 }
 
 function Card({ children, padded = true }) {
-  return <div style={{ background: T.bgSurface, border: `1px solid ${T.border}`, borderRadius: 14, padding: padded ? "20px 22px" : 0, boxShadow: "0 8px 24px rgba(0,0,0,0.3)" }}>{children}</div>;
+  return <div className={padded ? "cnb-card" : ""} style={{ background: T.bgSurface, border: `1px solid ${T.border}`, borderRadius: 14, padding: padded ? undefined : 0, boxShadow: "0 8px 24px rgba(0,0,0,0.3)" }}>{children}</div>;
 }
 
 function SectionHeader({ title, action }) {

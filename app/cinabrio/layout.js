@@ -2,16 +2,20 @@ export const metadata = {
   title: { absolute: "Cinabrio" },
   description: "Hábitos y finanzas personales",
   manifest: "/cinabrio/manifest.webmanifest",
-  themeColor: "#C8102E",
   appleWebApp: {
     title: "Cinabrio",
     statusBarStyle: "black-translucent",
     capable: true,
   },
-  icons: {
-    icon: "/cinabrio-logo.png",
-    apple: "/cinabrio-logo.png",
-  },
+};
+
+export const viewport = {
+  themeColor: "#0A0606",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function CinabrioLayout({ children }) {
