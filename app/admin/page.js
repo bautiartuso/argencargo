@@ -9296,7 +9296,8 @@ function MaritimePanel({token,allClients=[]}){
   Object.keys(byWarehouse).forEach(k=>{byWarehouse[k].sort((a,b)=>codeNum(a.shipment_code)-codeNum(b.shipment_code));});
 
   const cbmOf=(shId)=>packages.filter(p=>p.shipment_id===shId).reduce((s,p)=>s+Number(p.cbm||0),0);
-  const bultosOf=(shId)=>packages.filter(p=>p.shipment_id===shId).length;
+  // Total de bultos = suma de quantity (un row de qty=3 cuenta como 3 bultos)
+  const bultosOf=(shId)=>packages.filter(p=>p.shipment_id===shId).reduce((s,p)=>s+Number(p.quantity||1),0);
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   const downloadPdf=(warehouse,origin,lang="es",withValues=true)=>{
@@ -9412,7 +9413,7 @@ function MaritimePanel({token,allClients=[]}){
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginTop:10}}>
                   <div>
                     <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Bultos ({shPkgs.length})</p>
-                    {shPkgs.length===0?<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin bultos cargados</p>:<table style={{width:"100%",fontSize:11.5,borderCollapse:"collapse"}}><tbody>{shPkgs.map((p,i)=><tr key={p.id} style={{borderBottom:i<shPkgs.length-1?"1px solid rgba(255,255,255,0.04)":"none"}}><td style={{padding:"3px 0",color:"rgba(255,255,255,0.7)"}}>{p.label||`Bulto ${p.bulto_number||i+1}`}</td><td style={{padding:"3px 0",color:"rgba(255,255,255,0.55)"}}>{p.length_cm}×{p.width_cm}×{p.height_cm} cm</td><td style={{padding:"3px 0",textAlign:"right",color:GOLD_LIGHT,fontFeatureSettings:'"tnum"',fontWeight:600}}>{Number(p.cbm||0).toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</td></tr>)}</tbody></table>}
+                    {shPkgs.length===0?<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin bultos cargados</p>:<table style={{width:"100%",fontSize:11.5,borderCollapse:"collapse"}}><tbody>{shPkgs.map((p,i)=>{const q=Number(p.quantity||1);return <tr key={p.id} style={{borderBottom:i<shPkgs.length-1?"1px solid rgba(255,255,255,0.04)":"none"}}><td style={{padding:"3px 0",color:"rgba(255,255,255,0.7)",fontWeight:600,whiteSpace:"nowrap"}}>×{q}</td><td style={{padding:"3px 0",color:"rgba(255,255,255,0.55)"}}>{p.length_cm}×{p.width_cm}×{p.height_cm} cm</td><td style={{padding:"3px 0",textAlign:"right",color:GOLD_LIGHT,fontFeatureSettings:'"tnum"',fontWeight:600}}>{Number(p.cbm||0).toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</td></tr>;})}</tbody></table>}
                   </div>
                   <div>
                     <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Mercadería ({shItems.length})</p>
@@ -9437,12 +9438,12 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   const [productDescription,setProductDescription]=useState(editing?.product_description||"");
   const [clientId,setClientId]=useState(editing?.client_id||"");
   const [clientName,setClientName]=useState(editing?.client_name_snapshot||"");
-  const [pkgs,setPkgs]=useState(packages.length>0?packages.map(p=>({...p,length_cm:p.length_cm||"",width_cm:p.width_cm||"",height_cm:p.height_cm||"",label:p.label||""})):[{label:"",length_cm:"",width_cm:"",height_cm:""}]);
+  const [pkgs,setPkgs]=useState(packages.length>0?packages.map(p=>({...p,length_cm:p.length_cm||"",width_cm:p.width_cm||"",height_cm:p.height_cm||"",quantity:p.quantity||1})):[{quantity:1,length_cm:"",width_cm:"",height_cm:""}]);
   const [its,setIts]=useState(items.length>0?items.map(i=>({...i,quantity:i.quantity||"",unit_price_usd:i.unit_price_usd||""})):[]);
   const [saving,setSaving]=useState(false);
 
   const selectedWh=warehouses.find(w=>w.id===warehouseId);
-  const cbmLive=(p)=>{const l=Number(p.length_cm),w=Number(p.width_cm),h=Number(p.height_cm);return l&&w&&h?(l*w*h)/1000000:0;};
+  const cbmLive=(p)=>{const l=Number(p.length_cm),w=Number(p.width_cm),h=Number(p.height_cm),q=Number(p.quantity||1);return l&&w&&h?((l*w*h)/1000000)*q:0;};
   const cbmTotal=pkgs.reduce((s,p)=>s+cbmLive(p),0);
 
   const save=async()=>{
@@ -9480,7 +9481,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       shId=(Array.isArray(res)?res[0]:res)?.id;
     }
     if(shId){
-      const validPkgs=pkgs.filter(p=>p.length_cm&&p.width_cm&&p.height_cm).map((p,i)=>({shipment_id:shId,bulto_number:i+1,label:p.label||null,length_cm:Number(p.length_cm),width_cm:Number(p.width_cm),height_cm:Number(p.height_cm)}));
+      const validPkgs=pkgs.filter(p=>p.length_cm&&p.width_cm&&p.height_cm).map((p,i)=>({shipment_id:shId,bulto_number:i+1,quantity:Math.max(1,Number(p.quantity)||1),length_cm:Number(p.length_cm),width_cm:Number(p.width_cm),height_cm:Number(p.height_cm)}));
       if(validPkgs.length>0)await dq("maritime_packages",{method:"POST",token,body:validPkgs});
       const validItems=its.filter(it=>it.description?.trim()).map((it,i)=>({shipment_id:shId,description:it.description.trim(),quantity:Number(it.quantity||1),unit_price_usd:Number(it.unit_price_usd||0),notes:it.notes||null,sort_order:i}));
       if(validItems.length>0)await dq("maritime_items",{method:"POST",token,body:validItems});
@@ -9510,10 +9511,10 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     <div style={{marginTop:12,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>📦 Bultos</p>
-        <button onClick={()=>setPkgs(p=>[...p,{label:"",length_cm:"",width_cm:"",height_cm:""}])} style={{padding:"4px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"transparent",color:IC,cursor:"pointer"}}>+ Bulto</button>
+        <button onClick={()=>setPkgs(p=>[...p,{quantity:1,length_cm:"",width_cm:"",height_cm:""}])} style={{padding:"4px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"transparent",color:IC,cursor:"pointer"}}>+ Bulto</button>
       </div>
-      {pkgs.map((p,i)=>{const c=cbmLive(p);return <div key={i} style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 1fr 1fr 0.9fr auto",gap:8,marginBottom:6,alignItems:"end"}}>
-        <Inp label={i===0?"Label (opcional)":""} value={p.label} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,label:v}:x))} placeholder={`Bulto ${i+1}`} small/>
+      {pkgs.map((p,i)=>{const c=cbmLive(p);return <div key={i} style={{display:"grid",gridTemplateColumns:"0.7fr 1fr 1fr 1fr 0.9fr auto",gap:8,marginBottom:6,alignItems:"end"}}>
+        <Inp label={i===0?"Cantidad":""} type="number" value={p.quantity} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x))} placeholder="1" small/>
         <Inp label={i===0?"Largo (cm)":""} type="number" value={p.length_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,length_cm:v}:x))} small/>
         <Inp label={i===0?"Ancho (cm)":""} type="number" value={p.width_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,width_cm:v}:x))} small/>
         <Inp label={i===0?"Alto (cm)":""} type="number" value={p.height_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,height_cm:v}:x))} small/>
