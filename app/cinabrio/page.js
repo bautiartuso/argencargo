@@ -33,7 +33,9 @@ const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
 const DAYS_FULL = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const DAYS_SHORT_FULL = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+// Fecha local (no UTC) — toISOString() devuelve UTC y a las 21+ en AR ya cambiaba de día.
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const todayStr = () => ymd(new Date());
 const dowOf = (date) => { const d = new Date(date + "T12:00:00").getDay(); return d === 0 ? 6 : d - 1; };
 const todayDow = () => dowOf(todayStr());
 const monthStr = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -47,16 +49,16 @@ function startOfWeek(date) {
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return ymd(d);
 }
 function weekDates(startStr) {
   const d = new Date(startStr + "T12:00:00");
   return Array.from({ length: 7 }, (_, i) => {
     const x = new Date(d); x.setDate(d.getDate() + i);
-    return x.toISOString().slice(0, 10);
+    return ymd(x);
   });
 }
-function addDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+function addDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return ymd(d); }
 
 // Mantiene una fecha/mes "vivo": cuando la pestaña vuelve a estar visible o pasa medianoche,
 // vuelve a sincronizar al día/mes real (evita que la PWA quede en un mes viejo).
@@ -347,7 +349,7 @@ function DayView({ habits, cats, log, date, setDate, onToggle, onNew }) {
 
 function DayHeader({ date, setDate, pct, completed, total, isToday }) {
   const d = new Date(date + "T12:00:00");
-  const navDay = (n) => { const x = new Date(d); x.setDate(d.getDate() + n); setDate(x.toISOString().slice(0, 10)); };
+  const navDay = (n) => { const x = new Date(d); x.setDate(d.getDate() + n); setDate(ymd(x)); };
 
   return (
     <Card>
@@ -430,7 +432,7 @@ function WeekView({ habits, cats, log, onToggle }) {
   const dates = weekDates(weekStart);
   const navWeek = (n) => {
     const d = new Date(weekStart + "T12:00:00"); d.setDate(d.getDate() + n * 7);
-    setWeekStart(d.toISOString().slice(0, 10));
+    setWeekStart(ymd(d));
   };
   const ts = todayStr();
 
