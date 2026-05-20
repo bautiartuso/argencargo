@@ -9286,7 +9286,10 @@ function MaritimePanel({token,allClients=[]}){
 
   // Agrupar por (warehouse, origin)
   const filtered=shipments.filter(s=>(originFilter==="all"||s.origin===originFilter)&&(warehouseFilter==="all"||s.warehouse===warehouseFilter));
-  const warehouses=whs.map(w=>w.name);
+  // Solo mostrar los depósitos del país filtrado (o todos si origin="all").
+  const warehouses=whs.filter(w=>originFilter==="all"||w.origin===originFilter).map(w=>w.name);
+  // Si el depósito seleccionado no pertenece al país actual, reseteamos a "all".
+  useEffect(()=>{if(warehouseFilter!=="all"&&!warehouses.includes(warehouseFilter))setWarehouseFilter("all");},[originFilter,warehouseFilter,warehouses]);
   const byWarehouse={};
   filtered.forEach(s=>{const k=s.warehouse||"Sin depósito";if(!byWarehouse[k])byWarehouse[k]=[];byWarehouse[k].push(s);});
   const codeNum=c=>{const m=String(c||"").match(/\d+/);return m?Number(m[0]):9999;};
