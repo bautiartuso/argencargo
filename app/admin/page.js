@@ -5556,6 +5556,7 @@ function AgentsPanel({token}){
   const [selectedOps,setSelectedOps]=useState([]);
   const [opsWithDocs,setOpsWithDocs]=useState(new Set());
   const [selFlight,setSelFlight]=useState(null);
+  const [flightsSubTab,setFlightsSubTab]=useState("active"); // active | received
   const [expandedRepack,setExpandedRepack]=useState(null); // op.id cuyo snapshot está expandido
   const [showAnticipoForm,setShowAnticipoForm]=useState(null);
   const [showRefundForm,setShowRefundForm]=useState(null);
@@ -6031,19 +6032,27 @@ function AgentsPanel({token}){
       </div>;
     })()}
 
-    {tab==="flights"&&!selFlight&&<div>
+    {tab==="flights"&&!selFlight&&(()=>{
+      const activeFlights=flights.filter(f=>f.status!=="recibido");
+      const receivedFlights=flights.filter(f=>f.status==="recibido");
+      const shownFlights=flightsSubTab==="received"?receivedFlights:activeFlights;
+      return <div>
       {/* Banners de pagos pendientes (Alibaba / Alipay) — el agente despachó pero falta cargar cómo se pagó */}
       {(()=>{const aliPend=flights.filter(f=>f.awaiting_alibaba_payment);const aliPay=flights.filter(f=>f.awaiting_alipay_payment);return <>
         {aliPend.length>0&&<AlibabaPendingBanner flights={aliPend} token={token} onDone={load}/>}
         {aliPay.length>0&&<AlipayPendingBanner flights={aliPay} token={token} onDone={load}/>}
       </>;})()}
-      {flights.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay vuelos creados todavía</p>:
+      {/* Sub-tabs En operación / Recibidos */}
+      <div style={{display:"flex",gap:6,marginBottom:14,padding:4,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,width:"fit-content"}}>
+        {[{k:"active",l:"En operación",n:activeFlights.length,c:"#60a5fa"},{k:"received",l:"Recibidos",n:receivedFlights.length,c:"#22c55e"}].map(st=>{const isActive=flightsSubTab===st.k;return <button key={st.k} onClick={()=>setFlightsSubTab(st.k)} style={{padding:"8px 16px",fontSize:11.5,fontWeight:700,border:"none",borderRadius:7,background:isActive?`linear-gradient(135deg, ${st.c}33, ${st.c}1A)`:"transparent",color:isActive?st.c:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",transition:"all 160ms",display:"inline-flex",alignItems:"center",gap:8,boxShadow:isActive?`inset 0 0 0 1px ${st.c}55`:"none"}}>{st.l}<span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:99,background:isActive?`${st.c}33`:"rgba(255,255,255,0.08)",color:isActive?st.c:"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{st.n}</span></button>;})}
+      </div>
+      {shownFlights.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>{flights.length===0?"No hay vuelos creados todavía":flightsSubTab==="received"?"Aún no hay vuelos recibidos":"No hay vuelos en operación"}</p>:
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
             {["Código","Agente","Estado","Ops","Clientes","Peso","Costo","Tracking","Demora"].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
           </tr></thead>
-          <tbody>{flights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const a=signups.find(s=>s.auth_user_id===f.agent_id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
+          <tbody>{shownFlights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const a=signups.find(s=>s.auth_user_id===f.agent_id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
             // Demora del agente: días entre dispatched_at y carrier_pickup_at.
             // Auto para DHL/FedEx (vía API), manual para UPS (cargado por admin).
             const demoraInfo=(()=>{
@@ -6075,7 +6084,8 @@ function AgentsPanel({token}){
           </tr>;})}</tbody>
         </table>
       </div>}
-    </div>}
+    </div>;
+    })()}
 
     {tab==="flights"&&selFlight&&flight&&<FlightEditor token={token} flight={flight} signups={signups} flightOps={flightOpsForSel} depositOps={depositOps} allOps={allOps} invoiceItems={invoiceItems.filter(i=>i.flight_id===flight.id)} depositPkgs={depositPkgs} onReload={load} onFlash={flash} onBack={()=>setSelFlight(null)} usd={usd}/>}
 
