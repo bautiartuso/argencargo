@@ -9419,7 +9419,9 @@ function MaritimePanel({token,allClients=[]}){
             const isExp=expanded.has(sh.id);
             const shItems=items.filter(it=>it.shipment_id===sh.id);
             const shPkgs=packages.filter(p=>p.shipment_id===sh.id);
-            const recDate=sh.received_at?new Date(sh.received_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
+            // received_at viene como "YYYY-MM-DD" (columna date). new Date(string-de-10-chars) lo parsea como UTC,
+            // y al renderizar en AR (UTC-3) retrocede al día anterior. Agregamos "T12:00:00" → mediodía local, sin riesgo de TZ.
+            const recDate=sh.received_at?new Date(sh.received_at+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
             return <Fragment key={sh.id}>
               <tr onClick={()=>setExpanded(prev=>{const n=new Set(prev);if(n.has(sh.id))n.delete(sh.id);else n.add(sh.id);return n;})} style={{borderBottom:isExp?"none":"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}}>
                 <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:700,color:recDate?IC:"rgba(255,255,255,0.3)",fontFeatureSettings:'"tnum"'}}>{recDate||"—"}</td>
