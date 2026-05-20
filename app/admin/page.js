@@ -419,6 +419,78 @@ function NewOperation({token,clients,onBack,onCreated}){
   </div>;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// Parser de tracking UPS: pegás el texto copiado de ups.com y devuelve
+// un array de eventos listos para insertar en tracking_events.
+// 100% JS local, sin API ni LLM — gratis e ilimitado.
+// ────────────────────────────────────────────────────────────────────
+function parseUpsTracking(text){
+  if(!text||typeof text!=="string")return [];
+  const lines=text.split(/\r?\n/).map(s=>s.trim());
+  const dateRx=/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+  const timeRx=/^(\d{1,2}):(\d{2})\s*(A\.?M\.?|P\.?M\.?)$/i;
+  // Líneas a ignorar siempre
+  const skip=new Set(["Select Time Zone","keyboard_arrow_down",""]);
+  const filtered=lines.filter(l=>!skip.has(l));
+
+  // Tokens entre fechas: para cada bloque [date, time, ...middle, location]
+  const blocks=[];
+  let cur=null;
+  for(let i=0;i<filtered.length;i++){
+    const ln=filtered[i];
+    if(dateRx.test(ln)){
+      if(cur)blocks.push(cur);
+      cur={date:ln,time:null,middle:[]};
+      continue;
+    }
+    if(!cur)continue;
+    if(!cur.time&&timeRx.test(ln)){cur.time=ln;continue;}
+    cur.middle.push(ln);
+  }
+  if(cur)blocks.push(cur);
+
+  return blocks.map(b=>{
+    if(!b.date||!b.time||b.middle.length===0)return null;
+    const [_,mm,dd,yyyy]=b.date.match(dateRx);
+    const [__,hh,min,ampm]=b.time.match(timeRx);
+    let H=parseInt(hh,10);
+    const isPm=/p/i.test(ampm);
+    if(H===12)H=isPm?12:0;
+    else if(isPm)H+=12;
+    // Argentina (UTC-03) — coincide con el TZ que mostraría UPS si seleccionás "Argentina"
+    const iso=`${yyyy}-${String(mm).padStart(2,"0")}-${String(dd).padStart(2,"0")}T${String(H).padStart(2,"0")}:${min}:00-03:00`;
+    // middle = [...preLines, location]. La última línea siempre es location.
+    let realLocation=null, realTitle=null, realDescription=null;
+    if(b.middle.length===1){
+      realTitle=b.middle[0];
+    }else{
+      realLocation=b.middle[b.middle.length-1];
+      const pre=b.middle.slice(0,-1);
+      // Heurística: si la última pre-línea es "larga" (descripción), usamos la anterior como título.
+      // Si es "corta" (acción tipo "Arrived at Facility"), usamos esa como título.
+      const isDescriptive=(s)=>s.length>42||/[.!?]$/.test(s);
+      if(pre.length===1){
+        realTitle=pre[0];
+      }else if(pre.length===2){
+        // [label, accion-o-descripcion]
+        if(isDescriptive(pre[1])){realTitle=pre[0]; realDescription=pre[1];}
+        else{realTitle=pre[1]; realDescription=pre[0];}
+      }else{
+        // 3+ líneas: la última pre-línea decide, las anteriores van a description
+        const last=pre[pre.length-1];
+        const beforeLast=pre[pre.length-2];
+        if(isDescriptive(last)){realTitle=beforeLast; realDescription=[...pre.slice(0,-2),last].join(" · ");}
+        else{realTitle=last; realDescription=pre.slice(0,-1).join(" · ");}
+      }
+    }
+    // Hash determinístico para deduplicar re-pastes (mismo evento = mismo external_id)
+    const hashSrc=`${iso}|${realTitle}|${realLocation||""}`;
+    let h=0;for(let k=0;k<hashSrc.length;k++){h=((h<<5)-h+hashSrc.charCodeAt(k))|0;}
+    const external_id=`ups_paste_${Math.abs(h).toString(36)}`;
+    return {occurred_at:iso,title:realTitle,description:realDescription,location:realLocation,external_id};
+  }).filter(Boolean);
+}
+
 // Notas internas + recordatorios por op (admin only)
 function OperationNotesPanel({opId,token}){
   const [notes,setNotes]=useState([]);
@@ -861,6 +933,25 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const saveEvt=async(ev)=>{const{id,...rest}=ev;delete rest.created_at;await dq("tracking_events",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Evento guardado");};
   const addEvt=async()=>{await dq("tracking_events",{method:"POST",token,body:{operation_id:op.id,title:"Nuevo evento",occurred_at:new Date().toISOString(),is_visible_to_client:true,created_by:null}});await reloadEvents();flash("Evento agregado");};
   const delEvt=async(id)=>{await dq("tracking_events",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadEvents();flash("Evento eliminado");};
+
+  // UPS Paste: pegás el texto copiado de ups.com y se generan los tracking_events.
+  const [upsPasteOpen,setUpsPasteOpen]=useState(false);
+  const [upsPasteText,setUpsPasteText]=useState("");
+  const [upsImporting,setUpsImporting]=useState(false);
+  const upsParsed=useMemo(()=>parseUpsTracking(upsPasteText),[upsPasteText]);
+  const upsExistingIds=useMemo(()=>new Set(events.map(e=>e.external_id).filter(Boolean)),[events]);
+  const upsNewCount=upsParsed.filter(p=>!upsExistingIds.has(p.external_id)).length;
+  const importUpsEvents=async()=>{
+    if(upsParsed.length===0)return;
+    setUpsImporting(true);
+    const toInsert=upsParsed.filter(p=>!upsExistingIds.has(p.external_id)).map(p=>({operation_id:op.id,title:p.title,description:p.description,location:p.location,occurred_at:p.occurred_at,is_visible_to_client:true,source:"ups_manual",carrier:"UPS",external_id:p.external_id,created_by:null}));
+    if(toInsert.length>0)await dq("tracking_events",{method:"POST",token,body:toInsert,filters:"?on_conflict=operation_id,source,external_id",headers:{"Prefer":"resolution=ignore-duplicates,return=minimal"}});
+    await reloadEvents();
+    setUpsImporting(false);
+    setUpsPasteOpen(false);
+    setUpsPasteText("");
+    flash(`${toInsert.length} eventos importados desde UPS`);
+  };
 
   const isCanalB=op.channel?.includes("negro");
   const isGI=op.service_type==="gestion_integral";
@@ -1678,7 +1769,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </div>
       <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"4px 0 0"}}>Las actualizaciones de DHL/FedEx/UPS se sincronizan automáticamente cada 6h (cron). Podés forzar ahora con el botón ↻.</p>
     </Card>
-    <Card title="Eventos de seguimiento" actions={<Btn onClick={addEvt} small>+ Agregar evento</Btn>}>
+    <Card title="Eventos de seguimiento" actions={<>{(op.international_carrier||"").toLowerCase().includes("ups")&&<Btn onClick={()=>setUpsPasteOpen(true)} small variant="secondary">📋 Pegar desde UPS</Btn>}<Btn onClick={addEvt} small>+ Agregar evento</Btn></>}>
       {events.map((ev,i)=><div key={ev.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>{ev.title||"Sin título"} — {formatDate(ev.occurred_at)}</p>
@@ -1696,6 +1787,36 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </div>)}
       {events.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>No hay eventos de seguimiento.</p>}
     </Card>
+    {upsPasteOpen&&<div onClick={()=>!upsImporting&&setUpsPasteOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:780,maxHeight:"90vh",overflowY:"auto",background:"#0F1F3A",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div>
+            <p style={{margin:0,fontSize:16,fontWeight:700,color:"#fff"}}>Importar tracking desde UPS</p>
+            <p style={{margin:"3px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Pegá acá el texto copiado de ups.com (selección completa de la sección de movimientos). Se generan los eventos automáticamente.</p>
+          </div>
+          <button onClick={()=>!upsImporting&&setUpsPasteOpen(false)} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+        </div>
+        <textarea autoFocus value={upsPasteText} onChange={e=>setUpsPasteText(e.target.value)} placeholder="Pegá el texto de UPS acá…" rows={8} style={{width:"100%",padding:"12px 14px",fontSize:12,fontFamily:"ui-monospace, monospace",border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",resize:"vertical",boxSizing:"border-box",marginBottom:14}}/>
+        {upsParsed.length>0&&<div style={{marginBottom:14}}>
+          <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Preview · {upsParsed.length} evento{upsParsed.length!==1?"s":""} detectado{upsParsed.length!==1?"s":""} ({upsNewCount} nuevo{upsNewCount!==1?"s":""}, {upsParsed.length-upsNewCount} ya existe{upsParsed.length-upsNewCount!==1?"n":""})</p>
+          <div style={{maxHeight:260,overflowY:"auto",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10}}>
+            {upsParsed.map((p,i)=>{const dup=upsExistingIds.has(p.external_id);const d=new Date(p.occurred_at);return <div key={i} style={{padding:"10px 14px",borderBottom:i===upsParsed.length-1?"none":"1px solid rgba(255,255,255,0.06)",display:"flex",alignItems:"flex-start",gap:10,opacity:dup?0.4:1}}>
+              <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:dup?"rgba(255,255,255,0.08)":"rgba(127,176,105,0.18)",color:dup?"rgba(255,255,255,0.5)":"#7FB069",letterSpacing:"0.06em",textTransform:"uppercase",flexShrink:0,marginTop:2}}>{dup?"Duplic":"Nuevo"}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{margin:0,fontSize:13,fontWeight:600,color:"#fff"}}>{p.title}</p>
+                <p style={{margin:"2px 0 0",fontSize:11,color:"rgba(255,255,255,0.55)"}}>{d.toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})} {p.location?`· ${p.location}`:""}</p>
+                {p.description&&<p style={{margin:"3px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{p.description}</p>}
+              </div>
+            </div>;})}
+          </div>
+        </div>}
+        {upsPasteText&&upsParsed.length===0&&<p style={{margin:"0 0 14px",fontSize:12,color:"#fbbf24"}}>⚠ No pude parsear ningún evento. Asegurate de copiar la sección completa de movimientos de ups.com (incluyendo fechas, horas y ubicaciones).</p>}
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+          <Btn onClick={()=>!upsImporting&&setUpsPasteOpen(false)} variant="secondary" small>Cancelar</Btn>
+          <Btn onClick={importUpsEvents} disabled={upsImporting||upsNewCount===0} small>{upsImporting?"Importando…":upsNewCount===0?(upsParsed.length>0?"Todos duplicados":"Sin eventos para importar"):`Importar ${upsNewCount} nuevo${upsNewCount!==1?"s":""}`}</Btn>
+        </div>
+      </div>
+    </div>}
     </>}
 
     {tab==="payments"&&(()=>{
