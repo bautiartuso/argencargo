@@ -9292,8 +9292,18 @@ function MaritimePanel({token,allClients=[]}){
   useEffect(()=>{if(warehouseFilter!=="all"&&!warehouses.includes(warehouseFilter))setWarehouseFilter("all");},[originFilter,warehouseFilter,warehouses]);
   const byWarehouse={};
   filtered.forEach(s=>{const k=s.warehouse||"Sin depósito";if(!byWarehouse[k])byWarehouse[k]=[];byWarehouse[k].push(s);});
+  // Orden por fecha de recepción ascendente (los primeros en llegar arriba).
+  // Los que aún no llegaron (received_at null) van al fondo, ordenados por fecha de creación.
   const codeNum=c=>{const m=String(c||"").match(/\d+/);return m?Number(m[0]):9999;};
-  Object.keys(byWarehouse).forEach(k=>{byWarehouse[k].sort((a,b)=>codeNum(a.shipment_code)-codeNum(b.shipment_code));});
+  Object.keys(byWarehouse).forEach(k=>{byWarehouse[k].sort((a,b)=>{
+    const ra=a.received_at?new Date(a.received_at).getTime():null;
+    const rb=b.received_at?new Date(b.received_at).getTime():null;
+    if(ra!==null&&rb!==null)return ra-rb;
+    if(ra!==null)return -1;
+    if(rb!==null)return 1;
+    // Ambos pendientes: por created_at ascendente (los más viejos primero)
+    return new Date(a.created_at||0).getTime()-new Date(b.created_at||0).getTime();
+  });});
 
   const cbmOf=(shId)=>packages.filter(p=>p.shipment_id===shId).reduce((s,p)=>s+Number(p.cbm||0),0);
   // Total de bultos = suma de quantity (un row de qty=3 cuenta como 3 bultos)
@@ -9301,12 +9311,18 @@ function MaritimePanel({token,allClients=[]}){
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   const downloadPdf=(warehouse,origin,lang="es",withValues=true)=>{
-    const wsShipments=shipments.filter(s=>s.warehouse===warehouse&&s.origin===origin).map((s,idx)=>({
+    const wsShipments=shipments.filter(s=>s.warehouse===warehouse&&s.origin===origin).map(s=>({
       ...s,
-      shipment_code:s.shipment_code||`#${idx+1}`,
       packages:packages.filter(p=>p.shipment_id===s.id),
       items:items.filter(it=>it.shipment_id===s.id),
-    })).sort((a,b)=>codeNum(a.shipment_code)-codeNum(b.shipment_code));
+    })).sort((a,b)=>{
+      const ra=a.received_at?new Date(a.received_at).getTime():null;
+      const rb=b.received_at?new Date(b.received_at).getTime():null;
+      if(ra!==null&&rb!==null)return ra-rb;
+      if(ra!==null)return -1;
+      if(rb!==null)return 1;
+      return new Date(a.created_at||0).getTime()-new Date(b.created_at||0).getTime();
+    });
     if(wsShipments.length===0){alert("No hay pedidos para ese depósito/origen");return;}
     const wh=whByName[warehouse];
     const rotulo=wh?.rotulo||`MARÍTIMO ${warehouse.toUpperCase()} (código cliente)`;
@@ -9385,18 +9401,18 @@ function MaritimePanel({token,allClients=[]}){
         </div>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.2)"}}>
-            {["#","Producto","Cliente","Origen","Tracking","Bultos","CBM","Estado",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{h}</th>)}
+            {["Recibido","Producto","Cliente","Origen","Tracking","Bultos","CBM","Estado",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{h}</th>)}
           </tr></thead>
           <tbody>{wsList.map((sh,idx)=>{
             const cbm=cbmOf(sh.id);
             const bcount=bultosOf(sh.id);
             const isExp=expanded.has(sh.id);
-            const code=sh.shipment_code||`#${String(idx+1).padStart(2,"0")}`;
             const shItems=items.filter(it=>it.shipment_id===sh.id);
             const shPkgs=packages.filter(p=>p.shipment_id===sh.id);
+            const recDate=sh.received_at?new Date(sh.received_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
             return <Fragment key={sh.id}>
               <tr onClick={()=>setExpanded(prev=>{const n=new Set(prev);if(n.has(sh.id))n.delete(sh.id);else n.add(sh.id);return n;})} style={{borderBottom:isExp?"none":"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}}>
-                <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:700,color:IC}}>{code}</td>
+                <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:700,color:recDate?IC:"rgba(255,255,255,0.3)",fontFeatureSettings:'"tnum"'}}>{recDate||"—"}</td>
                 <td style={{padding:"10px 12px",color:"#fff",fontWeight:600}}>{sh.product_description}{sh.is_fragile&&<span style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.18)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.4)",letterSpacing:"0.05em",marginLeft:6,display:"inline-block",verticalAlign:"middle"}}>FRÁGIL</span>}{sh.is_repack&&<span style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(251,146,60,0.18)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.4)",letterSpacing:"0.05em",marginLeft:6,display:"inline-block",verticalAlign:"middle"}}>REENVÍO</span>}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.65)"}}>{sh.client_name_snapshot||"—"}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)"}}>{sh.origin==="usa"?"🇺🇸 USA":"🇨🇳 China"}</td>
