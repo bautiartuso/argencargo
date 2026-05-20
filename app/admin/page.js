@@ -813,9 +813,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   };
 
   // Auto-sync: refresca items+bultos+tarifas+overrides+cliente de DB y recalcula+guarda presupuesto silenciosamente.
-  // Se llama después de cualquier CRUD de items/bultos. Saltea ops cerradas/canceladas.
+  // Se llama después de cualquier CRUD de items/bultos. Saltea ops canceladas.
+  // En ops cerradas SÍ recalcula — el admin puede modificar bultos/items y después usar "Ajustar saldo"
+  // para que el excedente del cliente refleje el nuevo presupuesto.
   const autoSyncBudget=async()=>{
-    if(op.status==="operacion_cerrada"||op.status==="cancelada")return;
+    if(op.status==="cancelada")return;
     try{
       // Refetch TODO fresco para evitar closures stale de tariffs/overrides (puede haber cambiado desde que se cargó la op).
       const[fit,fpk,ft,fov,fcl,fop]=await Promise.all([
@@ -1227,19 +1229,37 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       {op.service_type==="gestion_integral"&&<GiAssignmentCard op={op} setOp={setOp} opClient={opClient} token={token} flash={flash}/>}
       <Card title="Estado" actions={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{op.created_by_agent_id&&pkgs.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(op.status)&&(!repackReq||repackReq.status!=="pending")&&<Btn small variant="secondary" onClick={requestRepack}>🔄 Pedir reempaque</Btn>}{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&<Btn small variant="secondary" onClick={async()=>{if(!confirm("¿Reabrir la declaración? El cliente podrá modificar/agregar productos."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{status:"en_deposito_origen",consolidation_confirmed:false}});setOp(p=>({...p,status:"en_deposito_origen",consolidation_confirmed:false}));flash("✅ Declaración reabierta — el cliente puede editar");}}>↻ Reabrir declaración</Btn>}
 {op.status==="operacion_cerrada"&&<Btn small variant="secondary" onClick={async()=>{
-  // Trae las movimientos de CC vinculados a esta op para mostrar al usuario qué se va a revertir
-  const movs=await dq("client_account_movements",{token,filters:`?operation_id=eq.${op.id}&select=id,type,amount_usd,description`});
-  const summary=Array.isArray(movs)&&movs.length>0?movs.map(m=>`• ${m.type} ${Number(m.amount_usd)>=0?"+":""}USD ${Number(m.amount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}${m.description?` — ${m.description}`:""}`).join("\n"):"(sin movimientos en CC)";
-  const msg=`¿Reabrir la operación cerrada?\n\nSe va a:\n• Volver el estado a "Lista para retirar" para que puedas editar bultos / items / pagos libremente.\n• Eliminar los movimientos de cuenta corriente generados al cerrar esta op (saldo del cliente se ajusta automáticamente):\n\n${summary}\n\nCuando termines, podés volver a cerrarla y se recalculan los movimientos correctos.`;
+  // Ajustar saldo: recalcula el excedente del cliente según el presupuesto actual.
+  // Lógica: total_recibido = collected_amount + overpayments_actuales (lo que pagó el cliente en total)
+  // new_overpayment = total_recibido - budget_total_actual
+  //   > 0 → actualiza el movimiento "overpayment" al nuevo valor (o lo crea si no existe)
+  //   = 0 → borra el movimiento "overpayment" si existe
+  //   < 0 → la op queda con saldo pendiente, se borra overpayment, is_collected=false
+  // El movimiento "applied" NO se toca (representa saldo previo del cliente que ya se consumió).
+  const movs=await dq("client_account_movements",{token,filters:`?operation_id=eq.${op.id}&select=id,type,amount_usd`});
+  const overMovs=(Array.isArray(movs)?movs:[]).filter(m=>m.type==="overpayment");
+  const currentOverSum=overMovs.reduce((s,m)=>s+Number(m.amount_usd||0),0);
+  const collectedNow=Number(op.collected_amount||0);
+  const totalRecibido=collectedNow+currentOverSum;
+  const newBudget=Number(op.budget_total||0);
+  const newOver=totalRecibido-newBudget;
+  const delta=newOver-currentOverSum; // cuánto cambia el saldo del cliente
+  const msg=`Ajustar saldo del cliente según el presupuesto actual:\n\n• Presupuesto actual: USD ${newBudget.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}\n• Total recibido del cliente: USD ${totalRecibido.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}\n• Excedente actual en CC: USD ${currentOverSum.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}\n• Excedente nuevo: USD ${newOver.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}\n• Cambio en saldo del cliente: ${delta>=0?"+":""}USD ${delta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}\n\n${newOver<-0.005?"⚠ El cliente quedaría debiendo USD "+Math.abs(newOver).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})+". La op pasará a 'saldo pendiente'.":""}\n\n¿Confirmás?`;
   if(!confirm(msg))return;
-  // 1) Borrar movimientos de CC asociados (el trigger recalcula account_balance_usd)
-  await dq("client_account_movements",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`});
-  // 2) Limpiar flags de cierre en la op
-  const reset={status:"entregada",closed_at:null,is_collected:false,collected_amount:null,collection_date:null,collection_method:null,collection_currency:null,collection_exchange_rate:null,discount_applied_usd:0,debt_applied_usd:0};
-  await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:reset});
-  setOp(p=>({...p,...reset}));
-  flash("✅ Op reabierta. Editá lo que necesites y volvé a cerrarla cuando termines.");
-}}>🔓 Reabrir op cerrada</Btn>}{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",entregada:"retiro",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];const waSent=op.sent_notifications?.[`wa_${tr}`];const hasWaTpl=tr==="deposito"||tr==="retiro";return <>
+  // 1) Borrar todos los overpayments existentes de esta op
+  for(const m of overMovs){await dq("client_account_movements",{method:"DELETE",token,filters:`?id=eq.${m.id}`});}
+  // 2) Crear el nuevo overpayment si corresponde
+  if(newOver>0.005){
+    await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:newOver,description:`Excedente de ${op.operation_code}`}});
+  }
+  // 3) Actualizar la op: collected_amount, is_collected
+  const opUpdate=newOver>=-0.005
+    ?{collected_amount:newBudget,is_collected:true}
+    :{collected_amount:totalRecibido,is_collected:false};
+  await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
+  setOp(p=>({...p,...opUpdate}));
+  flash(`✅ Saldo ajustado. Cliente: ${delta>=0?"+":""}USD ${delta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
+}}>🔄 Ajustar saldo al presupuesto actual</Btn>}{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",entregada:"retiro",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];const waSent=op.sent_notifications?.[`wa_${tr}`];const hasWaTpl=tr==="deposito"||tr==="retiro";return <>
 <Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>
 {hasWaTpl&&<Btn small variant="secondary" onClick={()=>sendWaTrigger(tr)}>{waSent?"💬 Reenviar WA":"💬 Enviar WA"}</Btn>}
 </>;})()}<Btn onClick={handleSave} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
