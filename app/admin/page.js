@@ -9264,6 +9264,7 @@ function MaritimePanel({token,allClients=[]}){
   const [showNew,setShowNew]=useState(false);
   const [editingId,setEditingId]=useState(null);
   const [expanded,setExpanded]=useState(new Set());
+  const [expandedWh,setExpandedWh]=useState(new Set()); // depósitos abiertos
   const [editingWh,setEditingWh]=useState(null); // warehouse being edited (object)
 
   const load=async()=>{
@@ -9368,8 +9369,12 @@ function MaritimePanel({token,allClients=[]}){
       </div>}
     </div>
 
-    {/* Form nuevo / editar */}
-    {showNew&&<MaritimeForm token={token} editing={editingId?shipments.find(s=>s.id===editingId):null} packages={editingId?packages.filter(p=>p.shipment_id===editingId):[]} items={editingId?items.filter(it=>it.shipment_id===editingId):[]} allClients={allClients} warehouses={whs} shipments={shipments} onCreateWarehouse={()=>setEditingWh({})} onSave={()=>{setShowNew(false);setEditingId(null);load();}} onCancel={()=>{setShowNew(false);setEditingId(null);}}/>}
+    {/* Form nuevo / editar — modal centrado para que no se pierda contexto al editar desde abajo */}
+    {showNew&&<div onClick={()=>{setShowNew(false);setEditingId(null);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 20px",overflowY:"auto"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:920,background:"#0F1F3A",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",margin:"auto"}}>
+        <MaritimeForm token={token} editing={editingId?shipments.find(s=>s.id===editingId):null} packages={editingId?packages.filter(p=>p.shipment_id===editingId):[]} items={editingId?items.filter(it=>it.shipment_id===editingId):[]} allClients={allClients} warehouses={whs} shipments={shipments} onCreateWarehouse={()=>setEditingWh({})} onSave={()=>{setShowNew(false);setEditingId(null);load();}} onCancel={()=>{setShowNew(false);setEditingId(null);}}/>
+      </div>
+    </div>}
 
     {lo&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>}
 
@@ -9379,14 +9384,19 @@ function MaritimePanel({token,allClients=[]}){
       const totalCbm=wsList.reduce((s,sh)=>s+cbmOf(sh.id),0);
       const totalBultos=wsList.reduce((s,sh)=>s+bultosOf(sh.id),0);
       const pending=wsList.filter(sh=>cbmOf(sh.id)===0).length;
-      return <div key={wh} style={{marginBottom:24,background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
-        <div style={{padding:"14px 18px",background:"rgba(96,165,250,0.06)",borderBottom:"1px solid rgba(96,165,250,0.18)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-          <div style={{flex:1,minWidth:240}}>
-            <p style={{fontSize:11,fontWeight:800,color:"#60a5fa",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>📦 Depósito {wh}</p>
-            <p style={{fontSize:13,color:"rgba(255,255,255,0.75)",margin:0}}>{wsList.length} pedido{wsList.length!==1?"s":""} · {totalBultos} bulto{totalBultos!==1?"s":""} · <strong style={{color:"#fff"}}>CBM {totalCbm.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{pending>0?` (+ ${pending} pendiente${pending!==1?"s":""})`:""}</p>
-            {whByName[wh]?.rotulo&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",fontStyle:"italic"}}>Rótulo: <span style={{color:IC,fontWeight:600}}>{whByName[wh].rotulo}</span></p>}
+      const isWhOpen=expandedWh.has(wh);
+      const toggleWh=()=>setExpandedWh(prev=>{const n=new Set(prev);if(n.has(wh))n.delete(wh);else n.add(wh);return n;});
+      return <div key={wh} style={{marginBottom:14,background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
+        <div style={{padding:"14px 18px",background:"rgba(96,165,250,0.06)",borderBottom:isWhOpen?"1px solid rgba(96,165,250,0.18)":"none",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,cursor:"pointer",transition:"background 150ms"}} onClick={toggleWh} onMouseEnter={e=>{e.currentTarget.style.background="rgba(96,165,250,0.10)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(96,165,250,0.06)";}}>
+          <div style={{flex:1,minWidth:240,display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:14,color:"#60a5fa",transition:"transform 200ms",transform:isWhOpen?"rotate(90deg)":"rotate(0deg)",display:"inline-block",userSelect:"none"}}>▶</span>
+            <div style={{flex:1}}>
+              <p style={{fontSize:11,fontWeight:800,color:"#60a5fa",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>📦 Depósito {wh}</p>
+              <p style={{fontSize:13,color:"rgba(255,255,255,0.75)",margin:0}}>{wsList.length} pedido{wsList.length!==1?"s":""} · {totalBultos} bulto{totalBultos!==1?"s":""} · <strong style={{color:"#fff"}}>CBM {totalCbm.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{pending>0?` (+ ${pending} pendiente${pending!==1?"s":""})`:""}</p>
+              {whByName[wh]?.rotulo&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",fontStyle:"italic"}}>Rótulo: <span style={{color:IC,fontWeight:600}}>{whByName[wh].rotulo}</span></p>}
+            </div>
           </div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             {whByName[wh]&&<>
               <button onClick={()=>setEditingWh(whByName[wh])} title="Editar depósito / rótulo" style={{padding:"5px 9px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>✎ Depósito</button>
               <button onClick={()=>delWarehouse(whByName[wh])} title="Eliminar depósito" style={{padding:"5px 9px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
@@ -9399,7 +9409,7 @@ function MaritimePanel({token,allClients=[]}){
             );return <div key={o} style={{display:"flex",flexDirection:"column",gap:5}}>{btnGroup(true)}{btnGroup(false)}</div>;})}
           </div>
         </div>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+        {isWhOpen&&<table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.2)"}}>
             {["Recibido","Producto","Cliente","Origen","Tracking","Bultos","CBM","Estado",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{h}</th>)}
           </tr></thead>
@@ -9440,7 +9450,7 @@ function MaritimePanel({token,allClients=[]}){
               </td></tr>}
             </Fragment>;
           })}</tbody>
-        </table>
+        </table>}
       </div>;
     })}
   </div>;
