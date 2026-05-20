@@ -854,33 +854,28 @@ function FinanceSection({ token }) {
 
       {view === "categories" && (
         expCats.length === 0 ? (
-          <Card><EmptyState text="Definí categorías con presupuesto mensual para controlar el gasto." action={<button onClick={() => setEditCat({})} style={btnPrimary}>+ Crear primera</button>} /></Card>
+          <Card><EmptyState text="Sin categorías. Creá la primera para agrupar tus gastos." action={<button onClick={() => setEditCat({})} style={btnPrimary}>+ Crear primera</button>} /></Card>
         ) : (
           <Card>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {expCats.map(c => {
                 const spent = monthExp.filter(e => e.category_id === c.id).reduce((s, e) => s + Number(e.amount_ars || 0), 0);
-                const budget = Number(c.monthly_budget_ars || 0);
-                const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
-                const over = budget > 0 && spent > budget;
+                const count = monthExp.filter(e => e.category_id === c.id).length;
+                const color = c.color || T.gold;
                 return (
-                  <div key={c.id} style={{ padding: "12px 14px", background: T.bgSurfaceHi, borderRadius: 10, border: `1px solid ${T.border}` }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7, gap: 10 }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600, color: T.textPrimary }}>
-                        {c.icon && <span style={{ fontSize: 16 }}>{c.icon}</span>}
-                        <span style={{ width: 9, height: 9, borderRadius: 2, background: c.color || T.gold }} /> {c.name}
-                      </span>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 12.5, color: over ? T.danger : T.textSecondary, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
-                          {fmtArs(spent)}{budget > 0 && ` / ${fmtArs(budget)}`}
-                        </span>
-                        <IconBtn onClick={() => setEditCat(c)} title="Editar">✎</IconBtn>
-                        <IconBtn onClick={() => delCat(c)} title="Eliminar" danger>×</IconBtn>
+                  <div key={c.id} style={{ padding: "12px 14px", background: T.bgSurfaceHi, borderRadius: 10, border: `1px solid ${T.border}`, borderLeft: `3px solid ${color}`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600, color: T.textPrimary, minWidth: 0, flex: 1 }}>
+                      {c.icon && <span style={{ fontSize: 18, flexShrink: 0 }}>{c.icon}</span>}
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      <div style={{ textAlign: "right" }}>
+                        <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: spent > 0 ? T.textPrimary : T.textMuted, fontVariantNumeric: "tabular-nums" }}>{fmtArs(spent)}</p>
+                        <p style={{ margin: "2px 0 0", fontSize: 10.5, color: T.textMuted, letterSpacing: "0.04em" }}>{count === 0 ? "sin gastos" : `${count} gasto${count !== 1 ? "s" : ""}`}</p>
                       </div>
+                      <IconBtn onClick={() => setEditCat(c)} title="Editar">✎</IconBtn>
+                      <IconBtn onClick={() => delCat(c)} title="Eliminar" danger>×</IconBtn>
                     </div>
-                    {budget > 0 && <div style={{ height: 5, background: T.bgSurface, borderRadius: 3, overflow: "hidden" }}>
-                      <div style={{ width: `${pct}%`, height: "100%", background: over ? T.danger : c.color || T.gold, transition: "width 300ms" }} />
-                    </div>}
                   </div>
                 );
               })}
@@ -991,7 +986,6 @@ function CategoryModal({ isExpense, token, editing, onClose, onSaved }) {
   const table = isExpense ? "mp_expense_categories" : "mp_habit_categories";
   const [name, setName] = useState(editing?.name || "");
   const [icon, setIcon] = useState(editing?.icon || "");
-  const [budget, setBudget] = useState(editing?.monthly_budget_ars || "");
   const [saving, setSaving] = useState(false);
 
   // El color se decide automáticamente. Si la categoría ya tenía uno, lo respetamos al editar.
@@ -1002,7 +996,6 @@ function CategoryModal({ isExpense, token, editing, onClose, onSaved }) {
     setSaving(true);
     const finalColor = editing?.color || colorForName(name);
     const body = { name: name.trim(), color: finalColor, icon: icon || null };
-    if (isExpense) body.monthly_budget_ars = Number(String(budget).replace(/\./g, "").replace(",", ".")) || 0;
     if (editing?.id) await dq(table, { method: "PATCH", token, filters: `?id=eq.${editing.id}`, body });
     else await dq(table, { method: "POST", token, body });
     setSaving(false);
@@ -1023,7 +1016,6 @@ function CategoryModal({ isExpense, token, editing, onClose, onSaved }) {
       </div>
       <Field label="Nombre"><input autoFocus value={name} onChange={e => setName(e.target.value)} style={inputStyle} placeholder={isExpense ? "Comida, Transporte…" : "Cuerpo, Trabajo, Mente…"} /></Field>
       <Field label="Emoji (opcional)"><input value={icon} onChange={e => setIcon(e.target.value)} style={{ ...inputStyle, width: 100, fontSize: 22, textAlign: "center" }} placeholder="🏋️" maxLength={2} /></Field>
-      {isExpense && <Field label="Presupuesto mensual (ARS)"><input type="text" inputMode="decimal" value={budget} onChange={e => setBudget(e.target.value)} style={inputStyle} placeholder="0" /></Field>}
       <p style={{ margin: "0 0 6px", fontSize: 11, color: T.textMuted, lineHeight: 1.5 }}>El color se asigna automáticamente según el nombre. Si querés otro, cambiá el nombre o tocá el ícono.</p>
       <ModalFooter onCancel={onClose} onConfirm={save} loading={saving} confirmLabel={editing?.id ? "Guardar" : "Crear"} />
     </Modal>
