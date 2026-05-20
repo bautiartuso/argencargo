@@ -483,6 +483,19 @@ function parseUpsTracking(text){
         else{realTitle=last; realDescription=pre.slice(0,-1).join(" · ");}
       }
     }
+    // Limpiar menciones del carrier (white-label: el cliente no debe ver "UPS").
+    // Quita "UPS" como palabra suelta y compacta espacios/comas duplicadas.
+    const scrub=(s)=>{
+      if(!s)return s;
+      let out=s.replace(/\bUPS®?\b\.?/gi," ");
+      // Limpia residuos tipo "a  facility" → "a facility", ", ," → ",", "  " → " "
+      out=out.replace(/\s+/g," ").replace(/\s+,/g,",").replace(/,\s*,/g,",").trim();
+      // Capitaliza si quedó en minúscula al inicio
+      if(out&&/[a-z]/.test(out[0]))out=out[0].toUpperCase()+out.slice(1);
+      return out||null;
+    };
+    realTitle=scrub(realTitle);
+    realDescription=scrub(realDescription);
     // Hash determinístico para deduplicar re-pastes (mismo evento = mismo external_id)
     const hashSrc=`${iso}|${realTitle}|${realLocation||""}`;
     let h=0;for(let k=0;k<hashSrc.length;k++){h=((h<<5)-h+hashSrc.charCodeAt(k))|0;}
