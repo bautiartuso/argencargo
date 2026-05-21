@@ -5793,6 +5793,22 @@ function AgentsPanel({token}){
     if(agentIds.length>1){alert("Solo podés agrupar ops del MISMO agente. Las que seleccionaste son de varios agentes distintos.");return;}
     const agentId=agentIds[0];
     if(!agentId){alert("Las ops seleccionadas no tienen agente asignado");return;}
+    // ── PRE-VUELO: bloquear si algún canal A tiene items sin NCM / sin derechos cargados.
+    // Sin esto, los flight_invoice_items se clonan con hs_code="" y el presupuesto se calcula
+    // con 0% de derechos/estadística → cliente subfacturado.
+    const opsBlanco=ops.filter(o=>o.channel?.includes("blanco")&&!o.channel?.includes("maritimo"));
+    if(opsBlanco.length>0){
+      const opIds=opsBlanco.map(o=>o.id);
+      const checkItems=await dq("operation_items",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=operation_id,description,ncm_code,import_duty_rate,statistics_rate`});
+      const codeOf=Object.fromEntries(opsBlanco.map(o=>[o.id,o.operation_code]));
+      const bad=(Array.isArray(checkItems)?checkItems:[]).filter(i=>i.description&&i.description.trim()&&(!i.ncm_code||i.ncm_code.trim()===""||i.import_duty_rate==null||i.import_duty_rate===""||i.statistics_rate==null||i.statistics_rate===""));
+      if(bad.length>0){
+        const byOp={};bad.forEach(i=>{const c=codeOf[i.operation_id]||"—";(byOp[c]=byOp[c]||[]).push(i.description.slice(0,40));});
+        const summary=Object.entries(byOp).map(([c,ds])=>`• ${c}: ${ds.length} item(s) sin NCM / sin derechos`).join("\n");
+        alert(`❌ No se puede crear el vuelo: hay productos sin clasificar.\n\n${summary}\n\nClasificalos primero desde el detalle de la op → Productos → ✨ Clasificar todos los NCM (IA), o cargá NCM/derechos a mano. Si se genera el vuelo con items sin NCM, el presupuesto se calcula con 0% de derechos y el cliente queda subfacturado.`);
+        return;
+      }
+    }
     const lastFl=flights[0];
     const lastNum=lastFl?parseInt(lastFl.flight_code.replace(/\D/g,""),10)||0:0;
     const newCode=`FL-${String(lastNum+1).padStart(4,"0")}`;
