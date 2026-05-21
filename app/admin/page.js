@@ -992,6 +992,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
   // Checklist de cierre — modal cuando se intenta cerrar la op
   const [showCloseChecklist,setShowCloseChecklist]=useState(false);
+  // Modal pre-emisión de Factura C: pide CUIT/nombre/domicilio/TC antes de imprimir.
+  // alsoDsi=true → imprime también la DSI inmediatamente con un delay.
+  const [facturaModal,setFacturaModal]=useState(null);
   // Reempaque pendiente
   const [repackReq,setRepackReq]=useState(null);
   const [showRepackDetail,setShowRepackDetail]=useState(false);
@@ -1111,12 +1114,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         {!op.channel?.includes("negro")&&items.length>0&&<>
-  <Btn onClick={()=>{
-    // Abre DSI y luego Factura C en secuencia (500ms de delay para que el browser no bloquee el segundo popup)
-    printSimplifiedDeclaration({op,items,pkgs,client:opClient,events,config});
-    setTimeout(()=>printFacturaC({op,items,pkgs,client:opClient,config}),600);
-  }} variant="secondary" small title="Genera DSI + Factura C de Monotributo (ARTUSO BAUTISTA) en dos ventanas">📋 DSI + Factura C</Btn>
-  <Btn onClick={()=>printFacturaC({op,items,pkgs,client:opClient,config})} variant="secondary" small title="Solo Factura C de Monotributo">🧾 Factura C</Btn>
+  <Btn onClick={()=>setFacturaModal({alsoDsi:true})} variant="secondary" small title="Genera DSI + Factura C: pide CUIT/datos del receptor y TC antes de imprimir">📋 DSI + Factura C</Btn>
+  <Btn onClick={()=>setFacturaModal({alsoDsi:false})} variant="secondary" small title="Solo Factura C">🧾 Factura C</Btn>
 </>}
         <Btn onClick={openReassign} variant="secondary" small>👤 Reasignar cliente</Btn>
         <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
@@ -3136,6 +3135,45 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
 
     {tab==="comms"&&<CommsLog opId={op.id} token={token}/>}
     {showCloseChecklist&&<CloseChecklistModal op={op} items={items} payments={payments} clientPayments={clientPayments} supplierPayments={supplierPayments} onCancel={()=>{setShowCloseChecklist(false);setOp(p=>({...p,status:initOp.status}));}} onConfirm={async()=>{setShowCloseChecklist(false);await executeSave();}}/>}
+    {facturaModal&&(()=>{
+      // Pre-fill con datos del cliente y TC de la op
+      const defaults={
+        cuit:opClient?.cuit||"",
+        name:`${(opClient?.last_name||"").trim()} ${(opClient?.first_name||"").trim()}`.trim()||"",
+        address:`${opClient?.street||""}${opClient?.floor_apt?" "+opClient.floor_apt:""}${opClient?.city?" - "+opClient.city:""}${opClient?.province?", "+opClient.province:""}`.trim(),
+        tax_condition:opClient?.tax_condition==="responsable_inscripto"?"IVA Responsable Inscripto":opClient?.tax_condition==="monotributo"?"Responsable Monotributo":opClient?.tax_condition==="exento"?"IVA Exento":"Consumidor Final",
+        exchange_rate:String(op.exchange_rate||op.collection_exchange_rate||""),
+      };
+      const [f,setF]=[facturaModal.form||defaults,(patch)=>setFacturaModal(p=>({...p,form:{...(p.form||defaults),...patch}}))];
+      const emit=()=>{
+        const overrides={
+          cuit:f.cuit?.trim()||null,
+          name:f.name?.trim()||null,
+          address:f.address?.trim()||null,
+          tax_condition:f.tax_condition?.trim()||null,
+          exchange_rate:Number(String(f.exchange_rate||"").replace(/\./g,"").replace(",","."))||null,
+        };
+        if(facturaModal.alsoDsi)printSimplifiedDeclaration({op,items,pkgs,client:opClient,events,config});
+        setTimeout(()=>printFacturaC({op,items,pkgs,client:opClient,config,overrides}),facturaModal.alsoDsi?600:50);
+        setFacturaModal(null);
+      };
+      return <div onClick={()=>setFacturaModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,background:"#0F1F3A",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.5)"}}>
+          <p style={{margin:"0 0 4px",fontSize:16,fontWeight:700,color:"#fff"}}>Datos para la Factura C</p>
+          <p style={{margin:"0 0 16px",fontSize:11.5,color:"rgba(255,255,255,0.5)",lineHeight:1.5}}>Estos campos solo aplican a la Factura C. La DSI se imprime con los datos originales del cliente, en USD.</p>
+          <Inp label="CUIT del receptor" value={f.cuit} onChange={v=>setF({cuit:v})} placeholder="20XXXXXXXXX"/>
+          <Inp label="Apellido y Nombre / Razón Social" value={f.name} onChange={v=>setF({name:v})} placeholder="APELLIDO Nombre"/>
+          <Inp label="Domicilio" value={f.address} onChange={v=>setF({address:v})} placeholder="Calle 123 - Ciudad, Provincia"/>
+          <Sel label="Condición frente al IVA" value={f.tax_condition} onChange={v=>setF({tax_condition:v})} options={[{value:"Consumidor Final",label:"Consumidor Final"},{value:"IVA Responsable Inscripto",label:"IVA Responsable Inscripto"},{value:"Responsable Monotributo",label:"Responsable Monotributo"},{value:"IVA Exento",label:"IVA Exento"}]}/>
+          <Inp label="Tipo de cambio (ARS por USD)" value={f.exchange_rate} onChange={v=>setF({exchange_rate:v})} placeholder="Ej: 1250 — si cobraste en USD podés usar el TC del día"/>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"-6px 0 16px",lineHeight:1.5}}>Si dejás vacío, usa el TC cargado en la op ({op.exchange_rate||op.collection_exchange_rate||"sin TC"}). Fallback: 1000.</p>
+          <div style={{display:"flex",justifyContent:"flex-end",gap:8,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+            <Btn onClick={()=>setFacturaModal(null)} variant="secondary" small>Cancelar</Btn>
+            <Btn onClick={emit} small>{facturaModal.alsoDsi?"Imprimir DSI + Factura C":"Imprimir Factura C"}</Btn>
+          </div>
+        </div>
+      </div>;
+    })()}
 
     {showAddPayment&&<div onClick={()=>!savingAddPayment&&setShowAddPayment(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(34,197,94,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
