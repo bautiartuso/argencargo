@@ -1110,7 +1110,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600,animation:"ac_fade_in 200ms"}}>✓ {msg}</span>}
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        {!op.channel?.includes("negro")&&items.length>0&&<Btn onClick={()=>printSimplifiedDeclaration({op,items,pkgs,client:opClient})} variant="secondary" small title="Generar PDF visual de la destinación simplificada para mostrar al cliente">📋 DDJJ visual</Btn>}
+        {!op.channel?.includes("negro")&&items.length>0&&<Btn onClick={()=>printSimplifiedDeclaration({op,items,pkgs,client:opClient,events})} variant="secondary" small title="Generar PDF visual de la destinación simplificada para mostrar al cliente">📋 DDJJ visual</Btn>}
         <Btn onClick={openReassign} variant="secondary" small>👤 Reasignar cliente</Btn>
         <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
       </div>
