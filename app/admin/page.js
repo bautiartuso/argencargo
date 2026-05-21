@@ -1114,8 +1114,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         {!op.channel?.includes("negro")&&items.length>0&&<>
-  <Btn onClick={()=>setFacturaModal({alsoDsi:true})} variant="secondary" small title="Genera DSI + Factura C: pide CUIT/datos del receptor y TC antes de imprimir">📋 DSI + Factura C</Btn>
-  <Btn onClick={()=>setFacturaModal({alsoDsi:false})} variant="secondary" small title="Solo Factura C">🧾 Factura C</Btn>
+  <Btn onClick={()=>printSimplifiedDeclaration({op,items,pkgs,client:opClient,events,config})} variant="secondary" small title="Genera la Destinación Simplificada de Importación (DSI) en USD">📋 DSI</Btn>
+  <Btn onClick={()=>setFacturaModal({alsoDsi:false})} variant="secondary" small title="Genera la Factura C (Monotributo) estilo Nota de Venta Contado: pide CUIT del receptor y T/C antes de imprimir">🧾 Factura C</Btn>
 </>}
         <Btn onClick={openReassign} variant="secondary" small>👤 Reasignar cliente</Btn>
         <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
