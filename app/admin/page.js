@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "rea
 import { calcOpBudget } from "../../lib/calc";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
-import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printSimplifiedDeclaration, printMaritimePdf } from "../../lib/pdf-templates";
+import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printSimplifiedDeclaration, printMaritimePdf, printFacturaC } from "../../lib/pdf-templates";
 import IntelligencePanel from "./components/IntelligencePanel";
 import TicketsPanel from "./components/TicketsPanel";
 
@@ -1110,7 +1110,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600,animation:"ac_fade_in 200ms"}}>✓ {msg}</span>}
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        {!op.channel?.includes("negro")&&items.length>0&&<Btn onClick={()=>printSimplifiedDeclaration({op,items,pkgs,client:opClient,events,config})} variant="secondary" small title="Generar PDF visual de la destinación simplificada para mostrar al cliente">📋 DDJJ visual</Btn>}
+        {!op.channel?.includes("negro")&&items.length>0&&<>
+  <Btn onClick={()=>{
+    // Abre DSI y luego Factura C en secuencia (500ms de delay para que el browser no bloquee el segundo popup)
+    printSimplifiedDeclaration({op,items,pkgs,client:opClient,events,config});
+    setTimeout(()=>printFacturaC({op,items,pkgs,client:opClient,config}),600);
+  }} variant="secondary" small title="Genera DSI + Factura C de Monotributo (ARTUSO BAUTISTA) en dos ventanas">📋 DSI + Factura C</Btn>
+  <Btn onClick={()=>printFacturaC({op,items,pkgs,client:opClient,config})} variant="secondary" small title="Solo Factura C de Monotributo">🧾 Factura C</Btn>
+</>}
         <Btn onClick={openReassign} variant="secondary" small>👤 Reasignar cliente</Btn>
         <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
       </div>
