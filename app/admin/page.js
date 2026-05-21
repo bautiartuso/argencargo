@@ -5589,7 +5589,11 @@ function RefundForm({token,agentId,onSaved}){
 }
 
 function AgentsPanel({token}){
-  const [tab,setTab]=useState("deposito");
+  // Persistimos también la sub-tab (depósito/vuelos/cc agentes/...) y el vuelo seleccionado
+  // para que al recargar dentro del panel de agentes volvamos al mismo subview.
+  const readSub=()=>{if(typeof window==="undefined")return{};try{return JSON.parse(localStorage.getItem("ac_agents_nav")||"{}");}catch{return{};}};
+  const _sub=readSub();
+  const [tab,setTab]=useState(_sub.tab||"deposito");
   const [signups,setSignups]=useState([]);
   const [profiles,setProfiles]=useState({});
   const [unassigned,setUnassigned]=useState([]);
@@ -5602,8 +5606,13 @@ function AgentsPanel({token}){
   const [accMovements,setAccMovements]=useState([]);
   const [selectedOps,setSelectedOps]=useState([]);
   const [opsWithDocs,setOpsWithDocs]=useState(new Set());
-  const [selFlight,setSelFlight]=useState(null);
-  const [flightsSubTab,setFlightsSubTab]=useState("active"); // active | received
+  const [selFlight,setSelFlight]=useState(_sub.selFlight||null);
+  const [flightsSubTab,setFlightsSubTab]=useState(_sub.flightsSubTab||"active"); // active | received
+  // Persistir cambios de tab/selFlight/flightsSubTab
+  useEffect(()=>{
+    if(typeof window==="undefined")return;
+    try{localStorage.setItem("ac_agents_nav",JSON.stringify({tab,selFlight,flightsSubTab}));}catch{}
+  },[tab,selFlight,flightsSubTab]);
   const [expandedRepack,setExpandedRepack]=useState(null); // op.id cuyo snapshot está expandido
   const [showAnticipoForm,setShowAnticipoForm]=useState(null);
   const [showRefundForm,setShowRefundForm]=useState(null);
@@ -9176,7 +9185,21 @@ function GiAdminPanel({token,clients}){
 }
 
 function AdminDashboard({session,onLogout}){
-  const [page,setPage]=useState("operations");const [selOp,setSelOp]=useState(null);const [selClient,setSelClient]=useState(null);const [newOp,setNewOp]=useState(false);const [allClients,setAllClients]=useState([]);const [mobOpen,setMobOpen]=useState(false);
+  // Estado de navegación persistido en localStorage para que al recargar (F5 / Cmd+R) el admin
+  // vuelva exactamente al mismo lugar (página, op/cliente/vuelo seleccionado).
+  const readNav=()=>{if(typeof window==="undefined")return null;try{return JSON.parse(localStorage.getItem("ac_admin_nav")||"null");}catch{return null;}};
+  const initNav=readNav()||{};
+  const [page,setPage]=useState(initNav.page||"operations");
+  const [selOp,setSelOp]=useState(initNav.selOp||null);
+  const [selClient,setSelClient]=useState(initNav.selClient||null);
+  const [newOp,setNewOp]=useState(false);
+  const [allClients,setAllClients]=useState([]);
+  const [mobOpen,setMobOpen]=useState(false);
+  // Guardamos el snapshot cada vez que cambia alguna de las claves de navegación.
+  useEffect(()=>{
+    if(typeof window==="undefined")return;
+    try{localStorage.setItem("ac_admin_nav",JSON.stringify({page,selOp,selClient}));}catch{}
+  },[page,selOp,selClient]);
   const token=session.token;
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
   // Nav agrupado por secciones (estilo Linear/Notion). Cada item: {key, label, p (svg paths)}
