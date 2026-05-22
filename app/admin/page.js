@@ -1478,10 +1478,24 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         flash("Presupuesto manual guardado");
         setSaving(false);
       };
-      // Helper: input numérico que actualiza op.* y recalcula total al cambiar
+      // Helper: input numérico que actualiza op.* y auto-suma el TOTAL al cambiar cualquier componente.
+      // Si el usuario edita directamente budget_total (override), no recalcula desde los rows.
       const ManualInput=({field,placeholder})=>{
         const v=op[field]??"";
-        return <input type="text" inputMode="decimal" value={v} placeholder={placeholder} onChange={e=>{const raw=e.target.value.replace(",",".");if(raw===""||/^\d*\.?\d*$/.test(raw)){chOp(field)(raw===""?null:Number(raw));}}} style={{width:130,padding:"6px 9px",fontSize:13,fontWeight:600,border:`1px solid ${GOLD_LIGHT}55`,borderRadius:6,background:`${GOLD_LIGHT}0A`,color:"#fff",outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"}}/>;
+        return <input type="text" inputMode="decimal" value={v} placeholder={placeholder} onChange={e=>{
+          const raw=e.target.value.replace(",",".");
+          if(raw===""||/^\d*\.?\d*$/.test(raw)){
+            const newVal=raw===""?null:Number(raw);
+            chOp(field)(newVal);
+            // Auto-suma: cuando edito un componente, recalculo TOTAL = SUM(componentes) + shipping
+            if(field!=="budget_total"){
+              const components=["budget_taxes","budget_flete","budget_seguro","budget_surcharge"];
+              const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
+              const sum=components.reduce((s,f)=>s+(f===field?(Number(newVal)||0):Number(op[f]||0)),0)+shipCost;
+              chOp("budget_total")(Math.round(sum*100)/100);
+            }
+          }
+        }} style={{width:130,padding:"6px 9px",fontSize:13,fontWeight:600,border:`1px solid ${GOLD_LIGHT}55`,borderRadius:6,background:`${GOLD_LIGHT}0A`,color:"#fff",outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"}}/>;
       };
       // Si manual: usamos los valores guardados como los visualizados
       if(isManual){totalTax=Number(op.budget_taxes||0);flete=Number(op.budget_flete||0);seguro=Number(op.budget_seguro||0);surcharge=Number(op.budget_surcharge||0);totalAbonar=Number(op.budget_total||0);}
