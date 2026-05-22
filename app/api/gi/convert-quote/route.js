@@ -54,6 +54,10 @@ export async function POST(req) {
   const opCode = (typeof codeRes.body === "string") ? codeRes.body : (codeRes.body?.[0] || `AC-${Date.now()}`);
 
   const someUSA = (quote.gi_quote_products || []).some(p => p.origin === "usa");
+  // Costo total al proveedor = SUM(unit_cost × qty) de los productos cotizados.
+  // Este queda guardado en operations.cost_producto_usd para tracking de ganancia neta.
+  const supplierTotal = (quote.gi_quote_products || []).reduce((s, p) =>
+    s + Number(p.unit_cost_usd || 0) * Number(p.quantity || 1), 0);
   const opBody = {
     operation_code: opCode,
     client_id: clientId,
@@ -61,8 +65,13 @@ export async function POST(req) {
     origin: someUSA ? "USA" : "China",
     description: `Gestión Integral · ${quote.gi_quote_products?.length || 0} productos`,
     service_type: "gestion_integral",
-    status: "en_preparacion",
+    // GI arranca en "pendiente" (PROVEEDOR) — no tiene etapa de documentación porque la cotización ya cierra esa parte.
+    status: "pendiente",
     budget_total: finalTotal,
+    // Modo manual para que el trigger sync_gi_budget_total no pise el precio acordado con la suma de items.
+    // Los items se guardan con unit_price_usd = precio cliente (ya prorrateado al final), pero por seguridad fijamos el total.
+    budget_mode: "manual",
+    cost_producto_usd: supplierTotal,
     gi_partner_id: quote.gi_quote_requests?.assigned_partner_id || null,
     gi_commission_pct: Number(quote.gi_quote_requests?.profiles?.gi_partner_pct || 0) || null,
     gi_admin_owned: false,
@@ -78,15 +87,21 @@ export async function POST(req) {
   }
   const opId = opRes.body[0].id;
 
-  // operation_items desde gi_quote_products
+  // operation_items desde gi_quote_products.
+  // Para GI, unit_price_usd debe representar el PRECIO CLIENTE (no el costo del proveedor),
+  // así el subtotal de productos coincide con el total acordado del canal seleccionado.
+  // Prorrateamos linealmente: unit_price_cliente = unit_cost × (finalTotal / supplierTotal)
+  const multiplier = supplierTotal > 0 ? (finalTotal / supplierTotal) : 1;
   for (const p of (quote.gi_quote_products || [])) {
+    const unitCost = Number(p.unit_cost_usd || 0);
+    const clientUnitPrice = Math.round(unitCost * multiplier * 10000) / 10000; // 4 decimales para mantener total exacto
     await sbFetch(`/operation_items`, {
       method: "POST",
       body: JSON.stringify({
         operation_id: opId,
         description: p.description,
         quantity: p.quantity,
-        unit_price_usd: p.unit_cost_usd,
+        unit_price_usd: clientUnitPrice,
         ncm_code: p.ncm_code,
         import_duty_rate: p.ncm_di_pct,
         statistics_rate: p.ncm_estad_pct,
