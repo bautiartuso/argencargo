@@ -6815,13 +6815,15 @@ function AlipayPendingBanner({flights,token,onDone}){
   const [closing,setClosing]=useState("");
   const [paidAt,setPaidAt]=useState(new Date().toISOString().slice(0,10));
   const [realCostInput,setRealCostInput]=useState("");
+  const [creditCardId,setCreditCardId]=useState("");
   const [saving,setSaving]=useState(false);
   const flight=flights.find(f=>f.id===open);
   const base=flight?Number(flight.alipay_base_cost_usd||0):0;
   useEffect(()=>{if(open)setRealCostInput(String(base));},[open,base]);
-  const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");setPaidAt(new Date().toISOString().slice(0,10));setRealCostInput(String(Number(f.alipay_base_cost_usd||0)));};
+  const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");setCreditCardId("");setPaidAt(new Date().toISOString().slice(0,10));setRealCostInput(String(Number(f.alipay_base_cost_usd||0)));};
   const complete=async(flight)=>{
     if(method==="tarjeta_credito"&&!closing){alert("Falta fecha de cierre de tarjeta");return;}
+    if(method==="tarjeta_credito"&&!creditCardId){alert("Elegí qué tarjeta de crédito usaste");return;}
     if(!paidAt){alert("Falta fecha de pago");return;}
     const realCost=Number(realCostInput||0);
     if(!realCost||realCost<=0){alert("Cargá un costo real válido");return;}
@@ -6834,7 +6836,7 @@ function AlipayPendingBanner({flights,token,onDone}){
     for(const fo of (Array.isArray(fos)?fos:[])){
       const share=totalW>0?(Number(fo.weight_kg||0)/totalW)*realCost:0;
       await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{cost_share_usd:share}});
-      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{cost_flete:share,cost_flete_method:isTC?"tarjeta_credito":"tarjeta_debito",cost_flete_paid_at:isTC?null:paidAtIso}});
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{cost_flete:share,cost_flete_method:isTC?"tarjeta_credito":"tarjeta_debito",cost_flete_paid_at:isTC?null:paidAtIso,cost_flete_credit_card_id:isTC?creditCardId:null,cost_flete_card_closing:isTC?closing:null}});
     }
     await dq("finance_entries",{method:"POST",token,body:{date:paidAt,type:"gasto",description:`Flete vuelo ${flight.flight_code} (Alipay ${isTC?"TC":"débito"})`,amount:realCost,currency:"USD",payment_method:isTC?"tarjeta_credito":"transferencia",card_closing_date:isTC?closing:null,is_paid:!isTC,auto_generated:true,flight_id:flight.id}});
     setSaving(false);setOpen(null);onDone();
@@ -6864,6 +6866,7 @@ function AlipayPendingBanner({flights,token,onDone}){
             {method==="tarjeta_credito"&&<Inp label="Fecha cierre TC" type="date" value={closing} onChange={setClosing}/>}
             <Inp label="Fecha de pago" type="date" value={paidAt} onChange={setPaidAt}/>
           </div>
+          {method==="tarjeta_credito"&&<div><CreditCardPicker token={token} value={creditCardId} onChange={setCreditCardId} required/></div>}
           <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
             <Btn small variant="secondary" onClick={()=>setOpen(null)} disabled={saving}>Cancelar</Btn>
             <Btn small onClick={()=>complete(f)} disabled={saving}>{saving?"Guardando…":"💾 Confirmar pago"}</Btn>
@@ -6883,15 +6886,17 @@ function AlibabaPendingBanner({flights,token,onDone}){
   const [paidAt,setPaidAt]=useState(new Date().toISOString().slice(0,10));
   const [realCostInput,setRealCostInput]=useState("");
   const [userEdited,setUserEdited]=useState(false);
+  const [creditCardId,setCreditCardId]=useState("");
   const [saving,setSaving]=useState(false);
   const flight=flights.find(f=>f.id===open);
   const base=flight?Number(flight.alibaba_base_cost_usd||0):0;
   const autoCost=Math.round(base*1.03*(method==="tarjeta_credito"?1.012:1)*100)/100;
   // Auto-calcular cuando cambia el método o el flight, salvo que el usuario haya editado manualmente.
   useEffect(()=>{if(!userEdited&&open)setRealCostInput(String(autoCost));},[autoCost,open,userEdited]);
-  const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");setPaidAt(new Date().toISOString().slice(0,10));setUserEdited(false);};
+  const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");setCreditCardId("");setPaidAt(new Date().toISOString().slice(0,10));setUserEdited(false);};
   const complete=async(flight)=>{
     if(method==="tarjeta_credito"&&!closing){alert("Falta fecha de cierre de tarjeta");return;}
+    if(method==="tarjeta_credito"&&!creditCardId){alert("Elegí qué tarjeta de crédito usaste");return;}
     if(!paidAt){alert("Falta fecha de pago");return;}
     const realCost=Number(realCostInput||0);
     if(!realCost||realCost<=0){alert("Cargá un costo real válido");return;}
@@ -6901,13 +6906,14 @@ function AlibabaPendingBanner({flights,token,onDone}){
     const paidAtIso=new Date(paidAt+"T12:00:00Z").toISOString();
     // 1) Update flight con datos del pago + nuevo total_cost_usd (para que las distribuciones queden coherentes)
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{awaiting_alibaba_payment:false,alibaba_payment_method:method,alibaba_card_closing_date:isTC?closing:null,alibaba_real_cost_usd:realCost,alibaba_paid_at:paidAtIso,total_cost_usd:realCost}});
-    // 2) Recalcular cost_share por op (prorrateado por peso) y actualizar cost_flete en cada op
+    // 2) Recalcular cost_share por op (prorrateado por peso) y actualizar cost_flete en cada op.
+    //    Propagamos credit_card_id y card_closing_date a CADA op para que aparezca en Deuda Tarjeta.
     const fos=await dq("flight_operations",{token,filters:`?flight_id=eq.${flight.id}&select=*`});
     const totalW=(Array.isArray(fos)?fos:[]).reduce((s,fo)=>s+Number(fo.weight_kg||0),0);
     for(const fo of (Array.isArray(fos)?fos:[])){
       const share=totalW>0?(Number(fo.weight_kg||0)/totalW)*realCost:0;
       await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{cost_share_usd:share}});
-      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{cost_flete:share,cost_flete_method:isTC?"tarjeta_credito":"tarjeta_debito",cost_flete_paid_at:isTC?null:paidAtIso}});
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{cost_flete:share,cost_flete_method:isTC?"tarjeta_credito":"tarjeta_debito",cost_flete_paid_at:isTC?null:paidAtIso,cost_flete_credit_card_id:isTC?creditCardId:null,cost_flete_card_closing:isTC?closing:null}});
     }
     // 3) Crear finance_entry con la fecha de pago indicada por el admin (no la de hoy).
     await dq("finance_entries",{method:"POST",token,body:{date:paidAt,type:"gasto",description:`Flete vuelo ${flight.flight_code} (Alibaba ${isTC?"TC":"débito"})`,amount:realCost,currency:"USD",payment_method:isTC?"tarjeta_credito":"transferencia",card_closing_date:isTC?closing:null,is_paid:!isTC,auto_generated:true,flight_id:flight.id}});
@@ -6936,6 +6942,9 @@ function AlibabaPendingBanner({flights,token,onDone}){
             {method==="tarjeta_credito"&&<Inp label="Cierre de tarjeta" type="date" value={closing} onChange={setClosing}/>}
             <Inp label={`Costo real (auto: USD ${autoCost.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`} type="number" step="0.01" value={realCostInput} onChange={v=>{setRealCostInput(v);setUserEdited(true);}}/>
           </div>
+          {method==="tarjeta_credito"&&<div style={{marginTop:8}}>
+            <CreditCardPicker token={token} value={creditCardId} onChange={setCreditCardId} required/>
+          </div>}
           <div style={{display:"flex",gap:8,marginTop:10,justifyContent:"flex-end"}}>
             {userEdited&&<button onClick={()=>{setUserEdited(false);setRealCostInput(String(autoCost));}} style={{padding:"6px 12px",fontSize:11,borderRadius:7,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>↻ Usar auto</button>}
             <button onClick={()=>setOpen(null)} disabled={saving} style={{padding:"6px 14px",fontSize:11,borderRadius:7,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.5)",cursor:"pointer"}}>Cancelar</button>
