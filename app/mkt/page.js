@@ -27,8 +27,18 @@ const STATUS = {
 };
 const STATUS_OPTS = Object.entries(STATUS).map(([v, s]) => ({ v, l: s.l }));
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+// IMPORTANTE: toISOString() devuelve UTC. En zona AR (UTC-3) desde las 21hs ya estamos en el día siguiente
+// y el mes podía saltar (ej. último día de mes 21hs → empieza a mostrar el mes nuevo en UTC).
+// Construimos YYYY-MM-DD a partir de componentes locales para evitar ese drift.
+const ymdLocal = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const todayStr = () => ymdLocal(new Date());
 const monthOf = (dateStr) => dateStr.slice(0, 7);
+// Label de mes safe-from-TZ: nunca usar new Date("YYYY-MM-01") porque se parsea como UTC midnight
+// y luego en local va al mes anterior. Usar componentes locales con día 15 (mitad de mes).
+const monthLabel = (mm) => {
+  const [y, m] = mm.split("-").map(Number);
+  return new Date(y, m - 1, 15).toLocaleDateString("es-AR", { month: "long", year: "numeric" }).replace(/^./, c => c.toUpperCase());
+};
 const PUBLISH_DAYS = [1, 4, 7, 10, 13, 16, 19, 22, 25, 28];
 
 // ────── Root ──────
@@ -346,8 +356,21 @@ function Hoy({ token, pieces, radar, reactives, extraTasks, setExtraTasks, daily
 // ────── PLAN DEL MES ──────
 function Plan({ token, pieces, reload }) {
   const [redSel, setRedSel] = useState("instagram");
-  const [monthSel, setMonthSel] = useState(monthOf(todayStr()));
-  const [editing, setEditing] = useState(null); // pieza en edición
+  // monthSel arranca en el mes actual y se re-sincroniza si pasa medianoche/mes mientras el panel está abierto.
+  // Si el admin navegó manualmente a otro mes con las flechas, respeta esa elección.
+  const currentMonth = monthOf(todayStr());
+  const [monthSel, setMonthSel] = useState(currentMonth);
+  const [touchedMonth, setTouchedMonth] = useState(false);
+  const [editing, setEditing] = useState(null);
+  // Re-sync al mes actual si: a) cambió la fecha real y b) el admin no navegó manualmente.
+  useEffect(() => {
+    if (!touchedMonth) setMonthSel(currentMonth);
+    const onVis = () => { if (!document.hidden && !touchedMonth) setMonthSel(monthOf(todayStr())); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onVis);
+    const id = setInterval(onVis, 60000);
+    return () => { document.removeEventListener("visibilitychange", onVis); window.removeEventListener("focus", onVis); clearInterval(id); };
+  }, [currentMonth, touchedMonth]);
 
   const monthPieces = pieces.filter(p => monthOf(p.scheduled_date) === monthSel);
   const piezasRed = monthPieces.filter(p => p.network === redSel).sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date));
@@ -356,7 +379,9 @@ function Plan({ token, pieces, reload }) {
   const navMonth = (delta) => {
     const [y, m] = monthSel.split("-").map(Number);
     const dt = new Date(y, m - 1 + delta, 1);
-    setMonthSel(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`);
+    const next = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+    setTouchedMonth(next !== currentMonth);
+    setMonthSel(next);
   };
 
   const ensureMonth = async () => {
@@ -382,7 +407,7 @@ function Plan({ token, pieces, reload }) {
   return (
     <div>
       <PageHeader
-        title={`Plan ${new Date(monthSel + "-01").toLocaleDateString("es-AR", { month: "long", year: "numeric" }).replace(/^./, c => c.toUpperCase())}`}
+        title={`Plan ${monthLabel(monthSel)}`}
         sub="10 piezas por red — cada 3 días (1, 4, 7, 10, 13, 16, 19, 22, 25, 28)"
         right={<button onClick={() => navMonth(-1)} style={btnSec}>‹ Mes anterior</button>}
         rightExtra={<button onClick={() => navMonth(1)} style={btnSec}>Mes siguiente ›</button>}
