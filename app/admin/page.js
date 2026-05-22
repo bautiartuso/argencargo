@@ -2383,9 +2383,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
                 <Inp label="Monto ARS" type="number" value={newCliPmt.amount_ars} onChange={v=>setNewCliPmt(p=>({...p,amount_ars:v}))} step="0.01"/>
                 <Inp label="Tipo de cambio" type="number" value={newCliPmt.exchange_rate} onChange={v=>setNewCliPmt(p=>({...p,exchange_rate:v}))} step="0.01" placeholder="Ej: 1410"/>
               </div>}
-              <div style={{display:"grid",gridTemplateColumns:"3fr auto",gap:10,alignItems:"end"}}>
-                <Inp label="Notas (opcional)" value={newCliPmt.notes} onChange={v=>setNewCliPmt(p=>({...p,notes:v}))} placeholder="Ej: 30% anticipo producción"/>
-                <Btn onClick={addGiCliPayment} disabled={!newCliPmt.amount_usd||Number(newCliPmt.amount_usd)<=0} small>+ Registrar cobro</Btn>
+              {/* Notas + botón en la misma línea — el botón alineado al input */}
+              <div style={{display:"flex",gap:10,alignItems:"flex-end"}}>
+                <div style={{flex:1}}>
+                  <Inp label="Notas (opcional)" value={newCliPmt.notes} onChange={v=>setNewCliPmt(p=>({...p,notes:v}))} placeholder="Ej: 30% anticipo producción"/>
+                </div>
+                <div style={{paddingBottom:12,flexShrink:0}}>
+                  <Btn onClick={addGiCliPayment} disabled={!newCliPmt.amount_usd||Number(newCliPmt.amount_usd)<=0} small>+ Registrar cobro</Btn>
+                </div>
               </div>
             </div>
           </Card>;
