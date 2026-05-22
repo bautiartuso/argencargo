@@ -1478,25 +1478,22 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         flash("Presupuesto manual guardado");
         setSaving(false);
       };
-      // Helper: input numérico que actualiza op.* y auto-suma el TOTAL al cambiar cualquier componente.
-      // Si el usuario edita directamente budget_total (override), no recalcula desde los rows.
-      const ManualInput=({field,placeholder})=>{
-        const v=op[field]??"";
-        return <input type="text" inputMode="decimal" value={v} placeholder={placeholder} onChange={e=>{
-          const raw=e.target.value.replace(",",".");
-          if(raw===""||/^\d*\.?\d*$/.test(raw)){
-            const newVal=raw===""?null:Number(raw);
-            chOp(field)(newVal);
-            // Auto-suma: cuando edito un componente, recalculo TOTAL = SUM(componentes) + shipping
-            if(field!=="budget_total"){
-              const components=["budget_taxes","budget_flete","budget_seguro","budget_surcharge"];
-              const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
-              const sum=components.reduce((s,f)=>s+(f===field?(Number(newVal)||0):Number(op[f]||0)),0)+shipCost;
-              chOp("budget_total")(Math.round(sum*100)/100);
-            }
-          }
-        }} style={{width:130,padding:"6px 9px",fontSize:13,fontWeight:600,border:`1px solid ${GOLD_LIGHT}55`,borderRadius:6,background:`${GOLD_LIGHT}0A`,color:"#fff",outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"}}/>;
+      // Handler de cambio para los inputs manuales: actualiza op[field] y auto-suma el TOTAL.
+      // Si se edita directamente budget_total (override), no recalcula desde los rows.
+      const handleManualChange=(field,rawInput)=>{
+        const raw=String(rawInput).replace(",",".");
+        if(raw!==""&&!/^\d*\.?\d*$/.test(raw))return;
+        const newVal=raw===""?null:Number(raw);
+        chOp(field)(newVal);
+        if(field!=="budget_total"){
+          const components=["budget_taxes","budget_flete","budget_seguro","budget_surcharge"];
+          const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
+          const sum=components.reduce((s,f)=>s+(f===field?(Number(newVal)||0):Number(op[f]||0)),0)+shipCost;
+          chOp("budget_total")(Math.round(sum*100)/100);
+        }
       };
+      // Estilo común reutilizable (sin redefinir componente — evita remount + pérdida de foco)
+      const manualInputStyle={width:130,padding:"6px 9px",fontSize:13,fontWeight:600,border:`1px solid ${GOLD_LIGHT}55`,borderRadius:6,background:`${GOLD_LIGHT}0A`,color:"#fff",outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"};
       // Si manual: usamos los valores guardados como los visualizados
       if(isManual){totalTax=Number(op.budget_taxes||0);flete=Number(op.budget_flete||0);seguro=Number(op.budget_seguro||0);surcharge=Number(op.budget_surcharge||0);totalAbonar=Number(op.budget_total||0);}
       return <Card title={`Presupuesto${opClient?` — ${opClient.first_name} ${opClient.last_name} (${isRI?"Resp. Inscripto":"No RI"})`:""}`} actions={
@@ -1521,12 +1518,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <b>Modo manual:</b> editás los valores directamente. El sistema no recalcula automáticamente al modificar bultos/items. Volvé a "AUTO" para recalcular.
           </div>
           {isBlanco?<>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Total Impuestos (USD)</span><ManualInput field="budget_taxes" placeholder="0.00"/></div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Flete internacional (USD)</span><ManualInput field="budget_flete" placeholder="0.00"/></div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Seguro de carga (USD)</span><ManualInput field="budget_seguro" placeholder="0.00"/></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Total Impuestos (USD)</span><input type="text" inputMode="decimal" value={op.budget_taxes??""} placeholder="0,00" onChange={e=>handleManualChange("budget_taxes",e.target.value)} style={manualInputStyle}/></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Flete internacional (USD)</span><input type="text" inputMode="decimal" value={op.budget_flete??""} placeholder="0,00" onChange={e=>handleManualChange("budget_flete",e.target.value)} style={manualInputStyle}/></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Seguro de carga (USD)</span><input type="text" inputMode="decimal" value={op.budget_seguro??""} placeholder="0,00" onChange={e=>handleManualChange("budget_seguro",e.target.value)} style={manualInputStyle}/></div>
           </>:<>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Servicio Integral (USD)</span><ManualInput field="budget_flete" placeholder="0.00"/></div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Recargo por valor (USD)</span><ManualInput field="budget_surcharge" placeholder="0.00"/></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Servicio Integral (USD)</span><input type="text" inputMode="decimal" value={op.budget_flete??""} placeholder="0,00" onChange={e=>handleManualChange("budget_flete",e.target.value)} style={manualInputStyle}/></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Recargo por valor (USD)</span><input type="text" inputMode="decimal" value={op.budget_surcharge??""} placeholder="0,00" onChange={e=>handleManualChange("budget_surcharge",e.target.value)} style={manualInputStyle}/></div>
           </>}
         </>:<>
           {isBlanco?<>
@@ -1544,7 +1541,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           {isManual
             ?<div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>USD</span>
-                <input type="text" inputMode="decimal" value={op.budget_total??""} placeholder="0.00" onChange={e=>{const raw=e.target.value.replace(",",".");if(raw===""||/^\d*\.?\d*$/.test(raw))chOp("budget_total")(raw===""?null:Number(raw));}} style={{width:160,padding:"8px 12px",fontSize:18,fontWeight:700,border:`1.5px solid ${IC}`,borderRadius:8,background:`${IC}1A`,color:IC,outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"}}/>
+                <input type="text" inputMode="decimal" value={op.budget_total??""} placeholder="0,00" onChange={e=>{const raw=e.target.value.replace(",",".");if(raw===""||/^\d*\.?\d*$/.test(raw))chOp("budget_total")(raw===""?null:Number(raw));}} style={{width:160,padding:"8px 12px",fontSize:18,fontWeight:700,border:`1.5px solid ${IC}`,borderRadius:8,background:`${IC}1A`,color:IC,outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"}}/>
                 <Btn onClick={saveManualBudget} disabled={saving} small>{saving?"...":"💾 Guardar"}</Btn>
               </div>
             :<span style={{fontSize:20,fontWeight:700,color:IC}}>USD {totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
@@ -1600,7 +1597,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
         <span style={{fontSize:11,color:"rgba(255,255,255,0.55)",fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase"}}>Total a cobrar al cliente:</span>
         {op.budget_mode==="manual"?<>
-          <input type="text" inputMode="decimal" value={op.budget_total??""} placeholder="0.00" onChange={e=>{const raw=e.target.value.replace(",",".");if(raw===""||/^\d*\.?\d*$/.test(raw))chOp("budget_total")(raw===""?null:Number(raw));}} style={{width:160,padding:"8px 12px",fontSize:18,fontWeight:700,border:`1.5px solid ${IC}`,borderRadius:8,background:`${IC}1A`,color:IC,outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"}}/>
+          <input type="text" inputMode="decimal" value={op.budget_total??""} placeholder="0,00" onChange={e=>{const raw=e.target.value.replace(",",".");if(raw===""||/^\d*\.?\d*$/.test(raw))chOp("budget_total")(raw===""?null:Number(raw));}} style={{width:160,padding:"8px 12px",fontSize:18,fontWeight:700,border:`1.5px solid ${IC}`,borderRadius:8,background:`${IC}1A`,color:IC,outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"}}/>
           <Btn onClick={async()=>{setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_total:Number(op.budget_total)||0}});flash("Total cliente guardado");setSaving(false);}} disabled={saving} small>{saving?"...":"💾 Guardar"}</Btn>
         </>:<span style={{fontSize:20,fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>USD {Number(op.budget_total||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
       </div>
