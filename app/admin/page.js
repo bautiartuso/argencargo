@@ -4948,7 +4948,7 @@ function CarrierPickupBlock({flight,token,onReload}){
           <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"3px 0 0",fontStyle:"italic"}}>Se completa automáticamente con la API</p>
         </div>
       </>}
-      {demora!=null&&<div style={{padding:"6px 12px",borderRadius:8,background:`${color}18`,border:`1px solid ${color}55`}}>
+      {demora!=null&&<div style={{padding:"6px 12px",borderRadius:8,background:`${color}18`,border:`1px solid ${color}55`,marginBottom:12}}>
         <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Demora</p>
         <p style={{fontSize:14,fontWeight:800,color,margin:0,fontFeatureSettings:'"tnum"'}}>{demora.toFixed(1)} días</p>
       </div>}
