@@ -36,6 +36,13 @@ function decodeEntities(s) {
 
 function stripTags(s) { return s.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim(); }
 
+// Ruido financiero / cotización de divisas — no aporta valor al radar aduanero,
+// ensucia el feed con widgets de "Dólar HOY", cotizaciones, etc. Si el title matchea, descartamos.
+function isFinanceNoise(title) {
+  const t = String(title || "").toLowerCase();
+  return /(d[oó]lar(?:\s|:|,|$)|tipo\s+de\s+cambio|cotizaci[oó]n\s+del?\s+d[oó]lar|compra:?\s*\$|venta:?\s*\$|d[oó]lar\s+(blue|mep|ccl|oficial|mayorista|tarjeta)|cotizar\s+divisas?)/.test(t);
+}
+
 function absUrl(href, base) {
   try { return new URL(href, base).toString(); } catch { return href; }
 }
@@ -128,7 +135,8 @@ export async function GET(req) {
     if (!html) { results.push({ source: src.name, status: "fetch_failed" }); continue; }
     const parser = pickParser(src.url);
     const items = parser(html, src.url);
-    const fresh = items.filter(it => !existingSet.has(it.title.toLowerCase().trim()));
+    // Filtramos: nuevos + sin ruido financiero (cotizaciones de dólar, TC, etc.)
+    const fresh = items.filter(it => !existingSet.has(it.title.toLowerCase().trim()) && !isFinanceNoise(it.title));
     if (fresh.length > 0) {
       const toInsert = fresh.slice(0, 6).map(it => ({
         source_id: src.id,
