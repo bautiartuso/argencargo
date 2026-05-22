@@ -1465,32 +1465,34 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       // Editor manual: valores locales editables, guardado a demanda
       const saveManualBudget=async()=>{
         setSaving(true);
+        // Helper local también para el save (parsea coma/punto a number)
+        const num=(s)=>{if(s===""||s==null)return 0;const n=Number(String(s).replace(",","."));return isNaN(n)?0:n;};
         const body={
           budget_mode:"manual",
-          budget_taxes:Number(op.budget_taxes)||0,
-          budget_flete:Number(op.budget_flete)||0,
-          budget_seguro:Number(op.budget_seguro)||0,
-          budget_surcharge:Number(op.budget_surcharge)||0,
-          budget_total:Number(op.budget_total)||0,
+          budget_taxes:num(op.budget_taxes),
+          budget_flete:num(op.budget_flete),
+          budget_seguro:num(op.budget_seguro),
+          budget_surcharge:num(op.budget_surcharge),
+          budget_total:num(op.budget_total),
         };
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
         setOp(p=>({...p,...body}));
         flash("Presupuesto manual guardado");
         setSaving(false);
       };
-      // Handler de cambio para los inputs manuales: actualiza op[field] y auto-suma el TOTAL.
-      // Si se edita directamente budget_total (override), no recalcula desde los rows.
-      const handleManualChange=(field,rawInput)=>{
-        const raw=String(rawInput).replace(",",".");
-        if(raw!==""&&!/^\d*\.?\d*$/.test(raw))return;
-        const newVal=raw===""?null:Number(raw);
-        chOp(field)(newVal);
-        if(field!=="budget_total"){
-          const components=["budget_taxes","budget_flete","budget_seguro","budget_surcharge"];
-          const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
-          const sum=components.reduce((s,f)=>s+(f===field?(Number(newVal)||0):Number(op[f]||0)),0)+shipCost;
-          chOp("budget_total")(Math.round(sum*100)/100);
-        }
+      // Helper: convierte string (con coma o punto) a number, tolerante a vacío y NaN.
+      const toNum=(s)=>{if(s===""||s==null)return 0;const n=Number(String(s).replace(",","."));return isNaN(n)?0:n;};
+      // Handler: guarda el string tal cual lo escribió el usuario (preserva coma o punto), valida que sea solo dígitos
+      // + máximo un separador. Recalcula el total automáticamente al editar cualquier componente.
+      const handleManualChange=(field,val)=>{
+        // Permitir: vacío, o dígitos con max un separador (. o ,)
+        if(val!==""&&!/^\d*[.,]?\d*$/.test(val))return;
+        chOp(field)(val);
+        // Recalcular total siempre desde los componentes (total NO es editable manualmente)
+        const components=["budget_taxes","budget_flete","budget_seguro","budget_surcharge"];
+        const shipCost=op.shipping_to_door?toNum(op.shipping_cost):0;
+        const sum=components.reduce((s,f)=>s+(f===field?toNum(val):toNum(op[f])),0)+shipCost;
+        chOp("budget_total")(Math.round(sum*100)/100);
       };
       // Estilo común reutilizable (sin redefinir componente — evita remount + pérdida de foco)
       const manualInputStyle={width:130,padding:"6px 9px",fontSize:13,fontWeight:600,border:`1px solid ${GOLD_LIGHT}55`,borderRadius:6,background:`${GOLD_LIGHT}0A`,color:"#fff",outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"};
@@ -1539,9 +1541,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}>
           <span style={{fontSize:16,fontWeight:700,color:"#fff"}}>TOTAL A ABONAR</span>
           {isManual
-            ?<div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>USD</span>
-                <input type="text" inputMode="decimal" value={op.budget_total??""} placeholder="0,00" onChange={e=>{const raw=e.target.value.replace(",",".");if(raw===""||/^\d*\.?\d*$/.test(raw))chOp("budget_total")(raw===""?null:Number(raw));}} style={{width:160,padding:"8px 12px",fontSize:18,fontWeight:700,border:`1.5px solid ${IC}`,borderRadius:8,background:`${IC}1A`,color:IC,outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"}}/>
+            ?<div style={{display:"flex",alignItems:"center",gap:12}}>
+                <span style={{fontSize:20,fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums",minWidth:160,textAlign:"right"}}>USD {toNum(op.budget_total).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
                 <Btn onClick={saveManualBudget} disabled={saving} small>{saving?"...":"💾 Guardar"}</Btn>
               </div>
             :<span style={{fontSize:20,fontWeight:700,color:IC}}>USD {totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
