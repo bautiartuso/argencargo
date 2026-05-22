@@ -813,11 +813,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   };
 
   // Auto-sync: refresca items+bultos+tarifas+overrides+cliente de DB y recalcula+guarda presupuesto silenciosamente.
-  // Se llama después de cualquier CRUD de items/bultos. Saltea ops canceladas.
+  // Se llama después de cualquier CRUD de items/bultos. Saltea ops canceladas Y ops con budget_mode=manual.
   // En ops cerradas SÍ recalcula — el admin puede modificar bultos/items y después usar "Ajustar saldo"
   // para que el excedente del cliente refleje el nuevo presupuesto.
-  const autoSyncBudget=async()=>{
+  const autoSyncBudget=async(force=false)=>{
     if(op.status==="cancelada")return;
+    if(!force && op.budget_mode==="manual")return; // ← Manual: el admin maneja los números a mano, no pisamos
     try{
       // Refetch TODO fresco para evitar closures stale de tariffs/overrides (puede haber cambiado desde que se cargó la op).
       const[fit,fpk,ft,fov,fcl,fop]=await Promise.all([
@@ -1442,7 +1443,54 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       }
       const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
       const rw=(l,v)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>USD {v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
-      return <Card title={`Presupuesto${opClient?` — ${opClient.first_name} ${opClient.last_name} (${isRI?"Resp. Inscripto":"No RI"})`:""}`}>
+      const isManual=op.budget_mode==="manual";
+      // Toggler auto/manual: al pasar a manual pre-cargamos los valores actuales en budget_*; al pasar a auto recalculamos.
+      const setBudgetMode=async(mode)=>{
+        if(mode===op.budget_mode)return;
+        setSaving(true);
+        if(mode==="manual"){
+          // Snapshot del cálculo actual en budget_*
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_mode:"manual",budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}});
+          setOp(p=>({...p,budget_mode:"manual",budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}));
+          flash("Modo manual activado — editá los valores y guardá");
+        } else {
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_mode:"auto"}});
+          setOp(p=>({...p,budget_mode:"auto"}));
+          // force=true para saltarse el guard de manual (closure todavía ve la versión anterior de op)
+          await autoSyncBudget(true);
+          flash("Modo automático activado — el presupuesto se recalcula solo");
+        }
+        setSaving(false);
+      };
+      // Editor manual: valores locales editables, guardado a demanda
+      const saveManualBudget=async()=>{
+        setSaving(true);
+        const body={
+          budget_mode:"manual",
+          budget_taxes:Number(op.budget_taxes)||0,
+          budget_flete:Number(op.budget_flete)||0,
+          budget_seguro:Number(op.budget_seguro)||0,
+          budget_surcharge:Number(op.budget_surcharge)||0,
+          budget_total:Number(op.budget_total)||0,
+        };
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
+        setOp(p=>({...p,...body}));
+        flash("Presupuesto manual guardado");
+        setSaving(false);
+      };
+      // Helper: input numérico que actualiza op.* y recalcula total al cambiar
+      const ManualInput=({field,placeholder})=>{
+        const v=op[field]??"";
+        return <input type="text" inputMode="decimal" value={v} placeholder={placeholder} onChange={e=>{const raw=e.target.value.replace(",",".");if(raw===""||/^\d*\.?\d*$/.test(raw)){chOp(field)(raw===""?null:Number(raw));}}} style={{width:130,padding:"6px 9px",fontSize:13,fontWeight:600,border:`1px solid ${GOLD_LIGHT}55`,borderRadius:6,background:`${GOLD_LIGHT}0A`,color:"#fff",outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"}}/>;
+      };
+      // Si manual: usamos los valores guardados como los visualizados
+      if(isManual){totalTax=Number(op.budget_taxes||0);flete=Number(op.budget_flete||0);seguro=Number(op.budget_seguro||0);surcharge=Number(op.budget_surcharge||0);totalAbonar=Number(op.budget_total||0);}
+      return <Card title={`Presupuesto${opClient?` — ${opClient.first_name} ${opClient.last_name} (${isRI?"Resp. Inscripto":"No RI"})`:""}`} actions={
+        <div style={{display:"flex",gap:0,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:2}}>
+          <button onClick={()=>setBudgetMode("auto")} disabled={saving} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",background:!isManual?`linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`:"transparent",color:!isManual?"#0A1628":"rgba(255,255,255,0.6)",cursor:saving?"wait":"pointer",letterSpacing:"0.04em"}}>⚙ AUTO</button>
+          <button onClick={()=>setBudgetMode("manual")} disabled={saving} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",background:isManual?"linear-gradient(135deg,#fb923c,#f97316)":"transparent",color:isManual?"#0A1628":"rgba(255,255,255,0.6)",cursor:saving?"wait":"pointer",letterSpacing:"0.04em"}}>✎ MANUAL</button>
+        </div>
+      }>
         {/* Canal B: input para valor de mercadería (base del recargo por valor) */}
         {!isBlanco&&<div style={{marginBottom:14,padding:"10px 14px",background:"rgba(96,165,250,0.05)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10,display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:"0.06em",whiteSpace:"nowrap"}}>Valor mercadería (USD)</span>
@@ -1454,16 +1502,39 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             {(()=>{const amtForVpu=op.channel?.includes("aereo")?(op.channel==="aereo_negro"?totGW:pf):totCBM;const merchVal=Number(op.merchandise_value_usd||0)||totalFob;if(merchVal<=0||amtForVpu<=0)return "Cargá valor mercadería + bultos para ver recargo.";const vpu=merchVal/amtForVpu;const u=op.channel?.includes("aereo")?"kg":"CBM";return <>USD/{u}: <b style={{color:"#fff",fontStyle:"normal"}}>{vpu.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b> · {surchargePct>0?<span style={{color:GOLD_LIGHT,fontWeight:700,fontStyle:"normal"}}>Recargo {surchargePct}%</span>:<span style={{color:"rgba(255,255,255,0.4)",fontStyle:"normal"}}>sin recargo</span>}</>;})()}
           </span>
         </div>}
-        {isBlanco?<>
-          {rw("Total Impuestos",totalTax)}
-          {rw("Flete internacional",flete)}
-          {rw("Seguro de carga",seguro)}
+        {isManual?<>
+          <div style={{padding:"8px 12px",marginBottom:10,background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:8,fontSize:11.5,color:"#fb923c",lineHeight:1.5}}>
+            <b>Modo manual:</b> editás los valores directamente. El sistema no recalcula automáticamente al modificar bultos/items. Volvé a "AUTO" para recalcular.
+          </div>
+          {isBlanco?<>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Total Impuestos (USD)</span><ManualInput field="budget_taxes" placeholder="0.00"/></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Flete internacional (USD)</span><ManualInput field="budget_flete" placeholder="0.00"/></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Seguro de carga (USD)</span><ManualInput field="budget_seguro" placeholder="0.00"/></div>
+          </>:<>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Servicio Integral (USD)</span><ManualInput field="budget_flete" placeholder="0.00"/></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Recargo por valor (USD)</span><ManualInput field="budget_surcharge" placeholder="0.00"/></div>
+          </>}
         </>:<>
-          {rw("Servicio Integral ARGENCARGO",flete)}
-          {surcharge>0&&rw(`Recargo por valor (${surchargePct}%)`,surcharge)}
+          {isBlanco?<>
+            {rw("Total Impuestos",totalTax)}
+            {rw("Flete internacional",flete)}
+            {rw("Seguro de carga",seguro)}
+          </>:<>
+            {rw("Servicio Integral ARGENCARGO",flete)}
+            {surcharge>0&&rw(`Recargo por valor (${surchargePct}%)`,surcharge)}
+          </>}
         </>}
         {shipCost>0&&rw("Envío a domicilio",shipCost)}
-        <div style={{display:"flex",justifyContent:"space-between",padding:"12px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}><span style={{fontSize:16,fontWeight:700,color:"#fff"}}>TOTAL A ABONAR</span><span style={{fontSize:20,fontWeight:700,color:IC}}>USD {totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}>
+          <span style={{fontSize:16,fontWeight:700,color:"#fff"}}>TOTAL A ABONAR</span>
+          {isManual
+            ?<div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>USD</span>
+                <input type="text" inputMode="decimal" value={op.budget_total??""} placeholder="0.00" onChange={e=>{const raw=e.target.value.replace(",",".");if(raw===""||/^\d*\.?\d*$/.test(raw))chOp("budget_total")(raw===""?null:Number(raw));}} style={{width:160,padding:"8px 12px",fontSize:18,fontWeight:700,border:`1.5px solid ${IC}`,borderRadius:8,background:`${IC}1A`,color:IC,outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"}}/>
+                <Btn onClick={saveManualBudget} disabled={saving} small>{saving?"...":"💾 Guardar"}</Btn>
+              </div>
+            :<span style={{fontSize:20,fontWeight:700,color:IC}}>USD {totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+        </div>
         {/* Controles de Envío a domicilio — siempre visibles, auto-save cuando cambian */}
         <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
           {(()=>{
