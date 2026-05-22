@@ -1449,9 +1449,18 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         if(mode===op.budget_mode)return;
         setSaving(true);
         if(mode==="manual"){
-          // Snapshot del cálculo actual en budget_*
-          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_mode:"manual",budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}});
-          setOp(p=>({...p,budget_mode:"manual",budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}));
+          // Snapshot del cálculo actual en budget_* — ceros explícitos en los campos que no aplican al canal
+          // (Canal A: sin surcharge / Canal B: sin taxes ni seguro). Evita residuales sumando al total en manual.
+          const snap={
+            budget_mode:"manual",
+            budget_taxes:isBlanco?totalTax:0,
+            budget_flete:flete,
+            budget_seguro:isBlanco?seguro:0,
+            budget_surcharge:isBlanco?0:(surcharge||0),
+            budget_total:totalAbonar,
+          };
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:snap});
+          setOp(p=>({...p,...snap}));
           flash("Modo manual activado — editá los valores y guardá");
         } else {
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_mode:"auto"}});
@@ -1465,14 +1474,15 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       // Editor manual: valores locales editables, guardado a demanda
       const saveManualBudget=async()=>{
         setSaving(true);
-        // Helper local también para el save (parsea coma/punto a number)
         const num=(s)=>{if(s===""||s==null)return 0;const n=Number(String(s).replace(",","."));return isNaN(n)?0:n;};
+        // Por canal: ceros explícitos en los campos que no aplican, así el total queda limpio
+        // (evita residuales del modo auto: en canal B no debe contar seguro/taxes; en canal A no surcharge).
         const body={
           budget_mode:"manual",
-          budget_taxes:num(op.budget_taxes),
+          budget_taxes:isBlanco?num(op.budget_taxes):0,
           budget_flete:num(op.budget_flete),
-          budget_seguro:num(op.budget_seguro),
-          budget_surcharge:num(op.budget_surcharge),
+          budget_seguro:isBlanco?num(op.budget_seguro):0,
+          budget_surcharge:isBlanco?0:num(op.budget_surcharge),
           budget_total:num(op.budget_total),
         };
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
@@ -1488,8 +1498,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         // Permitir: vacío, o dígitos con max un separador (. o ,)
         if(val!==""&&!/^\d*[.,]?\d*$/.test(val))return;
         chOp(field)(val);
-        // Recalcular total siempre desde los componentes (total NO es editable manualmente)
-        const components=["budget_taxes","budget_flete","budget_seguro","budget_surcharge"];
+        // Recalcular total siempre desde los componentes (total NO es editable manualmente).
+        // Sumamos solo los componentes que aplican al canal — igual que calcOpBudget en auto:
+        //   Canal A (blanco) → taxes + flete + seguro
+        //   Canal B (negro)  → flete + surcharge
+        const components=isBlanco?["budget_taxes","budget_flete","budget_seguro"]:["budget_flete","budget_surcharge"];
         const shipCost=op.shipping_to_door?toNum(op.shipping_cost):0;
         const sum=components.reduce((s,f)=>s+(f===field?toNum(val):toNum(op[f])),0)+shipCost;
         chOp("budget_total")(Math.round(sum*100)/100);
