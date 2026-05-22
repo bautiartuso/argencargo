@@ -35,9 +35,9 @@ function decodeEntities(s) {
 }
 
 function stripTags(s) { return s.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim(); }
+function stripCDATA(s) { return String(s).replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim(); }
 
-// Ruido financiero / cotización de divisas — no aporta valor al radar aduanero,
-// ensucia el feed con widgets de "Dólar HOY", cotizaciones, etc. Si el title matchea, descartamos.
+// Ruido financiero / cotización de divisas — no aporta valor al radar aduanero.
 function isFinanceNoise(title) {
   const t = String(title || "").toLowerCase();
   return /(d[oó]lar(?:\s|:|,|$)|tipo\s+de\s+cambio|cotizaci[oó]n\s+del?\s+d[oó]lar|compra:?\s*\$|venta:?\s*\$|d[oó]lar\s+(blue|mep|ccl|oficial|mayorista|tarjeta)|cotizar\s+divisas?)/.test(t);
@@ -48,7 +48,6 @@ function absUrl(href, base) {
 }
 
 // Parser muy básico: extrae anchors con texto de longitud razonable.
-// Para refinamiento por fuente, agregar selectores específicos en MKT_PARSERS abajo.
 function extractGeneric(html, baseUrl) {
   const anchors = [...html.matchAll(/<a\s+[^>]*?href=["']([^"']+)["'][^>]*?>([\s\S]*?)<\/a>/gi)];
   const seen = new Set();
@@ -56,13 +55,38 @@ function extractGeneric(html, baseUrl) {
   for (const m of anchors) {
     const url = absUrl(m[1], baseUrl);
     const text = decodeEntities(stripTags(m[2]));
-    if (text.length < 30 || text.length > 220) continue;
-    if (/^(home|inicio|contacto|men[uú]|registrar|login|leer m[aá]s|m[aá]s informaci[oó]n|ver m[aá]s)/i.test(text)) continue;
+    if (text.length < 25 || text.length > 260) continue;
+    if (/^(home|inicio|contacto|men[uú]|registrar|login|leer m[aá]s|m[aá]s informaci[oó]n|ver m[aá]s|todos los|ver todos|seguir leyendo)/i.test(text)) continue;
     const key = text.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ title: text, url });
     if (out.length >= 12) break;
+  }
+  return out;
+}
+
+// Parser RSS/Atom — funciona con cualquier feed estándar (Google News, WordPress, etc.).
+// Soporta tanto <item> (RSS 2.0) como <entry> (Atom).
+function parseRSS(xml, baseUrl) {
+  const blocks = [...xml.matchAll(/<(item|entry)[\s>][\s\S]*?<\/\1>/gi)];
+  const out = [];
+  const seen = new Set();
+  for (const m of blocks) {
+    const block = m[0];
+    const titleMatch = block.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const linkAtom = block.match(/<link[^>]*\bhref=["']([^"']+)["'][^>]*\/?>/i);
+    const linkRss = block.match(/<link[^>]*>([\s\S]*?)<\/link>/i);
+    let title = titleMatch ? decodeEntities(stripTags(stripCDATA(titleMatch[1]))) : "";
+    let url = "";
+    if (linkAtom) url = linkAtom[1].trim();
+    else if (linkRss) url = stripCDATA(linkRss[1]).trim();
+    if (!title || title.length < 20 || title.length > 320) continue;
+    const key = title.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ title, url: absUrl(url, baseUrl) });
+    if (out.length >= 15) break;
   }
   return out;
 }
@@ -87,7 +111,11 @@ const MKT_PARSERS = {
   },
 };
 
-function pickParser(url) {
+function pickParser(url, html) {
+  // Detección de feed RSS/Atom por contenido (más confiable que la extensión)
+  if (html && /^\s*(?:<\?xml|<rss\b|<feed\b)/i.test(html.slice(0, 200))) {
+    return parseRSS;
+  }
   try {
     const host = new URL(url).hostname.replace(/^www\./, "");
     return MKT_PARSERS[host] || extractGeneric;
@@ -132,8 +160,13 @@ export async function GET(req) {
 
   for (const src of sources) {
     const html = await fetchHtml(src.url);
-    if (!html) { results.push({ source: src.name, status: "fetch_failed" }); continue; }
-    const parser = pickParser(src.url);
+    if (!html) {
+      // Marcamos last_fetched_at igualmente para no quedarnos con NULL forever (telemetría)
+      await sb(`/rest/v1/mkt_sources?id=eq.${src.id}`, { method: "PATCH", body: JSON.stringify({ last_fetched_at: new Date().toISOString() }) });
+      results.push({ source: src.name, status: "fetch_failed" });
+      continue;
+    }
+    const parser = pickParser(src.url, html);
     const items = parser(html, src.url);
     // Filtramos: nuevos + sin ruido financiero (cotizaciones de dólar, TC, etc.)
     const fresh = items.filter(it => !existingSet.has(it.title.toLowerCase().trim()) && !isFinanceNoise(it.title));
