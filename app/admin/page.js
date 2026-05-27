@@ -3220,11 +3220,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               <strong style={{color:"#60a5fa"}}>Presu ajustado al cobro real:</strong> el cliente {ingresoNeto>presuTotal?"pagó más":"pagó menos"} que lo presupuestado, así que cada concepto se prorratea con factor <strong>×{factor.toFixed(3)}</strong>. Saldo refleja la realidad del cobro.
             </div>}
             {block("Flete",bFlete,costFlete)}
-            {/* Impuestos (presu) incluyen el gasto documental dentro del cálculo del calc.js
-                → al mostrar Impuestos y Gasto documental por separado, restamos bDoc para
-                no doble-contar. Solo se muestran cuando hay valor (canal B no aplica). */}
-            {(bTax>0||costImp>0)&&block("Impuestos",Math.max(0,bTax-bDoc),costImp)}
-            {(bDoc>0||costDoc>0)&&block("Gasto documental",bDoc,costDoc)}
+            {/* Impuestos: una sola línea unificada que incluye el gasto documental.
+                Presupuestado = bTax (que ya incluye el desembolso/gasto doc cuando es modo auto;
+                en modo manual respeta lo que cargó el admin, aunque sea 0).
+                Costo real = costImp + costDoc — los dos pagos al despacho/aduana sumados.
+                Visible cuando hay budget o costo real (canal B no aplica → ambos en 0, no muestra). */}
+            {(bTax>0||costImp>0||costDoc>0)&&block("Impuestos",bTax,costImp+costDoc)}
             {(bSeg>0||costSeg>0)&&block("Seguro",bSeg,costSeg)}
             {bSurch>0&&block("Recargo por valor",bSurch,0)}
             {(bLocal>0||costLocal>0)&&block("Flete local",bLocal,costLocal)}
