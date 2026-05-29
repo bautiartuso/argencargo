@@ -2863,6 +2863,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           cost_flete_paid_at:dateOrNull(op.cost_flete_paid_at),
           cost_flete_card_closing:dateOnly(op.cost_flete_card_closing),
           cost_flete_credit_card_id:op.cost_flete_method==="tarjeta_credito"?(op.cost_flete_credit_card_id||null):null,
+          cost_flete_platform:(op.cost_flete_method==="tarjeta_credito"||op.cost_flete_method==="tarjeta_debito")?(op.cost_flete_platform||null):null,
           cost_impuestos_ars:numOrNull(op.cost_impuestos_ars),
           cost_impuestos_method:op.cost_impuestos_method||null,
           cost_impuestos_card_closing:dateOnly(op.cost_impuestos_card_closing),
@@ -3086,6 +3087,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           {/* TC: fecha de cierre + tarjeta. Queda en Deuda Tarjeta hasta que se debite. */}
           {isTC&&Number(op.cost_flete)>0&&<Inp label="Cierre de tarjeta" type="date" value={op.cost_flete_card_closing?String(op.cost_flete_card_closing).slice(0,10):""} onChange={v=>chOp("cost_flete_card_closing")(v||null)}/>}
         </div>
+        {(isTC||isDebito)&&Number(op.cost_flete)>0&&<div style={{marginBottom:12,maxWidth:260}}>
+          <Sel label="Plataforma" value={op.cost_flete_platform||""} onChange={chOp("cost_flete_platform")} options={[{value:"",label:"— Sin especificar —"},{value:"alibaba",label:"Alibaba"},{value:"alipay",label:"Alipay"}]}/>
+        </div>}
         {isTC&&Number(op.cost_flete)>0&&<div style={{marginBottom:12}}>
           <CreditCardPicker token={token} value={op.cost_flete_credit_card_id} onChange={v=>chOp("cost_flete_credit_card_id")(v)} required/>
           <p style={{fontSize:10.5,color:"#a78bfa",margin:"6px 0 0",fontStyle:"italic"}}>💳 Pago con tarjeta de crédito: queda como Deuda Tarjeta hasta el débito del cierre.</p>
@@ -4400,7 +4404,7 @@ function FinancePanel({token}){
     // Costos GI con TC + USD pendientes (deuda tarjeta USD) — NO incluir refunds
     dq("operation_supplier_payments",{token,filters:"?select=*,operations(operation_code),credit_cards(id,name,brand)&payment_method=eq.tarjeta_credito&is_paid=eq.false&or=(currency.eq.USD,currency.is.null)&type=neq.refund&order=card_closing_date.asc"}),
     // Fletes pagados con TC (Alibaba u otra) pendientes de débito
-    dq("operations",{token,filters:"?select=id,operation_code,cost_flete,cost_flete_card_closing,cost_flete_paid_at,credit_cards:cost_flete_credit_card_id(id,name,brand),clients(client_code)&cost_flete_method=eq.tarjeta_credito&cost_flete_paid_at=is.null&cost_flete=gt.0&order=cost_flete_card_closing.asc"}),
+    dq("operations",{token,filters:"?select=id,operation_code,cost_flete,cost_flete_card_closing,cost_flete_paid_at,cost_flete_platform,credit_cards:cost_flete_credit_card_id(id,name,brand),clients(client_code)&cost_flete_method=eq.tarjeta_credito&cost_flete_paid_at=is.null&cost_flete=gt.0&order=cost_flete_card_closing.asc"}),
     // Auto-generated entries (impuestos/gasto doc dolarizados desde ops). Van al libro diario, no al panel "Gastos del Negocio".
     dq("finance_entries",{token,filters:"?select=*&auto_generated=eq.true&currency=eq.USD&is_paid=eq.true&order=date.desc"}),
     // Movimientos CC del cliente vinculados a una op (overpayment / applied / debt). Para reflejar el cash real en libro diario.
@@ -4861,7 +4865,7 @@ function FinancePanel({token}){
       // Los ARS pendientes de dolarización viven solo en la tab Dollarización.
       // Cuando se dolarizan, el pago de la tarjeta ya se hizo en ese momento → no vuelven a Deuda Tarjeta.
       // Fletes TC (Alibaba u otra) pendientes de débito
-      (cardDebt.fleteTcOps||[]).forEach(o=>pushItem({source:"flete_op",id:o.id,desc:`Flete ${o.operation_code}${o.clients?.client_code?` — ${o.clients.client_code}`:""}`,detail:"Pago con tarjeta de crédito",amt:Number(o.cost_flete||0),amtArs:0,currency:"USD",dateLoad:null,op:o.operation_code,card:o.credit_cards},o.credit_cards,o.cost_flete_card_closing));
+      (cardDebt.fleteTcOps||[]).forEach(o=>{const plat=o.cost_flete_platform==="alibaba"?"Alibaba":o.cost_flete_platform==="alipay"?"Alipay":null;pushItem({source:"flete_op",id:o.id,desc:`Flete ${o.operation_code}${o.clients?.client_code?` — ${o.clients.client_code}`:""}`,detail:plat?`Pago con tarjeta de crédito · ${plat}`:"Pago con tarjeta de crédito",amt:Number(o.cost_flete||0),amtArs:0,currency:"USD",dateLoad:null,op:o.operation_code,card:o.credit_cards},o.credit_cards,o.cost_flete_card_closing);});
       // Orden: primero por nombre de tarjeta, después por fecha de cierre.
       const sortedGroups=Object.values(groups).sort((a,b)=>{
         const an=(a.card?.name||"~zsin tarjeta").toLowerCase();
