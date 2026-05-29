@@ -4082,6 +4082,17 @@ function CreditCardPicker({token,value,onChange,label="Tarjeta",small=true,requi
   </div>;
 }
 
+// Select compacto para asignar tarjeta a un ítem de Deuda Tarjeta. NO auto-selecciona (a diferencia
+// de CreditCardPicker) — solo asigna cuando el admin elige explícitamente, evitando asignaciones masivas.
+function AssignCardSelect({token,value,onAssign}){
+  const [cards,setCards]=useState([]);
+  useEffect(()=>{(async()=>{const r=await dq("credit_cards",{token,filters:"?active=eq.true&select=id,name,brand&order=brand.asc,name.asc"});setCards(Array.isArray(r)?r:[]);})();},[token]);
+  return <select value={value||""} onChange={e=>onAssign(e.target.value||null)} style={{padding:"5px 8px",fontSize:11,border:`1px solid ${value?"rgba(255,255,255,0.12)":"rgba(251,146,60,0.45)"}`,borderRadius:6,background:value?"rgba(255,255,255,0.06)":"rgba(251,146,60,0.08)",color:value?"#fff":"#fb923c",cursor:"pointer",fontWeight:600}}>
+    <option value="" style={{background:"#142038"}}>{value?"— Quitar tarjeta —":"⚠ Asignar tarjeta…"}</option>
+    {cards.map(c=><option key={c.id} value={c.id} style={{background:"#142038"}}>{(c.brand==="visa"?"VISA · ":c.brand==="mastercard"?"MC · ":c.brand==="amex"?"AMEX · ":"")+c.name}</option>)}
+  </select>;
+}
+
 function CreditCardsCard({token}){
   const [cards,setCards]=useState([]);
   const [lo,setLo]=useState(true);
@@ -4659,7 +4670,7 @@ function FinancePanel({token}){
       <div style={{background:"rgba(251,146,60,0.04)",border:"1px solid rgba(251,146,60,0.15)",borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px"}}>GASTOS NEGOCIO</p><p style={{fontSize:20,fontWeight:700,color:"#fb923c",margin:0}}>{usd(ledgerGastosFijos)}</p></div>
       <div style={{background:ganancia>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)",border:`1px solid ${ganancia>=0?"rgba(34,197,94,0.18)":"rgba(255,80,80,0.18)"}`,borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px"}}>GANANCIA NETA</p><p style={{fontSize:20,fontWeight:700,color:ganancia>=0?"#22c55e":"#ff6b6b",margin:0}}>{usd(ganancia)}</p></div>
     </div>
-    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>{[{k:"fixed",l:"Gastos del Negocio"},{k:"ledger",l:"Libro Diario"},{k:"dollar",l:"Dollarización"},{k:"tcdebt",l:(()=>{const c=cardDebt.usd.length+cardDebt.pmts.length;return c>0?`Deuda Tarjeta (${c})`:"Deuda Tarjeta";})()}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
+    <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>{[{k:"fixed",l:"Gastos del Negocio"},{k:"ledger",l:"Libro Diario"},{k:"dollar",l:"Dollarización"},{k:"tcdebt",l:(()=>{const c=cardDebt.usd.length+cardDebt.pmts.length+(cardDebt.supTcUsd||[]).length+(cardDebt.fleteTcOps||[]).length;return c>0?`Deuda Tarjeta (${c})`:"Deuda Tarjeta";})()}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
     {showAdd&&tab==="fixed"&&<Card title="Nuevo gasto">
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
         <Inp label="Fecha" type="date" value={newEntry.date} onChange={v=>setNewEntry(p=>({...p,date:v}))}/>
@@ -4828,7 +4839,8 @@ function FinancePanel({token}){
       const usdTotEntries=cardDebt.usd.reduce((s,e)=>s+Number(e.amount||0),0);
       const usdTotPmts=cardDebt.pmts.reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
       const usdTotSup=(cardDebt.supTcUsd||[]).reduce((s,p)=>s+Number(p.amount_usd||0),0);
-      const usdTot=usdTotEntries+usdTotPmts+usdTotSup;
+      const usdTotFlete=(cardDebt.fleteTcOps||[]).reduce((s,o)=>s+Number(o.cost_flete||0),0);
+      const usdTot=usdTotEntries+usdTotPmts+usdTotSup+usdTotFlete;
       // ARS pendientes = finance_entries ARS + supplier_payments ARS (estos también dolarizan al cierre).
       const arsTotEntries=cardDebt.ars.reduce((s,e)=>s+Number(e.amount_ars||0),0);
       const arsTotSup=(cardDebt.supTcArs||[]).reduce((s,p)=>s+Number(p.amount_ars||0),0);
@@ -4874,6 +4886,14 @@ function FinancePanel({token}){
         else{await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:t}});}
         load();flash("Marcada como debitada");
       };
+      // Asignar (o cambiar) la tarjeta de un ítem. Patchea el campo credit_card_id de la fuente correspondiente.
+      const assignCard=async(item,cardId)=>{
+        if(item.source==="finance"){await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{credit_card_id:cardId||null}});}
+        else if(item.source==="supplier"){await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{credit_card_id:cardId||null}});}
+        else if(item.source==="flete_op"){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{cost_flete_credit_card_id:cardId||null}});}
+        else{await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{giro_credit_card_id:cardId||null}});}
+        load();flash(cardId?"Tarjeta asignada":"Tarjeta quitada");
+      };
       const markGroupPaid=async(g)=>{
         if(!confirm(`¿Marcar las ${g.items.length} deudas de ${g.date==="sin_fecha"?"sin fecha":formatDate(g.date)} como debitadas? Total: USD ${g.items.reduce((s,i)=>s+i.amt,0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`))return;
         const t=nowIso();
@@ -4891,7 +4911,7 @@ function FinancePanel({token}){
           <div style={{background:usdTot>0?"rgba(251,146,60,0.06)":"rgba(34,197,94,0.06)",border:`1px solid ${usdTot>0?"rgba(251,146,60,0.2)":"rgba(34,197,94,0.2)"}`,borderRadius:12,padding:"18px 22px"}}>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",letterSpacing:"0.05em"}}>💳 DEUDA TARJETA USD</p>
             <p style={{fontSize:28,fontWeight:700,color:usdTot>0?"#fb923c":"#22c55e",margin:0}}>USD {usdTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>{cardDebt.usd.length} gasto{cardDebt.usd.length!==1?"s":""} del negocio{usdTotEntries>0?` (USD ${usdTotEntries.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""} · {cardDebt.pmts.length} giro{cardDebt.pmts.length!==1?"s":""} al exterior{usdTotPmts>0?` (USD ${usdTotPmts.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}{(cardDebt.supTcUsd||[]).length>0?` · ${cardDebt.supTcUsd.length} costo${cardDebt.supTcUsd.length!==1?"s":""} GI (USD ${usdTotSup.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"8px 0 0"}}>{cardDebt.usd.length} gasto{cardDebt.usd.length!==1?"s":""} del negocio{usdTotEntries>0?` (USD ${usdTotEntries.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""} · {cardDebt.pmts.length} giro{cardDebt.pmts.length!==1?"s":""} al exterior{usdTotPmts>0?` (USD ${usdTotPmts.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}{(cardDebt.supTcUsd||[]).length>0?` · ${cardDebt.supTcUsd.length} costo${cardDebt.supTcUsd.length!==1?"s":""} GI (USD ${usdTotSup.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}{(cardDebt.fleteTcOps||[]).length>0?` · ${cardDebt.fleteTcOps.length} flete${cardDebt.fleteTcOps.length!==1?"s":""} con TC (USD ${usdTotFlete.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}</p>
             {arsTot>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"10px 0 0",paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
               + {cardDebt.ars.length+(cardDebt.supTcArs||[]).length} gasto{(cardDebt.ars.length+(cardDebt.supTcArs||[]).length)!==1?"s":""} en ARS pendiente{(cardDebt.ars.length+(cardDebt.supTcArs||[]).length)!==1?"s":""} de dolarizar (ARS {arsTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}). <button onClick={()=>setTab("dollar")} style={{background:"transparent",border:"none",color:IC,fontWeight:700,cursor:"pointer",padding:0,fontSize:11,textDecoration:"underline"}}>Ir a Dollarización →</button>
             </p>}
@@ -4935,6 +4955,7 @@ function FinancePanel({token}){
                   </div>
                   {it.detail&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{it.detail}</p>}
                   {it.dateLoad&&<p style={{fontSize:10,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Cargado {formatDate(it.dateLoad)}</p>}
+                  <div style={{marginTop:6}}><AssignCardSelect token={token} value={it.card?.id||null} onAssign={(cardId)=>assignCard(it,cardId)}/></div>
                 </div>
                 <span style={{fontSize:14,fontWeight:700,color:"#fff",minWidth:120,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{it.currency==="ARS"?<>ARS {Number(it.amtArs||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}<span style={{display:"block",fontSize:9,color:"#fbbf24",fontWeight:500,marginTop:2}}>pendiente dolarizar</span></>:`USD ${Number(it.amt||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</span>
                 <button onClick={()=>markPaid(it)} style={{fontSize:10,fontWeight:700,padding:"6px 12px",borderRadius:6,border:"none",background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>✓ Debitada</button>
@@ -7907,7 +7928,9 @@ function FinanceDashboard({token}){
       const deudaTCUsdFinance=finEntries.filter(e=>e.type==="gasto"&&!e.is_paid&&e.currency==="USD"&&e.payment_method==="tarjeta_credito").reduce((s,e)=>s+Number(e.amount||0),0);
       const deudaTCUsdPmts=Object.values(pmtsByOp).flat().filter(p=>p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid).reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
       const deudaTCUsdSup=supplierPmts.filter(p=>p.payment_method==="tarjeta_credito"&&!p.is_paid&&(p.currency==="USD"||!p.currency)&&p.type!=="refund").reduce((s,p)=>s+Number(p.amount_usd||0),0);
-      const deudaTCUsd=deudaTCUsdFinance+deudaTCUsdPmts+deudaTCUsdSup;
+      // Fletes (Alibaba u otra) pagados con TC y todavía no debitados → deuda tarjeta en USD.
+      const deudaTCUsdFlete=ops.filter(o=>o.cost_flete_method==="tarjeta_credito"&&!o.cost_flete_paid_at&&Number(o.cost_flete||0)>0).reduce((s,o)=>s+Number(o.cost_flete||0),0);
+      const deudaTCUsd=deudaTCUsdFinance+deudaTCUsdPmts+deudaTCUsdSup+deudaTCUsdFlete;
       const cashDisponible=totCobrado-totCostosTotales;
       // Ops listas para entregar (status=entregada) sin cobro completo: lo que falta cobrar al cliente.
       const opsListasParaEntregar=ops.filter(o=>o.status==="entregada").map(o=>{
