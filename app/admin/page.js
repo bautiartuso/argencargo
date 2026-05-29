@@ -3066,10 +3066,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const isCC=fleteMethod==="cuenta_corriente";
           const isTC=fleteMethod==="tarjeta_credito";
           const isDebito=fleteMethod==="tarjeta_debito";
-          // Para el flete del agente: agregamos opciones de Alibaba (TC/Débito) además de las históricas.
+          // Para el flete del agente: opciones de TC/Débito (Alibaba o Alipay) además de las históricas.
           const fleteOptions=isCanalB
             ?[{value:"efectivo",label:"Contado"}]
-            :[{value:"cuenta_corriente",label:"Cuenta Corriente (agente)"},{value:"tarjeta_credito",label:"Tarjeta de Crédito (Alibaba)"},{value:"tarjeta_debito",label:"Tarjeta de Débito (Alibaba)"},{value:"transferencia",label:"Transferencia"}];
+            :[{value:"cuenta_corriente",label:"Cuenta Corriente (agente)"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"tarjeta_debito",label:"Tarjeta de Débito"},{value:"transferencia",label:"Transferencia"}];
           return <>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px",marginBottom:isCC?16:8}}>
           <Inp label="Costo flete (USD)" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>
@@ -3088,7 +3088,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
         {isTC&&Number(op.cost_flete)>0&&<div style={{marginBottom:12}}>
           <CreditCardPicker token={token} value={op.cost_flete_credit_card_id} onChange={v=>chOp("cost_flete_credit_card_id")(v)} required/>
-          <p style={{fontSize:10.5,color:"#a78bfa",margin:"6px 0 0",fontStyle:"italic"}}>💳 Pago con TC (Alibaba): queda como Deuda Tarjeta hasta el débito del cierre.</p>
+          <p style={{fontSize:10.5,color:"#a78bfa",margin:"6px 0 0",fontStyle:"italic"}}>💳 Pago con tarjeta de crédito: queda como Deuda Tarjeta hasta el débito del cierre.</p>
         </div>}
         {isDebito&&Number(op.cost_flete)>0&&!op.cost_flete_paid_at&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-6px 0 12px",fontStyle:"italic"}}>⚠ Sin fecha de pago — el libro diario va a usar hoy. Cargá la fecha real del débito.</p>}
         {!isCC&&!isTC&&!isDebito&&Number(op.cost_flete)>0&&!op.cost_flete_paid_at&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-6px 0 12px",fontStyle:"italic"}}>⚠ Sin fecha de pago — el libro diario va a usar hoy. Cargá la fecha real del pago si fue otro día.</p>}
@@ -4861,7 +4861,7 @@ function FinancePanel({token}){
       // Los ARS pendientes de dolarización viven solo en la tab Dollarización.
       // Cuando se dolarizan, el pago de la tarjeta ya se hizo en ese momento → no vuelven a Deuda Tarjeta.
       // Fletes TC (Alibaba u otra) pendientes de débito
-      (cardDebt.fleteTcOps||[]).forEach(o=>pushItem({source:"flete_op",id:o.id,desc:`Flete ${o.operation_code}${o.clients?.client_code?` — ${o.clients.client_code}`:""}`,detail:"Pago con TC (Alibaba)",amt:Number(o.cost_flete||0),amtArs:0,currency:"USD",dateLoad:null,op:o.operation_code,card:o.credit_cards},o.credit_cards,o.cost_flete_card_closing));
+      (cardDebt.fleteTcOps||[]).forEach(o=>pushItem({source:"flete_op",id:o.id,desc:`Flete ${o.operation_code}${o.clients?.client_code?` — ${o.clients.client_code}`:""}`,detail:"Pago con tarjeta de crédito",amt:Number(o.cost_flete||0),amtArs:0,currency:"USD",dateLoad:null,op:o.operation_code,card:o.credit_cards},o.credit_cards,o.cost_flete_card_closing));
       // Orden: primero por nombre de tarjeta, después por fecha de cierre.
       const sortedGroups=Object.values(groups).sort((a,b)=>{
         const an=(a.card?.name||"~zsin tarjeta").toLowerCase();
