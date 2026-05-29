@@ -8,15 +8,15 @@ const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 
 async function searchDB(ncmCode) {
-  let r = await fetch(`${SB_URL}/rest/v1/ncm_database?ncm_code=eq.${ncmCode}&select=ncm_code,description,die,te&limit=5`, { headers: { apikey: SB_KEY } });
+  let r = await fetch(`${SB_URL}/rest/v1/ncm_database?ncm_code=eq.${ncmCode}&select=ncm_code,description,die,te,iva&limit=5`, { headers: { apikey: SB_KEY } });
   let d = await r.json();
   if (Array.isArray(d) && d.length > 0) return d;
   const prefix6 = ncmCode.substring(0, 7);
-  r = await fetch(`${SB_URL}/rest/v1/ncm_database?ncm_code=like.${prefix6}*&select=ncm_code,description,die,te&limit=10`, { headers: { apikey: SB_KEY } });
+  r = await fetch(`${SB_URL}/rest/v1/ncm_database?ncm_code=like.${prefix6}*&select=ncm_code,description,die,te,iva&limit=10`, { headers: { apikey: SB_KEY } });
   d = await r.json();
   if (Array.isArray(d) && d.length > 0) return d;
   const prefix4 = ncmCode.substring(0, 4);
-  r = await fetch(`${SB_URL}/rest/v1/ncm_database?ncm_code=like.${prefix4}*&select=ncm_code,description,die,te&limit=10`, { headers: { apikey: SB_KEY } });
+  r = await fetch(`${SB_URL}/rest/v1/ncm_database?ncm_code=like.${prefix4}*&select=ncm_code,description,die,te,iva&limit=10`, { headers: { apikey: SB_KEY } });
   d = await r.json();
   return Array.isArray(d) ? d : [];
 }
@@ -32,7 +32,7 @@ function pickBest(results, fallbackIntervention = null) {
     ncm_description: best.description,
     import_duty_rate: best.die,
     statistics_rate: Math.min(best.te, 3),
-    iva_rate: 21,
+    iva_rate: best.iva ?? 21,
     intervention: fallbackIntervention || { required: false, types: [], reason: null },
     source: "database",
   };
@@ -52,6 +52,13 @@ El usuario importa productos desde China/USA para reventa en Argentina. Tu traba
 
    NO INCLUYAS jamás "Seguridad Eléctrica", "LCM", "Resolución 169/2018" ni nada relacionado a seguridad eléctrica — el usuario NO opera bajo ese régimen.
 
+   REGLA CLAVE sobre ANMAT (evitá falsos positivos): un producto es "producto médico" SOLO si su finalidad es diagnosticar, tratar, monitorear o estar en contacto terapéutico con el paciente (ej: tensiómetro, oxímetro, electroestimulador TENS/EMS, termómetro clínico corporal, nebulizador, vendas/ortesis con finalidad médica declarada).
+   NO son producto médico (NO marques ANMAT) los CONTENEDORES Y ACCESORIOS aunque sirvan para guardar o transportar medicación, ni aunque incluyan gel refrigerante o un display de temperatura del propio estuche:
+   - estuches / neceseres / organizadores / conservadoras portátiles / "cooler case" / "insulin case" / "pill organizer / pastillero" → son contenedores, NO productos médicos.
+   - gel pack / cooling gel / ice pack → accesorio de frío, NO producto médico.
+   - termómetro que mide la temperatura del estuche/ambiente (no la corporal) → NO es producto médico.
+   El gel "para mantener frío" NO es "uso terapéutico". Si el objeto es esencialmente un estuche/caja/bolso, clasificá por el estuche y NO marques intervención, aunque el nombre comercial mencione insulina, medicación o uso médico.
+
 3. Reglas de clasificación específicas (overrides):
    - auriculares (bluetooth, TWS, inalámbricos, headphones, earbuds) → 8518.30.00 (NO 8517)
    - parlantes/altavoces → 8518.22.00
@@ -62,6 +69,7 @@ El usuario importa productos desde China/USA para reventa en Argentina. Tu traba
    - power bank → 8507.60.00
    - zapatillas deportivas → 6404.11.00
    - jabonera plástica/organizador baño/cocina → 3924.90.00 (sin intervención)
+   - estuche / neceser / organizador / conservadora portátil / cooler case / insulin case (superficie exterior de plástico o textil) → 4202.92.00 (SIN intervención, aunque incluya gel pack o termómetro del estuche)
 
 FORMATO DE SALIDA (JSON estricto, sin markdown):
 {

@@ -830,6 +830,16 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         dq("operations",{token,filters:`?id=eq.${op.id}&select=channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status`})
       ]);
       const its=Array.isArray(fit)?fit:[];const pks=Array.isArray(fpk)?fpk:[];
+      // Gestión Integral (AUTO): el total que ve el cliente es la suma de productos × cantidad
+      // ("puesto en Argentina" acordado), NO el motor genérico de flete+impuestos. Lo manejamos
+      // acá para que cualquier CRUD de items recalcule el total correcto.
+      if(op.service_type==="gestion_integral"){
+        if(op.budget_mode==="manual")return; // manual GI: el admin maneja el total, no lo pisamos
+        const totalAuto=its.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||0),0);
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_total:totalAuto}});
+        setOp(p=>({...p,budget_total:totalAuto}));
+        return;
+      }
       const tariffsFresh=Array.isArray(ft)?ft:[];
       const overridesFresh=Array.isArray(fov)?fov:[];
       const clientFresh=Array.isArray(fcl)?fcl[0]:null;
@@ -895,7 +905,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             ncm_code:finalNcm,
             import_duty_rate:numOr(d.import_duty_rate,it.import_duty_rate),
             statistics_rate:numOr(d.statistics_rate,it.statistics_rate),
-            iva_rate:numOr(d.iva_rate,it.iva_rate)||21,
+            iva_rate:numOr(d.iva_rate,it.iva_rate)??21,
           }});
           ok++;
           if(d.intervention?.required)interventions.push(`${it.description.slice(0,30)}: ${d.intervention.types.join("/")}`);
@@ -3824,22 +3834,22 @@ function Calculator({token,clients}){
         return br;};
       const sumItems=(items,k)=>items.reduce((s,it)=>s+(it[k]||0),0);
 
-      // Aéreo Courier Comercial (A) — omitido si hay marca
-      if(!hasBrand&&fact>0){const{rate,cost}=getFleteRate("aereo_a_china",fact);const flete=fact*rate;const fCost=fact*cost;
-        const certFlFict=fact*certAerFict;const segFict=(totalFob+certFlFict)*0.01;const cifFict=totalFob+certFlFict+segFict;
+      // Aéreo Courier Comercial (A) — omitido si hay marca. Peso facturable mínimo 5 kg (China).
+      if(!hasBrand&&fact>0){const factBill=Math.max(fact,5);const{rate,cost}=getFleteRate("aereo_a_china",factBill);const flete=factBill*rate;const fCost=factBill*cost;
+        const certFlFict=factBill*certAerFict;const segFict=(totalFob+certFlFict)*0.01;const cifFict=totalFob+certFlFict+segFict;
         const certFlReal=totWeight*certAerReal;const segReal=(totalFob+certFlReal)*0.01;const cifReal=totalFob+certFlReal+segReal;
         const validProds=products.filter(p=>Number(p.unit_price)>0);
         const itemsFict=validProds.map(p=>calcItemTax(p,certFlFict,false,cifFict));
         const itemsReal=validProds.map(p=>calcItemTax(p,certFlReal,false,cifReal));
         const impFict=sumItems(itemsFict,"totalImp");const impReal=sumItems(itemsReal,"totalImp");
-        const battExtra=hasBattery?fact*2:0;const gananciaImp=impFict-impReal;
+        const battExtra=hasBattery?factBill*2:0;const gananciaImp=impFict-impReal;
         channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días",isBlanco:true,
           flete,fCost,seguro:segFict,battExtra,totalImp:impFict,totalSvc:flete+segFict+battExtra,total:impFict+flete+segFict+battExtra,
           derechos:sumItems(itemsFict,"derechos"),tasa_e:sumItems(itemsFict,"tasa_e"),iva:sumItems(itemsFict,"iva"),gastoDoc:sumItems(itemsFict,"desembolso"),ivaDesemb:sumItems(itemsFict,"ivaDesemb"),
-          items:itemsFict,cifReal,cifFict,impReal,impFict,gananciaImp,unit:`${fact.toFixed(1)} kg`});}
-      // Aéreo Integral AC (B)
-      if(totWeight>0){const{rate,cost}=getFleteRate("aereo_b_china",totWeight);const flete=totWeight*rate;const fCost=totWeight*cost;const sur=getSurcharge("aereo_b_china",totalFob,totWeight);
-        channels.push({key:"aereo_b_china",name:"Aéreo Integral AC",info:"10-15 días",isBlanco:false,flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totWeight.toFixed(1)} kg`});}
+          items:itemsFict,cifReal,cifFict,impReal,impFict,gananciaImp,unit:`${factBill.toFixed(1)} kg`});}
+      // Aéreo Integral AC (B) — peso bruto mínimo 5 kg (China)
+      if(totWeight>0){const bw=Math.max(totWeight,5);const{rate,cost}=getFleteRate("aereo_b_china",bw);const flete=bw*rate;const fCost=bw*cost;const sur=getSurcharge("aereo_b_china",totalFob,bw);
+        channels.push({key:"aereo_b_china",name:"Aéreo Integral AC",info:"10-15 días",isBlanco:false,flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${bw.toFixed(1)} kg`});}
       // Marítimo Carga LCL/FCL (A) — omitido si hay marca
       if(!hasBrand&&!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_a_china",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;
         const certFlFict=totCBM*certMarFict;const segFict=(totalFob+certFlFict)*0.01;const cifFict=totalFob+certFlFict+segFict;
@@ -3913,7 +3923,7 @@ function Calculator({token,clients}){
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>COTIZACIÓN CLIENTE</p>
           {ch.isBlanco?<>
             {row("Flete",ch.flete)}{ch.battExtra>0&&row("Recargo baterías",ch.battExtra)}{row("Seguro",ch.seguro)}
-            {row(`Derechos (${ncm?.import_duty_rate||0}%)`,ch.derechos)}{row(`TE (${ncm?.statistics_rate||0}%)`,ch.tasa_e)}{row(`IVA (${ncm?.iva_rate||21}%)`,ch.iva)}
+            {row(`Derechos (${ncm?.import_duty_rate||0}%)`,ch.derechos)}{row(`TE (${ncm?.statistics_rate||0}%)`,ch.tasa_e)}{row(`IVA (${ncm?.iva_rate??21}%)`,ch.iva)}
             {ch.isMar?<>{row("IVA Adic. (20%)",ch.ivaAdic)}{row("IIGG (6%)",ch.iigg)}{row("IIBB (5%)",ch.iibb)}</>:<>{row("Gasto doc.",ch.gastoDoc)}{row("IVA desemb.",ch.ivaDesemb)}</>}
           </>:<>
             {row("Servicio Integral ARGENCARGO",ch.flete)}
@@ -3952,7 +3962,7 @@ function Calculator({token,clients}){
         <div style={{marginBottom:14}}><label style={{display:"block",fontSize:13,fontWeight:700,color:"#fff",marginBottom:5}}>Descripción de la mercadería</label><div style={{display:"flex",gap:8}}><input value={p.description||""} onChange={e=>chProd(i,"description",e.target.value)} placeholder="Sé específico. Ej: Auriculares inalámbricos bluetooth" style={{flex:1,padding:"11px 14px",fontSize:14,border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.1)",color:"#fff",outline:"none"}}/>{!hasBrand&&<button onClick={()=>classifyProduct(i)} disabled={p.ncmLoading||!p.description?.trim()} style={{padding:"11px 16px",fontSize:12,fontWeight:600,borderRadius:10,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${B.accent},${B.primary})`,color:"#fff",whiteSpace:"nowrap",opacity:p.ncmLoading?0.6:1}}>{p.ncmLoading?"Clasificando...":"Clasificar"}</button>}</div></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}><Inp label="Precio unit. (USD)" type="number" value={p.unit_price} onChange={v=>chProd(i,"unit_price",v)} placeholder="3.50"/><Inp label="Cantidad" type="number" value={p.quantity} onChange={v=>chProd(i,"quantity",v)} placeholder="1"/></div>
         {!hasBrand&&p.ncm?.ncm_code&&<div style={{background:"rgba(184,149,106,0.06)",borderRadius:10,padding:"12px 16px",marginBottom:8,border:"1px solid rgba(184,149,106,0.12)"}}><div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}><span style={{fontFamily:"monospace",fontWeight:700,color:IC,padding:"4px 10px",background:"rgba(184,149,106,0.15)",borderRadius:6,fontSize:12}}>{p.ncm.ncm_code}</span><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{p.ncm.ncm_description}</span><button onClick={()=>chProd(i,"ncm",null)} style={{fontSize:11,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",marginLeft:"auto"}}>Reclasificar</button></div><div style={{display:"flex",gap:16,marginTop:6}}><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>DIE: <strong style={{color:"#fff"}}>{p.ncm.import_duty_rate}%</strong></span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>TE: <strong style={{color:"#fff"}}>{p.ncm.statistics_rate}%</strong></span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>IVA: <strong style={{color:"#fff"}}>{p.ncm.iva_rate}%</strong></span></div></div>}
-        {!hasBrand&&p.ncmError&&<div style={{background:"rgba(255,80,80,0.08)",borderRadius:10,padding:"12px 16px",marginBottom:8,border:"1px solid rgba(255,80,80,0.15)"}}><p style={{fontSize:13,color:"#ff6b6b",margin:"0 0 6px",fontWeight:600}}>No se pudo detectar el NCM. Cargá manualmente:</p><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 8px"}}><Inp label="NCM" value={p.ncm?.ncm_code||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_description:p.description}),ncm_code:v,import_duty_rate:p.ncm?.import_duty_rate||35,statistics_rate:p.ncm?.statistics_rate||3,iva_rate:p.ncm?.iva_rate||21})} placeholder="3926.90.90"/><Inp label="DIE %" type="number" value={p.ncm?.import_duty_rate||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_code:"MANUAL",ncm_description:p.description}),import_duty_rate:Number(v)||35,statistics_rate:p.ncm?.statistics_rate||3,iva_rate:p.ncm?.iva_rate||21})}/><Inp label="TE %" type="number" value={p.ncm?.statistics_rate||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,iva_rate:21}),statistics_rate:Number(v)||3})}/><Inp label="IVA %" type="number" value={p.ncm?.iva_rate||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,statistics_rate:3}),iva_rate:Number(v)||21})}/></div></div>}
+        {!hasBrand&&p.ncmError&&<div style={{background:"rgba(255,80,80,0.08)",borderRadius:10,padding:"12px 16px",marginBottom:8,border:"1px solid rgba(255,80,80,0.15)"}}><p style={{fontSize:13,color:"#ff6b6b",margin:"0 0 6px",fontWeight:600}}>No se pudo detectar el NCM. Cargá manualmente:</p><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 8px"}}><Inp label="NCM" value={p.ncm?.ncm_code||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_description:p.description}),ncm_code:v,import_duty_rate:p.ncm?.import_duty_rate||35,statistics_rate:p.ncm?.statistics_rate||3,iva_rate:p.ncm?.iva_rate??21})} placeholder="3926.90.90"/><Inp label="DIE %" type="number" value={p.ncm?.import_duty_rate||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_code:"MANUAL",ncm_description:p.description}),import_duty_rate:Number(v)||35,statistics_rate:p.ncm?.statistics_rate||3,iva_rate:p.ncm?.iva_rate??21})}/><Inp label="TE %" type="number" value={p.ncm?.statistics_rate||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,iva_rate:21}),statistics_rate:Number(v)||3})}/><Inp label="IVA %" type="number" value={p.ncm?.iva_rate||""} onChange={v=>chProd(i,"ncm",{...(p.ncm||{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,statistics_rate:3}),iva_rate:Number(v)||21})}/></div></div>}
         {!hasBrand&&!p.ncm&&!p.ncmError&&!p.ncmLoading&&p.description?.trim()&&<div style={{marginBottom:8}}><button onClick={()=>chProd(i,"ncm",{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,statistics_rate:3,iva_rate:21})} style={{fontSize:11,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",padding:0}}>Usar valores estimados (35% derechos) →</button></div>}
       </div>)}
       <button onClick={addProduct} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar producto</button>
@@ -5120,16 +5130,20 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     return {opId,count:list.length,target:targetForThisOp,opCode:opsUnique.find(o=>o.id===opId)?.operation_code||"?"};
   }).filter(o=>o.count>o.target):[];
   const [compressState,setCompressState]=useState(null);
-  const openCompressFor=async(opId,target)=>{
+  // target = a cuántos ítems comprimir esta op (lo que el admin elige, puede ser < techo RG).
+  // maxTarget = techo permitido por RG 5608 para esta op (8 − ítems de otras ops). El admin
+  // arranca en el techo y puede bajar de ahí; nunca subir por encima (violaría el límite legal).
+  const openCompressFor=async(opId,target,maxTarget)=>{
     const opItems=itemsByOp[opId]||[];
     const op=opsUnique.find(o=>o.id===opId);
-    const targetMax=target||MAX_INVOICE_ITEMS;
+    const ceiling=Math.max(1,maxTarget||target||MAX_INVOICE_ITEMS);
+    const targetMax=Math.max(1,Math.min(target||ceiling,ceiling));
     // Traer operation_items ORIGINALES (precios que declaró el cliente, NO los subfacturados del vuelo).
     // Usados para reconstruir el precio original por grupo al guardar.
     const origRaw=await dq("operation_items",{token,filters:`?operation_id=eq.${opId}&select=id,description,quantity,unit_price_usd,ncm_code`});
     const origItems=Array.isArray(origRaw)?origRaw:[];
     const origMap={};origItems.forEach(o=>{origMap[o.id]=o;});
-    setCompressState({opId,opCode:op?.operation_code||"?",target:targetMax,original:opItems,origItems,origMap,proposed:null,loading:true,error:null,applying:false});
+    setCompressState({opId,opCode:op?.operation_code||"?",target:targetMax,maxTarget:ceiling,original:opItems,origItems,origMap,proposed:null,loading:true,error:null,applying:false});
     try{
       const r=await fetch("/api/compress-items",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
         items:opItems.map(it=>({description:it.description,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_declared_usd||0),hs_code:it.hs_code||null})),
@@ -5594,19 +5608,26 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         </div>
       </>}
     </Card>}
-    {compressState&&(()=>{const {opCode,original,proposed,loading,error,applying,target}=compressState;const targetMax=target||MAX_INVOICE_ITEMS;return <div onClick={()=>!applying&&setCompressState(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    {compressState&&(()=>{const {opCode,original,proposed,loading,error,applying,target}=compressState;const targetMax=target||MAX_INVOICE_ITEMS;const ceiling=Math.max(1,compressState.maxTarget||targetMax);const busy=loading||applying;const stepBtn=(disabled)=>({width:28,height:28,borderRadius:7,border:`1px solid ${disabled?"rgba(255,255,255,0.08)":"rgba(251,146,60,0.4)"}`,background:disabled?"rgba(255,255,255,0.03)":"rgba(251,146,60,0.12)",color:disabled?"rgba(255,255,255,0.25)":"#fb923c",fontSize:16,fontWeight:800,cursor:disabled?"not-allowed":"pointer",lineHeight:1,display:"inline-flex",alignItems:"center",justifyContent:"center"});return <div onClick={()=>!applying&&setCompressState(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(251,146,60,0.35)",borderRadius:14,padding:"20px 22px",maxWidth:920,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
           <div>
             <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>🗜 Comprimir items de {opCode}</h3>
-            <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>De {original.length} items → máximo {targetMax} para esta op (factura tiene {totalInvoiceItems} items, límite RG 5608: {MAX_INVOICE_ITEMS}). La IA agrupa variantes (color, talle, etc.) — conservador, no fuerza si los productos son distintos.</p>
+            <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>De {original.length} items → objetivo {targetMax} para esta op (factura tiene {totalInvoiceItems} items, límite RG 5608: {MAX_INVOICE_ITEMS}). La IA agrupa variantes (color, talle, etc.) — conservador, no fuerza si los productos son distintos.</p>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10}}>
+              <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Comprimir a</span>
+              <button disabled={busy||targetMax<=1} onClick={()=>openCompressFor(compressState.opId,targetMax-1,ceiling)} style={stepBtn(busy||targetMax<=1)}>−</button>
+              <span style={{fontSize:15,fontWeight:800,color:"#fb923c",minWidth:22,textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{targetMax}</span>
+              <button disabled={busy||targetMax>=ceiling} onClick={()=>openCompressFor(compressState.opId,targetMax+1,ceiling)} style={stepBtn(busy||targetMax>=ceiling)}>+</button>
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>ítem{targetMax>1?"s":""} · podés bajar de {ceiling} (techo RG) si querés menos líneas</span>
+            </div>
           </div>
           <button onClick={()=>!applying&&setCompressState(null)} disabled={applying} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:applying?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
         </div>
         {loading&&<p style={{padding:"30px",textAlign:"center",fontSize:13,color:"#a78bfa"}}>⏳ La IA está agrupando los {original.length} items…</p>}
         {error&&<div style={{padding:"12px 14px",background:"rgba(255,80,80,0.1)",border:"1px solid rgba(255,80,80,0.3)",borderRadius:8,marginBottom:12}}>
           <p style={{fontSize:12,color:"#ff6b6b",margin:0,fontWeight:700}}>❌ {error}</p>
-          <button onClick={()=>openCompressFor(compressState.opId,compressState.target)} style={{marginTop:8,fontSize:11,padding:"4px 10px",borderRadius:5,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:"pointer"}}>🔄 Reintentar</button>
+          <button onClick={()=>openCompressFor(compressState.opId,compressState.target,compressState.maxTarget)} style={{marginTop:8,fontSize:11,padding:"4px 10px",borderRadius:5,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:"pointer"}}>🔄 Reintentar</button>
         </div>}
         {proposed&&<>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
@@ -5641,7 +5662,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           </div>
           <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
             <button onClick={()=>!applying&&setCompressState(null)} disabled={applying} style={{padding:"8px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:applying?"not-allowed":"pointer"}}>Cancelar</button>
-            <button onClick={()=>openCompressFor(compressState.opId,compressState.target)} disabled={applying} style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:applying?"not-allowed":"pointer"}}>🔄 Re-comprimir</button>
+            <button onClick={()=>openCompressFor(compressState.opId,compressState.target,compressState.maxTarget)} disabled={applying} style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:applying?"not-allowed":"pointer"}}>🔄 Re-comprimir</button>
             <button onClick={applyCompress} disabled={applying||proposed.can_apply===false} title={proposed.can_apply===false?"La IA tuvo errores críticos. Tocá Re-comprimir.":"Aplicar y sincronizar"} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${proposed.can_apply===false?"rgba(255,255,255,0.1)":IC}`,background:applying||proposed.can_apply===false?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:applying||proposed.can_apply===false?"rgba(255,255,255,0.4)":"#0A1628",cursor:applying?"wait":(proposed.can_apply===false?"not-allowed":"pointer")}}>{applying?"Aplicando…":(proposed.can_apply===false?"⛔ Bloqueado por errores":"✓ Aplicar y sincronizar")}</button>
           </div>
         </>}
@@ -5884,6 +5905,7 @@ function AgentsPanel({token}){
   const [moveClients,setMoveClients]=useState([]);
   const [moveSearch,setMoveSearch]=useState("");
   const [moveSelClient,setMoveSelClient]=useState(null);
+  const [moveDest,setMoveDest]=useState(null); // null=auto | "new" | opId
   const [moveSaving,setMoveSaving]=useState(false);
   const openMoveModal=async(pkg,fromOp)=>{
     setMovePkgState({pkg,fromOp});setMoveSearch("");setMoveSelClient(null);
@@ -5892,21 +5914,37 @@ function AgentsPanel({token}){
       setMoveClients(Array.isArray(r)?r:[]);
     }
   };
-  const closeMoveModal=()=>{setMovePkgState(null);setMoveSelClient(null);setMoveSearch("");};
-  // Para el cliente seleccionado: busca su op abierta más reciente en depósito (en_deposito_origen / en_preparacion)
-  // SPLIT (mismo cliente) → SIEMPRE crea op nueva, jamás fusiona.
-  // Otro cliente → busca op abierta del cliente destino DEL MISMO AGENTE que la op origen.
-  // Si no hay → crea op nueva preservando el agente de la op origen.
-  const isSameClient=moveSelClient&&movePkgState&&moveSelClient.id===movePkgState.fromOp.client_id;
-  const moveTargetOp=moveSelClient&&movePkgState&&!isSameClient
-    ?[...allOps,...depositOps].find(o=>o.client_id===moveSelClient.id&&o.id!==movePkgState.fromOp.id&&o.created_by_agent_id===movePkgState.fromOp.created_by_agent_id)
-    :null;
+  const closeMoveModal=()=>{setMovePkgState(null);setMoveSelClient(null);setMoveSearch("");setMoveDest(null);};
+  // Para el cliente seleccionado: lista TODAS sus ops abiertas en depósito (excepto la op origen).
+  // El admin elige el destino: agregar a una op existente, o crear una op nueva.
+  // moveDest: null=auto (default inteligente), "new"=op nueva, o el id de una op existente.
+  const moveCandidateOps=(()=>{
+    if(!moveSelClient||!movePkgState)return [];
+    const OPEN=["en_deposito_origen","en_preparacion","pendiente"];
+    const seen=new Set();const out=[];
+    for(const o of [...depositOps,...allOps]){
+      if(!o||o.client_id!==moveSelClient.id)continue;
+      if(o.id===movePkgState.fromOp.id)continue;
+      if(!OPEN.includes(o.status))continue;
+      if(seen.has(o.id))continue;seen.add(o.id);out.push(o);
+    }
+    return out;
+  })();
+  // Default: si hay una op abierta del MISMO agente, sugerirla; si no, la primera op abierta; si no hay, op nueva.
+  const moveDefaultDest=(()=>{
+    const sameAgent=moveCandidateOps.find(o=>o.created_by_agent_id===movePkgState?.fromOp.created_by_agent_id);
+    return (sameAgent||moveCandidateOps[0])?.id||"new";
+  })();
+  const moveEffectiveDest=moveDest||moveDefaultDest;
   const executeMove=async()=>{
     if(!moveSelClient||!movePkgState)return;
     const {pkg,fromOp}=movePkgState;
-    // Mismo cliente está OK = split. La condición vital es que destino ≠ op origen, lo asegura moveTargetOp.
     setMoveSaving(true);
-    let destOpId=moveTargetOp?.id;let destCode=moveTargetOp?.operation_code;
+    let destOpId=null,destCode=null;
+    if(moveEffectiveDest&&moveEffectiveDest!=="new"){
+      const dest=moveCandidateOps.find(o=>o.id===moveEffectiveDest);
+      destOpId=dest?.id;destCode=dest?.operation_code;
+    }
     if(!destOpId){
       // Crear nueva op para el cliente destino, copiando metadata de la op origen
       const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
@@ -6405,23 +6443,33 @@ function AgentsPanel({token}){
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
           <div>
-            <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>↪ Mover bulto #{movePkgState.pkg.package_number} a otro cliente</h3>
+            <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>↪ Mover bulto #{movePkgState.pkg.package_number}</h3>
             <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>Origen: <strong style={{color:"#fff"}}>{movePkgState.fromOp.operation_code}</strong> · {fromName}</p>
           </div>
           <button onClick={closeMoveModal} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
         </div>
-        <input autoFocus value={moveSearch} onChange={e=>{setMoveSearch(e.target.value);setMoveSelClient(null);}} placeholder="Buscar cliente por código o nombre…" style={{width:"100%",padding:"10px 12px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",marginBottom:10,outline:"none"}}/>
+        <input autoFocus value={moveSearch} onChange={e=>{setMoveSearch(e.target.value);setMoveSelClient(null);setMoveDest(null);}} placeholder="Buscar cliente por código o nombre…" style={{width:"100%",padding:"10px 12px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",marginBottom:10,outline:"none"}}/>
         {!moveSelClient&&<div style={{maxHeight:260,overflowY:"auto",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,marginBottom:12}}>
-          {filteredCl.length===0?<p style={{padding:"14px",fontSize:12,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>{moveSearch?"Sin coincidencias":"Escribí para buscar…"}</p>:filteredCl.map(c=>{const isFrom=c.id===movePkgState.fromOp.client_id;return <button key={c.id} onClick={()=>setMoveSelClient(c)} style={{width:"100%",padding:"10px 12px",border:"none",borderBottom:"1px solid rgba(255,255,255,0.04)",background:"transparent",color:"#fff",cursor:"pointer",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+          {filteredCl.length===0?<p style={{padding:"14px",fontSize:12,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>{moveSearch?"Sin coincidencias":"Escribí para buscar…"}</p>:filteredCl.map(c=>{const isFrom=c.id===movePkgState.fromOp.client_id;return <button key={c.id} onClick={()=>{setMoveSelClient(c);setMoveDest(null);}} style={{width:"100%",padding:"10px 12px",border:"none",borderBottom:"1px solid rgba(255,255,255,0.04)",background:"transparent",color:"#fff",cursor:"pointer",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
             <span><strong style={{fontFamily:"monospace",color:IC}}>{c.client_code}</strong> — {c.first_name} {c.last_name}</span>
-            {isFrom&&<span style={{fontSize:10,fontWeight:700,color:"#a78bfa",padding:"2px 6px",borderRadius:4,background:"rgba(167,139,250,0.12)",border:"1px solid rgba(167,139,250,0.3)"}}>SPLIT (mismo cliente)</span>}
+            {isFrom&&<span style={{fontSize:10,fontWeight:700,color:"#a78bfa",padding:"2px 6px",borderRadius:4,background:"rgba(167,139,250,0.12)",border:"1px solid rgba(167,139,250,0.3)"}}>MISMO CLIENTE</span>}
           </button>;})}
         </div>}
         {moveSelClient&&<div style={{padding:"14px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,marginBottom:12}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Cliente destino</p>
           <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 10px"}}><span style={{fontFamily:"monospace",color:IC}}>{moveSelClient.client_code}</span> — {moveSelClient.first_name} {moveSelClient.last_name}</p>
-          {isSameClient?<p style={{fontSize:12,color:"#a78bfa",margin:0}}>✂️ SPLIT — se crea una NUEVA op para este cliente con este bulto (mismo agente que {movePkgState.fromOp.operation_code}). La op origen sigue con el resto.</p>:moveTargetOp?<p style={{fontSize:12,color:"#22c55e",margin:0}}>✓ Tiene op abierta del MISMO agente <strong style={{fontFamily:"monospace"}}>{moveTargetOp.operation_code}</strong> — el bulto se agrega ahí</p>:<p style={{fontSize:12,color:"#fbbf24",margin:0}}>⚠ Sin op abierta de ese agente — se va a crear una nueva (preservando el agente de {movePkgState.fromOp.operation_code})</p>}
-          <button onClick={()=>setMoveSelClient(null)} style={{marginTop:8,fontSize:11,color:"rgba(255,255,255,0.5)",background:"transparent",border:"none",cursor:"pointer",padding:0,textDecoration:"underline"}}>← Cambiar cliente</button>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Destino del bulto</p>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {moveCandidateOps.map(o=>{const sel=moveEffectiveDest===o.id;const sameAg=o.created_by_agent_id===movePkgState.fromOp.created_by_agent_id;return <button key={o.id} onClick={()=>setMoveDest(o.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"9px 11px",fontSize:12,borderRadius:8,border:`1px solid ${sel?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.1)"}`,background:sel?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.03)",color:"#fff",cursor:"pointer",textAlign:"left"}}>
+              <span>📦 Agregar a <strong style={{fontFamily:"monospace"}}>{o.operation_code}</strong>{sameAg?"":<span style={{color:"#fbbf24"}}> · otro agente</span>}</span>
+              {sel&&<span style={{color:"#22c55e",fontWeight:700}}>✓</span>}
+            </button>;})}
+            {(()=>{const sel=moveEffectiveDest==="new";return <button onClick={()=>setMoveDest("new")} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"9px 11px",fontSize:12,borderRadius:8,border:`1px solid ${sel?"rgba(167,139,250,0.5)":"rgba(255,255,255,0.1)"}`,background:sel?"rgba(167,139,250,0.1)":"rgba(255,255,255,0.03)",color:"#fff",cursor:"pointer",textAlign:"left"}}>
+              <span>✂️ Crear op nueva{moveCandidateOps.length===0?<span style={{color:"rgba(255,255,255,0.45)"}}> (no hay ops abiertas de este cliente)</span>:""}</span>
+              {sel&&<span style={{color:"#a78bfa",fontWeight:700}}>✓</span>}
+            </button>;})()}
+          </div>
+          <button onClick={()=>{setMoveSelClient(null);setMoveDest(null);}} style={{marginTop:8,fontSize:11,color:"rgba(255,255,255,0.5)",background:"transparent",border:"none",cursor:"pointer",padding:0,textDecoration:"underline"}}>← Cambiar cliente</button>
         </div>}
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={closeMoveModal} disabled={moveSaving} style={{padding:"8px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:"pointer"}}>Cancelar</button>
@@ -6466,8 +6514,31 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
   const [search,setSearch]=useState("");
   const [confirmAction,setConfirmAction]=useState(null); // {type, notif}
   const [confirmChannel,setConfirmChannel]=useState(null); // canal elegido por admin para crear la op
+  const [confirmDestOp,setConfirmDestOp]=useState(null); // null=op nueva | id de op existente (consolidar)
+  const [confirmCandidates,setConfirmCandidates]=useState([]); // ops abiertas del cliente para consolidar
   const [mergeAction,setMergeAction]=useState(null); // {clientId, notifs}
   const [working,setWorking]=useState(false);
+  // Al abrir el modal de confirmar: buscar ops abiertas del MISMO cliente (depósito/preparación/pendiente,
+  // que no estén en un vuelo activo) para ofrecer consolidar en vez de crear siempre una op nueva.
+  useEffect(()=>{
+    if(!confirmAction||confirmAction.type!=="confirm"){setConfirmCandidates([]);setConfirmDestOp(null);return;}
+    const n=confirmAction.notif;let cancelled=false;
+    (async()=>{
+      const ops=await dq("operations",{token,filters:`?client_id=eq.${n.client_id}&status=in.(pendiente,en_deposito_origen,en_preparacion)&select=id,operation_code,status,channel,service_type,created_at&order=created_at.desc`});
+      let list=Array.isArray(ops)?ops:[];
+      if(list.length){
+        const ids=list.map(o=>o.id);
+        const fos=await dq("flight_operations",{token,filters:`?operation_id=in.(${ids.join(",")})&select=operation_id,flights(status)`});
+        const inFlight=new Set((Array.isArray(fos)?fos:[]).filter(f=>f.flights&&["preparando","despachado","recibido"].includes(f.flights.status)).map(f=>f.operation_id));
+        list=list.filter(o=>!inFlight.has(o.id));
+      }
+      if(cancelled)return;
+      setConfirmCandidates(list);
+      // Default: consolidar en la op abierta más reciente si existe; si no, op nueva.
+      setConfirmDestOp(list.length?list[0].id:null);
+    })();
+    return ()=>{cancelled=true;};
+  },[confirmAction,token]);
   const load=async()=>{setLo(true);const r=await dq("purchase_notifications",{token,filters:"?select=*,trackings:purchase_notification_trackings(id,tracking_code,received_at),clients(client_code,first_name,last_name,whatsapp,auth_user_id),operations(operation_code)&order=created_at.desc"});setItems(Array.isArray(r)?r:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
 
@@ -6500,23 +6571,37 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
     try{
       const trks=Array.isArray(n.trackings)?n.trackings:[];
       const trkCodes=trks.length>0?trks.map(t=>t.tracking_code):(n.tracking_code?[n.tracking_code]:[]);
-      // Crear op nueva con datos del aviso pre-cargados
-      const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
-      const newCode=typeof rpc==="string"?rpc:null;
-      if(!newCode){alert("Error generando código de op");setWorking(false);return;}
-      // Canal: admin puede haber elegido en el modal. Default = negro (Integral AC) si no eligió
-      const channel=confirmChannel||(n.shipping_method==="maritimo"?"maritimo_negro":"aereo_negro");
-      const origin=n.origin==="usa"?"USA":"China";
-      // OJO: los trackings del aviso son national_trackings (tracking del proveedor en origen), no
-      // el international_tracking del courier (DHL/FedEx). Ese se completa al despacho del vuelo.
-      // Creamos un operation_package por cada tracking → preserva la info del aviso en la op.
-      const opBody={operation_code:newCode,client_id:n.client_id,channel,origin,service_type:"courier",status:"en_deposito_origen",description:n.description||null};
-      const created=await dq("operations",{method:"POST",token,body:opBody});
-      const opObj=Array.isArray(created)?created[0]:created;
-      if(!opObj?.id){alert("Error creando op");setWorking(false);return;}
-      // Crear un operation_package por cada tracking del aviso (preserva codes + bultos físicos del cliente).
       const now=new Date().toISOString();
-      let pkgNum=0;
+      let opObj=null,newCode=null,consolidated=false;
+      // ── Destino: consolidar en una op existente del cliente, o crear una nueva ──
+      if(confirmDestOp){
+        const ex=await dq("operations",{token,filters:`?id=eq.${confirmDestOp}&select=id,operation_code,status`});
+        opObj=Array.isArray(ex)&&ex[0]?ex[0]:null;
+        if(opObj){
+          consolidated=true;newCode=opObj.operation_code;
+          // GI/op en 'pendiente' recibe su primer paquete físico → avanza a en_deposito_origen
+          if(opObj.status==="pendiente")await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opObj.id}`,body:{status:"en_deposito_origen"}}).catch(()=>{});
+        }
+      }
+      if(!opObj){
+        // Crear op nueva con datos del aviso pre-cargados
+        const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
+        newCode=typeof rpc==="string"?rpc:null;
+        if(!newCode){alert("Error generando código de op");setWorking(false);return;}
+        // Canal: admin puede haber elegido en el modal. Default = negro (Integral AC) si no eligió
+        const channel=confirmChannel||(n.shipping_method==="maritimo"?"maritimo_negro":"aereo_negro");
+        const origin=n.origin==="usa"?"USA":"China";
+        // OJO: los trackings del aviso son national_trackings (tracking del proveedor en origen), no
+        // el international_tracking del courier (DHL/FedEx). Ese se completa al despacho del vuelo.
+        const opBody={operation_code:newCode,client_id:n.client_id,channel,origin,service_type:"courier",status:"en_deposito_origen",description:n.description||null};
+        const created=await dq("operations",{method:"POST",token,body:opBody});
+        opObj=Array.isArray(created)?created[0]:created;
+        if(!opObj?.id){alert("Error creando op");setWorking(false);return;}
+      }
+      // package_number arranca después del último existente (clave al consolidar en una op con bultos)
+      const exPkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${opObj.id}&select=package_number&order=package_number.desc&limit=1`});
+      let pkgNum=Array.isArray(exPkgs)&&exPkgs[0]?Number(exPkgs[0].package_number)||0:0;
+      // Crear un operation_package por cada tracking del aviso (preserva codes + bultos físicos del cliente).
       for(const t of trks){
         pkgNum++;
         await dq("operation_packages",{method:"POST",token,body:{operation_id:opObj.id,package_number:pkgNum,quantity:1,national_tracking:t.tracking_code||null}}).catch(e=>console.error("pkg create",e));
@@ -6524,17 +6609,19 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
       }
       // Si el aviso no tenía trackings hijos pero sí un tracking_code legacy en el aviso mismo
       if(trks.length===0&&n.tracking_code){
-        await dq("operation_packages",{method:"POST",token,body:{operation_id:opObj.id,package_number:1,quantity:1,national_tracking:n.tracking_code}}).catch(e=>console.error("pkg create legacy",e));
+        pkgNum++;
+        await dq("operation_packages",{method:"POST",token,body:{operation_id:opObj.id,package_number:pkgNum,quantity:1,national_tracking:n.tracking_code}}).catch(e=>console.error("pkg create legacy",e));
       }
       await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{status:"received",operation_id:opObj.id,confirmed_at:now}});
       // Notif al cliente
       try{
         if(n.clients?.auth_user_id){
-          dq("notifications",{method:"POST",token,body:{user_id:n.clients.auth_user_id,portal:"cliente",title:`✓ Tu carga llegó al depósito`,body:`${trkCodes.length} tracking${trkCodes.length>1?"s":""} → operación ${newCode} creada`,link:`?op=${newCode}`}}).catch(()=>{});
+          const verbo=consolidated?`agregado${trkCodes.length>1?"s":""} a la operación ${newCode}`:`→ operación ${newCode} creada`;
+          dq("notifications",{method:"POST",token,body:{user_id:n.clients.auth_user_id,portal:"cliente",title:`✓ Tu carga llegó al depósito`,body:`${trkCodes.length} tracking${trkCodes.length>1?"s":""} ${verbo}`,link:`?op=${newCode}`}}).catch(()=>{});
           fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:n.clients.auth_user_id,title:`✓ Tu carga llegó al depósito`,body:`${trkCodes.length} tracking${trkCodes.length>1?"s":""} → ${newCode}`,url:`/portal?op=${newCode}`})}).catch(()=>{});
         }
       }catch(e){}
-      setConfirmAction(null);load();
+      setConfirmAction(null);setConfirmChannel(null);setConfirmDestOp(null);load();
       if(onCreateOp)onCreateOp(opObj);
     }catch(e){alert("Error: "+e.message);}
     setWorking(false);
@@ -6648,7 +6735,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
       return <div onClick={()=>!working&&(setConfirmAction(null),setConfirmChannel(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${type==="confirm"?"rgba(34,197,94,0.4)":"rgba(255,80,80,0.4)"}`,borderRadius:14,padding:"22px 24px",maxWidth:560,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
-          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>{type==="confirm"?"✓ Confirmar recepción y crear op":"Rechazar aviso"}</h3>
+          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>{type==="confirm"?(confirmDestOp?"✓ Confirmar y consolidar":"✓ Confirmar recepción y crear op"):"Rechazar aviso"}</h3>
           <button onClick={()=>!working&&(setConfirmAction(null),setConfirmChannel(null))} disabled={working} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:working?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
         </div>
         <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,marginBottom:14}}>
@@ -6660,9 +6747,23 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
           <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0}}>{notif.origin==="china"?"🇨🇳 China":"🇺🇸 USA"} · {isAereo?"✈️ Aéreo":"🚢 Marítimo"}{notif.description?` · ${notif.description}`:""}</p>
         </div>
         {type==="confirm"?<>
-          {/* Selector de canal — solo China tiene 2 opciones; USA solo negro */}
-          {notif.origin==="china"?<div style={{marginBottom:14}}>
-            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Canal de la operación</p>
+          {/* Destino: consolidar en una op abierta del cliente, o crear una nueva */}
+          <div style={{marginBottom:14}}>
+            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Destino de los trackings</p>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {confirmCandidates.map(o=>{const sel=confirmDestOp===o.id;const chLabel=o.channel?.includes("maritimo")?"🚢":"✈️";const giTag=o.service_type==="gestion_integral"?" · GI":"";return <div key={o.id} onClick={()=>setConfirmDestOp(o.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"10px 12px",border:`1.5px solid ${sel?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.08)"}`,borderRadius:10,cursor:"pointer",background:sel?"rgba(34,197,94,0.1)":"rgba(0,0,0,0.2)"}}>
+                <span style={{fontSize:12.5,color:"#fff"}}>📦 Agregar a <strong style={{fontFamily:"monospace"}}>{o.operation_code}</strong> <span style={{color:"rgba(255,255,255,0.5)"}}>{chLabel} {SM[o.status]?.l||o.status}{giTag}</span></span>
+                {sel&&<span style={{color:"#22c55e",fontWeight:700}}>✓</span>}
+              </div>;})}
+              {(()=>{const sel=!confirmDestOp;return <div onClick={()=>setConfirmDestOp(null)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"10px 12px",border:`1.5px solid ${sel?GOLD_DEEP:"rgba(255,255,255,0.08)"}`,borderRadius:10,cursor:"pointer",background:sel?"rgba(184,149,106,0.10)":"rgba(0,0,0,0.2)"}}>
+                <span style={{fontSize:12.5,color:"#fff"}}>✂️ Crear op nueva{confirmCandidates.length===0?<span style={{color:"rgba(255,255,255,0.45)"}}> (el cliente no tiene ops abiertas)</span>:""}</span>
+                {sel&&<span style={{color:GOLD_LIGHT,fontWeight:700}}>✓</span>}
+              </div>;})()}
+            </div>
+          </div>
+          {/* Selector de canal — solo aplica al crear op nueva. Solo China tiene 2 opciones; USA solo negro */}
+          {!confirmDestOp&&(notif.origin==="china"?<div style={{marginBottom:14}}>
+            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Canal de la operación nueva</p>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               {channelOpts.map(o=>{const sel=selChannel===o.k;return <div key={o.k} onClick={()=>setConfirmChannel(o.k)} style={{padding:"11px 12px",border:`1.5px solid ${sel?GOLD_DEEP:"rgba(255,255,255,0.08)"}`,borderRadius:10,cursor:"pointer",background:sel?"rgba(184,149,106,0.10)":"rgba(0,0,0,0.2)",transition:"all 150ms",boxShadow:sel?"0 0 12px rgba(184,149,106,0.18)":"none"}}>
                 <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
@@ -6672,11 +6773,11 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
                 <p style={{fontSize:10.5,color:"rgba(255,255,255,0.5)",margin:0}}>{o.sub}</p>
               </div>;})}
             </div>
-          </div>:<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px",lineHeight:1.5}}>Se va a crear una nueva operación (canal <strong>{isAereo?"Aéreo Integral AC":"Marítimo Integral AC"}</strong>) con <strong>los {trks.length} tracking{trks.length>1?"s":""}</strong>.</p>}
+          </div>:<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px",lineHeight:1.5}}>Se va a crear una nueva operación (canal <strong>{isAereo?"Aéreo Integral AC":"Marítimo Integral AC"}</strong>) con <strong>los {trks.length} tracking{trks.length>1?"s":""}</strong>.</p>)}
         </>:<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px"}}>El aviso queda marcado como cancelado. El cliente puede dar otro aviso si vuelve a intentarlo.</p>}
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={()=>!working&&(setConfirmAction(null),setConfirmChannel(null))} disabled={working} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:working?"not-allowed":"pointer"}}>Volver</button>
-          <button onClick={async()=>{if(type==="confirm"){await confirmReceipt(notif);setConfirmChannel(null);}else{await cancelNotif(notif);}}} disabled={working} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${type==="confirm"?"rgba(34,197,94,0.5)":"rgba(255,80,80,0.5)"}`,background:working?"rgba(255,255,255,0.05)":(type==="confirm"?"linear-gradient(135deg,#22c55e,#16a34a)":"linear-gradient(135deg,#ff6b6b,#ef4444)"),color:working?"rgba(255,255,255,0.4)":"#fff",cursor:working?"wait":"pointer"}}>{working?"Procesando…":(type==="confirm"?"✓ Sí, crear op":"Sí, rechazar")}</button>
+          <button onClick={async()=>{if(type==="confirm"){await confirmReceipt(notif);setConfirmChannel(null);}else{await cancelNotif(notif);}}} disabled={working} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${type==="confirm"?"rgba(34,197,94,0.5)":"rgba(255,80,80,0.5)"}`,background:working?"rgba(255,255,255,0.05)":(type==="confirm"?"linear-gradient(135deg,#22c55e,#16a34a)":"linear-gradient(135deg,#ff6b6b,#ef4444)"),color:working?"rgba(255,255,255,0.4)":"#fff",cursor:working?"wait":"pointer"}}>{working?"Procesando…":(type==="confirm"?(confirmDestOp?"✓ Sí, agregar a la op":"✓ Sí, crear op"):"Sí, rechazar")}</button>
         </div>
       </div>
     </div>;})()}
@@ -8552,7 +8653,7 @@ function QuotesList({token}){
       const ck=channelKey||selQuote.channel_key;
       const quoteClient=selQuote.client_id?clientsMap[selQuote.client_id]:null;
       const opLike={channel:CHANNEL_MAP[ck]||"aereo_negro",origin:selQuote.origin,shipping_to_door:selQuote.delivery&&selQuote.delivery!=="oficina",shipping_cost:0,has_battery:false};
-      const items=editProds.map(p=>({unit_price_usd:p.unit_price,quantity:p.quantity,import_duty_rate:p.ncm?.import_duty_rate||0,statistics_rate:p.ncm?.statistics_rate||0,iva_rate:p.ncm?.iva_rate||21,iva_additional_rate:20,iigg_rate:6,iibb_rate:5}));
+      const items=editProds.map(p=>({unit_price_usd:p.unit_price,quantity:p.quantity,import_duty_rate:p.ncm?.import_duty_rate||0,statistics_rate:p.ncm?.statistics_rate||0,iva_rate:p.ncm?.iva_rate??21,iva_additional_rate:20,iigg_rate:6,iibb_rate:5}));
       const pks=editPkgs.map(p=>({quantity:Number(p.qty||1),gross_weight_kg:Number(p.weight||0),length_cm:Number(p.length||0),width_cm:Number(p.width||0),height_cm:Number(p.height||0)}));
       const shipC=calcShippingCost(pks);
       opLike.shipping_cost=shipC;
@@ -8599,7 +8700,7 @@ function QuotesList({token}){
     const prods=editProds.length?editProds:(typeof q.products==="string"?JSON.parse(q.products):q.products||[]);
     const w=window.open("","_blank");if(!w)return;
     const totFob=prods.reduce((s,p)=>s+Number(p.unit_price||0)*Number(p.quantity||1),0);
-    const rows=prods.map(p=>{const fob=Number(p.unit_price||0)*Number(p.quantity||1);const nc=p.ncm||{};return `<tr><td>${p.description||p.type||""}</td><td class="c">${p.quantity||1}</td><td class="r">USD ${Number(p.unit_price||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td class="r">USD ${fob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td class="c mono">${nc.ncm_code||"—"}</td><td class="c">${nc.import_duty_rate||0}%</td><td class="c">${nc.statistics_rate||0}%</td><td class="c">${nc.iva_rate||21}%</td></tr>`;}).join("");
+    const rows=prods.map(p=>{const fob=Number(p.unit_price||0)*Number(p.quantity||1);const nc=p.ncm||{};return `<tr><td>${p.description||p.type||""}</td><td class="c">${p.quantity||1}</td><td class="r">USD ${Number(p.unit_price||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td class="r">USD ${fob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td class="c mono">${nc.ncm_code||"—"}</td><td class="c">${nc.import_duty_rate||0}%</td><td class="c">${nc.statistics_rate||0}%</td><td class="c">${nc.iva_rate??21}%</td></tr>`;}).join("");
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Cotización ${q.client_code||""}</title><style>
       *{box-sizing:border-box}body{font-family:'Helvetica Neue',Arial,sans-serif;padding:32px;color:#111;max-width:900px;margin:0 auto}
       h1{font-size:22px;margin:0 0 4px;color:#1B4F8A}.sub{color:#666;font-size:12px;margin-bottom:24px}

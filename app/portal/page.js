@@ -1094,7 +1094,7 @@ function CalculatorPage({token,client}){
     setProductHistory(dedup.slice(0,8));
   })();},[client?.id,token]);
   const addFromHistorical=(it)=>{
-    setProducts(p=>[...p,{type:"general",description:it.description||"",unit_price:String(it.unit_price_usd||""),quantity:String(it.quantity||"1"),ncm:it.ncm_code?{ncm_code:it.ncm_code,ncm_description:it.description,import_duty_rate:it.import_duty_rate||35,statistics_rate:it.statistics_rate||3,iva_rate:it.iva_rate||21}:null,ncmLoading:false,ncmError:false}]);
+    setProducts(p=>[...p,{type:"general",description:it.description||"",unit_price:String(it.unit_price_usd||""),quantity:String(it.quantity||"1"),ncm:it.ncm_code?{ncm_code:it.ncm_code,ncm_description:it.description,import_duty_rate:it.import_duty_rate||35,statistics_rate:it.statistics_rate||3,iva_rate:it.iva_rate??21}:null,ncmLoading:false,ncmError:false}]);
   };
 
   const addProduct=()=>setProducts(p=>[...p,{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false}]);
@@ -1122,9 +1122,12 @@ function CalculatorPage({token,client}){
   const RESTRICTED_CHAPTERS=new Set(["50","51","52","53","54","55","56","57","58","59","60","61","62","63","64","65"]);
   // Keywords ampliadas: incluye gorras, sombreros, boinas, vinchas, tocados.
   const RESTRICTED_KEYWORDS=/\b(ropa|remer[ao]s?|camiset[ao]s?|pantal[oó]n(es)?|vestido?s?|buzo?s?|camper[ao]s?|blus[ao]s?|poller[ao]s?|sweater|sueter|cardigan|jean(s)?|short(s)?|legging(s)?|hoodie|jacket|t-?shirt|polo|bermudas?|trajes?|abrigos?|tapado|blazer|chaleco|cinturones?|underwear|ropa interior|calzon(es|cillos?)?|bombach(as?|ones?)|sost[eé]n(es)?|brassiere|panties|boxers?|medias?|socks|joggings?|conjunto[s]? deportivo|deportiva|calzados?|zapat(o|illa)s?|zapatill?as?|botas?|botines?|bot[ií]n(es)?|sandalias?|ojotas?|chinelas?|pantuflas?|mocasines?|sneakers?|tenis|trainers?|running\s*shoes?|footwear|alpargatas?|crocs?|gorr(a|o)s?|gorrit[ao]s?|sombrer[ao]s?|boin[ao]s?|vinch[ao]s?|tocados?|caps?|hats?|beanie|bandanas?|panuelos?|bufand[ao]s?|guantes?|mitones?)\b/i;
-  // Umbral mínimo FOB para ofrecer Marítimo LCL/FCL. Por debajo de este monto, no conviene marítimo
-  // (los costos fijos del despacho + tiempo de tránsito comen el ahorro vs aéreo / courier).
-  const MIN_FOB_MARITIMO_LCL=3000;
+  // Umbral mínimo FOB para ofrecer Marítimo LCL/FCL: 250 USD por m³ (mínimo 1 m³ facturable).
+  // Por debajo de esa densidad de valor no conviene marítimo (costos fijos de despacho + tránsito
+  // comen el ahorro vs aéreo/courier). Ej: 1 m³ → mín. USD 250; 3 m³ → mín. USD 750.
+  const MIN_FOB_PER_CBM_MARITIMO_LCL=250;
+  // Peso facturable mínimo para aéreo desde China (canal A Courier y canal B Integral): 5 kg.
+  const MIN_KG_AEREO_CHINA=5;
   const isRestricted=products.some(p=>{
     const ncm=(p.ncm?.ncm_code||"").replace(/[^0-9]/g,"");
     const chapter=ncm.slice(0,2);
@@ -1226,38 +1229,39 @@ function CalculatorPage({token,client}){
     const calcItemTaxes=(p,certFleteTotal,isMaritimo,totalCif)=>{
       const itemFob=toN(p.unit_price)*(toN(p.quantity)||1);const pct=totalFob>0?itemFob/totalFob:1;
       const itemCertFl=certFleteTotal*pct;const itemSeg=(itemFob+itemCertFl)*0.01;const itemCif=itemFob+itemCertFl+itemSeg;
-      const dr=Number(p.ncm?.import_duty_rate||0)/100;const te=Number(p.ncm?.statistics_rate||0)/100;const ivaR=Number(p.ncm?.iva_rate||21)/100;
+      const dr=Number(p.ncm?.import_duty_rate||0)/100;const te=Number(p.ncm?.statistics_rate||0)/100;const ivaR=Number(p.ncm?.iva_rate??21)/100;
       const derechos=itemCif*dr;const tasa_e=itemCif*te;const baseImp=itemCif+derechos+tasa_e;const iva=baseImp*ivaR;
       let totalImp=derechos+tasa_e+iva;let extras={};
       if(isMaritimo){const ivaAdic=baseImp*0.20;const iigg=baseImp*0.06;const iibb=baseImp*0.05;totalImp+=ivaAdic+iigg+iibb;extras={ivaAdic,iigg,iibb};}
       else{const fullTasa=getDesembolso(totalCif);const propTasa=fullTasa*pct;const ivaD=propTasa*0.21;totalImp+=propTasa+ivaD;extras={desembolso:propTasa,ivaDesemb:ivaD};}
-      return{desc:p.description||"Producto",fob:itemFob,cif:itemCif,seguro:itemSeg,derechos,tasa_e,iva,totalImp,drPct:p.ncm?.import_duty_rate||0,tePct:p.ncm?.statistics_rate||0,ivaPct:p.ncm?.iva_rate||21,...extras};
+      return{desc:p.description||"Producto",fob:itemFob,cif:itemCif,seguro:itemSeg,derechos,tasa_e,iva,totalImp,drPct:p.ncm?.import_duty_rate||0,tePct:p.ncm?.statistics_rate||0,ivaPct:p.ncm?.iva_rate??21,...extras};
     };
 
     // Aéreo Courier Comercial (canal A) — peso facturable (max bruto/vol).
     // Omitido si: hay marca registrada, o algún bulto unitario supera los 45 kg
     // (límite operativo del canal courier — no importa el total, sino el peso por bulto)
     const overweightPkg=pkgs.find(pk=>Number(pk.weight||0)>45);
-    if(!hasBrand&&!overweightPkg&&facturable>0){const fleteRate=getFleteRate("aereo_a_china",facturable);const flete=facturable*fleteRate;
-      const certFlete=isRI?(totWeight*certAerReal):(facturable*certAerFict);
-      const seguro=(totalFob+certFlete)*0.01;const totalCif=totalFob+certFlete+seguro;const battExtra=hasBattery?facturable*2:0;
+    if(!hasBrand&&!overweightPkg&&facturable>0){const facturableBill=Math.max(facturable,MIN_KG_AEREO_CHINA);const fleteRate=getFleteRate("aereo_a_china",facturableBill);const flete=facturableBill*fleteRate;
+      const certFlete=isRI?(totWeight*certAerReal):(facturableBill*certAerFict);
+      const seguro=(totalFob+certFlete)*0.01;const totalCif=totalFob+certFlete+seguro;const battExtra=hasBattery?facturableBill*2:0;
       const items=products.filter(p=>toN(p.unit_price)>0).map(p=>calcItemTaxes(p,certFlete,false,totalCif));
       const totalImp=items.reduce((s,it)=>s+it.totalImp,0);const totalSvc=flete+seguro+battExtra;
       channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles",isBlanco:true,
         flete,seguro,battExtra,totalImp,totalSvc,total:totalImp+totalSvc,items,
-        pesoBruto:totWeight,pesoVol:volWeightTotal,pesoFact:facturable,pkgDetails,unit:`${facturable.toFixed(1)} kg`});}
+        pesoBruto:totWeight,pesoVol:volWeightTotal,pesoFact:facturableBill,pkgDetails,unit:`${facturableBill.toFixed(1)} kg`});}
 
-    // Aéreo Integral AC (B) — peso bruto
-    if(totWeight>0){const bw=Math.max(totWeight,1);const fleteRate=getFleteRate("aereo_b_china",bw);const flete=bw*fleteRate;const sur=getSurcharge("aereo_b_china",totalFob,bw);
+    // Aéreo Integral AC (B) — peso bruto (mínimo 5 kg China)
+    if(totWeight>0){const bw=Math.max(totWeight,MIN_KG_AEREO_CHINA);const fleteRate=getFleteRate("aereo_b_china",bw);const flete=bw*fleteRate;const sur=getSurcharge("aereo_b_china",totalFob,bw);
       channels.push({key:"aereo_b_china",name:"Aéreo Integral AC",info:"10-15 días hábiles",isBlanco:false,
-        flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,pesoBruto:totWeight,unit:`${totWeight.toFixed(1)} kg`});}
+        flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,pesoBruto:totWeight,unit:`${bw.toFixed(1)} kg`});}
 
     // Restricción ropa/calzado: a partir del 01/05/2026, marítimo LCL/FCL solo si >= 5 CBM.
     // Marítimo Integral AC sigue siempre disponible (excepción del régimen).
     const blockMaritimoLclRestricted=isRestricted&&totCBM>0&&totCBM<MIN_CBM_RESTRICTED;
-    // Regla operativa Argencargo: no ofrecer Marítimo LCL/FCL para FOB < USD 3.000
-    // (costos fijos despacho + tiempo de tránsito comen el ahorro vs courier/aéreo). Excepción solo si CBM ≥ 5.
-    const blockMaritimoLclLowFob=totalFob>0&&totalFob<MIN_FOB_MARITIMO_LCL&&totCBM<MIN_CBM_RESTRICTED;
+    // Regla operativa Argencargo: no ofrecer Marítimo LCL/FCL si el FOB no alcanza USD 250 por m³
+    // (mínimo 1 m³ facturable). Por debajo de esa densidad de valor el ahorro marítimo no compensa.
+    const requiredFobMaritimo=MIN_FOB_PER_CBM_MARITIMO_LCL*Math.max(totCBM,1);
+    const blockMaritimoLclLowFob=totalFob>0&&totCBM>0&&totalFob<requiredFobMaritimo;
 
     // Marítimo Carga LCL/FCL (A) — SIEMPRE ficticio. Omitido si hay marca o si es ropa/calzado <5 CBM.
     // Si totCBM>0 hay dimensiones cargadas (noDims puede haber quedado true del UX previo, lo ignoramos).
@@ -1275,7 +1279,7 @@ function CalculatorPage({token,client}){
     if(totCBM>0){const fleteRate=getFleteRate("maritimo_b",totCBM);const flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
       channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",isBlanco:false,
         flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,cbm:totCBM,unit:`${totCBM.toFixed(4)} CBM`});}
-    setResults({channels,totWeight,totCBM,blockMaritimoLclRestricted,blockMaritimoLclLowFob,isRestricted,totalFob});setStep(4);
+    setResults({channels,totWeight,totCBM,blockMaritimoLclRestricted,blockMaritimoLclLowFob,requiredFobMaritimo,isRestricted,totalFob});setStep(4);
   };
 
   // Política de envíos:
@@ -1444,7 +1448,7 @@ function CalculatorPage({token,client}){
             const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
             const d=await r.json();
             if(d?.ncm_code){
-              setProducts(p=>p.map((x,j)=>j===i?{...x,ncm:{ncm_code:d.ncm_code,ncm_description:d.ncm_description||it.description,import_duty_rate:d.import_duty_rate||35,statistics_rate:d.statistics_rate||3,iva_rate:d.iva_rate||21},ncmLoading:false}:x));
+              setProducts(p=>p.map((x,j)=>j===i?{...x,ncm:{ncm_code:d.ncm_code,ncm_description:d.ncm_description||it.description,import_duty_rate:d.import_duty_rate||35,statistics_rate:d.statistics_rate||3,iva_rate:d.iva_rate??21},ncmLoading:false}:x));
             }else{
               setProducts(p=>p.map((x,j)=>j===i?{...x,ncmLoading:false}:x));
             }
@@ -1479,7 +1483,7 @@ function CalculatorPage({token,client}){
             <button onClick={()=>chProd(i,"ncm",{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,statistics_rate:3,iva_rate:21})} style={{fontSize:12,padding:"6px 14px",borderRadius:8,border:`1px solid ${IC}33`,background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",fontWeight:600}}>Usar valores estimados (35% derechos)</button>
             <a href={`https://wa.me/5491125088580?text=${encodeURIComponent("Hola! Necesito ayuda para clasificar: "+p.description)}`} target="_blank" rel="noopener noreferrer" style={{fontSize:12,padding:"6px 14px",borderRadius:8,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",fontWeight:600,textDecoration:"none"}}>Consultar por WhatsApp</a>
           </div>
-          <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 8px"}}><div><label style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>Derechos %</label><input type="number" placeholder="35" onChange={e=>{const v=Number(e.target.value)||35;chProd(i,"ncm",{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:v,statistics_rate:p.ncm?.statistics_rate||3,iva_rate:p.ncm?.iva_rate||21});}} style={{width:"100%",padding:"6px 8px",fontSize:12,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.028)",color:"#fff",outline:"none",boxSizing:"border-box"}}/></div><div><label style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>TE %</label><input type="number" placeholder="3" onChange={e=>{const v=Number(e.target.value)||3;chProd(i,"ncm",{...p.ncm,ncm_code:"MANUAL",statistics_rate:v});}} style={{width:"100%",padding:"6px 8px",fontSize:12,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.028)",color:"#fff",outline:"none",boxSizing:"border-box"}}/></div><div><label style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>IVA %</label><input type="number" placeholder="21" onChange={e=>{const v=Number(e.target.value)||21;chProd(i,"ncm",{...p.ncm,ncm_code:"MANUAL",iva_rate:v});}} style={{width:"100%",padding:"6px 8px",fontSize:12,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.028)",color:"#fff",outline:"none",boxSizing:"border-box"}}/></div></div>
+          <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 8px"}}><div><label style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>Derechos %</label><input type="number" placeholder="35" onChange={e=>{const v=Number(e.target.value)||35;chProd(i,"ncm",{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:v,statistics_rate:p.ncm?.statistics_rate||3,iva_rate:p.ncm?.iva_rate??21});}} style={{width:"100%",padding:"6px 8px",fontSize:12,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.028)",color:"#fff",outline:"none",boxSizing:"border-box"}}/></div><div><label style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>TE %</label><input type="number" placeholder="3" onChange={e=>{const v=Number(e.target.value)||3;chProd(i,"ncm",{...p.ncm,ncm_code:"MANUAL",statistics_rate:v});}} style={{width:"100%",padding:"6px 8px",fontSize:12,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.028)",color:"#fff",outline:"none",boxSizing:"border-box"}}/></div><div><label style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>IVA %</label><input type="number" placeholder="21" onChange={e=>{const v=Number(e.target.value)||21;chProd(i,"ncm",{...p.ncm,ncm_code:"MANUAL",iva_rate:v});}} style={{width:"100%",padding:"6px 8px",fontSize:12,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.028)",color:"#fff",outline:"none",boxSizing:"border-box"}}/></div></div>
         </div>}
         {!hasBrand&&!p.ncm&&!p.ncmError&&!p.ncmLoading&&p.description?.trim()&&<div style={{marginBottom:8}}><button onClick={()=>chProd(i,"ncm",{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,statistics_rate:3,iva_rate:21})} style={{fontSize:11,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",padding:0}}>¿No querés clasificar? Usar valores estimados →</button></div>}
       </div>)}
@@ -1568,6 +1572,7 @@ function CalculatorPage({token,client}){
         noDims?"Marcaste 'Desconozco las medidas de las cajas' — sin dimensiones no se puede calcular envío marítimo. Volvé al paso anterior para cargarlas.":
         results.totCBM===0?"No cargaste dimensiones de bultos — sin volumen (CBM) no se puede calcular envío marítimo.":
         results.blockMaritimoLclRestricted?"Por nuevas regulaciones aduaneras de mayo 2026, marítimo no aplica para ropa/calzado con menos de 5 CBM.":
+        results.blockMaritimoLclLowFob?`El marítimo LCL/FCL requiere un FOB mínimo de USD 250 por m³. Para ${results.totCBM.toFixed(2)} m³ necesitás al menos USD ${Number(results.requiredFobMaritimo||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de mercadería (tu FOB es USD ${Number(results.totalFob||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}). Por debajo de esa densidad de valor conviene aéreo/courier.`:
         null
       ):null;
       return <><div>{pairs.map((pair,pi)=><div key={pi} className="grid-2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"stretch",marginBottom:0}}>{pair.map(ch=>ch?renderCard(ch):<div key={"empty"+pi}/>)}</div>)}</div>
@@ -1659,7 +1664,7 @@ function QuotesPage({token,client}){
             {nc.ncm_description&&<span style={{color:"rgba(255,255,255,0.5)"}}>{nc.ncm_description}</span>}
             <span style={{color:"rgba(255,255,255,0.5)",marginLeft:"auto"}}>Derechos <strong style={{color:"#fff"}}>{nc.import_duty_rate||0}%</strong></span>
             <span style={{color:"rgba(255,255,255,0.5)"}}>TE <strong style={{color:"#fff"}}>{nc.statistics_rate||0}%</strong></span>
-            <span style={{color:"rgba(255,255,255,0.5)"}}>IVA <strong style={{color:"#fff"}}>{nc.iva_rate||21}%</strong></span>
+            <span style={{color:"rgba(255,255,255,0.5)"}}>IVA <strong style={{color:"#fff"}}>{nc.iva_rate??21}%</strong></span>
           </div>}
         </div>;})}</div>:<p style={{fontSize:14,fontWeight:500,color:"#fff",margin:"0 0 10px",lineHeight:1.4}}>{prodDesc||"Sin descripción"}</p>}
         {/* Selector de canales disponibles (si la cotización tiene alternativas guardadas) */}
