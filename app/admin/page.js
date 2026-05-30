@@ -9074,9 +9074,9 @@ function AdminCalculator({token}){
       body{font-family:'Helvetica Neue',Arial,sans-serif;color:#111;margin:0;padding:16mm 16mm 14mm}
       h1{font-size:22px;margin:0 0 4px;color:#1A3D6E;letter-spacing:-0.01em}
       .sub{color:#666;font-size:12px;margin-bottom:22px}
-      .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;padding:14px;background:#f4f6fa;border-radius:8px}
-      .grid div{font-size:11px;color:#555}
-      .grid b{font-size:13px;color:#111;display:block;margin-top:2px;font-weight:700}
+      .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px;margin-bottom:20px;padding:14px 16px;background:#f4f6fa;border-radius:8px}
+      .grid div{font-size:11px;color:#555;letter-spacing:0.05em;text-transform:uppercase;font-weight:700}
+      .grid b{font-size:14px;color:#111;display:block;margin-top:3px;font-weight:700;text-transform:none;letter-spacing:normal}
       h3{margin:18px 0 6px;font-size:13px;color:#1A3D6E;letter-spacing:0.02em}
       table{width:100%;border-collapse:collapse;margin-top:10px;font-size:11px}
       th,td{padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:left}
@@ -9094,7 +9094,7 @@ function AdminCalculator({token}){
       .totals .big{font-size:22px;font-weight:700;letter-spacing:-0.01em;margin-top:2px}
       .foot{margin-top:22px;padding-top:14px;border-top:1px solid #e5e7eb;font-size:10px;color:#666;line-height:1.5}
       .brand{margin-top:24px;text-align:center;padding:14px 0 4px}
-      .brand img{max-width:240px;height:auto;display:block;margin:0 auto}
+      .brand img{max-width:380px;width:100%;height:auto;display:block;margin:0 auto}
       .brand-fallback{display:none}
       .brand img.failed + .brand-fallback{display:block}
       .brand-fallback .line{width:48px;height:2px;background:#1A3D6E;margin:0 auto 10px;border-radius:2px}
@@ -9104,10 +9104,10 @@ function AdminCalculator({token}){
       <h1>Cotización Argencargo</h1>
       <div class="sub">Emitida ${new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})}</div>
       <div class="grid">
-        <div>CLIENTE<b>${(clientName||"—").replace(/</g,"&lt;")}</b></div>
-        <div>RÉGIMEN<b>${taxLabel}</b></div>
-        <div>ORIGEN<b>${origin}</b></div>
-        <div>CANAL<b>${ch.name}</b><span style="font-size:10px;color:#666;font-weight:400">${ch.info}</span></div>
+        <div>Cliente<b>${(clientName||"—").replace(/</g,"&lt;")}</b></div>
+        <div>Servicio<b>${ch.name}</b></div>
+        <div>Origen<b>${origin}</b></div>
+        <div>${bd.isAereo?"Peso facturable":"CBM facturable"}<b>${bd.isAereo?`${fmt(Number(ch.fleteAmt||0))} kg`:`${Number(ch.fleteAmt||0).toFixed(4)} m³`}</b></div>
       </div>
       <h3>Productos</h3>
       <table><thead><tr><th>Descripción</th><th>Cant</th><th>Unit.</th><th>FOB</th><th>NCM</th></tr></thead><tbody>${rows}</tbody></table>
