@@ -9051,7 +9051,7 @@ function AdminCalculator({token}){
     if(bd.isBlanco){
       if(bd.derechos>0)rowsBd.push(`<div class="row"><span>Derechos importación</span><span>USD ${fmt(bd.derechos)}</span></div>`);
       if(bd.tasaE>0)rowsBd.push(`<div class="row"><span>Tasa estadística</span><span>USD ${fmt(bd.tasaE)}</span></div>`);
-      if(bd.iva>0)rowsBd.push(`<div class="row"><span>IVA (productos)</span><span>USD ${fmt(bd.iva)}</span></div>`);
+      if(bd.iva>0)rowsBd.push(`<div class="row"><span>IVA de Importación</span><span>USD ${fmt(bd.iva)}</span></div>`);
       if(bd.isMaritimo){
         if(bd.ivaAdic>0)rowsBd.push(`<div class="row"><span>IVA adicional</span><span>USD ${fmt(bd.ivaAdic)}</span></div>`);
         if(bd.iigg>0)rowsBd.push(`<div class="row"><span>Ganancias (IIGG)</span><span>USD ${fmt(bd.iigg)}</span></div>`);
@@ -9165,10 +9165,12 @@ function AdminCalculator({token}){
       <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>FOB total: <strong style={{color:IC}}>USD {fmt(totalFob)}</strong> · CBM total: <strong style={{color:IC}}>{totCBM.toFixed(4)} m³</strong></p>
     </div>
     {/* Calcular */}
-    <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:18}}>
-      <button onClick={calculate} disabled={totalFob<=0} style={{padding:"11px 22px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:totalFob>0?"pointer":"not-allowed",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:totalFob>0?GOLD_GLOW:"none",opacity:totalFob>0?1:0.5}}>Calcular cotización</button>
-      {totalFob<=0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Cargá al menos un producto con precio</span>}
-    </div>
+    {(()=>{const unclassified=!hasBrand&&products.filter(p=>toN(p.unit_price)>0&&!p.ncm);const blocked=totalFob<=0||unclassified.length>0;return <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:18,flexWrap:"wrap"}}>
+      <button onClick={calculate} disabled={blocked} style={{padding:"11px 22px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:blocked?"not-allowed":"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:!blocked?GOLD_GLOW:"none",opacity:blocked?0.5:1}}>Calcular cotización</button>
+      {totalFob<=0?<span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Cargá al menos un producto con precio</span>
+        :unclassified.length>0?<span style={{fontSize:11,fontWeight:600,color:"#fb923c"}}>⚠ {unclassified.length} producto{unclassified.length>1?"s":""} sin clasificar — tocá <strong>✨ NCM</strong> antes de calcular</span>
+        :null}
+    </div>;})()}
     {/* Resultados */}
     {results&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12,alignItems:"stretch"}}>
       {results.channels.length===0?<p style={{color:"rgba(255,255,255,0.5)",gridColumn:"1/-1",textAlign:"center",padding:"1rem"}}>Ningún canal aplica con estos datos (chequeá marca, peso por bulto y volumen).</p>:results.channels.map(ch=>{
@@ -9193,7 +9195,7 @@ function AdminCalculator({token}){
             {bd.isBlanco&&<>
               {bd.derechos>0&&<div style={rowStyle}><span>Derechos importación</span><span style={valStyle}>USD {fmt(bd.derechos)}</span></div>}
               {bd.tasaE>0&&<div style={rowStyle}><span>Tasa estadística</span><span style={valStyle}>USD {fmt(bd.tasaE)}</span></div>}
-              {bd.iva>0&&<div style={rowStyle}><span>IVA (productos)</span><span style={valStyle}>USD {fmt(bd.iva)}</span></div>}
+              {bd.iva>0&&<div style={rowStyle}><span>IVA de Importación</span><span style={valStyle}>USD {fmt(bd.iva)}</span></div>}
               {bd.isMaritimo&&<>
                 {bd.ivaAdic>0&&<div style={rowStyle}><span>IVA adicional</span><span style={valStyle}>USD {fmt(bd.ivaAdic)}</span></div>}
                 {bd.iigg>0&&<div style={rowStyle}><span>Ganancias (IIGG)</span><span style={valStyle}>USD {fmt(bd.iigg)}</span></div>}
