@@ -8923,14 +8923,29 @@ function QuotesList({token}){
           </div>;})()}
       </div>
     </div>;})()}
-    <AdminCalculator token={token} tariffs={tariffs} config={config} clientsMap={clientsMap}/>
   </div>;
 }
 
 // Calculadora "pro" del admin: misma matemática que la del portal cliente (calcOpBudget) pero con
 // selección explícita de régimen fiscal (RI / Monotributo), origen y export PDF por canal.
-function AdminCalculator({token,tariffs,config,clientsMap}){
-  const [clientName,setClientName]=useState("");
+// El régimen impacta el cert flete declarado en aduana: RI = USD 2,5/kg (real), Mono = USD 3,5/kg (ficticio).
+function AdminCalculator({token}){
+  const [tariffs,setTariffs]=useState([]);
+  const [config,setConfig]=useState({});
+  const [allClients,setAllClients]=useState([]);
+  useEffect(()=>{(async()=>{
+    const [tf,cc,cl]=await Promise.all([
+      dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),
+      dq("calc_config",{token,filters:"?select=*"}),
+      dq("clients",{token,filters:"?select=id,first_name,last_name,whatsapp,client_code,tax_condition&order=client_code.asc"})
+    ]);
+    setTariffs(Array.isArray(tf)?tf:[]);
+    const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
+    setAllClients(Array.isArray(cl)?cl:[]);
+  })();},[token]);
+  const [clientId,setClientId]=useState(""); // id del cliente del sistema (o "" si free-text)
+  const [clientName,setClientName]=useState(""); // texto en el input; coincide con cliente del sistema o se carga a mano
+  const [showClientList,setShowClientList]=useState(false);
   const [taxCond,setTaxCond]=useState("monotributo"); // 'responsable_inscripto' | 'monotributo'
   const [origin,setOrigin]=useState("China");
   const [hasBrand,setHasBrand]=useState(false);
@@ -8977,7 +8992,8 @@ function AdminCalculator({token,tariffs,config,clientsMap}){
     const w=window.open("","_blank");if(!w)return;
     const rows=products.filter(p=>toN(p.unit_price)>0).map(p=>{const up=toN(p.unit_price);const fob=up*Number(p.quantity||1);return `<tr><td>${(p.description||"—").replace(/</g,"&lt;")}</td><td class="c">${p.quantity||1}</td><td class="r">USD ${fmt(up)}</td><td class="r">USD ${fmt(fob)}</td><td class="c mono">${p.ncm?.ncm_code||"—"}</td></tr>`;}).join("");
     const taxLabel=taxCond==="responsable_inscripto"?"Responsable Inscripto":"Monotributista";
-    const ivaNote=taxCond==="responsable_inscripto"?'<p style="font-size:11px;color:#555;margin:8px 0 0">⚠ Régimen RI: el IVA pagado en la importación es <b>crédito fiscal recuperable</b> ante AFIP.</p>':"";
+    const certKg=taxCond==="responsable_inscripto"?"2,50":"3,50";
+    const regimenNote=`<p style="font-size:11px;color:#555;margin:8px 0 0">Cotización emitida según régimen <b>${taxLabel}</b>. Flete declarado a aduana: <b>USD ${certKg}/kg</b>.</p>`;
     const breakdown=[ch.flete&&`<div class="row"><span>Flete + seguro</span><span>USD ${fmt(Number(ch.flete||0)+Number(ch.seguro||0))}</span></div>`,ch.totalTax&&`<div class="row"><span>Impuestos y gastos aduana</span><span>USD ${fmt(ch.totalTax)}</span></div>`,ch.surcharge&&`<div class="row"><span>Recargo por valor (canal B)</span><span>USD ${fmt(ch.surcharge)}</span></div>`].filter(Boolean).join("");
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Cotización Argencargo</title><style>
       *{box-sizing:border-box}body{font-family:'Helvetica Neue',Arial,sans-serif;padding:32px;color:#111;max-width:900px;margin:0 auto}
@@ -9008,7 +9024,7 @@ function AdminCalculator({token,tariffs,config,clientsMap}){
       <table><thead><tr><th>Descripción</th><th>Cant</th><th>Unit.</th><th>FOB</th><th>NCM</th></tr></thead><tbody>${rows}</tbody></table>
       <div class="breakdown">${breakdown||'<div class="row"><span>Sin desglose</span><span>—</span></div>'}</div>
       <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${fmt(totalFob)}</div></div><div style="text-align:right"><div class="lbl">Costo total estimado</div><div class="big">USD ${fmt(ch.totalAbonar)}</div></div></div>
-      ${ivaNote}
+      ${regimenNote}
       <div class="foot">Cotización estimativa. Los costos finales pueden variar según volumen real, tipo de cambio y gastos documentales al momento del despacho. Vigencia: 7 días corridos. Argencargo — Integral Freight Forwarding.</div>
       <script>setTimeout(()=>window.print(),300)</script>
     </body></html>`);w.document.close();
@@ -9030,13 +9046,23 @@ function AdminCalculator({token,tariffs,config,clientsMap}){
       </div>
     </div>
     {/* Datos del cliente / régimen */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-      <div><label style={labelStyle}>Cliente (texto libre)</label><input value={clientName} onChange={e=>setClientName(e.target.value)} placeholder="Nombre del cliente / razón social" style={inputStyle}/></div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14,alignItems:"end"}}>
+      <div style={{position:"relative"}}>
+        <label style={labelStyle}>Cliente (texto libre o del sistema)</label>
+        <input value={clientName} onChange={e=>{setClientName(e.target.value);setClientId("");setShowClientList(true);}} onFocus={()=>setShowClientList(true)} onBlur={()=>setTimeout(()=>setShowClientList(false),180)} placeholder="Buscá un cliente o escribí un nombre" style={inputStyle}/>
+        {clientId&&<span style={{position:"absolute",right:8,top:30,fontSize:9.5,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)",letterSpacing:"0.04em"}}>DEL SISTEMA</span>}
+        {showClientList&&(()=>{const q=clientName.trim().toLowerCase();const matches=allClients.filter(c=>{if(!q)return true;const s=`${c.client_code||""} ${c.first_name||""} ${c.last_name||""}`.toLowerCase();return s.includes(q);}).slice(0,8);return matches.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,boxShadow:"0 8px 28px rgba(0,0,0,0.5)",zIndex:5,maxHeight:240,overflowY:"auto"}}>
+          {matches.map(c=>{const name=`${c.first_name||""} ${c.last_name||""}`.trim();const taxLabel=c.tax_condition==="responsable_inscripto"?"RI":c.tax_condition==="monotributo"?"Mono":"";return <div key={c.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{setClientId(c.id);setClientName(name);if(c.tax_condition==="responsable_inscripto"||c.tax_condition==="monotributo")setTaxCond(c.tax_condition);setShowClientList(false);}} style={{padding:"8px 12px",fontSize:12,color:"#fff",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.04)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+            <span><strong style={{fontFamily:"monospace",color:IC}}>{c.client_code||"—"}</strong> <span style={{color:"rgba(255,255,255,0.85)"}}>{name||"(sin nombre)"}</span></span>
+            {taxLabel&&<span style={{fontSize:9.5,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.7)"}}>{taxLabel}</span>}
+          </div>;})}
+        </div>;})()}
+      </div>
       <div>
-        <label style={labelStyle}>Régimen fiscal</label>
-        <div style={{display:"flex",gap:8}}>
-          <div onClick={()=>setTaxCond("responsable_inscripto")} style={cardOption(taxCond==="responsable_inscripto")}><p style={{fontSize:12,fontWeight:700,color:taxCond==="responsable_inscripto"?IC:"rgba(255,255,255,0.7)",margin:0}}>Responsable Inscripto</p><p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>IVA recuperable</p></div>
-          <div onClick={()=>setTaxCond("monotributo")} style={cardOption(taxCond==="monotributo")}><p style={{fontSize:12,fontWeight:700,color:taxCond==="monotributo"?IC:"rgba(255,255,255,0.7)",margin:0}}>Monotributista</p><p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>IVA = costo</p></div>
+        <label style={labelStyle}>Régimen fiscal (declaración del flete)</label>
+        <div style={{display:"flex",gap:6,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:3}}>
+          <button onClick={()=>setTaxCond("responsable_inscripto")} style={{flex:1,padding:"7px 8px",fontSize:11.5,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:taxCond==="responsable_inscripto"?GOLD_GRADIENT:"transparent",color:taxCond==="responsable_inscripto"?"#0A1628":"rgba(255,255,255,0.55)",letterSpacing:"0.02em"}}>Responsable Inscripto · USD 2,5/kg</button>
+          <button onClick={()=>setTaxCond("monotributo")} style={{flex:1,padding:"7px 8px",fontSize:11.5,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:taxCond==="monotributo"?GOLD_GRADIENT:"transparent",color:taxCond==="monotributo"?"#0A1628":"rgba(255,255,255,0.55)",letterSpacing:"0.02em"}}>Monotributista · USD 3,5/kg</button>
         </div>
       </div>
     </div>
@@ -9683,6 +9709,7 @@ function AdminDashboard({session,onLogout}){
       {key:"tasks",label:"Tareas",p:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"]},
       {key:"purchase_notifs",label:"Avisos de compra",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},
       {key:"quotes",label:"Cotizaciones",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},
+      {key:"calc",label:"Calculadora",p:["M9 2h6","M3 6h18","M9 12h.01","M15 12h.01","M9 16h.01","M15 16h.01","M9 20h.01","M15 20h.01","M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6"]},
     ]},
     {section:"Finanzas",items:[
       {key:"dashboard",label:"Dashboard",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},
@@ -9786,6 +9813,7 @@ function AdminDashboard({session,onLogout}){
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
       {page==="quotes"&&<QuotesList token={token}/>}
+      {page==="calc"&&<AdminCalculator token={token}/>}
       {page==="gi_requests"&&<GiAdminPanel token={token} clients={allClients}/>}
       {page==="settings"&&<AdminSettings token={token} session={session}/>}
     </div></div>
