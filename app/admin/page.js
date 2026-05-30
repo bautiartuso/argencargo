@@ -8953,7 +8953,55 @@ function AdminCalculator({token}){
   const [products,setProducts]=useState([{description:"",unit_price:"",quantity:"1",ncm:null,classifying:false}]);
   const [pkgs,setPkgs]=useState([{qty:"1",length:"",width:"",height:"",weight:""}]);
   const [results,setResults]=useState(null);
+  // Override manual del desaduanaje (gastos documentales aduana) por canal. Si el admin lo bonifica,
+  // se ingresa un valor menor y el total se recalcula. Si está vacío, se usa el auto de la tabla.
+  const [desembolsoOverride,setDesembolsoOverride]=useState({}); // {[chKey]: string}
   const toN=(v)=>{const n=Number(String(v||"").replace(",","."));return isNaN(n)?0:n;};
+  // Desglose por canal: mismo math que calc.js, expone los componentes (derechos, tasa estadística, IVA,
+  // adicionales marítimos, desaduanaje) para mostrar y permitir override del desaduanaje.
+  const computeBreakdown=(chKey,items,pks,client)=>{
+    const opChannel=CHANNEL_MAP[chKey];
+    const isBlanco=opChannel?.includes("blanco");
+    const isAereo=opChannel?.includes("aereo");
+    const isMaritimo=opChannel?.includes("maritimo");
+    const isUSA=origin==="USA";
+    const isRI=client?.tax_condition==="responsable_inscripto";
+    let pf=0,totCBM=0,totGW=0;
+    pks.forEach(p=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0);const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});
+    const totFob=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
+    const aereoMinKg=isUSA?1:5;
+    const certFlRate=isAereo?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
+    const certFl=isAereo?(isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate):totCBM*certFlRate;
+    const seguro=(totFob+certFl)*0.01;
+    const cif=totFob+certFl+seguro;
+    const tabla=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];
+    const getDes=(c)=>{for(const[max,amt]of tabla)if(c<max)return amt;return 120;};
+    let derechos=0,tasaE=0,iva=0,ivaAdic=0,iigg=0,iibb=0;
+    if(isBlanco){
+      items.forEach(it=>{
+        const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);
+        const pct=totFob>0?itemFob/totFob:1;
+        const iCert=certFl*pct;
+        const iSeg=(itemFob+iCert)*0.01;
+        const iCif=itemFob+iCert+iSeg;
+        const dr=(it.import_duty_rate==null||it.import_duty_rate==="")?0:Number(it.import_duty_rate)/100;
+        const te=(it.statistics_rate==null||it.statistics_rate==="")?0:Number(it.statistics_rate)/100;
+        const ivaR=(it.iva_rate==null||it.iva_rate==="")?0.21:Number(it.iva_rate)/100;
+        const die=iCif*dr;
+        const tasa=iCif*te;
+        const bi=iCif+die+tasa;
+        derechos+=die;tasaE+=tasa;iva+=bi*ivaR;
+        if(isMaritimo){
+          const ivaAdicR=(it.iva_additional_rate==null||it.iva_additional_rate==="")?0.20:Number(it.iva_additional_rate)/100;
+          const iiggR=(it.iigg_rate==null||it.iigg_rate==="")?0.06:Number(it.iigg_rate)/100;
+          const iibbR=(it.iibb_rate==null||it.iibb_rate==="")?0.05:Number(it.iibb_rate)/100;
+          ivaAdic+=bi*ivaAdicR;iigg+=bi*iiggR;iibb+=bi*iibbR;
+        }
+      });
+    }
+    const desembolsoAuto=isBlanco&&isAereo?getDes(cif):0;
+    return {certFl,seguro,cif,derechos,tasaE,iva,ivaAdic,iigg,iibb,desembolsoAuto,isBlanco,isAereo,isMaritimo};
+  };
   const CHANNEL_MAP={aereo_a_china:"aereo_blanco",aereo_b_china:"aereo_negro",aereo_b_usa:"aereo_negro",maritimo_a_china:"maritimo_blanco",maritimo_b:"maritimo_negro"};
   const channelsForOrigin=(o)=>o==="USA"
     ?[{key:"aereo_b_usa",name:"Aéreo Integral AC — USA",info:"48-72 hs hábiles"},{key:"maritimo_b",name:"Marítimo Integral AC",info:"45-55 días"}]
@@ -8974,7 +9022,7 @@ function AdminCalculator({token}){
     const client={tax_condition:taxCond};
     const all=channelsForOrigin(origin).map(ch=>{
       const opLike={channel:CHANNEL_MAP[ch.key],origin,shipping_to_door:false,shipping_cost:0,has_battery:hasBattery,has_phones:false};
-      try{const r=calcOpBudget(opLike,items,pks,tariffs||[],config||{},[],client);return{...ch,...r};}catch(e){console.error("calc",ch.key,e);return null;}
+      try{const r=calcOpBudget(opLike,items,pks,tariffs||[],config||{},[],client);const bd=computeBreakdown(ch.key,items,pks,client);return{...ch,...r,bd};}catch(e){console.error("calc",ch.key,e);return null;}
     }).filter(Boolean).filter(ch=>{
       // Mismas reglas de visibilidad que el portal:
       if(ch.key==="aereo_a_china"&&(hasBrand||overweight))return false;
@@ -8988,13 +9036,32 @@ function AdminCalculator({token}){
     setResults({channels:all,totalFob,totCBM,taxCond,origin,clientName,hasBrand,hasBattery});
   };
   const fmt=(n)=>Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
-  const printPdf=(ch)=>{
+  const printPdf=(ch,eff)=>{
     const w=window.open("","_blank");if(!w)return;
     const rows=products.filter(p=>toN(p.unit_price)>0).map(p=>{const up=toN(p.unit_price);const fob=up*Number(p.quantity||1);return `<tr><td>${(p.description||"—").replace(/</g,"&lt;")}</td><td class="c">${p.quantity||1}</td><td class="r">USD ${fmt(up)}</td><td class="r">USD ${fmt(fob)}</td><td class="c mono">${p.ncm?.ncm_code||"—"}</td></tr>`;}).join("");
     const taxLabel=taxCond==="responsable_inscripto"?"Responsable Inscripto":"Monotributista";
     const certKg=taxCond==="responsable_inscripto"?"2,50":"3,50";
     const regimenNote=`<p style="font-size:11px;color:#555;margin:8px 0 0">Cotización emitida según régimen <b>${taxLabel}</b>. Flete declarado a aduana: <b>USD ${certKg}/kg</b>.</p>`;
-    const breakdown=[ch.flete&&`<div class="row"><span>Flete + seguro</span><span>USD ${fmt(Number(ch.flete||0)+Number(ch.seguro||0))}</span></div>`,ch.totalTax&&`<div class="row"><span>Impuestos y gastos aduana</span><span>USD ${fmt(ch.totalTax)}</span></div>`,ch.surcharge&&`<div class="row"><span>Recargo por valor (canal B)</span><span>USD ${fmt(ch.surcharge)}</span></div>`].filter(Boolean).join("");
+    const bd=eff?.bd||ch.bd||{};
+    const desEff=eff?.desEff||0;
+    const ivaDesEff=eff?.ivaDesEff||0;
+    const effTotal=eff?.effTotal||ch.totalAbonar||0;
+    const rowsBd=[];
+    if(Number(ch.flete||0)>0)rowsBd.push(`<div class="row"><span>Flete + seguro</span><span>USD ${fmt(Number(ch.flete||0)+Number(ch.seguro||0))}</span></div>`);
+    if(bd.isBlanco){
+      if(bd.derechos>0)rowsBd.push(`<div class="row"><span>Derechos importación</span><span>USD ${fmt(bd.derechos)}</span></div>`);
+      if(bd.tasaE>0)rowsBd.push(`<div class="row"><span>Tasa estadística</span><span>USD ${fmt(bd.tasaE)}</span></div>`);
+      if(bd.iva>0)rowsBd.push(`<div class="row"><span>IVA (productos)</span><span>USD ${fmt(bd.iva)}</span></div>`);
+      if(bd.isMaritimo){
+        if(bd.ivaAdic>0)rowsBd.push(`<div class="row"><span>IVA adicional</span><span>USD ${fmt(bd.ivaAdic)}</span></div>`);
+        if(bd.iigg>0)rowsBd.push(`<div class="row"><span>Ganancias (IIGG)</span><span>USD ${fmt(bd.iigg)}</span></div>`);
+        if(bd.iibb>0)rowsBd.push(`<div class="row"><span>Ingresos brutos (IIBB)</span><span>USD ${fmt(bd.iibb)}</span></div>`);
+      }
+      if(bd.isAereo&&desEff>0)rowsBd.push(`<div class="row"><span>Desaduanaje (gastos documentales)</span><span>USD ${fmt(desEff)}</span></div>`);
+      if(bd.isAereo&&ivaDesEff>0)rowsBd.push(`<div class="row"><span>IVA 21% sobre desaduanaje</span><span>USD ${fmt(ivaDesEff)}</span></div>`);
+    }
+    if(Number(ch.surcharge||0)>0)rowsBd.push(`<div class="row"><span>Recargo valor${ch.surchargePct?` (${ch.surchargePct}%)`:""}</span><span>USD ${fmt(ch.surcharge)}</span></div>`);
+    const breakdown=rowsBd.join("");
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Cotización Argencargo</title><style>
       *{box-sizing:border-box}body{font-family:'Helvetica Neue',Arial,sans-serif;padding:32px;color:#111;max-width:900px;margin:0 auto}
       h1{font-size:22px;margin:0 0 4px;color:#1B4F8A}.sub{color:#666;font-size:12px;margin-bottom:24px}
@@ -9023,7 +9090,7 @@ function AdminCalculator({token}){
       <h3 style="margin:18px 0 6px;font-size:13px;color:#1B4F8A">Productos</h3>
       <table><thead><tr><th>Descripción</th><th>Cant</th><th>Unit.</th><th>FOB</th><th>NCM</th></tr></thead><tbody>${rows}</tbody></table>
       <div class="breakdown">${breakdown||'<div class="row"><span>Sin desglose</span><span>—</span></div>'}</div>
-      <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${fmt(totalFob)}</div></div><div style="text-align:right"><div class="lbl">Costo total estimado</div><div class="big">USD ${fmt(ch.totalAbonar)}</div></div></div>
+      <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${fmt(totalFob)}</div></div><div style="text-align:right"><div class="lbl">Costo total estimado</div><div class="big">USD ${fmt(effTotal)}</div></div></div>
       ${regimenNote}
       <div class="foot">Cotización estimativa. Los costos finales pueden variar según volumen real, tipo de cambio y gastos documentales al momento del despacho. Vigencia: 7 días corridos. Argencargo — Integral Freight Forwarding.</div>
       <script>setTimeout(()=>window.print(),300)</script>
@@ -9103,21 +9170,57 @@ function AdminCalculator({token}){
       {totalFob<=0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Cargá al menos un producto con precio</span>}
     </div>
     {/* Resultados */}
-    {results&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12}}>
-      {results.channels.length===0?<p style={{color:"rgba(255,255,255,0.5)",gridColumn:"1/-1",textAlign:"center",padding:"1rem"}}>Ningún canal aplica con estos datos (chequeá marca, peso por bulto y volumen).</p>:results.channels.map(ch=><div key={ch.key} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10}}>
-        <p style={{fontSize:12,fontWeight:700,color:IC,margin:"0 0 4px"}}>{ch.name}</p>
-        <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"0 0 10px"}}>{ch.info}</p>
-        <div style={{display:"flex",flexDirection:"column",gap:4,fontSize:11.5,color:"rgba(255,255,255,0.65)",marginBottom:10}}>
-          {Number(ch.flete||0)>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span>Flete + seguro</span><span style={{color:"#fff",fontWeight:600}}>USD {fmt(Number(ch.flete||0)+Number(ch.seguro||0))}</span></div>}
-          {Number(ch.totalTax||0)>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span>Impuestos aduana</span><span style={{color:"#fff",fontWeight:600}}>USD {fmt(ch.totalTax)}</span></div>}
-          {Number(ch.surcharge||0)>0&&<div style={{display:"flex",justifyContent:"space-between"}}><span>Recargo valor</span><span style={{color:"#fff",fontWeight:600}}>USD {fmt(ch.surcharge)}</span></div>}
-        </div>
-        <div style={{padding:"10px 12px",background:"rgba(184,149,106,0.1)",border:`1px solid ${IC}55`,borderRadius:8,marginBottom:10}}>
-          <p style={{fontSize:10,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total estimado</p>
-          <p style={{fontSize:20,fontWeight:800,color:IC,margin:"2px 0 0",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {fmt(ch.totalAbonar)}</p>
-        </div>
-        <button onClick={()=>printPdf(ch)} style={{width:"100%",padding:"9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>📄 Exportar PDF cotización</button>
-      </div>)}
+    {results&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12,alignItems:"stretch"}}>
+      {results.channels.length===0?<p style={{color:"rgba(255,255,255,0.5)",gridColumn:"1/-1",textAlign:"center",padding:"1rem"}}>Ningún canal aplica con estos datos (chequeá marca, peso por bulto y volumen).</p>:results.channels.map(ch=>{
+        const bd=ch.bd||{};
+        const ovStr=desembolsoOverride[ch.key];
+        const hasOv=ovStr!=null&&String(ovStr).trim()!=="";
+        const desEff=hasOv?toN(ovStr):bd.desembolsoAuto||0;
+        const ivaDesEff=desEff*0.21;
+        let effTotalImp=0;
+        if(bd.isBlanco&&bd.isAereo)effTotalImp=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+desEff+ivaDesEff;
+        else if(bd.isBlanco&&bd.isMaritimo)effTotalImp=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
+        const effTotal=bd.isBlanco
+          ?(Number(ch.flete||0)+Number(ch.seguro||0)+effTotalImp)
+          :(Number(ch.flete||0)+Number(ch.surcharge||0));
+        const rowStyle={display:"flex",justifyContent:"space-between",alignItems:"baseline",fontSize:11.5,color:"rgba(255,255,255,0.65)"};
+        const valStyle={color:"#fff",fontWeight:600,fontVariantNumeric:"tabular-nums"};
+        return <div key={ch.key} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,display:"flex",flexDirection:"column"}}>
+          <p style={{fontSize:12,fontWeight:700,color:IC,margin:"0 0 4px"}}>{ch.name}</p>
+          <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"0 0 12px"}}>{ch.info}</p>
+          <div style={{flex:1,display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>
+            {Number(ch.flete||0)>0&&<div style={rowStyle}><span>Flete + seguro</span><span style={valStyle}>USD {fmt(Number(ch.flete||0)+Number(ch.seguro||0))}</span></div>}
+            {bd.isBlanco&&<>
+              {bd.derechos>0&&<div style={rowStyle}><span>Derechos importación</span><span style={valStyle}>USD {fmt(bd.derechos)}</span></div>}
+              {bd.tasaE>0&&<div style={rowStyle}><span>Tasa estadística</span><span style={valStyle}>USD {fmt(bd.tasaE)}</span></div>}
+              {bd.iva>0&&<div style={rowStyle}><span>IVA (productos)</span><span style={valStyle}>USD {fmt(bd.iva)}</span></div>}
+              {bd.isMaritimo&&<>
+                {bd.ivaAdic>0&&<div style={rowStyle}><span>IVA adicional</span><span style={valStyle}>USD {fmt(bd.ivaAdic)}</span></div>}
+                {bd.iigg>0&&<div style={rowStyle}><span>Ganancias (IIGG)</span><span style={valStyle}>USD {fmt(bd.iigg)}</span></div>}
+                {bd.iibb>0&&<div style={rowStyle}><span>Ingresos brutos (IIBB)</span><span style={valStyle}>USD {fmt(bd.iibb)}</span></div>}
+              </>}
+              {bd.isAereo&&<div style={{padding:"7px 10px",background:"rgba(184,149,106,0.06)",borderRadius:7,border:"1px dashed rgba(184,149,106,0.25)",display:"flex",flexDirection:"column",gap:4}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:11,color:"rgba(255,255,255,0.7)"}}>Desaduanaje <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>(editable)</span></span>
+                  <div style={{display:"flex",alignItems:"center",gap:4}}>
+                    <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>USD</span>
+                    <input value={hasOv?ovStr:String(bd.desembolsoAuto||0)} onChange={e=>setDesembolsoOverride(p=>({...p,[ch.key]:e.target.value}))} style={{width:64,padding:"4px 7px",fontSize:11.5,border:`1px solid ${hasOv?IC:"rgba(255,255,255,0.15)"}`,borderRadius:5,background:"rgba(0,0,0,0.3)",color:hasOv?IC:"#fff",outline:"none",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums"}}/>
+                    {hasOv&&<button onClick={()=>setDesembolsoOverride(p=>{const c={...p};delete c[ch.key];return c;})} title="Volver al automático" style={{padding:"2px 6px",fontSize:10,borderRadius:4,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>↻</button>}
+                  </div>
+                </div>
+                {ivaDesEff>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:10.5,color:"rgba(255,255,255,0.45)"}}><span>+ IVA 21% sobre desaduanaje</span><span>USD {fmt(ivaDesEff)}</span></div>}
+                {hasOv&&Math.abs(desEff-(bd.desembolsoAuto||0))>0.01&&<p style={{fontSize:10,color:"#fbbf24",margin:"2px 0 0",fontStyle:"italic"}}>Override (auto: USD {fmt(bd.desembolsoAuto||0)})</p>}
+              </div>}
+            </>}
+            {Number(ch.surcharge||0)>0&&<div style={rowStyle}><span>Recargo valor{ch.surchargePct?` (${ch.surchargePct}%)`:""}</span><span style={valStyle}>USD {fmt(ch.surcharge)}</span></div>}
+          </div>
+          <div style={{padding:"10px 12px",background:"rgba(184,149,106,0.12)",border:`1px solid ${IC}55`,borderRadius:8,marginBottom:10}}>
+            <p style={{fontSize:10,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total estimado</p>
+            <p style={{fontSize:20,fontWeight:800,color:IC,margin:"2px 0 0",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {fmt(effTotal)}</p>
+          </div>
+          <button onClick={()=>printPdf(ch,{desEff,ivaDesEff,effTotalImp,effTotal,bd})} style={{width:"100%",padding:"9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>📄 Exportar PDF cotización</button>
+        </div>;
+      })}
     </div>}
   </div>;
 }
