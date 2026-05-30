@@ -9066,35 +9066,40 @@ function AdminCalculator({token}){
     }
     if(Number(ch.surcharge||0)>0)rowsServicios.push(`<div class="row"><span>Recargo por valor${ch.surchargePct?` (${ch.surchargePct}%)`:""}</span><span>USD ${fmt(ch.surcharge)}</span></div>`);
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Cotización Argencargo</title><style>
-      @page{size:A4;margin:14mm}
+      /* @page con margin 0 hace que el navegador no tenga espacio para imprimir su header/footer
+         (fecha, URL "about:blank", título, número de página). El contenido lleva su propio padding. */
+      @page{size:A4;margin:0}
       *,*:before,*:after{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}
       html,body{margin:0;padding:0}
-      body{font-family:'Helvetica Neue',Arial,sans-serif;color:#111;max-width:900px;margin:0 auto;padding:0}
-      h1{font-size:22px;margin:0 0 4px;color:#1B4F8A;letter-spacing:-0.01em}
+      body{font-family:'Helvetica Neue',Arial,sans-serif;color:#111;margin:0;padding:16mm 16mm 14mm}
+      h1{font-size:22px;margin:0 0 4px;color:#1A3D6E;letter-spacing:-0.01em}
       .sub{color:#666;font-size:12px;margin-bottom:22px}
-      .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;padding:14px;background:#f5f7fa;border-radius:8px}
+      .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;padding:14px;background:#f4f6fa;border-radius:8px}
       .grid div{font-size:11px;color:#555}
       .grid b{font-size:13px;color:#111;display:block;margin-top:2px;font-weight:700}
-      h3{margin:18px 0 6px;font-size:13px;color:#1B4F8A;letter-spacing:0.02em}
+      h3{margin:18px 0 6px;font-size:13px;color:#1A3D6E;letter-spacing:0.02em}
       table{width:100%;border-collapse:collapse;margin-top:10px;font-size:11px}
       th,td{padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:left}
-      th{background:#1B4F8A !important;color:#fff !important;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+      th{background:#1A3D6E !important;color:#fff !important;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:700}
       td.c{text-align:center}td.r{text-align:right}td.mono{font-family:'SFMono-Regular',Consolas,monospace;font-size:10.5px}
       tr:nth-child(even) td{background:#fafbfc}
       .section{margin-top:14px}
-      .section-title{font-size:10px;font-weight:700;color:#1B4F8A;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 6px;padding:0 4px}
-      .breakdown{padding:12px 14px;background:#f5f7fa;border-radius:8px;font-size:12px}
+      .section-title{font-size:10px;font-weight:700;color:#1A3D6E;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 6px;padding:0 4px}
+      .breakdown{padding:12px 14px;background:#f4f6fa;border-radius:8px;font-size:12px}
       .breakdown .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e5e7eb}
       .breakdown .row:last-child{border-bottom:none}
       .breakdown .row span:last-child{font-weight:600;color:#111}
-      .totals{margin-top:16px;padding:16px 20px;background:#1B4F8A !important;color:#fff !important;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
+      .totals{margin-top:16px;padding:16px 20px;background:#1A3D6E !important;color:#fff !important;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
       .totals .lbl{font-size:11px;text-transform:uppercase;letter-spacing:0.05em;opacity:.85}
       .totals .big{font-size:22px;font-weight:700;letter-spacing:-0.01em;margin-top:2px}
       .foot{margin-top:22px;padding-top:14px;border-top:1px solid #e5e7eb;font-size:10px;color:#666;line-height:1.5}
-      .brand{margin-top:24px;text-align:center;padding:18px 0 4px}
-      .brand .line{width:48px;height:2px;background:#1B4F8A;margin:0 auto 10px;border-radius:2px}
-      .brand .name{font-size:18px;font-weight:800;color:#1B4F8A;letter-spacing:0.28em;margin:0}
-      .brand .tag{font-size:9.5px;color:#888;letter-spacing:0.22em;text-transform:uppercase;margin:5px 0 0;font-weight:600}
+      .brand{margin-top:24px;text-align:center;padding:14px 0 4px}
+      .brand img{max-width:240px;height:auto;display:block;margin:0 auto}
+      .brand-fallback{display:none}
+      .brand img.failed + .brand-fallback{display:block}
+      .brand-fallback .line{width:48px;height:2px;background:#1A3D6E;margin:0 auto 10px;border-radius:2px}
+      .brand-fallback .name{font-size:18px;font-weight:800;color:#1A3D6E;letter-spacing:0.28em;margin:0}
+      .brand-fallback .tag{font-size:9.5px;color:#888;letter-spacing:0.22em;text-transform:uppercase;margin:5px 0 0;font-weight:600}
     </style></head><body>
       <h1>Cotización Argencargo</h1>
       <div class="sub">Emitida ${new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})}</div>
@@ -9111,11 +9116,22 @@ function AdminCalculator({token}){
       <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${fmt(totalFob)}</div></div><div style="text-align:right"><div class="lbl">Costo total estimado</div><div class="big">USD ${fmt(effTotal)}</div></div></div>
       <div class="foot">Cotización estimativa. Los costos finales pueden variar según peso, volumen y valor reales al momento del despacho.</div>
       <div class="brand">
-        <div class="line"></div>
-        <p class="name">ARGENCARGO</p>
-        <p class="tag">Air &amp; Sea · Integral Freight Forwarding</p>
+        <img src="${typeof window!=="undefined"?window.location.origin:""}/argencargo-logo.png" alt="Argencargo" onerror="this.classList.add('failed')"/>
+        <div class="brand-fallback">
+          <div class="line"></div>
+          <p class="name">ARGENCARGO</p>
+          <p class="tag">Air &amp; Sea · Integral Freight Forwarding</p>
+        </div>
       </div>
-      <script>setTimeout(()=>window.print(),300)</script>
+      <script>
+        // Esperar a que la imagen del logo cargue (o falle) antes de abrir el print dialog,
+        // para que el logo aparezca renderizado en el PDF.
+        const img=document.querySelector('.brand img');
+        const go=()=>setTimeout(()=>window.print(),120);
+        if(img&&img.complete)go();
+        else if(img){img.addEventListener('load',go);img.addEventListener('error',go);setTimeout(go,1500);}
+        else go();
+      </script>
     </body></html>`);w.document.close();
   };
   const addProduct=()=>setProducts(p=>[...p,{description:"",unit_price:"",quantity:"1",ncm:null,classifying:false}]);
