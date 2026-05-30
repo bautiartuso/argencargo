@@ -9026,9 +9026,11 @@ function AdminCalculator({token}){
     }).filter(Boolean).filter(ch=>{
       // Mismas reglas de visibilidad que el portal:
       if(ch.key==="aereo_a_china"&&(hasBrand||overweight))return false;
+      // Marítimos requieren dimensiones cargadas (CBM > 0): sin volumen no se puede cotizar carga marítima.
+      if((ch.key==="maritimo_a_china"||ch.key==="maritimo_b")&&totCBM<=0)return false;
       if(ch.key==="maritimo_a_china"){
         if(hasBrand)return false;
-        if(totCBM>0&&totCBM<1)return false;
+        if(totCBM<1)return false;
         if(totalFob>0&&totalFob<250*Math.max(totCBM,1))return false;
       }
       return true;
@@ -9047,7 +9049,8 @@ function AdminCalculator({token}){
     const ivaDesEff=eff?.ivaDesEff||0;
     const effTotal=eff?.effTotal||ch.totalAbonar||0;
     const rowsBd=[];
-    if(Number(ch.flete||0)>0)rowsBd.push(`<div class="row"><span>Flete + seguro</span><span>USD ${fmt(Number(ch.flete||0)+Number(ch.seguro||0))}</span></div>`);
+    if(Number(ch.flete||0)>0)rowsBd.push(`<div class="row"><span>Flete</span><span>USD ${fmt(ch.flete)}</span></div>`);
+    if(Number(ch.seguro||0)>0)rowsBd.push(`<div class="row"><span>Seguro</span><span>USD ${fmt(ch.seguro)}</span></div>`);
     if(bd.isBlanco){
       if(bd.derechos>0)rowsBd.push(`<div class="row"><span>Derechos importación</span><span>USD ${fmt(bd.derechos)}</span></div>`);
       if(bd.tasaE>0)rowsBd.push(`<div class="row"><span>Tasa estadística</span><span>USD ${fmt(bd.tasaE)}</span></div>`);
@@ -9172,7 +9175,7 @@ function AdminCalculator({token}){
         :null}
     </div>;})()}
     {/* Resultados */}
-    {results&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12,alignItems:"stretch"}}>
+    {results&&<div style={{display:"grid",gridTemplateColumns:`repeat(${Math.max(1,results.channels.length)}, minmax(0, 1fr))`,gap:10,alignItems:"stretch"}}>
       {results.channels.length===0?<p style={{color:"rgba(255,255,255,0.5)",gridColumn:"1/-1",textAlign:"center",padding:"1rem"}}>Ningún canal aplica con estos datos (chequeá marca, peso por bulto y volumen).</p>:results.channels.map(ch=>{
         const bd=ch.bd||{};
         const ovStr=desembolsoOverride[ch.key];
@@ -9191,7 +9194,8 @@ function AdminCalculator({token}){
           <p style={{fontSize:12,fontWeight:700,color:IC,margin:"0 0 4px"}}>{ch.name}</p>
           <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"0 0 12px"}}>{ch.info}</p>
           <div style={{flex:1,display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>
-            {Number(ch.flete||0)>0&&<div style={rowStyle}><span>Flete + seguro</span><span style={valStyle}>USD {fmt(Number(ch.flete||0)+Number(ch.seguro||0))}</span></div>}
+            {Number(ch.flete||0)>0&&<div style={rowStyle}><span>Flete</span><span style={valStyle}>USD {fmt(ch.flete)}</span></div>}
+            {Number(ch.seguro||0)>0&&<div style={rowStyle}><span>Seguro</span><span style={valStyle}>USD {fmt(ch.seguro)}</span></div>}
             {bd.isBlanco&&<>
               {bd.derechos>0&&<div style={rowStyle}><span>Derechos importación</span><span style={valStyle}>USD {fmt(bd.derechos)}</span></div>}
               {bd.tasaE>0&&<div style={rowStyle}><span>Tasa estadística</span><span style={valStyle}>USD {fmt(bd.tasaE)}</span></div>}
