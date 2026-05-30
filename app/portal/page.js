@@ -577,10 +577,15 @@ function EditableItemRow({item,editable,token,onChange}){
 function OperationDetail({op,token,onBack}){
   const {t}=useT();
   const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [purchaseNotif,setPurchaseNotif]=useState(null);const [repackInfo,setRepackInfo]=useState(null);const [showRepackDetail,setShowRepackDetail]=useState(false);
+  // Cliente tocó "Esperando más bultos": ack visual, sigue en depósito hasta confirmar consolidación.
+  const [waitingMore,setWaitingMore]=useState(false);
   const [docInputMode,setDocInputMode]=useState(null); // 'pdf' | 'manual'
   const [localConfirmed,setLocalConfirmed]=useState(false);
   const [inFlight,setInFlight]=useState(false);
-  const canDocument=op.status==="en_preparacion"||op.status==="en_deposito_origen"||localConfirmed;
+  // El panel de documentación se desbloquea recién cuando el cliente confirma que llegaron TODOS los bultos
+  // (consolidation_confirmed) o cuando lo hizo en esta sesión (localConfirmed). Antes de eso no se puede
+  // cargar la factura para evitar declaraciones por partes.
+  const canDocument=op.consolidation_confirmed||localConfirmed;
   const addDocItem=()=>setDocItems(p=>[...p,{description:"",quantity:"1",unit_price_usd:""}]);
   const rmDocItem=(i)=>setDocItems(p=>p.filter((_,j)=>j!==i));
   const chDocItem=(i,f,v)=>setDocItems(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
@@ -642,17 +647,24 @@ function OperationDetail({op,token,onBack}){
         <p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:0}}>{t("imports.noticeOn",{date:formatDate(purchaseNotif.created_at),trk:purchaseNotif.tracking_code})}{purchaseNotif.confirmed_at?` · ${t("imports.confirmedOn",{date:formatDate(purchaseNotif.confirmed_at)})}`:""}</p>
       </div>
     </div>}
-    {!loading&&op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&!op.consolidation_confirmed&&!localConfirmed&&<div style={{background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+    {!loading&&op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&!op.consolidation_confirmed&&!localConfirmed&&(waitingMore?<div style={{background:"linear-gradient(135deg,rgba(96,165,250,0.10),rgba(96,165,250,0.03))",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+      <h3 style={{fontSize:15,fontWeight:700,color:"#60a5fa",margin:"0 0 6px"}}>⏳ Esperando los demás bultos</h3>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.65)",margin:"0 0 14px",lineHeight:1.5}}>Listo. Vamos a sumar los bultos que vayan llegando al depósito. Cuando estén todos, tocá el botón de abajo para avanzar y cargar la factura.</p>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        <button onClick={()=>{setLocalConfirmed(true);setWaitingMore(false);setShowDocPanel(true);setDocInputMode(null);setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}}).then(()=>loadAll());}} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW}}>✅ Ya llegaron todos los bultos</button>
+        <button onClick={()=>setWaitingMore(false)} style={{padding:"12px 18px",fontSize:12,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer"}}>← Volver</button>
+      </div>
+    </div>:<div style={{background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <h3 style={{fontSize:15,fontWeight:700,color:"#fbbf24",margin:"0 0 6px"}}>📦 {t("imports.atWarehouse")}</h3>
       <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>{t("imports.atWarehouseDesc")}</p>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-        <button onClick={()=>{setLocalConfirmed(true);setShowDocPanel(true);setDocInputMode(null);setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}}).then(()=>loadAll());}} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW}}>✅ {t("imports.onlyOne")}</button>
-        <button style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",cursor:"default"}}>⏳ {t("imports.morePackages")}</button>
+        <button onClick={()=>{setLocalConfirmed(true);setShowDocPanel(true);setDocInputMode(null);setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}}).then(()=>loadAll());}} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW}}>✅ {t("imports.onlyOne")}</button>
+        <button onClick={()=>setWaitingMore(true)} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.06)",color:"#60a5fa",cursor:"pointer"}}>⏳ {t("imports.morePackages")}</button>
       </div>
-    </div>}
+    </div>)}
     {(()=>{
       // Editable mientras la op esté pre-vuelo (en depósito o preparación) Y todavía no se haya creado un vuelo
-      const isEditable=op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&items.length>0&&!inFlight;
+      const isEditable=op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&(op.consolidation_confirmed||localConfirmed)&&items.length>0&&!inFlight;
       // Si la op ya está en un vuelo, los productos quedan congelados y se muestran en el detalle del presupuesto/factura: no repetir la card acá.
       if(inFlight)return null;
       return !loading&&!isGI&&items.length>0&&<div style={{background:isEditable?"linear-gradient(135deg,rgba(96,165,250,0.10),rgba(96,165,250,0.03))":"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:`1.5px solid ${isEditable?"rgba(96,165,250,0.35)":"rgba(184,149,106,0.3)"}`,borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
