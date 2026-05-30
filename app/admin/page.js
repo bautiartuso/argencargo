@@ -9042,45 +9042,59 @@ function AdminCalculator({token}){
     const w=window.open("","_blank");if(!w)return;
     const rows=products.filter(p=>toN(p.unit_price)>0).map(p=>{const up=toN(p.unit_price);const fob=up*Number(p.quantity||1);return `<tr><td>${(p.description||"—").replace(/</g,"&lt;")}</td><td class="c">${p.quantity||1}</td><td class="r">USD ${fmt(up)}</td><td class="r">USD ${fmt(fob)}</td><td class="c mono">${p.ncm?.ncm_code||"—"}</td></tr>`;}).join("");
     const taxLabel=taxCond==="responsable_inscripto"?"Responsable Inscripto":"Monotributista";
-    const certKg=taxCond==="responsable_inscripto"?"2,50":"3,50";
-    const regimenNote=`<p style="font-size:11px;color:#555;margin:8px 0 0">Cotización emitida según régimen <b>${taxLabel}</b>. Flete declarado a aduana: <b>USD ${certKg}/kg</b>.</p>`;
     const bd=eff?.bd||ch.bd||{};
     const desEff=eff?.desEff||0;
     const ivaDesEff=eff?.ivaDesEff||0;
     const effTotal=eff?.effTotal||ch.totalAbonar||0;
-    const rowsBd=[];
-    if(Number(ch.flete||0)>0)rowsBd.push(`<div class="row"><span>Flete</span><span>USD ${fmt(ch.flete)}</span></div>`);
-    if(Number(ch.seguro||0)>0)rowsBd.push(`<div class="row"><span>Seguro</span><span>USD ${fmt(ch.seguro)}</span></div>`);
+    // Sección 1: Servicios (flete + seguro)
+    const rowsServicios=[];
+    if(Number(ch.flete||0)>0)rowsServicios.push(`<div class="row"><span>Flete</span><span>USD ${fmt(ch.flete)}</span></div>`);
+    if(Number(ch.seguro||0)>0)rowsServicios.push(`<div class="row"><span>Seguro</span><span>USD ${fmt(ch.seguro)}</span></div>`);
+    // Sección 2: Aduana / impuestos
+    const rowsAduana=[];
     if(bd.isBlanco){
-      if(bd.derechos>0)rowsBd.push(`<div class="row"><span>Derechos importación</span><span>USD ${fmt(bd.derechos)}</span></div>`);
-      if(bd.tasaE>0)rowsBd.push(`<div class="row"><span>Tasa estadística</span><span>USD ${fmt(bd.tasaE)}</span></div>`);
-      if(bd.iva>0)rowsBd.push(`<div class="row"><span>IVA de Importación</span><span>USD ${fmt(bd.iva)}</span></div>`);
+      if(bd.derechos>0)rowsAduana.push(`<div class="row"><span>Derechos importación</span><span>USD ${fmt(bd.derechos)}</span></div>`);
+      if(bd.tasaE>0)rowsAduana.push(`<div class="row"><span>Tasa estadística</span><span>USD ${fmt(bd.tasaE)}</span></div>`);
+      if(bd.iva>0)rowsAduana.push(`<div class="row"><span>IVA de Importación</span><span>USD ${fmt(bd.iva)}</span></div>`);
       if(bd.isMaritimo){
-        if(bd.ivaAdic>0)rowsBd.push(`<div class="row"><span>IVA adicional</span><span>USD ${fmt(bd.ivaAdic)}</span></div>`);
-        if(bd.iigg>0)rowsBd.push(`<div class="row"><span>Ganancias (IIGG)</span><span>USD ${fmt(bd.iigg)}</span></div>`);
-        if(bd.iibb>0)rowsBd.push(`<div class="row"><span>Ingresos brutos (IIBB)</span><span>USD ${fmt(bd.iibb)}</span></div>`);
+        if(bd.ivaAdic>0)rowsAduana.push(`<div class="row"><span>IVA adicional</span><span>USD ${fmt(bd.ivaAdic)}</span></div>`);
+        if(bd.iigg>0)rowsAduana.push(`<div class="row"><span>Ganancias (IIGG)</span><span>USD ${fmt(bd.iigg)}</span></div>`);
+        if(bd.iibb>0)rowsAduana.push(`<div class="row"><span>Ingresos brutos (IIBB)</span><span>USD ${fmt(bd.iibb)}</span></div>`);
       }
-      if(bd.isAereo&&desEff>0)rowsBd.push(`<div class="row"><span>Desaduanaje (gastos documentales)</span><span>USD ${fmt(desEff)}</span></div>`);
-      if(bd.isAereo&&ivaDesEff>0)rowsBd.push(`<div class="row"><span>IVA 21% sobre desaduanaje</span><span>USD ${fmt(ivaDesEff)}</span></div>`);
+      if(bd.isAereo&&desEff>0)rowsAduana.push(`<div class="row"><span>Desaduanaje (gastos documentales)</span><span>USD ${fmt(desEff)}</span></div>`);
+      if(bd.isAereo&&ivaDesEff>0)rowsAduana.push(`<div class="row"><span>IVA 21% sobre desaduanaje</span><span>USD ${fmt(ivaDesEff)}</span></div>`);
     }
-    if(Number(ch.surcharge||0)>0)rowsBd.push(`<div class="row"><span>Recargo valor${ch.surchargePct?` (${ch.surchargePct}%)`:""}</span><span>USD ${fmt(ch.surcharge)}</span></div>`);
-    const breakdown=rowsBd.join("");
+    if(Number(ch.surcharge||0)>0)rowsServicios.push(`<div class="row"><span>Recargo por valor${ch.surchargePct?` (${ch.surchargePct}%)`:""}</span><span>USD ${fmt(ch.surcharge)}</span></div>`);
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Cotización Argencargo</title><style>
-      *{box-sizing:border-box}body{font-family:'Helvetica Neue',Arial,sans-serif;padding:32px;color:#111;max-width:900px;margin:0 auto}
-      h1{font-size:22px;margin:0 0 4px;color:#1B4F8A}.sub{color:#666;font-size:12px;margin-bottom:24px}
-      .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;padding:14px;background:#f5f7fa;border-radius:8px}
-      .grid div{font-size:11px;color:#555}.grid b{font-size:13px;color:#111;display:block;margin-top:2px}
-      table{width:100%;border-collapse:collapse;margin-top:14px;font-size:11px}
+      @page{size:A4;margin:14mm}
+      *,*:before,*:after{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}
+      html,body{margin:0;padding:0}
+      body{font-family:'Helvetica Neue',Arial,sans-serif;color:#111;max-width:900px;margin:0 auto;padding:0}
+      h1{font-size:22px;margin:0 0 4px;color:#1B4F8A;letter-spacing:-0.01em}
+      .sub{color:#666;font-size:12px;margin-bottom:22px}
+      .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;padding:14px;background:#f5f7fa;border-radius:8px}
+      .grid div{font-size:11px;color:#555}
+      .grid b{font-size:13px;color:#111;display:block;margin-top:2px;font-weight:700}
+      h3{margin:18px 0 6px;font-size:13px;color:#1B4F8A;letter-spacing:0.02em}
+      table{width:100%;border-collapse:collapse;margin-top:10px;font-size:11px}
       th,td{padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:left}
-      th{background:#1B4F8A;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
-      td.c{text-align:center}td.r{text-align:right}td.mono{font-family:monospace}
+      th{background:#1B4F8A !important;color:#fff !important;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+      td.c{text-align:center}td.r{text-align:right}td.mono{font-family:'SFMono-Regular',Consolas,monospace;font-size:10.5px}
       tr:nth-child(even) td{background:#fafbfc}
-      .breakdown{margin-top:14px;padding:14px;background:#f5f7fa;border-radius:8px;font-size:12px}
+      .section{margin-top:14px}
+      .section-title{font-size:10px;font-weight:700;color:#1B4F8A;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 6px;padding:0 4px}
+      .breakdown{padding:12px 14px;background:#f5f7fa;border-radius:8px;font-size:12px}
       .breakdown .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e5e7eb}
       .breakdown .row:last-child{border-bottom:none}
-      .totals{margin-top:14px;padding:16px;background:#1B4F8A;color:#fff;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
-      .totals .lbl{font-size:11px;text-transform:uppercase;opacity:.8}.totals .big{font-size:22px;font-weight:700}
-      .foot{margin-top:28px;padding-top:14px;border-top:1px solid #e5e7eb;font-size:10px;color:#666}
+      .breakdown .row span:last-child{font-weight:600;color:#111}
+      .totals{margin-top:16px;padding:16px 20px;background:#1B4F8A !important;color:#fff !important;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
+      .totals .lbl{font-size:11px;text-transform:uppercase;letter-spacing:0.05em;opacity:.85}
+      .totals .big{font-size:22px;font-weight:700;letter-spacing:-0.01em;margin-top:2px}
+      .foot{margin-top:22px;padding-top:14px;border-top:1px solid #e5e7eb;font-size:10px;color:#666;line-height:1.5}
+      .brand{margin-top:24px;text-align:center;padding:18px 0 4px}
+      .brand .line{width:48px;height:2px;background:#1B4F8A;margin:0 auto 10px;border-radius:2px}
+      .brand .name{font-size:18px;font-weight:800;color:#1B4F8A;letter-spacing:0.28em;margin:0}
+      .brand .tag{font-size:9.5px;color:#888;letter-spacing:0.22em;text-transform:uppercase;margin:5px 0 0;font-weight:600}
     </style></head><body>
       <h1>Cotización Argencargo</h1>
       <div class="sub">Emitida ${new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})}</div>
@@ -9088,14 +9102,19 @@ function AdminCalculator({token}){
         <div>CLIENTE<b>${(clientName||"—").replace(/</g,"&lt;")}</b></div>
         <div>RÉGIMEN<b>${taxLabel}</b></div>
         <div>ORIGEN<b>${origin}</b></div>
-        <div>CANAL<b>${ch.name}</b><span style="font-size:10px;color:#666">${ch.info}</span></div>
+        <div>CANAL<b>${ch.name}</b><span style="font-size:10px;color:#666;font-weight:400">${ch.info}</span></div>
       </div>
-      <h3 style="margin:18px 0 6px;font-size:13px;color:#1B4F8A">Productos</h3>
+      <h3>Productos</h3>
       <table><thead><tr><th>Descripción</th><th>Cant</th><th>Unit.</th><th>FOB</th><th>NCM</th></tr></thead><tbody>${rows}</tbody></table>
-      <div class="breakdown">${breakdown||'<div class="row"><span>Sin desglose</span><span>—</span></div>'}</div>
+      ${rowsServicios.length?`<div class="section"><p class="section-title">Servicios — Flete y seguro</p><div class="breakdown">${rowsServicios.join("")}</div></div>`:""}
+      ${rowsAduana.length?`<div class="section"><p class="section-title">Aduana — Impuestos y gastos</p><div class="breakdown">${rowsAduana.join("")}</div></div>`:""}
       <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${fmt(totalFob)}</div></div><div style="text-align:right"><div class="lbl">Costo total estimado</div><div class="big">USD ${fmt(effTotal)}</div></div></div>
-      ${regimenNote}
-      <div class="foot">Cotización estimativa. Los costos finales pueden variar según volumen real, tipo de cambio y gastos documentales al momento del despacho. Vigencia: 7 días corridos. Argencargo — Integral Freight Forwarding.</div>
+      <div class="foot">Cotización estimativa. Los costos finales pueden variar según peso, volumen y valor reales al momento del despacho.</div>
+      <div class="brand">
+        <div class="line"></div>
+        <p class="name">ARGENCARGO</p>
+        <p class="tag">Air &amp; Sea · Integral Freight Forwarding</p>
+      </div>
       <script>setTimeout(()=>window.print(),300)</script>
     </body></html>`);w.document.close();
   };
