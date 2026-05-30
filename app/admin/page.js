@@ -9092,14 +9092,20 @@ function AdminCalculator({token}){
       .totals{margin-top:16px;padding:16px 20px;background:#1A3D6E !important;color:#fff !important;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
       .totals .lbl{font-size:11px;text-transform:uppercase;letter-spacing:0.05em;opacity:.85}
       .totals .big{font-size:22px;font-weight:700;letter-spacing:-0.01em;margin-top:2px}
-      .foot{margin-top:22px;padding-top:14px;border-top:1px solid #e5e7eb;font-size:10px;color:#666;line-height:1.5}
-      .brand{margin-top:24px;text-align:center;padding:14px 0 4px}
+      .foot{margin-top:18px;padding-top:12px;border-top:1px solid #e5e7eb;font-size:10px;color:#666;line-height:1.5}
+      .brand{margin-top:14px;text-align:center;padding:8px 0 0}
       .brand img{max-width:380px;width:100%;height:auto;display:block;margin:0 auto}
       .brand-fallback{display:none}
       .brand img.failed + .brand-fallback{display:block}
       .brand-fallback .line{width:48px;height:2px;background:#1A3D6E;margin:0 auto 10px;border-radius:2px}
       .brand-fallback .name{font-size:18px;font-weight:800;color:#1A3D6E;letter-spacing:0.28em;margin:0}
       .brand-fallback .tag{font-size:9.5px;color:#888;letter-spacing:0.22em;text-transform:uppercase;margin:5px 0 0;font-weight:600}
+      /* Evita que el navegador agregue una página en blanco al final cuando el contenido roza el borde */
+      @media print{
+        html,body{height:auto;overflow:hidden}
+        body{padding:14mm 16mm 8mm !important}
+        .brand,.foot,.totals{page-break-inside:avoid;break-inside:avoid;page-break-after:avoid;break-after:avoid}
+      }
     </style></head><body>
       <h1>Cotización Argencargo</h1>
       <div class="sub">Emitida ${new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})}</div>
