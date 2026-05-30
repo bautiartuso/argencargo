@@ -9116,7 +9116,7 @@ function AdminCalculator({token}){
       <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${fmt(totalFob)}</div></div><div style="text-align:right"><div class="lbl">Costo total estimado</div><div class="big">USD ${fmt(effTotal)}</div></div></div>
       <div class="foot">Cotización estimativa. Los costos finales pueden variar según peso, volumen y valor reales al momento del despacho.</div>
       <div class="brand">
-        <img src="${typeof window!=="undefined"?window.location.origin:""}/argencargo-logo.png" alt="Argencargo" onerror="this.classList.add('failed')"/>
+        <img src="${typeof window!=="undefined"?window.location.origin:""}/logo_cotizaciones.png" alt="Argencargo" onerror="this.classList.add('failed')"/>
         <div class="brand-fallback">
           <div class="line"></div>
           <p class="name">ARGENCARGO</p>
