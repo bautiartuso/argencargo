@@ -358,7 +358,7 @@ function OperationsList({token,onSelect,onNew}){
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.78)",whiteSpace:"nowrap",fontSize:13}}>{cn}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12.5}}>{op.description||"—"}</td>
           <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}><span style={{fontSize:10.5,padding:"3px 9px",borderRadius:999,background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",border:"1px solid rgba(255,255,255,0.06)"}}>{CM[op.channel]||op.channel}</span></td>
-          <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>{(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);const limit=STALE_DAYS[op.status];const since=daysSince(op.updated_at||op.created_at);const isStale=limit&&since>=limit;return <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px `:"none"}}/>{st.l}</span>{isStale&&<span title={`Hace ${since} días en este estado`} style={{fontSize:9,fontWeight:700,padding:"3px 6px",borderRadius:4,background:"rgba(248,113,113,0.15)",color:"#f87171",border:"1px solid rgba(248,113,113,0.4)"}}>⚠ {since}d</span>}</span>;})()}</td>
+          <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>{(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);const limit=STALE_DAYS[op.status];const since=daysSince(op.updated_at||op.created_at);const isStale=limit&&since>=limit;return <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px `:"none"}}/>{st.l}</span>{isStale&&!op.lost_in_customs_at&&<span title={`Hace ${since} días en este estado`} style={{fontSize:9,fontWeight:700,padding:"3px 6px",borderRadius:4,background:"rgba(248,113,113,0.15)",color:"#f87171",border:"1px solid rgba(248,113,113,0.4)"}}>⚠ {since}d</span>}{op.lost_in_customs_at&&<span title={`Perdida en aduana — ${op.lost_in_customs_reason||""}`} style={{fontSize:9,fontWeight:800,padding:"3px 7px",borderRadius:4,background:"rgba(239,68,68,0.2)",color:"#fca5a5",border:"1px solid rgba(239,68,68,0.5)",letterSpacing:"0.04em"}}>🚨 PERDIDA ADUANA</span>}</span>;})()}</td>
           {showGanancia?<td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{formatDateShort(op.collection_date||op.closed_at)}</td>:<><td style={{padding:"14px 16px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{formatDateShort(op.eta)}</td><td style={{padding:"14px 24px 14px 16px",whiteSpace:"nowrap",fontSize:12.5,fontWeight:700,fontVariantNumeric:"tabular-nums",textAlign:"right",color:saldo===null?"rgba(255,255,255,0.35)":saldo===0?"#22c55e":GOLD_LIGHT}}>{saldo===null?<span style={{fontWeight:500}}>—</span>:saldo===0?"Cobrada":`USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</td></>}
           {showGanancia&&<td style={{padding:"14px 24px 14px 16px",fontWeight:700,textAlign:"right",color:gan>0?"#22c55e":gan<0?"#ff6b6b":"rgba(255,255,255,0.4)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{(()=>{
             const realIng=op.is_collected?Number(op.collected_amount||op.budget_total||0):Number(op.budget_total||0);
@@ -774,6 +774,29 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const deleteOp=async()=>{if(!confirm(`¿Eliminar operación ${op.operation_code}? Se borrarán también sus productos, bultos y eventos.`))return;
     await Promise.all([dq("operation_items",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`}),dq("operation_packages",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`}),dq("tracking_events",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`})]);
     await dq("operations",{method:"DELETE",token,filters:`?id=eq.${op.id}`});onDelete();};
+  // Modal para marcar/desmarcar la op como perdida en aduana (retención + abandono)
+  const [customsLossModal,setCustomsLossModal]=useState(null); // {reason} cuando está abierto
+  const REASONES_PERDIDA=[
+    {value:"DUVA / valor criterio",label:"DUVA — valoración aduana sospecha subfacturación"},
+    {value:"Clasificación NCM",label:"Clasificación NCM — aduana propone otra posición"},
+    {value:"Intervención faltante",label:"Intervención faltante — ANMAT/INAL/ENACOM"},
+    {value:"Origen",label:"Origen — certificado vencido/no aplica"},
+    {value:"Otro",label:"Otro motivo"},
+  ];
+  const markLostInCustoms=async()=>{
+    if(!customsLossModal?.reason?.trim()){alert("Elegí o escribí un motivo");return;}
+    setSaving(true);
+    const body={lost_in_customs_at:new Date().toISOString(),lost_in_customs_reason:customsLossModal.reason.trim(),status:"cancelada",closed_at:new Date().toISOString()};
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
+    setOp(p=>({...p,...body}));setCustomsLossModal(null);setSaving(false);flash("🚨 Op marcada como perdida en aduana");
+  };
+  const unmarkLostInCustoms=async()=>{
+    if(!confirm("¿Deshacer la marca de perdida en aduana? La op vuelve a su estado anterior.\nNota: el status seguirá en 'cancelada' — cambialo manualmente si querés reabrirla."))return;
+    setSaving(true);
+    const body={lost_in_customs_at:null,lost_in_customs_reason:null};
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
+    setOp(p=>({...p,...body}));setSaving(false);flash("Marca de perdida quitada — revisá el status manualmente");
+  };
   const isBlanco=op.channel?.includes("blanco");const isAereo=op.channel?.includes("aereo");const isMaritimo=op.channel?.includes("maritimo");
 
   const saveOp=async()=>{setSaving(true);const{id,clients,...rest}=op;delete rest.created_at;delete rest.updated_at;
@@ -1129,6 +1152,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   <Btn onClick={()=>setFacturaModal({alsoDsi:false})} variant="secondary" small title="Genera la Factura C (Monotributo) estilo Nota de Venta Contado: pide CUIT del receptor y T/C antes de imprimir">🧾 Factura C</Btn>
 </>}
         <Btn onClick={openReassign} variant="secondary" small>👤 Reasignar cliente</Btn>
+        {op.lost_in_customs_at
+          ?<Btn onClick={unmarkLostInCustoms} variant="secondary" small title="Quitar la marca de perdida en aduana">↩ Deshacer pérdida aduana</Btn>
+          :<Btn onClick={()=>setCustomsLossModal({reason:""})} variant="danger" small title="La carga fue retenida y se abandona: el cliente no abona, la op se cierra como pérdida operativa">🚨 Marcar perdida en aduana</Btn>}
         <Btn onClick={deleteOp} variant="danger" small>Eliminar operación</Btn>
       </div>
     </div>
@@ -1191,6 +1217,33 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
         <Btn small onClick={reassignClient} disabled={!reassignToId||reassigning}>{reassigning?"Reasignando…":"Confirmar"}</Btn>
         <Btn small variant="secondary" onClick={()=>setShowReassign(false)} disabled={reassigning}>Cancelar</Btn>
+      </div>
+    </div>}
+    {/* Banner: op marcada como perdida en aduana */}
+    {op.lost_in_customs_at&&<div style={{marginBottom:16,padding:"14px 18px",background:"linear-gradient(135deg,rgba(239,68,68,0.18),rgba(239,68,68,0.06))",border:"1.5px solid rgba(239,68,68,0.45)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <div style={{flex:1,minWidth:220}}>
+        <p style={{fontSize:13,fontWeight:800,color:"#fca5a5",margin:0,letterSpacing:"0.05em",textTransform:"uppercase"}}>🚨 Perdida en Aduana</p>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:"4px 0 0"}}>Motivo: <strong style={{color:"#fff"}}>{op.lost_in_customs_reason||"—"}</strong> · Marcada el {formatDate(op.lost_in_customs_at)}</p>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0",fontStyle:"italic"}}>El cliente no abona — esta op se trata como pérdida operativa, no aparece en cobros pendientes.</p>
+      </div>
+    </div>}
+    {/* Modal: marcar perdida en aduana */}
+    {customsLossModal&&<div onClick={()=>!saving&&setCustomsLossModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(239,68,68,0.5)",borderRadius:14,padding:"22px 24px",maxWidth:540,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+        <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>🚨 Marcar {op.operation_code} como perdida en aduana</h3>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 16px",lineHeight:1.5}}>La carga quedó retenida y se abandona. La op se cierra como <strong>cancelada</strong>, no se cobra al cliente, y se trata como pérdida operativa. Vas a poder verla con el badge "Perdida Aduana" en la lista.</p>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Motivo de la pérdida</p>
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+          {REASONES_PERDIDA.map(r=><label key={r.value} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 11px",fontSize:12.5,borderRadius:8,border:`1px solid ${customsLossModal.reason===r.value?"rgba(239,68,68,0.5)":"rgba(255,255,255,0.08)"}`,background:customsLossModal.reason===r.value?"rgba(239,68,68,0.08)":"transparent",cursor:"pointer",color:"#fff"}}>
+            <input type="radio" checked={customsLossModal.reason===r.value} onChange={()=>setCustomsLossModal({reason:r.value})} style={{accentColor:"#ef4444"}}/>
+            <span style={{flex:1}}>{r.label}</span>
+          </label>)}
+        </div>
+        {customsLossModal.reason==="Otro"&&<input autoFocus value={customsLossModal.customText||""} onChange={e=>setCustomsLossModal(s=>({...s,reason:e.target.value||"Otro",customText:e.target.value}))} placeholder="Describí el motivo" style={{width:"100%",padding:"9px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",marginBottom:12}}/>}
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>!saving&&setCustomsLossModal(null)} disabled={saving} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Cancelar</button>
+          <button onClick={markLostInCustoms} disabled={saving||!customsLossModal.reason?.trim()} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(239,68,68,0.5)",background:saving?"rgba(255,255,255,0.05)":"linear-gradient(135deg,#ef4444,#dc2626)",color:"#fff",cursor:saving?"wait":"pointer",opacity:(!customsLossModal.reason?.trim())?0.5:1}}>{saving?"Guardando…":"🚨 Marcar como perdida"}</button>
+        </div>
       </div>
     </div>}
     {/* Tabs estilo Linear: pill flotante para el tab activo + scroll horizontal en mobile */}
