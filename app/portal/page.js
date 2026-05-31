@@ -153,11 +153,13 @@ function SI({k,a,cur,isA,sz=20,alert}){let key=k;if(k==="en_transito")key=isA?"e
 function NI({p,a,sz=17}){return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={a?GOLD_LIGHT:"rgba(255,255,255,0.4)"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{p.map((d,i)=><path key={i} d={d}/>)}</svg>;}
 // Progress steps estilo mockup: dots limpios (sin íconos), líneas conectoras gold cuando done,
 // dot relleno gold para done, dot pulsante gold gradient para current, dot vacío para pending.
-function OpProgress({status,isAereo,onActionClick,isGI,channel,hasItems}){
+function OpProgress({status,isAereo,onActionClick,isGI,channel,hasItems,lostInCustoms}){
   const showDoc=!isGI&&channel==="aereo_blanco";
   const STEPS=showDoc?OS:OS.filter(s=>s.k!=="documentacion");
   const statusToKey={pendiente:"proveedor",en_deposito_origen:"warehouse",en_preparacion:showDoc?"documentacion":"warehouse",en_transito:"en_transito",arribo_argentina:"arribo",en_aduana:"aduana",entregada:"entrega",operacion_cerrada:"cerrada"};
-  const key=statusToKey[status]||"proveedor";
+  // Si la op fue retenida/abandonada en aduana, el progreso queda fijo en "Aduana" aunque el status
+  // técnico sea "cancelada" (terminal). Así el cliente ve dónde se trabó.
+  const key=lostInCustoms?"aduana":(statusToKey[status]||"proveedor");
   const si=STEPS.findIndex(s=>s.k===key);
   const isDoc=status==="en_preparacion"&&showDoc&&!hasItems;
   return <div className="op-progress" style={{display:"flex",alignItems:"flex-start",padding:"14px 0 4px",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.06)",margin:"12px 0 14px",position:"relative"}}>
@@ -207,6 +209,8 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     })();
     const ps={good:{c:"#22c55e",bg:"rgba(34,197,94,0.10)",bd:"rgba(34,197,94,0.4)"},orange:{c:"#fb923c",bg:"rgba(251,146,60,0.10)",bd:"rgba(251,146,60,0.4)"},info:{c:"#60a5fa",bg:"rgba(96,165,250,0.10)",bd:"rgba(96,165,250,0.4)"},warn:{c:"#fbbf24",bg:"rgba(251,191,36,0.10)",bd:"rgba(251,191,36,0.4)"},muted:{c:"#94a3b8",bg:"rgba(148,163,184,0.10)",bd:"rgba(148,163,184,0.4)"}}[pillVariant];
     const saldoTxt=(()=>{
+      // Op retenida en aduana: el cliente no debe pagar nada. Falta abonar = 0.
+      if(op.lost_in_customs_at)return{txt:"USD 0,00",isPaid:true};
       const bt=Number(op.budget_total||0);
       if(bt<=0)return{txt:t("common.pending"),isPending:true};
       const pmtTot=Number(pmtsByOp[op.id]||0);
@@ -222,7 +226,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
         <span className="ac-cli-op-code">{op.operation_code}</span>
         <span className="ac-cli-pill" style={{color:ps.c,background:ps.bg,borderColor:ps.bd}}>
           <span className="pdot" style={{background:ps.c,boxShadow:`0 0 6px ${ps.c}`}}/>
-          {t("opStatus."+op.status)}
+          {op.lost_in_customs_at?"RETENIDA EN ADUANA":t("opStatus."+op.status)}
         </span>
         {op.service_type==="gestion_integral"&&<span style={{fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`}}>Gestión Integral</span>}
       </div>
@@ -230,7 +234,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     </div>
     <p className="ac-cli-op-desc">{gd(op)}</p>
     {op.tier_discount_applied_usd>0&&(()=>{const ti=getTierInfo(op.tier_discount_applied);return <div style={{marginBottom:8,padding:"10px 14px",background:`linear-gradient(90deg, ${ti.color}22, transparent)`,border:`1px solid ${ti.color}55`,borderRadius:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:16}}>{ti.icon}</span><div style={{flex:1,minWidth:200}}><p style={{fontSize:11,fontWeight:700,color:ti.light,margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("home.tierDiscount",{tier:ti.label})}</p></div><span style={{fontSize:14,fontWeight:800,color:ti.light,fontVariantNumeric:"tabular-nums"}}>−USD {Number(op.tier_discount_applied_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;})()}
-    <OpProgress status={op.status} isAereo={isA} onActionClick={(e)=>{e?.stopPropagation?.();onSelect(op);}} isGI={op.service_type==="gestion_integral"} channel={op.channel} hasItems={(itemsByOp[op.id]||0)>0}/>
+    <OpProgress status={op.status} isAereo={isA} onActionClick={(e)=>{e?.stopPropagation?.();onSelect(op);}} isGI={op.service_type==="gestion_integral"} channel={op.channel} hasItems={(itemsByOp[op.id]||0)>0} lostInCustoms={!!op.lost_in_customs_at}/>
     <div className="ac-cli-op-foot">
       {op.service_type!=="gestion_integral"&&<div className="ac-cli-op-foot-item">
         <span className="l">{t("imports.origin")}</span>
@@ -619,11 +623,15 @@ function OperationDetail({op,token,onBack}){
         <span style={{fontSize:18,fontWeight:700,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{op.operation_code}</span>
         <span style={{width:1,height:16,background:"rgba(255,255,255,0.12)"}}/>
         {isGI&&<span className="ac-gi-pulse" style={{fontSize:11,fontWeight:800,padding:"7px 16px",borderRadius:8,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.15em",textTransform:"uppercase",border:`1.5px solid ${GOLD_DEEP}`,boxShadow:`${GOLD_GLOW}, inset 0 1px 0 rgba(255,255,255,0.4)`}}>{t("acc.gi")}</span>}
-        {(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);return <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,border:`1px solid ${st.c}40`,background:`${st.c}14`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px `:"none"}}/>{t("opStatus."+op.status)}</span>;})()}
+        {(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status)&&!op.lost_in_customs_at;const color=op.lost_in_customs_at?"#f87171":st.c;return <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color,border:`1px solid ${color}40`,background:`${color}14`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:color,boxShadow:isActive?`0 0 8px `:"none"}}/>{op.lost_in_customs_at?"RETENIDA EN ADUANA":t("opStatus."+op.status)}</span>;})()}
         {op.eta&&op.status!=="entregada"&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.55)",letterSpacing:"0.02em",marginLeft:"auto"}}>ETA · <span style={{color:"#fff",fontWeight:600}}>{formatDate(op.eta)}</span></span>}
       </div>
       <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 12px",textTransform:"uppercase"}}>{op.description}</h2>
-      <OpProgress status={op.status} isAereo={isA} isGI={isGI} channel={op.channel} hasItems={items.length>0}/>
+      <OpProgress status={op.status} isAereo={isA} isGI={isGI} channel={op.channel} hasItems={items.length>0} lostInCustoms={!!op.lost_in_customs_at}/>
+      {op.lost_in_customs_at&&<div style={{marginTop:6,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,rgba(248,113,113,0.10),rgba(248,113,113,0.03))",border:"1.5px solid rgba(248,113,113,0.35)",borderRadius:12}}>
+        <p style={{fontSize:12,fontWeight:800,color:"#fca5a5",margin:0,letterSpacing:"0.05em",textTransform:"uppercase"}}>🚨 Carga retenida en aduana</p>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"4px 0 0",lineHeight:1.5}}>Esta operación quedó retenida por aduana y no puede liberarse. No tenés saldo pendiente — la pérdida la asume Argencargo. Cualquier duda, escribinos por WhatsApp.</p>
+      </div>}
       {(()=>{const totGW=pkgs.reduce((s,p)=>s+Number(p.gross_weight_kg||0)*Number(p.quantity||1),0);const totCBM=pkgs.reduce((s,p)=>{const q=Number(p.quantity||1),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);return s+(l&&w&&h?((l*w*h)/1000000)*q:0);},0);let pf=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const vw=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(gw*q,vw);});
       // Para GI: mostrar SOLO Origen + Canal. Sin bultos/peso/CBM/total (toda esa info se ve abajo en Presupuesto).
       const giFields=[
@@ -636,7 +644,7 @@ function OperationDetail({op,token,onBack}){
         {l:t("imports.origin"),v:t("origin."+(op.origin||"china").toLowerCase())||op.origin||"China"},
         {l:t("imports.channel"),v:op.channel?t("channel."+op.channel):"—"},
         ...(isA?[{l:t("imports.grossWeight"),v:totGW?`${totGW.toFixed(1)} kg`:"—"},{l:t("imports.billableWeight"),v:pf?`${pf.toFixed(1)} kg`:"—",a:true}]:[{l:"CBM",v:totCBM?`${totCBM.toFixed(4)} m³`:"—",a:true}]),
-        {l:t("imports.totalToPay"),v:(()=>{const bt=Number(op.budget_total||0);if(bt<=0)return t("common.pending");const pmtTotal=pmts.filter(p=>!p.client_paid).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtAnt=Number(op.total_anticipos||0);const cliPaid=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);const saldo=Math.max(0,bt-cliPaid+Math.max(0,pmtTotal-pmtAnt));return `USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;})(),a:true}
+        {l:t("imports.totalToPay"),v:(()=>{if(op.lost_in_customs_at)return "USD 0,00";const bt=Number(op.budget_total||0);if(bt<=0)return t("common.pending");const pmtTotal=pmts.filter(p=>!p.client_paid).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtAnt=Number(op.total_anticipos||0);const cliPaid=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);const saldo=Math.max(0,bt-cliPaid+Math.max(0,pmtTotal-pmtAnt));return `USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;})(),a:true}
       ];
       return <div className="op-info" style={{display:"flex",gap:28,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:14,marginTop:4,flexWrap:"wrap"}}>
         {(isGI?giFields:normalFields).map((x,i)=><div key={i}><span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{x.l}</span><p style={{fontSize:13,fontWeight:600,color:x.a?IC:"#fff",margin:"2px 0 0"}}>{x.v}</p></div>)}

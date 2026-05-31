@@ -235,6 +235,8 @@ function OperationsList({token,onSelect,onNew}){
   // - descuento intencional (discount_applied_usd) — cubre parte del budget sin cash
   // - gestión de pagos internacionales (payment_management) si excede los anticipos
   const calcSaldo=(o)=>{
+    // Op perdida en aduana: no se cobra al cliente, saldo = 0.
+    if(o.lost_in_customs_at)return 0;
     const bt=Number(o.budget_total||0);
     if(bt<=0)return null;
     if(o.is_collected)return 0; // ya está cobrada, no hay saldo pendiente
@@ -253,9 +255,11 @@ function OperationsList({token,onSelect,onNew}){
   const getOrigin=(op)=>op.origin||"China";
   const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannel&&o.channel!==fChannel)return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
   const calcGan=(o)=>{
-    // Ingreso: si está cobrada, usar collected_amount + credit_applied + discount_applied
+    // Op perdida en aduana: ingreso 0 (no se cobra), la "ganancia" es la pérdida operativa (-costos).
     let ing;
-    if(o.is_collected){
+    if(o.lost_in_customs_at){
+      ing=0;
+    } else if(o.is_collected){
       const raw=Number(o.collected_amount||0);
       const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
       const cash=isArs&&rate>0?raw/rate:raw;
@@ -359,7 +363,7 @@ function OperationsList({token,onSelect,onNew}){
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12.5}}>{op.description||"—"}</td>
           <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}><span style={{fontSize:10.5,padding:"3px 9px",borderRadius:999,background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",border:"1px solid rgba(255,255,255,0.06)"}}>{CM[op.channel]||op.channel}</span></td>
           <td style={{padding:"14px 16px",whiteSpace:"nowrap"}}>{(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status);const limit=STALE_DAYS[op.status];const since=daysSince(op.updated_at||op.created_at);const isStale=limit&&since>=limit;return <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:st.c,boxShadow:isActive?`0 0 8px `:"none"}}/>{st.l}</span>{isStale&&!op.lost_in_customs_at&&<span title={`Hace ${since} días en este estado`} style={{fontSize:9,fontWeight:700,padding:"3px 6px",borderRadius:4,background:"rgba(248,113,113,0.15)",color:"#f87171",border:"1px solid rgba(248,113,113,0.4)"}}>⚠ {since}d</span>}{op.lost_in_customs_at&&<span title={`Perdida en aduana — ${op.lost_in_customs_reason||""}`} style={{fontSize:9,fontWeight:800,padding:"3px 7px",borderRadius:4,background:"rgba(239,68,68,0.2)",color:"#fca5a5",border:"1px solid rgba(239,68,68,0.5)",letterSpacing:"0.04em"}}>🚨 PERDIDA ADUANA</span>}</span>;})()}</td>
-          {showGanancia?<td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{formatDateShort(op.collection_date||op.closed_at)}</td>:<><td style={{padding:"14px 16px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{formatDateShort(op.eta)}</td><td style={{padding:"14px 24px 14px 16px",whiteSpace:"nowrap",fontSize:12.5,fontWeight:700,fontVariantNumeric:"tabular-nums",textAlign:"right",color:saldo===null?"rgba(255,255,255,0.35)":saldo===0?"#22c55e":GOLD_LIGHT}}>{saldo===null?<span style={{fontWeight:500}}>—</span>:saldo===0?"Cobrada":`USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</td></>}
+          {showGanancia?<td style={{padding:"14px 16px",color:op.lost_in_customs_at?"#f87171":"rgba(255,255,255,0.5)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{op.lost_in_customs_at?"perdida":formatDateShort(op.collection_date||op.closed_at)}</td>:<><td style={{padding:"14px 16px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{formatDateShort(op.eta)}</td><td style={{padding:"14px 24px 14px 16px",whiteSpace:"nowrap",fontSize:12.5,fontWeight:700,fontVariantNumeric:"tabular-nums",textAlign:"right",color:saldo===null?"rgba(255,255,255,0.35)":saldo===0?"#22c55e":GOLD_LIGHT}}>{saldo===null?<span style={{fontWeight:500}}>—</span>:saldo===0?"Cobrada":`USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</td></>}
           {showGanancia&&<td style={{padding:"14px 24px 14px 16px",fontWeight:700,textAlign:"right",color:gan>0?"#22c55e":gan<0?"#ff6b6b":"rgba(255,255,255,0.4)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{(()=>{
             const realIng=op.is_collected?Number(op.collected_amount||op.budget_total||0):Number(op.budget_total||0);
             const hasData=realIng>0||Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)>0;
@@ -7749,9 +7753,11 @@ function FinanceDashboard({token}){
   const periodOps=filterByPeriod(closedOps,"closed_at");
 
   const calcGan=(o)=>{
-    // Ingreso: si está cobrada, usar collected_amount (real); sino budget_total (presupuesto)
+    // Op perdida en aduana: ingreso 0, queda como pérdida operativa (-costos).
     let baseIng;
-    if(o.is_collected){
+    if(o.lost_in_customs_at){
+      baseIng=0;
+    } else if(o.is_collected){
       const raw=Number(o.collected_amount||o.budget_total||0);
       const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
       const cash=isArs&&rate>0?raw/rate:raw;
