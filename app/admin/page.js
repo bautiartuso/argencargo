@@ -7020,12 +7020,18 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
               {trks.map((t,i)=>{const dateVal=getTrkDate(t);const origDate=t.received_at?String(t.received_at).slice(0,10):null;const dateChanged=origDate&&dateVal!==origDate;const rotulo=cl?.client_code?`FCWBOX132 ARGENCARGO ${cl.client_code}`:null;return <div key={i} style={{padding:"8px 10px",background:t.received_at?"rgba(34,197,94,0.05)":"rgba(255,255,255,0.025)",border:`1px solid ${t.received_at?"rgba(34,197,94,0.22)":"rgba(255,255,255,0.06)"}`,borderRadius:8}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                   <div style={{flex:"1 1 220px",minWidth:200}}>
-                    <p style={{margin:0,fontSize:12.5,color:"#fff"}}>
-                      <strong style={{fontWeight:700}}>Seguimiento:</strong> <span style={{fontFamily:"monospace",fontWeight:600}}>{t.tracking_code}</span>
+                    {isAdminMode?<>
+                      <p style={{margin:0,fontSize:12.5,color:"#fff"}}>
+                        <strong style={{fontWeight:700}}>Seguimiento:</strong> <span style={{fontFamily:"monospace",fontWeight:600}}>{t.tracking_code}</span>
+                        {t.informed_weight_kg!=null&&<span style={{color:"#fbbf24",marginLeft:10,fontWeight:600}}>· {Number(t.informed_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:2})} kg informados</span>}
+                        {t.received_at&&<span style={{color:"rgba(34,197,94,0.95)",marginLeft:10,fontWeight:700}}>· ✓ recibido {formatDate(t.received_at)}</span>}
+                      </p>
+                      {rotulo&&<p style={{margin:"3px 0 0",fontSize:12,fontWeight:800,fontFamily:"monospace",color:t.received_at?"rgba(34,197,94,0.95)":IC,letterSpacing:"0.02em"}}>🏷 {rotulo}</p>}
+                    </>:<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.7)"}}>
+                      <span style={{fontFamily:"monospace"}}>📦 {t.tracking_code}</span>
                       {t.informed_weight_kg!=null&&<span style={{color:"#fbbf24",marginLeft:10,fontWeight:600}}>· {Number(t.informed_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:2})} kg informados</span>}
-                      {t.received_at&&<span style={{color:"rgba(34,197,94,0.95)",marginLeft:10,fontWeight:700}}>· ✓ recibido {formatDate(t.received_at)}</span>}
-                    </p>
-                    {rotulo&&<p style={{margin:"3px 0 0",fontSize:12,fontWeight:800,fontFamily:"monospace",color:t.received_at?"rgba(34,197,94,0.95)":IC,letterSpacing:"0.02em"}}>🏷 {rotulo}</p>}
+                      {t.received_at&&<span style={{color:"rgba(34,197,94,0.85)",marginLeft:10,fontWeight:700}}>· ✓ recibido</span>}
+                    </p>}
                   </div>
                   {isOpen&&t.id&&(isAdminMode
                     ?<div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,minWidth:170}} title={t.received_at?"Cambiá la fecha o vaciála para deshacer la recepción":"Elegí la fecha en que llegó al depósito"}>
@@ -7042,7 +7048,9 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
                 </div>
               </div>;})}
             </div>
-            {n.description&&<p style={{fontSize:12.5,color:"#fff",margin:"6px 0 4px"}}><strong style={{fontWeight:700}}>Mercadería:</strong> {n.description}</p>}
+            {n.description&&(isAdminMode
+              ?<p style={{fontSize:12.5,color:"#fff",margin:"6px 0 4px"}}><strong style={{fontWeight:700}}>Mercadería:</strong> {n.description}</p>
+              :<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 4px"}}>{n.description}</p>)}
             {!isAdminMode&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>Avisado {formatDate(n.created_at)}{n.estimated_packages?` · ${n.estimated_packages} bultos`:""}{n.estimated_dispatch_date?` · sale ${formatDate(n.estimated_dispatch_date)}`:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?` · op `:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?<strong style={{color:IC,fontFamily:"monospace"}}>{n.operations.operation_code}</strong>:""}</p>}
           </div>
           {isOpen&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
