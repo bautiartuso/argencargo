@@ -6687,11 +6687,19 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
   const [newAviso,setNewAviso]=useState({client_id:"",client_search:"",origin:"china",shipping_method:"aereo",description:"",trackings:[""]});
   const [showCreateClientList,setShowCreateClientList]=useState(false);
   const [savingNew,setSavingNew]=useState(false);
+  const [editingNotifId,setEditingNotifId]=useState(null); // id del aviso siendo editado (null = creando uno nuevo)
   // Buffer de fechas por tracking (para pickear antes de marcar como recibido, o editar la fecha ya guardada)
   const [trkDateBuf,setTrkDateBuf]=useState({});
   const todayStr=()=>new Date().toISOString().slice(0,10);
   const getTrkDate=(t)=>trkDateBuf[t.id]??(t.received_at?String(t.received_at).slice(0,10):todayStr());
-  const openCreateModal=()=>{setNewAviso({client_id:"",client_search:"",origin:"china",shipping_method:"aereo",description:"",trackings:[""]});setShowCreateClientList(false);setShowCreateModal(true);};
+  const openCreateModal=()=>{setEditingNotifId(null);setNewAviso({client_id:"",client_search:"",origin:"china",shipping_method:"aereo",description:"",trackings:[""]});setShowCreateClientList(false);setShowCreateModal(true);};
+  const openEditModal=(notif)=>{
+    setEditingNotifId(notif.id);
+    const cl=notif.clients;
+    const trkCodes=Array.isArray(notif.trackings)?notif.trackings.map(t=>t.tracking_code).filter(Boolean):[];
+    setNewAviso({client_id:notif.client_id,client_search:cl?`${cl.client_code} — ${cl.first_name} ${cl.last_name}`:"",origin:notif.origin||"china",shipping_method:notif.shipping_method||"aereo",description:notif.description||"",trackings:trkCodes.length?trkCodes:[""]});
+    setShowCreateClientList(false);setShowCreateModal(true);
+  };
   // En modo admin (Aéreo B China) ocultamos el selector de origen+modalidad: siempre es china+aereo.
   const saveNewAviso=async()=>{
     if(!newAviso.client_id){alert("Elegí un cliente");return;}
@@ -6699,16 +6707,35 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
     if(trks.length===0){alert("Agregá al menos un tracking");return;}
     setSavingNew(true);
     try{
-      // OJO: purchase_notifications.tracking_code es NOT NULL (legacy de cuando el aviso tenía un solo tracking).
-      // Le pasamos el primer tracking como "tracking_code principal" — los demás van en la tabla hija.
-      const body={client_id:newAviso.client_id,origin:newAviso.origin,shipping_method:newAviso.shipping_method,tracking_code:trks[0],description:newAviso.description.trim()||null,status:"pending",is_admin_created:true};
-      const created=await dq("purchase_notifications",{method:"POST",token,body});
-      const notif=Array.isArray(created)?created[0]:created;
-      if(!notif?.id){alert("Error creando aviso");setSavingNew(false);return;}
-      for(const code of trks){
-        await dq("purchase_notification_trackings",{method:"POST",token,body:{notification_id:notif.id,tracking_code:code}}).catch(e=>console.error("trk",e));
+      if(editingNotifId){
+        // EDIT: patch del aviso + sincronizar trackings (mantener received_at de los que ya existían)
+        const body={client_id:newAviso.client_id,origin:newAviso.origin,shipping_method:newAviso.shipping_method,tracking_code:trks[0],description:newAviso.description.trim()||null};
+        await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${editingNotifId}`,body});
+        // Trackings actuales en DB
+        const existing=await dq("purchase_notification_trackings",{token,filters:`?notification_id=eq.${editingNotifId}&select=id,tracking_code`});
+        const exList=Array.isArray(existing)?existing:[];
+        const exCodes=new Set(exList.map(t=>t.tracking_code));
+        const newCodes=new Set(trks);
+        // Agregar los que no estaban
+        for(const code of trks){
+          if(!exCodes.has(code))await dq("purchase_notification_trackings",{method:"POST",token,body:{notification_id:editingNotifId,tracking_code:code}}).catch(e=>console.error("trk add",e));
+        }
+        // Eliminar los que se quitaron (esto pierde el received_at de esos)
+        for(const t of exList){
+          if(!newCodes.has(t.tracking_code))await dq("purchase_notification_trackings",{method:"DELETE",token,filters:`?id=eq.${t.id}`}).catch(e=>console.error("trk del",e));
+        }
+        setShowCreateModal(false);setEditingNotifId(null);setSavingNew(false);load();
+      } else {
+        // NEW: insert. tracking_code es NOT NULL (legacy) → primer tracking de la lista.
+        const body={client_id:newAviso.client_id,origin:newAviso.origin,shipping_method:newAviso.shipping_method,tracking_code:trks[0],description:newAviso.description.trim()||null,status:"pending",is_admin_created:true};
+        const created=await dq("purchase_notifications",{method:"POST",token,body});
+        const notif=Array.isArray(created)?created[0]:created;
+        if(!notif?.id){alert("Error creando aviso");setSavingNew(false);return;}
+        for(const code of trks){
+          await dq("purchase_notification_trackings",{method:"POST",token,body:{notification_id:notif.id,tracking_code:code}}).catch(e=>console.error("trk",e));
+        }
+        setShowCreateModal(false);setSavingNew(false);load();
       }
-      setShowCreateModal(false);setSavingNew(false);load();
     }catch(e){alert("Error: "+e.message);setSavingNew(false);}
   };
   // Marcar un tracking individual como recibido + recomputar status del aviso
@@ -6939,7 +6966,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
               {trks.map((t,i)=>{const dateVal=getTrkDate(t);const origDate=t.received_at?String(t.received_at).slice(0,10):null;const dateChanged=origDate&&dateVal!==origDate;return <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 8px",background:t.received_at?"rgba(34,197,94,0.06)":"rgba(255,255,255,0.025)",border:`1px solid ${t.received_at?"rgba(34,197,94,0.22)":"rgba(255,255,255,0.06)"}`,borderRadius:6,flexWrap:"wrap"}}>
                 <span style={{fontFamily:"monospace",fontSize:11.5,color:t.received_at?"rgba(34,197,94,0.9)":"#fff",flex:"1 1 auto",minWidth:120}}>{t.tracking_code}{t.received_at?" ✓":""}</span>
                 {isOpen&&t.id&&<>
-                  <input type="date" value={dateVal} onChange={e=>setTrkDateBuf(p=>({...p,[t.id]:e.target.value}))} title={t.received_at?"Fecha de recepción":"Fecha al marcar como recibido"} style={{padding:"3px 6px",fontSize:10.5,borderRadius:5,border:`1px solid ${dateChanged?"rgba(251,191,36,0.4)":"rgba(255,255,255,0.1)"}`,background:dateChanged?"rgba(251,191,36,0.06)":"rgba(0,0,0,0.2)",color:t.received_at?"rgba(34,197,94,0.9)":"#fff",outline:"none",fontFamily:"inherit",colorScheme:"dark"}}/>
+                  <div style={{minWidth:140,maxWidth:170,padding:dateChanged?2:0,borderRadius:7,background:dateChanged?"rgba(251,191,36,0.10)":"transparent",border:dateChanged?"1px solid rgba(251,191,36,0.35)":"1px solid transparent"}} title={t.received_at?"Fecha de recepción":"Fecha al marcar como recibido"}><DatePicker value={dateVal} onChange={v=>setTrkDateBuf(p=>({...p,[t.id]:v||todayStr()}))} small/></div>
                   {t.received_at
                     ?(dateChanged
                         ?<button onClick={()=>{updateReceivedDate(n,t.id,dateVal);setTrkDateBuf(p=>{const c={...p};delete c[t.id];return c;});}} title="Guardar nueva fecha" style={{padding:"2px 8px",fontSize:10,fontWeight:700,borderRadius:4,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.12)",color:"#fbbf24",cursor:"pointer",fontFamily:"inherit"}}>💾 Guardar</button>
@@ -6952,6 +6979,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
             <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>Avisado {formatDate(n.created_at)}{n.estimated_packages?` · ${n.estimated_packages} bultos`:""}{n.estimated_dispatch_date?` · sale ${formatDate(n.estimated_dispatch_date)}`:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?` · op `:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?<strong style={{color:IC,fontFamily:"monospace"}}>{n.operations.operation_code}</strong>:""}</p>
           </div>
           {isOpen&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {isAdminMode&&<button onClick={()=>openEditModal(n)} style={{padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>✎ Editar</button>}
             <button onClick={()=>setConfirmAction({type:"confirm",notif:n})} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:7,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>✓ Confirmar y crear op</button>
             <button onClick={()=>setConfirmAction({type:"cancel",notif:n})} style={{padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>Rechazar</button>
           </div>}
@@ -7021,8 +7049,8 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${IC}`,borderRadius:14,padding:"22px 24px",maxWidth:560,width:"100%",maxHeight:"88vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
           <div>
-            <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>📦 Nuevo aviso de compra</h3>
-            <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"4px 0 0",lineHeight:1.5}}>Cargá los trackings que estás enviando al depósito de origen. Después marcá cada uno como recibido cuando llegue.</p>
+            <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>{editingNotifId?"✎ Editar aviso":"📦 Nuevo aviso de compra"}</h3>
+            <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"4px 0 0",lineHeight:1.5}}>{editingNotifId?"Cambiá los datos del aviso. Si sacás un tracking ya recibido, se pierde la fecha de recepción.":"Cargá los trackings que estás enviando al depósito de origen. Después marcá cada uno como recibido cuando llegue."}</p>
           </div>
           <button onClick={()=>!savingNew&&setShowCreateModal(false)} disabled={savingNew} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:savingNew?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
         </div>
@@ -7068,7 +7096,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
         </div>
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={()=>!savingNew&&setShowCreateModal(false)} disabled={savingNew} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:savingNew?"not-allowed":"pointer"}}>Cancelar</button>
-          <button onClick={saveNewAviso} disabled={savingNew||!newAviso.client_id||newAviso.trackings.every(t=>!t.trim())} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:savingNew?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:savingNew?"rgba(255,255,255,0.4)":"#0A1628",cursor:savingNew?"wait":"pointer"}}>{savingNew?"Guardando…":"✓ Crear aviso"}</button>
+          <button onClick={saveNewAviso} disabled={savingNew||!newAviso.client_id||newAviso.trackings.every(t=>!t.trim())} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:savingNew?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:savingNew?"rgba(255,255,255,0.4)":"#0A1628",cursor:savingNew?"wait":"pointer"}}>{savingNew?"Guardando…":(editingNotifId?"💾 Guardar cambios":"✓ Crear aviso")}</button>
         </div>
       </div>
     </div>;})()}
