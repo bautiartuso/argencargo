@@ -4993,7 +4993,7 @@ function FinancePanel({token}){
         const dateKey=closingDate||"sin_fecha";
         const k=`${cardKey}__${dateKey}`;
         if(!groups[k])groups[k]={key:k,date:dateKey,card:cardObj||null,items:[]};
-        groups[k].items.push(item);
+        groups[k].items.push({...item,closingDate:closingDate?String(closingDate).slice(0,10):""});
       };
       cardDebt.usd.forEach(e=>pushItem({source:"finance",id:e.id,desc:e.description||"Gasto",detail:e.detail||"",amt:Number(e.amount||0),amtArs:0,currency:"USD",dateLoad:e.date,op:e.operations?.operation_code,card:e.credit_cards},e.credit_cards,e.card_closing_date));
       cardDebt.pmts.forEach(p=>pushItem({source:"pmt",id:p.id,desc:`Giro al exterior${p.operations?.operation_code?` — ${p.operations.operation_code}`:""}`,detail:p.description||"",amt:Number(p.giro_amount_usd||0),amtArs:0,currency:"USD",dateLoad:p.created_at?String(p.created_at).slice(0,10):null,op:p.operations?.operation_code,card:p.credit_cards},p.credit_cards,p.giro_tarjeta_due_date));
@@ -5033,6 +5033,14 @@ function FinancePanel({token}){
         else if(item.source==="flete_op"){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{cost_flete_credit_card_id:cardId||null}});}
         else{await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{giro_credit_card_id:cardId||null}});}
         load();flash(cardId?"Tarjeta asignada":"Tarjeta quitada");
+      };
+      const assignClosingDate=async(item,dateStr)=>{
+        const v=dateStr||null;
+        if(item.source==="finance"){await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{card_closing_date:v}});}
+        else if(item.source==="supplier"){await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{card_closing_date:v}});}
+        else if(item.source==="flete_op"){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{cost_flete_card_closing:v}});}
+        else{await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{giro_tarjeta_due_date:v}});}
+        load();flash(v?"Fecha de cierre asignada":"Fecha de cierre quitada");
       };
       const markGroupPaid=async(g)=>{
         if(!confirm(`¿Marcar las ${g.items.length} deudas de ${g.date==="sin_fecha"?"sin fecha":formatDate(g.date)} como debitadas? Total: USD ${g.items.reduce((s,i)=>s+i.amt,0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`))return;
@@ -5095,7 +5103,13 @@ function FinancePanel({token}){
                   </div>
                   {it.detail&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{it.detail}</p>}
                   {it.dateLoad&&<p style={{fontSize:10,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Cargado {formatDate(it.dateLoad)}</p>}
-                  <div style={{marginTop:6}}><AssignCardSelect token={token} value={it.card?.id||null} onAssign={(cardId)=>assignCard(it,cardId)}/></div>
+                  <div style={{marginTop:6,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <AssignCardSelect token={token} value={it.card?.id||null} onAssign={(cardId)=>assignCard(it,cardId)}/>
+                    <div style={{display:"flex",alignItems:"center",gap:6,padding:"2px 8px",borderRadius:6,background:it.closingDate?"rgba(184,149,106,0.08)":"rgba(251,191,36,0.08)",border:`1px solid ${it.closingDate?"rgba(184,149,106,0.25)":"rgba(251,191,36,0.3)"}`}}>
+                      <span style={{fontSize:10,fontWeight:700,color:it.closingDate?"rgba(255,255,255,0.55)":"#fbbf24",textTransform:"uppercase",letterSpacing:"0.05em"}}>Cierre</span>
+                      <DatePicker value={it.closingDate||""} onChange={v=>assignClosingDate(it,v)} placeholder="elegir…"/>
+                    </div>
+                  </div>
                 </div>
                 <span style={{fontSize:14,fontWeight:700,color:"#fff",minWidth:120,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{it.currency==="ARS"?<>ARS {Number(it.amtArs||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}<span style={{display:"block",fontSize:9,color:"#fbbf24",fontWeight:500,marginTop:2}}>pendiente dolarizar</span></>:`USD ${Number(it.amt||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</span>
                 <button onClick={()=>markPaid(it)} style={{fontSize:10,fontWeight:700,padding:"6px 12px",borderRadius:6,border:"none",background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>✓ Debitada</button>
