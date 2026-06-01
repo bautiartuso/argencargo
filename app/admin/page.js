@@ -9792,12 +9792,29 @@ function GiAdminPanel({token,clients}){
     if(!confirm(`¿Marcar como pagadas ${earningIds.length} comisión${earningIds.length>1?"es":""} por USD ${Math.abs(totalAmount).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}?`))return;
     setPaying(true);
     const now=new Date().toISOString();
+    const today=new Date().toISOString().slice(0,10);
     for(const id of earningIds){
       const earn=earnings.find(e=>e.id===id);
-      await dq("gi_partner_earnings",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{paid_to_partner:true,paid_at:now,paid_amount_usd:Number(earn?.commission_usd||0)}});
-      // Marcar el finance_entry asociado como is_paid
-      if(earn?.operation_id){
-        await dq("finance_entries",{method:"PATCH",token,filters:`?operation_id=eq.${earn.operation_id}&category=eq.comisiones_socio`,body:{is_paid:true}});
+      const commission=Number(earn?.commission_usd||0);
+      await dq("gi_partner_earnings",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{paid_to_partner:true,paid_at:now,paid_amount_usd:commission}});
+      // Crear la finance_entry recién en el momento del pago real (no al cerrar la op).
+      // Así el dashboard no muestra costo devengado hasta que el admin efectivamente liquidó.
+      if(earn?.operation_id&&commission!==0){
+        const opCode=earn.operations?.operation_code||"—";
+        const isExpense=commission>=0;
+        await dq("finance_entries",{method:"POST",token,body:{
+          date:today,
+          type:isExpense?"gasto":"ingreso",
+          category:"comisiones_socio",
+          description:isExpense?`Comisión socio GI · ${opCode}`:`Recupero pérdida socio GI · ${opCode}`,
+          detail:`${Number(earn?.commission_pct||0).toFixed(2)}% sobre USD ${Number(earn?.net_profit_usd||0).toFixed(2)} · Pagada ${today}`,
+          amount:Math.abs(commission),
+          currency:"USD",
+          is_paid:true,
+          payment_method:"transferencia",
+          auto_generated:true,
+          operation_id:earn.operation_id
+        }});
       }
     }
     flash(`✓ ${earningIds.length} comisión${earningIds.length>1?"es":""} marcada${earningIds.length>1?"s":""} como pagada${earningIds.length>1?"s":""}`);
