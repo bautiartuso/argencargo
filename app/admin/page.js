@@ -7106,7 +7106,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
         </div>
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={()=>!savingNew&&setShowCreateModal(false)} disabled={savingNew} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:savingNew?"not-allowed":"pointer"}}>Cancelar</button>
-          <button onClick={saveNewAviso} disabled={savingNew||!newAviso.client_id||newAviso.trackings.every(t=>!t.trim())} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:savingNew?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:savingNew?"rgba(255,255,255,0.4)":"#0A1628",cursor:savingNew?"wait":"pointer"}}>{savingNew?"Guardando…":(editingNotifId?"💾 Guardar cambios":"✓ Crear aviso")}</button>
+          <button onClick={saveNewAviso} disabled={savingNew||!newAviso.client_id||newAviso.trackings.every(t=>!String(t.code||"").trim())} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:savingNew?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:savingNew?"rgba(255,255,255,0.4)":"#0A1628",cursor:savingNew?"wait":"pointer"}}>{savingNew?"Guardando…":(editingNotifId?"💾 Guardar cambios":"✓ Crear aviso")}</button>
         </div>
       </div>
     </div>;})()}
