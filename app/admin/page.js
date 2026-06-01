@@ -6687,6 +6687,10 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
   const [newAviso,setNewAviso]=useState({client_id:"",client_search:"",origin:"china",shipping_method:"aereo",description:"",trackings:[""]});
   const [showCreateClientList,setShowCreateClientList]=useState(false);
   const [savingNew,setSavingNew]=useState(false);
+  // Buffer de fechas por tracking (para pickear antes de marcar como recibido, o editar la fecha ya guardada)
+  const [trkDateBuf,setTrkDateBuf]=useState({});
+  const todayStr=()=>new Date().toISOString().slice(0,10);
+  const getTrkDate=(t)=>trkDateBuf[t.id]??(t.received_at?String(t.received_at).slice(0,10):todayStr());
   const openCreateModal=()=>{setNewAviso({client_id:"",client_search:"",origin:"china",shipping_method:"aereo",description:"",trackings:[""]});setShowCreateClientList(false);setShowCreateModal(true);};
   // En modo admin (Aéreo B China) ocultamos el selector de origen+modalidad: siempre es china+aereo.
   const saveNewAviso=async()=>{
@@ -6695,7 +6699,9 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
     if(trks.length===0){alert("Agregá al menos un tracking");return;}
     setSavingNew(true);
     try{
-      const body={client_id:newAviso.client_id,origin:newAviso.origin,shipping_method:newAviso.shipping_method,description:newAviso.description.trim()||null,status:"pending",is_admin_created:true};
+      // OJO: purchase_notifications.tracking_code es NOT NULL (legacy de cuando el aviso tenía un solo tracking).
+      // Le pasamos el primer tracking como "tracking_code principal" — los demás van en la tabla hija.
+      const body={client_id:newAviso.client_id,origin:newAviso.origin,shipping_method:newAviso.shipping_method,tracking_code:trks[0],description:newAviso.description.trim()||null,status:"pending",is_admin_created:true};
       const created=await dq("purchase_notifications",{method:"POST",token,body});
       const notif=Array.isArray(created)?created[0]:created;
       if(!notif?.id){alert("Error creando aviso");setSavingNew(false);return;}
@@ -6706,8 +6712,8 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
     }catch(e){alert("Error: "+e.message);setSavingNew(false);}
   };
   // Marcar un tracking individual como recibido + recomputar status del aviso
-  const markTrackingReceived=async(notif,trackingId)=>{
-    const now=new Date().toISOString();
+  const markTrackingReceived=async(notif,trackingId,customDateStr)=>{
+    const now=customDateStr?new Date(customDateStr+"T12:00:00").toISOString():new Date().toISOString();
     await dq("purchase_notification_trackings",{method:"PATCH",token,filters:`?id=eq.${trackingId}`,body:{received_at:now}});
     const updatedTrks=await dq("purchase_notification_trackings",{token,filters:`?notification_id=eq.${notif.id}&select=id,received_at`});
     const list=Array.isArray(updatedTrks)?updatedTrks:[];
@@ -6715,6 +6721,13 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
     const newStatus=remaining===0?"received":"partial";
     const patchBody={status:newStatus};if(newStatus==="received"&&!notif.confirmed_at)patchBody.confirmed_at=now;
     await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${notif.id}`,body:patchBody});
+    load();
+  };
+  // Solo updatear la fecha de recepción (cuando ya está marcado como recibido)
+  const updateReceivedDate=async(notif,trackingId,dateStr)=>{
+    if(!dateStr)return;
+    const iso=new Date(dateStr+"T12:00:00").toISOString();
+    await dq("purchase_notification_trackings",{method:"PATCH",token,filters:`?id=eq.${trackingId}`,body:{received_at:iso}});
     load();
   };
   const unmarkTrackingReceived=async(notif,trackingId)=>{
@@ -6889,10 +6902,12 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
       {[{k:"open",l:"Abiertos",c:counts.open},{k:"pending",l:"Pendientes",c:counts.pending},{k:"partial",l:"Parciales",c:counts.partial},{k:"received",l:"Recibidas",c:counts.received},{k:"cancelled",l:"Canceladas",c:counts.cancelled},{k:"all",l:"Todas",c:counts.all}].map(t=><button key={t.k} onClick={()=>setFilter(t.k)} style={{padding:"6px 12px",fontSize:12,fontWeight:600,borderRadius:7,border:`1px solid ${filter===t.k?IC:"rgba(255,255,255,0.1)"}`,background:filter===t.k?"rgba(184,149,106,0.1)":"transparent",color:filter===t.k?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{t.l} ({t.c})</button>)}
     </div>
     <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-      <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Modalidad:</span>
-      {[{k:"all",l:"Todas"},{k:"aereo",l:"✈️ Aéreo"},{k:"maritimo",l:"🚢 Marítimo"}].map(t=><button key={t.k} onClick={()=>setFilterChannel(t.k)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:5,border:`1px solid ${filterChannel===t.k?"#60a5fa":"rgba(255,255,255,0.08)"}`,background:filterChannel===t.k?"rgba(96,165,250,0.1)":"transparent",color:filterChannel===t.k?"#60a5fa":"rgba(255,255,255,0.5)",cursor:"pointer"}}>{t.l}</button>)}
-      <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em",marginLeft:8}}>Origen:</span>
-      {[{k:"all",l:"Todos"},{k:"china",l:"🇨🇳 China"},{k:"usa",l:"🇺🇸 USA"}].map(t=><button key={t.k} onClick={()=>setFilterOrigin(t.k)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:5,border:`1px solid ${filterOrigin===t.k?"#60a5fa":"rgba(255,255,255,0.08)"}`,background:filterOrigin===t.k?"rgba(96,165,250,0.1)":"transparent",color:filterOrigin===t.k?"#60a5fa":"rgba(255,255,255,0.5)",cursor:"pointer"}}>{t.l}</button>)}
+      {!isAdminMode&&<>
+        <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Modalidad:</span>
+        {[{k:"all",l:"Todas"},{k:"aereo",l:"✈️ Aéreo"},{k:"maritimo",l:"🚢 Marítimo"}].map(t=><button key={t.k} onClick={()=>setFilterChannel(t.k)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:5,border:`1px solid ${filterChannel===t.k?"#60a5fa":"rgba(255,255,255,0.08)"}`,background:filterChannel===t.k?"rgba(96,165,250,0.1)":"transparent",color:filterChannel===t.k?"#60a5fa":"rgba(255,255,255,0.5)",cursor:"pointer"}}>{t.l}</button>)}
+        <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em",marginLeft:8}}>Origen:</span>
+        {[{k:"all",l:"Todos"},{k:"china",l:"🇨🇳 China"},{k:"usa",l:"🇺🇸 USA"}].map(t=><button key={t.k} onClick={()=>setFilterOrigin(t.k)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:5,border:`1px solid ${filterOrigin===t.k?"#60a5fa":"rgba(255,255,255,0.08)"}`,background:filterOrigin===t.k?"rgba(96,165,250,0.1)":"transparent",color:filterOrigin===t.k?"#60a5fa":"rgba(255,255,255,0.5)",cursor:"pointer"}}>{t.l}</button>)}
+      </>}
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por tracking, cliente o descripción…" style={{flex:1,minWidth:200,padding:"7px 12px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
     </div>
     {lo?<p style={{textAlign:"center",padding:"3rem 0",color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<div style={{padding:"3rem 1rem",textAlign:"center",background:"rgba(255,255,255,0.02)",border:"1px dashed rgba(255,255,255,0.08)",borderRadius:14}}>
@@ -6920,13 +6935,18 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
               <span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.5)"}}>📦 {totalTrks} tracking{totalTrks!==1?"s":""}</span>
             </div>
             <p style={{fontSize:13,color:"#fff",margin:"0 0 6px"}}><strong style={{color:IC,fontFamily:"monospace"}}>{cl?.client_code||"?"}</strong> — {cl?.first_name} {cl?.last_name}</p>
-            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:6,alignItems:"center"}}>
-              {trks.map((t,i)=><span key={i} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontFamily:"monospace",padding:"3px 5px 3px 8px",borderRadius:4,background:t.received_at?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.05)",color:t.received_at?"rgba(34,197,94,0.9)":"#fff",border:`1px solid ${t.received_at?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.1)"}`}}>
-                <span>{t.tracking_code}{t.received_at?" ✓":""}</span>
-                {isOpen&&t.id&&(t.received_at
-                  ?<button title={`Recibido ${formatDate(t.received_at)} — click para deshacer`} onClick={()=>unmarkTrackingReceived(n,t.id)} style={{padding:"1px 5px",fontSize:9,borderRadius:3,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.4)",cursor:"pointer",fontFamily:"inherit"}}>↶</button>
-                  :<button title="Marcar como recibido en el depósito" onClick={()=>markTrackingReceived(n,t.id)} style={{padding:"1px 6px",fontSize:9,fontWeight:700,borderRadius:3,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer",fontFamily:"inherit"}}>✓</button>)}
-              </span>)}
+            <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:6}}>
+              {trks.map((t,i)=>{const dateVal=getTrkDate(t);const origDate=t.received_at?String(t.received_at).slice(0,10):null;const dateChanged=origDate&&dateVal!==origDate;return <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 8px",background:t.received_at?"rgba(34,197,94,0.06)":"rgba(255,255,255,0.025)",border:`1px solid ${t.received_at?"rgba(34,197,94,0.22)":"rgba(255,255,255,0.06)"}`,borderRadius:6,flexWrap:"wrap"}}>
+                <span style={{fontFamily:"monospace",fontSize:11.5,color:t.received_at?"rgba(34,197,94,0.9)":"#fff",flex:"1 1 auto",minWidth:120}}>{t.tracking_code}{t.received_at?" ✓":""}</span>
+                {isOpen&&t.id&&<>
+                  <input type="date" value={dateVal} onChange={e=>setTrkDateBuf(p=>({...p,[t.id]:e.target.value}))} title={t.received_at?"Fecha de recepción":"Fecha al marcar como recibido"} style={{padding:"3px 6px",fontSize:10.5,borderRadius:5,border:`1px solid ${dateChanged?"rgba(251,191,36,0.4)":"rgba(255,255,255,0.1)"}`,background:dateChanged?"rgba(251,191,36,0.06)":"rgba(0,0,0,0.2)",color:t.received_at?"rgba(34,197,94,0.9)":"#fff",outline:"none",fontFamily:"inherit",colorScheme:"dark"}}/>
+                  {t.received_at
+                    ?(dateChanged
+                        ?<button onClick={()=>{updateReceivedDate(n,t.id,dateVal);setTrkDateBuf(p=>{const c={...p};delete c[t.id];return c;});}} title="Guardar nueva fecha" style={{padding:"2px 8px",fontSize:10,fontWeight:700,borderRadius:4,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.12)",color:"#fbbf24",cursor:"pointer",fontFamily:"inherit"}}>💾 Guardar</button>
+                        :<button onClick={()=>unmarkTrackingReceived(n,t.id)} title="Deshacer recepción" style={{padding:"2px 7px",fontSize:10,borderRadius:4,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.45)",cursor:"pointer",fontFamily:"inherit"}}>↶</button>)
+                    :<button onClick={()=>{markTrackingReceived(n,t.id,dateVal);setTrkDateBuf(p=>{const c={...p};delete c[t.id];return c;});}} title="Marcar como recibido en esa fecha" style={{padding:"2px 9px",fontSize:10.5,fontWeight:700,borderRadius:4,border:"1px solid rgba(34,197,94,0.45)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer",fontFamily:"inherit"}}>✓ Recibido</button>}
+                </>}
+              </div>;})}
             </div>
             {n.description&&<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 4px"}}>{n.description}</p>}
             <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>Avisado {formatDate(n.created_at)}{n.estimated_packages?` · ${n.estimated_packages} bultos`:""}{n.estimated_dispatch_date?` · sale ${formatDate(n.estimated_dispatch_date)}`:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?` · op `:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?<strong style={{color:IC,fontFamily:"monospace"}}>{n.operations.operation_code}</strong>:""}</p>
