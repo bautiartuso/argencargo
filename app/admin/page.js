@@ -6790,7 +6790,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
     })();
     return ()=>{cancelled=true;};
   },[confirmAction,token]);
-  const load=async()=>{setLo(true);const adminFilter=isAdminMode?"&is_admin_created=eq.true":"&is_admin_created=eq.false";const r=await dq("purchase_notifications",{token,filters:`?select=*,trackings:purchase_notification_trackings(id,tracking_code,received_at,box_number,informed_weight_kg),clients(client_code,first_name,last_name,whatsapp,auth_user_id),operations(operation_code)${adminFilter}&order=created_at.desc`});setItems(Array.isArray(r)?r:[]);setLo(false);};
+  const load=async()=>{setLo(true);const adminFilter=isAdminMode?"&is_admin_created=eq.true":"&is_admin_created=eq.false";const r=await dq("purchase_notifications",{token,filters:`?select=*,trackings:purchase_notification_trackings(id,tracking_code,received_at,informed_weight_kg),clients(client_code,first_name,last_name,whatsapp,auth_user_id),operations(operation_code)${adminFilter}&order=created_at.desc`});setItems(Array.isArray(r)?r:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
 
   // Filtros combinados
@@ -6966,7 +6966,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
             </div>
             <p style={{fontSize:13,color:"#fff",margin:"0 0 6px"}}><strong style={{color:IC,fontFamily:"monospace"}}>{cl?.client_code||"?"}</strong>{!isAdminMode&&<> — {cl?.first_name} {cl?.last_name}</>}</p>
             <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:6}}>
-              {trks.map((t,i)=>{const dateVal=getTrkDate(t);const origDate=t.received_at?String(t.received_at).slice(0,10):null;const dateChanged=origDate&&dateVal!==origDate;const rotulo=t.box_number?`FCWBOX${t.box_number} ARGENCARGO ${cl?.client_code||""}`:null;return <div key={i} style={{padding:"8px 10px",background:t.received_at?"rgba(34,197,94,0.05)":"rgba(255,255,255,0.025)",border:`1px solid ${t.received_at?"rgba(34,197,94,0.22)":"rgba(255,255,255,0.06)"}`,borderRadius:8}}>
+              {trks.map((t,i)=>{const dateVal=getTrkDate(t);const origDate=t.received_at?String(t.received_at).slice(0,10):null;const dateChanged=origDate&&dateVal!==origDate;const rotulo=cl?.client_code?`FCWBOX132 ARGENCARGO ${cl.client_code}`:null;return <div key={i} style={{padding:"8px 10px",background:t.received_at?"rgba(34,197,94,0.05)":"rgba(255,255,255,0.025)",border:`1px solid ${t.received_at?"rgba(34,197,94,0.22)":"rgba(255,255,255,0.06)"}`,borderRadius:8}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                   <div style={{flex:"1 1 220px",minWidth:200}}>
                     {rotulo&&<p style={{margin:0,fontSize:12.5,fontWeight:800,fontFamily:"monospace",color:t.received_at?"rgba(34,197,94,0.95)":IC,letterSpacing:"0.02em"}}>🏷 {rotulo}</p>}
