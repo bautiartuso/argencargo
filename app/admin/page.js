@@ -4427,7 +4427,7 @@ function AdminSettings({token,session}){
   </div>;
 }
 
-// Ordenadas alfabéticamente por label. "Otros" queda como catchall al final-medio.
+// Orden: alfabético por label, con "Otros" forzado al final como catchall.
 const FIXED_CATS=[
   {k:"afip",l:"AFIP"},
   {k:"comisiones",l:"Comisiones (PayPal, spread cambio)"},
@@ -4435,9 +4435,9 @@ const FIXED_CATS=[
   {k:"linea_telefonica",l:"Línea Telefónica"},
   {k:"marketing",l:"Marketing (Meta, Google, etc.)"},
   {k:"oficina",l:"Oficina"},
-  {k:"otros",l:"Otros (requiere detalle)"},
   {k:"salarios",l:"Salarios"},
   {k:"software",l:"Software (Claude, Vercel, etc.)"},
+  {k:"otros",l:"Otros (requiere detalle)"},
 ];
 const CAT_LBL={afip:"AFIP",comisiones:"Comisiones",fletes_allred:"Fletes ALL RED",linea_telefonica:"Línea Telefónica",marketing:"Marketing",oficina:"Oficina",otros:"Otros",salarios:"Salarios",software:"Software"};
 const CAT_COLOR={afip:"#e11d48",comisiones:"#fbbf24",fletes_allred:"#dc2626",linea_telefonica:"#06b6d4",marketing:"#fb923c",oficina:"#60a5fa",otros:"#94a3b8",salarios:"#22c55e",software:"#a78bfa"};
@@ -4445,7 +4445,7 @@ function FinancePanel({token}){
   const [entries,setEntries]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("fixed");const [showAdd,setShowAdd]=useState(false);const [msg,setMsg]=useState("");
   // Filtros del libro diario
   const [ledFrom,setLedFrom]=useState("");const [ledTo,setLedTo]=useState("");const [ledType,setLedType]=useState("");const [ledSearch,setLedSearch]=useState("");const [ledOrigen,setLedOrigen]=useState("");
-  const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});
+  const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});
   const [allOps,setAllOps]=useState([]);const [allPmts,setAllPmts]=useState([]);
   const [dollarPending,setDollarPending]=useState([]);const [dollarRates,setDollarRates]=useState({});
   const [cardDebt,setCardDebt]=useState({usd:[],ars:[],pmts:[]});
@@ -4510,7 +4510,7 @@ function FinancePanel({token}){
       body={...body,amount:Number(newEntry.amount),currency:"USD"};
     }
     const r=await dq("finance_entries",{method:"POST",token,body});
-    if(r?.id||Array.isArray(r)){load();setShowAdd(false);setNewEntry({date:new Date().toISOString().slice(0,10),category:"software",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});flash("Gasto agregado");}
+    if(r?.id||Array.isArray(r)){load();setShowAdd(false);setNewEntry({date:new Date().toISOString().slice(0,10),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});flash("Gasto agregado");}
   };
   const delEntry=async(id)=>{if(!confirm("¿Eliminar este movimiento?"))return;await dq("finance_entries",{method:"DELETE",token,filters:`?id=eq.${id}`});setEntries(p=>p.filter(e=>e.id!==id));flash("Eliminado");};
   const usd=v=>`USD ${Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
@@ -4748,7 +4748,7 @@ function FinancePanel({token}){
     {showAdd&&tab==="fixed"&&<Card title="Nuevo gasto">
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
         <Inp label="Fecha" type="date" value={newEntry.date} onChange={v=>setNewEntry(p=>({...p,date:v}))}/>
-        <Sel label="Categoría" value={newEntry.category} onChange={v=>setNewEntry(p=>({...p,category:v}))} options={FIXED_CATS.map(c=>({value:c.k,label:c.l}))}/>
+        <Sel label="Categoría" value={newEntry.category} onChange={v=>setNewEntry(p=>({...p,category:v}))} options={FIXED_CATS.map(c=>({value:c.k,label:c.l}))} ph="— Elegí una categoría —"/>
         <Sel label="Método" value={newEntry.payment_method} onChange={v=>setNewEntry(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"tarjeta_credito",label:"Tarjeta Crédito"},{value:"tarjeta_debito",label:"Tarjeta Débito"},{value:"efectivo",label:"Efectivo"}]}/>
       </div>
       {/* Selector de moneda USD/ARS */}
