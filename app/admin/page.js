@@ -6679,6 +6679,49 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
   const [confirmCandidates,setConfirmCandidates]=useState([]); // ops abiertas del cliente para consolidar
   const [mergeAction,setMergeAction]=useState(null); // {clientId, notifs}
   const [working,setWorking]=useState(false);
+  // Creación manual desde admin (típicamente para Aéreo B China)
+  const [showCreateModal,setShowCreateModal]=useState(false);
+  const [newAviso,setNewAviso]=useState({client_id:"",client_search:"",origin:"china",shipping_method:"aereo",description:"",trackings:[""]});
+  const [showCreateClientList,setShowCreateClientList]=useState(false);
+  const [savingNew,setSavingNew]=useState(false);
+  const openCreateModal=()=>{setNewAviso({client_id:"",client_search:"",origin:"china",shipping_method:"aereo",description:"",trackings:[""]});setShowCreateClientList(false);setShowCreateModal(true);};
+  const saveNewAviso=async()=>{
+    if(!newAviso.client_id){alert("Elegí un cliente");return;}
+    const trks=newAviso.trackings.map(t=>String(t||"").trim()).filter(Boolean);
+    if(trks.length===0){alert("Agregá al menos un tracking");return;}
+    setSavingNew(true);
+    try{
+      const body={client_id:newAviso.client_id,origin:newAviso.origin,shipping_method:newAviso.shipping_method,description:newAviso.description.trim()||null,status:"pending"};
+      const created=await dq("purchase_notifications",{method:"POST",token,body});
+      const notif=Array.isArray(created)?created[0]:created;
+      if(!notif?.id){alert("Error creando aviso");setSavingNew(false);return;}
+      for(const code of trks){
+        await dq("purchase_notification_trackings",{method:"POST",token,body:{notification_id:notif.id,tracking_code:code}}).catch(e=>console.error("trk",e));
+      }
+      setShowCreateModal(false);setSavingNew(false);load();
+    }catch(e){alert("Error: "+e.message);setSavingNew(false);}
+  };
+  // Marcar un tracking individual como recibido + recomputar status del aviso
+  const markTrackingReceived=async(notif,trackingId)=>{
+    const now=new Date().toISOString();
+    await dq("purchase_notification_trackings",{method:"PATCH",token,filters:`?id=eq.${trackingId}`,body:{received_at:now}});
+    const updatedTrks=await dq("purchase_notification_trackings",{token,filters:`?notification_id=eq.${notif.id}&select=id,received_at`});
+    const list=Array.isArray(updatedTrks)?updatedTrks:[];
+    const remaining=list.filter(t=>!t.received_at).length;
+    const newStatus=remaining===0?"received":"partial";
+    const patchBody={status:newStatus};if(newStatus==="received"&&!notif.confirmed_at)patchBody.confirmed_at=now;
+    await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${notif.id}`,body:patchBody});
+    load();
+  };
+  const unmarkTrackingReceived=async(notif,trackingId)=>{
+    await dq("purchase_notification_trackings",{method:"PATCH",token,filters:`?id=eq.${trackingId}`,body:{received_at:null}});
+    const updatedTrks=await dq("purchase_notification_trackings",{token,filters:`?notification_id=eq.${notif.id}&select=id,received_at`});
+    const list=Array.isArray(updatedTrks)?updatedTrks:[];
+    const anyReceived=list.some(t=>t.received_at);
+    const newStatus=anyReceived?"partial":"pending";
+    await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${notif.id}`,body:{status:newStatus,confirmed_at:null}});
+    load();
+  };
   // Al abrir el modal de confirmar: buscar ops abiertas del MISMO cliente (depósito/preparación/pendiente,
   // que no estén en un vuelo activo) para ofrecer consolidar en vez de crear siempre una op nueva.
   useEffect(()=>{
@@ -6819,12 +6862,13 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:12,flexWrap:"wrap"}}>
       <div>
-        <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>📦 Avisos de compra de clientes</h2>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>Pre-avisos del cliente. Confirmá cuando la carga llegue al depósito y se crea la operación oficial.</p>
+        <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>📦 Avisos de compra</h2>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>Pre-avisos del cliente o cargados manualmente (típico: Aéreo B China). Marcá cada tracking como recibido cuando llegue al depósito; el aviso pasa a confirmable y crea la op.</p>
       </div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
         {dupGroups.length>0&&<span style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:8,background:"rgba(251,146,60,0.15)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.4)"}}>⚠️ {dupGroups.length} grupo{dupGroups.length>1?"s":""} duplicado{dupGroups.length>1?"s":""}</span>}
         {counts.open>0&&<span style={{padding:"6px 14px",fontSize:12,fontWeight:700,borderRadius:8,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)"}}>⏳ {counts.open} abiertos</span>}
+        <button onClick={openCreateModal} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.02em"}}>+ Nuevo aviso</button>
       </div>
     </div>
 
@@ -6872,8 +6916,13 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
               <span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.5)"}}>📦 {totalTrks} tracking{totalTrks!==1?"s":""}</span>
             </div>
             <p style={{fontSize:13,color:"#fff",margin:"0 0 6px"}}><strong style={{color:IC,fontFamily:"monospace"}}>{cl?.client_code||"?"}</strong> — {cl?.first_name} {cl?.last_name}</p>
-            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:6}}>
-              {trks.map((t,i)=><span key={i} style={{fontSize:11,fontFamily:"monospace",padding:"3px 8px",borderRadius:4,background:t.received_at?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.05)",color:t.received_at?"rgba(34,197,94,0.9)":"#fff",border:`1px solid ${t.received_at?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.1)"}`}}>{t.tracking_code}{t.received_at?" ✓":""}</span>)}
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:6,alignItems:"center"}}>
+              {trks.map((t,i)=><span key={i} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontFamily:"monospace",padding:"3px 5px 3px 8px",borderRadius:4,background:t.received_at?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.05)",color:t.received_at?"rgba(34,197,94,0.9)":"#fff",border:`1px solid ${t.received_at?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.1)"}`}}>
+                <span>{t.tracking_code}{t.received_at?" ✓":""}</span>
+                {isOpen&&t.id&&(t.received_at
+                  ?<button title={`Recibido ${formatDate(t.received_at)} — click para deshacer`} onClick={()=>unmarkTrackingReceived(n,t.id)} style={{padding:"1px 5px",fontSize:9,borderRadius:3,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.4)",cursor:"pointer",fontFamily:"inherit"}}>↶</button>
+                  :<button title="Marcar como recibido en el depósito" onClick={()=>markTrackingReceived(n,t.id)} style={{padding:"1px 6px",fontSize:9,fontWeight:700,borderRadius:3,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer",fontFamily:"inherit"}}>✓</button>)}
+              </span>)}
             </div>
             {n.description&&<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 4px"}}>{n.description}</p>}
             <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>Avisado {formatDate(n.created_at)}{n.estimated_packages?` · ${n.estimated_packages} bultos`:""}{n.estimated_dispatch_date?` · sale ${formatDate(n.estimated_dispatch_date)}`:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?` · op `:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?<strong style={{color:IC,fontFamily:"monospace"}}>{n.operations.operation_code}</strong>:""}</p>
@@ -6939,6 +6988,71 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={()=>!working&&(setConfirmAction(null),setConfirmChannel(null))} disabled={working} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:working?"not-allowed":"pointer"}}>Volver</button>
           <button onClick={async()=>{if(type==="confirm"){await confirmReceipt(notif);setConfirmChannel(null);}else{await cancelNotif(notif);}}} disabled={working} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${type==="confirm"?"rgba(34,197,94,0.5)":"rgba(255,80,80,0.5)"}`,background:working?"rgba(255,255,255,0.05)":(type==="confirm"?"linear-gradient(135deg,#22c55e,#16a34a)":"linear-gradient(135deg,#ff6b6b,#ef4444)"),color:working?"rgba(255,255,255,0.4)":"#fff",cursor:working?"wait":"pointer"}}>{working?"Procesando…":(type==="confirm"?(confirmDestOp?"✓ Sí, agregar a la op":"✓ Sí, crear op"):"Sí, rechazar")}</button>
+        </div>
+      </div>
+    </div>;})()}
+
+    {/* Modal: crear aviso manualmente desde admin (típicamente para Aéreo B China) */}
+    {showCreateModal&&(()=>{const filtCl=(allClients||[]).filter(c=>{const q=newAviso.client_search.trim().toLowerCase();if(!q)return true;return c.client_code?.toLowerCase().includes(q)||`${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(q);}).slice(0,10);const selCl=newAviso.client_id?(allClients||[]).find(c=>c.id===newAviso.client_id):null;return <div onClick={()=>!savingNew&&setShowCreateModal(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${IC}`,borderRadius:14,padding:"22px 24px",maxWidth:560,width:"100%",maxHeight:"88vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
+          <div>
+            <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>📦 Nuevo aviso de compra</h3>
+            <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"4px 0 0",lineHeight:1.5}}>Cargá los trackings que estás enviando al depósito de origen. Después marcá cada uno como recibido cuando llegue.</p>
+          </div>
+          <button onClick={()=>!savingNew&&setShowCreateModal(false)} disabled={savingNew} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:savingNew?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
+        </div>
+        {/* Cliente */}
+        <div style={{position:"relative",marginBottom:12}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Cliente</p>
+          {selCl?<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:8}}>
+            <span style={{fontSize:13,color:"#fff"}}><strong style={{fontFamily:"monospace",color:IC}}>{selCl.client_code}</strong> — {selCl.first_name} {selCl.last_name}</span>
+            <button onClick={()=>setNewAviso(p=>({...p,client_id:"",client_search:""}))} style={{fontSize:10,padding:"3px 8px",borderRadius:5,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer"}}>Cambiar</button>
+          </div>:<>
+            <input autoFocus value={newAviso.client_search} onChange={e=>{setNewAviso(p=>({...p,client_search:e.target.value}));setShowCreateClientList(true);}} onFocus={()=>setShowCreateClientList(true)} placeholder="Buscar por código o nombre…" style={{width:"100%",padding:"9px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+            {showCreateClientList&&filtCl.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,boxShadow:"0 8px 28px rgba(0,0,0,0.5)",zIndex:5,maxHeight:220,overflowY:"auto"}}>
+              {filtCl.map(c=><div key={c.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{setNewAviso(p=>({...p,client_id:c.id,client_search:`${c.client_code} — ${c.first_name} ${c.last_name}`}));setShowCreateClientList(false);}} style={{padding:"8px 12px",fontSize:12,color:"#fff",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                <strong style={{fontFamily:"monospace",color:IC}}>{c.client_code||"—"}</strong> {c.first_name} {c.last_name}
+              </div>)}
+            </div>}
+          </>}
+        </div>
+        {/* Origen + modalidad */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+          <div>
+            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Origen</p>
+            <div style={{display:"flex",gap:6}}>
+              {[{k:"china",l:"🇨🇳 China"},{k:"usa",l:"🇺🇸 USA"}].map(o=>{const sel=newAviso.origin===o.k;return <button key={o.k} onClick={()=>setNewAviso(p=>({...p,origin:o.k}))} style={{flex:1,padding:"8px",fontSize:11.5,fontWeight:700,borderRadius:7,border:`1px solid ${sel?IC:"rgba(255,255,255,0.1)"}`,background:sel?"rgba(184,149,106,0.12)":"transparent",color:sel?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{o.l}</button>;})}
+            </div>
+          </div>
+          <div>
+            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Modalidad</p>
+            <div style={{display:"flex",gap:6}}>
+              {[{k:"aereo",l:"✈️ Aéreo"},{k:"maritimo",l:"🚢 Marítimo"}].map(o=>{const sel=newAviso.shipping_method===o.k;return <button key={o.k} onClick={()=>setNewAviso(p=>({...p,shipping_method:o.k}))} style={{flex:1,padding:"8px",fontSize:11.5,fontWeight:700,borderRadius:7,border:`1px solid ${sel?IC:"rgba(255,255,255,0.1)"}`,background:sel?"rgba(184,149,106,0.12)":"transparent",color:sel?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{o.l}</button>;})}
+            </div>
+          </div>
+        </div>
+        {/* Trackings */}
+        <div style={{marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>Trackings <span style={{color:"rgba(255,255,255,0.4)",fontWeight:500,letterSpacing:0}}>({newAviso.trackings.filter(t=>t.trim()).length})</span></p>
+            <button onClick={()=>setNewAviso(p=>({...p,trackings:[...p.trackings,""]}))} style={{fontSize:10.5,fontWeight:700,padding:"4px 10px",borderRadius:5,border:"1px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Otro tracking</button>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {newAviso.trackings.map((t,i)=><div key={i} style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input value={t} onChange={e=>setNewAviso(p=>({...p,trackings:p.trackings.map((x,j)=>j===i?e.target.value:x)}))} placeholder={`Tracking ${i+1} (ej: SF1234567890123)`} style={{flex:1,padding:"8px 10px",fontSize:12.5,fontFamily:"monospace",boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+              {newAviso.trackings.length>1&&<button onClick={()=>setNewAviso(p=>({...p,trackings:p.trackings.filter((_,j)=>j!==i)}))} style={{padding:"6px 9px",fontSize:11,borderRadius:5,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>×</button>}
+            </div>)}
+          </div>
+        </div>
+        {/* Descripción */}
+        <div style={{marginBottom:16}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Descripción (opcional)</p>
+          <input value={newAviso.description} onChange={e=>setNewAviso(p=>({...p,description:e.target.value}))} placeholder="Ej: Ropa deportiva — orden Alibaba" style={{width:"100%",padding:"9px 12px",fontSize:12.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={()=>!savingNew&&setShowCreateModal(false)} disabled={savingNew} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:savingNew?"not-allowed":"pointer"}}>Cancelar</button>
+          <button onClick={saveNewAviso} disabled={savingNew||!newAviso.client_id||newAviso.trackings.every(t=>!t.trim())} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:savingNew?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:savingNew?"rgba(255,255,255,0.4)":"#0A1628",cursor:savingNew?"wait":"pointer"}}>{savingNew?"Guardando…":"✓ Crear aviso"}</button>
         </div>
       </div>
     </div>;})()}
