@@ -6999,17 +6999,22 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
         const statusBg=n.status==="pending"?"rgba(251,191,36,0.05)":n.status==="partial"?"rgba(96,165,250,0.05)":n.status==="received"?"rgba(34,197,94,0.04)":"rgba(255,255,255,0.02)";
         const statusBorder=isDup?"rgba(251,146,60,0.5)":n.status==="pending"?"rgba(251,191,36,0.25)":n.status==="partial"?"rgba(96,165,250,0.3)":n.status==="received"?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.06)";
         const statusLabel=n.status==="pending"?"⏳ PENDIENTE":n.status==="partial"?`⏳ PARCIAL (${recvTrks}/${totalTrks})`:n.status==="received"?"✓ RECIBIDA":"✕ CANCELADA";
-        const isOpen=["pending","partial"].includes(n.status);
+        // En admin: el aviso está "abierto" mientras no esté cancelado y no se le haya creado op.
+        // Eso garantiza que aunque todos los trackings estén recibidos, sigan apareciendo los
+        // botones de Editar / Confirmar y crear op / Rechazar y el DatePicker de cada tracking.
+        const isOpen=isAdminMode?(n.status!=="cancelled"&&!n.operation_id):["pending","partial"].includes(n.status);
         return <div key={n.id} style={{padding:isAdminMode?"10px 14px":"14px 16px",background:statusBg,border:`1.5px solid ${statusBorder}`,borderRadius:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",gap:12,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:240}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+            {(!isAdminMode||isDup)&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
               {isDup&&<span style={{fontSize:9,fontWeight:800,padding:"3px 7px",borderRadius:4,background:"rgba(251,146,60,0.18)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.5)"}}>⚠️ DUPLICADO</span>}
-              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:n.origin==="china"?"rgba(239,68,68,0.15)":"rgba(59,130,246,0.15)",color:n.origin==="china"?"#fca5a5":"#93c5fd",border:`1px solid ${n.origin==="china"?"rgba(239,68,68,0.3)":"rgba(59,130,246,0.3)"}`}}>{n.origin==="china"?"🇨🇳 CHINA":"🇺🇸 USA"}</span>
-              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{n.shipping_method==="aereo"?"✈️ Aéreo":"🚢 Marítimo"}</span>
-              {!isAdminMode&&<span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:`${statusColor}25`,color:statusColor}}>{statusLabel}</span>}
-              <span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.5)"}}>📦 {totalTrks} tracking{totalTrks!==1?"s":""}</span>
-            </div>
+              {!isAdminMode&&<>
+                <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:n.origin==="china"?"rgba(239,68,68,0.15)":"rgba(59,130,246,0.15)",color:n.origin==="china"?"#fca5a5":"#93c5fd",border:`1px solid ${n.origin==="china"?"rgba(239,68,68,0.3)":"rgba(59,130,246,0.3)"}`}}>{n.origin==="china"?"🇨🇳 CHINA":"🇺🇸 USA"}</span>
+                <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{n.shipping_method==="aereo"?"✈️ Aéreo":"🚢 Marítimo"}</span>
+                <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:`${statusColor}25`,color:statusColor}}>{statusLabel}</span>
+                <span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.5)"}}>📦 {totalTrks} tracking{totalTrks!==1?"s":""}</span>
+              </>}
+            </div>}
             {!isAdminMode&&<p style={{fontSize:13,color:"#fff",margin:"0 0 6px"}}><strong style={{color:IC,fontFamily:"monospace"}}>{cl?.client_code||"?"}</strong> — {cl?.first_name} {cl?.last_name}</p>}
             <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:6}}>
               {trks.map((t,i)=>{const dateVal=getTrkDate(t);const origDate=t.received_at?String(t.received_at).slice(0,10):null;const dateChanged=origDate&&dateVal!==origDate;const rotulo=cl?.client_code?`FCWBOX132 ARGENCARGO ${cl.client_code}`:null;return <div key={i} style={{padding:"8px 10px",background:t.received_at?"rgba(34,197,94,0.05)":"rgba(255,255,255,0.025)",border:`1px solid ${t.received_at?"rgba(34,197,94,0.22)":"rgba(255,255,255,0.06)"}`,borderRadius:8}}>
@@ -7018,9 +7023,9 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
                     <p style={{margin:0,fontSize:12.5,color:"#fff"}}>
                       <strong style={{fontWeight:700}}>Seguimiento:</strong> <span style={{fontFamily:"monospace",fontWeight:600}}>{t.tracking_code}</span>
                       {t.informed_weight_kg!=null&&<span style={{color:"#fbbf24",marginLeft:10,fontWeight:600}}>· {Number(t.informed_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:2})} kg informados</span>}
-                      {t.received_at&&<span style={{color:"rgba(34,197,94,0.95)",marginLeft:10,fontWeight:700}}>· ✓ recibido</span>}
+                      {t.received_at&&<span style={{color:"rgba(34,197,94,0.95)",marginLeft:10,fontWeight:700}}>· ✓ recibido {formatDate(t.received_at)}</span>}
                     </p>
-                    {rotulo&&<p style={{margin:"3px 0 0",fontSize:11,fontWeight:700,fontFamily:"monospace",color:t.received_at?"rgba(34,197,94,0.85)":"rgba(184,149,106,0.85)",letterSpacing:"0.02em"}}>🏷 {rotulo}</p>}
+                    {rotulo&&<p style={{margin:"3px 0 0",fontSize:12,fontWeight:800,fontFamily:"monospace",color:t.received_at?"rgba(34,197,94,0.95)":IC,letterSpacing:"0.02em"}}>🏷 {rotulo}</p>}
                   </div>
                   {isOpen&&t.id&&(isAdminMode
                     ?<div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,minWidth:170}} title={t.received_at?"Cambiá la fecha o vaciála para deshacer la recepción":"Elegí la fecha en que llegó al depósito"}>
