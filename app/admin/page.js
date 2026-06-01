@@ -6836,7 +6836,11 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
   useEffect(()=>{load();},[token]);
 
   // Filtros combinados
-  const filteredByStatus=filter==="open"?items.filter(i=>["pending","partial"].includes(i.status)):filter==="all"?items:items.filter(i=>i.status===filter);
+  // En admin mode "open" = no rechazado y sin op creada todavía (puede estar pending, partial o incluso received esperando que el admin confirme y cree la op).
+  // En client mode "open" sigue siendo pending+partial (comportamiento original).
+  const filteredByStatus=filter==="open"
+    ?(isAdminMode?items.filter(i=>i.status!=="cancelled"&&!i.operation_id):items.filter(i=>["pending","partial"].includes(i.status)))
+    :filter==="all"?items:items.filter(i=>i.status===filter);
   const filteredByChannel=filterChannel==="all"?filteredByStatus:filteredByStatus.filter(i=>i.shipping_method===filterChannel);
   const filteredByOrigin=filterOrigin==="all"?filteredByChannel:filteredByChannel.filter(i=>i.origin===filterOrigin);
   const filtered=search?filteredByOrigin.filter(n=>{const q=search.toLowerCase();const trks=Array.isArray(n.trackings)?n.trackings.map(t=>t.tracking_code).join(" "):"";return trks.toLowerCase().includes(q)||n.tracking_code?.toLowerCase().includes(q)||n.clients?.client_code?.toLowerCase().includes(q)||`${n.clients?.first_name||""} ${n.clients?.last_name||""}`.toLowerCase().includes(q)||n.description?.toLowerCase().includes(q);}):filteredByOrigin;
@@ -7011,8 +7015,12 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
               {trks.map((t,i)=>{const dateVal=getTrkDate(t);const origDate=t.received_at?String(t.received_at).slice(0,10):null;const dateChanged=origDate&&dateVal!==origDate;const rotulo=cl?.client_code?`FCWBOX132 ARGENCARGO ${cl.client_code}`:null;return <div key={i} style={{padding:"8px 10px",background:t.received_at?"rgba(34,197,94,0.05)":"rgba(255,255,255,0.025)",border:`1px solid ${t.received_at?"rgba(34,197,94,0.22)":"rgba(255,255,255,0.06)"}`,borderRadius:8}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                   <div style={{flex:"1 1 220px",minWidth:200}}>
-                    {rotulo&&<p style={{margin:0,fontSize:12.5,fontWeight:800,fontFamily:"monospace",color:t.received_at?"rgba(34,197,94,0.95)":IC,letterSpacing:"0.02em"}}>🏷 {rotulo}</p>}
-                    <p style={{margin:"3px 0 0",fontSize:11,color:"rgba(255,255,255,0.6)"}}><span style={{fontFamily:"monospace"}}>📦 {t.tracking_code}</span>{t.informed_weight_kg!=null&&<span style={{color:"#fbbf24",marginLeft:10,fontWeight:600}}>· {Number(t.informed_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:2})} kg informados</span>}{t.received_at&&<span style={{color:"rgba(34,197,94,0.85)",marginLeft:10,fontWeight:700}}>· ✓ recibido</span>}</p>
+                    <p style={{margin:0,fontSize:12.5,color:"#fff"}}>
+                      <strong style={{fontWeight:700}}>Seguimiento:</strong> <span style={{fontFamily:"monospace",fontWeight:600}}>{t.tracking_code}</span>
+                      {t.informed_weight_kg!=null&&<span style={{color:"#fbbf24",marginLeft:10,fontWeight:600}}>· {Number(t.informed_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:2})} kg informados</span>}
+                      {t.received_at&&<span style={{color:"rgba(34,197,94,0.95)",marginLeft:10,fontWeight:700}}>· ✓ recibido</span>}
+                    </p>
+                    {rotulo&&<p style={{margin:"3px 0 0",fontSize:11,fontWeight:700,fontFamily:"monospace",color:t.received_at?"rgba(34,197,94,0.85)":"rgba(184,149,106,0.85)",letterSpacing:"0.02em"}}>🏷 {rotulo}</p>}
                   </div>
                   {isOpen&&t.id&&(isAdminMode
                     ?<div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,minWidth:170}} title={t.received_at?"Cambiá la fecha o vaciála para deshacer la recepción":"Elegí la fecha en que llegó al depósito"}>
