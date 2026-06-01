@@ -230,7 +230,7 @@ function Shell({session,profile,onLogout}){
         {pane==="resumen"&&<PaneResumen token={token} onNav={setPane}/>}
         {pane==="quotes"&&<PaneQuotes token={token} profileId={profile?.id}/>}
         {pane==="settings"&&<PaneSettings token={token}/>}
-        {pane==="operations"&&<PaneOps token={token}/>}
+        {pane==="operations"&&<PaneOps token={token} isAdmin={profile?.role==="admin"}/>}
         {pane==="dashboard"&&<PaneDashboard token={token} profileId={profile?.id} isAdmin={profile?.role==="admin"}/>}
         {pane==="commissions"&&<PaneCommissions token={token}/>}
         {pane==="ledger"&&<PaneLedger token={token} profileId={profile?.id} isAdmin={profile?.role==="admin"}/>}
@@ -1741,7 +1741,7 @@ const STATUS_MAP={
   cancelada:{l:"Cancelada",c:"#f87171"},
 };
 
-function PaneOps({token}){
+function PaneOps({token,isAdmin}){
   const [ops,setOps]=useState([]);
   const [earnings,setEarnings]=useState([]);
   const [lo,setLo]=useState(true);
@@ -1761,15 +1761,21 @@ function PaneOps({token}){
 
   const earningByOpId=earnings.reduce((m,e)=>{m[e.operation_id]=e;return m;},{});
 
+  // Devuelve la comisión del SOCIO (lo que se le paga al partner). En la tabla earnings es commission_usd.
+  // Para admin también exponemos netProfit (ganancia bruta de la op) y margenAC = netProfit - commission_socio.
   const calcComision=(op)=>{
     const earn=earningByOpId[op.id];
-    if(earn)return {amount:Number(earn.commission_usd||0),real:true,pct:Number(earn.commission_pct||0)};
-    // Prioridad: override por op > % del cliente
+    if(earn){
+      const netProfit=Number(earn.net_profit_usd||0);
+      const comisionSocio=Number(earn.commission_usd||0);
+      return {amount:comisionSocio,real:true,pct:Number(earn.commission_pct||0),netProfit,margenAC:netProfit-comisionSocio};
+    }
+    // Estimación cuando la op no está cerrada
     const pct=Number(op.gi_commission_pct!=null?op.gi_commission_pct:(op.clients?.gi_commission_pct||0));
     const total=Number(op.budget_total||0);
-    const netEst=total*0.08;
+    const netEst=total*0.08; // 8% margen neto estimado
     const est=netEst*pct/100;
-    return {amount:est,real:false,pct};
+    return {amount:est,real:false,pct,netProfit:netEst,margenAC:netEst-est};
   };
 
   const matchSearch=(op)=>{
@@ -1784,6 +1790,9 @@ function PaneOps({token}){
 
   const totalActiveCommission=activas.reduce((s,op)=>s+calcComision(op).amount,0);
   const totalClosedCommission=cerradas.filter(o=>o.status==="operacion_cerrada").reduce((s,op)=>s+calcComision(op).amount,0);
+  // Margen AC (solo admin): ganancia neta − comisión socio.
+  const totalActiveMargenAC=activas.reduce((s,op)=>s+calcComision(op).margenAC,0);
+  const totalClosedMargenAC=cerradas.filter(o=>o.status==="operacion_cerrada").reduce((s,op)=>s+calcComision(op).margenAC,0);
 
   if(selOpId){
     return <OpDetail token={token} opId={selOpId} onBack={()=>setSelOpId(null)} calcComision={calcComision}/>;
@@ -1800,7 +1809,8 @@ function PaneOps({token}){
           <th style={thStyle()}>Estado</th>
           <th style={thStyle()}>ETA</th>
           <th style={{...thStyle(),textAlign:"right"}}>Total</th>
-          <th style={thStyle()}>Comisión</th>
+          <th style={{...thStyle(),textAlign:"right"}}>{isAdmin?"Comisión socio":"Comisión"}</th>
+          {isAdmin&&<th style={{...thStyle(),textAlign:"right"}}>Margen AC</th>}
         </tr></thead>
         <tbody>
           {rows.map(op=>{const st=STATUS_MAP[op.status]||{l:op.status,c:"#999"};const cn=op.clients?`${op.clients.first_name||""} ${op.clients.last_name||""}`.trim():"—";const com=calcComision(op);const chLabel=CHANNEL_DEFS.find(c=>c.key===op.channel)?.name||op.channel;return <tr key={op.id} onClick={()=>setSelOpId(op.id)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(184,149,106,0.06)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
@@ -1811,7 +1821,8 @@ function PaneOps({token}){
             <td style={{padding:"13px 14px",whiteSpace:"nowrap"}}><span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,letterSpacing:"0.05em",textTransform:"uppercase",whiteSpace:"nowrap"}}><span style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:st.c,flexShrink:0}}/>{st.l}</span></td>
             <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.55)",fontFeatureSettings:'"tnum"',textAlign:"center",whiteSpace:"nowrap"}}>{op.eta?fmtDateShort(op.eta):"—"}</td>
             <td style={{padding:"13px 14px",textAlign:"right",color:"#fff",fontWeight:600,fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}}>{fmtUSD(op.budget_total)}</td>
-            <td style={{padding:"13px 14px",textAlign:"right",color:com.real?(Number(com.amount)<0?"#f87171":"#22c55e"):"rgba(255,255,255,0.5)",fontWeight:700,fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}} title={com.real?(Number(com.amount)<0?`Op a pérdida — ${com.pct}% absorbido por el socio`:`Comisión real: ${com.pct}% sobre ganancia neta`):`Estimación con ${com.pct}% del cliente`}>{com.pct>0?fmtUSD(com.amount):"—"}{!com.real&&com.pct>0&&<span style={{fontSize:9,marginLeft:4,opacity:0.6}}>est.</span>}</td>
+            <td style={{padding:"13px 14px",textAlign:"right",color:com.real?(Number(com.amount)<0?"#f87171":"#22c55e"):"rgba(255,255,255,0.5)",fontWeight:700,fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}} title={com.real?(Number(com.amount)<0?`Op a pérdida — ${com.pct}% absorbido por el socio`:`Comisión del socio: ${com.pct}% sobre ganancia neta`):`Estimación con ${com.pct}% del socio`}>{com.pct>0?fmtUSD(com.amount):"—"}{!com.real&&com.pct>0&&<span style={{fontSize:9,marginLeft:4,opacity:0.6}}>est.</span>}</td>
+            {isAdmin&&<td style={{padding:"13px 14px",textAlign:"right",color:com.real?(com.margenAC<0?"#f87171":"#fbbf24"):"rgba(255,255,255,0.5)",fontWeight:700,fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}} title={com.real?`Margen Argencargo: ganancia neta (USD ${fmtUSD(com.netProfit)}) − comisión socio = USD ${fmtUSD(com.margenAC)}`:`Estimación: 8% del total − comisión socio`}>{com.netProfit!==0||com.pct>0?fmtUSD(com.margenAC):"—"}{!com.real&&com.pct>0&&<span style={{fontSize:9,marginLeft:4,opacity:0.6}}>est.</span>}</td>}
           </tr>;})}
         </tbody>
       </table>
@@ -1819,7 +1830,7 @@ function PaneOps({token}){
 
   return <div>
     <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px",color:"#fff"}}>Operaciones GI</h1>
-    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>Operaciones de Gestión Integral de tus clientes asignados. Las comisiones se calculan al cerrar cada op sobre la ganancia neta real.</p>
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:22}}>{isAdmin?"Todas las operaciones de Gestión Integral. La columna Comisión muestra lo que cobra el socio asignado; Margen AC es lo que queda para Argencargo.":"Operaciones de Gestión Integral de tus clientes asignados. Las comisiones se calculan al cerrar cada op sobre la ganancia neta real."}</p>
 
     <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:20}}>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por código, cliente o descripción..." style={{padding:"9px 12px",fontSize:12.5,border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit",minWidth:280,flex:1}}/>
@@ -1828,13 +1839,13 @@ function PaneOps({token}){
     {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:<>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10,flexWrap:"wrap",gap:10}}>
         <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",margin:0}}>Activas <span style={{color:GOLD_LIGHT,marginLeft:4}}>({activas.length})</span></h3>
-        {activas.length>0&&<span style={{fontSize:12,color:"rgba(255,255,255,0.6)"}}>Comisión est. activa: <strong style={{color:GOLD_LIGHT}}>{fmtUSD(totalActiveCommission)}</strong></span>}
+        {activas.length>0&&<span style={{fontSize:12,color:"rgba(255,255,255,0.6)"}}>{isAdmin?<>Comisión socio est.: <strong style={{color:"#22c55e"}}>{fmtUSD(totalActiveCommission)}</strong> · Margen AC est.: <strong style={{color:"#fbbf24"}}>{fmtUSD(totalActiveMargenAC)}</strong></>:<>Comisión est. activa: <strong style={{color:GOLD_LIGHT}}>{fmtUSD(totalActiveCommission)}</strong></>}</span>}
       </div>
       {renderTable(activas)}
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginTop:30,marginBottom:10,flexWrap:"wrap",gap:10}}>
         <h3 style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.1em",margin:0}}>Cerradas <span style={{color:"rgba(255,255,255,0.55)",marginLeft:4}}>({cerradas.length})</span></h3>
-        {cerradas.length>0&&<span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Comisión real cerrada: <strong style={{color:Number(totalClosedCommission)<0?"#f87171":"#22c55e"}}>{fmtUSD(totalClosedCommission)}</strong></span>}
+        {cerradas.length>0&&<span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{isAdmin?<>Comisión socio cerrada: <strong style={{color:Number(totalClosedCommission)<0?"#f87171":"#22c55e"}}>{fmtUSD(totalClosedCommission)}</strong> · Margen AC cerrado: <strong style={{color:Number(totalClosedMargenAC)<0?"#f87171":"#fbbf24"}}>{fmtUSD(totalClosedMargenAC)}</strong></>:<>Comisión real cerrada: <strong style={{color:Number(totalClosedCommission)<0?"#f87171":"#22c55e"}}>{fmtUSD(totalClosedCommission)}</strong></>}</span>}
       </div>
       {renderTable(cerradas)}
     </>}
