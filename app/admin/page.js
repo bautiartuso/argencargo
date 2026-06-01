@@ -6733,7 +6733,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
   // Buffer de fechas por tracking (para pickear antes de marcar como recibido, o editar la fecha ya guardada)
   const [trkDateBuf,setTrkDateBuf]=useState({});
   const todayStr=()=>new Date().toISOString().slice(0,10);
-  const getTrkDate=(t)=>trkDateBuf[t.id]??(t.received_at?String(t.received_at).slice(0,10):todayStr());
+  const getTrkDate=(t)=>trkDateBuf[t.id]??(t.received_at?String(t.received_at).slice(0,10):"");
   // Cada item de trackings: {code, weight, id?} — id presente solo cuando se está editando un tracking existente.
   const openCreateModal=()=>{setEditingNotifId(null);setNewAviso({client_id:"",client_search:"",origin:"china",shipping_method:"aereo",description:"",trackings:[{code:"",weight:"",id:null}]});setShowCreateClientList(false);setShowCreateModal(true);};
   const openEditModal=(notif)=>{
@@ -6970,9 +6970,9 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
       </div>
     </div>}
 
-    <div style={{display:"flex",gap:10,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
+    {!isAdminMode&&<div style={{display:"flex",gap:10,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
       {[{k:"open",l:"Abiertos",c:counts.open},{k:"pending",l:"Pendientes",c:counts.pending},{k:"partial",l:"Parciales",c:counts.partial},{k:"received",l:"Recibidas",c:counts.received},{k:"cancelled",l:"Canceladas",c:counts.cancelled},{k:"all",l:"Todas",c:counts.all}].map(t=><button key={t.k} onClick={()=>setFilter(t.k)} style={{padding:"6px 12px",fontSize:12,fontWeight:600,borderRadius:7,border:`1px solid ${filter===t.k?IC:"rgba(255,255,255,0.1)"}`,background:filter===t.k?"rgba(184,149,106,0.1)":"transparent",color:filter===t.k?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{t.l} ({t.c})</button>)}
-    </div>
+    </div>}
     <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
       {!isAdminMode&&<>
         <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Modalidad:</span>
@@ -6996,17 +6996,17 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
         const statusBorder=isDup?"rgba(251,146,60,0.5)":n.status==="pending"?"rgba(251,191,36,0.25)":n.status==="partial"?"rgba(96,165,250,0.3)":n.status==="received"?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.06)";
         const statusLabel=n.status==="pending"?"⏳ PENDIENTE":n.status==="partial"?`⏳ PARCIAL (${recvTrks}/${totalTrks})`:n.status==="received"?"✓ RECIBIDA":"✕ CANCELADA";
         const isOpen=["pending","partial"].includes(n.status);
-        return <div key={n.id} style={{padding:"14px 16px",background:statusBg,border:`1.5px solid ${statusBorder}`,borderRadius:12}}>
+        return <div key={n.id} style={{padding:isAdminMode?"10px 14px":"14px 16px",background:statusBg,border:`1.5px solid ${statusBorder}`,borderRadius:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",gap:12,flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:240}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
               {isDup&&<span style={{fontSize:9,fontWeight:800,padding:"3px 7px",borderRadius:4,background:"rgba(251,146,60,0.18)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.5)"}}>⚠️ DUPLICADO</span>}
               <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:n.origin==="china"?"rgba(239,68,68,0.15)":"rgba(59,130,246,0.15)",color:n.origin==="china"?"#fca5a5":"#93c5fd",border:`1px solid ${n.origin==="china"?"rgba(239,68,68,0.3)":"rgba(59,130,246,0.3)"}`}}>{n.origin==="china"?"🇨🇳 CHINA":"🇺🇸 USA"}</span>
               <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{n.shipping_method==="aereo"?"✈️ Aéreo":"🚢 Marítimo"}</span>
-              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:`${statusColor}25`,color:statusColor}}>{statusLabel}</span>
+              {!isAdminMode&&<span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:`${statusColor}25`,color:statusColor}}>{statusLabel}</span>}
               <span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.5)"}}>📦 {totalTrks} tracking{totalTrks!==1?"s":""}</span>
             </div>
-            <p style={{fontSize:13,color:"#fff",margin:"0 0 6px"}}><strong style={{color:IC,fontFamily:"monospace"}}>{cl?.client_code||"?"}</strong>{!isAdminMode&&<> — {cl?.first_name} {cl?.last_name}</>}</p>
+            {!isAdminMode&&<p style={{fontSize:13,color:"#fff",margin:"0 0 6px"}}><strong style={{color:IC,fontFamily:"monospace"}}>{cl?.client_code||"?"}</strong> — {cl?.first_name} {cl?.last_name}</p>}
             <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:6}}>
               {trks.map((t,i)=>{const dateVal=getTrkDate(t);const origDate=t.received_at?String(t.received_at).slice(0,10):null;const dateChanged=origDate&&dateVal!==origDate;const rotulo=cl?.client_code?`FCWBOX132 ARGENCARGO ${cl.client_code}`:null;return <div key={i} style={{padding:"8px 10px",background:t.received_at?"rgba(34,197,94,0.05)":"rgba(255,255,255,0.025)",border:`1px solid ${t.received_at?"rgba(34,197,94,0.22)":"rgba(255,255,255,0.06)"}`,borderRadius:8}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
@@ -7014,19 +7014,23 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
                     {rotulo&&<p style={{margin:0,fontSize:12.5,fontWeight:800,fontFamily:"monospace",color:t.received_at?"rgba(34,197,94,0.95)":IC,letterSpacing:"0.02em"}}>🏷 {rotulo}</p>}
                     <p style={{margin:"3px 0 0",fontSize:11,color:"rgba(255,255,255,0.6)"}}><span style={{fontFamily:"monospace"}}>📦 {t.tracking_code}</span>{t.informed_weight_kg!=null&&<span style={{color:"#fbbf24",marginLeft:10,fontWeight:600}}>· {Number(t.informed_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:2})} kg informados</span>}{t.received_at&&<span style={{color:"rgba(34,197,94,0.85)",marginLeft:10,fontWeight:700}}>· ✓ recibido</span>}</p>
                   </div>
-                  {isOpen&&t.id&&<div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
-                    <div style={{minWidth:140,maxWidth:170,padding:dateChanged?2:0,borderRadius:7,background:dateChanged?"rgba(251,191,36,0.10)":"transparent",border:dateChanged?"1px solid rgba(251,191,36,0.35)":"1px solid transparent"}} title={t.received_at?"Fecha de recepción":"Fecha al marcar como recibido"}><DatePicker value={dateVal} onChange={v=>setTrkDateBuf(p=>({...p,[t.id]:v||todayStr()}))} small/></div>
-                    {t.received_at
-                      ?(dateChanged
-                          ?<button onClick={()=>{updateReceivedDate(n,t.id,dateVal);setTrkDateBuf(p=>{const c={...p};delete c[t.id];return c;});}} title="Guardar nueva fecha" style={{padding:"3px 9px",fontSize:10.5,fontWeight:700,borderRadius:5,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.12)",color:"#fbbf24",cursor:"pointer",fontFamily:"inherit"}}>💾 Guardar</button>
-                          :<button onClick={()=>unmarkTrackingReceived(n,t.id)} title="Deshacer recepción" style={{padding:"3px 9px",fontSize:10.5,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.45)",cursor:"pointer",fontFamily:"inherit"}}>↶</button>)
-                      :<button onClick={()=>{markTrackingReceived(n,t.id,dateVal);setTrkDateBuf(p=>{const c={...p};delete c[t.id];return c;});}} title="Marcar como recibido en esa fecha" style={{padding:"3px 10px",fontSize:11,fontWeight:700,borderRadius:5,border:"1px solid rgba(34,197,94,0.45)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer",fontFamily:"inherit"}}>✓ Recibido</button>}
-                  </div>}
+                  {isOpen&&t.id&&(isAdminMode
+                    ?<div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,minWidth:170}} title={t.received_at?"Cambiá la fecha o vaciála para deshacer la recepción":"Elegí la fecha en que llegó al depósito"}>
+                      <DatePicker value={dateVal} onChange={v=>{const clean=v||"";setTrkDateBuf(p=>({...p,[t.id]:clean}));if(!clean){if(t.received_at)unmarkTrackingReceived(n,t.id);}else if(!t.received_at){markTrackingReceived(n,t.id,clean);}else if(clean!==(String(t.received_at).slice(0,10))){updateReceivedDate(n,t.id,clean);}}} small/>
+                    </div>
+                    :<div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                      <div style={{minWidth:140,maxWidth:170,padding:dateChanged?2:0,borderRadius:7,background:dateChanged?"rgba(251,191,36,0.10)":"transparent",border:dateChanged?"1px solid rgba(251,191,36,0.35)":"1px solid transparent"}} title={t.received_at?"Fecha de recepción":"Fecha al marcar como recibido"}><DatePicker value={dateVal||todayStr()} onChange={v=>setTrkDateBuf(p=>({...p,[t.id]:v||todayStr()}))} small/></div>
+                      {t.received_at
+                        ?(dateChanged
+                            ?<button onClick={()=>{updateReceivedDate(n,t.id,dateVal);setTrkDateBuf(p=>{const c={...p};delete c[t.id];return c;});}} title="Guardar nueva fecha" style={{padding:"3px 9px",fontSize:10.5,fontWeight:700,borderRadius:5,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.12)",color:"#fbbf24",cursor:"pointer",fontFamily:"inherit"}}>💾 Guardar</button>
+                            :<button onClick={()=>unmarkTrackingReceived(n,t.id)} title="Deshacer recepción" style={{padding:"3px 9px",fontSize:10.5,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.45)",cursor:"pointer",fontFamily:"inherit"}}>↶</button>)
+                        :<button onClick={()=>{markTrackingReceived(n,t.id,dateVal||todayStr());setTrkDateBuf(p=>{const c={...p};delete c[t.id];return c;});}} title="Marcar como recibido en esa fecha" style={{padding:"3px 10px",fontSize:11,fontWeight:700,borderRadius:5,border:"1px solid rgba(34,197,94,0.45)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer",fontFamily:"inherit"}}>✓ Recibido</button>}
+                    </div>)}
                 </div>
               </div>;})}
             </div>
             {n.description&&<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 4px"}}>{n.description}</p>}
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>Avisado {formatDate(n.created_at)}{n.estimated_packages?` · ${n.estimated_packages} bultos`:""}{n.estimated_dispatch_date?` · sale ${formatDate(n.estimated_dispatch_date)}`:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?` · op `:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?<strong style={{color:IC,fontFamily:"monospace"}}>{n.operations.operation_code}</strong>:""}</p>
+            {!isAdminMode&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>Avisado {formatDate(n.created_at)}{n.estimated_packages?` · ${n.estimated_packages} bultos`:""}{n.estimated_dispatch_date?` · sale ${formatDate(n.estimated_dispatch_date)}`:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?` · op `:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?<strong style={{color:IC,fontFamily:"monospace"}}>{n.operations.operation_code}</strong>:""}</p>}
           </div>
           {isOpen&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {isAdminMode&&<button onClick={()=>openEditModal(n)} style={{padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>✎ Editar</button>}
