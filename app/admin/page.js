@@ -4427,9 +4427,20 @@ function AdminSettings({token,session}){
   </div>;
 }
 
-const FIXED_CATS=[{k:"marketing",l:"Marketing (Meta, Google, etc.)"},{k:"software",l:"Software (Claude, Vercel, etc.)"},{k:"salarios",l:"Salarios"},{k:"oficina",l:"Oficina"},{k:"comisiones",l:"Comisiones (PayPal, spread cambio)"},{k:"otros",l:"Otros (requiere detalle)"}];
-const CAT_LBL={marketing:"Marketing",software:"Software",salarios:"Salarios",oficina:"Oficina",comisiones:"Comisiones",otros:"Otros"};
-const CAT_COLOR={marketing:"#fb923c",software:"#a78bfa",salarios:"#22c55e",oficina:"#60a5fa",comisiones:"#fbbf24",otros:"#94a3b8"};
+// Ordenadas alfabéticamente por label. "Otros" queda como catchall al final-medio.
+const FIXED_CATS=[
+  {k:"afip",l:"AFIP"},
+  {k:"comisiones",l:"Comisiones (PayPal, spread cambio)"},
+  {k:"fletes_allred",l:"Fletes ALL RED"},
+  {k:"linea_telefonica",l:"Línea Telefónica"},
+  {k:"marketing",l:"Marketing (Meta, Google, etc.)"},
+  {k:"oficina",l:"Oficina"},
+  {k:"otros",l:"Otros (requiere detalle)"},
+  {k:"salarios",l:"Salarios"},
+  {k:"software",l:"Software (Claude, Vercel, etc.)"},
+];
+const CAT_LBL={afip:"AFIP",comisiones:"Comisiones",fletes_allred:"Fletes ALL RED",linea_telefonica:"Línea Telefónica",marketing:"Marketing",oficina:"Oficina",otros:"Otros",salarios:"Salarios",software:"Software"};
+const CAT_COLOR={afip:"#e11d48",comisiones:"#fbbf24",fletes_allred:"#dc2626",linea_telefonica:"#06b6d4",marketing:"#fb923c",oficina:"#60a5fa",otros:"#94a3b8",salarios:"#22c55e",software:"#a78bfa"};
 function FinancePanel({token}){
   const [entries,setEntries]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("fixed");const [showAdd,setShowAdd]=useState(false);const [msg,setMsg]=useState("");
   // Filtros del libro diario
