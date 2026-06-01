@@ -4443,6 +4443,9 @@ const CAT_LBL={afip:"AFIP",comisiones:"Comisiones",fletes_allred:"Fletes ALL RED
 const CAT_COLOR={afip:"#e11d48",comisiones:"#fbbf24",fletes_allred:"#dc2626",linea_telefonica:"#06b6d4",marketing:"#fb923c",oficina:"#60a5fa",otros:"#94a3b8",salarios:"#22c55e",software:"#a78bfa"};
 function FinancePanel({token}){
   const [entries,setEntries]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("fixed");const [showAdd,setShowAdd]=useState(false);const [msg,setMsg]=useState("");
+  // Editar gasto: id del registro siendo editado (null = nuevo). Confirm delete: payload {id, label, date} del modal lindo.
+  const [editingId,setEditingId]=useState(null);
+  const [confirmDel,setConfirmDel]=useState(null);
   // Filtros del libro diario
   const [ledFrom,setLedFrom]=useState("");const [ledTo,setLedTo]=useState("");const [ledType,setLedType]=useState("");const [ledSearch,setLedSearch]=useState("");const [ledOrigen,setLedOrigen]=useState("");
   const [newEntry,setNewEntry]=useState({date:new Date().toISOString().slice(0,10),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});
@@ -4509,10 +4512,50 @@ function FinancePanel({token}){
       // USD puro
       body={...body,amount:Number(newEntry.amount),currency:"USD"};
     }
-    const r=await dq("finance_entries",{method:"POST",token,body});
-    if(r?.id||Array.isArray(r)){load();setShowAdd(false);setNewEntry({date:new Date().toISOString().slice(0,10),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});flash("Gasto agregado");}
+    // En edición: PATCH al registro existente. En alta: POST.
+    let r;
+    if(editingId){
+      r=await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${editingId}`,body});
+    } else {
+      r=await dq("finance_entries",{method:"POST",token,body});
+    }
+    if(r?.id||Array.isArray(r)||editingId){
+      load();setShowAdd(false);setEditingId(null);
+      setNewEntry({date:new Date().toISOString().slice(0,10),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});
+      flash(editingId?"Gasto actualizado":"Gasto agregado");
+    }
   };
-  const delEntry=async(id)=>{if(!confirm("¿Eliminar este movimiento?"))return;await dq("finance_entries",{method:"DELETE",token,filters:`?id=eq.${id}`});setEntries(p=>p.filter(e=>e.id!==id));flash("Eliminado");};
+  // Cargar un gasto existente en el form para editarlo.
+  const startEdit=(e)=>{
+    setEditingId(e.id);
+    setShowAdd(true);
+    setNewEntry({
+      date:e.date?String(e.date).slice(0,10):new Date().toISOString().slice(0,10),
+      category:e.category||"",
+      detail:e.detail||"",
+      amount:e.amount?String(e.amount):"",
+      amount_ars:e.amount_ars?String(e.amount_ars):"",
+      exchange_rate:e.exchange_rate?String(e.exchange_rate):"",
+      currency:e.currency||"USD",
+      payment_method:e.payment_method||"transferencia",
+      card_closing_date:e.card_closing_date?String(e.card_closing_date).slice(0,10):"",
+      credit_card_id:e.credit_card_id||"",
+    });
+    setTimeout(()=>{const el=document.querySelector('[data-entry-form]');if(el)el.scrollIntoView({behavior:"smooth",block:"start"});},50);
+  };
+  const cancelEdit=()=>{setShowAdd(false);setEditingId(null);setNewEntry({date:new Date().toISOString().slice(0,10),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});};
+  const askDelete=(e)=>{
+    const monto=e.currency==="ARS"&&e.amount_ars?`ARS ${Number(e.amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:`USD ${Number(e.amount||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    setConfirmDel({id:e.id,categoria:CAT_LBL[e.category||"otros"],detalle:e.detail,monto,fecha:e.date});
+  };
+  const executeDelete=async()=>{
+    if(!confirmDel)return;
+    await dq("finance_entries",{method:"DELETE",token,filters:`?id=eq.${confirmDel.id}`});
+    setEntries(p=>p.filter(e=>e.id!==confirmDel.id));
+    setConfirmDel(null);
+    if(editingId===confirmDel.id)cancelEdit();
+    flash("Eliminado");
+  };
   const usd=v=>`USD ${Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   // Totales costos fijos
   const totalFijos=entries.reduce((s,e)=>s+Number(e.amount||0),0);
@@ -4734,7 +4777,7 @@ function FinancePanel({token}){
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <Btn small variant="secondary" onClick={()=>generateMonthClosingPDF(-1)}>📊 Cierre mes anterior</Btn>
         <Btn small variant="secondary" onClick={()=>generateMonthClosingPDF(0)}>📊 Cierre mes actual</Btn>
-        {tab==="fixed"&&<Btn onClick={()=>setShowAdd(true)} small>+ Nuevo gasto</Btn>}
+        {tab==="fixed"&&<Btn onClick={()=>{setEditingId(null);setNewEntry({date:new Date().toISOString().slice(0,10),category:"",detail:"",amount:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",card_closing_date:"",credit_card_id:""});setShowAdd(true);}} small>+ Nuevo gasto</Btn>}
       </div>
     </div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
@@ -4745,7 +4788,7 @@ function FinancePanel({token}){
       <div style={{background:ganancia>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)",border:`1px solid ${ganancia>=0?"rgba(34,197,94,0.18)":"rgba(255,80,80,0.18)"}`,borderRadius:12,padding:"16px 20px"}}><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px"}}>GANANCIA NETA</p><p style={{fontSize:20,fontWeight:700,color:ganancia>=0?"#22c55e":"#ff6b6b",margin:0}}>{usd(ganancia)}</p></div>
     </div>
     <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>{[{k:"fixed",l:"Gastos del Negocio"},{k:"ledger",l:"Libro Diario"},{k:"dollar",l:"Dollarización"},{k:"tcdebt",l:(()=>{const c=cardDebt.usd.length+cardDebt.pmts.length+(cardDebt.supTcUsd||[]).length+(cardDebt.fleteTcOps||[]).length;return c>0?`Deuda Tarjeta (${c})`:"Deuda Tarjeta";})()}].map(t=><button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:tab===t.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:tab===t.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:tab===t.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{t.l}</button>)}</div>
-    {showAdd&&tab==="fixed"&&<Card title="Nuevo gasto">
+    {showAdd&&tab==="fixed"&&<Card title={editingId?"✎ Editar gasto":"+ Nuevo gasto"} data-entry-form>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 12px"}}>
         <Inp label="Fecha" type="date" value={newEntry.date} onChange={v=>setNewEntry(p=>({...p,date:v}))}/>
         <Sel label="Categoría" value={newEntry.category} onChange={v=>setNewEntry(p=>({...p,category:v}))} options={FIXED_CATS.map(c=>({value:c.k,label:c.l}))} ph="— Elegí una categoría —"/>
@@ -4770,7 +4813,7 @@ function FinancePanel({token}){
           <p style={{fontSize:12,color:"#fbbf24",margin:0,fontWeight:500}}>💳 Este gasto queda pendiente de débito y suma a la <strong>Deuda Tarjeta</strong> del dashboard hasta que se debite el día de cierre.{newEntry.currency==="ARS"?" Se dollariza al TC del día del débito (en la tab Dollarización).":""}</p>
         </div>
       </>}
-      <div style={{display:"flex",gap:8,marginTop:8}}><Btn onClick={addEntry}>Guardar</Btn><Btn variant="secondary" onClick={()=>setShowAdd(false)}>Cancelar</Btn></div>
+      <div style={{display:"flex",gap:8,marginTop:8}}><Btn onClick={addEntry}>{editingId?"Guardar cambios":"Guardar"}</Btn><Btn variant="secondary" onClick={cancelEdit}>Cancelar</Btn></div>
     </Card>}
     {tab==="fixed"&&(lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:<>
       <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:16}}>
@@ -4785,11 +4828,40 @@ function FinancePanel({token}){
             <td style={{padding:"10px 12px",color:"#fff"}}>{e.detail||"—"}</td>
             <td style={{padding:"10px 12px",fontWeight:700,color:"#ff6b6b"}}>-{usd(Number(e.amount||0))}</td>
             <td style={{padding:"10px 12px",fontSize:10,color:"rgba(255,255,255,0.4)"}}>{e.payment_method==="tarjeta_credito"?"TC":e.payment_method==="tarjeta_debito"?"TD":e.payment_method==="transferencia"?"TRF":"EF"}</td>
-            <td style={{padding:"10px 12px"}}><button onClick={()=>delEntry(e.id)} style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>X</button></td>
+            <td style={{padding:"10px 12px"}}><div style={{display:"flex",gap:6}}>
+              <button onClick={()=>startEdit(e)} title="Editar" style={{fontSize:10,padding:"3px 9px",borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",fontWeight:600}}>✎ Editar</button>
+              <button onClick={()=>askDelete(e)} title="Eliminar" style={{fontSize:10,padding:"3px 9px",borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>🗑 Eliminar</button>
+            </div></td>
           </tr>)}</tbody>
         </table>
         {entries.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>Sin gastos cargados. Agregá Meta ads, Vercel, Claude, salarios, etc.</p>}
-      </div></>)}
+      </div>
+      {/* Modal lindo de confirmación de eliminación */}
+      {confirmDel&&<div onClick={()=>setConfirmDel(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(255,80,80,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:460,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+            <div style={{width:42,height:42,borderRadius:"50%",background:"rgba(239,68,68,0.12)",border:"1.5px solid rgba(239,68,68,0.4)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🗑</div>
+            <div>
+              <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>Eliminar movimiento</h3>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Esta acción no se puede deshacer.</p>
+            </div>
+          </div>
+          <div style={{padding:"12px 14px",background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,marginBottom:16}}>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Movimiento</p>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:4}}>
+              <span style={{fontSize:11,padding:"2px 8px",borderRadius:4,fontWeight:700,background:`${CAT_COLOR[confirmDel.categoria?.toLowerCase()]||"#94a3b8"}22`,color:CAT_COLOR[confirmDel.categoria?.toLowerCase()]||"#94a3b8"}}>{confirmDel.categoria}</span>
+              <span style={{fontSize:15,fontWeight:700,color:"#ff6b6b",fontVariantNumeric:"tabular-nums"}}>-{confirmDel.monto}</span>
+            </div>
+            {confirmDel.detalle&&<p style={{fontSize:12,color:"rgba(255,255,255,0.75)",margin:"4px 0 0"}}>{confirmDel.detalle}</p>}
+            <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>{formatDate(confirmDel.fecha)}</p>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <button onClick={()=>setConfirmDel(null)} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Cancelar</button>
+            <button onClick={executeDelete} style={{padding:"9px 18px",fontSize:12.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(239,68,68,0.5)",background:"linear-gradient(135deg,#ef4444,#dc2626)",color:"#fff",cursor:"pointer"}}>🗑 Sí, eliminar</button>
+          </div>
+        </div>
+      </div>}
+      </>)}
     {tab==="ledger"&&(lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:(()=>{
       // Filtros
       const ledFiltered=ledger.filter(l=>{
