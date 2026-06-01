@@ -257,26 +257,102 @@ function Stub({title,desc}){
 // ────────────────────────────────────────────
 function PaneResumen({token,onNav}){
   const [reqs,setReqs]=useState([]);
+  const [ops,setOps]=useState([]);
+  const [supPmts,setSupPmts]=useState([]);
+  const [cliPmts,setCliPmts]=useState([]);
   const [lo,setLo]=useState(true);
   useEffect(()=>{(async()=>{
-    const r=await dq("gi_quote_requests",{token,filters:"?select=*,clients(first_name,last_name,client_code),gi_quote_request_products(id,quantity)&order=created_at.desc&limit=20"});
+    const [r,o,sp,cp]=await Promise.all([
+      dq("gi_quote_requests",{token,filters:"?select=*,clients(first_name,last_name,client_code),gi_quote_request_products(id,quantity)&order=created_at.desc&limit=20"}),
+      dq("operations",{token,filters:"?service_type=eq.gestion_integral&select=id,operation_code,status,channel,client_id,budget_total,total_anticipos,closed_at,eta,clients(first_name,last_name,client_code)&order=created_at.desc"}),
+      dq("operation_supplier_payments",{token,filters:"?select=id,operation_id,amount_usd,payment_date,is_paid,type,notes,operations!inner(operation_code,service_type)&operations.service_type=eq.gestion_integral&is_paid=eq.false&type=neq.refund&order=payment_date.asc"}),
+      dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd&operations!inner(service_type)&operations.service_type=eq.gestion_integral"}),
+    ]);
     setReqs(Array.isArray(r)?r:[]);
+    setOps(Array.isArray(o)?o:[]);
+    setSupPmts(Array.isArray(sp)?sp:[]);
+    setCliPmts(Array.isArray(cp)?cp:[]);
     setLo(false);
   })();},[token]);
   const pending=reqs.filter(r=>["pending","quoting"].includes(r.status));
   const sent=reqs.filter(r=>r.status==="sent");
-  const accepted=reqs.filter(r=>r.status==="accepted"||r.status==="converted");
+  const TERMINAL=["operacion_cerrada","cancelada"];
+  const activeOps=ops.filter(o=>!TERMINAL.includes(o.status)&&!o.lost_in_customs_at).sort((a,b)=>{const ea=a.eta||"9999";const eb=b.eta||"9999";return String(ea).localeCompare(String(eb));});
+  // Cobros pendientes: ops GI con saldo > 0 (no cerradas, no perdidas)
+  const cliPaidByOp={};(cliPmts||[]).forEach(p=>{cliPaidByOp[p.operation_id]=(cliPaidByOp[p.operation_id]||0)+Number(p.amount_usd||0);});
+  const conSaldo=ops.filter(o=>!TERMINAL.includes(o.status)&&!o.lost_in_customs_at).map(o=>{const bt=Number(o.budget_total||0);const paid=cliPaidByOp[o.id]||0;return {...o,saldo:Math.max(0,bt-paid)};}).filter(o=>o.saldo>0.5).sort((a,b)=>b.saldo-a.saldo);
+  const cobrosTotal=conSaldo.reduce((s,o)=>s+o.saldo,0);
+  // Pagos a proveedores pendientes (top por monto)
+  const supPendOrdered=[...supPmts].sort((a,b)=>Number(b.amount_usd||0)-Number(a.amount_usd||0));
+  const pagosTotal=supPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+  // Cerradas este mes
+  const monthStart=new Date();monthStart.setDate(1);monthStart.setHours(0,0,0,0);
+  const cerradasMes=ops.filter(o=>o.status==="operacion_cerrada"&&o.closed_at&&new Date(o.closed_at)>=monthStart);
+  const facturadoMes=cerradasMes.reduce((s,o)=>s+Number(o.budget_total||0),0);
+  const STATUS_COLOR={pendiente:"#94a3b8",en_deposito_origen:"#fbbf24",en_preparacion:"#a78bfa",en_transito:"#60a5fa",arribo_argentina:"#818cf8",en_aduana:"#fb923c",entregada:"#22c55e",operacion_cerrada:"#10b981",cancelada:"#f87171"};
+  const STATUS_LABEL={pendiente:"Pendiente",en_deposito_origen:"En depósito",en_preparacion:"Preparación",en_transito:"En tránsito",arribo_argentina:"Arribó",en_aduana:"Aduana",entregada:"Lista retiro",operacion_cerrada:"Cerrada",cancelada:"Cancelada"};
+  const usd=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
 
   return <div>
     <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.02em",margin:"0 0 4px"}}>Resumen</h1>
     <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:24}}>Estado general de tu actividad en Gestión Integral.</p>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>
-      <Kpi label="Pendientes de cotizar" val={pending.length} sub={pending.length>0?`Más reciente: ${fmtDate(pending[0]?.created_at)}`:"Al día"} color="#fbbf24"/>
-      <Kpi label="Enviadas a clientes" val={sent.length} sub="Esperando respuesta"/>
-      <Kpi label="Aceptadas" val={accepted.length} sub="Esta semana" color="#22c55e"/>
-      <Kpi label="Total cotizaciones" val={reqs.length} sub="Últimos 20"/>
+    {/* KPIs principales */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:18}}>
+      <Kpi label="Cotizaciones pendientes" val={pending.length} sub={pending.length>0?`Más reciente: ${fmtDate(pending[0]?.created_at)}`:"Al día"} color={pending.length>0?"#fbbf24":undefined}/>
+      <Kpi label="Operaciones activas" val={activeOps.length} sub={activeOps.length>0?`${activeOps.filter(o=>o.status==="en_transito").length} en tránsito`:"Sin ops en curso"} color={activeOps.length>0?"#60a5fa":undefined}/>
+      <Kpi label="Por cobrar a clientes" val={`USD ${usd(cobrosTotal)}`} sub={`${conSaldo.length} op${conSaldo.length!==1?"s":""} con saldo`} color={cobrosTotal>0?"#22c55e":undefined}/>
+      <Kpi label="A pagar proveedores" val={`USD ${usd(pagosTotal)}`} sub={`${supPmts.length} pago${supPmts.length!==1?"s":""} pendiente${supPmts.length!==1?"s":""}`} color={pagosTotal>0?"#fb923c":undefined}/>
+    </div>
+    {/* KPIs secundarios */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:24}}>
+      <Kpi label="Enviadas (esperando respuesta)" val={sent.length} sub="Cotizaciones"/>
+      <Kpi label="Cerradas este mes" val={cerradasMes.length} sub={cerradasMes.length>0?`USD ${usd(facturadoMes)} facturados`:"Sin cierres este mes"} color={cerradasMes.length>0?"#10b981":undefined}/>
+      <Kpi label="Total cotizaciones (últimas 20)" val={reqs.length} sub="Histórico reciente"/>
     </div>
 
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:18}}>
+      {/* Operaciones activas */}
+      <Card title="Operaciones activas" actionLabel="Ver todas →" onAction={()=>onNav("ops")}>
+        {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:activeOps.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1.5rem 0"}}>No hay operaciones en curso</p>:
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {activeOps.slice(0,6).map(o=>{const cn=o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—";const c=STATUS_COLOR[o.status]||"#888";return <div key={o.id} onClick={()=>onNav("ops")} style={{display:"grid",gridTemplateColumns:"90px 1fr auto auto",gap:10,alignItems:"center",padding:"10px 12px",background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.04)",borderRadius:8,cursor:"pointer",fontSize:12}}>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:GOLD_LIGHT,letterSpacing:"0.04em"}}>{o.operation_code}</span>
+              <span style={{color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cn}</span>
+              <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,color:c,background:`${c}18`,border:`1px solid ${c}33`,whiteSpace:"nowrap"}}>{STATUS_LABEL[o.status]||o.status}</span>
+              <span style={{color:"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums",fontSize:11,minWidth:80,textAlign:"right"}}>{o.eta?`ETA ${fmtDate(o.eta)}`:""}</span>
+            </div>;})}
+          </div>
+        }
+      </Card>
+      {/* Cobros pendientes */}
+      <Card title="Cobros pendientes" actionLabel={conSaldo.length?"Ver todos →":null} onAction={()=>onNav("ops")}>
+        {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:conSaldo.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1.5rem 0"}}>Al día con los cobros 🎉</p>:
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {conSaldo.slice(0,6).map(o=>{const cn=o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—";return <div key={o.id} onClick={()=>onNav("ops")} style={{display:"grid",gridTemplateColumns:"90px 1fr auto",gap:10,alignItems:"center",padding:"10px 12px",background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.04)",borderRadius:8,cursor:"pointer",fontSize:12}}>
+              <span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:GOLD_LIGHT,letterSpacing:"0.04em"}}>{o.operation_code}</span>
+              <span style={{color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cn}</span>
+              <span style={{color:"#22c55e",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {usd(o.saldo)}</span>
+            </div>;})}
+          </div>
+        }
+      </Card>
+    </div>
+
+    {/* Pagos a proveedores */}
+    <Card title="Pagos a proveedores pendientes" actionLabel={supPmts.length?"Ver libro diario →":null} onAction={()=>onNav("ledger")}>
+      {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:supPmts.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1.5rem 0"}}>Sin pagos pendientes a proveedores 🎉</p>:
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {supPendOrdered.slice(0,6).map(p=><div key={p.id} style={{display:"grid",gridTemplateColumns:"90px 1fr auto auto",gap:10,alignItems:"center",padding:"10px 12px",background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.04)",borderRadius:8,fontSize:12}}>
+            <span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:GOLD_LIGHT,letterSpacing:"0.04em"}}>{p.operations?.operation_code||"—"}</span>
+            <span style={{color:"rgba(255,255,255,0.7)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:11.5}}>{p.notes||"(sin descripción)"}</span>
+            <span style={{color:"rgba(255,255,255,0.45)",fontSize:10.5,fontVariantNumeric:"tabular-nums",minWidth:78,textAlign:"right"}}>{p.payment_date?fmtDate(p.payment_date):""}</span>
+            <span style={{color:"#fb923c",fontWeight:700,fontVariantNumeric:"tabular-nums",minWidth:110,textAlign:"right"}}>USD {usd(p.amount_usd)}</span>
+          </div>)}
+        </div>
+      }
+    </Card>
+
+    {/* Cotizaciones pendientes (lo que ya estaba) */}
     <Card title="Cotizaciones pendientes" actionLabel="Ver todas →" onAction={()=>onNav("quotes")}>
       {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:pending.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1.5rem 0"}}>No hay cotizaciones pendientes 🎉</p>:
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
