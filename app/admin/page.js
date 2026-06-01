@@ -6666,7 +6666,10 @@ function AgentsPanel({token}){
 }
 
 // PurchaseNotificationsAdmin — admin gestiona avisos de compra: confirma → crea op, o rechaza
-function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
+function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"}){
+  // mode = "client": avisos creados por el cliente desde el portal (UI sin botón crear)
+  // mode = "admin":  avisos creados manualmente desde admin (típicamente Aéreo B China)
+  const isAdminMode=mode==="admin";
   const [items,setItems]=useState([]);
   const [lo,setLo]=useState(true);
   const [filter,setFilter]=useState("open"); // open(pending+partial) | pending | partial | received | cancelled | all
@@ -6685,13 +6688,14 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
   const [showCreateClientList,setShowCreateClientList]=useState(false);
   const [savingNew,setSavingNew]=useState(false);
   const openCreateModal=()=>{setNewAviso({client_id:"",client_search:"",origin:"china",shipping_method:"aereo",description:"",trackings:[""]});setShowCreateClientList(false);setShowCreateModal(true);};
+  // En modo admin (Aéreo B China) ocultamos el selector de origen+modalidad: siempre es china+aereo.
   const saveNewAviso=async()=>{
     if(!newAviso.client_id){alert("Elegí un cliente");return;}
     const trks=newAviso.trackings.map(t=>String(t||"").trim()).filter(Boolean);
     if(trks.length===0){alert("Agregá al menos un tracking");return;}
     setSavingNew(true);
     try{
-      const body={client_id:newAviso.client_id,origin:newAviso.origin,shipping_method:newAviso.shipping_method,description:newAviso.description.trim()||null,status:"pending"};
+      const body={client_id:newAviso.client_id,origin:newAviso.origin,shipping_method:newAviso.shipping_method,description:newAviso.description.trim()||null,status:"pending",is_admin_created:true};
       const created=await dq("purchase_notifications",{method:"POST",token,body});
       const notif=Array.isArray(created)?created[0]:created;
       if(!notif?.id){alert("Error creando aviso");setSavingNew(false);return;}
@@ -6743,7 +6747,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
     })();
     return ()=>{cancelled=true;};
   },[confirmAction,token]);
-  const load=async()=>{setLo(true);const r=await dq("purchase_notifications",{token,filters:"?select=*,trackings:purchase_notification_trackings(id,tracking_code,received_at),clients(client_code,first_name,last_name,whatsapp,auth_user_id),operations(operation_code)&order=created_at.desc"});setItems(Array.isArray(r)?r:[]);setLo(false);};
+  const load=async()=>{setLo(true);const adminFilter=isAdminMode?"&is_admin_created=eq.true":"&is_admin_created=eq.false";const r=await dq("purchase_notifications",{token,filters:`?select=*,trackings:purchase_notification_trackings(id,tracking_code,received_at),clients(client_code,first_name,last_name,whatsapp,auth_user_id),operations(operation_code)${adminFilter}&order=created_at.desc`});setItems(Array.isArray(r)?r:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
 
   // Filtros combinados
@@ -6862,13 +6866,13 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:12,flexWrap:"wrap"}}>
       <div>
-        <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>📦 Avisos de compra</h2>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>Pre-avisos del cliente o cargados manualmente (típico: Aéreo B China). Marcá cada tracking como recibido cuando llegue al depósito; el aviso pasa a confirmable y crea la op.</p>
+        <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{isAdminMode?"✈️ Aéreo B China · Trackings entrantes":"📦 Avisos de compra"}</h2>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>{isAdminMode?"Avisos cargados manualmente por vos. Anotá los trackings que enviaste al depósito y marcá cada uno como recibido cuando llegue. Al recibir todos, podés crear la op consolidada.":"Pre-avisos cargados por los clientes desde el portal. Confirmá cuando la carga llegue al depósito y se crea la operación oficial."}</p>
       </div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
         {dupGroups.length>0&&<span style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:8,background:"rgba(251,146,60,0.15)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.4)"}}>⚠️ {dupGroups.length} grupo{dupGroups.length>1?"s":""} duplicado{dupGroups.length>1?"s":""}</span>}
         {counts.open>0&&<span style={{padding:"6px 14px",fontSize:12,fontWeight:700,borderRadius:8,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)"}}>⏳ {counts.open} abiertos</span>}
-        <button onClick={openCreateModal} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.02em"}}>+ Nuevo aviso</button>
+        {isAdminMode&&<button onClick={openCreateModal} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.02em"}}>+ Nuevo aviso</button>}
       </div>
     </div>
 
@@ -7017,20 +7021,12 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp}){
             </div>}
           </>}
         </div>
-        {/* Origen + modalidad */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-          <div>
-            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Origen</p>
-            <div style={{display:"flex",gap:6}}>
-              {[{k:"china",l:"🇨🇳 China"},{k:"usa",l:"🇺🇸 USA"}].map(o=>{const sel=newAviso.origin===o.k;return <button key={o.k} onClick={()=>setNewAviso(p=>({...p,origin:o.k}))} style={{flex:1,padding:"8px",fontSize:11.5,fontWeight:700,borderRadius:7,border:`1px solid ${sel?IC:"rgba(255,255,255,0.1)"}`,background:sel?"rgba(184,149,106,0.12)":"transparent",color:sel?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{o.l}</button>;})}
-            </div>
-          </div>
-          <div>
-            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Modalidad</p>
-            <div style={{display:"flex",gap:6}}>
-              {[{k:"aereo",l:"✈️ Aéreo"},{k:"maritimo",l:"🚢 Marítimo"}].map(o=>{const sel=newAviso.shipping_method===o.k;return <button key={o.k} onClick={()=>setNewAviso(p=>({...p,shipping_method:o.k}))} style={{flex:1,padding:"8px",fontSize:11.5,fontWeight:700,borderRadius:7,border:`1px solid ${sel?IC:"rgba(255,255,255,0.1)"}`,background:sel?"rgba(184,149,106,0.12)":"transparent",color:sel?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{o.l}</button>;})}
-            </div>
-          </div>
+        {/* Origen + modalidad fijos para Aéreo B China */}
+        <div style={{padding:"10px 12px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:8,marginBottom:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Canal:</span>
+          <span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(239,68,68,0.12)",color:"#fca5a5",border:"1px solid rgba(239,68,68,0.25)"}}>🇨🇳 China</span>
+          <span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.08)"}}>✈️ Aéreo</span>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Al confirmar, la op se crea como Aéreo Integral AC (canal B).</span>
         </div>
         {/* Trackings */}
         <div style={{marginBottom:12}}>
@@ -10110,6 +10106,7 @@ function AdminDashboard({session,onLogout}){
       {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
       {key:"tasks",label:"Tareas",p:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"]},
       {key:"purchase_notifs",label:"Avisos de compra",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},
+      {key:"aereo_b_china",label:"Aéreo B China",p:["M22 2L11 13","M22 2l-7 20-4-9-9-4 20-7z"]},
       {key:"quotes",label:"Cotizaciones",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},
       {key:"calc",label:"Calculadora",p:["M9 2h6","M3 6h18","M9 12h.01","M15 12h.01","M9 16h.01","M15 16h.01","M9 20h.01","M15 20h.01","M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6"]},
     ]},
@@ -10210,7 +10207,8 @@ function AdminDashboard({session,onLogout}){
       {page==="dashboard"&&<><FinanceDashboard token={token}/><OperationalAnalytics token={token}/><DashboardKPIs token={token}/><RetentionLTVCard token={token}/></>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="maritime"&&<MaritimePanel token={token} allClients={allClients}/>}
-      {page==="purchase_notifs"&&<PurchaseNotificationsAdmin token={token} allClients={allClients} onCreateOp={op=>{setPage("operations");setSelOp(op);}}/>}
+      {page==="purchase_notifs"&&<PurchaseNotificationsAdmin token={token} allClients={allClients} onCreateOp={op=>{setPage("operations");setSelOp(op);}} mode="client"/>}
+      {page==="aereo_b_china"&&<PurchaseNotificationsAdmin token={token} allClients={allClients} onCreateOp={op=>{setPage("operations");setSelOp(op);}} mode="admin"/>}
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
