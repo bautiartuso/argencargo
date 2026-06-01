@@ -1799,8 +1799,8 @@ function PaneOps({token,isAdmin}){
   }
 
   const renderTable=(rows)=>rows.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Sin operaciones en esta vista.</p>:
-    <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+    <div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflowX:"auto",overflowY:"hidden"}}>
+      <table style={{width:"100%",minWidth:isAdmin?920:780,borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.22)"}}>
           <th style={thStyle()}>Op</th>
           <th style={thStyle()}>Cliente</th>
