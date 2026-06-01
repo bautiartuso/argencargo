@@ -7029,7 +7029,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
                 </div>
               </div>;})}
             </div>
-            {n.description&&<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 4px"}}>{n.description}</p>}
+            {n.description&&<p style={{fontSize:12.5,color:"#fff",margin:"6px 0 4px"}}><strong style={{fontWeight:700}}>Mercadería:</strong> {n.description}</p>}
             {!isAdminMode&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>Avisado {formatDate(n.created_at)}{n.estimated_packages?` · ${n.estimated_packages} bultos`:""}{n.estimated_dispatch_date?` · sale ${formatDate(n.estimated_dispatch_date)}`:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?` · op `:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?<strong style={{color:IC,fontFamily:"monospace"}}>{n.operations.operation_code}</strong>:""}</p>}
           </div>
           {isOpen&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
