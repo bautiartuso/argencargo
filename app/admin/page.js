@@ -6178,19 +6178,41 @@ function AgentsPanel({token}){
     if(agentIds.length>1){alert("Solo podés agrupar ops del MISMO agente. Las que seleccionaste son de varios agentes distintos.");return;}
     const agentId=agentIds[0];
     if(!agentId){alert("Las ops seleccionadas no tienen agente asignado");return;}
-    // ── PRE-VUELO: bloquear si algún canal A tiene items sin NCM / sin derechos cargados.
-    // Sin esto, los flight_invoice_items se clonan con hs_code="" y el presupuesto se calcula
-    // con 0% de derechos/estadística → cliente subfacturado.
+    // ── PRE-VUELO (aéreo A): auto-clasificar con IA los operation_items pendientes ANTES de crear el vuelo.
+    // Antes solo bloqueaba; ahora intenta resolver automáticamente con /api/ncm para que el admin no
+    // tenga que ir op por op tocando "✨ Clasificar todos los NCM". Si la IA no logra resolver alguno,
+    // recién ahí se bloquea con un alert listando solo los irresolubles.
     const opsBlanco=ops.filter(o=>o.channel?.includes("blanco")&&!o.channel?.includes("maritimo"));
     if(opsBlanco.length>0){
       const opIds=opsBlanco.map(o=>o.id);
-      const checkItems=await dq("operation_items",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=operation_id,description,ncm_code,import_duty_rate,statistics_rate`});
+      const checkItems=await dq("operation_items",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=id,operation_id,description,ncm_code,import_duty_rate,statistics_rate,iva_rate`});
       const codeOf=Object.fromEntries(opsBlanco.map(o=>[o.id,o.operation_code]));
-      const bad=(Array.isArray(checkItems)?checkItems:[]).filter(i=>i.description&&i.description.trim()&&(!i.ncm_code||i.ncm_code.trim()===""||i.import_duty_rate==null||i.import_duty_rate===""||i.statistics_rate==null||i.statistics_rate===""));
-      if(bad.length>0){
-        const byOp={};bad.forEach(i=>{const c=codeOf[i.operation_id]||"—";(byOp[c]=byOp[c]||[]).push(i.description.slice(0,40));});
-        const summary=Object.entries(byOp).map(([c,ds])=>`• ${c}: ${ds.length} item(s) sin NCM / sin derechos`).join("\n");
-        alert(`❌ No se puede crear el vuelo: hay productos sin clasificar.\n\n${summary}\n\nClasificalos primero desde el detalle de la op → Productos → ✨ Clasificar todos los NCM (IA), o cargá NCM/derechos a mano. Si se genera el vuelo con items sin NCM, el presupuesto se calcula con 0% de derechos y el cliente queda subfacturado.`);
+      const pending=(Array.isArray(checkItems)?checkItems:[]).filter(i=>i.description&&i.description.trim()&&(!i.ncm_code||i.ncm_code.trim()===""||i.import_duty_rate==null||i.import_duty_rate===""||i.statistics_rate==null||i.statistics_rate===""||i.iva_rate==null||i.iva_rate===""));
+      const unresolved=[];
+      if(pending.length>0){
+        flash(`✨ Auto-clasificando ${pending.length} item${pending.length>1?"s":""} con IA…`);
+        for(const it of pending){
+          try{
+            const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
+            const d=await r.json();
+            if(d?.ncm_code){
+              const body={ncm_code:d.ncm_code};
+              if(d.import_duty_rate!=null)body.import_duty_rate=Number(d.import_duty_rate);
+              if(d.statistics_rate!=null)body.statistics_rate=Number(d.statistics_rate);
+              if(d.iva_rate!=null)body.iva_rate=Number(d.iva_rate);
+              await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body});
+              // Validar que quedaron todos los campos. Si la IA no devolvió derechos/IVA, marcar como no resuelto.
+              if(body.import_duty_rate==null||body.statistics_rate==null||body.iva_rate==null){unresolved.push(it);}
+            } else {
+              unresolved.push(it);
+            }
+          }catch(e){console.error("auto-clasificar",it.id,e);unresolved.push(it);}
+        }
+      }
+      if(unresolved.length>0){
+        const byOp={};unresolved.forEach(i=>{const c=codeOf[i.operation_id]||"—";(byOp[c]=byOp[c]||[]).push(i.description.slice(0,40));});
+        const summary=Object.entries(byOp).map(([c,ds])=>`• ${c}: ${ds.length} item(s) — ${ds.join(" · ")}`).join("\n");
+        alert(`❌ No se puede crear el vuelo: la IA no pudo clasificar todos los productos.\n\n${summary}\n\nCompletá NCM + DIE/TE/IVA a mano desde el detalle de cada op → Productos.`);
         return;
       }
     }
@@ -6340,14 +6362,20 @@ function AgentsPanel({token}){
               <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 {["✓","Op","Cliente","Mercadería","Bultos","Peso","Consolidación","WA"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
               </tr></thead>
-              <tbody>{grp.ops.map(o=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const opPkgs=opPackages(o.id);const pkgsCount=opPkgs.length;const lastPkgAt=opPkgs.reduce((mx,p)=>{const t=p.created_at?new Date(p.created_at).getTime():0;return t>mx?t:mx;},0);const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;const isExpanded=expandedOp===o.id;return <Fragment key={o.id}><tr style={{borderBottom:isExpanded?"none":"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:inFlight?0.5:0.7,cursor:"pointer",background:isExpanded?"rgba(184,149,106,0.06)":"transparent",transition:"background 150ms"}} onClick={(e)=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button"))return;setExpandedOp(isExpanded?null:o.id);}} onMouseEnter={e=>{if(!isExpanded)e.currentTarget.style.background="rgba(255,255,255,0.03)";}} onMouseLeave={e=>{if(!isExpanded)e.currentTarget.style.background="transparent";}}>
+              <tbody>{grp.ops.map(o=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const opPkgs=opPackages(o.id);const pkgsCount=opPkgs.length;const lastPkgAt=opPkgs.reduce((mx,p)=>{const t=p.created_at?new Date(p.created_at).getTime():0;return t>mx?t:mx;},0);const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;const isExpanded=expandedOp===o.id;
+              // Alerta DIE 0% para canal aéreo blanco (canal A): puede ser legítimo pero el admin tiene que revisarlo manual.
+              const isAereoA=o.channel==="aereo_blanco";
+              const itemsForOp=isAereoA?depositItems.filter(i=>i.operation_id===o.id):[];
+              const zeroDieItems=isAereoA?itemsForOp.filter(i=>i.description&&i.description.trim()&&i.ncm_code&&i.ncm_code.trim()&&Number(i.import_duty_rate)===0):[];
+              const hasZeroDie=zeroDieItems.length>0;
+              return <Fragment key={o.id}><tr style={{borderBottom:isExpanded?"none":"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:inFlight?0.5:0.7,cursor:"pointer",background:isExpanded?"rgba(184,149,106,0.06)":"transparent",transition:"background 150ms"}} onClick={(e)=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button"))return;setExpandedOp(isExpanded?null:o.id);}} onMouseEnter={e=>{if(!isExpanded)e.currentTarget.style.background="rgba(255,255,255,0.03)";}} onMouseLeave={e=>{if(!isExpanded)e.currentTarget.style.background="transparent";}}>
                 <td style={{padding:"10px 12px"}}>{canSelect?(()=>{const isChecked=selectedOps.includes(o.id);return <label onClick={e=>e.stopPropagation()} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",width:20,height:20}}>
                   <input type="checkbox" checked={isChecked} onChange={()=>toggleSelOp(o.id)} style={{position:"absolute",opacity:0,width:0,height:0,pointerEvents:"none"}}/>
                   <span style={{width:18,height:18,borderRadius:5,border:isChecked?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.25)",background:isChecked?GOLD_GRADIENT:"rgba(255,255,255,0.04)",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 150ms",boxShadow:isChecked?GOLD_GLOW:"none"}}>
                     {isChecked&&<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#0A1628" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                   </span>
                 </label>;})():<span style={{color:"rgba(255,255,255,0.3)",fontSize:14}}>{isExpanded?"▾":"▸"}</span>}</td>
-                <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12}}>{o.operation_code}</td>
+                <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12}}>{o.operation_code}{hasZeroDie&&<span title={`${zeroDieItems.length} producto(s) con DIE 0% — revisá manualmente que sea correcto:\n${zeroDieItems.map(i=>`• ${i.description} (NCM ${i.ncm_code})`).join("\n")}`} style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.18)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.4)",letterSpacing:"0.05em",marginLeft:6,cursor:"help"}}>⚠ DIE 0%</span>}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}>{o.clients?<>{`${o.clients.client_code} - ${o.clients.first_name}`}{o.clients.tax_condition==="responsable_inscripto"&&<span title="Cliente Responsable Inscripto" style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.18)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.05em",marginLeft:6,display:"inline-block",verticalAlign:"middle"}}>RI</span>}</>:"—"}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",maxWidth:240}}>{(()=>{
                   // Si la op tiene description manual, usala. Si no, usar items declarados por el cliente.
