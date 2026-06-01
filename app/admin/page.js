@@ -902,11 +902,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       gross_weight_kg:numOrNull(it.gross_weight_kg),
       notes:it.notes||null,
     };
-    // Auto-clasificar NCM si tiene descripción pero no código
-    if(body.description&&!body.ncm_code){
+    // Auto-clasificar NCM si tiene descripción pero no código. En GI no aplica (el cliente paga precio acordado, no se factura por NCM).
+    if(!isGI&&body.description&&!body.ncm_code){
       try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:body.description})});const d=await r.json();if(d?.ncm_code){body.ncm_code=d.ncm_code;if(d.import_duty_rate&&body.import_duty_rate==null)body.import_duty_rate=Number(d.import_duty_rate);if(d.statistics_rate&&body.statistics_rate==null)body.statistics_rate=Number(d.statistics_rate);if(d.iva_rate&&body.iva_rate==null)body.iva_rate=Number(d.iva_rate);}}catch(e){}
     }
-    await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body});flash(body.ncm_code?`Producto guardado · NCM ${body.ncm_code}`:"Producto guardado");autoSyncBudget();await reloadItems();
+    await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body});flash(!isGI&&body.ncm_code?`Producto guardado · NCM ${body.ncm_code}`:"Producto guardado");autoSyncBudget();await reloadItems();
   };
   const addItem=async()=>{await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:"Nuevo producto",quantity:1,unit_price_usd:0}});await reloadItems();flash("Producto agregado");autoSyncBudget();};
   // Clasificar TODOS los items: si no tienen NCM → IA. Si tienen NCM pero no tasas → llenar tasas con IA. Si tienen todo → saltear.
