@@ -4434,13 +4434,14 @@ const FIXED_CATS=[
   {k:"fletes_allred",l:"Fletes ALL RED"},
   {k:"linea_telefonica",l:"Línea Telefónica"},
   {k:"marketing",l:"Marketing (Meta, Google, etc.)"},
+  {k:"obra_social",l:"Obra Social"},
   {k:"oficina",l:"Oficina"},
   {k:"salarios",l:"Salarios"},
   {k:"software",l:"Software (Claude, Vercel, etc.)"},
   {k:"otros",l:"Otros (requiere detalle)"},
 ];
-const CAT_LBL={afip:"AFIP",comisiones:"Comisiones",fletes_allred:"Fletes ALL RED",linea_telefonica:"Línea Telefónica",marketing:"Marketing",oficina:"Oficina",otros:"Otros",salarios:"Salarios",software:"Software"};
-const CAT_COLOR={afip:"#e11d48",comisiones:"#fbbf24",fletes_allred:"#dc2626",linea_telefonica:"#06b6d4",marketing:"#fb923c",oficina:"#60a5fa",otros:"#94a3b8",salarios:"#22c55e",software:"#a78bfa"};
+const CAT_LBL={afip:"AFIP",comisiones:"Comisiones",fletes_allred:"Fletes ALL RED",linea_telefonica:"Línea Telefónica",marketing:"Marketing",obra_social:"Obra Social",oficina:"Oficina",otros:"Otros",salarios:"Salarios",software:"Software"};
+const CAT_COLOR={afip:"#e11d48",comisiones:"#fbbf24",fletes_allred:"#dc2626",linea_telefonica:"#06b6d4",marketing:"#fb923c",obra_social:"#14b8a6",oficina:"#60a5fa",otros:"#94a3b8",salarios:"#22c55e",software:"#a78bfa"};
 function FinancePanel({token}){
   const [entries,setEntries]=useState([]);const [lo,setLo]=useState(true);const [tab,setTab]=useState("fixed");const [showAdd,setShowAdd]=useState(false);const [msg,setMsg]=useState("");
   // Editar gasto: id del registro siendo editado (null = nuevo). Confirm delete: payload {id, label, date} del modal lindo.
