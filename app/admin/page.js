@@ -7049,18 +7049,9 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
                       {t.received_at&&<span style={{color:"rgba(34,197,94,0.85)",marginLeft:10,fontWeight:700}}>· ✓ recibido</span>}
                     </p>}
                   </div>
-                  {isOpen&&t.id&&(isAdminMode
-                    ?<div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,minWidth:170}} title={t.received_at?"Cambiá la fecha o vaciála para deshacer la recepción":"Elegí la fecha en que llegó al depósito"}>
-                      <DatePicker value={dateVal} onChange={v=>{const clean=v||"";setTrkDateBuf(p=>({...p,[t.id]:clean}));if(!clean){if(t.received_at)unmarkTrackingReceived(n,t.id);}else if(!t.received_at){markTrackingReceived(n,t.id,clean);}else if(clean!==(String(t.received_at).slice(0,10))){updateReceivedDate(n,t.id,clean);}}} small/>
-                    </div>
-                    :<div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
-                      <div style={{minWidth:140,maxWidth:170,padding:dateChanged?2:0,borderRadius:7,background:dateChanged?"rgba(251,191,36,0.10)":"transparent",border:dateChanged?"1px solid rgba(251,191,36,0.35)":"1px solid transparent"}} title={t.received_at?"Fecha de recepción":"Fecha al marcar como recibido"}><DatePicker value={dateVal||todayStr()} onChange={v=>setTrkDateBuf(p=>({...p,[t.id]:v||todayStr()}))} small/></div>
-                      {t.received_at
-                        ?(dateChanged
-                            ?<button onClick={()=>{updateReceivedDate(n,t.id,dateVal);setTrkDateBuf(p=>{const c={...p};delete c[t.id];return c;});}} title="Guardar nueva fecha" style={{padding:"3px 9px",fontSize:10.5,fontWeight:700,borderRadius:5,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.12)",color:"#fbbf24",cursor:"pointer",fontFamily:"inherit"}}>💾 Guardar</button>
-                            :<button onClick={()=>unmarkTrackingReceived(n,t.id)} title="Deshacer recepción" style={{padding:"3px 9px",fontSize:10.5,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.45)",cursor:"pointer",fontFamily:"inherit"}}>↶</button>)
-                        :<button onClick={()=>{markTrackingReceived(n,t.id,dateVal||todayStr());setTrkDateBuf(p=>{const c={...p};delete c[t.id];return c;});}} title="Marcar como recibido en esa fecha" style={{padding:"3px 10px",fontSize:11,fontWeight:700,borderRadius:5,border:"1px solid rgba(34,197,94,0.45)",background:"rgba(34,197,94,0.12)",color:"#22c55e",cursor:"pointer",fontFamily:"inherit"}}>✓ Recibido</button>}
-                    </div>)}
+                  {isOpen&&t.id&&<div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,minWidth:170}} title={t.received_at?"Cambiá la fecha o vaciála para deshacer la recepción":"Elegí la fecha en que llegó al depósito"}>
+                    <DatePicker value={dateVal} onChange={v=>{const clean=v||"";setTrkDateBuf(p=>({...p,[t.id]:clean}));if(!clean){if(t.received_at)unmarkTrackingReceived(n,t.id);}else if(!t.received_at){markTrackingReceived(n,t.id,clean);}else if(clean!==(String(t.received_at).slice(0,10))){updateReceivedDate(n,t.id,clean);}}} small/>
+                  </div>}
                 </div>
               </div>;})}
             </div>
