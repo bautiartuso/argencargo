@@ -154,6 +154,52 @@ function checkOverride(description) {
   return null;
 }
 
+// Intervención FORZADA por prefijo de NCM (la IA suele subdetectarlas,
+// especialmente en productos médicos disfrazados de wellness).
+// Si la IA marcó algo más fuerte (más tipos), respetamos lo suyo + agregamos.
+const NCM_INTERVENTION_RULES = [
+  // Capítulo 90 — Instrumentos y aparatos médicos: TODOS llevan ANMAT.
+  { prefix: "9018", types: ["ANMAT"], reason: "Instrumental médico-quirúrgico (Cap. 9018) — registro ANMAT obligatorio (Disp. 2318/02)" },
+  { prefix: "9019", types: ["ANMAT"], reason: "Aparatos de mecanoterapia / masaje / respiración médica (Cap. 9019) — registro ANMAT obligatorio" },
+  { prefix: "9020", types: ["ANMAT"], reason: "Aparatos respiratorios y máscaras (Cap. 9020) — registro ANMAT obligatorio" },
+  { prefix: "9021", types: ["ANMAT"], reason: "Ortopedia / prótesis / audífonos / fajas médicas (Cap. 9021) — registro ANMAT obligatorio (Disp. 2318/02)" },
+  { prefix: "9022", types: ["ANMAT"], reason: "Aparatos de rayos X / radiaciones (Cap. 9022) — registro ANMAT obligatorio" },
+  // Capítulo 30 — Productos farmacéuticos
+  { prefix: "3003", types: ["ANMAT"], reason: "Medicamentos no acondicionados para venta minorista — ANMAT" },
+  { prefix: "3004", types: ["ANMAT"], reason: "Medicamentos acondicionados para venta minorista — ANMAT" },
+  { prefix: "3005", types: ["ANMAT"], reason: "Guatas, gasas, vendas y artículos análogos acondicionados para uso médico — ANMAT" },
+  { prefix: "3006", types: ["ANMAT"], reason: "Preparaciones y artículos farmacéuticos diversos — ANMAT" },
+  // Cosméticos y perfumería — ANMAT (Disp. 1110/99)
+  { prefix: "3303", types: ["ANMAT"], reason: "Perfumes y aguas de tocador — ANMAT cosmético" },
+  { prefix: "3304", types: ["ANMAT"], reason: "Preparaciones de belleza/maquillaje/cuidado de piel — ANMAT cosmético" },
+  { prefix: "3305", types: ["ANMAT"], reason: "Preparaciones capilares — ANMAT cosmético" },
+  { prefix: "3306", types: ["ANMAT"], reason: "Higiene bucodental — ANMAT cosmético" },
+  { prefix: "3307", types: ["ANMAT"], reason: "Preparaciones de afeitar / desodorantes / sales de baño — ANMAT cosmético" },
+  // Alimentos y suplementos — INAL/ANMAT
+  { prefix: "2106", types: ["ANMAT"], reason: "Preparaciones alimenticias / suplementos dietarios — INAL/ANMAT" },
+  // ENACOM — telecomunicaciones inalámbricas
+  { prefix: "8517.13", types: ["ENACOM"], reason: "Teléfonos móviles — homologación ENACOM" },
+  { prefix: "8517.14", types: ["ENACOM"], reason: "Teléfonos móviles — homologación ENACOM" },
+  { prefix: "8517.62", types: ["ENACOM"], reason: "Equipos de transmisión/recepción inalámbricos — homologación ENACOM" },
+  { prefix: "8525.50", types: ["ENACOM"], reason: "Aparatos transmisores — homologación ENACOM" },
+  { prefix: "8525.60", types: ["ENACOM"], reason: "Aparatos transmisores con receptor incorporado — homologación ENACOM" },
+];
+
+function enforceInterventionByNcm(ncm_code, currentIntervention) {
+  if (!ncm_code) return currentIntervention;
+  const code = String(ncm_code).replace(/\s/g, "");
+  for (const rule of NCM_INTERVENTION_RULES) {
+    if (code.startsWith(rule.prefix)) {
+      const prevTypes = Array.isArray(currentIntervention?.types) ? currentIntervention.types : [];
+      const merged = Array.from(new Set([...prevTypes, ...rule.types]));
+      const prevReason = currentIntervention?.reason?.trim();
+      const reason = prevReason && !prevReason.includes(rule.reason) ? `${rule.reason} · ${prevReason}` : rule.reason;
+      return { required: true, types: merged, reason };
+    }
+  }
+  return currentIntervention || { required: false, types: [], reason: null };
+}
+
 export async function POST(req) {
   try {
     const { description, image, image_mime } = await req.json();
@@ -173,8 +219,12 @@ export async function POST(req) {
     if (claudeResult?.ncm_code) {
       // Si vino guess_description de visión, lo devolvemos para que el cliente rellene el campo
       const extras = claudeResult.guess_description ? { guess_description: claudeResult.guess_description } : {};
+      // Forzamos intervención por prefijo de NCM (la IA suele subdetectar ortopedia,
+      // suplementos, cosméticos, etc., especialmente cuando el producto se vende
+      // como "wellness" sin la palabra "médico").
+      const enforcedIntervention = enforceInterventionByNcm(claudeResult.ncm_code, claudeResult.intervention);
       const results = await searchDB(claudeResult.ncm_code);
-      if (results.length > 0) return Response.json({ ...pickBest(results, claudeResult.intervention), ...extras });
+      if (results.length > 0) return Response.json({ ...pickBest(results, enforcedIntervention), ...extras });
       // No match en DB pero tenemos NCM de Claude — devolver con defaults
       return Response.json({
         ncm_code: claudeResult.ncm_code,
@@ -182,7 +232,7 @@ export async function POST(req) {
         import_duty_rate: 35,
         statistics_rate: 3,
         iva_rate: 21,
-        intervention: claudeResult.intervention || { required: false, types: [], reason: null },
+        intervention: enforcedIntervention,
         source: image ? "claude-vision" : "claude",
         ...extras,
       });
