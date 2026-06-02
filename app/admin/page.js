@@ -3223,17 +3223,15 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const stored=Number(op.cost_flete||0);
           const shown=live!=null?live:stored;
           return <>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 16px",marginBottom:10}}>
+          <div style={{display:"grid",gridTemplateColumns:isArs?"1fr 1fr 1fr 1fr 1fr":"1fr 1fr 1fr 1fr",gap:"0 16px",marginBottom:10}}>
             <Sel label="Método de pago" value={fleteMethod} onChange={chOp("cost_flete_method")} options={fleteOptions}/>
             <Sel label="Moneda" value={cur} onChange={chOp("cost_flete_currency")} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]}/>
             {isArs
               ?<Inp label="Monto ARS" type="number" value={op.cost_flete_ars} onChange={chOp("cost_flete_ars")} step="0.01"/>
               :<Inp label="Monto USD" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>}
-            {isArs
-              ?<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_flete_exchange_rate||""} onChange={chOp("cost_flete_exchange_rate")} step="0.01" placeholder="Ej: 1410"/>
-              :<Inp label="Fecha de pago" type="date" value={op.cost_flete_paid_at?String(op.cost_flete_paid_at).slice(0,10):""} onChange={v=>chOp("cost_flete_paid_at")(v?v+"T12:00:00-03":null)}/>}
+            {isArs&&<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_flete_exchange_rate||""} onChange={chOp("cost_flete_exchange_rate")} step="0.01" placeholder="Ej: 1410"/>}
+            <Inp label="Fecha de pago" type="date" value={op.cost_flete_paid_at?String(op.cost_flete_paid_at).slice(0,10):""} onChange={v=>chOp("cost_flete_paid_at")(v?v+"T12:00:00-03":null)}/>
           </div>
-          {isArs&&<Inp label="Fecha de pago" type="date" value={op.cost_flete_paid_at?String(op.cost_flete_paid_at).slice(0,10):""} onChange={v=>chOp("cost_flete_paid_at")(v?v+"T12:00:00-03":null)}/>}
           <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"6px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"Se calcula al guardar"}</p>
           </>;
         })():<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px",marginBottom:isCC?16:8}}>
@@ -3276,19 +3274,24 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               :[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"}];
             const cur=op.cost_impuestos_currency||"ARS";
             const isUsd=isMarBl&&cur==="USD";
+            // Definimos columnas según combinación. Marítimo blanco:
+            //  · ARS cash: Método + Moneda + Monto + TC + Fecha → 5
+            //  · USD cash: Método + Moneda + Monto + Fecha → 4
+            // Resto de canales:
+            //  · ARS cash: Método + Monto + TC + Fecha → 4
+            //  · ARS TC:   Método + Monto + Cierre → 3
+            const cols=isMarBl?(isUsd?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr 1fr 1fr"):(isCash?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr");
             return <>
-            <div style={{display:"grid",gridTemplateColumns:isMarBl?"1fr 1fr 1fr 1fr 1fr":isCash?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr",gap:"0 16px"}}>
+            <div style={{display:"grid",gridTemplateColumns:cols,gap:"0 16px"}}>
               <Sel label="Método de pago" value={impMethod} onChange={chOp("cost_impuestos_method")} options={impOptions}/>
               {isMarBl&&<Sel label="Moneda" value={cur} onChange={chOp("cost_impuestos_currency")} options={[{value:"ARS",label:"ARS"},{value:"USD",label:"USD"}]}/>}
               {isUsd
                 ?<Inp label="Monto USD" type="number" value={op.cost_impuestos_usd} onChange={chOp("cost_impuestos_usd")} step="0.01"/>
                 :<Inp label="Monto ARS" type="number" value={op.cost_impuestos_ars} onChange={chOp("cost_impuestos_ars")} step="0.01"/>}
-              {isUsd
-                ?<Inp label="Fecha de pago" type="date" value={op.cost_impuestos_paid_at||""} onChange={chOp("cost_impuestos_paid_at")}/>
-                :isCash
-                  ?<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_impuestos_exchange_rate||""} onChange={chOp("cost_impuestos_exchange_rate")} step="0.01" placeholder="Ej: 1410"/>
-                  :<Inp label="Cierre de tarjeta" type="date" value={op.cost_impuestos_card_closing||""} onChange={chOp("cost_impuestos_card_closing")}/>}
-              {!isUsd&&isCash&&<Inp label="Fecha de pago" type="date" value={op.cost_impuestos_paid_at||""} onChange={chOp("cost_impuestos_paid_at")}/>}
+              {!isUsd&&(isCash
+                ?<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_impuestos_exchange_rate||""} onChange={chOp("cost_impuestos_exchange_rate")} step="0.01" placeholder="Ej: 1410"/>
+                :<Inp label="Cierre de tarjeta" type="date" value={op.cost_impuestos_card_closing||""} onChange={chOp("cost_impuestos_card_closing")}/>)}
+              {(isUsd||isCash)&&<Inp label="Fecha de pago" type="date" value={op.cost_impuestos_paid_at||""} onChange={chOp("cost_impuestos_paid_at")}/>}
             </div>
             {!isCash&&<div style={{marginTop:10}}>
               <CreditCardPicker token={token} value={op.cost_impuestos_credit_card_id} onChange={v=>chOp("cost_impuestos_credit_card_id")(v)} required/>
