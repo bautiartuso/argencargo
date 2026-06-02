@@ -2916,6 +2916,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           cost_flete_card_closing:dateOnly(op.cost_flete_card_closing),
           cost_flete_credit_card_id:op.cost_flete_method==="tarjeta_credito"?(op.cost_flete_credit_card_id||null):null,
           cost_flete_platform:(op.cost_flete_method==="tarjeta_credito"||op.cost_flete_method==="tarjeta_debito")?(op.cost_flete_platform||null):null,
+          cost_flete_currency:op.cost_flete_currency||null,
+          cost_flete_ars:numOrNull(op.cost_flete_ars),
+          cost_flete_exchange_rate:numOrNull(op.cost_flete_exchange_rate),
           cost_impuestos_ars:numOrNull(op.cost_impuestos_ars),
           cost_impuestos_method:op.cost_impuestos_method||null,
           cost_impuestos_card_closing:dateOnly(op.cost_impuestos_card_closing),
@@ -2923,6 +2926,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           cost_impuestos_exchange_rate:numOrNull(op.cost_impuestos_exchange_rate),
           cost_impuestos_paid_at:dateOrNull(op.cost_impuestos_paid_at),
           cost_impuestos_reales:numOrNull(op.cost_impuestos_reales),
+          cost_impuestos_currency:op.cost_impuestos_currency||null,
+          cost_impuestos_usd:numOrNull(op.cost_impuestos_usd),
           cost_gasto_documental_ars:numOrNull(op.cost_gasto_documental_ars),
           cost_gasto_doc_method:op.cost_gasto_doc_method||null,
           cost_gasto_doc_card_closing:dateOnly(op.cost_gasto_doc_card_closing),
@@ -2990,10 +2995,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             await loadCCBalance();
           }
         }
-        // Auto-create finance_entry for impuestos ARS
+        // Auto-create finance_entry for impuestos ARS.
+        // En marítimo blanco con moneda USD, este flujo se salta (la entry USD ya se creó arriba).
         const impMethod=op.cost_impuestos_method||"tarjeta_credito";
         const impHasMeta=impMethod==="efectivo"?Number(op.cost_impuestos_exchange_rate||0)>0:!!op.cost_impuestos_card_closing;
-        if(impArs>0&&impHasMeta){
+        const impIsUsd=op.cost_impuestos_currency==="USD";
+        if(impArs>0&&impHasMeta&&!impIsUsd){
           const existImp=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&description=like.Impuestos*&auto_generated=eq.true&select=id`});
           const existsImp=Array.isArray(existImp)&&existImp.length>0;
           if(impMethod==="efectivo"){
@@ -3037,6 +3044,33 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         // Para los demás canales esos campos se graban directo en USD en costBody arriba (sin entry auto).
         const isMarBl=op.channel?.includes("maritimo")&&op.channel?.includes("blanco");
         if(isMarBl){
+          // Flete ARS → dollarizar y persistir cost_flete USD final.
+          if((op.cost_flete_currency||"USD")==="ARS"){
+            const fArs=Number(op.cost_flete_ars||0);
+            const fRate=Number(op.cost_flete_exchange_rate||0);
+            if(fArs>0&&fRate>0){
+              const fUsd=Math.round((fArs/fRate)*100)/100;
+              await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{cost_flete:fUsd}});
+              setOp(p=>({...p,cost_flete:fUsd}));
+            }
+          }
+          // Impuestos USD: cost_impuestos_usd → cost_impuestos_reales directo (sin dolarizar) +
+          // finance_entry USD directa, evitando que el flujo ARS de arriba la cree con ARS=0.
+          if((op.cost_impuestos_currency||"ARS")==="USD"){
+            const iUsd=Number(op.cost_impuestos_usd||0);
+            if(iUsd>0){
+              await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{cost_impuestos_reales:iUsd}});
+              setOp(p=>({...p,cost_impuestos_reales:iUsd}));
+              const existImpUsd=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&description=like.Impuestos*&auto_generated=eq.true&select=id`});
+              const paidDateUsd=op.cost_impuestos_paid_at||new Date().toISOString().slice(0,10);
+              const feBody={date:paidDateUsd,type:"gasto",description:`Impuestos ${op.operation_code} (USD)`,amount:iUsd,currency:"USD",payment_method:op.cost_impuestos_method||"transferencia",is_paid:true,auto_generated:true,operation_id:id};
+              if(Array.isArray(existImpUsd)&&existImpUsd[0]?.id){
+                await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existImpUsd[0].id}`,body:feBody});
+              } else {
+                await dq("finance_entries",{method:"POST",token,body:feBody});
+              }
+            }
+          }
           for(const cfg of [
             {prefix:"cost_flete_local",label:"Flete local",descPattern:"Flete local"},
             {prefix:"cost_otros",label:"Otros costos",descPattern:"Otros costos"},
@@ -3179,7 +3213,30 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               ?[{value:"efectivo",label:"Contado"},{value:"transferencia",label:"Transferencia"}]
               :[{value:"cuenta_corriente",label:"Cuenta Corriente (agente)"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"tarjeta_debito",label:"Tarjeta de Débito"},{value:"transferencia",label:"Transferencia"}];
           return <>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px",marginBottom:isCC?16:8}}>
+        {/* Marítimo blanco: selector moneda + monto ARS / TC cuando aplica. Otros canales: solo USD. */}
+        {isMaritimoBlanco?(()=>{
+          const cur=op.cost_flete_currency||"USD";
+          const isArs=cur==="ARS";
+          const ars=Number(op.cost_flete_ars||0);
+          const rate=Number(op.cost_flete_exchange_rate||0);
+          const live=isArs&&ars>0&&rate>0?(ars/rate):null;
+          const stored=Number(op.cost_flete||0);
+          const shown=live!=null?live:stored;
+          return <>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 16px",marginBottom:10}}>
+            <Sel label="Método de pago" value={fleteMethod} onChange={chOp("cost_flete_method")} options={fleteOptions}/>
+            <Sel label="Moneda" value={cur} onChange={chOp("cost_flete_currency")} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]}/>
+            {isArs
+              ?<Inp label="Monto ARS" type="number" value={op.cost_flete_ars} onChange={chOp("cost_flete_ars")} step="0.01"/>
+              :<Inp label="Monto USD" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>}
+            {isArs
+              ?<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_flete_exchange_rate||""} onChange={chOp("cost_flete_exchange_rate")} step="0.01" placeholder="Ej: 1410"/>
+              :<Inp label="Fecha de pago" type="date" value={op.cost_flete_paid_at?String(op.cost_flete_paid_at).slice(0,10):""} onChange={v=>chOp("cost_flete_paid_at")(v?v+"T12:00:00-03":null)}/>}
+          </div>
+          {isArs&&<Inp label="Fecha de pago" type="date" value={op.cost_flete_paid_at?String(op.cost_flete_paid_at).slice(0,10):""} onChange={v=>chOp("cost_flete_paid_at")(v?v+"T12:00:00-03":null)}/>}
+          <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"6px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"Se calcula al guardar"}</p>
+          </>;
+        })():<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px",marginBottom:isCC?16:8}}>
           <Inp label="Costo flete (USD)" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>
           <Sel label="Método de pago" value={fleteMethod} onChange={chOp("cost_flete_method")} options={fleteOptions}/>
           {isCC&&<div style={{paddingTop:22}} title="Cuenta Corriente con el agente asignado a esta op: anticipos suman, fletes en CC restan. Negativo (rojo) = le debés al agente.">
@@ -3193,7 +3250,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           {!isCC&&!isTC&&Number(op.cost_flete)>0&&<Inp label="Fecha de pago del flete" type="date" value={op.cost_flete_paid_at?String(op.cost_flete_paid_at).slice(0,10):""} onChange={v=>chOp("cost_flete_paid_at")(v?v+"T12:00:00-03":null)}/>}
           {/* TC: fecha de cierre + tarjeta. Queda en Deuda Tarjeta hasta que se debite. */}
           {isTC&&Number(op.cost_flete)>0&&<Inp label="Cierre de tarjeta" type="date" value={op.cost_flete_card_closing?String(op.cost_flete_card_closing).slice(0,10):""} onChange={v=>chOp("cost_flete_card_closing")(v||null)}/>}
-        </div>
+        </div>}
         {(isTC||isDebito)&&Number(op.cost_flete)>0&&<div style={{marginBottom:12,maxWidth:260}}>
           <Sel label="Plataforma" value={op.cost_flete_platform||""} onChange={chOp("cost_flete_platform")} options={[{value:"",label:"— Sin especificar —"},{value:"alibaba",label:"Alibaba"},{value:"alipay",label:"Alipay"}]}/>
         </div>}
@@ -3209,6 +3266,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Impuestos (ARS)</p>
           {(()=>{
             // Marítimo blanco (FCL/LCL): impuestos solo por efectivo o transferencia, NO tarjeta.
+            // Además acepta USD o ARS como moneda — USD se carga directo, ARS se dollariza con TC.
             const isMarBl=op.channel?.includes("maritimo")&&op.channel?.includes("blanco");
             const impDefault=isMarBl?"transferencia":"tarjeta_credito";
             const impMethod=op.cost_impuestos_method||impDefault;
@@ -3216,12 +3274,21 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             const impOptions=isMarBl
               ?[{value:"efectivo",label:"Contado"},{value:"transferencia",label:"Transferencia"}]
               :[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"}];
+            const cur=op.cost_impuestos_currency||"ARS";
+            const isUsd=isMarBl&&cur==="USD";
             return <>
-            <div style={{display:"grid",gridTemplateColumns:isCash?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr",gap:"0 16px"}}>
+            <div style={{display:"grid",gridTemplateColumns:isMarBl?"1fr 1fr 1fr 1fr 1fr":isCash?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr",gap:"0 16px"}}>
               <Sel label="Método de pago" value={impMethod} onChange={chOp("cost_impuestos_method")} options={impOptions}/>
-              <Inp label="Monto ARS" type="number" value={op.cost_impuestos_ars} onChange={chOp("cost_impuestos_ars")} step="0.01"/>
-              {isCash?<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_impuestos_exchange_rate||""} onChange={chOp("cost_impuestos_exchange_rate")} step="0.01" placeholder="Ej: 1410"/>:<Inp label="Cierre de tarjeta" type="date" value={op.cost_impuestos_card_closing||""} onChange={chOp("cost_impuestos_card_closing")}/>}
-              {isCash&&<Inp label="Fecha de pago" type="date" value={op.cost_impuestos_paid_at||""} onChange={chOp("cost_impuestos_paid_at")}/>}
+              {isMarBl&&<Sel label="Moneda" value={cur} onChange={chOp("cost_impuestos_currency")} options={[{value:"ARS",label:"ARS"},{value:"USD",label:"USD"}]}/>}
+              {isUsd
+                ?<Inp label="Monto USD" type="number" value={op.cost_impuestos_usd} onChange={chOp("cost_impuestos_usd")} step="0.01"/>
+                :<Inp label="Monto ARS" type="number" value={op.cost_impuestos_ars} onChange={chOp("cost_impuestos_ars")} step="0.01"/>}
+              {isUsd
+                ?<Inp label="Fecha de pago" type="date" value={op.cost_impuestos_paid_at||""} onChange={chOp("cost_impuestos_paid_at")}/>
+                :isCash
+                  ?<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_impuestos_exchange_rate||""} onChange={chOp("cost_impuestos_exchange_rate")} step="0.01" placeholder="Ej: 1410"/>
+                  :<Inp label="Cierre de tarjeta" type="date" value={op.cost_impuestos_card_closing||""} onChange={chOp("cost_impuestos_card_closing")}/>}
+              {!isUsd&&isCash&&<Inp label="Fecha de pago" type="date" value={op.cost_impuestos_paid_at||""} onChange={chOp("cost_impuestos_paid_at")}/>}
             </div>
             {!isCash&&<div style={{marginTop:10}}>
               <CreditCardPicker token={token} value={op.cost_impuestos_credit_card_id} onChange={v=>chOp("cost_impuestos_credit_card_id")(v)} required/>
@@ -3231,6 +3298,13 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             const ars=Number(op.cost_impuestos_ars||0);
             const rate=Number(op.cost_impuestos_exchange_rate||0);
             const isMarBl=op.channel?.includes("maritimo")&&op.channel?.includes("blanco");
+            const cur=op.cost_impuestos_currency||"ARS";
+            const isUsd=isMarBl&&cur==="USD";
+            // Si es USD directo (solo marítimo blanco), mostrar el monto USD cargado tal cual.
+            if(isUsd){
+              const usdAmt=Number(op.cost_impuestos_usd||0);
+              return <p style={{fontSize:11,fontWeight:600,color:usdAmt>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {usdAmt>0?`USD ${usdAmt.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"Cargá el monto"}</p>;
+            }
             const m=op.cost_impuestos_method||(isMarBl?"transferencia":"tarjeta_credito");
             const isEf=m==="efectivo"||m==="transferencia";
             // Preview en vivo: si es cash (efectivo o transferencia) y hay ARS+TC, calcular ahora (no esperar al guardar).
