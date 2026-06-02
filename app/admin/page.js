@@ -3002,18 +3002,20 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         }
         // Auto-create finance_entry for impuestos ARS.
         // En marítimo blanco con moneda USD, este flujo se salta (la entry USD ya se creó arriba).
+        // Efectivo y transferencia son ambos "cash" (dolarizan con TC). TC sigue el flujo legacy.
         const impMethod=op.cost_impuestos_method||"tarjeta_credito";
-        const impHasMeta=impMethod==="efectivo"?Number(op.cost_impuestos_exchange_rate||0)>0:!!op.cost_impuestos_card_closing;
+        const impIsCash=impMethod==="efectivo"||impMethod==="transferencia";
+        const impHasMeta=impIsCash?Number(op.cost_impuestos_exchange_rate||0)>0:!!op.cost_impuestos_card_closing;
         const impIsUsd=op.cost_impuestos_currency==="USD";
         if(impArs>0&&impHasMeta&&!impIsUsd){
           const existImp=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&description=like.Impuestos*&auto_generated=eq.true&select=id`});
           const existsImp=Array.isArray(existImp)&&existImp.length>0;
-          if(impMethod==="efectivo"){
-            // Contado: re-dollarizar SIEMPRE con los valores actuales (no solo en el primer save).
+          if(impIsCash){
+            // Cash (efectivo o transferencia): re-dollarizar SIEMPRE con los valores actuales.
             const rate=Number(op.cost_impuestos_exchange_rate||0);
             if(rate>0){const usdAmt=Math.round((impArs/rate)*100)/100;
               const paidDate=op.cost_impuestos_paid_at||new Date().toISOString().slice(0,10);
-              const feBody={date:paidDate,type:"gasto",description:`Impuestos ${op.operation_code} (ARS ${impArs.toLocaleString("es-AR")} @ ${rate})`,amount:usdAmt,amount_ars:impArs,exchange_rate:rate,currency:"USD",payment_method:"efectivo",is_paid:true,auto_generated:true,operation_id:id};
+              const feBody={date:paidDate,type:"gasto",description:`Impuestos ${op.operation_code} (ARS ${impArs.toLocaleString("es-AR")} @ ${rate})`,amount:usdAmt,amount_ars:impArs,exchange_rate:rate,currency:"USD",payment_method:impMethod,is_paid:true,auto_generated:true,operation_id:id};
               if(existsImp){await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existImp[0].id}`,body:feBody});}
               else{await dq("finance_entries",{method:"POST",token,body:feBody});}
               await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{cost_impuestos_reales:usdAmt}});setOp(p=>({...p,cost_impuestos_reales:usdAmt}));}
@@ -3026,15 +3028,16 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         }
         // Auto-create finance_entry for gasto documental ARS
         const docMethod=op.cost_gasto_doc_method||"tarjeta_credito";
-        const docHasMeta=docMethod==="efectivo"?Number(op.cost_gasto_doc_exchange_rate||0)>0:!!op.cost_gasto_doc_card_closing;
+        const docIsCash=docMethod==="efectivo"||docMethod==="transferencia";
+        const docHasMeta=docIsCash?Number(op.cost_gasto_doc_exchange_rate||0)>0:!!op.cost_gasto_doc_card_closing;
         if(docArs>0&&docHasMeta){
           const existDoc=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&description=like.Gasto doc*&auto_generated=eq.true&select=id`});
           const existsDoc=Array.isArray(existDoc)&&existDoc.length>0;
-          if(docMethod==="efectivo"){
+          if(docIsCash){
             const rate=Number(op.cost_gasto_doc_exchange_rate||0);
             if(rate>0){const usdAmt=Math.round((docArs/rate)*100)/100;
               const paidDate=op.cost_gasto_doc_paid_at||new Date().toISOString().slice(0,10);
-              const feBody={date:paidDate,type:"gasto",description:`Gasto documental ${op.operation_code} (ARS ${docArs.toLocaleString("es-AR")} @ ${rate})`,amount:usdAmt,amount_ars:docArs,exchange_rate:rate,currency:"USD",payment_method:"efectivo",is_paid:true,auto_generated:true,operation_id:id};
+              const feBody={date:paidDate,type:"gasto",description:`Gasto documental ${op.operation_code} (ARS ${docArs.toLocaleString("es-AR")} @ ${rate})`,amount:usdAmt,amount_ars:docArs,exchange_rate:rate,currency:"USD",payment_method:docMethod,is_paid:true,auto_generated:true,operation_id:id};
               if(existsDoc){await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existDoc[0].id}`,body:feBody});}
               else{await dq("finance_entries",{method:"POST",token,body:feBody});}
               await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{cost_gasto_documental:usdAmt}});setOp(p=>({...p,cost_gasto_documental:usdAmt}));}
