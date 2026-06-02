@@ -175,8 +175,23 @@ const NCM_INTERVENTION_RULES = [
   { prefix: "3305", types: ["ANMAT"], reason: "Preparaciones capilares — ANMAT cosmético" },
   { prefix: "3306", types: ["ANMAT"], reason: "Higiene bucodental — ANMAT cosmético" },
   { prefix: "3307", types: ["ANMAT"], reason: "Preparaciones de afeitar / desodorantes / sales de baño — ANMAT cosmético" },
-  // Alimentos y suplementos — INAL/ANMAT
-  { prefix: "2106", types: ["ANMAT"], reason: "Preparaciones alimenticias / suplementos dietarios — INAL/ANMAT" },
+  // Alimentos — INAL (Instituto Nacional de Alimentos, dentro de ANMAT)
+  // Capítulos enteros: lácteos, carnes, pescados, granos, harinas, aceites, conservas, bebidas, preparaciones alimenticias.
+  { prefix: "04", types: ["INAL"], reason: "Productos lácteos / huevos / miel (Cap. 04) — INAL" },
+  { prefix: "07", types: ["INAL"], reason: "Hortalizas comestibles (Cap. 07) — INAL" },
+  { prefix: "08", types: ["INAL"], reason: "Frutas comestibles (Cap. 08) — INAL" },
+  { prefix: "09", types: ["INAL"], reason: "Café / té / yerba / especias (Cap. 09) — INAL" },
+  { prefix: "11", types: ["INAL"], reason: "Productos de molinería / harinas / almidones (Cap. 11) — INAL" },
+  { prefix: "15", types: ["INAL"], reason: "Grasas y aceites comestibles (Cap. 15) — INAL" },
+  { prefix: "16", types: ["INAL"], reason: "Preparaciones de carne / pescado (Cap. 16) — INAL" },
+  { prefix: "17", types: ["INAL"], reason: "Azúcares y artículos de confitería (Cap. 17) — INAL" },
+  { prefix: "18", types: ["INAL"], reason: "Cacao y sus preparaciones (Cap. 18) — INAL" },
+  { prefix: "19", types: ["INAL"], reason: "Preparaciones a base de cereales / harina / leche (Cap. 19) — INAL" },
+  { prefix: "20", types: ["INAL"], reason: "Preparaciones de hortalizas / frutas (Cap. 20) — INAL" },
+  { prefix: "21", types: ["INAL"], reason: "Preparaciones alimenticias diversas (Cap. 21) — INAL" },
+  { prefix: "22", types: ["INAL"], reason: "Bebidas, líquidos alcohólicos y vinagre (Cap. 22) — INAL" },
+  // Suplementos dietarios: 2106 puntualmente puede pisar a ANMAT por dosificación,
+  // pero el camino estándar es INAL — la regla por capítulo "21" ya lo cubre arriba.
   // ENACOM — telecomunicaciones inalámbricas
   { prefix: "8517.13", types: ["ENACOM"], reason: "Teléfonos móviles — homologación ENACOM" },
   { prefix: "8517.14", types: ["ENACOM"], reason: "Teléfonos móviles — homologación ENACOM" },
