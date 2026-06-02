@@ -3113,8 +3113,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Flete</p>
         {(()=>{
           // Canal B (Integral AC): flete siempre se paga en efectivo. Default + única opción.
+          // Marítimo blanco (FCL/LCL): no hay agente — flete se paga directo al despachante por efectivo o transferencia (ARS/USD).
           const isCanalB=op.channel?.includes("negro");
-          const defaultMethod=isCanalB?"efectivo":"cuenta_corriente";
+          const isMaritimoBlanco=op.channel?.includes("maritimo")&&op.channel?.includes("blanco");
+          const defaultMethod=isCanalB?"efectivo":isMaritimoBlanco?"transferencia":"cuenta_corriente";
           const fleteMethod=op.cost_flete_method||defaultMethod;
           const isCC=fleteMethod==="cuenta_corriente";
           const isTC=fleteMethod==="tarjeta_credito";
@@ -3122,7 +3124,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           // Para el flete del agente: opciones de TC/Débito (Alibaba o Alipay) además de las históricas.
           const fleteOptions=isCanalB
             ?[{value:"efectivo",label:"Contado"}]
-            :[{value:"cuenta_corriente",label:"Cuenta Corriente (agente)"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"tarjeta_debito",label:"Tarjeta de Débito"},{value:"transferencia",label:"Transferencia"}];
+            :isMaritimoBlanco
+              ?[{value:"efectivo",label:"Contado"},{value:"transferencia",label:"Transferencia"}]
+              :[{value:"cuenta_corriente",label:"Cuenta Corriente (agente)"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"tarjeta_debito",label:"Tarjeta de Débito"},{value:"transferencia",label:"Transferencia"}];
           return <>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px",marginBottom:isCC?16:8}}>
           <Inp label="Costo flete (USD)" type="number" value={op.cost_flete} onChange={chOp("cost_flete")} step="0.01"/>
@@ -3152,22 +3156,33 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         {/* Impuestos y Gasto Documental: solo para canal A (blanco). En canal B/negro no aplican. */}
         {!op.channel?.includes("negro")&&<><div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Impuestos (ARS)</p>
-          {(()=>{const isEf=(op.cost_impuestos_method||"tarjeta_credito")==="efectivo";return <>
-            <div style={{display:"grid",gridTemplateColumns:isEf?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr",gap:"0 16px"}}>
-              <Sel label="Método de pago" value={op.cost_impuestos_method||"tarjeta_credito"} onChange={chOp("cost_impuestos_method")} options={[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"}]}/>
+          {(()=>{
+            // Marítimo blanco (FCL/LCL): impuestos solo por efectivo o transferencia, NO tarjeta.
+            const isMarBl=op.channel?.includes("maritimo")&&op.channel?.includes("blanco");
+            const impDefault=isMarBl?"transferencia":"tarjeta_credito";
+            const impMethod=op.cost_impuestos_method||impDefault;
+            const isCash=impMethod==="efectivo"||impMethod==="transferencia";
+            const impOptions=isMarBl
+              ?[{value:"efectivo",label:"Contado"},{value:"transferencia",label:"Transferencia"}]
+              :[{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"efectivo",label:"Contado"}];
+            return <>
+            <div style={{display:"grid",gridTemplateColumns:isCash?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr",gap:"0 16px"}}>
+              <Sel label="Método de pago" value={impMethod} onChange={chOp("cost_impuestos_method")} options={impOptions}/>
               <Inp label="Monto ARS" type="number" value={op.cost_impuestos_ars} onChange={chOp("cost_impuestos_ars")} step="0.01"/>
-              {isEf?<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_impuestos_exchange_rate||""} onChange={chOp("cost_impuestos_exchange_rate")} step="0.01" placeholder="Ej: 1410"/>:<Inp label="Cierre de tarjeta" type="date" value={op.cost_impuestos_card_closing||""} onChange={chOp("cost_impuestos_card_closing")}/>}
-              {isEf&&<Inp label="Fecha de pago" type="date" value={op.cost_impuestos_paid_at||""} onChange={chOp("cost_impuestos_paid_at")}/>}
+              {isCash?<Inp label="Tipo de cambio ARS/USD" type="number" value={op.cost_impuestos_exchange_rate||""} onChange={chOp("cost_impuestos_exchange_rate")} step="0.01" placeholder="Ej: 1410"/>:<Inp label="Cierre de tarjeta" type="date" value={op.cost_impuestos_card_closing||""} onChange={chOp("cost_impuestos_card_closing")}/>}
+              {isCash&&<Inp label="Fecha de pago" type="date" value={op.cost_impuestos_paid_at||""} onChange={chOp("cost_impuestos_paid_at")}/>}
             </div>
-            {!isEf&&<div style={{marginTop:10}}>
+            {!isCash&&<div style={{marginTop:10}}>
               <CreditCardPicker token={token} value={op.cost_impuestos_credit_card_id} onChange={v=>chOp("cost_impuestos_credit_card_id")(v)} required/>
             </div>}
           </>;})()}
           {(()=>{
             const ars=Number(op.cost_impuestos_ars||0);
             const rate=Number(op.cost_impuestos_exchange_rate||0);
-            const isEf=(op.cost_impuestos_method||"tarjeta_credito")==="efectivo";
-            // Preview en vivo: si es contado y hay ARS+TC, calcular ahora (no esperar al guardar).
+            const isMarBl=op.channel?.includes("maritimo")&&op.channel?.includes("blanco");
+            const m=op.cost_impuestos_method||(isMarBl?"transferencia":"tarjeta_credito");
+            const isEf=m==="efectivo"||m==="transferencia";
+            // Preview en vivo: si es cash (efectivo o transferencia) y hay ARS+TC, calcular ahora (no esperar al guardar).
             // Si es TC, mostrar persistido (se dollariza al cerrar el resumen).
             const livePreview=isEf&&ars>0&&rate>0?(ars/rate):null;
             const shown=livePreview!=null?livePreview:Number(op.cost_impuestos_reales||0);
@@ -3176,7 +3191,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             return <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:(op.cost_impuestos_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (valor previo USD {stored.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})</span>:""}</p>;
           })()}
         </div>
-        <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
+        {!(op.channel?.includes("maritimo")&&op.channel?.includes("blanco"))&&<div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Gasto Documental (ARS)</p>
           {(()=>{const isEf=(op.cost_gasto_doc_method||"tarjeta_credito")==="efectivo";return <>
             <div style={{display:"grid",gridTemplateColumns:isEf?"1fr 1fr 1fr 1fr":"1fr 1fr 1fr",gap:"0 16px"}}>
@@ -3199,8 +3214,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             const stale=livePreview!=null&&stored>0&&Math.abs(livePreview-stored)>0.01;
             return <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:(op.cost_gasto_doc_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (valor previo USD {stored.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})</span>:""}</p>;
           })()}
-        </div></>}
-        <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
+        </div>}</>}
+        {/* Otros costos: ocultos en marítimo blanco (FCL/LCL solo factura flete + impuestos). */}
+        {!(op.channel?.includes("maritimo")&&op.channel?.includes("blanco"))&&<div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Otros costos (USD)</p>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px",marginBottom:8}}>
             <Inp label="Seguro" type="number" value={op.cost_seguro} onChange={chOp("cost_seguro")} step="0.01"/>
@@ -3218,7 +3234,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           </div>
           {Number(op.cost_otros)>0&&!op.cost_otros_paid_at&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-4px 0 8px",fontStyle:"italic"}}>⚠ Sin fecha de pago — el libro diario va a usar hoy.</p>}
           <Inp label="Notas" value={op.cost_notas} onChange={chOp("cost_notas")} placeholder="Ej: Consolidado con AC-0002..."/>
-        </div>
+        </div>}
       </Card>
       <Card title="Rentabilidad">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:16}}>
