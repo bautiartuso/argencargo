@@ -21,10 +21,12 @@ export async function GET(req) {
   // Normalizamos: la URL puede traer espacios o lowercase
   const code = String(opCode).trim().toUpperCase();
   try {
-    const r = await sbFetch(`/rest/v1/operations?operation_code=eq.${encodeURIComponent(code)}&select=id&limit=1`);
+    const r = await sbFetch(`/rest/v1/operations?operation_code=eq.${encodeURIComponent(code)}&select=id,clients(first_name)&limit=1`);
     const arr = await r.json();
     if (!Array.isArray(arr) || arr.length === 0) return Response.json({ ok: false, error: "No encontramos esa operación" }, { status: 404 });
-    return Response.json({ ok: true, op_id: arr[0].id });
+    const op = arr[0];
+    const firstName = op.clients?.first_name ? String(op.clients.first_name).trim().split(/\s+/)[0] : null;
+    return Response.json({ ok: true, op_id: op.id, first_name: firstName });
   } catch (e) {
     return Response.json({ ok: false, error: e.message }, { status: 500 });
   }
@@ -42,11 +44,12 @@ export async function POST(req) {
     return Response.json({ ok: false, error: "Rating inválido" }, { status: 400 });
   }
   try {
-    // Resolver op_id
-    const lookup = await sbFetch(`/rest/v1/operations?operation_code=eq.${encodeURIComponent(opCode)}&select=id&limit=1`);
+    // Resolver op_id (+ nombre cliente para devolverlo al frontend)
+    const lookup = await sbFetch(`/rest/v1/operations?operation_code=eq.${encodeURIComponent(opCode)}&select=id,clients(first_name)&limit=1`);
     const arr = await lookup.json();
     if (!Array.isArray(arr) || arr.length === 0) return Response.json({ ok: false, error: "No encontramos esa operación" }, { status: 404 });
     const opId = arr[0].id;
+    const firstName = arr[0].clients?.first_name ? String(arr[0].clients.first_name).trim().split(/\s+/)[0] : null;
     // ¿Ya existe feedback para esta op?
     const existR = await sbFetch(`/rest/v1/op_feedback?operation_id=eq.${opId}&select=id&limit=1`);
     const existArr = await existR.json();
@@ -67,7 +70,7 @@ export async function POST(req) {
       if (clickedGoogle) ins.clicked_google_review = true;
       await sbFetch(`/rest/v1/op_feedback`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify(ins) });
     }
-    return Response.json({ ok: true, op_id: opId });
+    return Response.json({ ok: true, op_id: opId, first_name: firstName });
   } catch (e) {
     return Response.json({ ok: false, error: e.message }, { status: 500 });
   }

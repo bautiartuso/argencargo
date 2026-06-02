@@ -18,6 +18,7 @@ function FeedbackPageInner() {
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [opId, setOpId] = useState(null);
+  const [firstName, setFirstName] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -25,20 +26,18 @@ function FeedbackPageInner() {
     // Lookup + (opcional) primer insert con rating si viene del email. Todo server-side
     // porque operations tiene RLS sin política para anon — ver /api/feedback/route.js.
     const hasPre = preRating >= 1 && preRating <= 5;
+    const onOk = (d) => {
+      if (d?.ok && d.op_id) { setOpId(d.op_id); if (d.first_name) setFirstName(d.first_name); }
+      else setError(d?.error || "No encontramos esa operación");
+    };
     if (hasPre) {
       fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ op: opCode, rating: preRating }),
-      }).then(r => r.json()).then(d => {
-        if (d?.ok && d.op_id) setOpId(d.op_id);
-        else setError(d?.error || "No encontramos esa operación");
-      }).catch(() => setError("Error al cargar"));
+      }).then(r => r.json()).then(onOk).catch(() => setError("Error al cargar"));
     } else {
-      fetch(`/api/feedback?op=${encodeURIComponent(opCode)}`).then(r => r.json()).then(d => {
-        if (d?.ok && d.op_id) setOpId(d.op_id);
-        else setError(d?.error || "No encontramos esa operación");
-      }).catch(() => setError("Error al cargar"));
+      fetch(`/api/feedback?op=${encodeURIComponent(opCode)}`).then(r => r.json()).then(onOk).catch(() => setError("Error al cargar"));
     }
   }, [opCode, preRating]);
 
@@ -90,8 +89,8 @@ function FeedbackPageInner() {
     <div style={wrapperStyle}>
       <div style={cardStyle}>
         <div style={{ marginBottom: 24, textAlign: "center" }}>
-          <h1 style={{ fontSize: 26, color: "#fff", margin: "0 0 8px", fontWeight: 800 }}>Argencargo</h1>
-          <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: 0, fontFamily: "monospace" }}>{opCode}</p>
+          <h1 style={{ fontSize: 26, color: "#fff", margin: "0 0 8px", fontWeight: 800 }}>{firstName ? `¡Hola ${firstName}!` : "Argencargo"}</h1>
+          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", margin: 0, fontFamily: "monospace", letterSpacing: "0.05em" }}>Argencargo · {opCode}</p>
         </div>
 
         {step === "rate" && (
