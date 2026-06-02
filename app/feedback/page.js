@@ -2,8 +2,6 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
-const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
-const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 // Abre el perfil de Argencargo en Google (kgmid). El cliente toca 'Escribir una reseña' ahí.
 // TODO: cuando Google Business esté verificado, reemplazar con el link directo tipo https://g.page/r/XXX/review
 const GOOGLE_REVIEW_URL = "https://www.google.com/search?q=Argencargo&kgmid=/g/11z0lfp088";
@@ -24,59 +22,47 @@ function FeedbackPageInner() {
 
   useEffect(() => {
     if (!opCode) return;
-    fetch(`${SB_URL}/rest/v1/operations?operation_code=eq.${opCode}&select=id`, {
-      headers: { apikey: SB_KEY },
-    }).then(r => r.json()).then(d => {
-      if (Array.isArray(d) && d[0]) {
-        setOpId(d[0].id);
-        // Si venimos del email con ?r= ya grabado, guardamos el rating inicial sin comentario
-        if (preRating >= 1 && preRating <= 5) {
-          fetch(`${SB_URL}/rest/v1/op_feedback`, {
-            method: "POST",
-            headers: { apikey: SB_KEY, "Content-Type": "application/json", Prefer: "return=minimal" },
-            body: JSON.stringify({ operation_id: d[0].id, rating: preRating }),
-          }).catch(() => {});
-        }
-      } else setError("No encontramos esa operación");
-    }).catch(() => setError("Error al cargar"));
+    // Lookup + (opcional) primer insert con rating si viene del email. Todo server-side
+    // porque operations tiene RLS sin política para anon — ver /api/feedback/route.js.
+    const hasPre = preRating >= 1 && preRating <= 5;
+    if (hasPre) {
+      fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op: opCode, rating: preRating }),
+      }).then(r => r.json()).then(d => {
+        if (d?.ok && d.op_id) setOpId(d.op_id);
+        else setError(d?.error || "No encontramos esa operación");
+      }).catch(() => setError("Error al cargar"));
+    } else {
+      fetch(`/api/feedback?op=${encodeURIComponent(opCode)}`).then(r => r.json()).then(d => {
+        if (d?.ok && d.op_id) setOpId(d.op_id);
+        else setError(d?.error || "No encontramos esa operación");
+      }).catch(() => setError("Error al cargar"));
+    }
   }, [opCode, preRating]);
 
   const submit = async (finalRating, finalComment) => {
-    if (!opId) return;
+    if (!opId && !opCode) return;
     setSubmitting(true);
     try {
-      const r = await fetch(`${SB_URL}/rest/v1/op_feedback`, {
+      await fetch("/api/feedback", {
         method: "POST",
-        headers: {
-          apikey: SB_KEY,
-          "Content-Type": "application/json",
-          Prefer: "return=minimal",
-        },
-        body: JSON.stringify({
-          operation_id: opId,
-          rating: finalRating,
-          comment: finalComment || null,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op: opCode, rating: finalRating, comment: finalComment || null }),
       });
-      if (!r.ok && r.status !== 201 && r.status !== 200 && r.status !== 204) {
-        const err = await r.json().catch(() => null);
-        // Si ya existe feedback previo, igual consideramos enviado
-        if (err?.code !== "23505") throw new Error(err?.message || "Error al guardar");
-      }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
     setSubmitting(false);
     if (finalRating >= 4) setStep("high");
     else setStep("low");
   };
 
   const markGoogleClicked = () => {
-    if (!opId) return;
-    fetch(`${SB_URL}/rest/v1/op_feedback?operation_id=eq.${opId}`, {
-      method: "PATCH",
-      headers: { apikey: SB_KEY, "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify({ clicked_google_review: true }),
+    if (!opCode) return;
+    fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ op: opCode, clicked_google_review: true }),
     }).catch(() => {});
   };
 
@@ -244,12 +230,12 @@ function FeedbackPageInner() {
             />
             <button
               onClick={async () => {
-                if (!opId) return;
+                if (!opCode) return;
                 setSubmitting(true);
-                await fetch(`${SB_URL}/rest/v1/op_feedback?operation_id=eq.${opId}`, {
-                  method: "PATCH",
-                  headers: { apikey: SB_KEY, "Content-Type": "application/json", Prefer: "return=minimal" },
-                  body: JSON.stringify({ comment: comment || null }),
+                await fetch("/api/feedback", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ op: opCode, rating, comment: comment || null }),
                 }).catch(() => {});
                 setSubmitting(false);
                 setStep("thanks");
