@@ -3207,7 +3207,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const isCanalB=op.channel?.includes("negro");
           const isMaritimoBlanco=op.channel?.includes("maritimo")&&op.channel?.includes("blanco");
           const defaultMethod=isCanalB?"efectivo":isMaritimoBlanco?"transferencia":"cuenta_corriente";
-          const fleteMethod=op.cost_flete_method||defaultMethod;
+          // Normalizamos métodos legacy que ya no aplican al canal actual (p.ej. ops viejas con
+          // cost_flete_method="cuenta_corriente" o "tarjeta_credito" que ahora son marítimo blanco).
+          const rawFleteMethod=op.cost_flete_method||defaultMethod;
+          const fleteMethod=isMaritimoBlanco&&!["efectivo","transferencia"].includes(rawFleteMethod)?"transferencia":rawFleteMethod;
           const isCC=fleteMethod==="cuenta_corriente";
           const isTC=fleteMethod==="tarjeta_credito";
           const isDebito=fleteMethod==="tarjeta_debito";
@@ -3272,7 +3275,11 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             // Además acepta USD o ARS como moneda — USD se carga directo, ARS se dollariza con TC.
             const isMarBl=op.channel?.includes("maritimo")&&op.channel?.includes("blanco");
             const impDefault=isMarBl?"transferencia":"tarjeta_credito";
-            const impMethod=op.cost_impuestos_method||impDefault;
+            // Normalizamos: si la op era legacy con "tarjeta_credito" pero ahora es marítimo blanco
+            // (donde TC no aplica), tratamos como "transferencia" para que el render no pinte los
+            // campos de tarjeta. Al guardar se persiste normalizado.
+            const rawMethod=op.cost_impuestos_method||impDefault;
+            const impMethod=isMarBl&&rawMethod==="tarjeta_credito"?"transferencia":rawMethod;
             const isCash=impMethod==="efectivo"||impMethod==="transferencia";
             const impOptions=isMarBl
               ?[{value:"efectivo",label:"Contado"},{value:"transferencia",label:"Transferencia"}]
@@ -3313,7 +3320,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               const usdAmt=Number(op.cost_impuestos_usd||0);
               return <p style={{fontSize:11,fontWeight:600,color:usdAmt>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {usdAmt>0?`USD ${usdAmt.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"Cargá el monto"}</p>;
             }
-            const m=op.cost_impuestos_method||(isMarBl?"transferencia":"tarjeta_credito");
+            const rawM=op.cost_impuestos_method||(isMarBl?"transferencia":"tarjeta_credito");
+            const m=isMarBl&&rawM==="tarjeta_credito"?"transferencia":rawM;
             const isEf=m==="efectivo"||m==="transferencia";
             // Preview en vivo: si es cash (efectivo o transferencia) y hay ARS+TC, calcular ahora (no esperar al guardar).
             // Si es TC, mostrar persistido (se dollariza al cerrar el resumen).
