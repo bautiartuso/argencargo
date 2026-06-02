@@ -2934,8 +2934,20 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           cost_seguro_paid_at:dateOrNull(op.cost_seguro_paid_at),
           cost_flete_local:numOrNull(op.cost_flete_local),
           cost_flete_local_paid_at:dateOrNull(op.cost_flete_local_paid_at),
+          cost_flete_local_method:op.cost_flete_local_method||null,
+          cost_flete_local_currency:op.cost_flete_local_currency||null,
+          cost_flete_local_ars:numOrNull(op.cost_flete_local_ars),
+          cost_flete_local_exchange_rate:numOrNull(op.cost_flete_local_exchange_rate),
+          cost_flete_local_card_closing:dateOnly(op.cost_flete_local_card_closing),
+          cost_flete_local_credit_card_id:op.cost_flete_local_method==="tarjeta_credito"?(op.cost_flete_local_credit_card_id||null):null,
           cost_otros:numOrNull(op.cost_otros),
           cost_otros_paid_at:dateOrNull(op.cost_otros_paid_at),
+          cost_otros_method:op.cost_otros_method||null,
+          cost_otros_currency:op.cost_otros_currency||null,
+          cost_otros_ars:numOrNull(op.cost_otros_ars),
+          cost_otros_exchange_rate:numOrNull(op.cost_otros_exchange_rate),
+          cost_otros_card_closing:dateOnly(op.cost_otros_card_closing),
+          cost_otros_credit_card_id:op.cost_otros_method==="tarjeta_credito"?(op.cost_otros_credit_card_id||null):null,
           cost_notas:op.cost_notas||null,
           cost_producto_usd:numOrNull(op.cost_producto_usd),
           cost_producto_method:op.cost_producto_method||null,
@@ -3018,6 +3030,45 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             await dq("finance_entries",{method:"POST",token,body:{date:new Date().toISOString().slice(0,10),type:"gasto",description:`Gasto documental ${op.operation_code}`,amount_ars:docArs,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op.cost_gasto_doc_card_closing,credit_card_id:op.cost_gasto_doc_credit_card_id||null,is_paid:false,auto_generated:true,operation_id:id}});
           } else {
             await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existDoc[0].id}`,body:{amount_ars:docArs,card_closing_date:op.cost_gasto_doc_card_closing,credit_card_id:op.cost_gasto_doc_credit_card_id||null}});
+          }
+        }
+        // Marítimo blanco: flete local + otros pueden ser ARS (cash) → dollarizar y persistir USD final;
+        // o TC ARS → grabar entry pendiente de dollarizar (igual que impuestos / gasto doc).
+        // Para los demás canales esos campos se graban directo en USD en costBody arriba (sin entry auto).
+        const isMarBl=op.channel?.includes("maritimo")&&op.channel?.includes("blanco");
+        if(isMarBl){
+          for(const cfg of [
+            {prefix:"cost_flete_local",label:"Flete local",descPattern:"Flete local"},
+            {prefix:"cost_otros",label:"Otros costos",descPattern:"Otros costos"},
+          ]){
+            const m=op[`${cfg.prefix}_method`]||"transferencia";
+            const cur=op[`${cfg.prefix}_currency`]||"USD";
+            const arsAmt=Number(op[`${cfg.prefix}_ars`]||0);
+            const rate=Number(op[`${cfg.prefix}_exchange_rate`]||0);
+            const isTC=m==="tarjeta_credito";
+            const isCash=m==="efectivo"||m==="transferencia";
+            const exist=await dq("finance_entries",{token,filters:`?operation_id=eq.${id}&description=like.${cfg.descPattern}*&auto_generated=eq.true&select=id`});
+            const existsId=Array.isArray(exist)&&exist[0]?.id;
+            if(isTC&&arsAmt>0&&op[`${cfg.prefix}_card_closing`]){
+              const feBody={date:new Date().toISOString().slice(0,10),type:"gasto",description:`${cfg.label} ${op.operation_code}`,amount_ars:arsAmt,currency:"ARS",payment_method:"tarjeta_credito",card_closing_date:op[`${cfg.prefix}_card_closing`],credit_card_id:op[`${cfg.prefix}_credit_card_id`]||null,is_paid:false,auto_generated:true,operation_id:id};
+              if(existsId)await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existsId}`,body:{amount_ars:arsAmt,card_closing_date:op[`${cfg.prefix}_card_closing`],credit_card_id:op[`${cfg.prefix}_credit_card_id`]||null}});
+              else await dq("finance_entries",{method:"POST",token,body:feBody});
+            } else if(isCash&&cur==="ARS"&&arsAmt>0&&rate>0){
+              const usdAmt=Math.round((arsAmt/rate)*100)/100;
+              const paidDate=op[`${cfg.prefix}_paid_at`]?String(op[`${cfg.prefix}_paid_at`]).slice(0,10):new Date().toISOString().slice(0,10);
+              const feBody={date:paidDate,type:"gasto",description:`${cfg.label} ${op.operation_code} (ARS ${arsAmt.toLocaleString("es-AR")} @ ${rate})`,amount:usdAmt,amount_ars:arsAmt,exchange_rate:rate,currency:"USD",payment_method:m,is_paid:true,auto_generated:true,operation_id:id};
+              if(existsId)await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existsId}`,body:feBody});
+              else await dq("finance_entries",{method:"POST",token,body:feBody});
+              await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{[cfg.prefix]:usdAmt}});
+              setOp(p=>({...p,[cfg.prefix]:usdAmt}));
+            } else if(isCash&&cur==="USD"&&Number(op[cfg.prefix]||0)>0){
+              // USD directo: cost_X ya guardado por costBody. Solo creamos/updateamos la entry consolidada.
+              const usdAmt=Number(op[cfg.prefix]||0);
+              const paidDate=op[`${cfg.prefix}_paid_at`]?String(op[`${cfg.prefix}_paid_at`]).slice(0,10):new Date().toISOString().slice(0,10);
+              const feBody={date:paidDate,type:"gasto",description:`${cfg.label} ${op.operation_code}`,amount:usdAmt,currency:"USD",payment_method:m,is_paid:true,auto_generated:true,operation_id:id};
+              if(existsId)await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${existsId}`,body:feBody});
+              else await dq("finance_entries",{method:"POST",token,body:feBody});
+            }
           }
         }
         // Auto-create/update consolidated "Costos" entry in finanzas (USD costs)
@@ -3215,8 +3266,58 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             return <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:(op.cost_gasto_doc_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (valor previo USD {stored.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})</span>:""}</p>;
           })()}
         </div>}</>}
-        {/* Otros costos: ocultos en marítimo blanco (FCL/LCL solo factura flete + impuestos). */}
-        {!(op.channel?.includes("maritimo")&&op.channel?.includes("blanco"))&&<div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
+        {/* Otros costos: en marítimo blanco se separa flete local + otros (sin seguro)
+            con flujo completo de método/moneda/TC/tarjeta — como impuestos. En el resto de canales
+            mantiene el formato viejo (monto USD + fecha simple). */}
+        {(op.channel?.includes("maritimo")&&op.channel?.includes("blanco"))?(()=>{
+          // Bloque reutilizable: monto + método (contado/transf/TC) + moneda (USD/ARS) + TC ARS + tarjeta.
+          // Campos en DB: cost_X (USD final), cost_X_method, cost_X_currency, cost_X_ars,
+          // cost_X_exchange_rate, cost_X_card_closing, cost_X_credit_card_id, cost_X_paid_at.
+          const renderCostBlock=(title,prefix)=>{
+            const method=op[`${prefix}_method`]||"transferencia";
+            const currency=op[`${prefix}_currency`]||"USD";
+            const isTC=method==="tarjeta_credito";
+            const isCash=method==="efectivo"||method==="transferencia";
+            const isArs=currency==="ARS";
+            const ars=Number(op[`${prefix}_ars`]||0);
+            const rate=Number(op[`${prefix}_exchange_rate`]||0);
+            const live=isCash&&isArs&&ars>0&&rate>0?(ars/rate):null;
+            const stored=Number(op[prefix]||0);
+            const shown=live!=null?live:stored;
+            const stale=live!=null&&stored>0&&Math.abs(live-stored)>0.01;
+            return <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
+              <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>{title}</p>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"0 16px",marginBottom:10}}>
+                <Sel label="Método de pago" value={method} onChange={chOp(`${prefix}_method`)} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Contado"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"}]}/>
+                {isTC
+                  ?<Inp label="Monto ARS" type="number" value={op[`${prefix}_ars`]} onChange={chOp(`${prefix}_ars`)} step="0.01"/>
+                  :<Sel label="Moneda" value={currency} onChange={chOp(`${prefix}_currency`)} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]}/>}
+                {isTC
+                  ?<Inp label="Cierre de tarjeta" type="date" value={op[`${prefix}_card_closing`]||""} onChange={chOp(`${prefix}_card_closing`)}/>
+                  :isArs
+                    ?<Inp label="Monto ARS" type="number" value={op[`${prefix}_ars`]} onChange={chOp(`${prefix}_ars`)} step="0.01"/>
+                    :<Inp label="Monto USD" type="number" value={op[prefix]} onChange={chOp(prefix)} step="0.01"/>}
+                {isTC
+                  ?<span/>
+                  :isArs
+                    ?<Inp label="Tipo de cambio ARS/USD" type="number" value={op[`${prefix}_exchange_rate`]||""} onChange={chOp(`${prefix}_exchange_rate`)} step="0.01" placeholder="Ej: 1410"/>
+                    :<Inp label="Fecha de pago" type="date" value={op[`${prefix}_paid_at`]?String(op[`${prefix}_paid_at`]).slice(0,10):""} onChange={v=>chOp(`${prefix}_paid_at`)(v?v+"T12:00:00-03":null)}/>}
+              </div>
+              {isTC&&<div style={{marginBottom:10}}>
+                <CreditCardPicker token={token} value={op[`${prefix}_credit_card_id`]} onChange={v=>chOp(`${prefix}_credit_card_id`)(v)} required/>
+              </div>}
+              {isCash&&isArs&&<Inp label="Fecha de pago" type="date" value={op[`${prefix}_paid_at`]?String(op[`${prefix}_paid_at`]).slice(0,10):""} onChange={v=>chOp(`${prefix}_paid_at`)(v?v+"T12:00:00-03":null)}/>}
+              <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {isTC?(stored>0?`USD ${stored.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"Pendiente de dollarización"):shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"Se calcula al guardar"}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (previo USD {stored.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})</span>:""}</p>
+            </div>;
+          };
+          return <>
+            {renderCostBlock("Flete Local","cost_flete_local")}
+            {renderCostBlock("Otros costos","cost_otros")}
+            <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
+              <Inp label="Notas" value={op.cost_notas} onChange={chOp("cost_notas")} placeholder="Ej: Consolidado con AC-0002..."/>
+            </div>
+          </>;
+        })():<div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Otros costos (USD)</p>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px",marginBottom:8}}>
             <Inp label="Seguro" type="number" value={op.cost_seguro} onChange={chOp("cost_seguro")} step="0.01"/>
