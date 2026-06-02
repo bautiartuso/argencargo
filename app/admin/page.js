@@ -5179,7 +5179,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   useEffect(()=>{(async()=>{
     const opIds=flightOps.map(fo=>fo.operation_id).filter(Boolean);
     if(opIds.length===0){setFlightOpsData([]);return;}
-    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name,tax_condition,company_name,cuit),budget_total`});
+    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name,tax_condition,company_name,cuit,street,floor_apt,city,province,postal_code),budget_total`});
     setFlightOpsData(Array.isArray(r)?r:[]);
     // Auto-recalcular budgets si alguna op del vuelo está en 0 y los items ya tienen HS clasificado
     const opsNeedingRecalc=(Array.isArray(r)?r:[]).filter(o=>Number(o.budget_total||0)<=0);
@@ -5211,23 +5211,39 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   useEffect(()=>{const diff={};Object.keys(dest).forEach(k=>{if((flight[k]||"")!==dest[k])diff[k]=dest[k];});if(Object.keys(diff).length===0)return;if(diff.dest_address!==undefined)diff.destination_address=diff.dest_address;const t=setTimeout(()=>{updateFlightSilent(diff);},800);return()=>clearTimeout(t);},[dest.dest_name,dest.dest_tax_id,dest.dest_address,dest.dest_postal_code,dest.dest_phone,dest.dest_email]);
   const chDest=(f,v)=>{typingRef.current=Date.now();setDest(p=>({...p,[f]:v}));};
   // Auto-prefill razón social + CUIT si hay un cliente RI en el vuelo y los campos están vacíos.
+  // Auto-fill del destinatario al cargar el vuelo:
+  //   · Teléfono / mail de Argencargo SIEMPRE como default (editable).
+  //   · Si hay un único cliente RI → completa nombre/CUIT/dirección completa/CP del cliente.
   // Solo dispara una vez (cuando aparecen los flightOpsData) — el usuario puede sobreescribir libremente después.
   const autoFilledRef=useRef(false);
+  const ARG_DEFAULT_PHONE="+5491133875126";
+  const ARG_DEFAULT_EMAIL="info@argencargo.com.ar";
   useEffect(()=>{
     if(autoFilledRef.current)return;
     if(!flightOpsData.length)return;
-    if((flight.dest_name||"").trim()||(flight.dest_tax_id||"").trim())return;
-    const riClients=flightOpsData.map(o=>o.clients).filter(c=>c?.tax_condition==="responsable_inscripto"&&(c.company_name||c.cuit));
-    if(riClients.length===0)return;
-    // Si hay varias RI distintas, no prefilleamos (ambiguo) — el admin elige.
-    const uniq=Array.from(new Map(riClients.map(c=>[c.cuit||c.company_name,c])).values());
-    if(uniq.length!==1)return;
-    const c=uniq[0];
+    const body={};
+    // Defaults de contacto de Argencargo (sólo si están vacíos)
+    if(!(flight.dest_phone||"").trim())body.dest_phone=ARG_DEFAULT_PHONE;
+    if(!(flight.dest_email||"").trim())body.dest_email=ARG_DEFAULT_EMAIL;
+    // Auto-fill RI: solo si nombre/CUIT siguen vacíos y hay UN único cliente RI con datos.
+    if(!(flight.dest_name||"").trim()&&!(flight.dest_tax_id||"").trim()){
+      const riClients=flightOpsData.map(o=>o.clients).filter(c=>c?.tax_condition==="responsable_inscripto"&&(c.company_name||c.cuit));
+      const uniq=Array.from(new Map(riClients.map(c=>[c.cuit||c.company_name,c])).values());
+      if(uniq.length===1){
+        const c=uniq[0];
+        body.dest_name=c.company_name||"";
+        body.dest_tax_id=c.cuit||"";
+        // Dirección completa: calle + piso/depto + ciudad + provincia.
+        const addr=[c.street,c.floor_apt,c.city,c.province].map(s=>(s||"").trim()).filter(Boolean).join(", ");
+        if(addr&&!(flight.dest_address||"").trim())body.dest_address=addr;
+        if(c.postal_code&&!(flight.dest_postal_code||"").trim())body.dest_postal_code=c.postal_code;
+      }
+    }
+    if(Object.keys(body).length===0)return;
     autoFilledRef.current=true;
-    const body={dest_name:c.company_name||"",dest_tax_id:c.cuit||""};
     setDest(p=>({...p,...body}));
     updateFlightSilent(body);
-  },[flightOpsData.length,flight.dest_name,flight.dest_tax_id]);
+  },[flightOpsData.length,flight.dest_name,flight.dest_tax_id,flight.dest_phone,flight.dest_email,flight.dest_address,flight.dest_postal_code]);
   const [savedAddrs,setSavedAddrs]=useState([]);const [showNewAddr,setShowNewAddr]=useState(false);const [newAddr,setNewAddr]=useState({label:"",name:"",tax_id:"",address:"",postal_code:"",phone:"",email:""});
   const loadAddrs=async()=>{const r=await dq("shipping_addresses",{token,filters:"?select=*&order=is_default.desc,created_at.desc"});setSavedAddrs(Array.isArray(r)?r:[]);};
   useEffect(()=>{loadAddrs();},[]);
