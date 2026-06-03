@@ -10606,11 +10606,86 @@ function MaritimePanel({token,allClients=[]}){
   const [expanded,setExpanded]=useState(new Set());
   const [expandedWh,setExpandedWh]=useState(new Set()); // depósitos abiertos
   const [editingWh,setEditingWh]=useState(null); // warehouse being edited (object)
+  const [selectedShipments,setSelectedShipments]=useState(new Set()); // ids para crear op consolidada
+  const [creatingOp,setCreatingOp]=useState(false);
+  const [msg,setMsg]=useState("");
+  const flash=(t)=>{setMsg(t);setTimeout(()=>setMsg(""),3000);};
+
+  // Cambio de estado de un shipment.
+  //  proveedor → en_deposito (con fecha de recepción)
+  //  en_deposito → en_camino_ar (con fecha de despacho)
+  //  Cualquier estado → estado anterior (reversible)
+  const advanceShipment=async(sh,toStatus)=>{
+    const body={status:toStatus};
+    const today=new Date().toISOString().slice(0,10);
+    if(toStatus==="en_deposito"&&!sh.received_at)body.received_at=today;
+    if(toStatus==="en_camino_ar"&&!sh.shipped_to_ar_at)body.shipped_to_ar_at=today;
+    if(toStatus==="proveedor"){body.received_at=null;body.shipped_to_ar_at=null;}
+    if(toStatus==="en_deposito")body.shipped_to_ar_at=null; // si retrocede desde en_camino_ar
+    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body});
+    load();
+  };
+
+  // Crear operación marítima (Integral AC / channel maritimo_negro) a partir de 1+ shipments seleccionados.
+  // Restricciones: todos los shipments deben ser del mismo cliente y mismo depósito.
+  const createOperationFromShipments=async()=>{
+    const ids=[...selectedShipments];
+    if(ids.length===0)return;
+    const selObjs=shipments.filter(s=>ids.includes(s.id));
+    const clientIds=new Set(selObjs.map(s=>s.client_id).filter(Boolean));
+    if(clientIds.size!==1){alert("Las shipments seleccionadas deben ser del mismo cliente.");return;}
+    const warehouseSet=new Set(selObjs.map(s=>s.warehouse));
+    if(warehouseSet.size!==1){alert("Las shipments seleccionadas deben ser del mismo depósito.");return;}
+    const clientId=[...clientIds][0];
+    const client=allClients.find(c=>c.id===clientId);
+    const desc=selObjs.map(s=>s.product_description).filter(Boolean).join(" · ");
+    const trackings=selObjs.map(s=>s.tracking_number).filter(Boolean).join(" · ");
+    const confirmMsg=`¿Crear operación marítima Integral AC con ${ids.length} carga${ids.length>1?"s":""} de ${client?.client_code||"—"}?\n\nDescripción: ${desc.slice(0,80)}${desc.length>80?"…":""}\n\nLos shipments quedan linkeados a la op (no se borran).`;
+    if(!confirm(confirmMsg))return;
+    setCreatingOp(true);
+    try{
+      // Próximo operation_code AC-XXXX
+      const last=await dq("operations",{token,filters:"?select=operation_code&order=created_at.desc&limit=1"});
+      const lastNum=Array.isArray(last)&&last[0]?.operation_code?parseInt(String(last[0].operation_code).replace(/\D/g,""),10)||0:0;
+      const newCode=`AC-${String(lastNum+1).padStart(4,"0")}`;
+      const opBody={
+        operation_code:newCode,
+        client_id:clientId,
+        channel:"maritimo_negro",
+        status:"pendiente",
+        origin:selObjs[0].origin==="usa"?"USA":"China",
+        description:desc||null,
+        international_tracking:trackings||null,
+      };
+      const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
+      const op=Array.isArray(r)?r[0]:r;
+      if(!op?.id){alert("Error creando la operación.");setCreatingOp(false);return;}
+      // Linkear cada shipment a la op
+      for(const id of ids){
+        await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{operation_id:op.id}});
+      }
+      setSelectedShipments(new Set());
+      flash(`✅ Operación ${newCode} creada con ${ids.length} carga${ids.length>1?"s":""} linkeada${ids.length>1?"s":""}`);
+      await load();
+    }catch(e){
+      console.error(e);
+      alert(`Error: ${e.message}`);
+    }
+    setCreatingOp(false);
+  };
+
+  const toggleSelectShipment=(id)=>{
+    setSelectedShipments(prev=>{
+      const n=new Set(prev);
+      if(n.has(id))n.delete(id);else n.add(id);
+      return n;
+    });
+  };
 
   const load=async()=>{
     setLo(true);
     const [sh,pk,it,wh]=await Promise.all([
-      dq("maritime_shipments",{token,filters:"?select=*&order=created_at.desc"}),
+      dq("maritime_shipments",{token,filters:"?select=*,operations(operation_code)&order=created_at.desc"}),
       dq("maritime_packages",{token,filters:"?select=*&order=bulto_number.asc"}),
       dq("maritime_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("maritime_warehouses",{token,filters:"?select=*&order=sort_order.asc,name.asc"}),
@@ -10697,6 +10772,31 @@ function MaritimePanel({token,allClients=[]}){
     </div>
 
     {editingWh&&<WarehouseForm token={token} editing={editingWh.id?editingWh:null} onSave={()=>{setEditingWh(null);load();}} onCancel={()=>setEditingWh(null)}/>}
+    {msg&&<div style={{padding:"10px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:8,color:"#22c55e",fontSize:13,fontWeight:600,marginBottom:14}}>{msg}</div>}
+
+    {/* Barra de selección: aparece cuando hay shipments tildados. Valida que sean del mismo cliente
+        y mismo depósito antes de habilitar el botón "Crear operación". */}
+    {selectedShipments.size>0&&(()=>{
+      const sel=shipments.filter(s=>selectedShipments.has(s.id));
+      const clientIds=new Set(sel.map(s=>s.client_id).filter(Boolean));
+      const warehouseSet=new Set(sel.map(s=>s.warehouse));
+      const sameClient=clientIds.size===1;
+      const sameWh=warehouseSet.size===1;
+      const canCreate=sameClient&&sameWh;
+      const clientCode=sameClient?allClients.find(c=>c.id===[...clientIds][0])?.client_code:null;
+      return <div style={{padding:"12px 16px",background:"rgba(184,149,106,0.08)",border:"1.5px solid rgba(184,149,106,0.35)",borderRadius:10,marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <p style={{fontSize:13,color:"#fff",margin:0,fontWeight:600}}>{sel.length} carga{sel.length>1?"s":""} seleccionada{sel.length>1?"s":""}</p>
+          {!sameClient&&<span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,80,80,0.15)",color:"#ff6b6b",border:"1px solid rgba(255,80,80,0.4)"}}>⚠ Distintos clientes</span>}
+          {sameClient&&!sameWh&&<span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,80,80,0.15)",color:"#ff6b6b",border:"1px solid rgba(255,80,80,0.4)"}}>⚠ Distintos depósitos</span>}
+          {canCreate&&<span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.4)"}}>✓ {clientCode} · {[...warehouseSet][0]}</span>}
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <Btn variant="secondary" small onClick={()=>setSelectedShipments(new Set())}>Limpiar</Btn>
+          <Btn small onClick={createOperationFromShipments} disabled={!canCreate||creatingOp}>{creatingOp?"Creando…":(sel.length>1?"+ Crear op consolidada":"+ Crear operación")}</Btn>
+        </div>
+      </div>;
+    })()}
 
     {/* Filtros */}
     <div style={{display:"flex",gap:14,marginBottom:18,flexWrap:"wrap",alignItems:"center"}}>
@@ -10751,7 +10851,7 @@ function MaritimePanel({token,allClients=[]}){
         </div>
         {isWhOpen&&<table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.2)"}}>
-            {["Recibido","Producto","Cliente","Origen","Tracking","Bultos","CBM","Estado",""].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{h}</th>)}
+            {["","Recibido","Producto","Cliente","Origen","Tracking","Bultos","CBM","Estado",""].map((h,i)=><th key={i} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em",width:i===0?34:undefined}}>{h}</th>)}
           </tr></thead>
           <tbody>{wsList.map((sh,idx)=>{
             const cbm=cbmOf(sh.id);
@@ -10763,7 +10863,21 @@ function MaritimePanel({token,allClients=[]}){
             // y al renderizar en AR (UTC-3) retrocede al día anterior. Agregamos "T12:00:00" → mediodía local, sin riesgo de TZ.
             const recDate=sh.received_at?new Date(sh.received_at+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
             return <Fragment key={sh.id}>
-              <tr onClick={()=>setExpanded(prev=>{const n=new Set(prev);if(n.has(sh.id))n.delete(sh.id);else n.add(sh.id);return n;})} style={{borderBottom:isExp?"none":"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}}>
+              {(()=>{
+                const st=sh.status||(sh.received_at?"en_deposito":"proveedor");
+                const stChip=st==="proveedor"
+                  ?{label:"🚚 PROVEEDOR",bg:"rgba(148,163,184,0.18)",fg:"#94a3b8"}
+                  :st==="en_deposito"
+                    ?{label:"📦 EN DEPÓSITO",bg:"rgba(34,197,94,0.15)",fg:"#22c55e"}
+                    :{label:"✈️ EN CAMINO ARGENTINA",bg:"rgba(96,165,250,0.15)",fg:"#60a5fa"};
+                const hasOp=!!sh.operation_id;
+                const isSel=selectedShipments.has(sh.id);
+                return <tr onClick={()=>setExpanded(prev=>{const n=new Set(prev);if(n.has(sh.id))n.delete(sh.id);else n.add(sh.id);return n;})} style={{borderBottom:isExp?"none":"1px solid rgba(255,255,255,0.04)",cursor:"pointer",background:isSel?"rgba(184,149,106,0.06)":"transparent",opacity:hasOp?0.7:1}}>
+                <td style={{padding:"10px 12px"}} onClick={e=>e.stopPropagation()}>
+                  {hasOp
+                    ?<span title={`Linkeada a ${sh.operations?.operation_code||"operación"}`} style={{fontSize:10,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,fontFamily:"monospace",letterSpacing:"0.04em",whiteSpace:"nowrap"}}>🔗 {sh.operations?.operation_code||"op"}</span>
+                    :<input type="checkbox" checked={isSel} onChange={()=>toggleSelectShipment(sh.id)} style={{cursor:"pointer",accentColor:IC}}/>}
+                </td>
                 <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:700,color:recDate?IC:"rgba(255,255,255,0.3)",fontFeatureSettings:'"tnum"'}}>{recDate||"—"}</td>
                 <td style={{padding:"10px 12px",color:"#fff",fontWeight:600}}>{sh.product_description}{sh.is_fragile&&<span style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.18)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.4)",letterSpacing:"0.05em",marginLeft:6,display:"inline-block",verticalAlign:"middle"}}>FRÁGIL</span>}{sh.is_repack&&<span style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(251,146,60,0.18)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.4)",letterSpacing:"0.05em",marginLeft:6,display:"inline-block",verticalAlign:"middle"}}>REENVÍO</span>}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.65)"}}>{sh.client_name_snapshot||"—"}</td>
@@ -10771,13 +10885,26 @@ function MaritimePanel({token,allClients=[]}){
                 <td style={{padding:"10px 12px",fontSize:11,fontFamily:"monospace",color:"rgba(255,255,255,0.55)"}}>{sh.tracking_number||<span style={{fontStyle:"italic",color:"rgba(255,255,255,0.3)"}}>sin código</span>}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",fontFeatureSettings:'"tnum"'}}>{bcount}</td>
                 <td style={{padding:"10px 12px",color:cbm>0?"#fff":"#fbbf24",fontWeight:700,fontFeatureSettings:'"tnum"'}}>{cbm>0?cbm.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4}):"Pendiente"}</td>
-                <td style={{padding:"10px 12px"}}>{sh.received_at?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",whiteSpace:"nowrap"}}>EN DEPÓSITO</span>:<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(96,165,250,0.15)",color:"#60a5fa",whiteSpace:"nowrap"}}>EN TRÁNSITO</span>}</td>
-                <td style={{padding:"10px 12px",textAlign:"right",whiteSpace:"nowrap"}}>
-                  <button onClick={e=>{e.stopPropagation();setEditingId(sh.id);setShowNew(true);}} style={{padding:"5px 10px",fontSize:10,fontWeight:600,marginRight:4,borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>✎</button>
-                  <button onClick={e=>{e.stopPropagation();delShipment(sh.id);}} style={{padding:"5px 10px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
+                <td style={{padding:"10px 12px"}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>
+                    <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:stChip.bg,color:stChip.fg,whiteSpace:"nowrap"}}>{stChip.label}</span>
+                    {!hasOp&&<div style={{display:"flex",gap:3}} onClick={e=>e.stopPropagation()}>
+                      {st==="proveedor"&&<button onClick={()=>advanceShipment(sh,"en_deposito")} title="Marcar recibido en depósito" style={{padding:"2px 6px",fontSize:9,fontWeight:700,borderRadius:4,border:"1px solid rgba(34,197,94,0.35)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer"}}>→ Depósito</button>}
+                      {st==="en_deposito"&&<>
+                        <button onClick={()=>advanceShipment(sh,"en_camino_ar")} title="Marcar despachado a Argentina" style={{padding:"2px 6px",fontSize:9,fontWeight:700,borderRadius:4,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>→ En camino</button>
+                        <button onClick={()=>advanceShipment(sh,"proveedor")} title="Volver a 'proveedor'" style={{padding:"2px 6px",fontSize:9,borderRadius:4,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>↶</button>
+                      </>}
+                      {st==="en_camino_ar"&&<button onClick={()=>advanceShipment(sh,"en_deposito")} title="Volver a 'en depósito'" style={{padding:"2px 6px",fontSize:9,borderRadius:4,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>↶</button>}
+                    </div>}
+                  </div>
                 </td>
-              </tr>
-              {isExp&&<tr><td colSpan={9} style={{padding:"0 12px 14px",background:"rgba(184,149,106,0.04)",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                <td style={{padding:"10px 12px",textAlign:"right",whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
+                  <button onClick={()=>{setEditingId(sh.id);setShowNew(true);}} style={{padding:"5px 10px",fontSize:10,fontWeight:600,marginRight:4,borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>✎</button>
+                  <button onClick={()=>delShipment(sh.id)} style={{padding:"5px 10px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
+                </td>
+              </tr>;
+              })()}
+              {isExp&&<tr><td colSpan={10} style={{padding:"0 12px 14px",background:"rgba(184,149,106,0.04)",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginTop:10}}>
                   <div>
                     <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Bultos ({shPkgs.length})</p>
