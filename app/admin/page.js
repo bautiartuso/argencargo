@@ -9850,6 +9850,16 @@ function AdminCalculator({token}){
               </div>}
             </>}
             {Number(ch.surcharge||0)>0&&<div style={rowStyle}><span>Recargo valor{ch.surchargePct?` (${ch.surchargePct}%)`:""}</span><span style={valStyle}>USD {fmt(ch.surcharge)}</span></div>}
+            {/* Detalle del recargo: solo aplica a canales B (no blanco). Si no hay recargo, mostramos
+                el vpu actual y el próximo umbral — para que se entienda por qué no aplicó. */}
+            {!bd.isBlanco&&ch.vpu>0&&<div style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",padding:"4px 0 0",borderTop:"1px dashed rgba(255,255,255,0.05)",marginTop:2}}>
+              USD/{ch.surchargeUnit||"kg"}: <strong style={{color:"#fff",fontWeight:600}}>{fmt(ch.vpu)}</strong>
+              {ch.surchargePct>0
+                ?<span style={{color:GOLD_LIGHT,fontWeight:600,marginLeft:6}}>· Recargo {ch.surchargePct}% aplicado</span>
+                :ch.surchargeNextThreshold
+                  ?<span style={{marginLeft:6}}>· Sin recargo (próximo: {fmt(ch.surchargeNextThreshold)} USD/{ch.surchargeUnit||"kg"} → {ch.surchargeNextRate}%)</span>
+                  :<span style={{marginLeft:6}}>· Sin recargo</span>}
+            </div>}
           </div>
           <div style={{padding:"10px 12px",background:"rgba(184,149,106,0.12)",border:`1px solid ${IC}55`,borderRadius:8,marginBottom:10}}>
             <p style={{fontSize:10,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total estimado</p>
