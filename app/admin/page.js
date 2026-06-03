@@ -11054,9 +11054,16 @@ function WarehouseForm({token,editing,onSave,onCancel}){
   const save=async()=>{
     if(!name.trim()){alert("Cargá el nombre del depósito");return;}
     setSaving(true);
-    const body={name:name.trim(),rotulo:rotulo.trim()||null,origin};
+    const newName=name.trim();
+    const body={name:newName,rotulo:rotulo.trim()||null,origin};
     if(editing?.id){
+      const oldName=editing.name;
       await dq("maritime_warehouses",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
+      // Cascada: renombrar maritime_shipments que apuntaban al nombre viejo. Sin esto los
+      // shipments quedan huérfanos (apuntando a un nombre que ya no existe en warehouses).
+      if(oldName&&oldName!==newName){
+        await dq("maritime_shipments",{method:"PATCH",token,filters:`?warehouse=eq.${encodeURIComponent(oldName)}`,body:{warehouse:newName},headers:{Prefer:"return=minimal"}});
+      }
     } else {
       await dq("maritime_warehouses",{method:"POST",token,body});
     }
