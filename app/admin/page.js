@@ -10869,7 +10869,7 @@ function MaritimePanel({token,allClients=[]}){
                   ?{label:"🚚 PROVEEDOR",bg:"rgba(148,163,184,0.18)",fg:"#94a3b8"}
                   :st==="en_deposito"
                     ?{label:"📦 EN DEPÓSITO",bg:"rgba(34,197,94,0.15)",fg:"#22c55e"}
-                    :{label:"✈️ EN CAMINO ARGENTINA",bg:"rgba(96,165,250,0.15)",fg:"#60a5fa"};
+                    :{label:"🚢 EN TRÁNSITO 🇦🇷",bg:"rgba(96,165,250,0.15)",fg:"#60a5fa"};
                 const hasOp=!!sh.operation_id;
                 const isSel=selectedShipments.has(sh.id);
                 return <tr onClick={()=>setExpanded(prev=>{const n=new Set(prev);if(n.has(sh.id))n.delete(sh.id);else n.add(sh.id);return n;})} style={{borderBottom:isExp?"none":"1px solid rgba(255,255,255,0.04)",cursor:"pointer",background:isSel?"rgba(184,149,106,0.06)":"transparent",opacity:hasOp?0.7:1}}>
@@ -10888,13 +10888,13 @@ function MaritimePanel({token,allClients=[]}){
                 <td style={{padding:"10px 12px"}}>
                   <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>
                     <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:stChip.bg,color:stChip.fg,whiteSpace:"nowrap"}}>{stChip.label}</span>
-                    {!hasOp&&<div style={{display:"flex",gap:3}} onClick={e=>e.stopPropagation()}>
-                      {st==="proveedor"&&<button onClick={()=>advanceShipment(sh,"en_deposito")} title="Marcar recibido en depósito" style={{padding:"2px 6px",fontSize:9,fontWeight:700,borderRadius:4,border:"1px solid rgba(34,197,94,0.35)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer"}}>→ Depósito</button>}
+                    {!hasOp&&<div style={{display:"flex",gap:3,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+                      {st==="proveedor"&&<button onClick={()=>advanceShipment(sh,"en_deposito")} title="Marcar recibido en depósito" style={{padding:"2px 6px",fontSize:9,fontWeight:700,borderRadius:4,border:"1px solid rgba(34,197,94,0.35)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>→ Depósito</button>}
                       {st==="en_deposito"&&<>
-                        <button onClick={()=>advanceShipment(sh,"en_camino_ar")} title="Marcar despachado a Argentina" style={{padding:"2px 6px",fontSize:9,fontWeight:700,borderRadius:4,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>→ En camino</button>
-                        <button onClick={()=>advanceShipment(sh,"proveedor")} title="Volver a 'proveedor'" style={{padding:"2px 6px",fontSize:9,borderRadius:4,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>↶</button>
+                        <button onClick={()=>advanceShipment(sh,"en_camino_ar")} title="Marcar despachado a Argentina" style={{padding:"2px 6px",fontSize:9,fontWeight:700,borderRadius:4,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",whiteSpace:"nowrap"}}>→ En tránsito</button>
+                        <button onClick={()=>advanceShipment(sh,"proveedor")} title="Volver a 'proveedor'" style={{padding:"2px 6px",fontSize:9,fontWeight:600,borderRadius:4,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.4)",cursor:"pointer",whiteSpace:"nowrap"}}>↶ Proveedor</button>
                       </>}
-                      {st==="en_camino_ar"&&<button onClick={()=>advanceShipment(sh,"en_deposito")} title="Volver a 'en depósito'" style={{padding:"2px 6px",fontSize:9,borderRadius:4,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>↶</button>}
+                      {st==="en_camino_ar"&&<button onClick={()=>advanceShipment(sh,"en_deposito")} title="Volver a 'en depósito'" style={{padding:"2px 6px",fontSize:9,fontWeight:600,borderRadius:4,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.4)",cursor:"pointer",whiteSpace:"nowrap"}}>↶ Depósito</button>}
                     </div>}
                   </div>
                 </td>
