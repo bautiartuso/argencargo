@@ -1907,8 +1907,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <Inp label="Referencia (opcional)" value={newSupPmt.reference||""} onChange={v=>setNewSupPmt(p=>({...p,reference:v}))} placeholder="Nº orden / comprobante"/>
           </div>
           {/* Fila 3: condicional — si TC, mostrar fecha cierre */}
-          {newSupPmt.payment_method==="tarjeta_credito"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,alignItems:"end",marginBottom:12,padding:"10px 14px",background:"rgba(167,139,250,0.06)",border:"1px solid rgba(167,139,250,0.18)",borderRadius:8}}>
-            <CreditCardPicker token={token} value={newSupPmt.credit_card_id} onChange={v=>setNewSupPmt(p=>({...p,credit_card_id:v}))} small={false} required/>
+          {newSupPmt.payment_method==="tarjeta_credito"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,alignItems:"start",marginBottom:12,padding:"10px 14px",background:"rgba(167,139,250,0.06)",border:"1px solid rgba(167,139,250,0.18)",borderRadius:8}}>
+            <div><CreditCardPicker token={token} value={newSupPmt.credit_card_id} onChange={v=>setNewSupPmt(p=>({...p,credit_card_id:v}))} small={false} required/></div>
             <Inp label="Cierre de tarjeta" type="date" value={newSupPmt.card_closing_date||""} onChange={v=>setNewSupPmt(p=>({...p,card_closing_date:v}))}/>
             <p style={{gridColumn:"1/-1",fontSize:11,color:"rgba(167,139,250,0.85)",margin:0,lineHeight:1.5}}>💳 Con tarjeta: el débito ocurre en la fecha de cierre. Hasta entonces, la plata está en el bolsillo pero es deuda TC del dashboard.</p>
           </div>}
