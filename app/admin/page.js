@@ -9661,40 +9661,42 @@ function AdminCalculator({token}){
       @page{size:A4;margin:0}
       *,*:before,*:after{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}
       html,body{margin:0;padding:0}
-      body{font-family:'Helvetica Neue',Arial,sans-serif;color:#111;margin:0;padding:16mm 16mm 14mm}
-      h1{font-size:22px;margin:0 0 4px;color:#1A3D6E;letter-spacing:-0.01em}
-      .sub{color:#666;font-size:12px;margin-bottom:22px}
-      .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px;margin-bottom:20px;padding:14px 16px;background:#f4f6fa;border-radius:8px}
-      .grid div{font-size:11px;color:#555;letter-spacing:0.05em;text-transform:uppercase;font-weight:700}
-      .grid b{font-size:14px;color:#111;display:block;margin-top:3px;font-weight:700;text-transform:none;letter-spacing:normal}
-      h3{margin:18px 0 6px;font-size:13px;color:#1A3D6E;letter-spacing:0.02em}
-      table{width:100%;border-collapse:collapse;margin-top:10px;font-size:11px}
-      th,td{padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:left}
-      th{background:#1A3D6E !important;color:#fff !important;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:700}
-      td.c{text-align:center}td.r{text-align:right}td.mono{font-family:'SFMono-Regular',Consolas,monospace;font-size:10.5px}
+      body{font-family:'Helvetica Neue',Arial,sans-serif;color:#111;margin:0;padding:12mm 14mm 8mm}
+      h1{font-size:20px;margin:0 0 2px;color:#1A3D6E;letter-spacing:-0.01em}
+      .sub{color:#666;font-size:11px;margin-bottom:12px}
+      .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:12px;padding:10px 14px;background:#f4f6fa;border-radius:8px}
+      .grid div{font-size:10px;color:#555;letter-spacing:0.05em;text-transform:uppercase;font-weight:700}
+      .grid b{font-size:13px;color:#111;display:block;margin-top:2px;font-weight:700;text-transform:none;letter-spacing:normal}
+      h3{margin:12px 0 4px;font-size:12px;color:#1A3D6E;letter-spacing:0.02em}
+      table{width:100%;border-collapse:collapse;margin-top:6px;font-size:10.5px}
+      th,td{padding:5px 9px;border-bottom:1px solid #e5e7eb;text-align:left}
+      th{background:#1A3D6E !important;color:#fff !important;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+      td.c{text-align:center}td.r{text-align:right}td.mono{font-family:'SFMono-Regular',Consolas,monospace;font-size:10px}
       tr:nth-child(even) td{background:#fafbfc}
-      .section{margin-top:14px}
-      .section-title{font-size:10px;font-weight:700;color:#1A3D6E;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 6px;padding:0 4px}
-      .breakdown{padding:12px 14px;background:#f4f6fa;border-radius:8px;font-size:12px}
-      .breakdown .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e5e7eb}
+      .section{margin-top:10px}
+      .section-title{font-size:9.5px;font-weight:700;color:#1A3D6E;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 4px;padding:0 4px}
+      .breakdown{padding:8px 12px;background:#f4f6fa;border-radius:8px;font-size:11.5px}
+      .breakdown .row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #e5e7eb}
       .breakdown .row:last-child{border-bottom:none}
       .breakdown .row span:last-child{font-weight:600;color:#111}
-      .totals{margin-top:16px;padding:16px 20px;background:#1A3D6E !important;color:#fff !important;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
-      .totals .lbl{font-size:11px;text-transform:uppercase;letter-spacing:0.05em;opacity:.85}
-      .totals .big{font-size:22px;font-weight:700;letter-spacing:-0.01em;margin-top:2px}
-      .foot{margin-top:18px;padding-top:12px;border-top:1px solid #e5e7eb;font-size:10px;color:#666;line-height:1.5}
-      .brand{margin-top:14px;text-align:center;padding:8px 0 0}
-      .brand img{max-width:380px;width:100%;height:auto;display:block;margin:0 auto}
+      .totals{margin-top:12px;padding:12px 18px;background:#1A3D6E !important;color:#fff !important;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
+      .totals .lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.05em;opacity:.85}
+      .totals .big{font-size:18px;font-weight:700;letter-spacing:-0.01em;margin-top:2px}
+      .foot{margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:9.5px;color:#666;line-height:1.45}
+      .brand{margin-top:8px;text-align:center;padding:4px 0 0}
+      .brand img{max-width:260px;width:100%;height:auto;display:block;margin:0 auto}
       .brand-fallback{display:none}
       .brand img.failed + .brand-fallback{display:block}
       .brand-fallback .line{width:48px;height:2px;background:#1A3D6E;margin:0 auto 10px;border-radius:2px}
       .brand-fallback .name{font-size:18px;font-weight:800;color:#1A3D6E;letter-spacing:0.28em;margin:0}
       .brand-fallback .tag{font-size:9.5px;color:#888;letter-spacing:0.22em;text-transform:uppercase;margin:5px 0 0;font-weight:600}
-      /* Evita que el navegador agregue una página en blanco al final cuando el contenido roza el borde */
+      /* Print: evitar márgenes extra del navegador y permitir que .totals/brand fluyan con el contenido.
+         No forzamos page-break-inside:avoid en bloques grandes (Aduana marítimo tiene 6 filas y empujaba
+         todo a una 2da página vacía). Si necesita partirse, que se parta. */
       @media print{
-        html,body{height:auto;overflow:hidden}
-        body{padding:14mm 16mm 8mm !important}
-        .brand,.foot,.totals{page-break-inside:avoid;break-inside:avoid;page-break-after:avoid;break-after:avoid}
+        html,body{height:auto}
+        body{padding:10mm 14mm 6mm !important}
+        .totals,.brand{page-break-inside:avoid;break-inside:avoid}
       }
     </style></head><body>
       <h1>Cotización Argencargo</h1>
