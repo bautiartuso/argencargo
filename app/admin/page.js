@@ -1754,13 +1754,20 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         if(!amt||amt<=0||!newSupPmt.payment_date)return;
         const isTC=newSupPmt.payment_method==="tarjeta_credito";
         const isArs=newSupPmt.currency==="ARS";
+        const rate=Number(newSupPmt.exchange_rate||0);
         if(isTC&&!newSupPmt.credit_card_id){alert("Elegí qué tarjeta usaste");return;}
+        // ARS cash (transferencia/efectivo/etc.) sin TC → no se puede dolarizar, frenamos.
+        if(isArs&&!isTC&&rate<=0){alert("Cargá el tipo de cambio ARS/USD para dolarizar el costo.");return;}
         const isRefund=newSupPmt.type==="refund";
+        // ARS cash → dolarizar al toque con el TC ingresado. ARS TC → queda pendiente hasta el cierre.
+        const arsCashDolarized=isArs&&!isTC&&rate>0;
+        const usdFromArs=arsCashDolarized?Math.round((amt/rate)*100)/100:0;
         const body={
           operation_id:op.id,
           payment_date:newSupPmt.payment_date,
-          amount_usd:isArs?0:amt,
+          amount_usd:isArs?(arsCashDolarized?usdFromArs:0):amt,
           amount_ars:isArs?amt:null,
+          exchange_rate:arsCashDolarized?rate:null,
           payment_method:newSupPmt.payment_method,
           is_paid:newSupPmt.is_paid,
           notes:newSupPmt.notes||null,
@@ -1768,23 +1775,28 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           currency:newSupPmt.currency||"USD",
           card_closing_date:isTC&&newSupPmt.card_closing_date?newSupPmt.card_closing_date:null,
           credit_card_id:isTC?newSupPmt.credit_card_id:null,
-          paid_at:newSupPmt.is_paid&&!isArs?new Date(newSupPmt.payment_date+"T12:00:00Z").toISOString():null,
+          paid_at:newSupPmt.is_paid&&(!isArs||arsCashDolarized)?new Date(newSupPmt.payment_date+"T12:00:00Z").toISOString():null,
           type:newSupPmt.type||"payment"
         };
-        // Si ARS: forzar is_paid=false hasta que se dolarice
-        // Reembolsos en ARS: también pending dolarizar (cuando recibas pesos de vuelta necesitás saber el TC del día)
-        if(isArs){body.is_paid=false;body.paid_at=null;}
+        // ARS TC: pendiente de dolarizar (is_paid=false hasta que se debite la tarjeta).
+        if(isArs&&!arsCashDolarized){body.is_paid=false;body.paid_at=null;}
         await dq("operation_supplier_payments",{method:"POST",token,body});
-        // Sync cost_producto_usd: los reembolsos RESTAN, los pagos SUMAN. ARS queda fuera hasta dolarizar.
-        if(!isArs){
-          const delta=isRefund?-amt:amt;
-          const newTotal=totalCosto+delta;
+        // Sync cost_producto_usd con el USD del pago.
+        //   USD directo → suma amt.
+        //   ARS cash dolarizado → suma usdFromArs.
+        //   ARS TC pendiente → no suma todavía (se sumará al dolarizar).
+        const usdDelta=isArs?(arsCashDolarized?usdFromArs:0):amt;
+        if(usdDelta>0){
+          const signed=isRefund?-usdDelta:usdDelta;
+          const newTotal=totalCosto+signed;
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{cost_producto_usd:newTotal}});
           setOp(p=>({...p,cost_producto_usd:newTotal}));
         }
-        setNewSupPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
+        setNewSupPmt({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",exchange_rate:"",type:"payment"});
         load();
-        flash(isRefund?(isArs?"Reembolso ARS registrado":"Reembolso registrado"):(isArs?"Costo ARS registrado — se dolariza al cerrar tarjeta":"Costo registrado"));
+        flash(isRefund
+          ?(arsCashDolarized?`Reembolso ARS registrado (USD ${usdFromArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:isArs?"Reembolso ARS TC registrado — se dolariza al cerrar tarjeta":"Reembolso registrado")
+          :(arsCashDolarized?`Costo ARS registrado (USD ${usdFromArs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:isArs?"Costo ARS TC registrado — se dolariza al cerrar tarjeta":"Costo registrado"));
       };
       const deleteCost=async(id)=>{
         const target=supplierPayments.find(p=>p.id===id);
@@ -1894,13 +1906,26 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             </div>
           </div>
           {newSupPmt.type==="refund"&&<p style={{fontSize:11,color:"rgba(34,197,94,0.8)",margin:"0 0 12px",padding:"8px 12px",background:"rgba(34,197,94,0.05)",border:"1px solid rgba(34,197,94,0.15)",borderRadius:6}}>💚 Reembolso del proveedor (ej: devolución por fallas de producción, crédito, ajuste). El monto se resta del costo total de la op.</p>}
-          {/* Fila 1: fecha + monto + moneda + método */}
-          <div style={{display:"grid",gridTemplateColumns:"140px 1fr 100px 1.3fr",gap:10,alignItems:"end",marginBottom:10}}>
-            <Inp label="Fecha" type="date" value={newSupPmt.payment_date} onChange={v=>setNewSupPmt(p=>({...p,payment_date:v}))}/>
-            <Inp label={`Monto (${newSupPmt.currency||"USD"})`} type="number" value={newSupPmt.amount_usd} onChange={v=>setNewSupPmt(p=>({...p,amount_usd:v}))} step="0.01" placeholder={newSupPmt.currency==="ARS"?"Ej: 500000":"0.00"}/>
-            <Sel label="Moneda" value={newSupPmt.currency||"USD"} onChange={v=>setNewSupPmt(p=>({...p,currency:v}))} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"},{value:"EUR",label:"EUR"},{value:"CNY",label:"CNY"}]}/>
-            <Sel label="Método" value={newSupPmt.payment_method} onChange={v=>setNewSupPmt(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Contado"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"swift",label:"SWIFT / Wire"},{value:"alibaba",label:"Alibaba"},{value:"otro",label:"Otro"}]}/>
-          </div>
+          {/* Fila 1: fecha + monto + moneda + método (+ TC ARS/USD si paga ARS por cash). */}
+          {(()=>{
+            const isArs=newSupPmt.currency==="ARS";
+            const isTC=newSupPmt.payment_method==="tarjeta_credito";
+            // Solo cash (no TC) en ARS muestra el TC para dolarizar al guardar.
+            const showRate=isArs&&!isTC;
+            const rate=Number(newSupPmt.exchange_rate||0);
+            const amt=Number(newSupPmt.amount_usd||0);
+            const usdEq=showRate&&amt>0&&rate>0?(amt/rate):null;
+            return <>
+            <div style={{display:"grid",gridTemplateColumns:showRate?"130px 1fr 90px 130px 1.2fr":"140px 1fr 100px 1.3fr",gap:10,alignItems:"end",marginBottom:showRate?6:10}}>
+              <Inp label="Fecha" type="date" value={newSupPmt.payment_date} onChange={v=>setNewSupPmt(p=>({...p,payment_date:v}))}/>
+              <Inp label={`Monto (${newSupPmt.currency||"USD"})`} type="number" value={newSupPmt.amount_usd} onChange={v=>setNewSupPmt(p=>({...p,amount_usd:v}))} step="0.01" placeholder={newSupPmt.currency==="ARS"?"Ej: 500000":"0.00"}/>
+              <Sel label="Moneda" value={newSupPmt.currency||"USD"} onChange={v=>setNewSupPmt(p=>({...p,currency:v}))} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"},{value:"EUR",label:"EUR"},{value:"CNY",label:"CNY"}]}/>
+              {showRate&&<Inp label="TC ARS/USD" type="number" value={newSupPmt.exchange_rate||""} onChange={v=>setNewSupPmt(p=>({...p,exchange_rate:v}))} step="0.01" placeholder="Ej: 1410"/>}
+              <Sel label="Método" value={newSupPmt.payment_method} onChange={v=>setNewSupPmt(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Contado"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"swift",label:"SWIFT / Wire"},{value:"alibaba",label:"Alibaba"},{value:"otro",label:"Otro"}]}/>
+            </div>
+            {showRate&&<p style={{fontSize:11,fontWeight:600,color:usdEq!=null?"#c084fc":"#fbbf24",margin:"0 0 10px"}}>USD equivalente: {usdEq!=null?`USD ${usdEq.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"Cargá monto + TC para dolarizar al guardar"}</p>}
+            </>;
+          })()}
           {/* Fila 2: descripción + referencia */}
           <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10,alignItems:"end",marginBottom:12}}>
             <Inp label="Descripción" value={newSupPmt.notes} onChange={v=>setNewSupPmt(p=>({...p,notes:v}))} placeholder="Ej: Orden Alibaba (incluye comisión)"/>
