@@ -9659,16 +9659,24 @@ function AdminCalculator({token}){
     const all=channelsForOrigin(origin).map(ch=>{
       const opLike={channel:CHANNEL_MAP[ch.key],origin,shipping_to_door:false,shipping_cost:0,has_battery:hasBattery,has_phones:false};
       try{const r=calcOpBudget(opLike,items,pks,tariffs||[],config||{},[],client);const bd=computeBreakdown(ch.key,items,pks,client);return{...ch,...r,bd};}catch(e){console.error("calc",ch.key,e);return null;}
-    }).filter(Boolean).filter(ch=>{
-      // Mismas reglas de visibilidad que el portal:
-      if(ch.key==="aereo_a_china"&&(hasBrand||overweight))return false;
-      // Marítimos requieren dimensiones cargadas (CBM > 0): sin volumen no se puede cotizar carga marítima.
-      if((ch.key==="maritimo_a_china"||ch.key==="maritimo_b")&&totCBM<=0)return false;
-      if(ch.key==="maritimo_a_china"){
-        if(hasBrand)return false;
-        if(totCBM<1)return false;
-        if(totalFob>0&&totalFob<250*Math.max(totCBM,1))return false;
+    }).filter(Boolean).map(ch=>{
+      // En la calculadora del admin queremos VER siempre los canales (decide manualmente
+      // si los ofrece al cliente o no). Las reglas del portal pasan a ser solo "avisos".
+      // notVisibleToClient: si está seteado, mostramos chip ⚠ con el motivo en la card.
+      const reasons=[];
+      if(ch.key==="aereo_a_china"){
+        if(hasBrand)reasons.push("aéreo A no permite mercadería con marca registrada");
+        if(overweight)reasons.push("hay bultos > 45 kg (Courier comercial no acepta)");
       }
+      if(ch.key==="maritimo_a_china"){
+        if(hasBrand)reasons.push("LCL/FCL no acepta mercadería con marca registrada");
+        if(totCBM>0&&totCBM<1)reasons.push(`CBM ${totCBM.toFixed(4)} m³ < 1 m³ (mínimo facturable)`);
+        if(totalFob>0&&totCBM>0&&totalFob<250*Math.max(totCBM,1))reasons.push(`FOB USD ${fmt(totalFob)} < mínimo USD ${fmt(250*Math.max(totCBM,1))} (USD 250/m³)`);
+      }
+      return {...ch,notVisibleToClient:reasons.length>0?reasons.join(" · "):null};
+    }).filter(ch=>{
+      // Solo descartamos cuando el cálculo es estructuralmente imposible (no por reglas comerciales).
+      if((ch.key==="maritimo_a_china"||ch.key==="maritimo_b")&&totCBM<=0)return false;
       return true;
     });
     setResults({channels:all,totalFob,totCBM,taxCond,origin,clientName,hasBrand,hasBattery});
@@ -9869,9 +9877,13 @@ function AdminCalculator({token}){
           :(Number(ch.flete||0)+Number(ch.surcharge||0));
         const rowStyle={display:"flex",justifyContent:"space-between",alignItems:"baseline",fontSize:11.5,color:"rgba(255,255,255,0.65)"};
         const valStyle={color:"#fff",fontWeight:600,fontVariantNumeric:"tabular-nums"};
-        return <div key={ch.key} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,display:"flex",flexDirection:"column"}}>
+        return <div key={ch.key} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:`1px solid ${ch.notVisibleToClient?"rgba(251,191,36,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:10,display:"flex",flexDirection:"column"}}>
           <p style={{fontSize:12,fontWeight:700,color:IC,margin:"0 0 4px"}}>{ch.name}</p>
           <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"0 0 12px"}}>{ch.info}</p>
+          {ch.notVisibleToClient&&<div title={ch.notVisibleToClient} style={{padding:"6px 10px",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:6,marginBottom:10}}>
+            <p style={{fontSize:10,fontWeight:700,color:"#fbbf24",margin:0,letterSpacing:"0.04em",textTransform:"uppercase"}}>⚠ No visible al cliente</p>
+            <p style={{fontSize:10,color:"rgba(251,191,36,0.85)",margin:"3px 0 0",lineHeight:1.4,fontWeight:500}}>{ch.notVisibleToClient}</p>
+          </div>}
           <div style={{flex:1,display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>
             {Number(ch.flete||0)>0&&<div style={rowStyle}><span>Flete</span><span style={valStyle}>USD {fmt(ch.flete)}</span></div>}
             {Number(ch.seguro||0)>0&&<div style={rowStyle}><span>Seguro</span><span style={valStyle}>USD {fmt(ch.seguro)}</span></div>}
