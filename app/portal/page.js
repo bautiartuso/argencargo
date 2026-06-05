@@ -2744,7 +2744,17 @@ function TutorialOverlay({client,token,onClose,onComplete}){
   const [i,setI]=useState(0);
   const [closing,setClosing]=useState(false);
   const fn=client?.first_name||"";
+  const code=client?.client_code||"";
   const steps=[
+    {
+      icon:"🪪",
+      title:"Tu código de cliente",
+      subtitle:"Importante — anotalo",
+      body:"Este es tu identificador único en Argencargo. Usalo cuando le pidas a tu proveedor en China que rotule la carga (ej: 'ARGENCARGO "+(code||"XXXXXX")+"'). Así sabemos al toque que esa mercadería es tuya cuando llega a depósito. Siempre lo tenés acá también en Mi Cuenta.",
+      cta:"Continuar",
+      nav:null,
+      highlightCode:true
+    },
     {
       icon:"👋",
       title:`¡Hola ${fn}!`,
@@ -2831,6 +2841,11 @@ function TutorialOverlay({client,token,onClose,onComplete}){
       <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,textTransform:"uppercase",letterSpacing:"0.12em",margin:"0 0 6px"}}>{cur.subtitle}</p>
       {/* Title */}
       <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.02em",lineHeight:1.15}}>{cur.title}</h2>
+      {/* Código de cliente destacado (primer step si highlightCode) */}
+      {cur.highlightCode&&code&&<div style={{margin:"4px 0 22px",padding:"22px 24px",background:"linear-gradient(135deg, rgba(184,149,106,0.22), rgba(232,208,152,0.06))",border:"1.5px solid rgba(184,149,106,0.45)",borderRadius:14,textAlign:"center",boxShadow:"0 0 40px rgba(184,149,106,0.18)"}}>
+        <p style={{fontSize:10,fontWeight:700,color:"rgba(232,208,152,0.85)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.18em"}}>Tu código es</p>
+        <p style={{fontSize:38,fontWeight:800,color:GOLD_LIGHT,fontFamily:"monospace",margin:0,letterSpacing:"0.1em",textShadow:"0 0 20px rgba(184,149,106,0.4)"}}>{code}</p>
+      </div>}
       {/* Body */}
       <p style={{fontSize:14,color:"rgba(255,255,255,0.7)",lineHeight:1.55,margin:"0 0 28px"}}>{cur.body}</p>
       {/* Footer */}
