@@ -858,7 +858,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const[fit,fpk,ft,fov,fcl,fop]=await Promise.all([
         dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*`}),
         dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*`}),
-        dq("tariffs",{token,filters:"?select=*&type=eq.rate"}),
+        dq("tariffs",{token,filters:"?select=*"}),
         op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([]),
         op.client_id?dq("clients",{token,filters:`?id=eq.${op.client_id}&select=tax_condition`}):Promise.resolve([]),
         dq("operations",{token,filters:`?id=eq.${op.id}&select=channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status`})
@@ -3872,7 +3872,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   };
   const addMov=async()=>{if(!newMov.amount)return;setSavingMov(true);const amt=Number(newMov.amount);const signed=newMov.type==="overpayment"||newMov.type==="adjustment"?Math.abs(amt):-Math.abs(amt);await dq("client_account_movements",{method:"POST",token,body:{client_id:cl.id,type:newMov.type,amount_usd:signed,description:newMov.description||null}});await loadAccMovs();const fresh=await dq("clients",{token,filters:`?id=eq.${cl.id}&select=account_balance_usd`});if(Array.isArray(fresh)&&fresh[0])setCl(p=>({...p,account_balance_usd:fresh[0].account_balance_usd}));setNewMov({type:"adjustment",amount:"",description:""});setSavingMov(false);flash("Movimiento registrado");};
   const delMov=async(id)=>{if(!confirm("¿Eliminar este movimiento?"))return;await dq("client_account_movements",{method:"DELETE",token,filters:`?id=eq.${id}`});await loadAccMovs();const fresh=await dq("clients",{token,filters:`?id=eq.${cl.id}&select=account_balance_usd`});if(Array.isArray(fresh)&&fresh[0])setCl(p=>({...p,account_balance_usd:fresh[0].account_balance_usd}));flash("Movimiento eliminado");};
-  useEffect(()=>{(async()=>{const [o,t,ov]=await Promise.all([dq("operations",{token,filters:`?client_id=eq.${cl.id}&select=*&order=created_at.desc`}),dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=service_key.asc,sort_order.asc"}),dq("client_tariff_overrides",{token,filters:`?client_id=eq.${cl.id}&select=*`})]);setOps(Array.isArray(o)?o:[]);setTariffs(Array.isArray(t)?t:[]);setOverrides(Array.isArray(ov)?ov:[]);setLo(false);loadAccMovs();})();},[cl.id,token]);
+  useEffect(()=>{(async()=>{const [o,t,ov]=await Promise.all([dq("operations",{token,filters:`?client_id=eq.${cl.id}&select=*&order=created_at.desc`}),dq("tariffs",{token,filters:"?select=*&order=service_key.asc,sort_order.asc"}),dq("client_tariff_overrides",{token,filters:`?client_id=eq.${cl.id}&select=*`})]);setOps(Array.isArray(o)?o:[]);setTariffs(Array.isArray(t)?t:[]);setOverrides(Array.isArray(ov)?ov:[]);setLo(false);loadAccMovs();})();},[cl.id,token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const getOverride=(tid)=>overrides.find(o=>o.tariff_id===tid);
   // Recalcula y guarda presupuesto de todas las ops activas del cliente (las cerradas/canceladas se saltean).
@@ -3880,7 +3880,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
   const syncClientOps=async()=>{
     try{
       const[tfRes,ccRes,opsRes,ovRes,clRes]=await Promise.all([
-        dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),
+        dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),
         dq("calc_config",{token,filters:"?select=*"}),
         dq("operations",{token,filters:`?client_id=eq.${cl.id}&status=not.in.(operacion_cerrada,cancelada)&select=*`}),
         dq("client_tariff_overrides",{token,filters:`?client_id=eq.${cl.id}&select=*`}),
@@ -9237,7 +9237,7 @@ function QuotesList({token}){
   useEffect(()=>{(async()=>{const [q,cl,tf,cc]=await Promise.all([
     dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),
     dq("clients",{token,filters:"?select=id,first_name,last_name,whatsapp,client_code,tax_condition"}),
-    dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),
+    dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),
     dq("calc_config",{token,filters:"?select=*"})
   ]);setQuotes(Array.isArray(q)?q:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);setLo(false);})();},[token]);
   useEffect(()=>{
@@ -9550,7 +9550,7 @@ function AdminCalculator({token}){
   const [allClients,setAllClients]=useState([]);
   useEffect(()=>{(async()=>{
     const [tf,cc,cl]=await Promise.all([
-      dq("tariffs",{token,filters:"?select=*&type=eq.rate&order=sort_order.asc"}),
+      dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("calc_config",{token,filters:"?select=*"}),
       dq("clients",{token,filters:"?select=id,first_name,last_name,whatsapp,client_code,tax_condition&order=client_code.asc"})
     ]);
