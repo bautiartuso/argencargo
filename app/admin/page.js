@@ -4690,7 +4690,7 @@ function FinancePanel({token}){
     dq("finance_entries",{token,filters:"?select=*&auto_generated=is.false&order=date.desc,created_at.desc"}),
     dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,credit_applied_usd,debt_applied_usd,extra_charge_usd,closed_at,cost_flete,cost_flete_method,cost_flete_paid_at,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_seguro_paid_at,cost_flete_local,cost_flete_local_paid_at,cost_otros,cost_otros_paid_at,service_type,cost_producto_usd,cost_producto_method,cost_producto_paid,cost_producto_paid_at,clients(first_name,last_name,client_code)&order=created_at.desc"}),
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)"}),
-    dq("finance_entries",{token,filters:"?select=*&currency=eq.ARS&exchange_rate=is.null&auto_generated=eq.true&order=card_closing_date.asc"}),
+    dq("finance_entries",{token,filters:"?select=*,operations(operation_code),credit_cards(id,name,brand)&currency=eq.ARS&exchange_rate=is.null&auto_generated=eq.true&order=card_closing_date.asc"}),
     dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),
     dq("agent_signups",{token,filters:"?select=auth_user_id,first_name,last_name"}),
     dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),
@@ -5152,12 +5152,28 @@ function FinancePanel({token}){
     {tab==="dollar"&&(()=>{
       // Dos fuentes: (1) finance_entries (gastos del negocio + impuestos/gasto doc de ops)
       //              (2) operation_supplier_payments (costos de ops GI con TC+ARS)
-      // Merge en groups por card_closing_date, cada item carga su source para el dollarize.
+      // Merge en groups por (TARJETA, card_closing_date). Cada tarjeta tiene su propio grupo
+      // aunque coincida la fecha con otra — la dolarización aplica TC distinto por tarjeta.
       const groups={};
-      dollarPending.forEach(e=>{const k=e.card_closing_date||"sin_fecha";if(!groups[k])groups[k]=[];groups[k].push({source:"entry",raw:e,id:e.id,description:e.description,amount_ars:Number(e.amount_ars||0),op_code:e.operations?.operation_code,operation_id:e.operation_id});});
-      (cardDebt.supTcArs||[]).forEach(p=>{const k=p.card_closing_date||"sin_fecha";if(!groups[k])groups[k]=[];groups[k].push({source:"supplier",raw:p,id:p.id,description:`Costo op ${p.operations?.operation_code||"—"} — ${p.notes||"Sin descripción"}`,amount_ars:Number(p.amount_ars||0),op_code:p.operations?.operation_code,operation_id:p.operation_id});});
-      const dollarize=async(closingDate)=>{const rate=Number(dollarRates[closingDate]||0);if(!rate){alert("Ingresá el tipo de cambio");return;}
-        const items=groups[closingDate];
+      const pushDollarItem=(item,cardObj,closingDate)=>{
+        const cardKey=cardObj?.id||"sin_tarjeta";
+        const dateKey=closingDate||"sin_fecha";
+        const k=`${cardKey}__${dateKey}`;
+        if(!groups[k])groups[k]={key:k,date:dateKey,card:cardObj||null,items:[]};
+        groups[k].items.push(item);
+      };
+      dollarPending.forEach(e=>pushDollarItem({source:"entry",raw:e,id:e.id,description:e.description,amount_ars:Number(e.amount_ars||0),op_code:e.operations?.operation_code,operation_id:e.operation_id},e.credit_cards,e.card_closing_date));
+      (cardDebt.supTcArs||[]).forEach(p=>pushDollarItem({source:"supplier",raw:p,id:p.id,description:`Costo op ${p.operations?.operation_code||"—"} — ${p.notes||"Sin descripción"}`,amount_ars:Number(p.amount_ars||0),op_code:p.operations?.operation_code,operation_id:p.operation_id},p.credit_cards,p.card_closing_date));
+      // Orden: primero por tarjeta (sin tarjeta al final), después por fecha.
+      const sortedDollarGroups=Object.values(groups).sort((a,b)=>{
+        const an=(a.card?.name||"~zsin tarjeta").toLowerCase();
+        const bn=(b.card?.name||"~zsin tarjeta").toLowerCase();
+        if(an!==bn)return an.localeCompare(bn);
+        if(a.date==="sin_fecha")return 1;if(b.date==="sin_fecha")return -1;
+        return a.date.localeCompare(b.date);
+      });
+      const dollarize=async(groupKey)=>{const rate=Number(dollarRates[groupKey]||0);if(!rate){alert("Ingresá el tipo de cambio");return;}
+        const items=groups[groupKey].items;
         // Para recomputar cost_producto_usd después, trackeamos ops afectadas
         const affectedGiOps=new Set();
         const nowIso=new Date().toISOString();
@@ -5185,13 +5201,18 @@ function FinancePanel({token}){
         load();flash(`Dollarizados ${items.length} gastos al TC $${rate}`);
       };
       return <>
-      {Object.keys(groups).length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>No hay gastos pendientes de dollarización</p>}
-      {Object.entries(groups).map(([closingDate,items])=>{
-        const totalArs=items.reduce((s,it)=>s+Number(it.amount_ars||0),0);
-        const rate=Number(dollarRates[closingDate]||0);
-        return <Card key={closingDate} title={`Cierre: ${formatDate(closingDate)}`}>
+      {sortedDollarGroups.length===0&&<p style={{textAlign:"center",color:"rgba(255,255,255,0.45)",padding:"2rem 0"}}>No hay gastos pendientes de dollarización</p>}
+      {sortedDollarGroups.map(g=>{
+        const totalArs=g.items.reduce((s,it)=>s+Number(it.amount_ars||0),0);
+        const rate=Number(dollarRates[g.key]||0);
+        const brandColor=g.card?.brand==="visa"?"#1a1f71":g.card?.brand==="mastercard"?"#eb001b":g.card?.brand==="amex"?"#006fcf":"#666";
+        const brandLbl=g.card?.brand==="visa"?"VISA":g.card?.brand==="mastercard"?"Mastercard":g.card?.brand==="amex"?"AMEX":"Sin tarjeta";
+        return <Card key={g.key} title={<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:`${brandColor}33`,color:"#fff",border:`1px solid ${brandColor}66`,letterSpacing:"0.05em",whiteSpace:"nowrap"}}>{brandLbl}{g.card?.name?` · ${g.card.name}`:""}</span>
+          <span>{g.date==="sin_fecha"?"📅 Sin fecha de cierre":`📅 Cierre ${formatDate(g.date)}`}</span>
+        </div>}>
           <div style={{marginBottom:12}}>
-            {items.map(it=><div key={`${it.source}_${it.id}`} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",gap:10}}>
+            {g.items.map(it=><div key={`${it.source}_${it.id}`} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.04)",gap:10}}>
               <div style={{flex:1,minWidth:0}}>
                 <span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{it.description}</span>
                 {it.source==="supplier"&&<span style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:3,background:"rgba(184,149,106,0.15)",color:GOLD_LIGHT,marginLeft:8,letterSpacing:"0.05em",textTransform:"uppercase"}}>GI</span>}
@@ -5201,9 +5222,9 @@ function FinancePanel({token}){
             <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",marginTop:4}}><span style={{fontSize:14,fontWeight:700,color:"#fff"}}>Total ARS</span><span style={{fontSize:16,fontWeight:700,color:IC}}>ARS {totalArs.toLocaleString("es-AR",{minimumFractionDigits:2})}</span></div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px",alignItems:"end"}}>
-            <Inp label="Tipo de cambio (ARS/USD)" type="number" value={dollarRates[closingDate]||""} onChange={v=>setDollarRates(p=>({...p,[closingDate]:v}))} step="0.01" placeholder="Ej: 1250"/>
+            <Inp label="Tipo de cambio (ARS/USD)" type="number" value={dollarRates[g.key]||""} onChange={v=>setDollarRates(p=>({...p,[g.key]:v}))} step="0.01" placeholder="Ej: 1250"/>
             <div style={{paddingTop:22}}><p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>EQUIVALENTE USD</p><p style={{fontSize:16,fontWeight:700,color:rate>0?"#22c55e":"rgba(255,255,255,0.2)",margin:0}}>{rate>0?usd(totalArs/rate):"—"}</p></div>
-            <Btn onClick={()=>dollarize(closingDate)} disabled={!rate}>Dollarizar</Btn>
+            <Btn onClick={()=>dollarize(g.key)} disabled={!rate}>Dollarizar</Btn>
           </div>
         </Card>;
       })}
