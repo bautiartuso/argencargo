@@ -853,11 +853,15 @@ function FinanceSection({ token }) {
         <IconBtn onClick={() => navMonth(1)} title="Mes siguiente">›</IconBtn>
       </div>
 
-      {/* Stats siempre visibles */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px,1fr))", gap: 14 }}>
-        <StatCard label="Ingresado" value={fmtArs(totalIn)} sub={monthWdraw.length === 0 ? "Sin ingresos aún" : `${monthWdraw.length} ingreso${monthWdraw.length !== 1 ? "s" : ""}`} accent={T.gold} />
-        <StatCard label="Gastado" value={fmtArs(totalSpent)} sub={`${monthExp.length} gasto${monthExp.length !== 1 ? "s" : ""}`} accent={T.red} />
-        <StatCard label="Disponible" value={fmtArs(totalIn - totalSpent)} sub={totalIn - totalSpent >= 0 ? "en mano" : "déficit"} accent={totalIn - totalSpent >= 0 ? T.success : T.danger} />
+      {/* Stats siempre visibles.
+          Reorganizado para que Disponible sea el HERO (centrado, grande, fondo verde vivo)
+          y los otros 2 sean cards más sobrias con la paleta financiera (teal/coral). */}
+      <div style={{ marginBottom: 14 }}>
+        <HeroDispoCard ingresado={totalIn} gastado={totalSpent} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <FinanceCard label="Ingresado" value={fmtArs(totalIn)} sub={monthWdraw.length === 0 ? "Sin ingresos aún" : `${monthWdraw.length} ingreso${monthWdraw.length !== 1 ? "s" : ""}`} kind="in" />
+        <FinanceCard label="Gastado" value={fmtArs(totalSpent)} sub={`${monthExp.length} gasto${monthExp.length !== 1 ? "s" : ""}`} kind="out" />
       </div>
 
       {view === "ledger" && (
@@ -1237,7 +1241,7 @@ function HabitModal({ token, editing, categories, onClose, onSaved }) {
             </div>
             <div>
               <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: T.textMuted, marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase" }}>Desde</label>
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputStyle} />
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={dateInputStyle} />
             </div>
           </div>
           <p style={{ margin: "8px 2px 0", fontSize: 11, color: T.gold, fontWeight: 600 }}>{frequencyLabel({ frequency_type: "every_n_days", every_n_days: Number(everyNDays) || 0 })} · desde {startDate || "hoy"}</p>
@@ -1342,7 +1346,7 @@ function ExpenseModal({ token, editing, categories, onClose, onSaved }) {
           {perInst && inst > 1 && <p style={{ margin: "6px 2px 0", fontSize: 11, color: T.textMuted }}>≈ {fmtArs(perInst)} por cuota</p>}
         </Field>
       )}
-      <Field label="Fecha"><input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} /></Field>
+      <Field label="Fecha"><input type="date" value={date} onChange={e => setDate(e.target.value)} style={dateInputStyle} /></Field>
       <Field label="Notas (opcional)"><input value={notes} onChange={e => setNotes(e.target.value)} style={inputStyle} /></Field>
       <ModalFooter onCancel={onClose} onConfirm={save} loading={saving} confirmLabel={editing?.id ? "Guardar" : "Registrar"} />
     </Modal>
@@ -1382,7 +1386,7 @@ function WithdrawalModal({ token, editing, onClose, onSaved }) {
         <p style={{ margin: 0, fontSize: 10.5, color: T.textMuted, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700 }}>Equivalente ARS</p>
         <p style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 600, color: T.gold, fontVariantNumeric: "tabular-nums" }}>{fmtArs(ars)}</p>
       </div>}
-      <Field label="Fecha"><input type="date" value={date} onChange={e => setDate(e.target.value)} style={inputStyle} /></Field>
+      <Field label="Fecha"><input type="date" value={date} onChange={e => setDate(e.target.value)} style={dateInputStyle} /></Field>
       <Field label="Notas (opcional)"><input value={notes} onChange={e => setNotes(e.target.value)} style={inputStyle} placeholder="Ej: Mitad del sueldo del mes" /></Field>
       <ModalFooter onCancel={onClose} onConfirm={save} loading={saving} confirmLabel={editing?.id ? "Guardar" : "Registrar"} />
     </Modal>
@@ -1478,6 +1482,75 @@ function StatCard({ label, value, sub, accent }) {
   );
 }
 
+// Paleta financiera (tonos sobrios, sin el rojo/dorado del cinabrio que se cruzaban con Hábitos):
+//   in    → emerald sutil (entradas)
+//   out   → coral profundo (salidas)
+//   hero  → verde vivo con glow (saldo disponible)
+const F = {
+  inText: "#5AB897",   // verde teal suave
+  inBg:   "rgba(90,184,151,0.08)",
+  inBorder: "rgba(90,184,151,0.28)",
+  outText: "#E27876",  // coral
+  outBg:   "rgba(226,120,118,0.08)",
+  outBorder: "rgba(226,120,118,0.28)",
+  heroGreen: "#22C55E",
+  heroGreenDeep: "#15803D",
+  heroGlow: "0 0 50px rgba(34,197,94,0.25)",
+  heroRed: "#EF4444",
+  heroRedDeep: "#991B1B",
+};
+
+function FinanceCard({ label, value, sub, kind }) {
+  const isIn = kind === "in";
+  const fg = isIn ? F.inText : F.outText;
+  const bg = isIn ? F.inBg : F.outBg;
+  const bd = isIn ? F.inBorder : F.outBorder;
+  const sign = isIn ? "▲" : "▼";
+  return (
+    <div style={{ padding: "14px 16px", background: bg, border: `1px solid ${bd}`, borderRadius: 12 }}>
+      <p style={{ margin: 0, fontSize: 9.5, color: fg, letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 700, opacity: 0.85, display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ fontSize: 11 }}>{sign}</span> {label}
+      </p>
+      <p style={{ margin: "6px 0 2px", fontSize: 18, fontWeight: 700, color: T.textPrimary, letterSpacing: "-0.01em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>{value}</p>
+      <p style={{ margin: 0, fontSize: 10.5, color: T.textMuted }}>{sub}</p>
+    </div>
+  );
+}
+
+function HeroDispoCard({ ingresado, gastado }) {
+  const dispo = ingresado - gastado;
+  const positive = dispo >= 0;
+  const color = positive ? F.heroGreen : F.heroRed;
+  const colorDeep = positive ? F.heroGreenDeep : F.heroRedDeep;
+  const glow = positive ? F.heroGlow : "0 0 50px rgba(239,68,68,0.22)";
+  return (
+    <div style={{
+      padding: "26px 22px 22px",
+      background: `linear-gradient(160deg, ${color}1F 0%, ${colorDeep}14 60%, rgba(22,16,14,0) 100%)`,
+      border: `1.5px solid ${color}55`,
+      borderRadius: 16,
+      textAlign: "center",
+      boxShadow: glow,
+      position: "relative",
+      overflow: "hidden",
+    }}>
+      <p style={{ margin: 0, fontSize: 10.5, color, letterSpacing: "0.22em", textTransform: "uppercase", fontWeight: 800, opacity: 0.95 }}>
+        {positive ? "Disponible" : "Déficit"}
+      </p>
+      <p style={{
+        margin: "10px 0 2px", fontSize: 32, fontWeight: 800, color, letterSpacing: "-0.02em",
+        lineHeight: 1.05, fontVariantNumeric: "tabular-nums",
+        textShadow: `0 0 22px ${color}55`,
+      }}>
+        {fmtArs(Math.abs(dispo))}
+      </p>
+      <p style={{ margin: "4px 0 0", fontSize: 11, color: T.textSecondary, letterSpacing: "0.04em" }}>
+        {positive ? "en mano este mes" : "este mes (gastos > ingresos)"}
+      </p>
+    </div>
+  );
+}
+
 function EmptyState({ text, action }) {
   return (
     <div style={{ padding: "40px 20px", textAlign: "center" }}>
@@ -1544,6 +1617,9 @@ function frequencyLabel(h) {
 }
 
 const inputStyle = { width: "100%", padding: "11px 14px", fontSize: 13.5, fontWeight: 500, border: `1px solid ${T.border}`, borderRadius: 8, background: T.bgSurfaceHi, color: T.textPrimary, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
+// Reset específico para inputs date — iOS Safari aplica un layout propio que recorta el
+// texto (queda "1 jun 2026" pegado al borde izquierdo) si no se desactiva el appearance.
+const dateInputStyle = { ...inputStyle, WebkitAppearance: "none", appearance: "none", minHeight: 46, lineHeight: "20px", textAlign: "left" };
 const btnPrimary = { padding: "10px 18px", fontSize: 12.5, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.gold}`, background: `linear-gradient(135deg, ${T.goldHi}, ${T.gold})`, color: T.bgBase, cursor: "pointer", letterSpacing: "0.04em", boxShadow: T.goldGlow, whiteSpace: "nowrap" };
 const btnSec = { padding: "10px 16px", fontSize: 12.5, fontWeight: 600, borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent", color: T.textPrimary, cursor: "pointer", whiteSpace: "nowrap" };
 const btnGhost = { padding: "8px 14px", fontSize: 12, fontWeight: 500, borderRadius: 8, border: "none", background: "transparent", color: T.textSecondary, cursor: "pointer", whiteSpace: "nowrap" };
