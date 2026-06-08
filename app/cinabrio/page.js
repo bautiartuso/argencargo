@@ -313,9 +313,12 @@ function ModeToggle({ mode, setMode }) {
         left: isFinance ? "calc(50% - 0px)" : 4,
         width: "calc(50% - 4px)",
         borderRadius: 999,
-        background: `linear-gradient(135deg, ${T.goldHi}, ${T.gold})`,
-        boxShadow: T.goldGlow,
-        transition: "left 280ms cubic-bezier(0.4,0,0.2,1)",
+        // Hábitos → dorado (theme cinabrio). Finanzas → esmeralda (paleta fintech).
+        background: isFinance
+          ? "linear-gradient(135deg, #34D399, #10B981)"
+          : `linear-gradient(135deg, ${T.goldHi}, ${T.gold})`,
+        boxShadow: isFinance ? "0 0 14px rgba(16,185,129,0.45)" : T.goldGlow,
+        transition: "all 280ms cubic-bezier(0.4,0,0.2,1)",
         zIndex: 1,
       }} />
     </button>
@@ -872,7 +875,7 @@ function FinanceSection({ token }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      {/* Sub-tabs */}
+      {/* Sub-tabs (sin los CTAs +Ingreso/+Gasto, que ahora viven en su propia fila debajo). */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <SubTab active={view === "ledger"} onClick={() => setView("ledger")}>Libro diario</SubTab>
         <SubTab active={view === "dashboard"} onClick={() => setView("dashboard")}>Dashboard</SubTab>
@@ -880,8 +883,7 @@ function FinanceSection({ token }) {
         <div style={{ flex: 1 }} />
         {view === "ledger" && (
           <>
-            <button onClick={() => setEditWithdraw({})} style={btnSec}>+ Ingreso</button>
-            <button onClick={() => setEditExpense({})} style={btnPrimary}>+ Gasto</button>
+            <span style={{ display: "none" }}>{/* placeholder: los CTAs se mueven abajo */}</span>
           </>
         )}
         {view === "categories" && <button onClick={() => setEditCat({})} style={btnPrimary}>+ Categoría</button>}
@@ -906,6 +908,32 @@ function FinanceSection({ token }) {
         <FinanceCard label="Ingresado" value={fmtArs(totalIn)} sub={monthWdraw.length === 0 ? "Sin ingresos aún" : `${monthWdraw.length} ingreso${monthWdraw.length !== 1 ? "s" : ""}`} kind="in" />
         <FinanceCard label="Gastado" value={fmtArs(totalSpent)} sub={`${monthExp.length} gasto${monthExp.length !== 1 ? "s" : ""}`} kind="out" />
       </div>
+      {/* CTAs principales: + Ingreso (verde) y + Gasto (rojo). Centrados, grandes y llamativos.
+          Reemplazan a los chips anteriores que estaban descolgados arriba a la derecha de las subtabs. */}
+      {view === "ledger" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 4 }}>
+          <button onClick={() => setEditWithdraw({})} style={{
+            padding: "16px 14px", fontSize: 14, fontWeight: 800, borderRadius: 14, border: "1.5px solid rgba(34,197,94,0.45)",
+            background: "linear-gradient(135deg, rgba(34,197,94,0.16), rgba(16,185,129,0.10))",
+            color: "#22C55E", cursor: "pointer", letterSpacing: "0.04em", boxShadow: "0 0 24px rgba(34,197,94,0.15)",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "inherit",
+            textShadow: "0 0 14px rgba(34,197,94,0.35)",
+          }}>
+            <span style={{ fontSize: 20, fontWeight: 800, lineHeight: 1 }}>+</span>
+            <span>Ingreso</span>
+          </button>
+          <button onClick={() => setEditExpense({})} style={{
+            padding: "16px 14px", fontSize: 14, fontWeight: 800, borderRadius: 14, border: "1.5px solid rgba(239,68,68,0.45)",
+            background: "linear-gradient(135deg, rgba(239,68,68,0.16), rgba(220,38,38,0.10))",
+            color: "#EF4444", cursor: "pointer", letterSpacing: "0.04em", boxShadow: "0 0 24px rgba(239,68,68,0.15)",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "inherit",
+            textShadow: "0 0 14px rgba(239,68,68,0.35)",
+          }}>
+            <span style={{ fontSize: 20, fontWeight: 800, lineHeight: 1 }}>+</span>
+            <span>Gasto</span>
+          </button>
+        </div>
+      )}
 
       {view === "ledger" && (
         ledger.length === 0 ? (
@@ -916,15 +944,15 @@ function FinanceSection({ token }) {
               <div key={`${r.kind}-${r.id}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: i === ledger.length - 1 ? "none" : `1px solid ${T.border}` }}>
                 <span style={{
                   width: 32, height: 32, borderRadius: 16, flexShrink: 0,
-                  background: r.kind === "in" ? `${T.gold}1F` : `${T.red}1F`,
-                  border: `1px solid ${r.kind === "in" ? T.gold + "55" : T.red + "55"}`,
+                  background: r.kind === "in" ? "rgba(34,197,94,0.14)" : "rgba(239,68,68,0.14)",
+                  border: `1px solid ${r.kind === "in" ? "rgba(34,197,94,0.45)" : "rgba(239,68,68,0.45)"}`,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  color: r.kind === "in" ? T.gold : T.red, fontSize: 16, fontWeight: 700, lineHeight: 1,
+                  color: r.kind === "in" ? "#22C55E" : "#EF4444", fontSize: 16, fontWeight: 700, lineHeight: 1,
                 }}>{r.kind === "in" ? "↓" : "↑"}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
                     <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{r.label}</p>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: r.kind === "in" ? T.gold : T.textPrimary, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", flexShrink: 0 }}>{r.kind === "in" ? "+" : "−"} {fmtArs(r.amount)}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: r.kind === "in" ? "#22C55E" : "#EF4444", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", flexShrink: 0 }}>{r.kind === "in" ? "+" : "−"} {fmtArs(r.amount)}</span>
                   </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
                     <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: T.textMuted, fontWeight: 500 }}>{r.date.slice(5).split("-").reverse().join("/")}</span>
