@@ -855,7 +855,16 @@ function FinanceSection({ token }) {
       ...monthWdraw.map(w => ({ kind: "in", id: w.id, date: w.withdrawal_date, amount: Number(w.amount_ars || 0), label: `Ingreso · ${fmtUsd(w.amount_usd)} @ ${Number(w.exchange_rate).toLocaleString("es-AR")}`, notes: w.notes, raw: w })),
       ...monthExp.map(e => ({ kind: "out", id: e.id, date: e.expense_date, amount: Number(e.amount_ars || 0), label: e.description || "(sin descripción)", category: expCats.find(c => c.id === e.category_id), payment_method: e.payment_method, installments: e.installments, raw: e })),
     ];
-    rows.sort((a, b) => b.date.localeCompare(a.date) || (b.id || "").localeCompare?.(a.id || "") || 0);
+    // Sort: primero por fecha del gasto/ingreso (más reciente arriba). Como tiebreaker dentro del
+    // mismo día usamos created_at (timestamp real de carga, refleja el orden cronológico de captura)
+    // en lugar del id, que es UUID random y no respeta orden.
+    rows.sort((a, b) => {
+      const byDate = b.date.localeCompare(a.date);
+      if (byDate !== 0) return byDate;
+      const aCreated = a.raw?.created_at || "";
+      const bCreated = b.raw?.created_at || "";
+      return bCreated.localeCompare(aCreated);
+    });
     return rows;
   }, [monthExp, monthWdraw, expCats]);
 
