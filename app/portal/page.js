@@ -1280,8 +1280,10 @@ function CalculatorPage({token,client}){
         flete,seguro,battExtra,totalImp,totalSvc,total:totalImp+totalSvc,items,
         pesoBruto:totWeight,pesoVol:volWeightTotal,pesoFact:facturableBill,pkgDetails,unit:`${facturableBill.toFixed(1)} kg`});}
 
-    // Aéreo Integral AC (B) — peso bruto (mínimo 5 kg China)
-    if(totWeight>0){const bw=Math.max(totWeight,MIN_KG_AEREO_CHINA);const fleteRate=getFleteRate("aereo_b_china",bw);const flete=bw*fleteRate;const sur=getSurcharge("aereo_b_china",totalFob,bw);
+    // Aéreo Integral AC (B) China — peso bruto. Solo se muestra al cliente si el peso
+    // bruto declarado supera 15 kg: para envíos chicos el courier comercial / IntAC USA
+    // suelen ser más razonables que el Aéreo IntAC desde China.
+    if(totWeight>15){const bw=Math.max(totWeight,MIN_KG_AEREO_CHINA);const fleteRate=getFleteRate("aereo_b_china",bw);const flete=bw*fleteRate;const sur=getSurcharge("aereo_b_china",totalFob,bw);
       channels.push({key:"aereo_b_china",name:"Aéreo Integral AC",info:"10-15 días hábiles",isBlanco:false,
         flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,pesoBruto:totWeight,unit:`${bw.toFixed(1)} kg`});}
 
