@@ -9389,7 +9389,7 @@ function QuotesList({token}){
       </div>
       <h3 style="margin:18px 0 6px;font-size:13px;color:#1B4F8A">Productos y clasificación arancelaria</h3>
       <table><thead><tr><th>Descripción</th><th>Cant</th><th>Unit.</th><th>FOB</th><th>NCM</th><th>Derechos</th><th>TE</th><th>IVA</th></tr></thead><tbody>${rows}</tbody></table>
-      <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${totFob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div><div style="text-align:right"><div class="lbl">Costo total estimado (DDP)</div><div class="big">USD ${Number(q.total_cost||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div></div>
+      <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${totFob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div><div style="text-align:right"><div class="lbl">Costo Total de Importar</div><div class="big">USD ${Number(q.total_cost||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div></div>
       <div class="foot">Los valores de NCM, derechos de importación, tasa de estadística e IVA son los aplicables según la normativa vigente al momento de emitir esta cotización. Los costos pueden variar según volumen final, tipo de cambio y gastos documentales. Argencargo — Integral Freight Forwarding.</div>
       <script>setTimeout(()=>window.print(),300)</script>
     </body></html>`);w.document.close();
@@ -9765,7 +9765,7 @@ function AdminCalculator({token}){
       <table><thead><tr><th>Descripción</th><th>Cant</th><th>Unit.</th><th>FOB</th><th>NCM</th></tr></thead><tbody>${rows}</tbody></table>
       ${rowsServicios.length?`<div class="section"><p class="section-title">Servicios — Flete y seguro</p><div class="breakdown">${rowsServicios.join("")}</div></div>`:""}
       ${rowsAduana.length?`<div class="section"><p class="section-title">Aduana — Impuestos y gastos</p><div class="breakdown">${rowsAduana.join("")}</div></div>`:""}
-      <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${fmt(totalFob)}</div></div><div style="text-align:right"><div class="lbl">Costo total estimado</div><div class="big">USD ${fmt(effTotal)}</div></div></div>
+      <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${fmt(totalFob)}</div></div><div style="text-align:right"><div class="lbl">Costo Total de Importar</div><div class="big">USD ${fmt(effTotal)}</div></div></div>
       <div class="foot">Cotización estimativa. Los costos finales pueden variar según peso, volumen y valor reales al momento del despacho.</div>
       <div class="brand">
         <img src="${typeof window!=="undefined"?window.location.origin:""}/logo_cotizaciones.png" alt="Argencargo" onerror="this.classList.add('failed')"/>

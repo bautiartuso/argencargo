@@ -1090,6 +1090,102 @@ function RatesPage({token,client}){
     </div>;})}
   </div>;
 }
+// Genera la hoja A4 imprimible de la cotización desde el portal del cliente.
+// Misma estética y layout que el printPdf del admin — el cliente puede descargar el
+// mismo PDF que se le envía manualmente. Recibe el canal expandido + contexto.
+function printQuotePdf({ch,products,totalFob,origin,clientName,delivCost=0}){
+  if(typeof window==="undefined")return;
+  const w=window.open("","_blank");if(!w)return;
+  const fmt=(n)=>Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const isAereo=ch.key?.includes("aereo");
+  const isBlanco=Boolean(ch.isBlanco);
+  const isMaritimo=ch.key?.includes("maritimo");
+  const fleteAmt=isAereo?(ch.pesoFact||ch.pesoBruto||0):(ch.cbm||0);
+  const fleteAmtLbl=isAereo?`${fmt(fleteAmt)} kg`:`${Number(fleteAmt||0).toFixed(4)} m³`;
+  // Productos
+  const rows=(products||[]).filter(p=>Number(p.unit_price_usd||p.unit_price||0)>0).map(p=>{
+    const up=Number(p.unit_price_usd||p.unit_price||0);
+    const fob=up*Number(p.quantity||1);
+    return `<tr><td>${(p.description||"—").replace(/</g,"&lt;")}</td><td class="c">${p.quantity||1}</td><td class="r">USD ${fmt(up)}</td><td class="r">USD ${fmt(fob)}</td><td class="c mono">${p.ncm?.ncm_code||p.ncm_code||"—"}</td></tr>`;
+  }).join("");
+  // Aduana (solo canales A — isBlanco). Si el portal trae los items pre-agregados los uso directamente.
+  let derechos=0,tasaE=0,iva=0,ivaAdic=0,iigg=0,iibb=0,desemb=0,ivaDesemb=0;
+  if(isBlanco&&Array.isArray(ch.items)){
+    ch.items.forEach(it=>{
+      derechos+=Number(it.derechos||0);tasaE+=Number(it.tasa_e||0);iva+=Number(it.iva||0);
+      ivaAdic+=Number(it.ivaAdic||0);iigg+=Number(it.iigg||0);iibb+=Number(it.iibb||0);
+      desemb+=Number(it.desembolso||0);ivaDesemb+=Number(it.ivaDesemb||0);
+    });
+  }
+  const rowsServicios=[];
+  if(Number(ch.flete||0)>0)rowsServicios.push(`<div class="row"><span>Flete</span><span>USD ${fmt(ch.flete)}</span></div>`);
+  if(Number(ch.seguro||0)>0)rowsServicios.push(`<div class="row"><span>Seguro</span><span>USD ${fmt(ch.seguro)}</span></div>`);
+  if(Number(ch.surcharge||0)>0)rowsServicios.push(`<div class="row"><span>Recargo por valor${ch.surchargePct?` (${ch.surchargePct}%)`:""}</span><span>USD ${fmt(ch.surcharge)}</span></div>`);
+  if(delivCost>0)rowsServicios.push(`<div class="row"><span>Envío CABA</span><span>USD ${fmt(delivCost)}</span></div>`);
+  const rowsAduana=[];
+  if(isBlanco){
+    if(derechos>0)rowsAduana.push(`<div class="row"><span>Derechos importación</span><span>USD ${fmt(derechos)}</span></div>`);
+    if(tasaE>0)rowsAduana.push(`<div class="row"><span>Tasa estadística</span><span>USD ${fmt(tasaE)}</span></div>`);
+    if(iva>0)rowsAduana.push(`<div class="row"><span>IVA de Importación</span><span>USD ${fmt(iva)}</span></div>`);
+    if(isMaritimo){
+      if(ivaAdic>0)rowsAduana.push(`<div class="row"><span>IVA adicional</span><span>USD ${fmt(ivaAdic)}</span></div>`);
+      if(iigg>0)rowsAduana.push(`<div class="row"><span>Ganancias (IIGG)</span><span>USD ${fmt(iigg)}</span></div>`);
+      if(iibb>0)rowsAduana.push(`<div class="row"><span>Ingresos brutos (IIBB)</span><span>USD ${fmt(iibb)}</span></div>`);
+    }
+    if(isAereo&&desemb>0)rowsAduana.push(`<div class="row"><span>Desaduanaje (gastos documentales)</span><span>USD ${fmt(desemb)}</span></div>`);
+    if(isAereo&&ivaDesemb>0)rowsAduana.push(`<div class="row"><span>IVA 21% sobre desaduanaje</span><span>USD ${fmt(ivaDesemb)}</span></div>`);
+  }
+  const effTotal=Number(ch.total||0)+Number(delivCost||0);
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Cotización Argencargo</title><style>
+    @page{size:A4;margin:0}
+    *,*:before,*:after{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}
+    html,body{margin:0;padding:0}
+    body{font-family:'Helvetica Neue',Arial,sans-serif;color:#111;margin:0;padding:12mm 14mm 8mm}
+    h1{font-size:20px;margin:0 0 2px;color:#1A3D6E;letter-spacing:-0.01em}
+    .sub{color:#666;font-size:11px;margin-bottom:12px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:12px;padding:10px 14px;background:#f4f6fa;border-radius:8px}
+    .grid div{font-size:10px;color:#555;letter-spacing:0.05em;text-transform:uppercase;font-weight:700}
+    .grid b{font-size:13px;color:#111;display:block;margin-top:2px;font-weight:700;text-transform:none;letter-spacing:normal}
+    h3{margin:12px 0 4px;font-size:12px;color:#1A3D6E;letter-spacing:0.02em}
+    table{width:100%;border-collapse:collapse;margin-top:6px;font-size:10.5px}
+    th,td{padding:5px 9px;border-bottom:1px solid #e5e7eb;text-align:left}
+    th{background:#1A3D6E !important;color:#fff !important;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+    td.c{text-align:center}td.r{text-align:right}td.mono{font-family:'SFMono-Regular',Consolas,monospace;font-size:10px}
+    tr:nth-child(even) td{background:#fafbfc}
+    .section{margin-top:10px}
+    .section-title{font-size:9.5px;font-weight:700;color:#1A3D6E;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 4px;padding:0 4px}
+    .breakdown{padding:8px 12px;background:#f4f6fa;border-radius:8px;font-size:11.5px}
+    .breakdown .row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #e5e7eb}
+    .breakdown .row:last-child{border-bottom:none}
+    .breakdown .row span:last-child{font-weight:600;color:#111}
+    .totals{margin-top:12px;padding:12px 18px;background:#1A3D6E !important;color:#fff !important;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
+    .totals .lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.05em;opacity:.85}
+    .totals .big{font-size:18px;font-weight:700;letter-spacing:-0.01em;margin-top:2px}
+    .foot{margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:9.5px;color:#666;line-height:1.45}
+    .brand{margin-top:8px;text-align:center;padding:4px 0 0}
+    .brand img{max-width:260px;width:100%;height:auto;display:block;margin:0 auto}
+    @media print{html,body{height:auto} body{padding:10mm 14mm 6mm !important} .totals,.brand{page-break-inside:avoid;break-inside:avoid}}
+  </style></head><body>
+    <h1>Cotización Argencargo</h1>
+    <div class="sub">Emitida ${new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"})}</div>
+    <div class="grid">
+      <div>Cliente<b>${(clientName||"—").replace(/</g,"&lt;")}</b></div>
+      <div>Servicio<b>${ch.name||"—"}</b></div>
+      <div>Origen<b>${origin||"—"}</b></div>
+      <div>${isAereo?"Peso facturable":"CBM facturable"}<b>${fleteAmtLbl}</b></div>
+    </div>
+    <h3>Productos</h3>
+    <table><thead><tr><th>Descripción</th><th>Cant</th><th>Unit.</th><th>FOB</th><th>NCM</th></tr></thead><tbody>${rows}</tbody></table>
+    ${rowsServicios.length?`<div class="section"><p class="section-title">Servicios — Flete y seguro</p><div class="breakdown">${rowsServicios.join("")}</div></div>`:""}
+    ${rowsAduana.length?`<div class="section"><p class="section-title">Aduana — Impuestos y gastos</p><div class="breakdown">${rowsAduana.join("")}</div></div>`:""}
+    <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${fmt(totalFob)}</div></div><div style="text-align:right"><div class="lbl">Costo Total de Importar</div><div class="big">USD ${fmt(effTotal)}</div></div></div>
+    <div class="foot">Cotización estimativa. Los costos finales pueden variar según peso, volumen y valor reales al momento del despacho.</div>
+    <div class="brand"><img src="/argencargo-isologo.png" alt="Argencargo"/></div>
+    <script>window.onload=()=>setTimeout(()=>window.print(),300);</script>
+  </body></html>`);
+  w.document.close();
+}
+
 function CalculatorPage({token,client}){
   const {t}=useT();
   const [step,setStep]=useState(0);const [origin,setOrigin]=useState("");
@@ -1662,6 +1758,10 @@ function CalculatorPage({token,client}){
             {delivCost>0&&row("Envío CABA",delivCost)}
             {row("TOTAL",modalCh.total+delivCost,true,true)}
           </div>}
+          {/* Botón Exportar PDF — abre una hoja A4 imprimible idéntica al PDF del admin. */}
+          <button onClick={()=>printQuotePdf({ch:modalCh,products,totalFob:results.totalFob,origin:results.origin,clientName:client?(`${client.first_name||""} ${client.last_name||""}`.trim()):"",delivCost})} style={{width:"100%",marginTop:18,padding:"13px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",letterSpacing:"0.04em",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+            📄 Exportar PDF cotización
+          </button>
         </div>
       </div>}
       </>;})()}
