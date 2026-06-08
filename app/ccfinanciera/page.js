@@ -160,6 +160,7 @@ function Dashboard({ token, onLogout }) {
 
   // Comisión SOLFIN acumulada (todos los ingresos ARS con comisión)
   const commissionTotal = useMemo(() => movements.filter((m) => m.type === "ingreso" && m.currency === "ARS").reduce((s, m) => s + Number(m.commission_amount || 0), 0), [movements]);
+  const isMobile = useIsMobile();
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
@@ -167,7 +168,7 @@ function Dashboard({ token, onLogout }) {
       <Header onLogout={onLogout} onAdd={setShowAdd} onShare={() => setShowShare(true)} />
       <main style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 22px 40px" }}>
         {/* Saldos */}
-        <section style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        <section style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 10 : 16, marginBottom: 16 }}>
           <BalanceCard label="Saldo ARS" currency="ARS" amount={enriched.totals.ars} />
           <BalanceCard label="Saldo USD" currency="USD" amount={enriched.totals.usd} />
         </section>
@@ -233,10 +234,10 @@ function BalanceCard({ label, currency, amount }) {
   const color = currency === "USD" ? T.green : T.gold;
   const isMobile = useIsMobile();
   return (
-    <div style={{ padding: isMobile ? "14px 14px" : "18px 20px", background: `linear-gradient(135deg, ${color}1A, ${color}06)`, border: `1px solid ${color}55`, borderRadius: 14, boxShadow: `0 0 30px ${color}10`, minWidth: 0, overflow: "hidden" }}>
-      <p style={{ fontSize: isMobile ? 9 : 10, fontWeight: 700, color, letterSpacing: "0.16em", textTransform: "uppercase", margin: "0 0 6px" }}>{label}</p>
-      <p style={{ fontSize: isMobile ? 18 : 26, fontWeight: 800, color: T.text, margin: 0, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{positive ? "" : "− "}{fmtMoney(Math.abs(amount), currency)}</p>
-      <p style={{ fontSize: isMobile ? 10 : 11, color: T.textMuted, margin: "4px 0 0" }}>{positive ? "a favor para Bautista" : "a favor para SOLFIN"}</p>
+    <div style={{ padding: "16px 18px", background: `linear-gradient(135deg, ${color}1A, ${color}06)`, border: `1px solid ${color}55`, borderRadius: 14, boxShadow: `0 0 30px ${color}10`, minWidth: 0, overflow: "hidden" }}>
+      <p style={{ fontSize: 10, fontWeight: 700, color, letterSpacing: "0.16em", textTransform: "uppercase", margin: "0 0 6px" }}>{label}</p>
+      <p style={{ fontSize: isMobile ? 22 : 26, fontWeight: 800, color: T.text, margin: 0, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{positive ? "" : "− "}{fmtMoney(Math.abs(amount), currency)}</p>
+      <p style={{ fontSize: 11, color: T.textMuted, margin: "4px 0 0" }}>{positive ? "a favor para Bautista" : "a favor para SOLFIN"}</p>
     </div>
   );
 }
