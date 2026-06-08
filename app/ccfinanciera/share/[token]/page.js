@@ -120,7 +120,14 @@ export default function SharePage({ params }) {
                   <div style={{ fontFamily: "ui-monospace, monospace", color: T.text, fontWeight: 600 }}>{fmtDate(m.date)}</div>
                   <div><span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: `${color}22`, color, letterSpacing: "0.05em", textTransform: "uppercase" }}>{isIn ? "▲ Ingreso" : "▼ Egreso"}</span></div>
                   <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted }}>{m.currency}</div>
-                  <div style={{ color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.description || <span style={{ color: T.textDim, fontStyle: "italic" }}>(sin descripción)</span>}</div>
+                  <div style={{ color: T.text, overflow: "hidden", display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                    {m.image_url && (
+                      <a href={m.image_url} target="_blank" rel="noreferrer" title="Ver comprobante" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 5, overflow: "hidden", border: `1px solid ${T.border}`, background: T.bgSurfaceHi, display: "inline-block" }}>
+                        <img src={m.image_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      </a>
+                    )}
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.description || <span style={{ color: T.textDim, fontStyle: "italic" }}>(sin descripción)</span>}</span>
+                  </div>
                   <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color, fontWeight: 600 }}>{isIn ? "+" : "−"} {fmtMoney(m.amount, m.currency)}</div>
                   <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: T.textMuted, fontSize: 11.5 }}>
                     {m.commission_pct ? <>{Number(m.commission_pct).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%<br /><span style={{ fontSize: 10, color: T.amber }}>−{fmtMoney(m.commission_amount, m.currency)}</span></> : <span style={{ color: T.textDim }}>—</span>}

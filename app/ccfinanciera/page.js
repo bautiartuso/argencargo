@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { dq, loadSession, clearSession, ac } from "../../lib/sb-client";
+import { dq, loadSession, clearSession, ac, SB_URL, SB_KEY } from "../../lib/sb-client";
 import { ToastStack, toast } from "../../lib/ui";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -266,7 +266,14 @@ function MovementRow({ m, onEdit, onReload, token }) {
       <div style={{ fontFamily: "ui-monospace, monospace", color: T.text, fontWeight: 600 }}>{fmtDate(m.date)}</div>
       <div><span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: `${color}22`, color, letterSpacing: "0.05em", textTransform: "uppercase" }}>{isIn ? "▲ Ingreso" : "▼ Egreso"}</span></div>
       <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted }}>{m.currency}</div>
-      <div style={{ color: T.text, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.description || <span style={{ color: T.textDim, fontStyle: "italic" }}>(sin descripción)</span>}</div>
+      <div style={{ color: T.text, fontSize: 13, overflow: "hidden", display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        {m.image_url && (
+          <a href={m.image_url} target="_blank" rel="noreferrer" title="Ver comprobante" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 5, overflow: "hidden", border: `1px solid ${T.border}`, background: T.bgSurfaceHi, display: "inline-block" }}>
+            <img src={m.image_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          </a>
+        )}
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.description || <span style={{ color: T.textDim, fontStyle: "italic" }}>(sin descripción)</span>}</span>
+      </div>
       <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: T.text, fontWeight: 600 }}>
         <span style={{ color }}>{isIn ? "+" : "−"} {fmtMoney(m.amount, m.currency)}</span>
       </div>
@@ -289,10 +296,51 @@ function MovementModal({ type, token, editing, onClose, onSaved }) {
   const [amount, setAmount] = useState(editing?.amount ? String(editing.amount) : "");
   const [commissionPct, setCommissionPct] = useState(editing?.commission_pct != null ? String(editing.commission_pct) : "2.5");
   const [description, setDescription] = useState(editing?.description || "");
+  const [imageUrl, setImageUrl] = useState(editing?.image_url || "");
+  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Solo ingresos ARS tienen comisión
   const showCommission = isIngreso && currency === "ARS";
+  // Comprobante: lo permitimos en todos los ingresos (no solo ARS), para flexibilidad
+  const showComprobante = isIngreso;
+
+  const uploadFile = useCallback(async (file) => {
+    if (!file || !file.type?.startsWith("image/")) { toast.error("Solo imágenes"); return; }
+    if (file.size > 8 * 1024 * 1024) { toast.error("Máx 8 MB"); return; }
+    setUploading(true);
+    try {
+      const ext = (file.name?.split(".").pop() || file.type.split("/")[1] || "png").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const filename = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}.${ext}`;
+      const r = await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/${filename}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, apikey: SB_KEY, "Content-Type": file.type, "x-upsert": "false" },
+        body: file,
+      });
+      if (!r.ok) { const t = await r.text().catch(() => ""); throw new Error(t || "Error subiendo"); }
+      const publicUrl = `${SB_URL}/storage/v1/object/public/solfin-comprobantes/${filename}`;
+      setImageUrl(publicUrl);
+      toast.success("Comprobante cargado");
+    } catch (e) { toast.error(e.message); }
+    setUploading(false);
+  }, [token]);
+
+  // Paste handler global mientras el modal está abierto
+  useEffect(() => {
+    if (!showComprobante) return;
+    const onPaste = (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const it of items) {
+        if (it.type?.startsWith("image/")) {
+          const file = it.getAsFile();
+          if (file) { uploadFile(file); e.preventDefault(); break; }
+        }
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [showComprobante, uploadFile]);
   const amt = Number(String(amount).replace(",", ".")) || 0;
   const pct = showCommission ? (Number(String(commissionPct).replace(",", ".")) || 0) : 0;
   const commissionAmt = showCommission ? Math.round(amt * (pct / 100) * 100) / 100 : 0;
@@ -310,6 +358,7 @@ function MovementModal({ type, token, editing, onClose, onSaved }) {
       commission_amount: showCommission ? commissionAmt : null,
       net_amount: net,
       description: description.trim() || null,
+      image_url: showComprobante ? (imageUrl || null) : null,
     };
     try {
       if (editing?.id) await dq("cc_solfin_movements", { method: "PATCH", token, filters: `?id=eq.${editing.id}`, body });
@@ -346,6 +395,26 @@ function MovementModal({ type, token, editing, onClose, onSaved }) {
       <Field label="Descripción (opcional)">
         <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder={isIngreso ? "Ej: Transferencia cliente AC-0162" : "Ej: Retiro para pagar proveedor"} style={inputStyle} />
       </Field>
+      {showComprobante && (
+        <Field label="Comprobante (opcional) — pegá con ⌘V / Ctrl+V o subí un archivo">
+          {imageUrl ? (
+            <div style={{ position: "relative", borderRadius: 10, overflow: "hidden", border: `1px solid ${T.border}`, background: T.bgSurfaceHi }}>
+              <a href={imageUrl} target="_blank" rel="noreferrer" style={{ display: "block" }}>
+                <img src={imageUrl} alt="Comprobante" style={{ display: "block", maxWidth: "100%", maxHeight: 280, margin: "0 auto" }} />
+              </a>
+              <button onClick={() => setImageUrl("")} type="button" style={{ position: "absolute", top: 6, right: 6, padding: "4px 8px", fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${T.red}55`, background: "rgba(0,0,0,0.55)", color: T.red, cursor: "pointer" }}>× Quitar</button>
+            </div>
+          ) : (
+            <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: "22px 14px", border: `1px dashed ${T.border}`, borderRadius: 10, background: T.bgSurfaceHi, cursor: uploading ? "wait" : "pointer", textAlign: "center" }}>
+              <span style={{ fontSize: 22 }}>{uploading ? "⏳" : "📎"}</span>
+              <span style={{ fontSize: 12, color: T.textMuted }}>
+                {uploading ? "Subiendo…" : <>Clic para elegir archivo · o pegá una imagen del portapapeles</>}
+              </span>
+              <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ""; }} disabled={uploading} style={{ display: "none" }} />
+            </label>
+          )}
+        </Field>
+      )}
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18 }}>
         <button onClick={onClose} style={btnGhost}>Cancelar</button>
         <button onClick={save} disabled={saving || amt <= 0} style={isIngreso ? btnIngreso : btnEgreso}>{saving ? "Guardando…" : (editing?.id ? "Guardar" : (isIngreso ? "+ Registrar ingreso" : "+ Registrar egreso"))}</button>
