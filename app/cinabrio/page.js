@@ -1335,7 +1335,7 @@ function HabitModal({ token, editing, categories, onClose, onSaved }) {
         }}>
           <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
             <span>Recordatorio push a la hora</span>
-            <span style={{ fontSize: 10.5, color: T.textMuted, letterSpacing: "0.04em" }}>{time ? `Te aviso a las ${time}` : "Cargá un horario para que te avise"}</span>
+            <span style={{ fontSize: 10.5, color: T.textMuted, letterSpacing: "0.04em" }}>{time ? `Push 10 min antes (a las ${time})` : "Cargá un horario para que te avise"}</span>
           </span>
           <span style={{
             width: 36, height: 20, borderRadius: 999, position: "relative",

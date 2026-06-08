@@ -73,9 +73,12 @@ function isHabitScheduled(h, dateStr) {
 }
 
 // --- Hora actual en Argentina (UTC-3) sin necesidad de tz libraries ---
-function nowInAR() {
+// offsetMin permite mirar al futuro/pasado. La noti se dispara 10 minutos ANTES del
+// horario del hábito → al pedir "+10 min" buscamos hábitos cuya hora coincide con
+// la hora actual + 10. Si el hábito está agendado a las 10:00 y son las 09:50, hace match.
+function nowInAR(offsetMin = 0) {
   const utcNow = new Date();
-  const arMs = utcNow.getTime() - 3 * 60 * 60 * 1000;
+  const arMs = utcNow.getTime() - 3 * 60 * 60 * 1000 + offsetMin * 60 * 1000;
   const ar = new Date(arMs);
   const yyyy = ar.getUTCFullYear();
   const mm = String(ar.getUTCMonth() + 1).padStart(2, "0");
@@ -85,11 +88,16 @@ function nowInAR() {
   return { dateStr: `${yyyy}-${mm}-${dd}`, timeStr: `${HH}:${MM}` };
 }
 
+// Cuántos minutos antes del horario del hábito se manda la notificación.
+const LEAD_MINUTES = 10;
+
 export async function GET() {
   try {
     if (!SB_SERVICE) return Response.json({ ok: false, error: "no service role" }, { status: 500 });
 
-    const { dateStr, timeStr } = nowInAR();
+    // Disparamos las notis con LEAD_MINUTES de anticipación. Si ahora son las 09:50,
+    // buscamos hábitos cuya hora es 10:00.
+    const { dateStr, timeStr } = nowInAR(LEAD_MINUTES);
     // Traigo todos los hábitos con notify_enabled + time seteado, no archivados.
     // Filtro por hora == timeStr (HH:MM exacto). El cron corre cada minuto.
     const habits = await sb(`/rest/v1/mp_habits?select=*&notify_enabled=eq.true&archived_at=is.null&time=eq.${encodeURIComponent(timeStr + ":00")}`);
@@ -115,10 +123,14 @@ export async function GET() {
 
     let sent = 0;
     for (const h of due) {
+      // Title: ícono + nombre del hábito. Si no hay ícono, usamos una campana.
       const title = `${h.icon || "🔔"}  ${h.name || "Hábito"}`;
+      // Body: aviso anticipado con hora exacta y duración estimada si hay.
+      const timeOnly = h.time ? String(h.time).slice(0, 5) : null;
       const bodyParts = [];
-      if (h.duration_min) bodyParts.push(`${h.duration_min} min`);
-      bodyParts.push("Es hora.");
+      bodyParts.push(`En ${LEAD_MINUTES} min`);
+      if (timeOnly) bodyParts.push(timeOnly);
+      if (h.duration_min) bodyParts.push(`${h.duration_min} min de duración`);
       const body = bodyParts.join(" · ");
       const url = "/cinabrio";
       for (const uid of userIds) {
