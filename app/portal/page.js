@@ -1160,9 +1160,16 @@ function printPortalCalcPdf({ch,products,totalFob,origin,clientName,delivCost=0}
     .breakdown .row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #e5e7eb}
     .breakdown .row:last-child{border-bottom:none}
     .breakdown .row span:last-child{font-weight:600;color:#111}
-    .totals{margin-top:12px;padding:12px 18px;background:#1A3D6E !important;color:#fff !important;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
-    .totals .lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.05em;opacity:.85}
-    .totals .big{font-size:18px;font-weight:700;letter-spacing:-0.01em;margin-top:2px}
+    .totals{margin-top:12px;padding:14px 18px;background:#1A3D6E !important;color:#fff !important;border-radius:8px;display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:14px;align-items:end}
+    .totals .col{display:flex;flex-direction:column;gap:2px}
+    .totals .col.hero{padding-left:14px;border-left:1px solid rgba(255,255,255,0.18)}
+    .totals .lbl{font-size:9px;text-transform:uppercase;letter-spacing:0.06em;opacity:.78;font-weight:700}
+    .totals .big{font-size:14px;font-weight:700;letter-spacing:-0.01em;margin-top:2px}
+    .totals .col.hero .lbl{opacity:1;color:#E8D098 !important}
+    .totals .col.hero .big{font-size:20px;color:#fff;text-shadow:0 0 8px rgba(232,208,152,0.25)}
+    .totals .hint{font-size:8.5px;color:rgba(255,255,255,0.5);font-weight:500;letter-spacing:0;margin-top:1px}
+    .note{margin-top:8px;padding:9px 12px;background:#FFF8E1;border-left:3px solid #E8D098;border-radius:4px;font-size:9.5px;color:#5C4A1F;line-height:1.45}
+    .note b{color:#1A3D6E}
     .foot{margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:9.5px;color:#666;line-height:1.45}
     .brand{margin-top:8px;text-align:center;padding:4px 0 0}
     .brand img{max-width:260px;width:100%;height:auto;display:block;margin:0 auto}
@@ -1180,7 +1187,12 @@ function printPortalCalcPdf({ch,products,totalFob,origin,clientName,delivCost=0}
     <table><thead><tr><th>Descripción</th><th>Cant</th><th>Unit.</th><th>FOB</th><th>NCM</th></tr></thead><tbody>${rows}</tbody></table>
     ${rowsServicios.length?`<div class="section"><p class="section-title">Servicios — Flete y seguro</p><div class="breakdown">${rowsServicios.join("")}</div></div>`:""}
     ${rowsAduana.length?`<div class="section"><p class="section-title">Aduana — Impuestos y gastos</p><div class="breakdown">${rowsAduana.join("")}</div></div>`:""}
-    <div class="totals"><div><div class="lbl">Valor FOB</div><div class="big">USD ${fmt(totalFob)}</div></div><div style="text-align:right"><div class="lbl">Costo Total de Importar</div><div class="big">USD ${fmt(effTotal)}</div></div></div>
+    <div class="totals">
+      <div class="col"><div class="lbl">Valor FOB</div><div class="big">USD ${fmt(totalFob)}</div><div class="hint">mercadería en origen</div></div>
+      <div class="col"><div class="lbl">Costo de importación</div><div class="big">USD ${fmt(effTotal)}</div><div class="hint">a abonar a Argencargo</div></div>
+      <div class="col hero"><div class="lbl">Costo en Argentina</div><div class="big">USD ${fmt(Number(totalFob||0)+Number(effTotal||0))}</div><div class="hint">FOB + importación · referencial</div></div>
+    </div>
+    <div class="note"><b>ℹ Aclaración:</b> a Argencargo solo pagás el <b>Costo de importación</b>. El <b>Costo en Argentina</b> es un valor de referencia que suma lo que ya pagaste al proveedor (FOB) — así sabés cuánto te termina costando la mercadería puesta en el país.</div>
     <div class="foot">Cotización estimativa. Los costos finales pueden variar según peso, volumen y valor reales al momento del despacho.</div>
     <div class="brand"><img src="/argencargo-isologo.png" alt="Argencargo"/></div>
     <script>window.onload=()=>setTimeout(()=>window.print(),300);</script>
