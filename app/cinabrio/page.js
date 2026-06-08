@@ -1024,6 +1024,38 @@ function CategoryModal({ isExpense, token, editing, onClose, onSaved }) {
   );
 }
 
+// Picker custom (hora + minuto) que reemplaza al <input type="time"> nativo del browser.
+// El nativo en iOS abre un picker grande blanco con "a.m./p.m." muy mal integrado con el theme oscuro.
+// Acá usamos 2 selects styled + botón × para limpiar. Valor en formato "HH:MM" (24hs).
+function TimePickerDual({ value, onChange, inputStyle }) {
+  const [hStr, mStr] = (value || "").split(":");
+  const h = hStr || "";
+  const m = mStr || "";
+  const selStyle = { ...inputStyle, flex: 1, padding: "10px 8px", appearance: "none", WebkitAppearance: "none", textAlign: "center", textAlignLast: "center", cursor: "pointer" };
+  const setH = (v) => onChange(v ? `${v}:${m || "00"}` : "");
+  const setM = (v) => onChange(v ? `${h || "08"}:${v}` : (h ? `${h}:00` : ""));
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <select value={h} onChange={e => setH(e.target.value)} style={selStyle}>
+        <option value="" style={{ background: T.bgSurface, color: T.textMuted }}>--</option>
+        {Array.from({ length: 24 }, (_, i) => {
+          const v = String(i).padStart(2, "0");
+          return <option key={v} value={v} style={{ background: T.bgSurface, color: T.textPrimary }}>{v}</option>;
+        })}
+      </select>
+      <span style={{ color: T.textMuted, fontWeight: 700, fontSize: 18, paddingBottom: 2 }}>:</span>
+      <select value={m} onChange={e => setM(e.target.value)} style={selStyle}>
+        <option value="" style={{ background: T.bgSurface, color: T.textMuted }}>--</option>
+        {Array.from({ length: 12 }, (_, i) => {
+          const v = String(i * 5).padStart(2, "0");
+          return <option key={v} value={v} style={{ background: T.bgSurface, color: T.textPrimary }}>{v}</option>;
+        })}
+      </select>
+      {value && <button type="button" onClick={() => onChange("")} title="Quitar horario" style={{ background: "transparent", border: `1px solid ${T.border}`, borderRadius: 8, color: T.textMuted, fontSize: 14, cursor: "pointer", padding: "8px 10px", lineHeight: 1 }}>×</button>}
+    </div>
+  );
+}
+
 function HabitModal({ token, editing, categories, onClose, onSaved }) {
   const [name, setName] = useState(editing?.name || "");
   const [catId, setCatId] = useState(editing?.category_id || categories[0]?.id || "");
@@ -1060,7 +1092,7 @@ function HabitModal({ token, editing, categories, onClose, onSaved }) {
         <p style={{ margin: "6px 2px 0", fontSize: 10.5, color: T.textMuted, letterSpacing: "0.04em" }}>El emoji se hereda de la categoría.</p>
       </Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Horario"><input type="time" value={time} onChange={e => setTime(e.target.value)} style={inputStyle} /></Field>
+        <Field label="Horario"><TimePickerDual value={time} onChange={setTime} inputStyle={inputStyle} /></Field>
         <Field label="Duración (min)"><input type="number" value={duration} onChange={e => setDuration(e.target.value)} style={inputStyle} placeholder="30 (opcional)" /></Field>
       </div>
       <Field label="Importancia">
