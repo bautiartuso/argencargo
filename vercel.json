@@ -39,6 +39,10 @@
     {
       "path": "/api/cron/mkt-generate-month",
       "schedule": "0 10 1 * *"
+    },
+    {
+      "path": "/api/cron/cinabrio-habits",
+      "schedule": "* * * * *"
     }
   ]
 }

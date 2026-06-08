@@ -58,6 +58,49 @@ function daysBetween(aStr, bStr) {
   return Math.round((a - b) / 86400000);
 }
 
+// Asegura que el dispositivo tenga registrado el service worker de cinabrio
+// y una suscripción Web Push válida persistida en la DB. Devuelve true si OK.
+async function ensureCinabrioPush(token) {
+  if (typeof window === "undefined") return false;
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return false;
+  const VAPID_PUB = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
+  if (!VAPID_PUB) { console.warn("NEXT_PUBLIC_VAPID_PUBLIC_KEY no seteado"); return false; }
+  try {
+    // 1. Permiso del usuario
+    let permission = Notification.permission;
+    if (permission === "default") permission = await Notification.requestPermission();
+    if (permission !== "granted") return false;
+    // 2. Registrar SW
+    const reg = await navigator.serviceWorker.register("/sw-cinabrio.js", { scope: "/cinabrio" });
+    await navigator.serviceWorker.ready;
+    // 3. Suscribir (si no hay suscripción todavía)
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const urlBase64ToUint8Array = (b64) => {
+        const pad = "=".repeat((4 - b64.length % 4) % 4);
+        const s = (b64 + pad).replace(/-/g, "+").replace(/_/g, "/");
+        const raw = atob(s);
+        const out = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+        return out;
+      };
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUB) });
+    }
+    // 4. Persistir en DB (portal='cinabrio')
+    if (token) {
+      await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ subscription: sub.toJSON(), portal: "cinabrio" }),
+      });
+    }
+    return true;
+  } catch (e) {
+    console.error("ensureCinabrioPush error", e);
+    return false;
+  }
+}
+
 // Lógica central: ¿este hábito está programado para esta fecha?
 // Tres modos:
 //   weekly                → bitmask days_of_week (default histórico).
@@ -1248,7 +1291,15 @@ function HabitModal({ token, editing, categories, onClose, onSaved }) {
         </>}
       </Field>
       <Field label="Recordatorio">
-        <button onClick={() => setNotify(v => !v)} style={{
+        <button onClick={async () => {
+          // Si va a prender el toggle, asegurar que haya suscripción push activa.
+          // Si va a apagarlo, directo.
+          if (!notify) {
+            const ok = await ensureCinabrioPush(token);
+            if (!ok) { toast.error("No se pudo activar push (permiso denegado o sin soporte)"); return; }
+          }
+          setNotify(v => !v);
+        }} style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
           padding: "11px 14px", borderRadius: 8, border: `1px solid ${T.border}`,
           background: T.bgSurfaceHi, color: T.textPrimary, cursor: "pointer",
@@ -1256,7 +1307,7 @@ function HabitModal({ token, editing, categories, onClose, onSaved }) {
         }}>
           <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
             <span>Recordatorio push a la hora</span>
-            <span style={{ fontSize: 10.5, color: T.textMuted, letterSpacing: "0.04em" }}>Próximamente</span>
+            <span style={{ fontSize: 10.5, color: T.textMuted, letterSpacing: "0.04em" }}>{time ? `Te aviso a las ${time}` : "Cargá un horario para que te avise"}</span>
           </span>
           <span style={{
             width: 36, height: 20, borderRadius: 999, position: "relative",

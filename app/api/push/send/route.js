@@ -116,8 +116,8 @@ function vapidJwt(audience) {
   return `${signingInput}.${b64uEncode(sig)}`;
 }
 
-async function sendOne(sub, title, body, url) {
-  const payload = JSON.stringify({ title, body, url });
+async function sendOne(sub, title, body, url, tag) {
+  const payload = JSON.stringify(tag ? { title, body, url, tag } : { title, body, url });
   const encrypted = encryptPayload(payload, sub.p256dh, sub.auth);
   const audience = new URL(sub.endpoint).origin;
   const jwt = vapidJwt(audience);
@@ -141,7 +141,7 @@ export async function POST(req) {
     if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
       return Response.json({ ok: false, error: "VAPID keys not configured" }, { status: 500 });
     }
-    const { user_id, title, body, url } = await req.json();
+    const { user_id, title, body, url, tag } = await req.json();
     if (!user_id || !title) return Response.json({ ok: false, error: "missing fields" }, { status: 400 });
 
     const subsR = await fetch(`${SB_URL}/rest/v1/push_subscriptions?user_id=eq.${user_id}&select=*`, {
@@ -155,7 +155,7 @@ export async function POST(req) {
     const results = [];
     for (const s of subs) {
       try {
-        const r = await sendOne(s, title, body, url);
+        const r = await sendOne(s, title, body, url, tag);
         results.push(r);
         // Si el endpoint reporta gone (404/410), borrarlo
         if (r.status === 404 || r.status === 410) {
