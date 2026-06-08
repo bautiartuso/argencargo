@@ -1061,7 +1061,7 @@ function HabitModal({ token, editing, categories, onClose, onSaved }) {
       </Field>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Horario"><input type="time" value={time} onChange={e => setTime(e.target.value)} style={inputStyle} /></Field>
-        <Field label="Duración (min, opcional)"><input type="number" value={duration} onChange={e => setDuration(e.target.value)} style={inputStyle} placeholder="30" /></Field>
+        <Field label="Duración (min)"><input type="number" value={duration} onChange={e => setDuration(e.target.value)} style={inputStyle} placeholder="30 (opcional)" /></Field>
       </div>
       <Field label="Importancia">
         <div style={{ display: "flex", gap: 6 }}>
@@ -1368,7 +1368,7 @@ function IconBtn({ children, onClick, title, danger }) {
 function Field({ label, children }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      {label && <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: T.textMuted, marginBottom: 6, letterSpacing: "0.1em", textTransform: "uppercase" }}>{label}</label>}
+      {label && <label style={{ display: "flex", alignItems: "flex-end", fontSize: 10.5, fontWeight: 700, color: T.textMuted, marginBottom: 6, letterSpacing: "0.1em", textTransform: "uppercase", minHeight: 28, lineHeight: 1.25 }}>{label}</label>}
       {children}
     </div>
   );
