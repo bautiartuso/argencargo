@@ -39,6 +39,17 @@ const fmtDate = (d) => {
 };
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
+function useIsMobile(breakpoint = 720) {
+  const [m, setM] = useState(false);
+  useEffect(() => {
+    const check = () => setM(typeof window !== "undefined" && window.innerWidth < breakpoint);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, [breakpoint]);
+  return m;
+}
+
 export default function CcFinancieraPage() {
   const [session, setSession] = useState(null);
   const [authError, setAuthError] = useState(null);
@@ -220,16 +231,25 @@ function BalanceCard({ label, currency, amount }) {
   const positive = amount >= 0;
   // Color por moneda: ARS dorado, USD verde
   const color = currency === "USD" ? T.green : T.gold;
+  const isMobile = useIsMobile();
   return (
-    <div style={{ padding: "18px 20px", background: `linear-gradient(135deg, ${color}1A, ${color}06)`, border: `1px solid ${color}55`, borderRadius: 14, boxShadow: `0 0 30px ${color}10` }}>
-      <p style={{ fontSize: 10, fontWeight: 700, color, letterSpacing: "0.18em", textTransform: "uppercase", margin: "0 0 6px" }}>{label}</p>
-      <p style={{ fontSize: 26, fontWeight: 800, color: T.text, margin: 0, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{positive ? "" : "− "}{fmtMoney(Math.abs(amount), currency)}</p>
-      <p style={{ fontSize: 11, color: T.textMuted, margin: "4px 0 0" }}>{positive ? "a favor para Bautista" : "a favor para SOLFIN"}</p>
+    <div style={{ padding: isMobile ? "14px 14px" : "18px 20px", background: `linear-gradient(135deg, ${color}1A, ${color}06)`, border: `1px solid ${color}55`, borderRadius: 14, boxShadow: `0 0 30px ${color}10`, minWidth: 0, overflow: "hidden" }}>
+      <p style={{ fontSize: isMobile ? 9 : 10, fontWeight: 700, color, letterSpacing: "0.16em", textTransform: "uppercase", margin: "0 0 6px" }}>{label}</p>
+      <p style={{ fontSize: isMobile ? 18 : 26, fontWeight: 800, color: T.text, margin: 0, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{positive ? "" : "− "}{fmtMoney(Math.abs(amount), currency)}</p>
+      <p style={{ fontSize: isMobile ? 10 : 11, color: T.textMuted, margin: "4px 0 0" }}>{positive ? "a favor para Bautista" : "a favor para SOLFIN"}</p>
     </div>
   );
 }
 
 function MovementList({ rows, onEdit, onReload, token }) {
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {rows.map((m) => <MovementCardMobile key={m.id} m={m} onEdit={onEdit} onReload={onReload} token={token} />)}
+      </div>
+    );
+  }
   return (
     <div style={{ background: T.bgSurface, borderRadius: 12, border: `1px solid ${T.border}`, overflow: "hidden" }}>
       <div style={{ display: "grid", gridTemplateColumns: "90px 90px 60px 1fr 170px 110px 170px 70px", gap: 10, padding: "10px 14px", background: "rgba(0,0,0,0.2)", fontSize: 9.5, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.08em", borderBottom: `1px solid ${T.border}` }}>
@@ -273,6 +293,54 @@ function MovementRow({ m, onEdit, onReload, token }) {
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
         <button onClick={() => onEdit(m)} title="Editar" style={iconBtn}>✎</button>
         <button onClick={handleDelete} title="Eliminar" style={{ ...iconBtn, color: T.red }}>×</button>
+      </div>
+    </div>
+  );
+}
+
+function MovementCardMobile({ m, onEdit, onReload, token }) {
+  const isIn = m.type === "ingreso";
+  const color = isIn ? T.green : T.red;
+  const running = m.currency === "ARS" ? m._arsBal : m._usdBal;
+  const handleDelete = async () => {
+    if (!confirm(`¿Eliminar este ${m.type}?`)) return;
+    await dq("cc_solfin_movements", { method: "DELETE", token, filters: `?id=eq.${m.id}` });
+    toast.success("Eliminado");
+    onReload();
+  };
+  return (
+    <div style={{ padding: "12px 14px", background: T.bgSurface, border: `1px solid ${T.border}`, borderRadius: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: `${color}22`, color, letterSpacing: "0.05em", textTransform: "uppercase" }}>{isIn ? "▲ Ingreso" : "▼ Egreso"}</span>
+        <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: "rgba(255,255,255,0.06)", color: T.textMuted, letterSpacing: "0.05em" }}>{m.currency}</span>
+        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: T.textMuted }}>{fmtDate(m.date)}</span>
+        <span style={{ flex: 1 }} />
+        <button onClick={() => onEdit(m)} title="Editar" style={iconBtn}>✎</button>
+        <button onClick={handleDelete} title="Eliminar" style={{ ...iconBtn, color: T.red }}>×</button>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, minWidth: 0 }}>
+        {m.image_url && (
+          <a href={m.image_url} target="_blank" rel="noreferrer" title="Ver comprobante" style={{ flexShrink: 0, width: 36, height: 36, borderRadius: 5, overflow: "hidden", border: `1px solid ${T.border}`, background: T.bgSurfaceHi, display: "inline-block" }}>
+            <img src={m.image_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          </a>
+        )}
+        <span style={{ flex: 1, fontSize: 13, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.description || <span style={{ color: T.textDim, fontStyle: "italic" }}>(sin descripción)</span>}</span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
+        <div>
+          <p style={{ fontSize: 9, fontWeight: 700, color: T.textDim, letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 2px" }}>Importe</p>
+          <p style={{ fontSize: 14, fontWeight: 700, color, margin: 0, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{isIn ? "+ " : "− "}{fmtMoney(m.amount, m.currency)}</p>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <p style={{ fontSize: 9, fontWeight: 700, color: T.textDim, letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 2px" }}>Saldo</p>
+          <p style={{ fontSize: 14, fontWeight: 700, color: running >= 0 ? T.green : T.red, margin: 0, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fmtMoney(running, m.currency)}</p>
+        </div>
+        {m.commission_pct ? (
+          <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "space-between", fontSize: 10.5, color: T.amber, marginTop: 2 }}>
+            <span>Comisión {Number(m.commission_pct).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</span>
+            <span>− {fmtMoney(m.commission_amount, m.currency)}</span>
+          </div>
+        ) : null}
       </div>
     </div>
   );
