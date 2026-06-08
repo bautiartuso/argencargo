@@ -1090,10 +1090,12 @@ function RatesPage({token,client}){
     </div>;})}
   </div>;
 }
-// Genera la hoja A4 imprimible de la cotización desde el portal del cliente.
+// Genera la hoja A4 imprimible de la cotización desde la calculadora del portal cliente.
 // Misma estética y layout que el printPdf del admin — el cliente puede descargar el
 // mismo PDF que se le envía manualmente. Recibe el canal expandido + contexto.
-function printQuotePdf({ch,products,totalFob,origin,clientName,delivCost=0}){
+// NOTA: el nombre "printPortalCalcPdf" evita colisión con el printQuotePdf de
+// lib/pdf-templates.js (que es para PDF de cotizaciones cerradas con op).
+function printPortalCalcPdf({ch,products,totalFob,origin,clientName,delivCost=0}){
   if(typeof window==="undefined")return;
   const w=window.open("","_blank");if(!w)return;
   const fmt=(n)=>Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1759,7 +1761,7 @@ function CalculatorPage({token,client}){
             {row("TOTAL",modalCh.total+delivCost,true,true)}
           </div>}
           {/* Botón Exportar PDF — abre una hoja A4 imprimible idéntica al PDF del admin. */}
-          <button onClick={()=>printQuotePdf({ch:modalCh,products,totalFob:results.totalFob,origin:results.origin,clientName:client?(`${client.first_name||""} ${client.last_name||""}`.trim()):"",delivCost})} style={{width:"100%",marginTop:18,padding:"13px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",letterSpacing:"0.04em",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+          <button onClick={()=>printPortalCalcPdf({ch:modalCh,products,totalFob:results.totalFob,origin:results.origin,clientName:client?(`${client.first_name||""} ${client.last_name||""}`.trim()):"",delivCost})} style={{width:"100%",marginTop:18,padding:"13px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",letterSpacing:"0.04em",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
             📄 Exportar PDF cotización
           </button>
         </div>
