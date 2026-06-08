@@ -38,6 +38,52 @@ const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0
 const todayStr = () => ymd(new Date());
 const dowOf = (date) => { const d = new Date(date + "T12:00:00").getDay(); return d === 0 ? 6 : d - 1; };
 const todayDow = () => dowOf(todayStr());
+
+// ¿En qué número de ocurrencia del día-de-la-semana está esta fecha dentro del mes?
+// Ej: el 3er sábado de junio devuelve 3. El 1er domingo de julio devuelve 1.
+function nthWeekdayOfMonth(dateStr) {
+  const d = new Date(dateStr + "T12:00:00");
+  return Math.ceil(d.getDate() / 7);
+}
+// ¿Es la última ocurrencia de ese día-de-la-semana del mes?
+function isLastWeekdayOfMonth(dateStr) {
+  const d = new Date(dateStr + "T12:00:00");
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  return d.getDate() + 7 > lastDay;
+}
+// Días enteros entre dos fechas (a partir de b). Positivo si a > b.
+function daysBetween(aStr, bStr) {
+  const a = new Date(aStr + "T12:00:00");
+  const b = new Date(bStr + "T12:00:00");
+  return Math.round((a - b) / 86400000);
+}
+
+// Lógica central: ¿este hábito está programado para esta fecha?
+// Tres modos:
+//   weekly                → bitmask days_of_week (default histórico).
+//   monthly_nth_weekday   → "1er/2do/3er/4to/último <weekday> del mes" (nth=5 significa "último").
+//   every_n_days          → cada N días desde start_date (inclusive).
+function isHabitScheduled(h, dateStr) {
+  if (!h) return false;
+  const type = h.frequency_type || "weekly";
+  const dow = dowOf(dateStr);
+  if (type === "weekly") return Boolean(h.days_of_week & (1 << dow));
+  if (type === "monthly_nth_weekday") {
+    if (h.monthly_weekday == null || h.monthly_nth == null) return false;
+    if (dow !== h.monthly_weekday) return false;
+    if (h.monthly_nth === 5) return isLastWeekdayOfMonth(dateStr);
+    return nthWeekdayOfMonth(dateStr) === h.monthly_nth;
+  }
+  if (type === "every_n_days") {
+    const n = Number(h.every_n_days || 0);
+    if (n <= 0) return false;
+    const start = h.start_date || (h.created_at ? String(h.created_at).slice(0, 10) : null);
+    if (!start) return false;
+    const diff = daysBetween(dateStr, start);
+    return diff >= 0 && diff % n === 0;
+  }
+  return false;
+}
 const monthStr = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 const monthLabel = (mm) => { const [y, m] = mm.split("-").map(Number); return new Date(y, m - 1, 15).toLocaleDateString("es-AR", { month: "long", year: "numeric" }).replace(/^./, c => c.toUpperCase()); };
 const fmtArs = (n) => `ARS ${Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -324,8 +370,7 @@ function HabitsSection({ token }) {
 
 // Vista Día (timeline tipo Structured)
 function DayView({ habits, cats, log, date, setDate, onToggle, onNew }) {
-  const dow = dowOf(date);
-  const todaysHabits = habits.filter(h => h.days_of_week & (1 << dow));
+  const todaysHabits = habits.filter(h => isHabitScheduled(h, date));
   const dayLog = log.filter(l => l.log_date === date);
   const completedIds = new Set(dayLog.filter(l => l.completed_at).map(l => l.habit_id));
   const totalW = todaysHabits.reduce((s, h) => s + (h.weight || 2), 0);
@@ -484,8 +529,7 @@ function WeekView({ habits, cats, log, onToggle }) {
                     </div>
                   </div>
                   {dates.map((d, di) => {
-                    const dow = dowOf(d);
-                    const isScheduled = h.days_of_week & (1 << dow);
+                    const isScheduled = isHabitScheduled(h, d);
                     const entry = log.find(l => l.habit_id === h.id && l.log_date === d);
                     const done = !!entry?.completed_at;
                     const isToday = d === ts;
@@ -550,8 +594,7 @@ function MonthView({ habits, cats, log, onPickDay }) {
   // Compute pct + scheduled for each date
   const stats = cells.map(date => {
     if (!date) return null;
-    const dow = dowOf(date);
-    const scheduled = habits.filter(h => h.days_of_week & (1 << dow));
+    const scheduled = habits.filter(h => isHabitScheduled(h, date));
     if (scheduled.length === 0) return { date, pct: null, doneCount: 0, total: 0 };
     const dayLog = log.filter(l => l.log_date === date);
     const doneSet = new Set(dayLog.filter(l => l.completed_at).map(l => l.habit_id));
@@ -705,7 +748,7 @@ function ManageView({ habits, cats, onEditHabit, onDelHabit, onEditCat, onDelCat
                   <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, color: T.textMuted, minWidth: 48, fontWeight: 500 }}>{h.time ? String(h.time).slice(0, 5) : "—"}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: T.textPrimary }}>{h.name}</p>
-                    <p style={{ margin: "3px 0 0", fontSize: 11, color: T.textMuted }}>{daysToLabel(h.days_of_week)}</p>
+                    <p style={{ margin: "3px 0 0", fontSize: 11, color: T.textMuted }}>{frequencyLabel(h)}</p>
                   </div>
                   {cat && <Badge color={cat.color || T.gold} label={cat.name} />}
                   <div style={{ display: "flex", gap: 4 }}>
@@ -1065,15 +1108,37 @@ function HabitModal({ token, editing, categories, onClose, onSaved }) {
   const [weight, setWeight] = useState(editing?.weight ?? 2);
   const [notify, setNotify] = useState(editing?.notify_enabled ?? false);
   const [saving, setSaving] = useState(false);
+  // Frecuencia avanzada: weekly (default) / monthly_nth_weekday / every_n_days.
+  const [freqType, setFreqType] = useState(editing?.frequency_type || "weekly");
+  const [monthlyNth, setMonthlyNth] = useState(editing?.monthly_nth ?? 1);
+  const [monthlyWeekday, setMonthlyWeekday] = useState(editing?.monthly_weekday ?? 6);
+  const [everyNDays, setEveryNDays] = useState(editing?.every_n_days ?? 15);
+  const [startDate, setStartDate] = useState(editing?.start_date || todayStr());
 
   const toggleDay = (i) => setDays(p => p ^ (1 << i));
   const setPreset = (mask) => setDays(mask);
 
   const save = async () => {
     if (!name.trim()) return toast.error("Falta el nombre");
-    if (days === 0) return toast.error("Elegí al menos un día");
+    if (freqType === "weekly" && days === 0) return toast.error("Elegí al menos un día");
+    if (freqType === "monthly_nth_weekday" && (monthlyNth == null || monthlyWeekday == null)) return toast.error("Elegí la ocurrencia y el día");
+    if (freqType === "every_n_days" && (!everyNDays || Number(everyNDays) <= 0)) return toast.error("Indicá cada cuántos días");
     setSaving(true);
-    const body = { name: name.trim(), category_id: catId || null, time: time || null, days_of_week: days, notify_enabled: notify, duration_min: Number(duration) || null, weight };
+    const body = {
+      name: name.trim(),
+      category_id: catId || null,
+      time: time || null,
+      notify_enabled: notify,
+      duration_min: Number(duration) || null,
+      weight,
+      frequency_type: freqType,
+      // Para weekly: días útiles. Para otros tipos guardo 0 (limpia) por consistencia.
+      days_of_week: freqType === "weekly" ? days : 0,
+      monthly_nth: freqType === "monthly_nth_weekday" ? Number(monthlyNth) : null,
+      monthly_weekday: freqType === "monthly_nth_weekday" ? Number(monthlyWeekday) : null,
+      every_n_days: freqType === "every_n_days" ? Number(everyNDays) : null,
+      start_date: freqType === "every_n_days" ? (startDate || todayStr()) : null,
+    };
     if (editing?.id) await dq("mp_habits", { method: "PATCH", token, filters: `?id=eq.${editing.id}`, body });
     else await dq("mp_habits", { method: "POST", token, body });
     setSaving(false);
@@ -1115,25 +1180,68 @@ function HabitModal({ token, editing, categories, onClose, onSaved }) {
         </div>
         <p style={{ margin: "6px 2px 0", fontSize: 10.5, color: T.textMuted }}>Define cuánto pesa este hábito en el % del día.</p>
       </Field>
-      <Field label="Días de la semana">
-        <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
-          <Chip onClick={() => setPreset(127)} active={days === 127}>Todos</Chip>
-          <Chip onClick={() => setPreset(31)} active={days === 31}>L–V</Chip>
-          <Chip onClick={() => setPreset(96)} active={days === 96}>Fin de semana</Chip>
+      <Field label="Frecuencia">
+        {/* Selector del tipo de frecuencia */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap" }}>
+          {[
+            { v: "weekly", label: "Semanal" },
+            { v: "monthly_nth_weekday", label: "Mensual" },
+            { v: "every_n_days", label: "Cada N días" },
+          ].map(o => (
+            <Chip key={o.v} onClick={() => setFreqType(o.v)} active={freqType === o.v}>{o.label}</Chip>
+          ))}
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {DAYS.map((d, i) => {
-            const active = days & (1 << i);
-            return (
-              <button key={i} onClick={() => toggleDay(i)} style={{
-                flex: 1, padding: "10px 0", fontSize: 12, fontWeight: 700,
-                borderRadius: 8, border: active ? `1px solid ${T.gold}` : `1px solid ${T.border}`,
-                background: active ? `linear-gradient(135deg, ${T.goldHi}, ${T.gold})` : "transparent",
-                color: active ? T.bgBase : T.textSecondary, cursor: "pointer", transition: "all 150ms",
-              }}>{d}</button>
-            );
-          })}
-        </div>
+        {/* Modo: Semanal — bitmask de días + presets */}
+        {freqType === "weekly" && <>
+          <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
+            <Chip onClick={() => setPreset(127)} active={days === 127}>Todos</Chip>
+            <Chip onClick={() => setPreset(31)} active={days === 31}>L–V</Chip>
+            <Chip onClick={() => setPreset(96)} active={days === 96}>Fin de semana</Chip>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {DAYS.map((d, i) => {
+              const active = days & (1 << i);
+              return (
+                <button key={i} onClick={() => toggleDay(i)} style={{
+                  flex: 1, padding: "10px 0", fontSize: 12, fontWeight: 700,
+                  borderRadius: 8, border: active ? `1px solid ${T.gold}` : `1px solid ${T.border}`,
+                  background: active ? `linear-gradient(135deg, ${T.goldHi}, ${T.gold})` : "transparent",
+                  color: active ? T.bgBase : T.textSecondary, cursor: "pointer", transition: "all 150ms",
+                }}>{d}</button>
+              );
+            })}
+          </div>
+        </>}
+        {/* Modo: Mensual — Nth + weekday. Ej: "1er Domingo de cada mes". */}
+        {freqType === "monthly_nth_weekday" && <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <select value={monthlyNth} onChange={e => setMonthlyNth(Number(e.target.value))} style={inputStyle}>
+              <option value={1}>1er</option>
+              <option value={2}>2do</option>
+              <option value={3}>3er</option>
+              <option value={4}>4to</option>
+              <option value={5}>Último</option>
+            </select>
+            <select value={monthlyWeekday} onChange={e => setMonthlyWeekday(Number(e.target.value))} style={inputStyle}>
+              {DAYS_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
+            </select>
+          </div>
+          <p style={{ margin: "8px 2px 0", fontSize: 11, color: T.gold, fontWeight: 600 }}>{frequencyLabel({ frequency_type: "monthly_nth_weekday", monthly_nth: monthlyNth, monthly_weekday: monthlyWeekday })}</p>
+        </>}
+        {/* Modo: Cada N días — N + fecha de referencia. */}
+        {freqType === "every_n_days" && <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: T.textMuted, marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase" }}>Cada N días</label>
+              <input type="number" min={1} value={everyNDays} onChange={e => setEveryNDays(e.target.value)} style={inputStyle} placeholder="15" />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: T.textMuted, marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase" }}>Desde</label>
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputStyle} />
+            </div>
+          </div>
+          <p style={{ margin: "8px 2px 0", fontSize: 11, color: T.gold, fontWeight: 600 }}>{frequencyLabel({ frequency_type: "every_n_days", every_n_days: Number(everyNDays) || 0 })} · desde {startDate || "hoy"}</p>
+        </>}
       </Field>
       <Field label="Recordatorio">
         <button onClick={() => setNotify(v => !v)} style={{
@@ -1411,6 +1519,28 @@ function daysToLabel(mask) {
   if (mask === 31) return "Lunes a Viernes";
   if (mask === 96) return "Fin de semana";
   return DAYS.filter((_, i) => mask & (1 << i)).join(" · ");
+}
+
+// Label legible para mostrar al usuario la frecuencia de un hábito.
+const NTH_LABEL = { 1: "1er", 2: "2do", 3: "3er", 4: "4to", 5: "Último" };
+function frequencyLabel(h) {
+  if (!h) return "";
+  const type = h.frequency_type || "weekly";
+  if (type === "weekly") return daysToLabel(h.days_of_week || 0);
+  if (type === "monthly_nth_weekday") {
+    const nth = NTH_LABEL[h.monthly_nth] || "?";
+    const wd = DAYS_SHORT_FULL[h.monthly_weekday] || "?";
+    return `${nth} ${wd} de cada mes`;
+  }
+  if (type === "every_n_days") {
+    const n = Number(h.every_n_days || 0);
+    if (n === 1) return "Cada día";
+    if (n === 7) return "Cada semana";
+    if (n === 14) return "Cada 2 semanas";
+    if (n === 30) return "Cada mes (aprox)";
+    return `Cada ${n} días`;
+  }
+  return "";
 }
 
 const inputStyle = { width: "100%", padding: "11px 14px", fontSize: 13.5, fontWeight: 500, border: `1px solid ${T.border}`, borderRadius: 8, background: T.bgSurfaceHi, color: T.textPrimary, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
