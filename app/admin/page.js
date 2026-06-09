@@ -217,6 +217,15 @@ function OperationsList({token,onSelect,onNew}){
       } else if(bulkAction.action==="markCollected"){
         await dq("operations",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{is_collected:true,collection_date:new Date().toISOString().slice(0,10)}});
       } else if(bulkAction.action==="delete"){
+        // Igual que deleteOp individual: limpiar primero las tablas hijas con FK sin cascade
+        // (operation_packages bloquea con 409 si no). items y tracking_events ya son CASCADE,
+        // pero las borramos explícito para mantener simetría con el delete individual.
+        const inFilter=`?operation_id=in.(${ids.join(",")})`;
+        await Promise.all([
+          dq("operation_items",{method:"DELETE",token,filters:inFilter}),
+          dq("operation_packages",{method:"DELETE",token,filters:inFilter}),
+          dq("tracking_events",{method:"DELETE",token,filters:inFilter}),
+        ]);
         await dq("operations",{method:"DELETE",token,filters:`?id=in.(${ids.join(",")})`});
       }
       // Recargar
