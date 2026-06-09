@@ -4825,21 +4825,30 @@ function FinancePanel({token}){
     // - Impuestos / gasto documental: se omiten acá porque ya viven como finance_entries auto-generadas (sino se duplican).
     const cc=o.clients?.client_code||"";
     const closedDate=o.closed_at?.slice(0,10)||null;
+    // pickDate: paid_at si existe, sino closed_at (default para débito/transf/efectivo).
+    // pickDateStrict: SOLO paid_at — usada para TC para que el gasto recién aparezca el día del débito.
+    // Bug histórico (Junio 2026): el pickDate genérico hacía fallback a closed_at para TC también,
+    // entonces el flete TC aparecía en el libro diario en la fecha de cierre y al debitar se "movía"
+    // de fecha, no se "agregaba". Ahora TC queda fuera del ledger hasta que se debita.
     const pickDate=(paid)=>paid?.slice(0,10)||closedDate;
+    const pickDateStrict=(paid)=>paid?.slice(0,10)||null;
     const fleteMethod=o.cost_flete_method||"cuenta_corriente";
-    const fleteDate=pickDate(o.cost_flete_paid_at);
+    const fleteIsTC=fleteMethod==="tarjeta_credito";
+    const fleteDate=fleteIsTC?pickDateStrict(o.cost_flete_paid_at):pickDate(o.cost_flete_paid_at);
     // - cuenta_corriente: settlement vía CC del agente (no es cash out de Argencargo)
     // - tarjeta_credito: queda pendiente como Deuda TC hasta que se marque debitada (cost_flete_paid_at = fecha del débito)
     // - tarjeta_debito / transferencia / efectivo: cash out inmediato en su fecha de pago
     if(fleteMethod!=="cuenta_corriente"&&Number(o.cost_flete||0)>0&&fleteDate){
-      const methodLbl=fleteMethod==="tarjeta_credito"?"TC":fleteMethod==="tarjeta_debito"?"Débito":fleteMethod==="transferencia"?"Transf.":"Contado";
+      const methodLbl=fleteIsTC?"TC":fleteMethod==="tarjeta_debito"?"Débito":fleteMethod==="transferencia"?"Transf.":"Contado";
       ledger.push({date:fleteDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Flete ${o.operation_code} — ${cc}`,amount:Number(o.cost_flete),detail:`Pago vía ${methodLbl}`});
     }
     const segDate=pickDate(o.cost_seguro_paid_at);
     if(Number(o.cost_seguro||0)>0&&segDate)ledger.push({date:segDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Seguro ${o.operation_code} — ${cc}`,amount:Number(o.cost_seguro)});
-    const flDate=pickDate(o.cost_flete_local_paid_at);
+    const flLocalIsTC=o.cost_flete_local_method==="tarjeta_credito";
+    const flDate=flLocalIsTC?pickDateStrict(o.cost_flete_local_paid_at):pickDate(o.cost_flete_local_paid_at);
     if(Number(o.cost_flete_local||0)>0&&flDate)ledger.push({date:flDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Flete local ${o.operation_code} — ${cc}`,amount:Number(o.cost_flete_local)});
-    const otDate=pickDate(o.cost_otros_paid_at);
+    const otIsTC=o.cost_otros_method==="tarjeta_credito";
+    const otDate=otIsTC?pickDateStrict(o.cost_otros_paid_at):pickDate(o.cost_otros_paid_at);
     if(Number(o.cost_otros||0)>0&&otDate)ledger.push({date:otDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Otros ${o.operation_code} — ${cc}`,amount:Number(o.cost_otros)});
   });
   // Gestión Integral: cada pago al proveedor aparece en su fecha de salida de cash.
@@ -8446,14 +8455,19 @@ function FinanceDashboard({token}){
   ops.forEach(o=>{
     const fleteMethod=o.cost_flete_method||"cuenta_corriente";
     const closedDate=o.closed_at?.slice(0,10)||null;
+    // pickDateStrict (sin fallback a closed_at) para TC: el gasto recién impacta cuando se debita.
     const pickDate=(paid)=>paid?.slice(0,10)||closedDate;
-    const fleteDate=pickDate(o.cost_flete_paid_at);
+    const pickDateStrict=(paid)=>paid?.slice(0,10)||null;
+    const fleteIsTC=fleteMethod==="tarjeta_credito";
+    const fleteDate=fleteIsTC?pickDateStrict(o.cost_flete_paid_at):pickDate(o.cost_flete_paid_at);
     if(fleteMethod!=="cuenta_corriente"&&Number(o.cost_flete||0)>0&&fleteDate&&periodFilter(fleteDate))totalCost+=Number(o.cost_flete);
     const segDate=pickDate(o.cost_seguro_paid_at);
     if(Number(o.cost_seguro||0)>0&&segDate&&periodFilter(segDate))totalCost+=Number(o.cost_seguro);
-    const flDate=pickDate(o.cost_flete_local_paid_at);
+    const flLocalIsTC=o.cost_flete_local_method==="tarjeta_credito";
+    const flDate=flLocalIsTC?pickDateStrict(o.cost_flete_local_paid_at):pickDate(o.cost_flete_local_paid_at);
     if(Number(o.cost_flete_local||0)>0&&flDate&&periodFilter(flDate))totalCost+=Number(o.cost_flete_local);
-    const otDate=pickDate(o.cost_otros_paid_at);
+    const otIsTC=o.cost_otros_method==="tarjeta_credito";
+    const otDate=otIsTC?pickDateStrict(o.cost_otros_paid_at):pickDate(o.cost_otros_paid_at);
     if(Number(o.cost_otros||0)>0&&otDate&&periodFilter(otDate))totalCost+=Number(o.cost_otros);
   });
   totalCost+=supplierPmts.filter(p=>p.is_paid&&p.type!=="refund"&&periodFilter(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
