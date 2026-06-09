@@ -5577,6 +5577,26 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     return {opId,count:list.length,target:targetForThisOp,opCode:opsUnique.find(o=>o.id===opId)?.operation_code||"?"};
   }).filter(o=>o.count>o.target):[];
   const [compressState,setCompressState]=useState(null);
+  // ---- NUEVO: comprimir TODO el vuelo (cross-ops), sin tocar operation_items ----
+  // Pensado para vuelos donde varias ops del mismo cliente repiten mercadería: la
+  // compresión por op no encuentra duplicados, pero entre ops sí. Solo reescribe
+  // flight_invoice_items (la declaración a Aduana). Cada op del cliente queda
+  // intacta — el admin después va y clasifica los productos manualmente.
+  const openCompressForFlight=async(target)=>{
+    const allItems=[...items];
+    if(allItems.length===0)return;
+    const targetMax=Math.max(1,Math.min(target||MAX_INVOICE_ITEMS,MAX_INVOICE_ITEMS));
+    setCompressState({scope:"flight",opCode:`${flight.flight_code} (vuelo entero)`,target:targetMax,maxTarget:MAX_INVOICE_ITEMS,original:allItems,proposed:null,loading:true,error:null,applying:false});
+    try{
+      const r=await fetch("/api/compress-items",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        items:allItems.map(it=>({description:it.description,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_declared_usd||0),hs_code:it.hs_code||null})),
+        maxItems:targetMax,
+      })});
+      const d=await r.json();
+      if(!d.ok){setCompressState(s=>({...s,loading:false,error:d.error||"Error desconocido"}));return;}
+      setCompressState(s=>({...s,loading:false,proposed:d}));
+    }catch(e){setCompressState(s=>({...s,loading:false,error:e.message}));}
+  };
   // target = a cuántos ítems comprimir esta op (lo que el admin elige, puede ser < techo RG).
   // maxTarget = techo permitido por RG 5608 para esta op (8 − ítems de otras ops). El admin
   // arranca en el techo y puede bajar de ahí; nunca subir por encima (violaría el límite legal).
@@ -5603,6 +5623,43 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   };
   const applyCompress=async()=>{
     if(!compressState?.proposed)return;
+    // --- Rama nueva: compresión de TODO el vuelo (no toca operation_items) ---
+    if(compressState.scope==="flight"){
+      const {proposed,original}=compressState;
+      setCompressState(s=>({...s,applying:true}));
+      try{
+        // Para cada grupo, asignamos operation_id al que más aporta por cantidad
+        // entre los items originales referenciados en source_indices.
+        const groupsWithOp=proposed.groups.map(g=>{
+          const qtyByOp={};
+          for(const idx of g.source_indices){
+            const it=original[idx];
+            if(!it||!it.operation_id)continue;
+            qtyByOp[it.operation_id]=(qtyByOp[it.operation_id]||0)+Number(it.quantity||0);
+          }
+          let pickOpId=null,pickQty=-1;
+          for(const [oid,q] of Object.entries(qtyByOp)){if(q>pickQty){pickQty=q;pickOpId=oid;}}
+          // Fallback: si ningún source tenía operation_id, asignamos al primer op del vuelo.
+          if(!pickOpId)pickOpId=opsUnique[0]?.id||null;
+          return {...g,operation_id:pickOpId};
+        });
+        // Reemplazo TODOS los flight_invoice_items del vuelo. Nada de operation_items.
+        await dq("flight_invoice_items",{method:"DELETE",token,filters:`?flight_id=eq.${flight.id}`});
+        let sortIdx=0;
+        for(const g of groupsWithOp){
+          sortIdx++;
+          await dq("flight_invoice_items",{method:"POST",token,body:{flight_id:flight.id,operation_id:g.operation_id,description:g.description,quantity:g.quantity,unit_price_declared_usd:g.unit_price_usd,hs_code:g.hs_code||"",sort_order:sortIdx}});
+        }
+        setCompressState(null);
+        onFlash(`✓ Vuelo comprimido ${proposed.original_count} → ${proposed.compressed_count} items · ops del cliente intactas — clasificá los productos en cada op`);
+        onReload();
+      }catch(e){
+        console.error("compress flight apply error",e);
+        setCompressState(s=>({...s,applying:false,error:e.message}));
+      }
+      return;
+    }
+    // --- Rama original: comprimir UNA op (toca flight_invoice_items + operation_items) ---
     const {opId,proposed,original,origMap}=compressState;
     setCompressState(s=>({...s,applying:true}));
     try{
@@ -6008,6 +6065,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           <button onClick={addItem} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Agregar ítem manual</button>
           {items.some(it=>it.description&&it.description.trim()&&(!it.hs_code||!it.hs_code.trim()))&&<button onClick={autoClassifyHs} disabled={classifyingHs} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:classifyingHs?"wait":"pointer",opacity:classifyingHs?0.6:1}}>{classifyingHs?"Clasificando…":"✨ Auto-completar HS Code (IA)"}</button>}
           {needsCompression&&!flight.invoice_presented_at&&opsCompressible.map(({opId,opCode,count,target})=><button key={opId} onClick={()=>openCompressFor(opId,target)} title={`Comprimir los ${count} items de ${opCode} a ${target} (otras ops aportan ${totalInvoiceItems-count} al total). Límite RG 5608: ${MAX_INVOICE_ITEMS} por factura.`} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🗜 Comprimir {opCode} ({count} → ≤{target})</button>)}
+          {needsCompression&&!flight.invoice_presented_at&&<button onClick={()=>openCompressForFlight(MAX_INVOICE_ITEMS)} title={`Comprimir TODOS los items del vuelo (cross-ops). Útil cuando varias ops del mismo cliente repiten mercadería y la compresión por op no agrupa entre sí. Sólo reescribe la declaración del vuelo — los productos en las ops del cliente quedan intactos y los clasificás después manualmente.`} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(167,139,250,0.5)",background:"rgba(167,139,250,0.14)",color:"#a78bfa",cursor:"pointer"}}>🗜 Comprimir VUELO completo ({totalInvoiceItems} → ≤{MAX_INVOICE_ITEMS}) · no toca ops</button>}
           {!flight.invoice_presented_at&&items.length>0&&<button onClick={async()=>{await saveAllItems();onFlash("Guardando y recalculando presupuestos…");await recalcAllBudgets();}} disabled={recalcing} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:recalcing?"wait":"pointer",opacity:recalcing?0.6:1}}>{recalcing?"Recalculando…":"💾 Guardar y recalcular presupuestos"}</button>}
         </div>
       </div>}
@@ -6055,18 +6113,18 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         </div>
       </>}
     </Card>}
-    {compressState&&(()=>{const {opCode,original,proposed,loading,error,applying,target}=compressState;const targetMax=target||MAX_INVOICE_ITEMS;const ceiling=Math.max(1,compressState.maxTarget||targetMax);const busy=loading||applying;const stepBtn=(disabled)=>({width:28,height:28,borderRadius:7,border:`1px solid ${disabled?"rgba(255,255,255,0.08)":"rgba(251,146,60,0.4)"}`,background:disabled?"rgba(255,255,255,0.03)":"rgba(251,146,60,0.12)",color:disabled?"rgba(255,255,255,0.25)":"#fb923c",fontSize:16,fontWeight:800,cursor:disabled?"not-allowed":"pointer",lineHeight:1,display:"inline-flex",alignItems:"center",justifyContent:"center"});return <div onClick={()=>!applying&&setCompressState(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    {compressState&&(()=>{const {opCode,original,proposed,loading,error,applying,target}=compressState;const isFlightScope=compressState.scope==="flight";const targetMax=target||MAX_INVOICE_ITEMS;const ceiling=Math.max(1,compressState.maxTarget||targetMax);const busy=loading||applying;const reopen=(t)=>isFlightScope?openCompressForFlight(t):openCompressFor(compressState.opId,t,ceiling);const stepBtn=(disabled)=>({width:28,height:28,borderRadius:7,border:`1px solid ${disabled?"rgba(255,255,255,0.08)":"rgba(251,146,60,0.4)"}`,background:disabled?"rgba(255,255,255,0.03)":"rgba(251,146,60,0.12)",color:disabled?"rgba(255,255,255,0.25)":"#fb923c",fontSize:16,fontWeight:800,cursor:disabled?"not-allowed":"pointer",lineHeight:1,display:"inline-flex",alignItems:"center",justifyContent:"center"});return <div onClick={()=>!applying&&setCompressState(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(251,146,60,0.35)",borderRadius:14,padding:"20px 22px",maxWidth:920,width:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
           <div>
             <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>🗜 Comprimir items de {opCode}</h3>
-            <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>De {original.length} items → objetivo {targetMax} para esta op (factura tiene {totalInvoiceItems} items, límite RG 5608: {MAX_INVOICE_ITEMS}). La IA agrupa variantes (color, talle, etc.) — conservador, no fuerza si los productos son distintos.</p>
+            <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"4px 0 0"}}>{isFlightScope?<>De {original.length} items → objetivo {targetMax} para el <strong>vuelo entero</strong>. La IA agrupa repeticiones <strong>cross-ops</strong> (mismo producto en varias ops del cliente). <strong>No toca</strong> los items en las ops del cliente — quedan como están y los clasificás manualmente después.</>:<>De {original.length} items → objetivo {targetMax} para esta op (factura tiene {totalInvoiceItems} items, límite RG 5608: {MAX_INVOICE_ITEMS}). La IA agrupa variantes (color, talle, etc.) — conservador, no fuerza si los productos son distintos.</>}</p>
             <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10}}>
               <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Comprimir a</span>
-              <button disabled={busy||targetMax<=1} onClick={()=>openCompressFor(compressState.opId,targetMax-1,ceiling)} style={stepBtn(busy||targetMax<=1)}>−</button>
+              <button disabled={busy||targetMax<=1} onClick={()=>reopen(targetMax-1)} style={stepBtn(busy||targetMax<=1)}>−</button>
               <span style={{fontSize:15,fontWeight:800,color:"#fb923c",minWidth:22,textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{targetMax}</span>
-              <button disabled={busy||targetMax>=ceiling} onClick={()=>openCompressFor(compressState.opId,targetMax+1,ceiling)} style={stepBtn(busy||targetMax>=ceiling)}>+</button>
-              <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>ítem{targetMax>1?"s":""} · podés bajar de {ceiling} (techo RG) si querés menos líneas</span>
+              <button disabled={busy||targetMax>=ceiling} onClick={()=>reopen(targetMax+1)} style={stepBtn(busy||targetMax>=ceiling)}>+</button>
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>ítem{targetMax>1?"s":""} · {isFlightScope?`techo RG ${ceiling}`:`podés bajar de ${ceiling} (techo RG) si querés menos líneas`}</span>
             </div>
           </div>
           <button onClick={()=>!applying&&setCompressState(null)} disabled={applying} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:applying?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
@@ -6074,7 +6132,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         {loading&&<p style={{padding:"30px",textAlign:"center",fontSize:13,color:"#a78bfa"}}>⏳ La IA está agrupando los {original.length} items…</p>}
         {error&&<div style={{padding:"12px 14px",background:"rgba(255,80,80,0.1)",border:"1px solid rgba(255,80,80,0.3)",borderRadius:8,marginBottom:12}}>
           <p style={{fontSize:12,color:"#ff6b6b",margin:0,fontWeight:700}}>❌ {error}</p>
-          <button onClick={()=>openCompressFor(compressState.opId,compressState.target,compressState.maxTarget)} style={{marginTop:8,fontSize:11,padding:"4px 10px",borderRadius:5,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:"pointer"}}>🔄 Reintentar</button>
+          <button onClick={()=>reopen(targetMax)} style={{marginTop:8,fontSize:11,padding:"4px 10px",borderRadius:5,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:"pointer"}}>🔄 Reintentar</button>
         </div>}
         {proposed&&<>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
@@ -6104,13 +6162,13 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           {proposed.warnings?.length>0&&<div style={{padding:"8px 12px",background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.3)",borderRadius:6,marginBottom:12}}>
             {proposed.warnings.map((w,i)=><p key={i} style={{fontSize:11,color:"#fbbf24",margin:i>0?"4px 0 0":0}}>⚠ {w}</p>)}
           </div>}
-          <div style={{padding:"10px 12px",background:"rgba(251,146,60,0.06)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:6,marginBottom:12}}>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.7)",margin:0}}>Al aplicar: se reemplazan los items en la <strong>factura del vuelo</strong> Y en la <strong>operación del cliente</strong>. Los originales se guardan como backup en <code>operations.items_backup_json</code> y el cliente los ve en una sección secundaria "Detalle original".</p>
+          <div style={{padding:"10px 12px",background:isFlightScope?"rgba(167,139,250,0.08)":"rgba(251,146,60,0.06)",border:`1px solid ${isFlightScope?"rgba(167,139,250,0.3)":"rgba(251,146,60,0.25)"}`,borderRadius:6,marginBottom:12}}>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.7)",margin:0}}>{isFlightScope?<>Al aplicar: se reemplazan los items en la <strong>factura del vuelo</strong>. Los productos en las <strong>ops del cliente</strong> quedan como están (sin backup, sin tocar) — después tenés que entrar a cada op y clasificarlos manualmente. Cada grupo se asigna a la op del cliente que más aporta por cantidad.</>:<>Al aplicar: se reemplazan los items en la <strong>factura del vuelo</strong> Y en la <strong>operación del cliente</strong>. Los originales se guardan como backup en <code>operations.items_backup_json</code> y el cliente los ve en una sección secundaria "Detalle original".</>}</p>
           </div>
           <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
             <button onClick={()=>!applying&&setCompressState(null)} disabled={applying} style={{padding:"8px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.7)",cursor:applying?"not-allowed":"pointer"}}>Cancelar</button>
-            <button onClick={()=>openCompressFor(compressState.opId,compressState.target,compressState.maxTarget)} disabled={applying} style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:applying?"not-allowed":"pointer"}}>🔄 Re-comprimir</button>
-            <button onClick={applyCompress} disabled={applying||proposed.can_apply===false} title={proposed.can_apply===false?"La IA tuvo errores críticos. Tocá Re-comprimir.":"Aplicar y sincronizar"} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${proposed.can_apply===false?"rgba(255,255,255,0.1)":IC}`,background:applying||proposed.can_apply===false?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:applying||proposed.can_apply===false?"rgba(255,255,255,0.4)":"#0A1628",cursor:applying?"wait":(proposed.can_apply===false?"not-allowed":"pointer")}}>{applying?"Aplicando…":(proposed.can_apply===false?"⛔ Bloqueado por errores":"✓ Aplicar y sincronizar")}</button>
+            <button onClick={()=>reopen(targetMax)} disabled={applying} style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:applying?"not-allowed":"pointer"}}>🔄 Re-comprimir</button>
+            <button onClick={applyCompress} disabled={applying||proposed.can_apply===false} title={proposed.can_apply===false?"La IA tuvo errores críticos. Tocá Re-comprimir.":"Aplicar y sincronizar"} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${proposed.can_apply===false?"rgba(255,255,255,0.1)":IC}`,background:applying||proposed.can_apply===false?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:applying||proposed.can_apply===false?"rgba(255,255,255,0.4)":"#0A1628",cursor:applying?"wait":(proposed.can_apply===false?"not-allowed":"pointer")}}>{applying?"Aplicando…":(proposed.can_apply===false?"⛔ Bloqueado por errores":(isFlightScope?"✓ Aplicar al vuelo":"✓ Aplicar y sincronizar"))}</button>
           </div>
         </>}
       </div>
