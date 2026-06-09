@@ -4791,6 +4791,15 @@ function FinancePanel({token}){
   const fijosByCategory=entries.reduce((m,e)=>{const k=e.category||"otros";m[k]=(m[k]||0)+Number(e.amount||0);return m;},{});
   // Libro diario unificado: ops cobradas + pmts client_paid (ingresos), costos op + giros confirmados (gastos), entries manuales (gastos fijos)
   const ledger=[];
+  // tsOf devuelve el timestamp más fino disponible para ordenar.
+  // Preferimos un timestamp completo (con hora) cuando existe — así dentro del mismo día
+  // los eventos se ordenan cronológicamente real. Si solo hay date, devolvemos date+T12:00
+  // para que quede a "media tarde" del día (los eventos con hora real lo desplazan).
+  const tsOf=(dateOnly,fullTs)=>{
+    if(fullTs)return String(fullTs);
+    if(!dateOnly||dateOnly==="—")return "";
+    return `${dateOnly}T12:00:00+00`;
+  };
   // IDs de ops que tienen pagos parciales del cliente (para NO duplicar con is_collected legacy)
   const opsWithClientPmts=new Set(clientPmts.map(p=>p.operation_id));
   allOps.forEach(o=>{
@@ -4816,7 +4825,8 @@ function FinancePanel({token}){
         if(creditApp>0)detail.push(`incluye USD ${creditApp.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de saldo a favor aplicado`);
         if(overpay>0.01)detail.push(`USD ${overpay.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} a saldo a favor del cliente`);
         if(extraCharge>0.01)detail.push(`incluye cargo extra USD ${extraCharge.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
-        ledger.push({date:o.collection_date||o.closed_at?.slice(0,10)||"—",type:"ingreso",origen:"op",code:o.operation_code,desc:`Cobro ${o.operation_code} — ${o.clients?.client_code||""}`,amount:cashIn,detail:detail.join(" · ")});
+        const cobroDate=o.collection_date||o.closed_at?.slice(0,10)||"—";
+        ledger.push({date:cobroDate,ts:tsOf(cobroDate,o.closed_at),type:"ingreso",origen:"op",code:o.operation_code,desc:`Cobro ${o.operation_code} — ${o.clients?.client_code||""}`,amount:cashIn,detail:detail.join(" · ")});
       }
     }
     // Costos op: una fila por concepto con su fecha real de pago.
@@ -4840,16 +4850,16 @@ function FinancePanel({token}){
     // - tarjeta_debito / transferencia / efectivo: cash out inmediato en su fecha de pago
     if(fleteMethod!=="cuenta_corriente"&&Number(o.cost_flete||0)>0&&fleteDate){
       const methodLbl=fleteIsTC?"TC":fleteMethod==="tarjeta_debito"?"Débito":fleteMethod==="transferencia"?"Transf.":"Contado";
-      ledger.push({date:fleteDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Flete ${o.operation_code} — ${cc}`,amount:Number(o.cost_flete),detail:`Pago vía ${methodLbl}`});
+      ledger.push({date:fleteDate,ts:tsOf(fleteDate,o.cost_flete_paid_at||o.closed_at),type:"gasto",origen:"op",code:o.operation_code,desc:`Flete ${o.operation_code} — ${cc}`,amount:Number(o.cost_flete),detail:`Pago vía ${methodLbl}`});
     }
     const segDate=pickDate(o.cost_seguro_paid_at);
-    if(Number(o.cost_seguro||0)>0&&segDate)ledger.push({date:segDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Seguro ${o.operation_code} — ${cc}`,amount:Number(o.cost_seguro)});
+    if(Number(o.cost_seguro||0)>0&&segDate)ledger.push({date:segDate,ts:tsOf(segDate,o.cost_seguro_paid_at||o.closed_at),type:"gasto",origen:"op",code:o.operation_code,desc:`Seguro ${o.operation_code} — ${cc}`,amount:Number(o.cost_seguro)});
     const flLocalIsTC=o.cost_flete_local_method==="tarjeta_credito";
     const flDate=flLocalIsTC?pickDateStrict(o.cost_flete_local_paid_at):pickDate(o.cost_flete_local_paid_at);
-    if(Number(o.cost_flete_local||0)>0&&flDate)ledger.push({date:flDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Flete local ${o.operation_code} — ${cc}`,amount:Number(o.cost_flete_local)});
+    if(Number(o.cost_flete_local||0)>0&&flDate)ledger.push({date:flDate,ts:tsOf(flDate,o.cost_flete_local_paid_at||o.closed_at),type:"gasto",origen:"op",code:o.operation_code,desc:`Flete local ${o.operation_code} — ${cc}`,amount:Number(o.cost_flete_local)});
     const otIsTC=o.cost_otros_method==="tarjeta_credito";
     const otDate=otIsTC?pickDateStrict(o.cost_otros_paid_at):pickDate(o.cost_otros_paid_at);
-    if(Number(o.cost_otros||0)>0&&otDate)ledger.push({date:otDate,type:"gasto",origen:"op",code:o.operation_code,desc:`Otros ${o.operation_code} — ${cc}`,amount:Number(o.cost_otros)});
+    if(Number(o.cost_otros||0)>0&&otDate)ledger.push({date:otDate,ts:tsOf(otDate,o.cost_otros_paid_at||o.closed_at),type:"gasto",origen:"op",code:o.operation_code,desc:`Otros ${o.operation_code} — ${cc}`,amount:Number(o.cost_otros)});
   });
   // Gestión Integral: cada pago al proveedor aparece en su fecha de salida de cash.
   // Si fue TC, la fecha en el ledger es la del débito (paid_at), no la de la operación.
@@ -4865,6 +4875,7 @@ function FinancePanel({token}){
     const tcSuffix=isTC&&p.paid_at&&p.payment_date!==cashDate?` · 💳 generado el ${formatDate(p.payment_date)}`:"";
     ledger.push({
       date:cashDate,
+      ts:tsOf(cashDate,isTC?p.paid_at:p.payment_date),
       type:isRefund?"ingreso":"gasto",
       origen:"supplier_pmt",
       code,
@@ -4879,17 +4890,17 @@ function FinancePanel({token}){
     const code=op?.operation_code||"";
     const cc=op?.clients?.client_code||"";
     const arsDetail=p.currency==="ARS"&&p.amount_ars?`ARS ${Number(p.amount_ars).toLocaleString("es-AR")} @ ${p.exchange_rate}`:"";
-    ledger.push({date:p.payment_date,type:"ingreso",origen:"client_pmt",code,desc:`Anticipo ${code} — ${cc}`,amount:Number(p.amount_usd||0),detail:p.notes?`${p.notes}${arsDetail?` · ${arsDetail}`:""}`:arsDetail});
+    ledger.push({date:p.payment_date,ts:tsOf(p.payment_date,p.created_at),type:"ingreso",origen:"client_pmt",code,desc:`Anticipo ${code} — ${cc}`,amount:Number(p.amount_usd||0),detail:p.notes?`${p.notes}${arsDetail?` · ${arsDetail}`:""}`:arsDetail});
   });
   allPmts.forEach(p=>{
     const code=p.operations?.operation_code||"";
     const op=allOps.find(o=>o.id===p.operation_id);
     const cc=op?.clients?.client_code||"";
-    if(p.client_paid)ledger.push({date:p.client_paid_date||"—",type:"ingreso",origen:"pmt",code,desc:`Pago ${code} — ${cc}`,amount:Number(p.client_paid_amount_usd??p.client_amount_usd??0),detail:p.description||""});
+    if(p.client_paid){const d=p.client_paid_date||"—";ledger.push({date:d,ts:tsOf(d,p.client_paid_date),type:"ingreso",origen:"pmt",code,desc:`Pago ${code} — ${cc}`,amount:Number(p.client_paid_amount_usd??p.client_amount_usd??0),detail:p.description||""});}
     const tarjetaPendiente=p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid;
     // Comisión de giro: SIEMPRE se cuenta como gasto de contado (no depende del método del giro).
     // Representa el costo financiero que se paga al recibir la transferencia del cliente.
-    if(p.giro_status==="confirmado"&&Number(p.cost_comision_giro||0)>0){ledger.push({date:p.giro_date||p.client_paid_date||"—",type:"gasto",origen:"pmt",code,desc:`Comisión financiera ${code} — ${cc}`,amount:Number(p.cost_comision_giro),detail:"Costo por recibir la transferencia"});}
+    if(p.giro_status==="confirmado"&&Number(p.cost_comision_giro||0)>0){const d=p.giro_date||p.client_paid_date||"—";ledger.push({date:d,ts:tsOf(d,p.giro_date),type:"gasto",origen:"pmt",code,desc:`Comisión financiera ${code} — ${cc}`,amount:Number(p.cost_comision_giro),detail:"Costo por recibir la transferencia"});}
     // Giro al exterior: aparece cuando se pagó (efectivo/transferencia) o se debitó la TC.
     // En libro diario usamos la fecha en que SALIÓ el cash (cash flow real):
     //  - efectivo / transferencia → giro_date (cuando se hizo el giro)
@@ -4899,7 +4910,7 @@ function FinancePanel({token}){
       const isGiroTC=p.giro_payment_method==="tarjeta_credito";
       const cashDate=isGiroTC&&p.giro_tarjeta_paid_at?p.giro_tarjeta_paid_at.slice(0,10):(p.giro_date||p.client_paid_date||"—");
       const tcSuffix=isGiroTC&&p.giro_tarjeta_paid_at&&p.giro_date&&p.giro_date!==cashDate?` · 💳 giro generado el ${formatDate(p.giro_date)}`:"";
-      ledger.push({date:cashDate,type:"gasto",origen:"pmt",code,desc:`Giro exterior ${code} — ${cc}`,amount:Number(p.giro_amount_usd),detail:(p.description||"")+tcSuffix});
+      ledger.push({date:cashDate,ts:tsOf(cashDate,isGiroTC?p.giro_tarjeta_paid_at:p.giro_date),type:"gasto",origen:"pmt",code,desc:`Giro exterior ${code} — ${cc}`,amount:Number(p.giro_amount_usd),detail:(p.description||"")+tcSuffix});
     }
   });
   entries.forEach(e=>{
@@ -4910,7 +4921,7 @@ function FinancePanel({token}){
     const cashDate=isTC&&e.card_paid_at?e.card_paid_at.slice(0,10):e.date;
     const tcSuffix=isTC&&e.card_paid_at&&e.date&&e.date!==cashDate?` · 💳 gasto generado el ${formatDate(e.date)}`:"";
     const arsSuffix=Number(e.amount_ars||0)>0&&Number(e.exchange_rate||0)>0?` · ARS ${Number(e.amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} @ ${Number(e.exchange_rate).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"";
-    ledger.push({date:cashDate,type:e.type,origen:"manual",code:"",desc:e.description,amount:Number(e.amount||0),detail:(e.detail||"")+tcSuffix+arsSuffix,cat:e.category,recurring:e.is_recurring,id:e.id});
+    ledger.push({date:cashDate,ts:tsOf(cashDate,isTC?e.card_paid_at:e.created_at),type:e.type,origen:"manual",code:"",desc:e.description,amount:Number(e.amount||0),detail:(e.detail||"")+tcSuffix+arsSuffix,cat:e.category,recurring:e.is_recurring,id:e.id});
   });
   // Auto-generated entries de ops (impuestos/gasto doc dolarizados): aparecen como "op" para que se distingan de gastos manuales del negocio.
   autoEntries.forEach(e=>{
@@ -4919,14 +4930,17 @@ function FinancePanel({token}){
     const cashDate=isTC&&e.card_paid_at?e.card_paid_at.slice(0,10):e.date;
     const tcSuffix=isTC&&e.card_paid_at&&e.date&&e.date!==cashDate?` · 💳 gasto generado el ${formatDate(e.date)}`:"";
     const arsSuffix=Number(e.amount_ars||0)>0&&Number(e.exchange_rate||0)>0?` · ARS ${Number(e.amount_ars).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} @ ${Number(e.exchange_rate).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"";
-    ledger.push({date:cashDate,type:e.type,origen:"op",code:"",desc:e.description,amount:Number(e.amount||0),detail:(e.detail||"")+tcSuffix+arsSuffix,id:e.id});
+    ledger.push({date:cashDate,ts:tsOf(cashDate,isTC?e.card_paid_at:e.created_at),type:e.type,origen:"op",code:"",desc:e.description,amount:Number(e.amount||0),detail:(e.detail||"")+tcSuffix+arsSuffix,id:e.id});
   });
   agentMvs.filter(m=>m.type==="anticipo").forEach(m=>{const ag=agentSignups.find(a=>a.auth_user_id===m.agent_id);const agName=ag?`${ag.first_name} ${ag.last_name}`:"agente";const paid=Number(m.amount_usd||0);const recv=m.amount_received_usd!=null?Number(m.amount_received_usd):paid;const com=Math.max(0,paid-recv);
     // Solo se cuenta lo que recibió el agente (el resto va como gasto comisión separado en finance_entries para no duplicar)
-    ledger.push({date:m.date,type:"gasto",origen:"agente",code:"",desc:`Anticipo a ${agName}`,amount:recv,detail:com>0?`Pagaste ${usd(paid)} · Agente recibió ${usd(recv)} (comisión ${usd(com)} contabilizada aparte)`:(m.description||"")});});
+    ledger.push({date:m.date,ts:tsOf(m.date,m.created_at),type:"gasto",origen:"agente",code:"",desc:`Anticipo a ${agName}`,amount:recv,detail:com>0?`Pagaste ${usd(paid)} · Agente recibió ${usd(recv)} (comisión ${usd(com)} contabilizada aparte)`:(m.description||"")});});
   // Refunds del agente (cash que el agente devuelve a AC) → ingreso en libro diario
-  agentMvs.filter(m=>m.type==="refund").forEach(m=>{const ag=agentSignups.find(a=>a.auth_user_id===m.agent_id);const agName=ag?`${ag.first_name} ${ag.last_name}`:"agente";const recv=Number(m.amount_received_usd||m.amount_usd);ledger.push({date:m.date,type:"ingreso",origen:"agente",code:"",desc:`Devolución de ${agName}`,amount:recv,detail:m.description||""});});
-  ledger.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  agentMvs.filter(m=>m.type==="refund").forEach(m=>{const ag=agentSignups.find(a=>a.auth_user_id===m.agent_id);const agName=ag?`${ag.first_name} ${ag.last_name}`:"agente";const recv=Number(m.amount_received_usd||m.amount_usd);ledger.push({date:m.date,ts:tsOf(m.date,m.created_at),type:"ingreso",origen:"agente",code:"",desc:`Devolución de ${agName}`,amount:recv,detail:m.description||""});});
+  // Orden: por timestamp completo desc. Si dos eventos comparten día, los que tienen hora real
+  // (TC paid_at, supplier paid_at, etc.) quedan ubicados según su hora; los que solo tienen day
+  // quedan a "media tarde" (12:00). Tiebreaker final por desc para estabilidad.
+  ledger.sort((a,b)=>(b.ts||b.date||"").localeCompare(a.ts||a.date||""));
   const ledgerIngresos=ledger.filter(l=>l.type==="ingreso").reduce((s,l)=>s+l.amount,0);
   const ledgerGastosOp=ledger.filter(l=>l.type==="gasto"&&l.origen!=="manual").reduce((s,l)=>s+l.amount,0);
   const ledgerGastosFijos=ledger.filter(l=>l.type==="gasto"&&l.origen==="manual").reduce((s,l)=>s+l.amount,0);
