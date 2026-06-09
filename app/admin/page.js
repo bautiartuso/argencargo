@@ -10840,6 +10840,20 @@ function MaritimePanel({token,allClients=[]}){
       for(const id of ids){
         await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{operation_id:op.id}});
       }
+      // Copiar BULTOS e ITEMS de las cargas → operation_packages / operation_items.
+      // Sin esto la op quedaba en 0 bultos y 0 mercadería (no se podía presupuestar ni rotular).
+      // Traemos fresco de DB (no del estado) para evitar datos viejos.
+      const shipPkgs=await dq("maritime_packages",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=*&order=shipment_id.asc,bulto_number.asc`});
+      const shipItems=await dq("maritime_items",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=*&order=shipment_id.asc,sort_order.asc`});
+      let pkgNum=0;
+      for(const p of (Array.isArray(shipPkgs)?shipPkgs:[])){
+        pkgNum++;
+        // Marítimo factura por CBM, no por peso → gross_weight_kg queda null (las dims sí van).
+        await dq("operation_packages",{method:"POST",token,body:{operation_id:op.id,package_number:pkgNum,quantity:Number(p.quantity||1),length_cm:p.length_cm||null,width_cm:p.width_cm||null,height_cm:p.height_cm||null}});
+      }
+      for(const it of (Array.isArray(shipItems)?shipItems:[])){
+        await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:it.description||null,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_usd||0),notes:it.notes||null}});
+      }
       // Mail "lista para retirar" al cliente — igual que cualquier op que pasa a 'entregada'.
       let emailNote="";
       try{
