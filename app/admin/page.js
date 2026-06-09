@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { calcOpBudget } from "../../lib/calc";
-import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState } from "../../lib/ui";
+import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printSimplifiedDeclaration, printMaritimePdf, printFacturaC } from "../../lib/pdf-templates";
 import IntelligencePanel from "./components/IntelligencePanel";
@@ -223,7 +223,7 @@ function OperationsList({token,onSelect,onNew}){
       const o=await dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"});
       setOps(Array.isArray(o)?o:[]);
       clearSelection();setBulkAction(null);
-    }catch(e){alert("Error: "+e.message);}
+    }catch(e){alertDialog("Error: "+e.message);}
     setBulkRunning(false);
   };
   // Peso por estado: mayor valor = más cerca de entrega (aparece arriba)
@@ -526,7 +526,7 @@ function OperationNotesPanel({opId,token}){
   const load=async()=>{setLo(true);const r=await dq("operation_notes",{token,filters:`?operation_id=eq.${opId}&select=*&order=created_at.desc`});setNotes(Array.isArray(r)?r:[]);setLo(false);};
   useEffect(()=>{load();},[opId,token]);
   const save=async()=>{
-    if(!body.trim()){alert("Cargá el texto de la nota");return;}
+    if(!body.trim()){alertDialog("Cargá el texto de la nota");return;}
     setSaving(true);
     const payload={operation_id:opId,body:body.trim()};
     if(remindAt)payload.remind_at=new Date(remindAt+":00").toISOString();
@@ -534,7 +534,7 @@ function OperationNotesPanel({opId,token}){
     setBody("");setRemindAt("");setShowForm(false);
     setSaving(false);load();
   };
-  const del=async(id)=>{if(!confirm("¿Eliminar esta nota?"))return;await dq("operation_notes",{method:"DELETE",token,filters:`?id=eq.${id}`});load();};
+  const del=async(id)=>{if(!await confirmDialog("¿Eliminar esta nota?"))return;await dq("operation_notes",{method:"DELETE",token,filters:`?id=eq.${id}`});load();};
   const toggleDone=async(n)=>{await dq("operation_notes",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{done_at:n.done_at?null:new Date().toISOString()}});load();};
   // Separar: recordatorios pendientes / vencidos / notas simples / hechas
   const now=Date.now();
@@ -612,12 +612,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const rate=Number(addPaymentForm.exchange_rate);
     let finalAmtUsd=amtUsd;
     if(addPaymentForm.currency==="ARS"){
-      if(!amtArs||amtArs<=0||!rate||rate<=0){alert("Para pagos en ARS necesitás monto ARS y tipo de cambio");return;}
+      if(!amtArs||amtArs<=0||!rate||rate<=0){alertDialog("Para pagos en ARS necesitás monto ARS y tipo de cambio");return;}
       finalAmtUsd=amtArs/rate;
     } else {
-      if(!amtUsd||amtUsd<=0){alert("Ingresá el monto USD");return;}
+      if(!amtUsd||amtUsd<=0){alertDialog("Ingresá el monto USD");return;}
     }
-    if(!addPaymentForm.payment_date){alert("Cargá la fecha del cobro");return;}
+    if(!addPaymentForm.payment_date){alertDialog("Cargá la fecha del cobro");return;}
     const budgetTot=Number(op.budget_total||0);
     setSavingAddPayment(true);
     try{
@@ -647,7 +647,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         const insertedLegacy=Array.isArray(insLegacy)?insLegacy[0]:insLegacy;
         if(!insertedLegacy||!insertedLegacy.id){
           const msg=insertedLegacy?.message||insertedLegacy?.error||"No se pudo preservar el cobro previo.";
-          alert("❌ "+msg);
+          alertDialog("❌ "+msg);
           setSavingAddPayment(false);
           return;
         }
@@ -657,7 +657,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       if(addPaymentForm.currency==="ARS"){body.amount_ars=amtArs;body.exchange_rate=rate;}
       const ins1=await dq("operation_client_payments",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
       const inserted1=Array.isArray(ins1)?ins1[0]:ins1;
-      if(!inserted1||!inserted1.id){const msg=inserted1?.message||inserted1?.error||"El pago no se pudo guardar.";alert("❌ "+msg);setSavingAddPayment(false);return;}
+      if(!inserted1||!inserted1.id){const msg=inserted1?.message||inserted1?.error||"El pago no se pudo guardar.";alertDialog("❌ "+msg);setSavingAddPayment(false);return;}
       const newTotal=prevTotal+finalAmtUsd;
       const opUpdate={collected_amount:newTotal};
       if(budgetTot>0&&newTotal>=budgetTot-0.01){
@@ -673,12 +673,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       setMsg(newTotal>=budgetTot?`✓ Cobro registrado · op cobrada (saldo $0)`:`✓ Cobro registrado · saldo USD ${(budgetTot-newTotal).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
       setTimeout(()=>setMsg(""),4000);
       setShowAddPayment(false);
-    }catch(e){alert("Error: "+e.message);}
+    }catch(e){alertDialog("Error: "+e.message);}
     setSavingAddPayment(false);
   };
   const loadRedemptions=async()=>{if(!op.client_id)return;const r=await dq("client_reward_redemptions",{token,filters:`?client_id=eq.${op.client_id}&status=eq.pending&select=*&order=redeemed_at.asc`});setPendingRedemptions(Array.isArray(r)?r:[]);};
   const applyRedemption=async(red)=>{
-    if(!confirm(`Aplicar "${red.reward_name}" a esta operación?\n\nSe va a descontar ${Number(red.value_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} USD del flete y el canje quedará marcado como usado.`))return;
+    if(!await confirmDialog(`Aplicar "${red.reward_name}" a esta operación?\n\nSe va a descontar ${Number(red.value_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} USD del flete y el canje quedará marcado como usado.`))return;
     const r=await dq("rpc/apply_redemption_to_op",{method:"POST",token,body:{p_redemption_id:red.id,p_op_id:op.id}});
     if(r?.ok){
       // Restar del budget_flete (y del total) si aplica
@@ -716,7 +716,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const oldCl=opClient?`${opClient.client_code} — ${opClient.first_name} ${opClient.last_name}`:"(sin cliente)";
     const closedish=["en_transito","arribo_argentina","en_aduana","entregada","operacion_cerrada"].includes(op.status);
     const warn=closedish?"\n\n⚠ ATENCIÓN: la op ya está en/después de tránsito. Pueden quedar inconsistencias en cobranzas/cuenta corriente del cliente anterior. Revisá manualmente movimientos de cuenta y pagos.":"";
-    if(!confirm(`¿Reasignar ${op.operation_code}?\n\nDe: ${oldCl}\nA: ${newCl.client_code} — ${newCl.first_name} ${newCl.last_name}${warn}`))return;
+    if(!await confirmDialog(`¿Reasignar ${op.operation_code}?\n\nDe: ${oldCl}\nA: ${newCl.client_code} — ${newCl.first_name} ${newCl.last_name}${warn}`))return;
     setReassigning(true);
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{client_id:reassignToId}});
     // Refresh op + opClient
@@ -737,7 +737,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     if(dest.id===op.id){flash("Esa es la misma operación");return;}
     if(["operacion_cerrada","cancelada"].includes(dest.status)){flash(`❌ Op destino está ${dest.status}`);return;}
     const destName=dest.clients?`${dest.clients.client_code} — ${dest.clients.first_name} ${dest.clients.last_name}`:"(sin cliente)";
-    if(!confirm(`Mover bulto #${pkg.package_number} de ${op.operation_code} a ${dest.operation_code}?\n\nCliente destino: ${destName}\n\nEl bulto se renumerará en la op destino. Se recalcula presupuesto en ambas.`))return;
+    if(!await confirmDialog(`Mover bulto #${pkg.package_number} de ${op.operation_code} a ${dest.operation_code}?\n\nCliente destino: ${destName}\n\nEl bulto se renumerará en la op destino. Se recalcula presupuesto en ambas.`))return;
     // Asignar nuevo package_number en destino
     const destPkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${dest.id}&select=package_number`});
     const maxNum=Array.isArray(destPkgs)&&destPkgs.length>0?Math.max(...destPkgs.map(p=>Number(p.package_number||0))):0;
@@ -782,7 +782,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   // Cargar al montar / cambiar de op. SIN refetch en focus/visibility — pisaba inputs no guardados.
   useEffect(()=>{load();},[op.id]);
   const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
-  const deleteOp=async()=>{if(!confirm(`¿Eliminar operación ${op.operation_code}? Se borrarán también sus productos, bultos y eventos.`))return;
+  const deleteOp=async()=>{if(!await confirmDialog(`¿Eliminar operación ${op.operation_code}? Se borrarán también sus productos, bultos y eventos.`))return;
     await Promise.all([dq("operation_items",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`}),dq("operation_packages",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`}),dq("tracking_events",{method:"DELETE",token,filters:`?operation_id=eq.${op.id}`})]);
     await dq("operations",{method:"DELETE",token,filters:`?id=eq.${op.id}`});onDelete();};
   // Modal para marcar/desmarcar la op como perdida en aduana (retención + abandono)
@@ -795,14 +795,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {value:"Otro",label:"Otro motivo"},
   ];
   const markLostInCustoms=async()=>{
-    if(!customsLossModal?.reason?.trim()){alert("Elegí o escribí un motivo");return;}
+    if(!customsLossModal?.reason?.trim()){alertDialog("Elegí o escribí un motivo");return;}
     setSaving(true);
     const body={lost_in_customs_at:new Date().toISOString(),lost_in_customs_reason:customsLossModal.reason.trim(),status:"cancelada",closed_at:new Date().toISOString()};
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
     setOp(p=>({...p,...body}));setCustomsLossModal(null);setSaving(false);flash("🚨 Op marcada como perdida en aduana");
   };
   const unmarkLostInCustoms=async()=>{
-    if(!confirm("¿Deshacer la marca de perdida en aduana? La op vuelve a su estado anterior.\nNota: el status seguirá en 'cancelada' — cambialo manualmente si querés reabrirla."))return;
+    if(!await confirmDialog("¿Deshacer la marca de perdida en aduana? La op vuelve a su estado anterior.\nNota: el status seguirá en 'cancelada' — cambialo manualmente si querés reabrirla."))return;
     setSaving(true);
     const body={lost_in_customs_at:null,lost_in_customs_reason:null};
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
@@ -1050,7 +1050,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     // opClient tiene la data completa del cliente (whatsapp inclusive). op.clients viene del SELECT con campos limitados.
     const waRaw=opClient?.whatsapp||op.clients?.whatsapp||"";
     const wa=String(waRaw).replace(/[^0-9]/g,"");
-    if(!wa){alert("El cliente no tiene WhatsApp cargado.");return;}
+    if(!wa){alertDialog("El cliente no tiene WhatsApp cargado.");return;}
     const firstName=opClient?.first_name||op.clients?.first_name||"";
     const opCode=op.operation_code||"";
     const desc=op.description||"tu mercadería";
@@ -1123,7 +1123,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     if(op.created_by_agent_id){try{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:op.created_by_agent_id,title:`🔄 Pedido de reempaque ${op.operation_code}`,body:reason||`Reempaquetar para bajar volumétrico (${billable.toFixed(1)} kg)`,url:`/agente?tab=deposit`})});}catch(e){}}
     flash("✅ Pedido de reempaque enviado al agente");
   };
-  const cancelRepack=async()=>{if(!repackReq||!confirm("¿Cancelar el pedido de reempaque?"))return;await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${repackReq.id}`,body:{status:"cancelled"}});setRepackReq(p=>({...p,status:"cancelled"}));flash("Pedido cancelado");};
+  const cancelRepack=async()=>{if(!repackReq||!await confirmDialog("¿Cancelar el pedido de reempaque?"))return;await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${repackReq.id}`,body:{status:"cancelled"}});setRepackReq(p=>({...p,status:"cancelled"}));flash("Pedido cancelado");};
   const executeSave=async()=>{
     let desc=op.description;
     if(!desc){const autoDesc=items.map(it=>it.description).filter(Boolean).join(", ");if(autoDesc){desc=autoDesc;setOp(p=>({...p,description:desc}));}}
@@ -1308,7 +1308,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {tab==="general"&&<>
       {/* GI: Asignación de socio + comisión por op (override del cliente) — visible apenas entra al detalle */}
       {op.service_type==="gestion_integral"&&<GiAssignmentCard op={op} setOp={setOp} opClient={opClient} token={token} flash={flash}/>}
-      <Card title="Estado" actions={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{op.created_by_agent_id&&pkgs.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(op.status)&&(!repackReq||repackReq.status!=="pending")&&<Btn small variant="secondary" onClick={requestRepack}>🔄 Pedir reempaque</Btn>}{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&<Btn small variant="secondary" onClick={async()=>{if(!confirm("¿Reabrir la declaración? El cliente podrá modificar/agregar productos."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{status:"en_deposito_origen",consolidation_confirmed:false}});setOp(p=>({...p,status:"en_deposito_origen",consolidation_confirmed:false}));flash("✅ Declaración reabierta — el cliente puede editar");}}>↻ Reabrir declaración</Btn>}
+      <Card title="Estado" actions={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{op.created_by_agent_id&&pkgs.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(op.status)&&(!repackReq||repackReq.status!=="pending")&&<Btn small variant="secondary" onClick={requestRepack}>🔄 Pedir reempaque</Btn>}{["en_preparacion","en_deposito_origen"].includes(op.status)&&items.length>0&&<Btn small variant="secondary" onClick={async()=>{if(!await confirmDialog("¿Reabrir la declaración? El cliente podrá modificar/agregar productos."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{status:"en_deposito_origen",consolidation_confirmed:false}});setOp(p=>({...p,status:"en_deposito_origen",consolidation_confirmed:false}));flash("✅ Declaración reabierta — el cliente puede editar");}}>↻ Reabrir declaración</Btn>}
 {op.status==="operacion_cerrada"&&<Btn small variant="secondary" onClick={async()=>{
   // Ajustar saldo: recalcula el excedente del cliente según el presupuesto actual.
   // Lógica: total_recibido = collected_amount + overpayments_actuales (lo que pagó el cliente en total)
@@ -1326,7 +1326,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const newOver=totalRecibido-newBudget;
   const delta=newOver-currentOverSum; // cuánto cambia el saldo del cliente
   const msg=`Ajustar saldo del cliente según el presupuesto actual:\n\n• Presupuesto actual: USD ${newBudget.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}\n• Total recibido del cliente: USD ${totalRecibido.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}\n• Excedente actual en CC: USD ${currentOverSum.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}\n• Excedente nuevo: USD ${newOver.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}\n• Cambio en saldo del cliente: ${delta>=0?"+":""}USD ${delta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}\n\n${newOver<-0.005?"⚠ El cliente quedaría debiendo USD "+Math.abs(newOver).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})+". La op pasará a 'saldo pendiente'.":""}\n\n¿Confirmás?`;
-  if(!confirm(msg))return;
+  if(!await confirmDialog(msg))return;
   // 1) Borrar todos los overpayments existentes de esta op
   for(const m of overMovs){await dq("client_account_movements",{method:"DELETE",token,filters:`?id=eq.${m.id}`});}
   // 2) Crear el nuevo overpayment si corresponde
@@ -1341,7 +1341,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   setOp(p=>({...p,...opUpdate}));
   flash(`✅ Saldo ajustado. Cliente: ${delta>=0?"+":""}USD ${delta.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
 }}>🔄 Ajustar saldo al presupuesto actual</Btn>}{(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",entregada:"retiro",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];const waSent=op.sent_notifications?.[`wa_${tr}`];const hasWaTpl=tr==="deposito"||tr==="retiro";return <>
-<Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>
+<Btn small variant="secondary" onClick={async()=>{if(!await confirmDialog(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>
 {hasWaTpl&&<Btn small variant="secondary" onClick={()=>sendWaTrigger(tr)}>{waSent?"💬 Reenviar WA":"💬 Enviar WA"}</Btn>}
 </>;})()}<Btn onClick={handleSave} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
         <Sel label="Estado de la carga" value={op.status} onChange={chOp("status")} options={STATUSES.filter(s=>!(isGI&&s==="en_preparacion")).map(s=>({value:s,label:SM[s].l}))}/>
@@ -1668,7 +1668,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         </div>
         {hasStoredBudget&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)",gap:12,flexWrap:"wrap"}}>
           <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic",flex:1}}>Presupuesto cargado manualmente. Si querés recalcular con productos/bultos, limpialo primero.</p>
-          <Btn variant="danger" small onClick={async()=>{if(!confirm("¿Limpiar presupuesto guardado? Se borrarán los valores actuales y podrás recargar productos/bultos para recalcular."))return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0}});setOp(p=>({...p,budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0}));flash("Presupuesto limpiado");setSaving(false);}} disabled={saving}>Limpiar presupuesto</Btn>
+          <Btn variant="danger" small onClick={async()=>{if(!await confirmDialog("¿Limpiar presupuesto guardado? Se borrarán los valores actuales y podrás recargar productos/bultos para recalcular."))return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0}});setOp(p=>({...p,budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0}));flash("Presupuesto limpiado");setSaving(false);}} disabled={saving}>Limpiar presupuesto</Btn>
         </div>}
         {/* El presupuesto se auto-sincroniza al guardar cualquier cambio de items/bultos/configuración.
             El botón manual se removió — el cálculo siempre refleja el estado actual. */}
@@ -1755,9 +1755,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         const isTC=newSupPmt.payment_method==="tarjeta_credito";
         const isArs=newSupPmt.currency==="ARS";
         const rate=Number(newSupPmt.exchange_rate||0);
-        if(isTC&&!newSupPmt.credit_card_id){alert("Elegí qué tarjeta usaste");return;}
+        if(isTC&&!newSupPmt.credit_card_id){alertDialog("Elegí qué tarjeta usaste");return;}
         // ARS cash (transferencia/efectivo/etc.) sin TC → no se puede dolarizar, frenamos.
-        if(isArs&&!isTC&&rate<=0){alert("Cargá el tipo de cambio ARS/USD para dolarizar el costo.");return;}
+        if(isArs&&!isTC&&rate<=0){alertDialog("Cargá el tipo de cambio ARS/USD para dolarizar el costo.");return;}
         const isRefund=newSupPmt.type==="refund";
         // ARS cash → dolarizar al toque con el TC ingresado. ARS TC → queda pendiente hasta el cierre.
         const arsCashDolarized=isArs&&!isTC&&rate>0;
@@ -1801,7 +1801,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const deleteCost=async(id)=>{
         const target=supplierPayments.find(p=>p.id===id);
         const isRefund=target?.type==="refund";
-        if(!confirm(isRefund?"¿Eliminar este reembolso?":"¿Eliminar este costo?"))return;
+        if(!await confirmDialog(isRefund?"¿Eliminar este reembolso?":"¿Eliminar este costo?"))return;
         await dq("operation_supplier_payments",{method:"DELETE",token,filters:`?id=eq.${id}`});
         const remaining=supplierPayments.filter(p=>p.id!==id);
         // Recomputar cost_producto_usd = sum(payments USD) - sum(refunds USD). Solo USD (los ARS se suman cuando se dolaricen).
@@ -2000,21 +2000,21 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
 
     {tab==="tracking"&&<><Card title="Carrier & Tracking" actions={<div style={{display:"flex",gap:8}}>
         <Btn small variant="secondary" onClick={async()=>{
-          if(!op.international_tracking||!op.international_carrier){alert("Cargá carrier y tracking primero");return;}
+          if(!op.international_tracking||!op.international_carrier){alertDialog("Cargá carrier y tracking primero");return;}
           const r=await fetch(`/api/tracking/sync?operation_id=${op.id}`,{headers:{Authorization:`Bearer ${token}`}});const d=await r.json();
-          if(d.error){alert("Error: "+d.error);return;}
-          const first=d.results?.[0];if(first?.error)alert("Error carrier: "+first.error);
+          if(d.error){alertDialog("Error: "+d.error);return;}
+          const first=d.results?.[0];if(first?.error)alertDialog("Error carrier: "+first.error);
           else if(first?.inserted!==undefined){
             // Refrescar también el state local de la op para que ETA/status actualizados aparezcan
             const fresh=await dq("operations",{token,filters:`?id=eq.${op.id}&select=*,clients(first_name,last_name,client_code)`});
             if(Array.isArray(fresh)&&fresh[0])setOp(fresh[0]);
             flash(`✓ ${first.inserted} eventos sincronizados${first.eta_patch?` · ETA: ${first.eta_patch}`:""}`);
           }
-          else if(first?.skipped)alert(first.skipped);
+          else if(first?.skipped)alertDialog(first.skipped);
           await reloadEvents();
         }}>↻ Sincronizar tracking</Btn>
         {(()=>{const tMap={en_deposito_origen:"deposito",arribo_argentina:"arribo",entregada:"retiro",operacion_cerrada:"cerrada"};const tr=tMap[op.status];if(!tr)return null;const sent=op.sent_notifications?.[`email_${tr}`];const waSent=op.sent_notifications?.[`wa_${tr}`];const hasWaTpl=tr==="deposito"||tr==="retiro";return <>
-<Btn small variant="secondary" onClick={async()=>{if(!confirm(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>
+<Btn small variant="secondary" onClick={async()=>{if(!await confirmDialog(`¿Reenviar email "${tr}" al cliente?${sent?`\n\nYa se envió el ${new Date(sent).toLocaleString("es-AR")}.`:""}`))return;try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:tr,force:true})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${tr} reenviado`);else flash(`❌ ${resp?.error||JSON.stringify(resp)}`);}catch(e){flash(`❌ ${e.message}`);}}}>{sent?"✉️ Reenviar email":"✉️ Enviar email"}</Btn>
 {hasWaTpl&&<Btn small variant="secondary" onClick={()=>sendWaTrigger(tr)}>{waSent?"💬 Reenviar WA":"💬 Enviar WA"}</Btn>}
 </>;})()}
         <Btn onClick={saveOp} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>
@@ -2142,16 +2142,16 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const gs=GST[pm.giro_status]||{l:pm.giro_status,c:"#999"};
           const isTarj=pm.giro_payment_method==="tarjeta_credito";
           const isCliTC=pm.client_payment_method==="tarjeta_credito";
-          const markTarjDeb=async()=>{if(!confirm("¿Marcar la tarjeta del giro como ya debitada? Esto restará del cash real."))return;await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});load();};
-          const markCliTarjDeb=async()=>{if(!confirm("¿Marcar la tarjeta del cobro como ya debitada? Confirma el ingreso del cobro al cash real."))return;await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{client_paid_tarjeta_paid:true,client_paid_tarjeta_paid_at:new Date().toISOString()}});load();};
+          const markTarjDeb=async()=>{if(!await confirmDialog("¿Marcar la tarjeta del giro como ya debitada? Esto restará del cash real."))return;await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{giro_tarjeta_paid:true,giro_tarjeta_paid_at:new Date().toISOString()}});load();};
+          const markCliTarjDeb=async()=>{if(!await confirmDialog("¿Marcar la tarjeta del cobro como ya debitada? Confirma el ingreso del cobro al cash real."))return;await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{client_paid_tarjeta_paid:true,client_paid_tarjeta_paid_at:new Date().toISOString()}});load();};
           const cycleGiro=()=>{const order=["pendiente","enviado","confirmado"];const idx=order.indexOf(pm.giro_status);const next=order[(idx+1)%order.length];updatePmt(pm.id,"giro_status",next);};
           const toggleCliPaid=async()=>{
-            if(pm.client_paid){if(confirm("¿Desmarcar cobro del cliente?")){await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{client_paid:false,client_paid_date:null,client_paid_amount_usd:null}});load();}return;}
+            if(pm.client_paid){if(await confirmDialog("¿Desmarcar cobro del cliente?")){await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{client_paid:false,client_paid_date:null,client_paid_amount_usd:null}});load();}return;}
             const expected=Number(pm.client_amount_usd||0);
             const input=prompt(`¿Cuánto pagó el cliente en USD?\n(Esperado: USD ${expected.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`,expected.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}));
             if(input===null)return;
             const amt=Number(String(input).replace(",","."));
-            if(isNaN(amt)||amt<0){alert("Monto inválido");return;}
+            if(isNaN(amt)||amt<0){alertDialog("Monto inválido");return;}
             await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pm.id}`,body:{client_paid:true,client_paid_date:new Date().toISOString().slice(0,10),client_paid_amount_usd:amt}});load();
           };
           const StatusCard=({label,value,sub,color,bg,border,onClick,icon})=><div onClick={onClick} style={{flex:1,minWidth:160,padding:"12px 14px",borderRadius:10,border:`1px solid ${border}`,background:bg,cursor:onClick?"pointer":"default",transition:"background 0.15s"}} onMouseEnter={e=>{if(onClick)e.currentTarget.style.background=bg.replace(/[\d.]+\)$/,m=>Math.min(Number(m.slice(0,-1))*1.5,0.2)+")");}} onMouseLeave={e=>{if(onClick)e.currentTarget.style.background=bg;}}>
@@ -2246,9 +2246,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         const isTC=e.client_payment_method==="tarjeta_credito";
         const isArs=e.client_currency==="ARS";
         const saveCobro=async()=>{
-          if(isTC&&!e.client_paid_credit_card_id){alert("Elegí qué tarjeta usaste");return;}
-          if(isArs&&(!Number(e.client_amount_ars)||!Number(e.client_exchange_rate))){alert("Cargá monto ARS y TC");return;}
-          if(!e.client_paid_date){alert("Cargá la fecha del cobro");return;}
+          if(isTC&&!e.client_paid_credit_card_id){alertDialog("Elegí qué tarjeta usaste");return;}
+          if(isArs&&(!Number(e.client_amount_ars)||!Number(e.client_exchange_rate))){alertDialog("Cargá monto ARS y TC");return;}
+          if(!e.client_paid_date){alertDialog("Cargá la fecha del cobro");return;}
           const usdEff=isArs?Number(e.client_amount_ars)/Number(e.client_exchange_rate):Number(e.client_amount_usd||0);
           await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${e.pmId}`,body:{
             client_paid:true,
@@ -2300,9 +2300,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         const isTC=e.giro_payment_method==="tarjeta_credito";
         const isArs=e.giro_currency==="ARS";
         const saveGiro=async()=>{
-          if(isTC&&!e.giro_credit_card_id){alert("Elegí qué tarjeta usaste");return;}
-          if(isArs&&(!Number(e.giro_amount_ars)||!Number(e.giro_exchange_rate))){alert("Cargá monto ARS y TC");return;}
-          if(!e.giro_date){alert("Cargá la fecha del giro");return;}
+          if(isTC&&!e.giro_credit_card_id){alertDialog("Elegí qué tarjeta usaste");return;}
+          if(isArs&&(!Number(e.giro_amount_ars)||!Number(e.giro_exchange_rate))){alertDialog("Cargá monto ARS y TC");return;}
+          if(!e.giro_date){alertDialog("Cargá la fecha del giro");return;}
           const usdEff=isArs?Number(e.giro_amount_ars)/Number(e.giro_exchange_rate):Number(e.giro_amount_usd||0);
           await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${e.pmId}`,body:{
             giro_status:"confirmado",
@@ -2428,7 +2428,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             if(newCliPmt.currency==="ARS"){body.amount_ars=Number(newCliPmt.amount_ars||0)||null;body.exchange_rate=Number(newCliPmt.exchange_rate||0)||null;}
             const insGi=await dq("operation_client_payments",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
             const insertedGi=Array.isArray(insGi)?insGi[0]:insGi;
-            if(!insertedGi||!insertedGi.id){alert("❌ "+(insertedGi?.message||insertedGi?.error||"El pago no se pudo guardar."));return;}
+            if(!insertedGi||!insertedGi.id){alertDialog("❌ "+(insertedGi?.message||insertedGi?.error||"El pago no se pudo guardar."));return;}
             // Si el cliente ya cubrió el total, marcar op cobrada
             const newTotalCli=totalCobrado+amt;
             if(newTotalCli>=totalIngreso&&totalIngreso>0){
@@ -2440,7 +2440,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             flash(newTotalCli>=totalIngreso?"Pago registrado — op cobrada ✓":"Pago registrado");
           };
           const delGiCliPayment=async(id)=>{
-            if(!confirm("¿Eliminar este pago del cliente?"))return;
+            if(!await confirmDialog("¿Eliminar este pago del cliente?"))return;
             await dq("operation_client_payments",{method:"DELETE",token,filters:`?id=eq.${id}`});
             const rest=clientPayments.filter(p=>p.id!==id);
             const newTotal=rest.reduce((s,p)=>s+Number(p.amount_usd||0),0);
@@ -2573,10 +2573,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           // Si moneda=ARS: se requiere rate para convertir a USD
           let finalAmtUsd=amtUsd;
           if(newCliPmt.currency==="ARS"){
-            if(!amtArs||amtArs<=0||!rate||rate<=0){alert("Para pagos en ARS necesitás el monto ARS y el tipo de cambio");return;}
+            if(!amtArs||amtArs<=0||!rate||rate<=0){alertDialog("Para pagos en ARS necesitás el monto ARS y el tipo de cambio");return;}
             finalAmtUsd=amtArs/rate;
           } else {
-            if(!amtUsd||amtUsd<=0){alert("Ingresá el monto USD");return;}
+            if(!amtUsd||amtUsd<=0){alertDialog("Ingresá el monto USD");return;}
           }
           if(!newCliPmt.payment_date)return;
           const body={operation_id:op.id,payment_date:newCliPmt.payment_date,amount_usd:finalAmtUsd,currency:newCliPmt.currency,payment_method:newCliPmt.payment_method,notes:newCliPmt.notes||null};
@@ -2586,7 +2586,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           const inserted=Array.isArray(insertRes)?insertRes[0]:insertRes;
           if(!inserted||!inserted.id){
             const msg=inserted?.message||inserted?.error||"El pago no se pudo guardar. Verificá los datos (montos, método, fecha).";
-            alert("❌ "+msg);
+            alertDialog("❌ "+msg);
             return;
           }
           // Sync total_anticipos y si se completa, marcar is_collected
@@ -2605,7 +2605,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           // Detectar overpayment → ofrecer registrarlo como saldo a favor en CC
           const diff=newTotal-budgetTot;
           if(budgetTot>0&&diff>0.01&&op.client_id){
-            if(confirm(`El cliente pagó USD ${diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de más.\n\n¿Registrar el excedente como saldo a favor en la cuenta corriente del cliente?`)){
+            if(await confirmDialog(`El cliente pagó USD ${diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de más.\n\n¿Registrar el excedente como saldo a favor en la cuenta corriente del cliente?`)){
               await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`});
               flash(`Saldo a favor registrado: +USD ${diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
             }
@@ -2615,7 +2615,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           flash(newTotal>=budgetTot?"Pago registrado — op cobrada ✓":"Anticipo registrado");
         };
         const deleteCliPayment=async(id)=>{
-          if(!confirm("¿Eliminar este pago del cliente?"))return;
+          if(!await confirmDialog("¿Eliminar este pago del cliente?"))return;
           await dq("operation_client_payments",{method:"DELETE",token,filters:`?id=eq.${id}`});
           const remaining=clientPayments.filter(p=>p.id!==id);
           const newTotal=remaining.reduce((s,p)=>s+Number(p.amount_usd||0),0);
@@ -2627,7 +2627,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         };
         const closeWithDiscount=async()=>{
           if(saldoCli<=0.01)return;
-          if(!confirm(`Estás por cerrar esta op con un DESCUENTO de USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}.\n\nEl cliente pagó USD ${totalCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} sobre un presupuesto de USD ${budgetTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}. La diferencia NO queda como deuda — queda como descuento intencional registrado en la op.\n\n¿Confirmás?`))return;
+          if(!await confirmDialog(`Estás por cerrar esta op con un DESCUENTO de USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}.\n\nEl cliente pagó USD ${totalCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} sobre un presupuesto de USD ${budgetTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}. La diferencia NO queda como deuda — queda como descuento intencional registrado en la op.\n\n¿Confirmás?`))return;
           const opUpdate={is_collected:true,collected_amount:totalCli,collection_date:new Date().toISOString().slice(0,10),discount_applied_usd:saldoCli};
           if(clientPayments.length>0){opUpdate.collection_method=clientPayments[clientPayments.length-1].payment_method;opUpdate.collection_currency=clientPayments[clientPayments.length-1].currency||"USD";}
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
@@ -2636,7 +2636,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         };
         const registerDebt=async()=>{
           if(saldoCli<=0.01||!op.client_id)return;
-          if(!confirm(`El cliente quedó debiendo USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}.\n\nVamos a registrarlo como deuda en su cuenta corriente (se podrá aplicar a próximas operaciones).\n\n¿Confirmás?`))return;
+          if(!await confirmDialog(`El cliente quedó debiendo USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}.\n\nVamos a registrarlo como deuda en su cuenta corriente (se podrá aplicar a próximas operaciones).\n\n¿Confirmás?`))return;
           const opUpdate={is_collected:true,collected_amount:totalCli,collection_date:new Date().toISOString().slice(0,10)};
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
           await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"debt",amount_usd:-saldoCli,description:`Deuda pendiente de ${op.operation_code}`});
@@ -2646,9 +2646,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         // 3a opción: dejar saldo pendiente dentro de la misma op (el cliente va a pagar el resto acá, no traspasa a CC).
         // No marca is_collected=true; no toca CC del cliente; no aplica descuento. La op queda visible como
         // "saldo pendiente" hasta que cargues los cobros adicionales que cierran la diferencia.
-        const keepSaldoInOp=()=>{
+        const keepSaldoInOp=async()=>{
           if(saldoCli<=0.01)return;
-          if(!confirm(`La op queda con saldo pendiente de USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} dentro de esta misma operación.\n\nNO se registra como deuda en la cuenta corriente del cliente ni como descuento. Cuando el cliente pague el resto, cargás otro cobro acá y se cierra.\n\n¿Confirmás?`))return;
+          if(!await confirmDialog(`La op queda con saldo pendiente de USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} dentro de esta misma operación.\n\nNO se registra como deuda en la cuenta corriente del cliente ni como descuento. Cuando el cliente pague el resto, cargás otro cobro acá y se cierra.\n\n¿Confirmás?`))return;
           flash(`Saldo pendiente: USD ${saldoCli.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} — cargá el resto cuando llegue.`);
         };
         return <Card title="Anticipos / Pagos del cliente">
@@ -2725,7 +2725,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         const budgetEffective=budgetTot+debtAppliedHere;
         const diff=cobroEffective-budgetEffective; // + = pagó de más, - = pagó de menos
         const saveCobro=async()=>{
-          if(op.is_collected&&isArsCol&&!colRate){alert("El cobro es en ARS: cargá el tipo de cambio primero");return;}
+          if(op.is_collected&&isArsCol&&!colRate){alertDialog("El cobro es en ARS: cargá el tipo de cambio primero");return;}
           if(op.is_collected&&budgetTot>0){
             if(diff>0.01){
               const choice=await askCobroDecision("overpay",diff);
@@ -2794,7 +2794,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         const debtApplied=Number(op.debt_applied_usd||0);
         const applyDebt=async()=>{
           if(debtBal<=0)return;
-          if(!confirm(`El cliente debe USD ${debtBal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de operaciones anteriores.\n\n¿Sumar al cobro de esta op?\n\nLa deuda se cancelará en su CC y el monto a cobrar será presupuesto + ${debtBal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}.`))return;
+          if(!await confirmDialog(`El cliente debe USD ${debtBal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de operaciones anteriores.\n\n¿Sumar al cobro de esta op?\n\nLa deuda se cancelará en su CC y el monto a cobrar será presupuesto + ${debtBal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}.`))return;
           await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"applied",amount_usd:debtBal,description:`Deuda cancelada en ${op.operation_code}`});
           const newDebtApplied=debtApplied+debtBal;
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{debt_applied_usd:newDebtApplied}});
@@ -2821,7 +2821,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             {debtApplied>0?<p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✓ Deuda anterior sumada: USD {debtApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>:<p style={{fontSize:12,fontWeight:700,color:"#fb923c",margin:0}}>⚠ Cliente con deuda anterior: USD {debtBal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
             {debtApplied>0?<p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0"}}>Total a cobrar: <strong style={{color:"#fff"}}>USD {(budgetTot+debtApplied).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong> · presupuesto USD {budgetTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} + deuda USD {debtApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>:<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si la sumás, el monto a cobrar pasa a USD {(budgetTot+debtBal).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} y la deuda se cancela.</p>}
           </div>
-          {debtApplied<=0?<Btn onClick={applyDebt} small>Sumar a esta op →</Btn>:<button onClick={async()=>{if(!confirm(`¿Quitar los USD ${debtApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de deuda aplicada? La deuda vuelve a la CC del cliente.`))return;
+          {debtApplied<=0?<Btn onClick={applyDebt} small>Sumar a esta op →</Btn>:<button onClick={async()=>{if(!await confirmDialog(`¿Quitar los USD ${debtApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de deuda aplicada? La deuda vuelve a la CC del cliente.`))return;
             // Revertir: borrar el movimiento "applied" creado y limpiar debt_applied_usd
             const movs=await dq("client_account_movements",{token,filters:`?operation_id=eq.${op.id}&type=eq.applied&description=ilike.*Deuda%20cancelada*&select=id&order=created_at.desc&limit=1`});
             if(Array.isArray(movs)&&movs[0])await dq("client_account_movements",{method:"DELETE",token,filters:`?id=eq.${movs[0].id}`});
@@ -2838,7 +2838,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <p style={{fontSize:12,fontWeight:700,color:"#a78bfa",margin:0}}>💰 Cargo extra: USD {Number(op.extra_charge_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
             <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Presupuesto USD {budgetTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} + extra USD {Number(op.extra_charge_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} = cobrado USD {(budgetTot+Number(op.extra_charge_usd)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}. Se cuenta como revenue de esta op.</p>
           </div>
-          <button onClick={async()=>{if(!confirm("¿Limpiar el cargo extra? Solo borra el flag, no modifica el monto cobrado."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{extra_charge_usd:0}});setOp(p=>({...p,extra_charge_usd:0}));flash("Cargo extra limpiado");}} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:6,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar</button>
+          <button onClick={async()=>{if(!await confirmDialog("¿Limpiar el cargo extra? Solo borra el flag, no modifica el monto cobrado."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{extra_charge_usd:0}});setOp(p=>({...p,extra_charge_usd:0}));flash("Cargo extra limpiado");}} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:6,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar</button>
         </div>}
         {hasPartials?<div style={{padding:"10px 14px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:8,marginBottom:8,fontSize:11,color:"rgba(255,255,255,0.55)"}}>Esta op usa cobros parciales. El monto total y el método se sincronizan automáticamente desde los pagos registrados — para modificarlos, agregá/eliminá pagos parciales abajo.</div>:<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
           {/* Fix bug: NO usar fallback a budget_total en value — confunde porque parece cargado pero el state está en 0.
@@ -2860,7 +2860,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             <p style={{margin:0,fontWeight:700,color:"#a78bfa"}}>Descuento intencional aplicado: USD {Number(op.discount_applied_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
             <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si fue por error, limpiá el descuento y volvé a cobrar correctamente.</p>
           </div>
-          <button onClick={async()=>{if(!confirm("¿Limpiar el descuento aplicado? Esto NO modifica el monto cobrado, solo elimina el flag de descuento."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{discount_applied_usd:0}});setOp(p=>({...p,discount_applied_usd:0}));flash("Descuento limpiado");}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.10)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar descuento</button>
+          <button onClick={async()=>{if(!await confirmDialog("¿Limpiar el descuento aplicado? Esto NO modifica el monto cobrado, solo elimina el flag de descuento."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{discount_applied_usd:0}});setOp(p=>({...p,discount_applied_usd:0}));flash("Descuento limpiado");}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.10)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar descuento</button>
         </div>}
 
         {/* Aviso de diff modernizado — card con icon + título + descripción + acento lateral */}
@@ -2904,7 +2904,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               <span style={{display:"flex",gap:8,alignItems:"center"}}>
                 <span style={{fontFamily:"monospace",color:"#fff",fontWeight:600}}>USD {Number(p.amount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}{isArs?` (ARS ${Number(p.amount_ars||0).toLocaleString("es-AR")} @ ${p.exchange_rate})`:""}</span>
                 <button onClick={()=>printReceiptPdf({op,payment:p,client:opClient})} title="Generar recibo PDF para enviar al cliente" style={{background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.3)",color:"#60a5fa",cursor:"pointer",fontSize:10,padding:"3px 8px",borderRadius:4,fontWeight:700}}>📄 Recibo</button>
-                <button onClick={async()=>{if(!confirm("¿Eliminar este cobro parcial?"))return;await dq("operation_client_payments",{method:"DELETE",token,filters:`?id=eq.${p.id}`});const newTot=clientPayments.filter(x=>x.id!==p.id).reduce((s,x)=>s+Number(x.amount_usd||0),0);const upd={collected_amount:newTot,total_anticipos:newTot};if(newTot<budgetTot)upd.is_collected=false;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});setOp(prev=>({...prev,...upd}));await load();flash("Cobro eliminado");}} title="Eliminar este cobro" style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.7)",cursor:"pointer",fontSize:14,padding:"0 4px"}}>×</button>
+                <button onClick={async()=>{if(!await confirmDialog("¿Eliminar este cobro parcial?"))return;await dq("operation_client_payments",{method:"DELETE",token,filters:`?id=eq.${p.id}`});const newTot=clientPayments.filter(x=>x.id!==p.id).reduce((s,x)=>s+Number(x.amount_usd||0),0);const upd={collected_amount:newTot,total_anticipos:newTot};if(newTot<budgetTot)upd.is_collected=false;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});setOp(prev=>({...prev,...upd}));await load();flash("Cobro eliminado");}} title="Eliminar este cobro" style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.7)",cursor:"pointer",fontSize:14,padding:"0 4px"}}>×</button>
               </span>
             </div>;})}
           </div>
@@ -3163,7 +3163,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             flash("Pago registrado");
           };
           const deleteSupPayment=async(id)=>{
-            if(!confirm("¿Eliminar este pago al proveedor?"))return;
+            if(!await confirmDialog("¿Eliminar este pago al proveedor?"))return;
             await dq("operation_supplier_payments",{method:"DELETE",token,filters:`?id=eq.${id}`});
             const remaining=supplierPayments.filter(p=>p.id!==id);
             const newTotal=remaining.reduce((s,p)=>s+Number(p.amount_usd||0),0);
@@ -3788,7 +3788,7 @@ function CommsLog({opId,token}){
     await dq("op_communications",{method:"POST",token,body:{operation_id:opId,type,direction:type==="note"?null:direction,content:content.trim()}});
     setContent("");setSaving(false);load();
   };
-  const del=async(id)=>{if(!confirm("¿Eliminar esta entrada?"))return;await dq("op_communications",{method:"DELETE",token,filters:`?id=eq.${id}`});load();};
+  const del=async(id)=>{if(!await confirmDialog("¿Eliminar esta entrada?"))return;await dq("op_communications",{method:"DELETE",token,filters:`?id=eq.${id}`});load();};
   const fmtAgo=(d)=>{const m=Math.floor((Date.now()-new Date(d).getTime())/60000);if(m<1)return"recién";if(m<60)return`hace ${m}min`;const h=Math.floor(m/60);if(h<24)return`hace ${h}h`;const dd=Math.floor(h/24);if(dd<30)return`hace ${dd}d`;return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"2-digit"});};
   return <Card title="Comunicaciones con el cliente">
     <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
@@ -3871,7 +3871,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
     setPayMgmtCC(Array.isArray(pg)?pg:[]);
   };
   const addMov=async()=>{if(!newMov.amount)return;setSavingMov(true);const amt=Number(newMov.amount);const signed=newMov.type==="overpayment"||newMov.type==="adjustment"?Math.abs(amt):-Math.abs(amt);await dq("client_account_movements",{method:"POST",token,body:{client_id:cl.id,type:newMov.type,amount_usd:signed,description:newMov.description||null}});await loadAccMovs();const fresh=await dq("clients",{token,filters:`?id=eq.${cl.id}&select=account_balance_usd`});if(Array.isArray(fresh)&&fresh[0])setCl(p=>({...p,account_balance_usd:fresh[0].account_balance_usd}));setNewMov({type:"adjustment",amount:"",description:""});setSavingMov(false);flash("Movimiento registrado");};
-  const delMov=async(id)=>{if(!confirm("¿Eliminar este movimiento?"))return;await dq("client_account_movements",{method:"DELETE",token,filters:`?id=eq.${id}`});await loadAccMovs();const fresh=await dq("clients",{token,filters:`?id=eq.${cl.id}&select=account_balance_usd`});if(Array.isArray(fresh)&&fresh[0])setCl(p=>({...p,account_balance_usd:fresh[0].account_balance_usd}));flash("Movimiento eliminado");};
+  const delMov=async(id)=>{if(!await confirmDialog("¿Eliminar este movimiento?"))return;await dq("client_account_movements",{method:"DELETE",token,filters:`?id=eq.${id}`});await loadAccMovs();const fresh=await dq("clients",{token,filters:`?id=eq.${cl.id}&select=account_balance_usd`});if(Array.isArray(fresh)&&fresh[0])setCl(p=>({...p,account_balance_usd:fresh[0].account_balance_usd}));flash("Movimiento eliminado");};
   useEffect(()=>{(async()=>{const [o,t,ov]=await Promise.all([dq("operations",{token,filters:`?client_id=eq.${cl.id}&select=*&order=created_at.desc`}),dq("tariffs",{token,filters:"?select=*&order=service_key.asc,sort_order.asc"}),dq("client_tariff_overrides",{token,filters:`?client_id=eq.${cl.id}&select=*`})]);setOps(Array.isArray(o)?o:[]);setTariffs(Array.isArray(t)?t:[]);setOverrides(Array.isArray(ov)?ov:[]);setLo(false);loadAccMovs();})();},[cl.id,token]);
   const flash=m=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const getOverride=(tid)=>overrides.find(o=>o.tariff_id===tid);
@@ -3918,7 +3918,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
     if(taxChanged)syncClientOps();
     setSaving(false);
   };
-  const deleteClient=async()=>{if(!confirm(`¿Estás seguro de eliminar a ${cl.first_name} ${cl.last_name}? Esta acción no se puede deshacer.`))return;await dq("clients",{method:"DELETE",token,filters:`?id=eq.${cl.id}`});onDelete();};
+  const deleteClient=async()=>{if(!await confirmDialog(`¿Estás seguro de eliminar a ${cl.first_name} ${cl.last_name}? Esta acción no se puede deshacer.`))return;await dq("clients",{method:"DELETE",token,filters:`?id=eq.${cl.id}`});onDelete();};
   const tabs=[{k:"info",l:"Info"},{k:"ops",l:`Operaciones (${ops.length})`},{k:"cc",l:`Cuenta corriente${Number(cl.account_balance_usd||0)!==0?" ·":""}`},{k:"tariffs",l:"Tarifas"}];
   return <div>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,gap:12,flexWrap:"wrap"}}>
@@ -4404,7 +4404,7 @@ function CreditCardsCard({token}){
     setEditId(null);setMsg("");load();setSaving(false);
   };
   const toggleActive=async(c)=>{await dq("credit_cards",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body:{active:!c.active}});load();};
-  const del=async(c)=>{if(!confirm(`¿Eliminar la tarjeta "${c.name}"? Los gastos asignados a ella quedarán sin tarjeta. Si tiene historial, mejor desactivala en vez de borrarla.`))return;await dq("credit_cards",{method:"DELETE",token,filters:`?id=eq.${c.id}`});load();};
+  const del=async(c)=>{if(!await confirmDialog(`¿Eliminar la tarjeta "${c.name}"? Los gastos asignados a ella quedarán sin tarjeta. Si tiene historial, mejor desactivala en vez de borrarla.`))return;await dq("credit_cards",{method:"DELETE",token,filters:`?id=eq.${c.id}`});load();};
   const brandIcon=(b)=>b==="visa"?"💳 VISA":b==="mastercard"?"💳 Mastercard":b==="amex"?"💳 Amex":"💳 Otro";
   const brandColor=(b)=>b==="visa"?"#1a1f71":b==="mastercard"?"#eb001b":b==="amex"?"#006fcf":"#666";
   return <Card title="Tarjetas de crédito" actions={<Btn small onClick={startNew}>+ Nueva tarjeta</Btn>}>
@@ -4454,13 +4454,13 @@ function HolidaysCard({token}){
   const load=async()=>{setLo(true);const r=await dq("holidays_calendar",{token,filters:"?select=*&order=start_date.asc"});setHolidays(Array.isArray(r)?r:[]);setLo(false);};
   useEffect(()=>{load();},[token]);
   const save=async()=>{
-    if(!form.name||!form.start_date||!form.end_date){alert("Completá nombre y fechas");return;}
+    if(!form.name||!form.start_date||!form.end_date){alertDialog("Completá nombre y fechas");return;}
     setSaving(true);
     await dq("holidays_calendar",{method:"POST",token,body:{country:form.country,name:form.name,start_date:form.start_date,end_date:form.end_date,description:form.description||null,alert_days_before:Number(form.alert_days_before)||14}});
     setShowForm(false);setForm({country:"china",name:"",start_date:"",end_date:"",description:"",alert_days_before:14});
     setSaving(false);load();
   };
-  const del=async(id)=>{if(!confirm("¿Eliminar este feriado?"))return;await dq("holidays_calendar",{method:"DELETE",token,filters:`?id=eq.${id}`});load();};
+  const del=async(id)=>{if(!await confirmDialog("¿Eliminar este feriado?"))return;await dq("holidays_calendar",{method:"DELETE",token,filters:`?id=eq.${id}`});load();};
   const todayISO=new Date().toISOString().slice(0,10);
   const upcoming=holidays.filter(h=>h.end_date>=todayISO);
   const past=holidays.filter(h=>h.end_date<todayISO);
@@ -4609,7 +4609,7 @@ function AdminSettings({token,session}){
     if(Array.isArray(exists)&&exists.length>0){await dq("calc_config",{method:"PATCH",token,filters:"?key=eq.photo_retention_days",body:{value:String(n)}});}
     else{await dq("calc_config",{method:"POST",token,body:{key:"photo_retention_days",value:String(n)}});}
     setPhotoMsg("✅ Guardado");setPhotoSaving(false);setTimeout(()=>setPhotoMsg(""),3000);};
-  const runCleanupNow=async()=>{if(!confirm("¿Ejecutar la limpieza ahora? Borra las fotos de bultos de operaciones cerradas hace más del período configurado."))return;setCleanupMsg("Ejecutando...");
+  const runCleanupNow=async()=>{if(!await confirmDialog("¿Ejecutar la limpieza ahora? Borra las fotos de bultos de operaciones cerradas hace más del período configurado."))return;setCleanupMsg("Ejecutando...");
     try{const r=await fetch("/api/cleanup/photos");const j=await r.json();if(j.ok){setCleanupMsg(`✅ ${j.deleted} fotos borradas (${j.ops_checked} ops revisadas, retención ${j.retention_days} días)${j.sample_ops?.length?` — ej: ${j.sample_ops.join(", ")}`:""}`);}else{setCleanupMsg(`❌ ${j.error}`);}}catch(e){setCleanupMsg("❌ "+e.message);}};
   const changePw=async()=>{if(!curPw||!newPw){setErr("Completá todos los campos");return;}if(newPw.length<6){setErr("La nueva contraseña debe tener al menos 6 caracteres");return;}if(newPw!==confPw){setErr("Las contraseñas no coinciden");return;}
     setLo(true);setErr("");setMsg("");
@@ -5195,7 +5195,7 @@ function FinancePanel({token}){
         if(a.date==="sin_fecha")return 1;if(b.date==="sin_fecha")return -1;
         return a.date.localeCompare(b.date);
       });
-      const dollarize=async(groupKey)=>{const rate=Number(dollarRates[groupKey]||0);if(!rate){alert("Ingresá el tipo de cambio");return;}
+      const dollarize=async(groupKey)=>{const rate=Number(dollarRates[groupKey]||0);if(!rate){alertDialog("Ingresá el tipo de cambio");return;}
         const items=groups[groupKey].items;
         // Para recomputar cost_producto_usd después, trackeamos ops afectadas
         const affectedGiOps=new Set();
@@ -5297,7 +5297,7 @@ function FinancePanel({token}){
       const todayStr=new Date().toISOString().slice(0,10);
       const nowIso=()=>new Date().toISOString();
       const markPaid=async(item)=>{
-        if(!confirm(`¿Marcar "${item.desc}" como debitada de la tarjeta? Esto la resta del cash real.`))return;
+        if(!await confirmDialog(`¿Marcar "${item.desc}" como debitada de la tarjeta? Esto la resta del cash real.`))return;
         const t=nowIso();
         if(item.source==="finance"){await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,card_paid_at:t}});}
         else if(item.source==="supplier"){await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,paid_at:t}});}
@@ -5322,7 +5322,7 @@ function FinancePanel({token}){
         load();flash(v?"Fecha de cierre asignada":"Fecha de cierre quitada");
       };
       const markGroupPaid=async(g)=>{
-        if(!confirm(`¿Marcar las ${g.items.length} deudas de ${g.date==="sin_fecha"?"sin fecha":formatDate(g.date)} como debitadas? Total: USD ${g.items.reduce((s,i)=>s+i.amt,0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`))return;
+        if(!await confirmDialog(`¿Marcar las ${g.items.length} deudas de ${g.date==="sin_fecha"?"sin fecha":formatDate(g.date)} como debitadas? Total: USD ${g.items.reduce((s,i)=>s+i.amt,0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`))return;
         const t=nowIso();
         for(const item of g.items){
           if(item.source==="finance")await dq("finance_entries",{method:"PATCH",token,filters:`?id=eq.${item.id}`,body:{is_paid:true,card_paid_at:t}});
@@ -5528,7 +5528,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   useEffect(()=>{loadAddrs();},[]);
   const applyAddr=(a)=>{const body={dest_name:a.name||"",dest_tax_id:a.tax_id||"",dest_address:a.address||"",dest_postal_code:a.postal_code||"",dest_phone:a.phone||"",dest_email:a.email||"",destination_address:[a.name,a.address,a.postal_code].filter(Boolean).join(", ")};setDest({dest_name:body.dest_name,dest_tax_id:body.dest_tax_id,dest_address:body.dest_address,dest_postal_code:body.dest_postal_code,dest_phone:body.dest_phone,dest_email:body.dest_email});updateFlight(body);};
   const saveNewAddr=async()=>{if(!newAddr.label||!newAddr.address){onFlash("Falta etiqueta o dirección");return;}await dq("shipping_addresses",{method:"POST",token,body:newAddr});setNewAddr({label:"",name:"",tax_id:"",address:"",postal_code:"",phone:"",email:""});setShowNewAddr(false);loadAddrs();onFlash("Dirección guardada");};
-  const delAddr=async(id)=>{if(!confirm("¿Eliminar dirección?"))return;await dq("shipping_addresses",{method:"DELETE",token,filters:`?id=eq.${id}`});loadAddrs();};
+  const delAddr=async(id)=>{if(!await confirmDialog("¿Eliminar dirección?"))return;await dq("shipping_addresses",{method:"DELETE",token,filters:`?id=eq.${id}`});loadAddrs();};
   const [items,setItems]=useState(invoiceItems);
   useEffect(()=>{setItems(invoiceItems);},[invoiceItems]);
   const chItem=(i,f,v)=>setItems(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
@@ -5877,7 +5877,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     }
   };
   const markReceived=async()=>{
-    if(!confirm(`¿Marcar ${flight.flight_code} como recibido en Bs As?`))return;
+    if(!await confirmDialog(`¿Marcar ${flight.flight_code} como recibido en Bs As?`))return;
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{status:"recibido",received_at:new Date().toISOString()}});
     // El status de las ops lo maneja el tracking automático (arribo_argentina, en_aduana, etc).
     // Acá solo marcamos el vuelo como recibido — no tocamos las ops.
@@ -6375,9 +6375,9 @@ function AgentsPanel({token}){
   const mergeOpItems=async(opId)=>{
     const items=depositItems.filter(i=>i.operation_id===opId);
     const groups=findMergeableGroups(items);
-    if(groups.length===0){alert("No hay items duplicados para mergear.");return;}
+    if(groups.length===0){alertDialog("No hay items duplicados para mergear.");return;}
     const totalDuplicates=groups.reduce((s,g)=>s+(g.length-1),0);
-    if(!confirm(`Se van a unificar ${groups.length} grupo${groups.length!==1?"s":""} de items duplicados (${totalDuplicates} fila${totalDuplicates!==1?"s":""} eliminada${totalDuplicates!==1?"s":""}). El total FOB no cambia. ¿Confirmás?`))return;
+    if(!await confirmDialog(`Se van a unificar ${groups.length} grupo${groups.length!==1?"s":""} de items duplicados (${totalDuplicates} fila${totalDuplicates!==1?"s":""} eliminada${totalDuplicates!==1?"s":""}). El total FOB no cambia. ¿Confirmás?`))return;
     for(const g of groups){
       const totalQty=g.reduce((s,it)=>s+Number(it.quantity||1),0);
       const totalAmt=g.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
@@ -6528,9 +6528,9 @@ function AgentsPanel({token}){
     if(selectedOps.length===0)return;
     const ops=availableForFlight.filter(o=>selectedOps.includes(o.id));
     const agentIds=[...new Set(ops.map(o=>o.created_by_agent_id))];
-    if(agentIds.length>1){alert("Solo podés agrupar ops del MISMO agente. Las que seleccionaste son de varios agentes distintos.");return;}
+    if(agentIds.length>1){alertDialog("Solo podés agrupar ops del MISMO agente. Las que seleccionaste son de varios agentes distintos.");return;}
     const agentId=agentIds[0];
-    if(!agentId){alert("Las ops seleccionadas no tienen agente asignado");return;}
+    if(!agentId){alertDialog("Las ops seleccionadas no tienen agente asignado");return;}
     // ── PRE-VUELO (aéreo A): auto-clasificar con IA los operation_items pendientes ANTES de crear el vuelo.
     // Antes solo bloqueaba; ahora intenta resolver automáticamente con /api/ncm para que el admin no
     // tenga que ir op por op tocando "✨ Clasificar todos los NCM". Si la IA no logra resolver alguno,
@@ -6565,7 +6565,7 @@ function AgentsPanel({token}){
       if(unresolved.length>0){
         const byOp={};unresolved.forEach(i=>{const c=codeOf[i.operation_id]||"—";(byOp[c]=byOp[c]||[]).push(i.description.slice(0,40));});
         const summary=Object.entries(byOp).map(([c,ds])=>`• ${c}: ${ds.length} item(s) — ${ds.join(" · ")}`).join("\n");
-        alert(`❌ No se puede crear el vuelo: la IA no pudo clasificar todos los productos.\n\n${summary}\n\nCompletá NCM + DIE/TE/IVA a mano desde el detalle de cada op → Productos.`);
+        alertDialog(`❌ No se puede crear el vuelo: la IA no pudo clasificar todos los productos.\n\n${summary}\n\nCompletá NCM + DIE/TE/IVA a mano desde el detalle de cada op → Productos.`);
         return;
       }
     }
@@ -6574,7 +6574,7 @@ function AgentsPanel({token}){
     const newCode=`FL-${String(lastNum+1).padStart(4,"0")}`;
     const r=await dq("flights",{method:"POST",token,body:{flight_code:newCode,agent_id:agentId,status:"preparando"}});
     const created=Array.isArray(r)?r[0]:r;
-    if(!created?.id){alert("Error creando vuelo");return;}
+    if(!created?.id){alertDialog("Error creando vuelo");return;}
     // Pre-fetch global data para auto-calcular presupuestos (no varía por op)
     const [tarFresh,cfgFresh]=await Promise.all([
       dq("tariffs",{token,filters:"?select=*"}),
@@ -6640,7 +6640,7 @@ function AgentsPanel({token}){
     await dq("unassigned_packages",{method:"PATCH",token,filters:`?id=eq.${pkg.id}`,body:{assigned_to_op_id:opId,assigned_at:new Date().toISOString()}});
     load();flash("Asignado a operación");
   };
-  const delUnassigned=async(id)=>{if(!confirm("¿Eliminar este paquete huérfano?"))return;await dq("unassigned_packages",{method:"DELETE",token,filters:`?id=eq.${id}`});load();flash("Eliminado");};
+  const delUnassigned=async(id)=>{if(!await confirmDialog("¿Eliminar este paquete huérfano?"))return;await dq("unassigned_packages",{method:"DELETE",token,filters:`?id=eq.${id}`});load();flash("Eliminado");};
   const flash=(m)=>{setMsg(m);setTimeout(()=>setMsg(""),2500);const v=/^[❌✕]|falló|error/i.test(m)?"error":/^⚠/.test(m)?"warn":"success";toast(m.replace(/^[✓✉️❌⚠️✕★📧⭐]\s*/u,""),v);};
   const approve=async(s)=>{
     // Update profile role to agente
@@ -6650,7 +6650,7 @@ function AgentsPanel({token}){
     await dq("agent_signups",{method:"PATCH",token,filters:`?id=eq.${s.id}`,body:{status:"approved",approved_at:new Date().toISOString()}});
     load();flash("Agente aprobado");
   };
-  const reject=async(s)=>{if(!confirm(`¿Rechazar a ${s.email}?`))return;await dq("agent_signups",{method:"PATCH",token,filters:`?id=eq.${s.id}`,body:{status:"rejected"}});load();flash("Agente rechazado");};
+  const reject=async(s)=>{if(!await confirmDialog(`¿Rechazar a ${s.email}?`))return;await dq("agent_signups",{method:"PATCH",token,filters:`?id=eq.${s.id}`,body:{status:"rejected"}});load();flash("Agente rechazado");};
   const ST={pending:{l:"Pendiente",c:"#fbbf24"},approved:{l:"Aprobado",c:"#22c55e"},rejected:{l:"Rechazado",c:"#ff6b6b"}};
   const flight=flights.find(f=>f.id===selFlight);
   const flightOpsForSel=flight?flightOps.filter(fo=>fo.flight_id===flight.id):[];
@@ -7098,9 +7098,9 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
   };
   // En modo admin (Aéreo B China) ocultamos el selector de origen+modalidad: siempre es china+aereo.
   const saveNewAviso=async()=>{
-    if(!newAviso.client_id){alert("Elegí un cliente");return;}
+    if(!newAviso.client_id){alertDialog("Elegí un cliente");return;}
     const rows=newAviso.trackings.map(t=>({code:String(t.code||"").trim(),weight:t.weight!==""&&t.weight!=null?Number(t.weight):null,id:t.id||null})).filter(r=>r.code);
-    if(rows.length===0){alert("Agregá al menos un tracking");return;}
+    if(rows.length===0){alertDialog("Agregá al menos un tracking");return;}
     setSavingNew(true);
     try{
       if(editingNotifId){
@@ -7128,13 +7128,13 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
         const body={client_id:newAviso.client_id,origin:newAviso.origin,shipping_method:newAviso.shipping_method,tracking_code:rows[0].code,description:newAviso.description.trim()||null,status:"pending",is_admin_created:true};
         const created=await dq("purchase_notifications",{method:"POST",token,body});
         const notif=Array.isArray(created)?created[0]:created;
-        if(!notif?.id){alert("Error creando aviso");setSavingNew(false);return;}
+        if(!notif?.id){alertDialog("Error creando aviso");setSavingNew(false);return;}
         for(const r of rows){
           await dq("purchase_notification_trackings",{method:"POST",token,body:{notification_id:notif.id,tracking_code:r.code,informed_weight_kg:r.weight}}).catch(e=>console.error("trk",e));
         }
         setShowCreateModal(false);setSavingNew(false);load();
       }
-    }catch(e){alert("Error: "+e.message);setSavingNew(false);}
+    }catch(e){alertDialog("Error: "+e.message);setSavingNew(false);}
   };
   // Marcar un tracking individual como recibido + recomputar status del aviso
   const markTrackingReceived=async(notif,trackingId,customDateStr)=>{
@@ -7237,7 +7237,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
         // Crear op nueva con datos del aviso pre-cargados
         const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
         newCode=typeof rpc==="string"?rpc:null;
-        if(!newCode){alert("Error generando código de op");setWorking(false);return;}
+        if(!newCode){alertDialog("Error generando código de op");setWorking(false);return;}
         // Canal: admin puede haber elegido en el modal. Default = negro (Integral AC) si no eligió
         const channel=confirmChannel||(n.shipping_method==="maritimo"?"maritimo_negro":"aereo_negro");
         const origin=n.origin==="usa"?"USA":"China";
@@ -7246,7 +7246,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
         const opBody={operation_code:newCode,client_id:n.client_id,channel,origin,service_type:"courier",status:"en_deposito_origen",description:n.description||null};
         const created=await dq("operations",{method:"POST",token,body:opBody});
         opObj=Array.isArray(created)?created[0]:created;
-        if(!opObj?.id){alert("Error creando op");setWorking(false);return;}
+        if(!opObj?.id){alertDialog("Error creando op");setWorking(false);return;}
       }
       // package_number arranca después del último existente (clave al consolidar en una op con bultos)
       const exPkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${opObj.id}&select=package_number&order=package_number.desc&limit=1`});
@@ -7273,7 +7273,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
       }catch(e){}
       setConfirmAction(null);setConfirmChannel(null);setConfirmDestOp(null);load();
       if(onCreateOp)onCreateOp(opObj);
-    }catch(e){alert("Error: "+e.message);}
+    }catch(e){alertDialog("Error: "+e.message);}
     setWorking(false);
   };
   const cancelNotif=async(n)=>{
@@ -7302,7 +7302,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
         await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{status:"cancelled",cancelled_at:new Date().toISOString(),notes:`Mergeado en aviso ${main.id}`}}).catch(()=>{});
       }
       setMergeAction(null);load();
-    }catch(e){alert("Error mergeando: "+e.message);}
+    }catch(e){alertDialog("Error mergeando: "+e.message);}
     setWorking(false);
   };
   return <div>
@@ -7664,11 +7664,11 @@ function AlipayPendingBanner({flights,token,onDone}){
   useEffect(()=>{if(open)setRealCostInput(String(base));},[open,base]);
   const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");setCreditCardId("");setPaidAt(new Date().toISOString().slice(0,10));setRealCostInput(String(Number(f.alipay_base_cost_usd||0)));};
   const complete=async(flight)=>{
-    if(method==="tarjeta_credito"&&!closing){alert("Falta fecha de cierre de tarjeta");return;}
-    if(method==="tarjeta_credito"&&!creditCardId){alert("Elegí qué tarjeta de crédito usaste");return;}
-    if(!paidAt){alert("Falta fecha de pago");return;}
+    if(method==="tarjeta_credito"&&!closing){alertDialog("Falta fecha de cierre de tarjeta");return;}
+    if(method==="tarjeta_credito"&&!creditCardId){alertDialog("Elegí qué tarjeta de crédito usaste");return;}
+    if(!paidAt){alertDialog("Falta fecha de pago");return;}
     const realCost=Number(realCostInput||0);
-    if(!realCost||realCost<=0){alert("Cargá un costo real válido");return;}
+    if(!realCost||realCost<=0){alertDialog("Cargá un costo real válido");return;}
     setSaving(true);
     const isTC=method==="tarjeta_credito";
     const paidAtIso=new Date(paidAt+"T12:00:00Z").toISOString();
@@ -7737,11 +7737,11 @@ function AlibabaPendingBanner({flights,token,onDone}){
   useEffect(()=>{if(!userEdited&&open)setRealCostInput(String(autoCost));},[autoCost,open,userEdited]);
   const startEdit=(f)=>{setOpen(f.id);setMethod("tarjeta_credito");setClosing("");setCreditCardId("");setPaidAt(new Date().toISOString().slice(0,10));setUserEdited(false);};
   const complete=async(flight)=>{
-    if(method==="tarjeta_credito"&&!closing){alert("Falta fecha de cierre de tarjeta");return;}
-    if(method==="tarjeta_credito"&&!creditCardId){alert("Elegí qué tarjeta de crédito usaste");return;}
-    if(!paidAt){alert("Falta fecha de pago");return;}
+    if(method==="tarjeta_credito"&&!closing){alertDialog("Falta fecha de cierre de tarjeta");return;}
+    if(method==="tarjeta_credito"&&!creditCardId){alertDialog("Elegí qué tarjeta de crédito usaste");return;}
+    if(!paidAt){alertDialog("Falta fecha de pago");return;}
     const realCost=Number(realCostInput||0);
-    if(!realCost||realCost<=0){alert("Cargá un costo real válido");return;}
+    if(!realCost||realCost<=0){alertDialog("Cargá un costo real válido");return;}
     setSaving(true);
     const isTC=method==="tarjeta_credito";
     // Fecha de pago a ISO (mediodía UTC para evitar problemas de timezone).
@@ -8912,8 +8912,8 @@ function ComunicacionesPanel({token}){
       const r=await fetch("/api/notify/preview",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({to,trigger})});
       const resp=await r.json();
       if(resp?.ok)flash(`✉️ Preview de "${tpl.label}" enviado a ${to}`);
-      else alert(`Error: ${resp?.error||"desconocido"}\n${JSON.stringify(resp?.detail||{},null,2)}`);
-    }catch(e){alert("Error: "+e.message);}
+      else alertDialog(`Error: ${resp?.error||"desconocido"}\n${JSON.stringify(resp?.detail||{},null,2)}`);
+    }catch(e){alertDialog("Error: "+e.message);}
   };
   const cancelTpl=()=>{setEditingTpl(null);setTplDraft({});};
   const saveTpl=async()=>{
@@ -8973,16 +8973,16 @@ function ComunicacionesPanel({token}){
   const enviadas=pending.filter(p=>p.alreadySent).slice(0,10);
 
   const openWA=(p)=>{
-    if(!p.wa){alert("El cliente no tiene WhatsApp cargado.");return;}
+    if(!p.wa){alertDialog("El cliente no tiene WhatsApp cargado.");return;}
     const msg=encodeURIComponent(buildWAMsg(p.op,p.trigger));
     window.open(`https://wa.me/${p.wa}?text=${msg}`,"_blank");
     markWaSent(p.op.id,p.sentKey);
     flash(`WA abierto · ${p.op.operation_code}`);
   };
 
-  const openAll=()=>{
+  const openAll=async()=>{
     if(pendientes.length===0)return;
-    if(!confirm(`Abrir ${pendientes.length} pestaña${pendientes.length!==1?"s":""} de WhatsApp con mensajes prellenados?`))return;
+    if(!await confirmDialog(`Abrir ${pendientes.length} pestaña${pendientes.length!==1?"s":""} de WhatsApp con mensajes prellenados?`))return;
     pendientes.forEach((p,i)=>{setTimeout(()=>openWA(p),i*250);});
   };
 
@@ -8992,8 +8992,8 @@ function ComunicacionesPanel({token}){
       const resp=await r.json();
       if(resp?.ok){flash("Email enviado ✓");load();}
       else if(resp?.skipped)flash(`Saltado: ${resp.skipped}`);
-      else alert(`Error: ${resp?.error||"desconocido"}`);
-    }catch(e){alert("Error: "+e.message);}
+      else alertDialog(`Error: ${resp?.error||"desconocido"}`);
+    }catch(e){alertDialog("Error: "+e.message);}
   };
 
   const testEmail=async()=>{
@@ -9003,8 +9003,8 @@ function ComunicacionesPanel({token}){
       const r=await fetch("/api/notify/test",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({to})});
       const resp=await r.json();
       if(resp?.ok)flash(`✉️ Email de prueba enviado a ${to}`);
-      else alert(`Error: ${resp?.error||"desconocido"}\n\n${JSON.stringify(resp?.detail||{},null,2)}`);
-    }catch(e){alert("Error: "+e.message);}
+      else alertDialog(`Error: ${resp?.error||"desconocido"}\n\n${JSON.stringify(resp?.detail||{},null,2)}`);
+    }catch(e){alertDialog("Error: "+e.message);}
   };
 
   return <div>
@@ -9176,7 +9176,7 @@ function AdminTasks({token}){
   };
 
   const deleteTask=async(id)=>{
-    if(!confirm("¿Eliminar esta tarea?"))return;
+    if(!await confirmDialog("¿Eliminar esta tarea?"))return;
     await dq("admin_tasks",{method:"DELETE",token,filters:`?id=eq.${id}`});
     setTasks(tasks.filter(t=>t.id!==id));
   };
@@ -10208,10 +10208,10 @@ function GiAdminPanel({token,clients}){
     // Bloqueo: no se pueden liquidar comisiones estimadas (con TC ARS pendiente de dolarizar)
     const estimadas=earningIds.map(id=>earnings.find(e=>e.id===id)).filter(e=>e?.is_estimated);
     if(estimadas.length>0){
-      alert(`⚠ No se pueden liquidar comisiones estimadas.\n\n${estimadas.length} op${estimadas.length>1?"s":""} tiene${estimadas.length>1?"n":""} costos en pesos pendientes de dolarizar:\n\n• ${estimadas.map(e=>`${e.operations?.operation_code||"—"} (USD ${Number(e.commission_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} estimada)`).join("\n• ")}\n\nDolarizá los pagos pendientes en cada op (cuando se debiten en la TC) y la comisión se confirma automáticamente. Después podés liquidarla.`);
+      alertDialog(`⚠ No se pueden liquidar comisiones estimadas.\n\n${estimadas.length} op${estimadas.length>1?"s":""} tiene${estimadas.length>1?"n":""} costos en pesos pendientes de dolarizar:\n\n• ${estimadas.map(e=>`${e.operations?.operation_code||"—"} (USD ${Number(e.commission_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} estimada)`).join("\n• ")}\n\nDolarizá los pagos pendientes en cada op (cuando se debiten en la TC) y la comisión se confirma automáticamente. Después podés liquidarla.`);
       return;
     }
-    if(!confirm(`¿Marcar como pagadas ${earningIds.length} comisión${earningIds.length>1?"es":""} por USD ${Math.abs(totalAmount).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}?`))return;
+    if(!await confirmDialog(`¿Marcar como pagadas ${earningIds.length} comisión${earningIds.length>1?"es":""} por USD ${Math.abs(totalAmount).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}?`))return;
     setPaying(true);
     const now=new Date().toISOString();
     const today=new Date().toISOString().slice(0,10);
@@ -10278,11 +10278,11 @@ function GiAdminPanel({token,clients}){
         body:JSON.stringify({email:partnerEmail.trim().toLowerCase(),gi_partner_pct:partnerPct?Number(partnerPct):null}),
       });
       const d=await r.json();
-      if(!r.ok){alert("Error: "+(d.error||"desconocido"));setPartnerSaving(false);return;}
+      if(!r.ok){alertDialog("Error: "+(d.error||"desconocido"));setPartnerSaving(false);return;}
       setInviteResult(d);
       setPartnerEmail("");setPartnerPct("");
       loadPartners();
-    } catch(e){alert("Error: "+e.message);}
+    } catch(e){alertDialog("Error: "+e.message);}
     setPartnerSaving(false);
   };
 
@@ -10322,9 +10322,9 @@ function GiAdminPanel({token,clients}){
   };
 
   const submit=async()=>{
-    if(!form.clientId){alert("Seleccioná un cliente");return;}
+    if(!form.clientId){alertDialog("Seleccioná un cliente");return;}
     const validProds=form.products.filter(p=>p.description?.trim());
-    if(validProds.length===0){alert("Cargá al menos un producto");return;}
+    if(validProds.length===0){alertDialog("Cargá al menos un producto");return;}
     setSaving(true);
     try{
       // Usa dq (que maneja refresh de JWT) en lugar de fetch raw
@@ -10357,7 +10357,7 @@ function GiAdminPanel({token,clients}){
       setModalOpen(false);
       load();
     } catch(e){
-      alert("Error: "+(e.message||"desconocido"));
+      alertDialog("Error: "+(e.message||"desconocido"));
     } finally {
       setSaving(false);
     }
@@ -10493,7 +10493,7 @@ function GiAdminPanel({token,clients}){
                 <td style={{padding:"13px 14px",color:"rgba(255,255,255,0.5)"}}>{r.expires_at?formatDate(r.expires_at):"—"}</td>
                 <td style={{padding:"13px 14px"}}><span style={{fontSize:10,fontWeight:700,padding:"4px 10px",borderRadius:999,color:st.c,background:`${st.c}14`,border:`1px solid ${st.c}40`,letterSpacing:"0.05em",textTransform:"uppercase"}}>{st.l}</span></td>
                 <td style={{padding:"13px 14px",textAlign:"right"}}>
-                  {(r.status==="pending"||r.status==="quoting")&&<button onClick={async()=>{if(!confirm(`¿Cancelar la solicitud ${r.request_code}? El socio dejará de verla en su panel.`))return;await dq("gi_quote_requests",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body:{status:"rejected"}});flash("Solicitud cancelada");load();}} style={{padding:"5px 10px",fontSize:10.5,fontWeight:600,borderRadius:6,border:"1px solid rgba(248,113,113,0.3)",background:"rgba(248,113,113,0.08)",color:"#f87171",cursor:"pointer"}}>Cancelar</button>}
+                  {(r.status==="pending"||r.status==="quoting")&&<button onClick={async()=>{if(!await confirmDialog(`¿Cancelar la solicitud ${r.request_code}? El socio dejará de verla en su panel.`))return;await dq("gi_quote_requests",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body:{status:"rejected"}});flash("Solicitud cancelada");load();}} style={{padding:"5px 10px",fontSize:10.5,fontWeight:600,borderRadius:6,border:"1px solid rgba(248,113,113,0.3)",background:"rgba(248,113,113,0.08)",color:"#f87171",cursor:"pointer"}}>Cancelar</button>}
                   {r.status==="quoted"&&<button style={{padding:"5px 10px",fontSize:10.5,fontWeight:700,borderRadius:6,border:"none",background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>Revisar →</button>}
                 </td>
               </tr>;
@@ -10552,7 +10552,7 @@ function GiAdminPanel({token,clients}){
                 <p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>Socio GI activo</p>
               </div>
               <input defaultValue={p.gi_partner_pct||""} onBlur={e=>{const v=e.target.value;if(v!==(p.gi_partner_pct||"").toString())updatePartnerPct(p.id,v);}} placeholder="% socio" style={{width:80,padding:"5px 8px",fontSize:11,border:"1px solid rgba(255,255,255,0.1)",borderRadius:5,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontFamily:"inherit",textAlign:"right"}}/>
-              <button onClick={()=>{if(confirm(`¿Revocar el acceso GI de ${p.email}?`))togglePartner(p.id,true);}} style={{padding:"5px 10px",fontSize:10.5,fontWeight:600,borderRadius:6,border:"1px solid rgba(248,113,113,0.3)",background:"rgba(248,113,113,0.06)",color:"#f87171",cursor:"pointer",fontFamily:"inherit"}}>Revocar</button>
+              <button onClick={async()=>{if(await confirmDialog(`¿Revocar el acceso GI de ${p.email}?`))togglePartner(p.id,true);}} style={{padding:"5px 10px",fontSize:10.5,fontWeight:600,borderRadius:6,border:"1px solid rgba(248,113,113,0.3)",background:"rgba(248,113,113,0.06)",color:"#f87171",cursor:"pointer",fontFamily:"inherit"}}>Revocar</button>
             </div>)}
           </div>
         }
@@ -10804,15 +10804,15 @@ function MaritimePanel({token,allClients=[]}){
     if(ids.length===0)return;
     const selObjs=shipments.filter(s=>ids.includes(s.id));
     const clientIds=new Set(selObjs.map(s=>s.client_id).filter(Boolean));
-    if(clientIds.size!==1){alert("Las shipments seleccionadas deben ser del mismo cliente.");return;}
+    if(clientIds.size!==1){alertDialog("Las shipments seleccionadas deben ser del mismo cliente.");return;}
     const warehouseSet=new Set(selObjs.map(s=>s.warehouse));
-    if(warehouseSet.size!==1){alert("Las shipments seleccionadas deben ser del mismo depósito.");return;}
+    if(warehouseSet.size!==1){alertDialog("Las shipments seleccionadas deben ser del mismo depósito.");return;}
     const clientId=[...clientIds][0];
     const client=allClients.find(c=>c.id===clientId);
     const desc=selObjs.map(s=>s.product_description).filter(Boolean).join(" · ");
     const trackings=selObjs.map(s=>s.tracking_number).filter(Boolean).join(" · ");
     const confirmMsg=`¿Crear operación marítima Integral AC con ${ids.length} carga${ids.length>1?"s":""} de ${client?.client_code||"—"}?\n\nDescripción: ${desc.slice(0,80)}${desc.length>80?"…":""}\n\n• La op nace LISTA PARA RETIRAR\n• Se le manda el email "lista para retirar" al cliente\n• Las cargas salen del depósito (quedan guardadas, linkeadas a la op)`;
-    if(!confirm(confirmMsg))return;
+    if(!await confirmDialog(confirmMsg))return;
     setCreatingOp(true);
     try{
       // Próximo operation_code AC-XXXX
@@ -10832,7 +10832,7 @@ function MaritimePanel({token,allClients=[]}){
       };
       const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
       const op=Array.isArray(r)?r[0]:r;
-      if(!op?.id){alert("Error creando la operación.");setCreatingOp(false);return;}
+      if(!op?.id){alertDialog("Error creando la operación.");setCreatingOp(false);return;}
       // Linkear cada shipment a la op. Quedan GUARDADOS en maritime_shipments (no se borran),
       // pero salen del listado del depósito porque la vista filtra por operation_id (más abajo).
       // Así la lista/PDF del depósito ya no los incluye, pero la data queda para el futuro
@@ -10872,7 +10872,7 @@ function MaritimePanel({token,allClients=[]}){
       await load();
     }catch(e){
       console.error(e);
-      alert(`Error: ${e.message}`);
+      alertDialog(`Error: ${e.message}`);
     }
     setCreatingOp(false);
   };
@@ -10945,22 +10945,22 @@ function MaritimePanel({token,allClients=[]}){
       if(rb!==null)return 1;
       return new Date(a.created_at||0).getTime()-new Date(b.created_at||0).getTime();
     });
-    if(wsShipments.length===0){alert("No hay pedidos para ese depósito/origen");return;}
+    if(wsShipments.length===0){alertDialog("No hay pedidos para ese depósito/origen");return;}
     const wh=whByName[warehouse];
     const rotulo=wh?.rotulo||`MARÍTIMO ${warehouse.toUpperCase()} (código cliente)`;
     printMaritimePdf({warehouse,origin,shipments:wsShipments,rotulo,lang,withValues});
   };
 
   const delShipment=async(id)=>{
-    if(!confirm("¿Eliminar este pedido marítimo? Se borran los bultos e items asociados."))return;
+    if(!await confirmDialog("¿Eliminar este pedido marítimo? Se borran los bultos e items asociados."))return;
     await dq("maritime_shipments",{method:"DELETE",token,filters:`?id=eq.${id}`});
     load();
   };
 
   const delWarehouse=async(wh)=>{
     const used=shipments.some(s=>s.warehouse===wh.name);
-    if(used){alert(`No se puede eliminar: hay pedidos asignados al depósito "${wh.name}". Reasigná o eliminá los pedidos primero.`);return;}
-    if(!confirm(`¿Eliminar el depósito "${wh.name}"?`))return;
+    if(used){alertDialog(`No se puede eliminar: hay pedidos asignados al depósito "${wh.name}". Reasigná o eliminá los pedidos primero.`);return;}
+    if(!await confirmDialog(`¿Eliminar el depósito "${wh.name}"?`))return;
     await dq("maritime_warehouses",{method:"DELETE",token,filters:`?id=eq.${wh.id}`});
     load();
   };
@@ -11148,8 +11148,8 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   const cbmTotal=pkgs.reduce((s,p)=>s+cbmLive(p),0);
 
   const save=async()=>{
-    if(!selectedWh){alert("Elegí o creá un depósito");return;}
-    if(!productDescription.trim()){alert("Cargá la mercadería");return;}
+    if(!selectedWh){alertDialog("Elegí o creá un depósito");return;}
+    if(!productDescription.trim()){alertDialog("Cargá la mercadería");return;}
     setSaving(true);
     // Auto-generar shipment_code como #N por depósito
     // - Si es nuevo: siguiente número del depósito
@@ -11258,7 +11258,7 @@ function WarehouseForm({token,editing,onSave,onCancel}){
   const [origin,setOrigin]=useState(editing?.origin||"china");
   const [saving,setSaving]=useState(false);
   const save=async()=>{
-    if(!name.trim()){alert("Cargá el nombre del depósito");return;}
+    if(!name.trim()){alertDialog("Cargá el nombre del depósito");return;}
     setSaving(true);
     const newName=name.trim();
     const body={name:newName,rotulo:rotulo.trim()||null,origin};
@@ -11295,6 +11295,6 @@ export default function AdminPage(){
   useEffect(()=>{const s=loadSession();if(s?.token&&s?.profile?.role==="admin"){setSession(s);}setRestoring(false);},[]);
   const logout=()=>{clearSession();setSession(null);};
   if(restoring)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG}}><p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p></div>;
-  if(!session)return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><AdminLogin onLogin={s=>{setSession(s);}}/></>;
-  return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><AdminDashboard session={session} onLogout={logout}/></>;
+  if(!session)return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><DialogHost/><AdminLogin onLogin={s=>{setSession(s);}}/></>;
+  return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><DialogHost/><AdminDashboard session={session} onLogout={logout}/></>;
 }
