@@ -10845,11 +10845,13 @@ function MaritimePanel({token,allClients=[]}){
       // Traemos fresco de DB (no del estado) para evitar datos viejos.
       const shipPkgs=await dq("maritime_packages",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=*&order=shipment_id.asc,bulto_number.asc`});
       const shipItems=await dq("maritime_items",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=*&order=shipment_id.asc,sort_order.asc`});
+      // Tracking por shipment → va al national_tracking de cada bulto que vino de esa carga.
+      const trackByShipment={};selObjs.forEach(s=>{trackByShipment[s.id]=s.tracking_number||null;});
       let pkgNum=0;
       for(const p of (Array.isArray(shipPkgs)?shipPkgs:[])){
         pkgNum++;
         // Marítimo factura por CBM, no por peso → gross_weight_kg queda null (las dims sí van).
-        await dq("operation_packages",{method:"POST",token,body:{operation_id:op.id,package_number:pkgNum,quantity:Number(p.quantity||1),length_cm:p.length_cm||null,width_cm:p.width_cm||null,height_cm:p.height_cm||null}});
+        await dq("operation_packages",{method:"POST",token,body:{operation_id:op.id,package_number:pkgNum,quantity:Number(p.quantity||1),length_cm:p.length_cm||null,width_cm:p.width_cm||null,height_cm:p.height_cm||null,national_tracking:trackByShipment[p.shipment_id]||null}});
       }
       for(const it of (Array.isArray(shipItems)?shipItems:[])){
         await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:it.description||null,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_usd||0),notes:it.notes||null}});
