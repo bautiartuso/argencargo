@@ -10811,7 +10811,7 @@ function MaritimePanel({token,allClients=[]}){
     const client=allClients.find(c=>c.id===clientId);
     const desc=selObjs.map(s=>s.product_description).filter(Boolean).join(" · ");
     const trackings=selObjs.map(s=>s.tracking_number).filter(Boolean).join(" · ");
-    const confirmMsg=`¿Crear operación marítima Integral AC con ${ids.length} carga${ids.length>1?"s":""} de ${client?.client_code||"—"}?\n\nDescripción: ${desc.slice(0,80)}${desc.length>80?"…":""}\n\nLos shipments quedan linkeados a la op (no se borran).`;
+    const confirmMsg=`¿Crear operación marítima Integral AC con ${ids.length} carga${ids.length>1?"s":""} de ${client?.client_code||"—"}?\n\nDescripción: ${desc.slice(0,80)}${desc.length>80?"…":""}\n\n• La op nace LISTA PARA RETIRAR\n• Se le manda el email "lista para retirar" al cliente\n• Las cargas salen del depósito (quedan guardadas, linkeadas a la op)`;
     if(!confirm(confirmMsg))return;
     setCreatingOp(true);
     try{
@@ -10823,7 +10823,9 @@ function MaritimePanel({token,allClients=[]}){
         operation_code:newCode,
         client_id:clientId,
         channel:"maritimo_negro",
-        status:"pendiente",
+        // La carga marítima ya llegó y está consolidada → la op nace LISTA PARA RETIRAR.
+        status:"entregada",
+        closed_at:new Date().toISOString(), // 'entregada' marca cierre como cualquier op entregada
         origin:selObjs[0].origin==="usa"?"USA":"China",
         description:desc||null,
         international_tracking:trackings||null,
@@ -10831,12 +10833,26 @@ function MaritimePanel({token,allClients=[]}){
       const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
       const op=Array.isArray(r)?r[0]:r;
       if(!op?.id){alert("Error creando la operación.");setCreatingOp(false);return;}
-      // Linkear cada shipment a la op
+      // Linkear cada shipment a la op. Quedan GUARDADOS en maritime_shipments (no se borran),
+      // pero salen del listado del depósito porque la vista filtra por operation_id (más abajo).
+      // Así la lista/PDF del depósito ya no los incluye, pero la data queda para el futuro
+      // tracking por contenedor.
       for(const id of ids){
         await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{operation_id:op.id}});
       }
+      // Mail "lista para retirar" al cliente — igual que cualquier op que pasa a 'entregada'.
+      let emailNote="";
+      try{
+        const res=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"retiro"})});
+        const j=await res.json().catch(()=>({}));
+        if(j?.ok)emailNote=" · ✉️ email enviado al cliente";
+        else if(j?.skipped==="already_sent")emailNote=" · ✉️ email ya estaba enviado";
+        else if(j?.skipped)emailNote=` · ⚠️ email no enviado (${j.skipped})`;
+        else emailNote=` · ⚠️ email falló (${j?.error||"ver consola"})`;
+        if(!j?.ok&&!j?.skipped)console.error("notify retiro error",j);
+      }catch(e){console.error("notify retiro error",e);emailNote=" · ⚠️ email falló (ver consola)";}
       setSelectedShipments(new Set());
-      flash(`✅ Operación ${newCode} creada con ${ids.length} carga${ids.length>1?"s":""} linkeada${ids.length>1?"s":""}`);
+      flash(`✅ Operación ${newCode} creada · LISTA PARA RETIRAR · ${ids.length} carga${ids.length>1?"s":""} sale${ids.length>1?"n":""} del depósito${emailNote}`);
       await load();
     }catch(e){
       console.error(e);
@@ -10872,7 +10888,10 @@ function MaritimePanel({token,allClients=[]}){
   const whByName=useMemo(()=>{const m={};whs.forEach(w=>{m[w.name]=w;});return m;},[whs]);
 
   // Agrupar por (warehouse, origin)
-  const filtered=shipments.filter(s=>(originFilter==="all"||s.origin===originFilter)&&(warehouseFilter==="all"||s.warehouse===warehouseFilter));
+  // Excluimos las cargas ya convertidas en operación (operation_id != null): salen del listado del
+  // depósito (y del PDF) porque ya no están físicamente ahí. Quedan guardadas en maritime_shipments
+  // linkeadas a la op para el futuro tracking por contenedor.
+  const filtered=shipments.filter(s=>!s.operation_id&&(originFilter==="all"||s.origin===originFilter)&&(warehouseFilter==="all"||s.warehouse===warehouseFilter));
   // Solo mostrar los depósitos del país filtrado (o todos si origin="all").
   const warehouses=whs.filter(w=>originFilter==="all"||w.origin===originFilter).map(w=>w.name);
   // Si el depósito seleccionado no pertenece al país actual, reseteamos a "all".
@@ -10898,7 +10917,7 @@ function MaritimePanel({token,allClients=[]}){
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   const downloadPdf=(warehouse,origin,lang="es",withValues=true)=>{
-    const wsShipments=shipments.filter(s=>s.warehouse===warehouse&&s.origin===origin).map(s=>({
+    const wsShipments=shipments.filter(s=>!s.operation_id&&s.warehouse===warehouse&&s.origin===origin).map(s=>({
       ...s,
       packages:packages.filter(p=>p.shipment_id===s.id),
       items:items.filter(it=>it.shipment_id===s.id),
