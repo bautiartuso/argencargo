@@ -10796,6 +10796,7 @@ function MaritimePanel({token,allClients=[]}){
   const [lo,setLo]=useState(true);
   const [originFilter,setOriginFilter]=useState("china");
   const [warehouseFilter,setWarehouseFilter]=useState("all");
+  const [clientFilter,setClientFilter]=useState(""); // client_id o "" = todos
   const [showNew,setShowNew]=useState(false);
   const [editingId,setEditingId]=useState(null);
   const [expanded,setExpanded]=useState(new Set());
@@ -10931,7 +10932,19 @@ function MaritimePanel({token,allClients=[]}){
   // Excluimos las cargas ya convertidas en operación (operation_id != null): salen del listado del
   // depósito (y del PDF) porque ya no están físicamente ahí. Quedan guardadas en maritime_shipments
   // linkeadas a la op para el futuro tracking por contenedor.
-  const filtered=shipments.filter(s=>!s.operation_id&&(originFilter==="all"||s.origin===originFilter)&&(warehouseFilter==="all"||s.warehouse===warehouseFilter));
+  const filtered=shipments.filter(s=>!s.operation_id&&(originFilter==="all"||s.origin===originFilter)&&(warehouseFilter==="all"||s.warehouse===warehouseFilter)&&(!clientFilter||s.client_id===clientFilter));
+  // Clientes con cargas activas (sin op) para el dropdown de filtro — solo los que tienen algo en depósito.
+  const clientsWithShipments=useMemo(()=>{
+    const ids=new Set(shipments.filter(s=>!s.operation_id&&s.client_id).map(s=>s.client_id));
+    return allClients.filter(c=>ids.has(c.id)).sort((a,b)=>(a.client_code||"").localeCompare(b.client_code||""));
+  },[shipments,allClients]);
+  // Al filtrar por cliente, abrir automáticamente los depósitos donde tiene cargas
+  // (sino quedan colapsados y parece que no hay resultados).
+  useEffect(()=>{
+    if(!clientFilter)return;
+    const whs=new Set(shipments.filter(s=>!s.operation_id&&s.client_id===clientFilter).map(s=>s.warehouse||"Sin depósito"));
+    setExpandedWh(prev=>new Set([...prev,...whs]));
+  },[clientFilter,shipments]);
   // Solo mostrar los depósitos del país filtrado (o todos si origin="all").
   const warehouses=whs.filter(w=>originFilter==="all"||w.origin===originFilter).map(w=>w.name);
   // Si el depósito seleccionado no pertenece al país actual, reseteamos a "all".
@@ -11036,6 +11049,14 @@ function MaritimePanel({token,allClients=[]}){
       {warehouses.length>0&&<div style={{display:"flex",gap:4,background:"rgba(255,255,255,0.04)",borderRadius:8,padding:4,border:"1px solid rgba(255,255,255,0.06)"}}>
         <button onClick={()=>setWarehouseFilter("all")} style={{padding:"6px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:6,cursor:"pointer",background:warehouseFilter==="all"?"rgba(96,165,250,0.2)":"transparent",color:warehouseFilter==="all"?"#60a5fa":"rgba(255,255,255,0.6)"}}>Todos depósitos</button>
         {warehouses.map(w=><button key={w} onClick={()=>setWarehouseFilter(w)} style={{padding:"6px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:6,cursor:"pointer",background:warehouseFilter===w?"rgba(96,165,250,0.2)":"transparent",color:warehouseFilter===w?"#60a5fa":"rgba(255,255,255,0.6)"}}>📦 {w}</button>)}
+      </div>}
+      {/* Filtro por cliente: solo lista clientes con cargas activas en depósito */}
+      {clientsWithShipments.length>0&&<div style={{display:"flex",alignItems:"center",gap:6}}>
+        <select value={clientFilter} onChange={e=>setClientFilter(e.target.value)} style={{padding:"8px 12px",fontSize:12,fontWeight:600,border:`1px solid ${clientFilter?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.08)"}`,borderRadius:8,background:clientFilter?"rgba(184,149,106,0.10)":"rgba(255,255,255,0.04)",color:clientFilter?GOLD_LIGHT:"rgba(255,255,255,0.75)",outline:"none",cursor:"pointer",maxWidth:260}}>
+          <option value="" style={{background:"#142038"}}>👤 Todos los clientes</option>
+          {clientsWithShipments.map(c=><option key={c.id} value={c.id} style={{background:"#142038"}}>{c.client_code} — {c.first_name} {c.last_name}</option>)}
+        </select>
+        {clientFilter&&<button onClick={()=>setClientFilter("")} title="Limpiar filtro de cliente" style={{padding:"7px 10px",fontSize:12,fontWeight:700,borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer"}}>×</button>}
       </div>}
     </div>
 
