@@ -129,6 +129,7 @@ function Dashboard({ token, onLogout }) {
   const [filterCurrency, setFilterCurrency] = useState("all"); // all | ARS | USD
   const [showAdd, setShowAdd] = useState(null); // 'ingreso' | 'egreso' | null
   const [showShare, setShowShare] = useState(false);
+  const [showDollarize, setShowDollarize] = useState(false);
   const [editing, setEditing] = useState(null);
 
   const load = useCallback(async () => {
@@ -165,7 +166,7 @@ function Dashboard({ token, onLogout }) {
   return (
     <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
       <ToastStack />
-      <Header onLogout={onLogout} onAdd={setShowAdd} onShare={() => setShowShare(true)} />
+      <Header onLogout={onLogout} onAdd={setShowAdd} onShare={() => setShowShare(true)} onDollarize={() => setShowDollarize(true)} />
       <main style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 22px 40px" }}>
         {/* Saldos */}
         <section style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 10 : 16, marginBottom: 16 }}>
@@ -205,11 +206,12 @@ function Dashboard({ token, onLogout }) {
       {showAdd && <MovementModal type={showAdd} token={token} editing={null} onClose={() => setShowAdd(null)} onSaved={() => { setShowAdd(null); load(); }} />}
       {editing && <MovementModal type={editing.type} token={token} editing={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
       {showShare && <ShareModal token={token} onClose={() => setShowShare(false)} />}
+      {showDollarize && <DollarizeModal token={token} arsBalance={enriched.totals.ars} onClose={() => setShowDollarize(false)} onSaved={() => { setShowDollarize(false); load(); }} />}
     </div>
   );
 }
 
-function Header({ onLogout, onAdd, onShare }) {
+function Header({ onLogout, onAdd, onShare, onDollarize }) {
   return (
     <header style={{ background: T.bgSurface, borderBottom: `1px solid ${T.border}`, padding: "14px 22px", position: "sticky", top: 0, zIndex: 10 }}>
       <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
@@ -219,6 +221,7 @@ function Header({ onLogout, onAdd, onShare }) {
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={onShare} style={btnGhost}>🔗 Compartir</button>
+          <button onClick={onDollarize} style={{ ...btnGhost, border: `1px solid ${T.green}45`, color: T.green }}>💱 Dolarizar</button>
           <button onClick={() => onAdd("ingreso")} style={btnIngreso}>+ Ingreso</button>
           <button onClick={() => onAdd("egreso")} style={btnEgreso}>+ Egreso</button>
           <button onClick={onLogout} style={btnGhost}>Salir</button>
@@ -552,6 +555,70 @@ function ShareModal({ token, onClose }) {
           ))}
         </div>
       )}
+    </Modal>
+  );
+}
+
+// Dolarizar saldo: convierte ARS → USD al TC ingresado. Genera DOS movimientos
+// visibles en el libro (egreso ARS + ingreso USD) — también en la vista de SOLFIN.
+function DollarizeModal({ token, arsBalance, onClose, onSaved }) {
+  const [date, setDate] = useState(todayStr());
+  const [amountArs, setAmountArs] = useState(arsBalance > 0 ? String(Math.round(arsBalance * 100) / 100) : "");
+  const [rate, setRate] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const ars = Number(String(amountArs).replace(",", ".")) || 0;
+  const tc = Number(String(rate).replace(",", ".")) || 0;
+  const usd = tc > 0 ? Math.round((ars / tc) * 100) / 100 : 0;
+  const exceeds = ars > arsBalance + 0.01;
+
+  const save = async () => {
+    if (ars <= 0) { toast.error("Cargá el importe ARS a dolarizar"); return; }
+    if (tc <= 0) { toast.error("Cargá el tipo de cambio ARS/USD"); return; }
+    if (exceeds) { toast.error(`Supera el saldo ARS disponible (${fmtMoney(arsBalance, "ARS")})`); return; }
+    setSaving(true);
+    const tcTxt = tc.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    try {
+      // Egreso ARS (sale del saldo en pesos)
+      await dq("cc_solfin_movements", { method: "POST", token, body: {
+        date, type: "egreso", currency: "ARS", amount: ars, net_amount: ars,
+        description: `💱 Dolarización → ${fmtMoney(usd, "USD")} @ TC ${tcTxt}`,
+      }});
+      // Ingreso USD (entra al saldo en dólares). Sin comisión — es conversión, no transferencia.
+      await dq("cc_solfin_movements", { method: "POST", token, body: {
+        date, type: "ingreso", currency: "USD", amount: usd, net_amount: usd,
+        description: `💱 Dolarización de ${fmtMoney(ars, "ARS")} @ TC ${tcTxt}`,
+      }});
+      toast.success(`Dolarizado: ${fmtMoney(ars, "ARS")} → ${fmtMoney(usd, "USD")}`);
+      onSaved();
+    } catch (e) { toast.error(e.message); setSaving(false); }
+  };
+
+  return (
+    <Modal title="💱 Dolarizar saldo" onClose={onClose}>
+      <p style={{ fontSize: 12.5, color: T.textMuted, margin: "0 0 16px", lineHeight: 1.5 }}>
+        Convierte saldo ARS a USD al tipo de cambio que pactes con SOLFIN. Quedan dos movimientos en el libro: un egreso en pesos y un ingreso en dólares.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Field label="Fecha"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} /></Field>
+        <Field label="TC ARS/USD">
+          <input type="text" inputMode="decimal" value={rate} onChange={(e) => { const v = e.target.value; if (v === "" || /^\d*[.,]?\d*$/.test(v)) setRate(v); }} placeholder="Ej: 1190" style={inputStyle} autoFocus />
+        </Field>
+      </div>
+      <Field label={`Importe ARS a dolarizar (disponible: ${fmtMoney(arsBalance, "ARS")})`}>
+        <input type="text" inputMode="decimal" value={amountArs} onChange={(e) => { const v = e.target.value; if (v === "" || /^\d*[.,]?\d*$/.test(v)) setAmountArs(v); }} placeholder="0,00" style={{ ...inputStyle, fontSize: 17, fontWeight: 700, ...(exceeds ? { border: `1px solid ${T.red}88` } : {}) }} />
+        {exceeds && <p style={{ fontSize: 11, color: T.red, margin: "6px 0 0" }}>Supera el saldo ARS disponible</p>}
+      </Field>
+      {ars > 0 && tc > 0 && (
+        <div style={{ padding: "12px 14px", background: `${T.green}10`, border: `1px solid ${T.green}40`, borderRadius: 10, marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12, color: T.textMuted }}>{fmtMoney(ars, "ARS")} ÷ {tc.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          <span style={{ fontSize: 17, fontWeight: 800, color: T.green, fontVariantNumeric: "tabular-nums" }}>= {fmtMoney(usd, "USD")}</span>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
+        <button onClick={onClose} style={btnGhost}>Cancelar</button>
+        <button onClick={save} disabled={saving || ars <= 0 || tc <= 0 || exceeds} style={{ ...btnIngreso, opacity: saving || ars <= 0 || tc <= 0 || exceeds ? 0.5 : 1 }}>{saving ? "Dolarizando…" : "💱 Dolarizar"}</button>
+      </div>
     </Modal>
   );
 }
