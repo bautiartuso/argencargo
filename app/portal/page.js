@@ -1688,7 +1688,17 @@ function CalculatorPage({token,client}){
         {ncm?.ncm_code&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>NCM</p><p style={{fontSize:15,fontWeight:600,color:IC,margin:0,fontFamily:"monospace"}}>{ncm.ncm_code}</p></div>}
         <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>ENTREGA</p><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{DELIV[delivery]}</p></div>
       </div>
-      {(()=>{const cheapest=results.channels.reduce((a,b)=>a.total<b.total?a:b);const delivCost=getShipCost(delivery,calcTotals().totWeight);
+      {(()=>{
+      // Guard: con ciertas combinaciones (ej. mercadería con marca + peso ≤15kg + sin CBM)
+      // NINGÚN canal queda disponible → channels=[]. Sin este guard, el reduce de abajo
+      // tiraba "Reduce of empty array with no initial value" y crasheaba toda la página.
+      if(results.channels.length===0)return <div style={{background:"rgba(251,191,36,0.06)",border:"1.5px solid rgba(251,191,36,0.35)",borderRadius:16,padding:"2rem",textAlign:"center"}}>
+        <p style={{fontSize:34,margin:"0 0 10px"}}>🤝</p>
+        <p style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 8px"}}>Esta carga necesita cotización a medida</p>
+        <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 auto 18px",maxWidth:480,lineHeight:1.6}}>Por las características de tu carga (peso, volumen o tipo de mercadería) ningún canal automático aplica. Escribinos y te armamos la mejor opción en minutos.</p>
+        <a href={`https://wa.me/5491125088580?text=${encodeURIComponent(`Hola! Coticé en el portal pero mi carga necesita cotización a medida. Mercadería: ${products.map(p=>p.description).filter(Boolean).join(", ")||"—"} · Peso: ${results.totWeight} kg`)}`} target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"13px 28px",fontSize:14,fontWeight:700,borderRadius:10,background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",textDecoration:"none",boxShadow:"0 4px 18px rgba(34,197,94,0.3)"}}>💬 Cotizar por WhatsApp</a>
+      </div>;
+      const cheapest=results.channels.reduce((a,b)=>a.total<b.total?a:b);const delivCost=getShipCost(delivery,calcTotals().totWeight);
       const aereos=results.channels.filter(c=>c.key.includes("aereo"));const maritimos=results.channels.filter(c=>c.key.includes("maritimo"));
       const renderCard=(ch)=>{const isCheapest=ch.key===cheapest.key;const isFastest=ch.key==="aereo_a_china";const isAereo=ch.key.includes("aereo");const total=ch.total+delivCost;
       return <div key={ch.key} style={{background:"rgba(255,255,255,0.028)",borderRadius:16,border:`1.5px solid ${isFastest?"rgba(184,149,106,0.45)":isCheapest?"rgba(34,197,94,0.4)":"rgba(255,255,255,0.1)"}`,padding:"1.5rem",marginBottom:16,display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
