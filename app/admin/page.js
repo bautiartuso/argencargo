@@ -9490,7 +9490,7 @@ function QuotesList({token}){
       .totals .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:0.08em;opacity:0.85;font-weight:700}
       .totals .big{font-size:17px;font-weight:700;letter-spacing:-0.01em;margin-top:3px}
       .totals .col.hero .lbl{opacity:1;color:#E8D098}
-      .totals .col.hero .big{font-size:24px;color:#fff;text-shadow:0 0 10px rgba(232,208,152,0.3)}
+      .totals .col.hero .big{font-size:24px;color:#fff}
       .totals .hint{font-size:9.5px;color:rgba(255,255,255,0.6);font-weight:500;letter-spacing:0;margin-top:2px}
       .note{margin-top:10px;padding:10px 13px;background:#FFF8E1;border-left:3px solid #E8D098;border-radius:4px;font-size:10.5px;color:#5C4A1F;line-height:1.5}
       .note b{color:#1B4F8A}
@@ -9861,7 +9861,7 @@ function AdminCalculator({token}){
       .totals .lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:0.08em;opacity:.85;font-weight:700}
       .totals .big{font-size:16px;font-weight:700;letter-spacing:-0.01em;margin-top:3px}
       .totals .col.hero .lbl{opacity:1;color:#E8D098 !important}
-      .totals .col.hero .big{font-size:22px;color:#fff;text-shadow:0 0 10px rgba(232,208,152,0.3)}
+      .totals .col.hero .big{font-size:22px;color:#fff}
       .totals .hint{font-size:9px;color:rgba(255,255,255,0.55);font-weight:500;letter-spacing:0;margin-top:2px}
       .note{margin-top:8px;padding:9px 12px;background:#FFF8E1;border-left:3px solid #E8D098;border-radius:4px;font-size:9.5px;color:#5C4A1F;line-height:1.45}
       .note b{color:#1A3D6E}
