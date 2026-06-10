@@ -1329,7 +1329,7 @@ function HabitModal({ token, editing, categories, onClose, onSaved }) {
             </div>
             <div>
               <label style={{ display: "block", fontSize: 10, fontWeight: 700, color: T.textMuted, marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase" }}>Desde</label>
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={dateInputStyle} />
+              <DateField value={startDate} onChange={setStartDate} />
             </div>
           </div>
           <p style={{ margin: "8px 2px 0", fontSize: 11, color: T.gold, fontWeight: 600 }}>{frequencyLabel({ frequency_type: "every_n_days", every_n_days: Number(everyNDays) || 0 })} · desde {startDate || "hoy"}</p>
@@ -1465,7 +1465,7 @@ function ExpenseModal({ token, editing, categories, onClose, onSaved }) {
           {perInst && inst > 1 && <p style={{ margin: "6px 2px 0", fontSize: 11, color: T.textMuted }}>≈ {fmtArs(perInst)} por cuota</p>}
         </Field>
       )}
-      <Field label="Fecha"><input type="date" value={date} onChange={e => setDate(e.target.value)} style={dateInputStyle} /></Field>
+      <Field label="Fecha"><DateField value={date} onChange={setDate} /></Field>
       <Field label="Notas (opcional)"><input value={notes} onChange={e => setNotes(e.target.value)} style={inputStyle} /></Field>
       <ModalFooter onCancel={onClose} onConfirm={save} loading={saving} confirmLabel={editing?.id ? "Guardar" : "Registrar"} />
     </Modal>
@@ -1505,7 +1505,7 @@ function WithdrawalModal({ token, editing, onClose, onSaved }) {
         <p style={{ margin: 0, fontSize: 10.5, color: T.textMuted, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700 }}>Equivalente ARS</p>
         <p style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 600, color: T.gold, fontVariantNumeric: "tabular-nums" }}>{fmtArs(ars)}</p>
       </div>}
-      <Field label="Fecha"><input type="date" value={date} onChange={e => setDate(e.target.value)} style={dateInputStyle} /></Field>
+      <Field label="Fecha"><DateField value={date} onChange={setDate} /></Field>
       <Field label="Notas (opcional)"><input value={notes} onChange={e => setNotes(e.target.value)} style={inputStyle} placeholder="Ej: Mitad del sueldo del mes" /></Field>
       <ModalFooter onCancel={onClose} onConfirm={save} loading={saving} confirmLabel={editing?.id ? "Guardar" : "Registrar"} />
     </Modal>
@@ -1739,6 +1739,66 @@ const inputStyle = { width: "100%", padding: "11px 14px", fontSize: 13.5, fontWe
 // Reset específico para inputs date — iOS Safari aplica un layout propio que recorta el
 // texto (queda "1 jun 2026" pegado al borde izquierdo) si no se desactiva el appearance.
 const dateInputStyle = { ...inputStyle, WebkitAppearance: "none", appearance: "none", minHeight: 46, lineHeight: "20px", textAlign: "left" };
+
+// Datepicker propio con el theme del cinabrio — el popup del <input type="date">
+// es del navegador (blanco, azul iOS) y no se puede estilizar.
+function DateField({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [cursor, setCursor] = useState(() => { const d = value ? new Date(value + "T12:00:00") : new Date(); return { y: d.getFullYear(), m: d.getMonth() }; });
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  const { y, m } = cursor;
+  const startDow = (new Date(y, m, 1).getDay() + 6) % 7; // lunes = 0
+  const daysIn = new Date(y, m + 1, 0).getDate();
+  const today = todayStr();
+  const mk = (d) => `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const nav = (dir) => setCursor(({ y, m }) => { const n = new Date(y, m + dir, 1); return { y: n.getFullYear(), m: n.getMonth() }; });
+  const monthName = new Date(y, m, 15).toLocaleDateString("es-AR", { month: "long", year: "numeric" }).replace(/^./, c => c.toUpperCase());
+  const label = value ? new Date(value + "T12:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "Elegir fecha…";
+  const navBtn = { width: 28, height: 28, borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent", color: T.textSecondary, cursor: "pointer", fontSize: 14, lineHeight: 1, fontFamily: "inherit" };
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button type="button" onClick={() => { setOpen(o => !o); if (value) { const d = new Date(value + "T12:00:00"); setCursor({ y: d.getFullYear(), m: d.getMonth() }); } }} style={{ ...dateInputStyle, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", borderColor: open ? T.gold : T.border }}>
+        <span style={{ color: value ? T.textPrimary : T.textMuted }}>{label}</span>
+        <span style={{ fontSize: 14, opacity: 0.65 }}>📅</span>
+      </button>
+      {open && (
+        <div style={{ position: "absolute", zIndex: 60, top: "calc(100% + 6px)", left: 0, width: 286, background: T.bgSurface, border: `1px solid ${T.goldDeep}`, borderRadius: 14, padding: "12px 12px 10px", boxShadow: "0 20px 55px rgba(0,0,0,0.65)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <span style={{ fontSize: 13.5, fontWeight: 700, color: T.gold }}>{monthName}</span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button type="button" onClick={() => nav(-1)} style={navBtn}>‹</button>
+              <button type="button" onClick={() => nav(1)} style={navBtn}>›</button>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2, marginBottom: 4 }}>
+            {["L", "M", "M", "J", "V", "S", "D"].map((d, i) => <span key={i} style={{ textAlign: "center", fontSize: 9.5, fontWeight: 800, color: T.textMuted, letterSpacing: "0.1em", padding: "2px 0" }}>{d}</span>)}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2 }}>
+            {Array.from({ length: startDow }).map((_, i) => <span key={`e${i}`} />)}
+            {Array.from({ length: daysIn }, (_, i) => i + 1).map(d => {
+              const ds = mk(d);
+              const sel = ds === value;
+              const isToday = ds === today;
+              return <button key={d} type="button" onClick={() => { onChange(ds); setOpen(false); }} style={{ aspectRatio: "1/1", borderRadius: 8, fontSize: 12.5, fontWeight: sel ? 800 : 600, fontFamily: "inherit", cursor: "pointer", border: isToday && !sel ? `1px solid ${T.gold}` : "1px solid transparent", background: sel ? `linear-gradient(135deg, ${T.goldHi}, ${T.gold})` : "transparent", color: sel ? T.bgBase : isToday ? T.gold : T.textPrimary, fontVariantNumeric: "tabular-nums" }}
+                onMouseEnter={e => { if (!sel) e.currentTarget.style.background = "rgba(255,255,255,0.07)"; }}
+                onMouseLeave={e => { if (!sel) e.currentTarget.style.background = "transparent"; }}>{d}</button>;
+            })}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
+            <button type="button" onClick={() => { onChange(""); setOpen(false); }} style={{ background: "none", border: "none", fontSize: 11.5, fontWeight: 700, color: T.textMuted, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>Borrar</button>
+            <button type="button" onClick={() => { onChange(today); setOpen(false); }} style={{ background: "none", border: "none", fontSize: 11.5, fontWeight: 800, color: T.gold, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>Hoy</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 const btnPrimary = { padding: "10px 18px", fontSize: 12.5, fontWeight: 700, borderRadius: 8, border: `1px solid ${T.gold}`, background: `linear-gradient(135deg, ${T.goldHi}, ${T.gold})`, color: T.bgBase, cursor: "pointer", letterSpacing: "0.04em", boxShadow: T.goldGlow, whiteSpace: "nowrap" };
 const btnSec = { padding: "10px 16px", fontSize: 12.5, fontWeight: 600, borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent", color: T.textPrimary, cursor: "pointer", whiteSpace: "nowrap" };
 const btnGhost = { padding: "8px 14px", fontSize: 12, fontWeight: 500, borderRadius: 8, border: "none", background: "transparent", color: T.textSecondary, cursor: "pointer", whiteSpace: "nowrap" };

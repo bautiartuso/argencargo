@@ -11021,8 +11021,23 @@ function MaritimePanel({token,allClients=[]}){
     flash(`🚢 Contenedor ${c.code} despachado`);load();
   };
   const setContainerStatus=async(c,status)=>{
-    await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body:{status}});
+    const body={status};
+    if(status==="arribado")body.arrived_at=new Date().toISOString().slice(0,10);
+    if(status==="en_transito")body.arrived_at=null; // volver atrás desde arribado
+    await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});
     flash(`Contenedor ${c.code} → ${status==="armandose"?"armándose":status==="en_transito"?"en tránsito":"arribado"}`);load();
+  };
+  // Vincular cargas YA OPERADAS (con operation_id, sin contenedor) a un contenedor del historial.
+  // Sirve para reconstruir el registro de qué vino en cada contenedor con ops anteriores a esta feature.
+  const [linkingContainer,setLinkingContainer]=useState(null); // contenedor al que se vinculan
+  const [linkSel,setLinkSel]=useState(new Set());
+  const [histOpen,setHistOpen]=useState(false); // sección historial de contenedores arribados
+  const linkOperatedShipments=async()=>{
+    const ids=[...linkSel];
+    if(!linkingContainer||ids.length===0)return;
+    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{container_id:linkingContainer.id}});
+    flash(`🔗 ${ids.length} carga${ids.length>1?"s":""} vinculada${ids.length>1?"s":""} a ${linkingContainer.code}`);
+    setLinkingContainer(null);setLinkSel(new Set());load();
   };
   // Asignar (o quitar con containerId=null) las cargas seleccionadas a un contenedor.
   const assignSelectedToContainer=async(containerId)=>{
@@ -11144,8 +11159,15 @@ function MaritimePanel({token,allClients=[]}){
         {isWhOpen&&(()=>{
           // Sub-agrupación por contenedor: cada depósito tiene sus propios contenedores.
           // Las cargas sin container_id van al grupo "Sin contenedor asignado".
-          const whConts=containers.filter(c=>c.warehouse===wh);
-          const byCont={};wsList.forEach(s=>{const k=s.container_id&&whConts.some(c=>c.id===s.container_id)?s.container_id:"__none";(byCont[k]=byCont[k]||[]).push(s);});
+          // Los contenedores ARRIBADOS salen del flujo activo → viven en la sección
+          // "Historial de contenedores" al pie de la página (junto con sus cargas).
+          const arrivedIds=new Set(containers.filter(c=>c.status==="arribado").map(c=>c.id));
+          const whConts=containers.filter(c=>c.warehouse===wh&&c.status!=="arribado");
+          const byCont={};wsList.forEach(s=>{
+            if(s.container_id&&arrivedIds.has(s.container_id))return; // va al historial, no al activo
+            const k=s.container_id&&whConts.some(c=>c.id===s.container_id)?s.container_id:"__none";
+            (byCont[k]=byCont[k]||[]).push(s);
+          });
           const noneList=byCont.__none||[];
           const contChip=(st)=>st==="armandose"?{l:"🔧 ARMÁNDOSE",bg:"rgba(251,191,36,0.14)",fg:"#fbbf24"}:st==="en_transito"?{l:"🚢 EN TRÁNSITO",bg:"rgba(96,165,250,0.15)",fg:"#60a5fa"}:{l:"⚓ ARRIBADO",bg:"rgba(34,197,94,0.15)",fg:"#22c55e"};
           const fmtD=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
@@ -11259,6 +11281,76 @@ function MaritimePanel({token,allClients=[]}){
         })()}
       </div>;
     })}
+
+    {/* ⚓ Historial de contenedores arribados — registro de lo que se fue operando.
+        Incluye las cargas ya convertidas en operación (siguen guardadas en maritime_shipments). */}
+    {!lo&&(()=>{
+      const arrived=containers.filter(c=>c.status==="arribado").sort((a,b)=>String(b.arrived_at||"").localeCompare(String(a.arrived_at||"")));
+      if(arrived.length===0)return null;
+      const fmtD=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"}):"—";
+      return <div style={{marginTop:26,background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
+        <div onClick={()=>setHistOpen(p=>!p)} style={{padding:"14px 18px",background:"rgba(34,197,94,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",gap:10,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{fontSize:14,color:"#22c55e",transition:"transform 200ms",transform:histOpen?"rotate(90deg)":"rotate(0deg)",display:"inline-block",userSelect:"none"}}>▶</span>
+            <p style={{fontSize:13,fontWeight:800,color:"#22c55e",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>⚓ Historial de contenedores arribados</p>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{arrived.length} contenedor{arrived.length!==1?"es":""}</span>
+          </div>
+        </div>
+        {histOpen&&arrived.map(c=>{
+          const cShips=shipments.filter(s=>s.container_id===c.id);
+          const cbmC=cShips.reduce((s,sh)=>s+cbmOf(sh.id),0);
+          const opCodes=[...new Set(cShips.map(s=>s.operations?.operation_code).filter(Boolean))];
+          return <div key={c.id} style={{borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+            <div style={{padding:"11px 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+              <div style={{flex:1,minWidth:260}}>
+                <p style={{fontSize:13,fontWeight:800,color:"#fff",margin:"0 0 3px"}}>🚢 {c.code} <span style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)"}}>· 📦 {c.warehouse}</span></p>
+                <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:0}}>Salió {fmtD(c.departed_at)} · Arribó {fmtD(c.arrived_at)} · {cShips.length} carga{cShips.length!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{c.notes?` · ${c.notes}`:""}</p>
+                {opCodes.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:6}}>
+                  {opCodes.map(oc=><span key={oc} style={{fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,fontFamily:"monospace"}}>🔗 {oc}</span>)}
+                </div>}
+                {cShips.length>0&&<div style={{marginTop:6}}>
+                  {cShips.map(s=><p key={s.id} style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0"}}>· {s.product_description||"—"} <span style={{color:"rgba(255,255,255,0.35)"}}>({s.client_name_snapshot||"—"})</span>{s.operations?.operation_code?<span style={{color:IC,fontFamily:"monospace",marginLeft:5}}>{s.operations.operation_code}</span>:<span style={{color:"#fbbf24",marginLeft:5,fontStyle:"italic"}}>sin operar</span>}</p>)}
+                </div>}
+              </div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                <button onClick={()=>{setLinkingContainer(c);setLinkSel(new Set());}} title="Vincular cargas ya operadas que no figuran en ningún contenedor" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>🔗 Vincular cargas</button>
+                <button onClick={()=>setContainerStatus(c,"en_transito")} title="Volver a en tránsito" style={{padding:"4px 8px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.45)",cursor:"pointer"}}>↶</button>
+                <button onClick={()=>setEditingContainer(c)} style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.06)",color:"#60a5fa",cursor:"pointer"}}>✎</button>
+                <button onClick={()=>delContainer(c)} style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
+              </div>
+            </div>
+          </div>;
+        })}
+      </div>;
+    })()}
+
+    {/* Modal: vincular cargas YA OPERADAS (sin contenedor) a un contenedor del historial */}
+    {linkingContainer&&(()=>{
+      const candidates=shipments.filter(s=>s.warehouse===linkingContainer.warehouse&&s.operation_id&&!s.container_id);
+      return <div onClick={()=>setLinkingContainer(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,maxHeight:"85vh",overflowY:"auto",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>🔗 Vincular cargas a {linkingContainer.code}</h3>
+            <button onClick={()=>setLinkingContainer(null)} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+          </div>
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>Cargas de <strong style={{color:"#fff"}}>{linkingContainer.warehouse}</strong> que ya se convirtieron en operación y no figuran en ningún contenedor. Tildá las que vinieron en este contenedor.</p>
+          {candidates.length===0?<p style={{fontSize:12.5,color:"rgba(255,255,255,0.4)",fontStyle:"italic",textAlign:"center",padding:"20px 0"}}>No hay cargas operadas sin contenedor en este depósito.</p>:<div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {candidates.map(s=>{const sel=linkSel.has(s.id);return <label key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:sel?"rgba(184,149,106,0.08)":"rgba(255,255,255,0.025)",border:`1px solid ${sel?"rgba(184,149,106,0.4)":"rgba(255,255,255,0.06)"}`,borderRadius:8,cursor:"pointer"}}>
+              <input type="checkbox" checked={sel} onChange={()=>setLinkSel(prev=>{const n=new Set(prev);if(n.has(s.id))n.delete(s.id);else n.add(s.id);return n;})} style={{accentColor:IC,cursor:"pointer"}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{fontSize:12.5,fontWeight:600,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.product_description||"—"}</p>
+                <p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"1px 0 0"}}>{s.client_name_snapshot||"—"} · {s.tracking_number||"sin tracking"}</p>
+              </div>
+              {s.operations?.operation_code&&<span style={{fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,fontFamily:"monospace",whiteSpace:"nowrap"}}>{s.operations.operation_code}</span>}
+            </label>;})}
+          </div>}
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:16}}>
+            <Btn variant="secondary" small onClick={()=>setLinkingContainer(null)}>Cancelar</Btn>
+            <Btn small onClick={linkOperatedShipments} disabled={linkSel.size===0}>🔗 Vincular {linkSel.size>0?linkSel.size:""}</Btn>
+          </div>
+        </div>
+      </div>;
+    })()}
 
     {/* Modal contenedor (crear / editar) */}
     {editingContainer&&<ContainerForm token={token} editing={editingContainer.id?editingContainer:null} warehouse={editingContainer.warehouse} onSave={()=>{setEditingContainer(null);load();}} onCancel={()=>setEditingContainer(null)}/>}
