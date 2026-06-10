@@ -11013,19 +11013,12 @@ function MaritimePanel({token,allClients=[]}){
     await dq("maritime_containers",{method:"DELETE",token,filters:`?id=eq.${c.id}`});
     flash(`Contenedor ${c.code} eliminado`);load();
   };
-  const dispatchContainer=async(c)=>{
-    const inCont=shipments.filter(s=>s.container_id===c.id&&!s.operation_id).length;
-    if(!await confirmDialog(`¿Despachar el contenedor ${c.code}?\n\nSe marca "En tránsito" y sus ${inCont} carga${inCont!==1?"s":""} pasan a 🚢 EN TRÁNSITO 🇦🇷.`))return;
-    await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body:{status:"en_transito",departed_at:new Date().toISOString().slice(0,10)}});
-    await dq("maritime_shipments",{method:"PATCH",token,filters:`?container_id=eq.${c.id}`,body:{status:"en_camino_ar"}});
-    flash(`🚢 Contenedor ${c.code} despachado`);load();
-  };
   const setContainerStatus=async(c,status)=>{
     const body={status};
     if(status==="arribado")body.arrived_at=new Date().toISOString().slice(0,10);
     if(status==="en_transito")body.arrived_at=null; // volver atrás desde arribado
     await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});
-    flash(`Contenedor ${c.code} → ${status==="armandose"?"armándose":status==="en_transito"?"en tránsito":"arribado"}`);load();
+    flash(`Contenedor ${c.code} → ${status==="en_transito"?"en tránsito":"arribado"}`);load();
   };
   // Vincular cargas YA OPERADAS (con operation_id, sin contenedor) a un contenedor del historial.
   // Sirve para reconstruir el registro de qué vino en cada contenedor con ops anteriores a esta feature.
@@ -11040,11 +11033,14 @@ function MaritimePanel({token,allClients=[]}){
     setLinkingContainer(null);setLinkSel(new Set());load();
   };
   // Asignar (o quitar con containerId=null) las cargas seleccionadas a un contenedor.
+  // El contenedor existe porque YA salió (en tránsito) → asignar una carga la pasa a
+  // "EN TRÁNSITO 🇦🇷"; quitarla la devuelve a "EN DEPÓSITO".
   const assignSelectedToContainer=async(containerId)=>{
     const ids=[...selectedShipments];
     if(ids.length===0)return;
-    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{container_id:containerId||null}});
-    flash(containerId?`📦 ${ids.length} carga${ids.length>1?"s":""} asignada${ids.length>1?"s":""} al contenedor`:`Carga${ids.length>1?"s":""} quitada${ids.length>1?"s":""} del contenedor`);
+    const body=containerId?{container_id:containerId,status:"en_camino_ar"}:{container_id:null,status:"en_deposito"};
+    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body});
+    flash(containerId?`🚢 ${ids.length} carga${ids.length>1?"s":""} asignada${ids.length>1?"s":""} al contenedor (→ en tránsito)`:`Carga${ids.length>1?"s":""} quitada${ids.length>1?"s":""} del contenedor (→ en depósito)`);
     setSelectedShipments(new Set());load();
   };
 
@@ -11082,7 +11078,7 @@ function MaritimePanel({token,allClients=[]}){
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           {sameWh&&(()=>{
-            const whConts=containers.filter(c=>c.warehouse===[...warehouseSet][0]&&c.status==="armandose");
+            const whConts=containers.filter(c=>c.warehouse===[...warehouseSet][0]&&c.status==="en_transito");
             const anyAssigned=sel.some(s=>s.container_id);
             if(whConts.length===0&&!anyAssigned)return null;
             return <select value="" onChange={e=>{const v=e.target.value;if(v==="__unassign")assignSelectedToContainer(null);else if(v)assignSelectedToContainer(v);e.target.value="";}} style={{padding:"7px 10px",fontSize:11.5,fontWeight:700,border:"1px solid rgba(96,165,250,0.4)",borderRadius:7,background:"rgba(96,165,250,0.08)",color:"#60a5fa",outline:"none",cursor:"pointer",maxWidth:200}}>
@@ -11169,7 +11165,7 @@ function MaritimePanel({token,allClients=[]}){
             (byCont[k]=byCont[k]||[]).push(s);
           });
           const noneList=byCont.__none||[];
-          const contChip=(st)=>st==="armandose"?{l:"🔧 ARMÁNDOSE",bg:"rgba(251,191,36,0.14)",fg:"#fbbf24"}:st==="en_transito"?{l:"🚢 EN TRÁNSITO",bg:"rgba(96,165,250,0.15)",fg:"#60a5fa"}:{l:"⚓ ARRIBADO",bg:"rgba(34,197,94,0.15)",fg:"#22c55e"};
+          const contChip=(st)=>st==="en_transito"?{l:"🚢 EN TRÁNSITO",bg:"rgba(96,165,250,0.15)",fg:"#60a5fa"}:{l:"⚓ ARRIBADO",bg:"rgba(34,197,94,0.15)",fg:"#22c55e"};
           const fmtD=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
           const renderTable=(list)=><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.2)"}}>
@@ -11255,10 +11251,7 @@ function MaritimePanel({token,allClients=[]}){
                 {c.notes&&<span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>· {c.notes}</span>}
               </div>
               <div style={{display:"flex",gap:5,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
-                {c.status==="armandose"&&list.length>0&&<button onClick={()=>dispatchContainer(c)} title="Despachar: el contenedor y sus cargas pasan a En tránsito" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#60a5fa",cursor:"pointer"}}>🚢 Despachar</button>}
-                {c.status==="en_transito"&&<button onClick={()=>setContainerStatus(c,"arribado")} style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer"}}>⚓ Arribó</button>}
-                {c.status==="en_transito"&&<button onClick={()=>setContainerStatus(c,"armandose")} title="Volver a armándose" style={{padding:"4px 8px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.45)",cursor:"pointer"}}>↶</button>}
-                {c.status==="arribado"&&<button onClick={()=>setContainerStatus(c,"en_transito")} title="Volver a en tránsito" style={{padding:"4px 8px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.45)",cursor:"pointer"}}>↶</button>}
+                {c.status==="en_transito"&&<button onClick={()=>setContainerStatus(c,"arribado")} title="Marcar arribado: el contenedor pasa al historial" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer"}}>⚓ Arribó</button>}
                 <button onClick={()=>setEditingContainer(c)} title="Editar contenedor" style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.06)",color:"#60a5fa",cursor:"pointer"}}>✎</button>
                 <button onClick={()=>delContainer(c)} title="Eliminar contenedor" style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
               </div>
@@ -11360,8 +11353,9 @@ function MaritimePanel({token,allClients=[]}){
 // Form de contenedor marítimo: código, estado, fechas y notas. Pertenece a UN depósito.
 function ContainerForm({token,editing,warehouse,onSave,onCancel}){
   const [code,setCode]=useState(editing?.code||"");
-  const [status,setStatus]=useState(editing?.status||"armandose");
-  const [departedAt,setDepartedAt]=useState(editing?.departed_at||"");
+  // Sin estado "armándose": el contenedor se crea cuando YA salió → nace en tránsito.
+  const [status,setStatus]=useState(editing?.status||"en_transito");
+  const [departedAt,setDepartedAt]=useState(editing?.departed_at||new Date().toISOString().slice(0,10));
   const [eta,setEta]=useState(editing?.eta||"");
   const [notes,setNotes]=useState(editing?.notes||"");
   const [saving,setSaving]=useState(false);
@@ -11389,7 +11383,7 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
       <div style={{marginBottom:12}}>
         <label style={{display:"block",fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Estado</label>
         <div style={{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:8,border:"1px solid rgba(255,255,255,0.08)"}}>
-          {[{k:"armandose",l:"🔧 Armándose"},{k:"en_transito",l:"🚢 En tránsito"},{k:"arribado",l:"⚓ Arribado"}].map(o=><button key={o.k} onClick={()=>setStatus(o.k)} style={{flex:1,padding:"7px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:status===o.k?"rgba(96,165,250,0.25)":"transparent",color:status===o.k?"#60a5fa":"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
+          {[{k:"en_transito",l:"🚢 En tránsito"},{k:"arribado",l:"⚓ Arribado"}].map(o=><button key={o.k} onClick={()=>setStatus(o.k)} style={{flex:1,padding:"7px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:status===o.k?"rgba(96,165,250,0.25)":"transparent",color:status===o.k?"#60a5fa":"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
         </div>
       </div>
       <Inp label="Notas (opcional)" value={notes} onChange={setNotes} placeholder="Naviera, booking, observaciones…"/>
