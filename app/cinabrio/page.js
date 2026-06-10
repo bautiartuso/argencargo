@@ -656,12 +656,16 @@ function MonthView({ habits, cats, log, onPickDay }) {
   const perfectDays = evaluable.filter(x => x.pct === 100).length;
   const zeroDays = evaluable.filter(x => x.pct === 0).length;
 
+  // Escala de 5 tramos (cada 20%): bordó → rojo → naranja → dorado apagado → dorado.
+  // El 100% es caso especial: dorado MUY brillante con glow (se aplica en el botón).
   const colorFor = (pct) => {
     if (pct === null) return T.bgSurfaceHi;
-    if (pct === 0) return `${T.red}26`;
-    if (pct < 50) return `${T.red}66`;
-    if (pct < 100) return `${T.gold}88`;
-    return T.gold;
+    if (pct >= 100) return `linear-gradient(135deg, #F7CE5B, ${T.goldHi} 45%, ${T.gold})`;
+    if (pct >= 80) return T.gold;
+    if (pct >= 60) return "#A87818";
+    if (pct >= 40) return "#C45A1E";
+    if (pct >= 20) return T.red;
+    return "#55101F";
   };
 
   const ts2 = todayStr();
@@ -704,8 +708,11 @@ function MonthView({ habits, cats, log, onPickDay }) {
                 onClick={() => onPickDay(s.date)}
                 disabled={!hasHabits}
                 style={{
-                  aspectRatio: "1 / 1", border: isToday ? `1.5px solid ${T.gold}` : `1px solid ${T.border}`,
+                  aspectRatio: "1 / 1",
+                  border: hasHabits && !isFuture && pct === 100 ? "1.5px solid #F7CE5B" : isToday ? `1.5px solid ${T.gold}` : `1px solid ${T.border}`,
                   background: hasHabits && !isFuture ? colorFor(pct) : T.bgSurfaceHi,
+                  // 100% = brilla todo: doble glow dorado alrededor de la celda
+                  boxShadow: hasHabits && !isFuture && pct === 100 ? "0 0 12px rgba(224,168,50,0.75), 0 0 28px rgba(224,168,50,0.35)" : "none",
                   borderRadius: 10, cursor: hasHabits ? "pointer" : "default",
                   display: "flex", flexDirection: "column", justifyContent: "space-between",
                   padding: "6px 8px", color: T.textPrimary, fontFamily: "inherit",
@@ -715,9 +722,9 @@ function MonthView({ habits, cats, log, onPickDay }) {
                 onMouseEnter={e => { if (hasHabits) e.currentTarget.style.transform = "scale(1.04)"; }}
                 onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
               >
-                <span style={{ fontSize: 12, fontWeight: 700, color: isToday ? T.gold : (pct === null || !hasHabits ? T.textMuted : pct >= 50 ? T.bgBase : T.textPrimary), fontVariantNumeric: "tabular-nums", textAlign: "left" }}>{d}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: isToday && pct < 40 ? T.gold : (pct === null || !hasHabits ? T.textMuted : pct >= 40 ? T.bgBase : T.textPrimary), fontVariantNumeric: "tabular-nums", textAlign: "left" }}>{d}</span>
                 {hasHabits && !isFuture && (
-                  <span style={{ fontSize: 11, fontWeight: 700, color: pct >= 50 ? T.bgBase : T.textPrimary, alignSelf: "flex-end", fontVariantNumeric: "tabular-nums" }}>{pct}%</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: pct >= 40 ? T.bgBase : T.textPrimary, alignSelf: "flex-end", fontVariantNumeric: "tabular-nums" }}>{pct}%</span>
                 )}
                 {hasHabits && isFuture && (
                   <span style={{ fontSize: 10, color: T.textMuted, alignSelf: "flex-end" }}>{s.total}</span>
@@ -729,9 +736,10 @@ function MonthView({ habits, cats, log, onPickDay }) {
         {/* Leyenda */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, justifyContent: "center", flexWrap: "wrap" }}>
           <span style={{ fontSize: 10.5, color: T.textMuted, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700 }}>0%</span>
-          {[`${T.red}26`, `${T.red}66`, `${T.gold}88`, T.gold].map((c, i) => (
+          {["#55101F", T.red, "#C45A1E", "#A87818", T.gold].map((c, i) => (
             <span key={i} style={{ width: 18, height: 18, borderRadius: 4, background: c, border: `1px solid ${T.border}` }} />
           ))}
+          <span style={{ width: 18, height: 18, borderRadius: 4, background: `linear-gradient(135deg, #F7CE5B, ${T.goldHi} 45%, ${T.gold})`, border: "1px solid #F7CE5B", boxShadow: "0 0 10px rgba(224,168,50,0.7)" }} />
           <span style={{ fontSize: 10.5, color: T.textMuted, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700 }}>100%</span>
         </div>
       </Card>

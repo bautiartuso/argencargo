@@ -159,8 +159,6 @@ function Dashboard({ token, onLogout }) {
   // Listado completo filtrado solo por moneda (acumulado, sin recorte por mes)
   const filtered = useMemo(() => filterCurrency === "all" ? enriched.withRunning : enriched.withRunning.filter((m) => m.currency === filterCurrency), [enriched, filterCurrency]);
 
-  // Comisión SOLFIN acumulada (todos los ingresos ARS con comisión)
-  const commissionTotal = useMemo(() => movements.filter((m) => m.type === "ingreso" && m.currency === "ARS").reduce((s, m) => s + Number(m.commission_amount || 0), 0), [movements]);
   const isMobile = useIsMobile();
 
   return (
@@ -173,13 +171,6 @@ function Dashboard({ token, onLogout }) {
           <BalanceCard label="Saldo ARS" currency="ARS" amount={enriched.totals.ars} />
           <BalanceCard label="Saldo USD" currency="USD" amount={enriched.totals.usd} />
         </section>
-        {commissionTotal > 0 && (
-          <div style={{ padding: "12px 16px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 10, marginBottom: 16, fontSize: 13, color: T.amber, display: "flex", alignItems: "center", gap: 8 }}>
-            <span>💸</span>
-            <span>Comisión SOLFIN acumulada: <strong>{fmtMoney(commissionTotal, "ARS")}</strong></span>
-          </div>
-        )}
-
         {/* Filtros */}
         <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
           <div style={{ display: "flex", gap: 4, padding: 3, background: T.bgSurface, borderRadius: 8, border: `1px solid ${T.border}` }}>
@@ -213,11 +204,20 @@ function Dashboard({ token, onLogout }) {
 
 function Header({ onLogout, onAdd, onShare, onDollarize }) {
   return (
-    <header style={{ background: T.bgSurface, borderBottom: `1px solid ${T.border}`, padding: "14px 22px", position: "sticky", top: 0, zIndex: 10 }}>
-      <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
-        <div>
-          <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: T.gold, letterSpacing: "-0.01em" }}>CC Financiera SOLFIN</h1>
-          <p style={{ fontSize: 11, color: T.textMuted, margin: "2px 0 0" }}>Cuenta corriente con SOLFIN · ARS y USD</p>
+    <header style={{ background: "linear-gradient(180deg, #10203C 0%, #0C1830 100%)", borderBottom: "1px solid rgba(184,149,106,0.22)", boxShadow: "0 1px 0 rgba(232,208,152,0.06), 0 10px 30px rgba(0,0,0,0.35)", padding: "16px 22px", position: "sticky", top: 0, zIndex: 10, overflow: "hidden" }}>
+      {/* Glow dorado sutil arriba a la izquierda */}
+      <div style={{ position: "absolute", top: -90, left: -60, width: 320, height: 200, background: "radial-gradient(ellipse, rgba(184,149,106,0.16), transparent 70%)", pointerEvents: "none" }} />
+      <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap", position: "relative" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
+          <div style={{ width: 42, height: 42, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19, background: "linear-gradient(135deg, rgba(184,149,106,0.22), rgba(184,149,106,0.06))", border: "1px solid rgba(232,208,152,0.35)", boxShadow: "0 0 18px rgba(184,149,106,0.18), inset 0 1px 0 rgba(255,255,255,0.08)" }}>🏦</div>
+          <div>
+            <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, letterSpacing: "-0.02em", background: "linear-gradient(135deg, #E8D098 20%, #B8956A 60%, #E8D098 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>CC Financiera</h1>
+            <p style={{ fontSize: 11, color: T.textMuted, margin: "2px 0 0", display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontWeight: 700, color: "rgba(232,208,152,0.75)", letterSpacing: "0.12em" }}>SOLFIN</span>
+              <span style={{ width: 3, height: 3, borderRadius: "50%", background: "rgba(255,255,255,0.25)", display: "inline-block" }} />
+              Cuenta corriente · ARS y USD
+            </p>
+          </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={onShare} style={btnGhost}>🔗 Compartir</button>
