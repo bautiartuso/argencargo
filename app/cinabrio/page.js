@@ -1381,17 +1381,25 @@ function ExpenseModal({ token, editing, categories, onClose, onSaved }) {
   const [inst, setInst] = useState(editing?.installments || 1);
   const [notes, setNotes] = useState(editing?.notes || "");
   const [saving, setSaving] = useState(false);
+  // Modo "varios montos": un monto por línea (o separados por +), se suman en un solo gasto.
+  // Caso de uso: 4 viajes de bondi en el día → un único gasto de transporte con la suma.
+  const [multiMode, setMultiMode] = useState(false);
+  const [multiAmounts, setMultiAmounts] = useState("");
 
   const isCredit = pm === "Tarjeta de crédito";
-  const totalN = Number(String(amount).replace(/\./g, "").replace(",", ".")) || 0;
+  const parseNum = (s) => Number(String(s).trim().replace(/\./g, "").replace(",", ".")) || 0;
+  const multiList = multiMode ? String(multiAmounts).split(/\n|\+/).map(s => s.trim()).filter(Boolean).map(parseNum).filter(n => n > 0) : [];
+  const totalN = multiMode ? Math.round(multiList.reduce((s, n) => s + n, 0) * 100) / 100 : parseNum(amount);
   const perInst = isCredit && inst > 1 ? totalN / inst : null;
 
   const save = async () => {
     if (!isFinite(totalN) || totalN <= 0) return toast.error("Monto inválido");
     setSaving(true);
+    // Si sumó varios montos, dejamos el desglose en las notas para trazabilidad.
+    const multiDetail = multiMode && multiList.length > 1 ? `Σ ${multiList.map(n => n.toLocaleString("es-AR", { maximumFractionDigits: 2 })).join(" + ")}` : "";
     const body = {
       category_id: catId || null, amount_ars: totalN, description: desc.trim() || null,
-      expense_date: date, notes: notes.trim() || null,
+      expense_date: date, notes: [multiDetail, notes.trim()].filter(Boolean).join(" · ") || null,
       payment_method: pm, installments: isCredit ? Number(inst) || 1 : 1,
     };
     if (editing?.id) await dq("mp_expenses", { method: "PATCH", token, filters: `?id=eq.${editing.id}`, body });
@@ -1406,8 +1414,23 @@ function ExpenseModal({ token, editing, categories, onClose, onSaved }) {
   return (
     <Modal title={editing?.id ? "Editar gasto" : "Registrar gasto"} onClose={onClose}>
       <Field label="Descripción"><input autoFocus value={desc} onChange={e => setDesc(e.target.value)} style={inputStyle} placeholder="Ej: Supermercado Coto" /></Field>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Monto (ARS)"><input type="text" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} style={inputStyle} placeholder="0" /></Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "start" }}>
+        <Field label="Monto (ARS)">
+          {!multiMode ? (
+            <>
+              <input type="text" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} style={inputStyle} placeholder="0" />
+              <button type="button" onClick={() => { setMultiMode(true); setMultiAmounts(totalN > 0 ? String(amount).trim() : ""); }} style={{ background: "none", border: "none", padding: "5px 0 0", fontSize: 11, fontWeight: 700, color: T.gold, cursor: "pointer", fontFamily: "inherit" }}>Σ Sumar varios montos</button>
+            </>
+          ) : (
+            <>
+              <textarea value={multiAmounts} onChange={e => setMultiAmounts(e.target.value)} rows={4} autoFocus style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6, fontVariantNumeric: "tabular-nums" }} placeholder={"714\n894,17\n1200"} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginTop: 5, flexWrap: "wrap" }}>
+                <button type="button" onClick={() => { setMultiMode(false); if (totalN > 0) setAmount(String(totalN).replace(".", ",")); }} style={{ background: "none", border: "none", padding: 0, fontSize: 11, fontWeight: 600, color: T.textMuted, cursor: "pointer", fontFamily: "inherit" }}>← Monto único</button>
+                <span style={{ fontSize: 11.5, fontWeight: 800, color: totalN > 0 ? T.gold : T.textMuted, fontVariantNumeric: "tabular-nums" }}>{multiList.length > 0 ? `Σ ${multiList.length} = ${fmtArs(totalN)}` : "un monto por línea"}</span>
+              </div>
+            </>
+          )}
+        </Field>
         <Field label="Categoría">
           <select value={catId} onChange={e => setCatId(e.target.value)} style={inputStyle}>
             <option value="">— Sin categoría —</option>
