@@ -10802,6 +10802,8 @@ function MaritimePanel({token,allClients=[]}){
   const [expanded,setExpanded]=useState(new Set());
   const [expandedWh,setExpandedWh]=useState(new Set()); // depósitos abiertos
   const [editingWh,setEditingWh]=useState(null); // warehouse being edited (object)
+  const [containers,setContainers]=useState([]); // maritime_containers (por depósito)
+  const [editingContainer,setEditingContainer]=useState(null); // {warehouse} nuevo | row al editar
   const [selectedShipments,setSelectedShipments]=useState(new Set()); // ids para crear op consolidada
   const [creatingOp,setCreatingOp]=useState(false);
   const [msg,setMsg]=useState("");
@@ -10912,16 +10914,18 @@ function MaritimePanel({token,allClients=[]}){
 
   const load=async()=>{
     setLo(true);
-    const [sh,pk,it,wh]=await Promise.all([
+    const [sh,pk,it,wh,ct]=await Promise.all([
       dq("maritime_shipments",{token,filters:"?select=*,operations(operation_code)&order=created_at.desc"}),
       dq("maritime_packages",{token,filters:"?select=*&order=bulto_number.asc"}),
       dq("maritime_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("maritime_warehouses",{token,filters:"?select=*&order=sort_order.asc,name.asc"}),
+      dq("maritime_containers",{token,filters:"?select=*&order=created_at.asc"}),
     ]);
     setShipments(Array.isArray(sh)?sh:[]);
     setPackages(Array.isArray(pk)?pk:[]);
     setItems(Array.isArray(it)?it:[]);
     setWhs(Array.isArray(wh)?wh:[]);
+    setContainers(Array.isArray(ct)?ct:[]);
     setLo(false);
   };
   useEffect(()=>{load();},[token]);
@@ -11002,6 +11006,33 @@ function MaritimePanel({token,allClients=[]}){
     load();
   };
 
+  // ── Contenedores ────────────────────────────────────────────────────────
+  const delContainer=async(c)=>{
+    const inCont=shipments.filter(s=>s.container_id===c.id).length;
+    if(!await confirmDialog(`¿Eliminar el contenedor "${c.code}"?${inCont>0?`\n\nLas ${inCont} carga${inCont>1?"s":""} asignada${inCont>1?"s":""} vuelven a "sin contenedor" (no se borran).`:""}`))return;
+    await dq("maritime_containers",{method:"DELETE",token,filters:`?id=eq.${c.id}`});
+    flash(`Contenedor ${c.code} eliminado`);load();
+  };
+  const dispatchContainer=async(c)=>{
+    const inCont=shipments.filter(s=>s.container_id===c.id&&!s.operation_id).length;
+    if(!await confirmDialog(`¿Despachar el contenedor ${c.code}?\n\nSe marca "En tránsito" y sus ${inCont} carga${inCont!==1?"s":""} pasan a 🚢 EN TRÁNSITO 🇦🇷.`))return;
+    await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body:{status:"en_transito",departed_at:new Date().toISOString().slice(0,10)}});
+    await dq("maritime_shipments",{method:"PATCH",token,filters:`?container_id=eq.${c.id}`,body:{status:"en_camino_ar"}});
+    flash(`🚢 Contenedor ${c.code} despachado`);load();
+  };
+  const setContainerStatus=async(c,status)=>{
+    await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body:{status}});
+    flash(`Contenedor ${c.code} → ${status==="armandose"?"armándose":status==="en_transito"?"en tránsito":"arribado"}`);load();
+  };
+  // Asignar (o quitar con containerId=null) las cargas seleccionadas a un contenedor.
+  const assignSelectedToContainer=async(containerId)=>{
+    const ids=[...selectedShipments];
+    if(ids.length===0)return;
+    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{container_id:containerId||null}});
+    flash(containerId?`📦 ${ids.length} carga${ids.length>1?"s":""} asignada${ids.length>1?"s":""} al contenedor`:`Carga${ids.length>1?"s":""} quitada${ids.length>1?"s":""} del contenedor`);
+    setSelectedShipments(new Set());load();
+  };
+
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:18,flexWrap:"wrap",gap:14}}>
       <div>
@@ -11034,7 +11065,17 @@ function MaritimePanel({token,allClients=[]}){
           {sameClient&&!sameWh&&<span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,80,80,0.15)",color:"#ff6b6b",border:"1px solid rgba(255,80,80,0.4)"}}>⚠ Distintos depósitos</span>}
           {canCreate&&<span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.4)"}}>✓ {clientCode} · {[...warehouseSet][0]}</span>}
         </div>
-        <div style={{display:"flex",gap:8}}>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          {sameWh&&(()=>{
+            const whConts=containers.filter(c=>c.warehouse===[...warehouseSet][0]&&c.status==="armandose");
+            const anyAssigned=sel.some(s=>s.container_id);
+            if(whConts.length===0&&!anyAssigned)return null;
+            return <select value="" onChange={e=>{const v=e.target.value;if(v==="__unassign")assignSelectedToContainer(null);else if(v)assignSelectedToContainer(v);e.target.value="";}} style={{padding:"7px 10px",fontSize:11.5,fontWeight:700,border:"1px solid rgba(96,165,250,0.4)",borderRadius:7,background:"rgba(96,165,250,0.08)",color:"#60a5fa",outline:"none",cursor:"pointer",maxWidth:200}}>
+              <option value="" style={{background:"#142038"}}>🚢 Contenedor…</option>
+              {whConts.map(c=><option key={c.id} value={c.id} style={{background:"#142038"}}>Asignar a {c.code}</option>)}
+              {anyAssigned&&<option value="__unassign" style={{background:"#142038"}}>— Quitar del contenedor</option>}
+            </select>;
+          })()}
           <Btn variant="secondary" small onClick={()=>setSelectedShipments(new Set())}>Limpiar</Btn>
           <Btn small onClick={createOperationFromShipments} disabled={!canCreate||creatingOp}>{creatingOp?"Creando…":(sel.length>1?"+ Crear op consolidada":"+ Crear operación")}</Btn>
         </div>
@@ -11100,11 +11141,19 @@ function MaritimePanel({token,allClients=[]}){
             );return <div key={o} style={{display:"flex",flexDirection:"column",gap:5}}>{btnGroup(true)}{btnGroup(false)}</div>;})}
           </div>
         </div>
-        {isWhOpen&&<table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+        {isWhOpen&&(()=>{
+          // Sub-agrupación por contenedor: cada depósito tiene sus propios contenedores.
+          // Las cargas sin container_id van al grupo "Sin contenedor asignado".
+          const whConts=containers.filter(c=>c.warehouse===wh);
+          const byCont={};wsList.forEach(s=>{const k=s.container_id&&whConts.some(c=>c.id===s.container_id)?s.container_id:"__none";(byCont[k]=byCont[k]||[]).push(s);});
+          const noneList=byCont.__none||[];
+          const contChip=(st)=>st==="armandose"?{l:"🔧 ARMÁNDOSE",bg:"rgba(251,191,36,0.14)",fg:"#fbbf24"}:st==="en_transito"?{l:"🚢 EN TRÁNSITO",bg:"rgba(96,165,250,0.15)",fg:"#60a5fa"}:{l:"⚓ ARRIBADO",bg:"rgba(34,197,94,0.15)",fg:"#22c55e"};
+          const fmtD=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
+          const renderTable=(list)=><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.2)"}}>
             {["","Recibido","Producto","Cliente","Origen","Tracking","Bultos","CBM","Estado",""].map((h,i)=><th key={i} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em",width:i===0?34:undefined}}>{h}</th>)}
           </tr></thead>
-          <tbody>{wsList.map((sh,idx)=>{
+          <tbody>{list.map((sh,idx)=>{
             const cbm=cbmOf(sh.id);
             const bcount=bultosOf(sh.id);
             const isExp=expanded.has(sh.id);
@@ -11170,9 +11219,93 @@ function MaritimePanel({token,allClients=[]}){
               </td></tr>}
             </Fragment>;
           })}</tbody>
-        </table>}
+        </table>;
+          const contHeader=(c)=>{
+            const list=byCont[c.id]||[];
+            const cbmC=list.reduce((s,sh)=>s+cbmOf(sh.id),0);
+            const bulC=list.reduce((s,sh)=>s+bultosOf(sh.id),0);
+            const chip=contChip(c.status);
+            return <div style={{padding:"9px 18px",background:"rgba(184,149,106,0.06)",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:12.5,fontWeight:800,color:IC}}>🚢 {c.code}</span>
+                <span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:4,background:chip.bg,color:chip.fg,letterSpacing:"0.05em"}}>{chip.l}</span>
+                <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>{list.length} carga{list.length!==1?"s":""} · {bulC} bulto{bulC!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{c.departed_at?` · salió ${fmtD(c.departed_at)}`:""}{c.eta?` · ETA ${fmtD(c.eta)}`:""}</span>
+                {c.notes&&<span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>· {c.notes}</span>}
+              </div>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+                {c.status==="armandose"&&list.length>0&&<button onClick={()=>dispatchContainer(c)} title="Despachar: el contenedor y sus cargas pasan a En tránsito" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#60a5fa",cursor:"pointer"}}>🚢 Despachar</button>}
+                {c.status==="en_transito"&&<button onClick={()=>setContainerStatus(c,"arribado")} style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer"}}>⚓ Arribó</button>}
+                {c.status==="en_transito"&&<button onClick={()=>setContainerStatus(c,"armandose")} title="Volver a armándose" style={{padding:"4px 8px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.45)",cursor:"pointer"}}>↶</button>}
+                {c.status==="arribado"&&<button onClick={()=>setContainerStatus(c,"en_transito")} title="Volver a en tránsito" style={{padding:"4px 8px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.45)",cursor:"pointer"}}>↶</button>}
+                <button onClick={()=>setEditingContainer(c)} title="Editar contenedor" style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.06)",color:"#60a5fa",cursor:"pointer"}}>✎</button>
+                <button onClick={()=>delContainer(c)} title="Eliminar contenedor" style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
+              </div>
+            </div>;
+          };
+          return <div>
+            {whConts.map(c=><div key={c.id}>
+              {contHeader(c)}
+              {(byCont[c.id]||[]).length>0?renderTable(byCont[c.id]):<p style={{padding:"10px 18px",fontSize:11.5,color:"rgba(255,255,255,0.35)",fontStyle:"italic",margin:0}}>Sin cargas asignadas — tildá cargas con el checkbox y usá el selector "🚢 Contenedor…" de la barra de selección.</p>}
+            </div>)}
+            {whConts.length>0&&noneList.length>0&&<div style={{padding:"9px 18px",background:"rgba(255,255,255,0.025)",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+              <span style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,0.6)"}}>📦 Sin contenedor asignado</span>
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginLeft:8}}>{noneList.length} carga{noneList.length!==1?"s":""} · CBM {noneList.reduce((s,sh)=>s+cbmOf(sh.id),0).toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</span>
+            </div>}
+            {(whConts.length===0?wsList.length>0:noneList.length>0)&&renderTable(whConts.length===0?wsList:noneList)}
+            <div style={{padding:"10px 18px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+              <button onClick={()=>setEditingContainer({warehouse:wh})} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1.5px dashed rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.05)",color:"#60a5fa",cursor:"pointer"}}>+ 🚢 Nuevo contenedor en {wh}</button>
+            </div>
+          </div>;
+        })()}
       </div>;
     })}
+
+    {/* Modal contenedor (crear / editar) */}
+    {editingContainer&&<ContainerForm token={token} editing={editingContainer.id?editingContainer:null} warehouse={editingContainer.warehouse} onSave={()=>{setEditingContainer(null);load();}} onCancel={()=>setEditingContainer(null)}/>}
+  </div>;
+}
+
+// Form de contenedor marítimo: código, estado, fechas y notas. Pertenece a UN depósito.
+function ContainerForm({token,editing,warehouse,onSave,onCancel}){
+  const [code,setCode]=useState(editing?.code||"");
+  const [status,setStatus]=useState(editing?.status||"armandose");
+  const [departedAt,setDepartedAt]=useState(editing?.departed_at||"");
+  const [eta,setEta]=useState(editing?.eta||"");
+  const [notes,setNotes]=useState(editing?.notes||"");
+  const [saving,setSaving]=useState(false);
+  const save=async()=>{
+    if(!code.trim()){alertDialog("Cargá el código del contenedor (ej: MSKU1234567 o Contenedor 1)");return;}
+    setSaving(true);
+    const body={code:code.trim(),status,departed_at:departedAt||null,eta:eta||null,notes:notes.trim()||null};
+    try{
+      if(editing?.id)await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
+      else await dq("maritime_containers",{method:"POST",token,body:{...body,warehouse}});
+      onSave();
+    }catch(e){alertDialog("Error: "+e.message);setSaving(false);}
+  };
+  return <div onClick={onCancel} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:480,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(96,165,250,0.35)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>🚢 {editing?"Editar":"Nuevo"} contenedor <span style={{color:"#60a5fa",fontSize:13}}>· {editing?.warehouse||warehouse}</span></h3>
+        <button onClick={onCancel} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+      </div>
+      <Inp label="Código / Identificación" value={code} onChange={setCode} placeholder="Ej: MSKU1234567"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+        <Inp label="Fecha de salida" type="date" value={departedAt} onChange={setDepartedAt}/>
+        <Inp label="ETA Argentina" type="date" value={eta} onChange={setEta}/>
+      </div>
+      <div style={{marginBottom:12}}>
+        <label style={{display:"block",fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Estado</label>
+        <div style={{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:8,border:"1px solid rgba(255,255,255,0.08)"}}>
+          {[{k:"armandose",l:"🔧 Armándose"},{k:"en_transito",l:"🚢 En tránsito"},{k:"arribado",l:"⚓ Arribado"}].map(o=><button key={o.k} onClick={()=>setStatus(o.k)} style={{flex:1,padding:"7px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:status===o.k?"rgba(96,165,250,0.25)":"transparent",color:status===o.k?"#60a5fa":"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
+        </div>
+      </div>
+      <Inp label="Notas (opcional)" value={notes} onChange={setNotes} placeholder="Naviera, booking, observaciones…"/>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+        <Btn variant="secondary" small onClick={onCancel} disabled={saving}>Cancelar</Btn>
+        <Btn small onClick={save} disabled={saving}>{saving?"Guardando…":(editing?"Guardar":"+ Crear contenedor")}</Btn>
+      </div>
+    </div>
   </div>;
 }
 
