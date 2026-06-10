@@ -191,8 +191,20 @@ function AdminLogin({onLogin}){
   </div>;
 }
 
+// Filtros de la lista de operaciones persistidos en localStorage: el componente se
+// desmonta al entrar a una op, así que el estado en memoria se perdía al volver.
+const OPS_FILTERS_KEY="ac_ops_filters";
+const loadOpsFilters=()=>{try{if(typeof window==="undefined")return{};return JSON.parse(localStorage.getItem(OPS_FILTERS_KEY)||"{}")||{};}catch{return{};}};
+
 function OperationsList({token,onSelect,onNew}){
-  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fStatuses,setFStatuses]=useState([]);const [fChannel,setFChannel]=useState("");const [sortCol,setSortCol]=useState("smart");const [sortDir,setSortDir]=useState("asc");const [showStatusDrop,setShowStatusDrop]=useState(false);const [pageClosed,setPageClosed]=useState(1);const CLOSED_PER_PAGE=25;
+  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [lo,setLo]=useState(true);
+  const [search,setSearch]=useState(()=>loadOpsFilters().search||"");
+  const [fStatuses,setFStatuses]=useState(()=>{const v=loadOpsFilters().fStatuses;return Array.isArray(v)?v:[];});
+  const [fChannels,setFChannels]=useState(()=>{const v=loadOpsFilters().fChannels;return Array.isArray(v)?v:[];});
+  const [sortCol,setSortCol]=useState(()=>loadOpsFilters().sortCol||"smart");
+  const [sortDir,setSortDir]=useState(()=>loadOpsFilters().sortDir||"asc");
+  useEffect(()=>{try{localStorage.setItem(OPS_FILTERS_KEY,JSON.stringify({search,fStatuses,fChannels,sortCol,sortDir}));}catch{}},[search,fStatuses,fChannels,sortCol,sortDir]);
+  const [showStatusDrop,setShowStatusDrop]=useState(false);const [showChannelDrop,setShowChannelDrop]=useState(false);const [pageClosed,setPageClosed]=useState(1);const CLOSED_PER_PAGE=25;
   const [selectedIds,setSelectedIds]=useState(new Set());
   const [bulkAction,setBulkAction]=useState(null); // {action:"setStatus"|"delete"|"markCollected", value?}
   const [bulkRunning,setBulkRunning]=useState(false);
@@ -261,8 +273,9 @@ function OperationsList({token,onSelect,onNew}){
     return saldo;
   };
   const toggleStatus=(s)=>setFStatuses(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
+  const toggleChannel=(c)=>setFChannels(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c]);
   const getOrigin=(op)=>op.origin||"China";
-  const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannel&&o.channel!==fChannel)return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
+  const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannels.length>0&&!fChannels.includes(o.channel))return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
   const calcGan=(o)=>{
     // Op perdida en aduana: ingreso 0 (no se cobra), la "ganancia" es la pérdida operativa (-costos).
     let ing;
@@ -348,10 +361,12 @@ function OperationsList({token,onSelect,onNew}){
     </div>}
     <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
       <div style={{flex:1,minWidth:200}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por código, cliente o descripción..." style={{width:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
-      <div style={{position:"relative"}}><button onClick={()=>setShowStatusDrop(p=>!p)} style={{padding:"10px 14px",fontSize:12,border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{fStatuses.length>0?`${fStatuses.length} estados`:"Todos los estados"} ▼</button>
+      <div style={{position:"relative"}}><button onClick={()=>setShowStatusDrop(p=>!p)} style={{padding:"10px 14px",fontSize:12,border:`1px solid ${fStatuses.length>0?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,borderRadius:8,background:fStatuses.length>0?"rgba(184,149,106,0.10)":"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{fStatuses.length>0?`${fStatuses.length} estado${fStatuses.length>1?"s":""}`:"Todos los estados"} ▼</button>
         {showStatusDrop&&<div style={{position:"absolute",top:"100%",left:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:8,zIndex:10,minWidth:200}}>{STATUSES.map(s=><label key={s} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",borderRadius:4}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><input type="checkbox" checked={fStatuses.includes(s)} onChange={()=>toggleStatus(s)}/><span style={{fontSize:12,color:SM[s].c,fontWeight:600}}>{SM[s].l}</span></label>)}<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:4}}><button onClick={()=>{setFStatuses([]);setShowStatusDrop(false);}} style={{fontSize:11,color:IC,background:"none",border:"none",cursor:"pointer",padding:"4px 8px"}}>Limpiar filtros</button></div></div>}
       </div>
-      <select value={fChannel} onChange={e=>setFChannel(e.target.value)} style={{padding:"10px 14px",fontSize:12,border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}><option value="" style={{background:"#142038"}}>Todos los canales</option>{CHANNELS.map(c=><option key={c} value={c} style={{background:"#142038"}}>{CM[c]}</option>)}</select>
+      <div style={{position:"relative"}}><button onClick={()=>setShowChannelDrop(p=>!p)} style={{padding:"10px 14px",fontSize:12,border:`1px solid ${fChannels.length>0?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,borderRadius:8,background:fChannels.length>0?"rgba(184,149,106,0.10)":"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{fChannels.length>0?`${fChannels.length} canal${fChannels.length>1?"es":""}`:"Todos los canales"} ▼</button>
+        {showChannelDrop&&<div style={{position:"absolute",top:"100%",left:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:8,zIndex:10,minWidth:180}}>{CHANNELS.map(c=><label key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",borderRadius:4}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><input type="checkbox" checked={fChannels.includes(c)} onChange={()=>toggleChannel(c)}/><span style={{fontSize:12,color:"#fff",fontWeight:600}}>{CM[c]}</span></label>)}<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:4}}><button onClick={()=>{setFChannels([]);setShowChannelDrop(false);}} style={{fontSize:11,color:IC,background:"none",border:"none",cursor:"pointer",padding:"4px 8px"}}>Limpiar canales</button></div></div>}
+      </div>
       {sortCol!=="smart"&&<button onClick={()=>{setSortCol("smart");setSortDir("asc");}} style={{padding:"10px 14px",fontSize:11,fontWeight:600,border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:8,background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>↻ Restaurar orden</button>}
     </div>
     {lo?<SkeletonTable rows={10} cols={7}/>:(()=>{
@@ -398,7 +413,7 @@ function OperationsList({token,onSelect,onNew}){
     return <>{ready.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em",display:"flex",alignItems:"center",gap:8}}><span style={{width:7,height:7,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 8px rgba(34,197,94,0.6)"}}/>Listas para retirar <span style={{color:"rgba(34,197,94,0.85)",marginLeft:4}}>({ready.length})</span></h3>{renderTable(ready,false)}</>}
     {inProgress.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:ready.length>0?"32px 0 14px":"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones en curso <span style={{color:GOLD_LIGHT,marginLeft:4}}>({inProgress.length})</span></h3>{renderTable(inProgress,false)}</>}
     {closed.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"32px 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones cerradas <span style={{color:"rgba(255,255,255,0.55)",marginLeft:4}}>({closed.length})</span> {totalGanancia!==0&&<span style={{fontSize:12,fontWeight:700,color:totalGanancia>0?"#22c55e":"#ff6b6b",marginLeft:12,letterSpacing:"0.04em"}}>Ganancia total: USD {totalGanancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}</h3>{renderTable(closedPaged,true)}{renderPagination()}</>}
-    {active.length===0&&closed.length===0&&<EmptyState icon="box" title={search||fStatuses.length>0||fChannel?"Sin resultados":"No hay operaciones"} description={search||fStatuses.length>0||fChannel?"Ninguna operación coincide con los filtros activos.":"Creá tu primera operación para comenzar."} cta={search||fStatuses.length>0||fChannel?null:"+ Nueva operación"} ctaOnClick={search||fStatuses.length>0||fChannel?null:onNew}/>}</>;})()}
+    {active.length===0&&closed.length===0&&(()=>{const hasFilters=search||fStatuses.length>0||fChannels.length>0;return <EmptyState icon="box" title={hasFilters?"Sin resultados":"No hay operaciones"} description={hasFilters?"Ninguna operación coincide con los filtros activos.":"Creá tu primera operación para comenzar."} cta={hasFilters?null:"+ Nueva operación"} ctaOnClick={hasFilters?null:onNew}/>;})()}</>;})()}
 
     {bulkAction&&<div onClick={()=>!bulkRunning&&setBulkAction(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${bulkAction.action==="delete"?"rgba(255,80,80,0.5)":bulkAction.action==="markCollected"?"rgba(34,197,94,0.5)":"rgba(184,149,106,0.5)"}`,borderRadius:14,padding:"22px 24px",maxWidth:480,width:"100%"}}>
