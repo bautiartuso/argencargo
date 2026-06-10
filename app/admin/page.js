@@ -10974,7 +10974,9 @@ function MaritimePanel({token,allClients=[]}){
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   const downloadPdf=(warehouse,origin,lang="es",withValues=true)=>{
-    const wsShipments=shipments.filter(s=>!s.operation_id&&s.warehouse===warehouse&&s.origin===origin).map(s=>({
+    // Excluir también cargas de contenedores ARRIBADOS (ya llegaron, viven en el historial).
+    const arrivedContIds=new Set(containers.filter(c=>c.status==="arribado").map(c=>c.id));
+    const wsShipments=shipments.filter(s=>!s.operation_id&&s.warehouse===warehouse&&s.origin===origin&&!(s.container_id&&arrivedContIds.has(s.container_id))).map(s=>({
       ...s,
       packages:packages.filter(p=>p.shipment_id===s.id),
       items:items.filter(it=>it.shipment_id===s.id),
@@ -10989,7 +10991,9 @@ function MaritimePanel({token,allClients=[]}){
     if(wsShipments.length===0){alertDialog("No hay pedidos para ese depósito/origen");return;}
     const wh=whByName[warehouse];
     const rotulo=wh?.rotulo||`MARÍTIMO ${warehouse.toUpperCase()} (código cliente)`;
-    printMaritimePdf({warehouse,origin,shipments:wsShipments,rotulo,lang,withValues});
+    // Contenedores en tránsito de este depósito → el PDF agrupa las cargas por contenedor.
+    const whContainers=containers.filter(c=>c.warehouse===warehouse&&c.status==="en_transito");
+    printMaritimePdf({warehouse,origin,shipments:wsShipments,rotulo,lang,withValues,containers:whContainers});
   };
 
   const delShipment=async(id)=>{
