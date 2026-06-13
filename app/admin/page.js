@@ -900,7 +900,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const isBlanco=opForCalc.channel?.includes("blanco");
       if(isBlanco&&its.length===0)return;
       if(!isBlanco&&pks.length===0)return;
-      const{totalTax,flete,seguro,totalAbonar,surcharge}=calcOpBudget(opForCalc,its,pks,tariffsFresh,config,overridesFresh,clientFresh);
+      // RI: impuestos sobre el valor declarado (flight_invoice_items de esta op).
+      const{totalTax,flete,seguro,totalAbonar,surcharge}=calcOpBudget(opForCalc,its,pks,tariffsFresh,config,overridesFresh,clientFresh,declaredItems);
       await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}});
       setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}));
     }catch(e){console.error("autoSync budget",e);}
@@ -3875,15 +3876,17 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
       const clientFresh=Array.isArray(clRes)?clRes[0]:null;
       for(const o of activeOps){
         try{
-          const[it,pk]=await Promise.all([
+          const[it,pk,fii]=await Promise.all([
             dq("operation_items",{token,filters:`?operation_id=eq.${o.id}&select=*`}),
-            dq("operation_packages",{token,filters:`?operation_id=eq.${o.id}&select=*`})
+            dq("operation_packages",{token,filters:`?operation_id=eq.${o.id}&select=*`}),
+            dq("flight_invoice_items",{token,filters:`?operation_id=eq.${o.id}&select=quantity,unit_price_declared_usd`})
           ]);
-          const items=Array.isArray(it)?it:[];const pkgs=Array.isArray(pk)?pk:[];
+          const items=Array.isArray(it)?it:[];const pkgs=Array.isArray(pk)?pk:[];const declForOp=Array.isArray(fii)?fii:[];
           const isBlanco=o.channel?.includes("blanco");
           if(isBlanco&&items.length===0)continue;
           if(!isBlanco&&pkgs.length===0)continue;
-          const{totalTax,flete,seguro,totalAbonar}=calcOpBudget(o,items,pkgs,tariffsFresh,cfg,overridesFresh,clientFresh);
+          // RI: impuestos sobre el valor declarado.
+          const{totalTax,flete,seguro,totalAbonar}=calcOpBudget(o,items,pkgs,tariffsFresh,cfg,overridesFresh,clientFresh,declForOp);
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}});
         }catch(e){console.error(`syncClientOps ${o.operation_code}`,e);}
       }
@@ -5553,7 +5556,9 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           const pksArr=Array.isArray(pks)?pks:[];
           const isBlanco=opForCalc.channel?.includes("blanco");
           if((isBlanco&&itsArr.length===0)||(!isBlanco&&pksArr.length===0)){err++;continue;}
-          const {totalTax,flete,seguro,totalAbonar,surcharge}=calcOpBudget(opForCalc,itsArr,pksArr,tarFresh||[],configMap,overr||[],client);
+          // RI: impuestos sobre el valor declarado (items=flight_invoice_items de este vuelo).
+          const declForOp=items.filter(d=>d.operation_id===op.id);
+          const {totalTax,flete,seguro,totalAbonar,surcharge}=calcOpBudget(opForCalc,itsArr,pksArr,tarFresh||[],configMap,overr||[],client,declForOp);
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}});
           ok++;
         }catch(e){console.error("recalc op",op.id,e);err++;}
