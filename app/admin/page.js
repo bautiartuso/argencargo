@@ -1042,12 +1042,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     {k:"comms",l:"Comunicaciones"}
   ]:[
     {k:"general",l:"General"},
-    {k:"budget",l:"Presupuesto"},
+    // Solapa unificada (11/06/2026): Presupuesto + Cobro/Costos (Finanzas) + Gestión de Pagos
+    // viven todos bajo "finance". Los bloques se gatean abajo con tab==="finance"&&!isGI.
+    {k:"finance",l:"Presupuesto y Finanzas"},
     ...(isCanalB?[]:[{k:"items",l:"Productos"}]),
     {k:"packages",l:"Bultos"},
     ...(isCanalB?[]:[{k:"tracking",l:"Seguimiento"}]),
-    {k:"payments",l:"Pagos"},
-    {k:"finance",l:"Finanzas"},
     {k:"comms",l:"Comunicaciones"}
   ];
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
@@ -1199,7 +1199,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       // Bultos (todas las ops aéreas requieren peso al menos)
       if(isAereo&&pkgs.length===0&&!["pendiente","cancelada"].includes(op.status))issues.push({txt:"Cargar bultos con peso/dimensiones",action:"Ir a tab Bultos",tab:"packages",priority:"high"});
       // Presupuesto sin cargar
-      if(Number(op.budget_total||0)<=0&&!["pendiente","cancelada"].includes(op.status))issues.push({txt:"Falta cargar/sincronizar presupuesto",action:"Ir a tab Presupuesto",tab:"budget",priority:"high"});
+      if(Number(op.budget_total||0)<=0&&!["pendiente","cancelada"].includes(op.status))issues.push({txt:"Falta cargar/sincronizar presupuesto",action:"Ir a Presupuesto y Finanzas",tab:"finance",priority:"high"});
       // Tracking internacional cuando ya está en tránsito
       if(["en_transito","arribo_argentina"].includes(op.status)&&!op.international_tracking)issues.push({txt:"Falta tracking internacional + carrier",action:"Ir a tab General",tab:"general",priority:"medium"});
       // ETA sin definir
@@ -1453,7 +1453,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       })()}
     </>}
 
-    {tab==="budget"&&(()=>{
+    {tab==="finance"&&!isGI&&(()=>{
       const totalFob=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
       // Peso facturable (per-bulto max)
       let pf=0,totCBM=0,totGW=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});
@@ -2092,7 +2092,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     </div>}
     </>}
 
-    {tab==="payments"&&(()=>{
+    {tab==="finance"&&!isGI&&(()=>{
       // Suma cobrado: usa monto real si está pagado, sino el esperado
       const totalAnticipado=payments.filter(p=>p.client_paid).reduce((s,p)=>s+Number(p.client_paid_amount_usd??p.client_amount_usd??0),0);
       const totalGirado=payments.filter(p=>p.giro_status==="confirmado").reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
@@ -2925,7 +2925,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             </div>;})}
           </div>
         </div>}
-        {payments.length>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.12)",borderRadius:10,padding:"12px 16px",marginBottom:12}}><p style={{fontSize:12,fontWeight:600,color:IC,margin:"0 0 2px"}}>Esta operación tiene gestión de pagos internacionales (servicio aparte)</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>El cobro de esta operación es independiente. Ver detalles en tab "Pagos".</p></div>}
+        {payments.length>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.12)",borderRadius:10,padding:"12px 16px",marginBottom:12}}><p style={{fontSize:12,fontWeight:600,color:IC,margin:"0 0 2px"}}>Esta operación tiene gestión de pagos internacionales (servicio aparte)</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>El cobro de esta operación es independiente. Ver la sección Gestión de Pagos más abajo.</p></div>}
         {/* Toggle switch "cobrada" — estilo moderno */}
         <div style={{marginTop:6,marginBottom:2,padding:"12px 16px",background:op.is_collected?"linear-gradient(90deg, rgba(34,197,94,0.12), rgba(34,197,94,0.02))":"rgba(255,255,255,0.028)",border:`1px solid ${op.is_collected?"rgba(34,197,94,0.35)":"rgba(255,255,255,0.08)"}`,borderRadius:12,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,transition:"all 180ms"}}>
           <div>
