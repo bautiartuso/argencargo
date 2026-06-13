@@ -700,7 +700,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     }catch(e){alertDialog("Error: "+e.message);}
     setSavingAddPayment(false);
   };
-  const loadRedemptions=async()=>{if(!op.client_id)return;const r=await dq("client_reward_redemptions",{token,filters:`?client_id=eq.${op.client_id}&status=eq.pending&select=*&order=redeemed_at.asc`});setPendingRedemptions(Array.isArray(r)?r:[]);};
+  // Sistema de puntos/recompensas DESACTIVADO (11/06/2026): no se cargan canjes pendientes,
+  // así el bloque de "Canje de puntos pendiente" nunca aparece. Reactivar restaurando el query.
+  const loadRedemptions=async()=>{setPendingRedemptions([]);};
   const applyRedemption=async(red)=>{
     if(!await confirmDialog(`Aplicar "${red.reward_name}" a esta operación?\n\nSe va a descontar ${Number(red.value_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} USD del flete y el canje quedará marcado como usado.`))return;
     const r=await dq("rpc/apply_redemption_to_op",{method:"POST",token,body:{p_redemption_id:red.id,p_op_id:op.id}});
@@ -844,19 +846,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();
     if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
-    // Tier voucher: al pasar a "entregada" aplicamos auto el voucher pending (antes de que cobre el cliente)
+    // Tier voucher DESACTIVADO (11/06/2026): las categorías quedan como etiqueta visual pero
+    // ya no aplican descuento automático. Reactivar restaurando el apply_tier_voucher_to_op.
     let tierVoucherMsg="";
-    if(rest.status!==initOp.status&&rest.status==="entregada"&&!op.tier_discount_applied_usd){
-      try{
-        const vr=await dq("rpc/apply_tier_voucher_to_op",{method:"POST",token,body:{p_op_id:op.id}});
-        if(vr?.applied){
-          tierVoucherMsg=` · ★ Descuento ${String(vr.tier).toUpperCase()} aplicado: -USD ${Number(vr.discount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-          // Refrescamos op en UI
-          const fresh=await dq("operations",{token,filters:`?id=eq.${op.id}&select=*,clients(first_name,last_name,client_code)`});
-          if(Array.isArray(fresh)&&fresh[0])setOp(fresh[0]);
-        }
-      }catch(e){console.error("tier voucher error",e);}
-    }
     // Notification #6: notify client when operation status changes
     if(rest.status!==initOp.status&&op.client_id){try{const cls=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=auth_user_id`});const uid=Array.isArray(cls)&&cls[0]?cls[0].auth_user_id:null;if(uid){await dq("notifications",{method:"POST",token,body:{user_id:uid,portal:"cliente",title:`Estado actualizado: ${SM[rest.status]?.l||rest.status}`,body:`Operación ${op.operation_code}`,link:`?op=${op.operation_code}`}});}}catch(e){console.error("notif error",e);}}
     // Email automático según trigger (deposito / arribo / cerrada)
@@ -3950,7 +3942,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
         <button onClick={onBack} style={{fontSize:12,color:"rgba(255,255,255,0.55)",background:"transparent",border:"1px solid rgba(255,255,255,0.08)",cursor:"pointer",fontWeight:600,padding:"6px 12px",borderRadius:8,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.color=GOLD_LIGHT;e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";}} onMouseLeave={e=>{e.currentTarget.style.color="rgba(255,255,255,0.55)";e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";}}>← Volver</button>
         <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{cl.first_name} {cl.last_name}</h2>
         {cl.tier&&cl.tier!=="standard"&&(()=>{const ti=getTierInfo(cl.tier);return <span title={cl.tier_achieved_at?`${ti.label} desde ${new Date(cl.tier_achieved_at).toLocaleDateString("es-AR")} · ${cl.lifetime_points_earned||0} pts ganados`:ti.label} style={{fontSize:10,fontWeight:800,padding:"4px 12px",borderRadius:999,background:ti.gradient,color:"#0A1628",letterSpacing:"0.14em",border:`1px solid ${ti.color}`,boxShadow:ti.glow,display:"inline-flex",alignItems:"center",gap:5,textTransform:"uppercase"}}>{ti.icon} {ti.label}</span>;})()}
-        {Number(cl.points_balance||0)>0&&<span title={`Balance actual · ${cl.lifetime_points_earned||0} ganados en total`} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,background:"rgba(184,149,106,0.12)",color:GOLD_LIGHT,border:"1px solid rgba(184,149,106,0.3)",letterSpacing:"0.08em",fontVariantNumeric:"tabular-nums"}}>★ {cl.points_balance} PTS</span>}
+        {/* Badge de puntos removido (11/06/2026): sistema de puntos desactivado. El badge de tier (arriba) se mantiene. */}
         {Number(cl.account_balance_usd||0)!==0&&(()=>{const bal=Number(cl.account_balance_usd||0);const isCredit=bal>0;return <span title={isCredit?"Saldo a favor en cuenta corriente":"Deuda en cuenta corriente"} onClick={()=>setTab("cc")} style={{fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:999,background:isCredit?"rgba(34,197,94,0.14)":"rgba(239,68,68,0.14)",color:isCredit?"#22c55e":"#ef4444",border:`1px solid ${isCredit?"rgba(34,197,94,0.35)":"rgba(239,68,68,0.35)"}`,letterSpacing:"0.06em",fontVariantNumeric:"tabular-nums",cursor:"pointer"}}>{isCredit?"+":""}USD {bal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>;})()}
         {msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600,animation:"ac_fade_in 200ms"}}>✓ {msg}</span>}
       </div>

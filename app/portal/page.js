@@ -91,8 +91,7 @@ const CN_SECTIONS=[
   ]},
   {section:"Mi cuenta",items:[
     {key:"account",tkey:"nav.account",label:"Cuenta corriente",p:["M3 3h18v18H3z","M3 9h18","M9 21V9"]},
-    {key:"points",tkey:"nav.points",label:"Puntos",p:["M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"]},
-    {key:"referrals",tkey:"nav.referrals",label:"Referidos",p:["M17 11l2 2 4-4","M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]},
+    // Puntos y Referidos removidos del nav (11/06/2026): sistema de puntos/recompensas/referidos desactivado.
     {key:"profile",tkey:"nav.profile",label:"Mi perfil",p:["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2","M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]},
   ]},
 ];
@@ -233,7 +232,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
       {op.eta&&op.status!=="entregada"&&<span className="ac-cli-op-eta">ETA · <b>{formatDate(op.eta)}</b></span>}
     </div>
     <p className="ac-cli-op-desc">{gd(op)}</p>
-    {op.tier_discount_applied_usd>0&&(()=>{const ti=getTierInfo(op.tier_discount_applied);return <div style={{marginBottom:8,padding:"10px 14px",background:`linear-gradient(90deg, ${ti.color}22, transparent)`,border:`1px solid ${ti.color}55`,borderRadius:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:16}}>{ti.icon}</span><div style={{flex:1,minWidth:200}}><p style={{fontSize:11,fontWeight:700,color:ti.light,margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("home.tierDiscount",{tier:ti.label})}</p></div><span style={{fontSize:14,fontWeight:800,color:ti.light,fontVariantNumeric:"tabular-nums"}}>−USD {Number(op.tier_discount_applied_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;})()}
+    {/* Descuento por categoría removido (11/06/2026): los tiers ya no aplican beneficio. */}
     <OpProgress status={op.status} isAereo={isA} onActionClick={(e)=>{e?.stopPropagation?.();onSelect(op);}} isGI={op.service_type==="gestion_integral"} channel={op.channel} hasItems={(itemsByOp[op.id]||0)>0} lostInCustoms={!!op.lost_in_customs_at}/>
     <div className="ac-cli-op-foot">
       {op.service_type!=="gestion_integral"&&<div className="ac-cli-op-foot-item">
@@ -1045,7 +1044,17 @@ function ProfilePage({client,token}){
     }catch(e){alert("Error: "+e.message);}
     setExporting(false);
   };
-  return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 24px",letterSpacing:"-0.02em"}}>{t("profile.title")}</h2><div style={{background:"rgba(255,255,255,0.025)",borderRadius:16,border:"1px solid rgba(255,255,255,0.06)",padding:"1.75rem 2rem"}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"24px 28px"}}>{f.map((x,i)=><div key={i}><p style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{x.l}</p><p style={{fontSize:15,color:"#fff",margin:0,fontWeight:500,...(x.m?{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:18,color:GOLD_LIGHT,letterSpacing:"0.04em"}:{})}}>{x.v||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</p></div>)}</div></div>
+  const ti=getTierInfo(client.tier);
+  return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 24px",letterSpacing:"-0.02em"}}>{t("profile.title")}</h2>
+  {/* Badge de categoría — solo etiqueta visual, sin beneficios (sistema de puntos desactivado 11/06/2026). */}
+  <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20,padding:"16px 20px",background:`linear-gradient(135deg, ${ti.color}1a, rgba(255,255,255,0.02))`,border:`1px solid ${ti.color}55`,borderRadius:14}}>
+    <span style={{fontSize:30,lineHeight:1}}>{ti.icon}</span>
+    <div>
+      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Tu categoría</p>
+      <p style={{fontSize:20,fontWeight:800,margin:0,letterSpacing:"-0.01em",background:ti.gradient,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>{ti.label}</p>
+    </div>
+  </div>
+  <div style={{background:"rgba(255,255,255,0.025)",borderRadius:16,border:"1px solid rgba(255,255,255,0.06)",padding:"1.75rem 2rem"}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"24px 28px"}}>{f.map((x,i)=><div key={i}><p style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.08em"}}>{x.l}</p><p style={{fontSize:15,color:"#fff",margin:0,fontWeight:500,...(x.m?{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:18,color:GOLD_LIGHT,letterSpacing:"0.04em"}:{})}}>{x.v||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</p></div>)}</div></div>
     <div style={{background:"rgba(184,149,106,0.06)",borderRadius:12,border:"1px solid rgba(184,149,106,0.18)",padding:"14px 20px",marginTop:16,display:"flex",alignItems:"center",gap:12}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={GOLD_LIGHT} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg><p style={{fontSize:13,color:"rgba(255,255,255,0.65)",margin:0,lineHeight:1.5}}>{t("profile.codeNote",{code:client.client_code})}</p></div>
     {/* Cambiar contraseña */}
     <div style={{background:"rgba(255,255,255,0.025)",borderRadius:16,border:"1px solid rgba(255,255,255,0.06)",padding:"1.5rem 2rem",marginTop:16}}>
@@ -2848,8 +2857,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     {page==="calculator"&&<CalculatorPage token={token} client={client}/>}
     {page==="services"&&<ServicesPage client={client}/>}
     {page==="quotes"&&<QuotesPage token={token} client={client}/>}
-    {page==="points"&&<PointsPage token={token} client={client}/>}
-    {page==="referrals"&&<ReferralsPage token={token} client={client}/>}
+    {/* Puntos y Referidos desactivados (11/06/2026) — rutas removidas, componentes quedan como código muerto para reactivar. */}
     {page==="payments"&&<InternationalPaymentsPage client={client}/>}
     {page==="account"&&<AccountPage token={token} client={client} onRestartTutorial={onRestartTutorial}/>}
     {page==="support"&&<SupportPage token={token} client={client}/>}
