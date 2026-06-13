@@ -3354,10 +3354,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             return <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:(op.cost_gasto_doc_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (valor previo USD {stored.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})</span>:""}</p>;
           })()}
         </div>}</>}
-        {/* Otros costos: en marítimo blanco se separa flete local + otros (sin seguro)
-            con flujo completo de método/moneda/TC/tarjeta — como impuestos. En el resto de canales
-            mantiene el formato viejo (monto USD + fecha simple). */}
-        {(op.channel?.includes("maritimo")&&op.channel?.includes("blanco"))?(()=>{
+        {/* Otros costos (11/06/2026): Flete Local + Otros costos para TODOS los canales,
+            ambos con método de pago + moneda USD o ARS + TC + tarjeta (mismo flujo que impuestos).
+            Seguro removido (no se paga, siempre 0) y Notas removidas, en las 4 vías. */}
+        {(()=>{
           // Bloque reutilizable: monto + método (contado/transf/TC) + moneda (USD/ARS) + TC ARS + tarjeta.
           // Campos en DB: cost_X (USD final), cost_X_method, cost_X_currency, cost_X_ars,
           // cost_X_exchange_rate, cost_X_card_closing, cost_X_credit_card_id, cost_X_paid_at.
@@ -3401,29 +3401,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           return <>
             {renderCostBlock("Flete Local","cost_flete_local")}
             {renderCostBlock("Otros costos","cost_otros")}
-            <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
-              <Inp label="Notas" value={op.cost_notas} onChange={chOp("cost_notas")} placeholder="Ej: Consolidado con AC-0002..."/>
-            </div>
           </>;
-        })():<div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 8px",textTransform:"uppercase"}}>Otros costos (USD)</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px",marginBottom:8}}>
-            <Inp label="Seguro" type="number" value={op.cost_seguro} onChange={chOp("cost_seguro")} step="0.01"/>
-            {Number(op.cost_seguro)>0&&<Inp label="Fecha de pago del seguro" type="date" value={op.cost_seguro_paid_at?String(op.cost_seguro_paid_at).slice(0,10):""} onChange={v=>chOp("cost_seguro_paid_at")(v?v+"T12:00:00-03":null)}/>}
-          </div>
-          {Number(op.cost_seguro)>0&&!op.cost_seguro_paid_at&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-4px 0 8px",fontStyle:"italic"}}>⚠ Sin fecha de pago — el libro diario va a usar hoy.</p>}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px",marginBottom:8}}>
-            <Inp label="Flete local" type="number" value={op.cost_flete_local} onChange={chOp("cost_flete_local")} step="0.01"/>
-            {Number(op.cost_flete_local)>0&&<Inp label="Fecha de pago flete local" type="date" value={op.cost_flete_local_paid_at?String(op.cost_flete_local_paid_at).slice(0,10):""} onChange={v=>chOp("cost_flete_local_paid_at")(v?v+"T12:00:00-03":null)}/>}
-          </div>
-          {Number(op.cost_flete_local)>0&&!op.cost_flete_local_paid_at&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-4px 0 8px",fontStyle:"italic"}}>⚠ Sin fecha de pago — el libro diario va a usar hoy.</p>}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px",marginBottom:8}}>
-            <Inp label="Otros costos" type="number" value={op.cost_otros} onChange={chOp("cost_otros")} step="0.01"/>
-            {Number(op.cost_otros)>0&&<Inp label="Fecha de pago otros" type="date" value={op.cost_otros_paid_at?String(op.cost_otros_paid_at).slice(0,10):""} onChange={v=>chOp("cost_otros_paid_at")(v?v+"T12:00:00-03":null)}/>}
-          </div>
-          {Number(op.cost_otros)>0&&!op.cost_otros_paid_at&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-4px 0 8px",fontStyle:"italic"}}>⚠ Sin fecha de pago — el libro diario va a usar hoy.</p>}
-          <Inp label="Notas" value={op.cost_notas} onChange={chOp("cost_notas")} placeholder="Ej: Consolidado con AC-0002..."/>
-        </div>}
+        })()}
       </Card>
       <Card title="Rentabilidad">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:16}}>
