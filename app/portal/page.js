@@ -579,9 +579,9 @@ function EditableItemRow({item,editable,token,onChange}){
   </div>;
 }
 
-function OperationDetail({op,token,onBack}){
+function OperationDetail({op,token,client,onBack}){
   const {t}=useT();
-  const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [purchaseNotif,setPurchaseNotif]=useState(null);const [repackInfo,setRepackInfo]=useState(null);const [showRepackDetail,setShowRepackDetail]=useState(false);
+  const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [purchaseNotif,setPurchaseNotif]=useState(null);const [repackInfo,setRepackInfo]=useState(null);const [showRepackDetail,setShowRepackDetail]=useState(false);const [declaredItems,setDeclaredItems]=useState([]);
   // Cliente tocó "Esperando más bultos": ack visual, sigue en depósito hasta confirmar consolidación.
   const [waitingMore,setWaitingMore]=useState(false);
   const [docInputMode,setDocInputMode]=useState(null); // 'pdf' | 'manual'
@@ -601,7 +601,8 @@ function OperationDetail({op,token,onBack}){
   const toggleSection=(s)=>setOpenSections(p=>({...p,[s]:!p[s]}));
   const downloadPdf=()=>printQuotePdf({op,items,pkgs,payments:pmts,cliPmts});
   const downloadClosingPdf=()=>printClosingPdf({op,items,pkgs,cliPmts,events});
-  const loadAll=async()=>{const [it,ev,pk,pm,cp,pn,rk,fl]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("purchase_notifications",{token,filters:`?operation_id=eq.${op.id}&select=tracking_code,origin,shipping_method,description,created_at,confirmed_at&limit=1`}),dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&status=eq.done&order=completed_at.desc&limit=1`}),dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=flight_id&limit=1`})]);
+  const loadAll=async()=>{const [it,ev,pk,pm,cp,pn,rk,fl,fii]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("purchase_notifications",{token,filters:`?operation_id=eq.${op.id}&select=tracking_code,origin,shipping_method,description,created_at,confirmed_at&limit=1`}),dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&status=eq.done&order=completed_at.desc&limit=1`}),dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=flight_id&limit=1`}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=description,hs_code,quantity,unit_price_declared_usd,sort_order&order=sort_order.asc`})]);
+  setDeclaredItems(Array.isArray(fii)?fii:[]);
   setInFlight(Array.isArray(fl)&&fl.length>0);
   setRepackInfo(Array.isArray(rk)&&rk[0]?rk[0]:null);setItems(Array.isArray(it)?it:[]);setEvents((Array.isArray(ev)?ev:[]).filter(e=>{
   // Filtrar eventos internos auto-generados por cambio de status (ya están en la barra de progreso)
@@ -713,6 +714,32 @@ function OperationDetail({op,token,onBack}){
         </div>;})}
       </div>
     </details>}
+    {/* Declaración a Aduana — SOLO clientes RI, ops abiertas. El RI ve el valor declarado por ítem
+        (la factura del despacho), distinto de lo que cargó originalmente. 11/06/2026. */}
+    {client?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&!isGI&&declaredItems.length>0&&(()=>{
+      const declTotal=declaredItems.reduce((s,d)=>s+Number(d.quantity||0)*Number(d.unit_price_declared_usd||0),0);
+      const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      return <div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(184,149,106,0.2)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+        <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>📋 Declaración a Aduana</h3>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"0 0 14px"}}>Valor declarado de cada ítem en el despacho de importación, tal como figura en tu factura.</p>
+        <div style={{background:"rgba(0,0,0,0.15)",borderRadius:8,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:"3fr 0.9fr 0.7fr 1fr 1fr",gap:8,padding:"7px 12px",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
+            <span>Descripción</span><span>HS Code</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Unit.</span><span style={{textAlign:"right"}}>Subtotal</span>
+          </div>
+          {declaredItems.map((d,i)=>{const sub=Number(d.quantity||0)*Number(d.unit_price_declared_usd||0);return <div key={i} style={{display:"grid",gridTemplateColumns:"3fr 0.9fr 0.7fr 1fr 1fr",gap:8,padding:"7px 12px",borderBottom:i<declaredItems.length-1?"1px solid rgba(255,255,255,0.04)":"none",fontSize:11.5,color:"rgba(255,255,255,0.78)",alignItems:"center"}}>
+            <span>{d.description||"—"}</span>
+            <span style={{fontFamily:"monospace",fontSize:10,color:d.hs_code?"#22c55e":"rgba(255,255,255,0.3)"}}>{d.hs_code||"—"}</span>
+            <span style={{textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{Number(d.quantity||0)}</span>
+            <span style={{textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{fmt(d.unit_price_declared_usd)}</span>
+            <span style={{textAlign:"right",fontWeight:600,fontVariantNumeric:"tabular-nums"}}>{fmt(sub)}</span>
+          </div>;})}
+          <div style={{display:"grid",gridTemplateColumns:"3fr 0.9fr 0.7fr 1fr 1fr",gap:8,padding:"9px 12px",borderTop:"1px solid rgba(184,149,106,0.3)"}}>
+            <span style={{gridColumn:"1 / 5",fontSize:11.5,fontWeight:700,color:"#fff"}}>TOTAL DECLARADO</span>
+            <span style={{textAlign:"right",fontSize:12.5,fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>{fmt(declTotal)}</span>
+          </div>
+        </div>
+      </div>;
+    })()}
     {/* Galería destacada de fotos del agente — aparece arriba si hay al menos una foto */}
     {!loading&&pkgs.some(p=>p.photo_url)&&<div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(184,149,106,0.18)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>📷 Fotos de tu mercadería</h3>
@@ -2850,7 +2877,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
   const clientWithCount={...client,_pending_vouchers_count:pendingVouchersCount};
   return <DashShell page={page} setPage={p=>{setPage(p);setSelOp(null);}} role="cliente" client={client} user={user} onLogout={onLogout} token={token}>
     {page==="imports"&&!selOp&&<><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp}/>}</>}
-    {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} onBack={()=>setSelOp(null)}/>}
+    {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} client={client} onBack={()=>setSelOp(null)}/>}
     {page==="profile"&&<ProfilePage client={client} token={token}/>}
     {page==="purchases"&&<PurchaseNotificationsPage token={token} client={client}/>}
     {page==="rates"&&<RatesPage token={token} client={client}/>}

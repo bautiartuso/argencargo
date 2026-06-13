@@ -619,6 +619,7 @@ function OperationNotesPanel({opId,token}){
 function OperationEditor({op:initOp,token,onBack,onDelete}){
   const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:""});const [cobroEditor,setCobroEditor]=useState(null);const [giroEditor,setGiroEditor]=useState(null);const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
+  const [declaredItems,setDeclaredItems]=useState([]); // flight_invoice_items de esta op (valor declarado a Aduana, para RI)
   const [pendingRedemptions,setPendingRedemptions]=useState([]);
   const [cancelRedemptionTarget,setCancelRedemptionTarget]=useState(null);
   const [cancelingRedemption,setCancelingRedemption]=useState(false);
@@ -795,7 +796,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     // Refrescar el op desde DB para reflejar cambios externos (SQL, otros admins, etc)
     const fresh=await dq("operations",{token,filters:`?id=eq.${op.id}&select=*`});
     if(Array.isArray(fresh)&&fresh[0])setOp(p=>({...p,...fresh[0]}));
-    const [it,pk,ev,tf,cc]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
+    const [it,pk,ev,tf,cc,fii]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=sort_order.asc`})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);setDeclaredItems(Array.isArray(fii)?fii:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
     if(op.client_id){const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*`});setOpClient(Array.isArray(cl)?cl[0]:null);const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);}
     const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
     const sp=await dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setSupplierPayments(Array.isArray(sp)?sp:[]);
@@ -1707,6 +1708,38 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </div>;})}
       {items.length===0&&<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"1rem 0"}}>No hay productos.</p>}
     </Card>}
+
+    {/* Declaración a Aduana (valor declarado por ítem) — SOLO clientes RI, ops abiertas.
+        El RI necesita ver la declaración real del despacho (lo que fue a Aduana, ya comprimido/
+        subfacturado), distinta de lo que cargó en sus productos. 11/06/2026. */}
+    {tab==="items"&&opClient?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&declaredItems.length>0&&(()=>{
+      const declTotal=declaredItems.reduce((s,d)=>s+Number(d.quantity||0)*Number(d.unit_price_declared_usd||0),0);
+      const realTotal=items.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_usd||0),0);
+      const diff=realTotal-declTotal;
+      const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      return <Card title="📋 Declaración a Aduana (cliente RI)">
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 12px",lineHeight:1.5}}>Valores tal como se declararon en el despacho (factura del vuelo). Es lo que el cliente RI ve en su factura de importación — distinto de lo que cargó en sus productos.</p>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+            <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+              {["Descripción","HS Code","Cant.","Unit. USD","Subtotal"].map((h,i)=><th key={i} style={{padding:"8px 12px",textAlign:i>1?"right":"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</th>)}
+            </tr></thead>
+            <tbody>{declaredItems.map((d,i)=><tr key={d.id||i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+              <td style={{padding:"8px 12px",color:"#fff"}}>{d.description||"—"}</td>
+              <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.6)",fontFamily:"monospace",fontSize:11.5}}>{d.hs_code||"—"}</td>
+              <td style={{padding:"8px 12px",textAlign:"right",color:"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums"}}>{Number(d.quantity||0)}</td>
+              <td style={{padding:"8px 12px",textAlign:"right",color:"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums"}}>{fmt(d.unit_price_declared_usd)}</td>
+              <td style={{padding:"8px 12px",textAlign:"right",color:"#fff",fontWeight:600,fontVariantNumeric:"tabular-nums"}}>{fmt(Number(d.quantity||0)*Number(d.unit_price_declared_usd||0))}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",marginTop:8,background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8}}>
+          <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL DECLARADO</span>
+          <span style={{fontSize:16,fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>{fmt(declTotal)}</span>
+        </div>
+        {Math.abs(diff)>0.01&&<p style={{fontSize:11,color:"#fbbf24",margin:"8px 0 0",fontStyle:"italic"}}>⚠ El cliente cargó {fmt(realTotal)} en sus productos · diferencia con lo declarado: {fmt(diff)}.</p>}
+      </Card>;
+    })()}
 
     {tab==="gi_costs"&&isGI&&(()=>{
       // Ledger de costos para ops Gestión Integral.
