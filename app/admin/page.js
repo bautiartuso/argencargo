@@ -208,6 +208,7 @@ function OperationsList({token,onSelect,onNew}){
   const [selectedIds,setSelectedIds]=useState(new Set());
   const [bulkAction,setBulkAction]=useState(null); // {action:"setStatus"|"delete"|"markCollected", value?}
   const [bulkRunning,setBulkRunning]=useState(false);
+  const [attFilter,setAttFilter]=useState(null); // categoría de atención activa: "stale"|"noBudget"|"noEta"|"unpaid" — filtra la lista
   const toggleSelected=(id)=>setSelectedIds(p=>{const n=new Set(p);n.has(id)?n.delete(id):n.add(id);return n;});
   const clearSelection=()=>setSelectedIds(new Set());
   const selectAll=(rows)=>setSelectedIds(new Set(rows.map(o=>o.id)));
@@ -330,9 +331,14 @@ function OperationsList({token,onSelect,onNew}){
   const unpaidClosedOps=ops.filter(o=>{const s=calcSaldo(o);return s!==null&&s>0&&["entregada","operacion_cerrada"].includes(o.status);});
   const noEtaOps=ops.filter(o=>["en_transito","arribo_argentina"].includes(o.status)&&!o.eta);
   const attentionTotal=staleOps.length+noBudgetOps.length+unpaidClosedOps.length+noEtaOps.length;
-  const AttCard=({n,label,color,onClick})=><button onClick={onClick} style={{flex:"1 1 160px",minWidth:140,padding:"14px 16px",background:n>0?`${color}10`:"rgba(255,255,255,0.02)",border:`1px solid ${n>0?color+"50":"rgba(255,255,255,0.05)"}`,borderRadius:12,cursor:n>0?"pointer":"default",textAlign:"left",transition:"all 150ms"}} onMouseEnter={e=>{if(n>0)e.currentTarget.style.background=`${color}20`;}} onMouseLeave={e=>{if(n>0)e.currentTarget.style.background=`${color}10`;}}>
+  // Filtro por tarjeta de atención: al tocar una card, la lista se filtra a esa categoría.
+  const attArrays={stale:staleOps,noBudget:noBudgetOps,noEta:noEtaOps,unpaid:unpaidClosedOps};
+  const attLabels={stale:"Estancadas",noBudget:"Sin presupuesto",noEta:"Sin ETA",unpaid:"Cobradas con saldo"};
+  const attIds=attFilter&&attArrays[attFilter]?new Set(attArrays[attFilter].map(o=>o.id)):null;
+  const toggleAtt=(k)=>setAttFilter(f=>f===k?null:k);
+  const AttCard=({n,label,color,onClick,active})=><button onClick={onClick} style={{flex:"1 1 160px",minWidth:140,padding:"14px 16px",background:active?`${color}28`:n>0?`${color}10`:"rgba(255,255,255,0.02)",border:`1.5px solid ${active?color:n>0?color+"50":"rgba(255,255,255,0.05)"}`,boxShadow:active?`0 0 0 1px ${color}, 0 4px 16px ${color}30`:"none",borderRadius:12,cursor:n>0?"pointer":"default",textAlign:"left",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(n>0&&!active)e.currentTarget.style.background=`${color}20`;}} onMouseLeave={e=>{if(n>0&&!active)e.currentTarget.style.background=`${color}10`;}}>
     <p style={{fontSize:24,fontWeight:800,color:n>0?color:"rgba(255,255,255,0.25)",margin:0,fontVariantNumeric:"tabular-nums"}}>{n}</p>
-    <p style={{fontSize:11,color:n>0?"#fff":"rgba(255,255,255,0.4)",margin:"2px 0 0",fontWeight:600,letterSpacing:"0.02em"}}>{label}</p>
+    <p style={{fontSize:11,color:n>0?"#fff":"rgba(255,255,255,0.4)",margin:"2px 0 0",fontWeight:600,letterSpacing:"0.02em"}}>{label}{active&&<span style={{marginLeft:6,fontSize:10,color}}>✓ filtrando</span>}</p>
   </button>;
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:10,flexWrap:"wrap"}}>
@@ -354,10 +360,14 @@ function OperationsList({token,onSelect,onNew}){
       <button onClick={()=>setBulkAction({action:"delete"})} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1px solid rgba(255,80,80,0.4)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>🗑 Eliminar</button>
     </div>}
     {attentionTotal>0&&<div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
-      <AttCard n={staleOps.length} label="Estancadas" color="#f87171" onClick={()=>{if(staleOps[0])onSelect(staleOps[0]);}}/>
-      <AttCard n={noBudgetOps.length} label="Sin presupuesto" color="#fbbf24" onClick={()=>{if(noBudgetOps[0])onSelect(noBudgetOps[0]);}}/>
-      <AttCard n={noEtaOps.length} label="Sin ETA" color="#60a5fa" onClick={()=>{if(noEtaOps[0])onSelect(noEtaOps[0]);}}/>
-      <AttCard n={unpaidClosedOps.length} label="Cobradas con saldo" color="#a78bfa" onClick={()=>{if(unpaidClosedOps[0])onSelect(unpaidClosedOps[0]);}}/>
+      <AttCard n={staleOps.length} label="Estancadas" color="#f87171" active={attFilter==="stale"} onClick={()=>{if(staleOps.length)toggleAtt("stale");}}/>
+      <AttCard n={noBudgetOps.length} label="Sin presupuesto" color="#fbbf24" active={attFilter==="noBudget"} onClick={()=>{if(noBudgetOps.length)toggleAtt("noBudget");}}/>
+      <AttCard n={noEtaOps.length} label="Sin ETA" color="#60a5fa" active={attFilter==="noEta"} onClick={()=>{if(noEtaOps.length)toggleAtt("noEta");}}/>
+      <AttCard n={unpaidClosedOps.length} label="Cobradas con saldo" color="#a78bfa" active={attFilter==="unpaid"} onClick={()=>{if(unpaidClosedOps.length)toggleAtt("unpaid");}}/>
+    </div>}
+    {attFilter&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"8px 14px",background:"rgba(184,149,106,0.10)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:10}}>
+      <span style={{fontSize:12.5,fontWeight:700,color:GOLD_LIGHT}}>Filtrando: {attLabels[attFilter]} <span style={{color:"rgba(255,255,255,0.55)",fontWeight:600}}>({attArrays[attFilter]?.length||0})</span></span>
+      <button onClick={()=>setAttFilter(null)} style={{fontSize:11,padding:"4px 11px",border:"1px solid rgba(255,255,255,0.18)",background:"transparent",color:"rgba(255,255,255,0.7)",borderRadius:6,cursor:"pointer",fontWeight:600}}>✕ Mostrar todas</button>
     </div>}
     <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
       <div style={{flex:1,minWidth:200}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por código, cliente o descripción..." style={{width:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>
@@ -370,12 +380,14 @@ function OperationsList({token,onSelect,onNew}){
       {sortCol!=="smart"&&<button onClick={()=>{setSortCol("smart");setSortDir("asc");}} style={{padding:"10px 14px",fontSize:11,fontWeight:600,border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:8,background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>↻ Restaurar orden</button>}
     </div>
     {lo?<SkeletonTable rows={10} cols={7}/>:(()=>{
-    const active=sorted.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
+    // Filtro por tarjeta de atención (si hay una activa, limita la lista a esa categoría).
+    const baseSorted=attIds?sorted.filter(o=>attIds.has(o.id)):sorted;
+    const active=baseSorted.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
     // Separamos las que ya llegaron y están esperando que el cliente las retire ("entregada" =
     // LISTA PARA RETIRAR). Quedan arriba para que se vea de un vistazo qué cargas hay listas.
     const ready=active.filter(o=>o.status==="entregada");
     const inProgress=active.filter(o=>o.status!=="entregada");
-    const closed=sorted.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada").sort((a,b)=>{const da=String(a.collection_date||a.closed_at||"").slice(0,10);const db=String(b.collection_date||b.closed_at||"").slice(0,10);return db.localeCompare(da);});
+    const closed=baseSorted.filter(o=>o.status==="operacion_cerrada"||o.status==="cancelada").sort((a,b)=>{const da=String(a.collection_date||a.closed_at||"").slice(0,10);const db=String(b.collection_date||b.closed_at||"").slice(0,10);return db.localeCompare(da);});
     const totalGanancia=closed.reduce((s,o)=>s+calcGan(o),0);
     const renderTable=(rows,showGanancia)=><div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
@@ -413,7 +425,7 @@ function OperationsList({token,onSelect,onNew}){
     return <>{ready.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em",display:"flex",alignItems:"center",gap:8}}><span style={{width:7,height:7,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 8px rgba(34,197,94,0.6)"}}/>Listas para retirar <span style={{color:"rgba(34,197,94,0.85)",marginLeft:4}}>({ready.length})</span></h3>{renderTable(ready,false)}</>}
     {inProgress.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:ready.length>0?"32px 0 14px":"0 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones en curso <span style={{color:GOLD_LIGHT,marginLeft:4}}>({inProgress.length})</span></h3>{renderTable(inProgress,false)}</>}
     {closed.length>0&&<><h3 style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"32px 0 14px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Operaciones cerradas <span style={{color:"rgba(255,255,255,0.55)",marginLeft:4}}>({closed.length})</span> {totalGanancia!==0&&<span style={{fontSize:12,fontWeight:700,color:totalGanancia>0?"#22c55e":"#ff6b6b",marginLeft:12,letterSpacing:"0.04em"}}>Ganancia total: USD {totalGanancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}</h3>{renderTable(closedPaged,true)}{renderPagination()}</>}
-    {active.length===0&&closed.length===0&&(()=>{const hasFilters=search||fStatuses.length>0||fChannels.length>0;return <EmptyState icon="box" title={hasFilters?"Sin resultados":"No hay operaciones"} description={hasFilters?"Ninguna operación coincide con los filtros activos.":"Creá tu primera operación para comenzar."} cta={hasFilters?null:"+ Nueva operación"} ctaOnClick={hasFilters?null:onNew}/>;})()}</>;})()}
+    {active.length===0&&closed.length===0&&(()=>{const hasFilters=search||fStatuses.length>0||fChannels.length>0||attFilter;return <EmptyState icon="box" title={hasFilters?"Sin resultados":"No hay operaciones"} description={hasFilters?"Ninguna operación coincide con los filtros activos.":"Creá tu primera operación para comenzar."} cta={hasFilters?null:"+ Nueva operación"} ctaOnClick={hasFilters?null:onNew}/>;})()}</>;})()}
 
     {bulkAction&&<div onClick={()=>!bulkRunning&&setBulkAction(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${bulkAction.action==="delete"?"rgba(255,80,80,0.5)":bulkAction.action==="markCollected"?"rgba(34,197,94,0.5)":"rgba(184,149,106,0.5)"}`,borderRadius:14,padding:"22px 24px",maxWidth:480,width:"100%"}}>
