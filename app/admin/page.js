@@ -1749,51 +1749,6 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </Card>;
     })()}
 
-    {/* Despacho real (RI) — el admin copia los impuestos tal cual de la factura del despachante/DHL.
-        Si está cargado, el presupuesto usa estos valores reales (no la fórmula). 13/06/2026. */}
-    {tab==="items"&&opClient?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&op.channel?.includes("blanco")&&(()=>{
-      const n=v=>{const x=Number(v);return v===""||v==null||isNaN(x)?0:x;};
-      const total=n(despacho.die)+n(despacho.est)+n(despacho.des)+n(despacho.iva);
-      const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-      const cargado=total>0;
-      const numOrNull=v=>{const x=Number(v);return v===""||v==null||isNaN(x)?null:x;};
-      const saveDespacho=async()=>{
-        setSavingDespacho(true);
-        try{
-          const body={despacho_die_usd:numOrNull(despacho.die),despacho_estadistica_usd:numOrNull(despacho.est),despacho_desaduanaje_usd:numOrNull(despacho.des),despacho_iva_usd:numOrNull(despacho.iva)};
-          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
-          setOp(p=>({...p,...body}));
-          await autoSyncBudget(true); // recalcula budget_taxes/total con los valores reales
-          flash("Despacho real guardado · presupuesto recalculado");
-        }catch(e){console.error("save despacho",e);flash("Error al guardar despacho");}
-        setSavingDespacho(false);
-      };
-      const field=(label,key,hint)=>(
-        <div style={{display:"flex",flexDirection:"column",gap:4}}>
-          <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</label>
-          <input type="number" step="0.01" inputMode="decimal" value={despacho[key]} onChange={e=>setDespacho(d=>({...d,[key]:e.target.value}))} placeholder="0.00"
-            style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:"9px 11px",color:"#fff",fontSize:13.5,fontVariantNumeric:"tabular-nums",width:"100%"}}/>
-          {hint&&<span style={{fontSize:10,color:"rgba(255,255,255,0.35)"}}>{hint}</span>}
-        </div>
-      );
-      return <Card title="🧾 Despacho real (cliente RI)">
-        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>Copiá los impuestos tal cual figuran en la factura del despachante/DHL. Si cargás esto, el presupuesto del RI usa <strong style={{color:"rgba(255,255,255,0.7)"}}>estos valores reales</strong> en vez del estimado de la fórmula. Incluye IVA (su recupero como crédito fiscal es asunto del cliente con su contador).</p>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-          {field("Derechos (DIE)","die")}
-          {field("Estadística","est")}
-          {field("Desaduanaje","des","Procesamiento + multiline + otros")}
-          {field("IVA importación","iva")}
-        </div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",marginTop:14,background:cargado?"rgba(74,222,128,0.08)":"rgba(255,255,255,0.04)",border:`1px solid ${cargado?"rgba(74,222,128,0.25)":"rgba(255,255,255,0.1)"}`,borderRadius:8}}>
-          <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL IMPUESTOS (real)</span>
-          <span style={{fontSize:16,fontWeight:700,color:cargado?"#4ade80":"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{fmt(total)}</span>
-        </div>
-        <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
-          <Btn small onClick={saveDespacho} disabled={savingDespacho}>{savingDespacho?"Guardando...":"💾 Guardar despacho y recalcular"}</Btn>
-        </div>
-        {!cargado&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>Sin cargar todavía: el presupuesto usa el estimado de la fórmula sobre el valor declarado.</p>}
-      </Card>;
-    })()}
 
     {tab==="gi_costs"&&isGI&&(()=>{
       // Ledger de costos para ops Gestión Integral.
@@ -2132,6 +2087,53 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </div>
     </div>}
     </>}
+
+    {/* Despacho real (RI) — entre el presupuesto y Gestión de Pagos. El admin copia los impuestos
+        tal cual de la factura del despachante/DHL; si está cargado, el presupuesto usa estos
+        valores reales (no la fórmula). 13/06/2026. */}
+    {tab==="finance"&&!isGI&&opClient?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&op.channel?.includes("blanco")&&(()=>{
+      const n=v=>{const x=Number(v);return v===""||v==null||isNaN(x)?0:x;};
+      const total=n(despacho.die)+n(despacho.est)+n(despacho.des)+n(despacho.iva);
+      const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      const cargado=total>0;
+      const numOrNull=v=>{const x=Number(v);return v===""||v==null||isNaN(x)?null:x;};
+      const saveDespacho=async()=>{
+        setSavingDespacho(true);
+        try{
+          const body={despacho_die_usd:numOrNull(despacho.die),despacho_estadistica_usd:numOrNull(despacho.est),despacho_desaduanaje_usd:numOrNull(despacho.des),despacho_iva_usd:numOrNull(despacho.iva)};
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
+          setOp(p=>({...p,...body}));
+          await autoSyncBudget(true); // recalcula budget_taxes/total con los valores reales
+          flash("Despacho real guardado · presupuesto recalculado");
+        }catch(e){console.error("save despacho",e);flash("Error al guardar despacho");}
+        setSavingDespacho(false);
+      };
+      const field=(label,key,hint)=>(
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</label>
+          <input type="number" step="0.01" inputMode="decimal" value={despacho[key]} onChange={e=>setDespacho(d=>({...d,[key]:e.target.value}))} placeholder="0.00"
+            style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:"9px 11px",color:"#fff",fontSize:13.5,fontVariantNumeric:"tabular-nums",width:"100%"}}/>
+          {hint&&<span style={{fontSize:10,color:"rgba(255,255,255,0.35)"}}>{hint}</span>}
+        </div>
+      );
+      return <Card title="🧾 Despacho real (cliente RI)">
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>Copiá los impuestos tal cual figuran en la factura del despachante/DHL. Si cargás esto, el presupuesto del RI usa <strong style={{color:"rgba(255,255,255,0.7)"}}>estos valores reales</strong> en vez del estimado de la fórmula. Incluye IVA (su recupero como crédito fiscal es asunto del cliente con su contador).</p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
+          {field("Derechos (DIE)","die")}
+          {field("Estadística","est")}
+          {field("Desaduanaje","des","Procesamiento + multiline + otros")}
+          {field("IVA importación","iva")}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",marginTop:14,background:cargado?"rgba(74,222,128,0.08)":"rgba(255,255,255,0.04)",border:`1px solid ${cargado?"rgba(74,222,128,0.25)":"rgba(255,255,255,0.1)"}`,borderRadius:8}}>
+          <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL IMPUESTOS (real)</span>
+          <span style={{fontSize:16,fontWeight:700,color:cargado?"#4ade80":"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{fmt(total)}</span>
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
+          <Btn small onClick={saveDespacho} disabled={savingDespacho}>{savingDespacho?"Guardando...":"💾 Guardar despacho y recalcular"}</Btn>
+        </div>
+        {!cargado&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>Sin cargar todavía: el presupuesto usa el estimado de la fórmula sobre el valor declarado.</p>}
+      </Card>;
+    })()}
 
     {tab==="finance"&&!isGI&&(()=>{
       // Suma cobrado: usa monto real si está pagado, sino el esperado
