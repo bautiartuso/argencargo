@@ -1424,8 +1424,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       // - Operación cerrada → histórico, congelado.
       // - Canal A sin productos cargados → no puede recalcular (impuestos per-item).
       // Canal B no necesita ítems: con bultos + valor mercadería siempre puede recalcular.
-      const hasStoredBudget=Number(op.budget_total||0)>0&&(op.status==="operacion_cerrada"||(isBlanco&&items.length===0));
       const isRI=opClient?.tax_condition==="responsable_inscripto";
+      // RI con despacho real cargado: el budget_taxes guardado (calculado sobre los valores reales
+      // de la factura del despachante) es la verdad. NO recalcular con la fórmula inline, que la
+      // ignora y daría el estimado (más alto). Usar el guardado.
+      const despachoCargado=isRI&&isBlanco&&(Number(op.despacho_die_usd||0)+Number(op.despacho_estadistica_usd||0)+Number(op.despacho_desaduanaje_usd||0)+Number(op.despacho_iva_usd||0))>0;
+      const hasStoredBudget=Number(op.budget_total||0)>0&&(op.status==="operacion_cerrada"||(isBlanco&&items.length===0)||despachoCargado);
       let totalTax,flete,seguro,totalAbonar,surcharge=0,surchargePct=0;
       if(hasStoredBudget){
         totalTax=Number(op.budget_taxes||0);flete=Number(op.budget_flete||0);seguro=Number(op.budget_seguro||0);surcharge=Number(op.budget_surcharge||0);
