@@ -620,6 +620,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:""});const [cobroEditor,setCobroEditor]=useState(null);const [giroEditor,setGiroEditor]=useState(null);const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const [declaredItems,setDeclaredItems]=useState([]); // flight_invoice_items de esta op (valor declarado a Aduana, para RI)
+  // Despacho REAL (RI): valores copiados de la factura del despachante/DHL. Si están cargados,
+  // los impuestos del presupuesto los toman de acá (no de la fórmula).
+  const [despacho,setDespacho]=useState({die:initOp.despacho_die_usd??"",est:initOp.despacho_estadistica_usd??"",des:initOp.despacho_desaduanaje_usd??"",iva:initOp.despacho_iva_usd??""});
+  const [savingDespacho,setSavingDespacho]=useState(false);
   const [pendingRedemptions,setPendingRedemptions]=useState([]);
   const [cancelRedemptionTarget,setCancelRedemptionTarget]=useState(null);
   const [cancelingRedemption,setCancelingRedemption]=useState(false);
@@ -795,7 +799,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const load=async()=>{setLo(true);
     // Refrescar el op desde DB para reflejar cambios externos (SQL, otros admins, etc)
     const fresh=await dq("operations",{token,filters:`?id=eq.${op.id}&select=*`});
-    if(Array.isArray(fresh)&&fresh[0])setOp(p=>({...p,...fresh[0]}));
+    if(Array.isArray(fresh)&&fresh[0]){setOp(p=>({...p,...fresh[0]}));const f=fresh[0];setDespacho({die:f.despacho_die_usd??"",est:f.despacho_estadistica_usd??"",des:f.despacho_desaduanaje_usd??"",iva:f.despacho_iva_usd??""});}
     const [it,pk,ev,tf,cc,fii]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=sort_order.asc`})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);setDeclaredItems(Array.isArray(fii)?fii:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
     if(op.client_id){const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*`});setOpClient(Array.isArray(cl)?cl[0]:null);const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);}
     const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
@@ -878,7 +882,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         dq("tariffs",{token,filters:"?select=*"}),
         op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([]),
         op.client_id?dq("clients",{token,filters:`?id=eq.${op.client_id}&select=tax_condition`}):Promise.resolve([]),
-        dq("operations",{token,filters:`?id=eq.${op.id}&select=channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status`}),
+        dq("operations",{token,filters:`?id=eq.${op.id}&select=channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status,despacho_die_usd,despacho_estadistica_usd,despacho_desaduanaje_usd,despacho_iva_usd`}),
         dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=quantity,unit_price_declared_usd`})
       ]);
       // Declarados FRESCOS (no el state declaredItems, que puede estar vacío por closure stale en el sync de montaje).
@@ -1742,6 +1746,52 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <span style={{fontSize:16,fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>{fmt(declTotal)}</span>
         </div>
         {Math.abs(diff)>0.01&&<p style={{fontSize:11,color:"#fbbf24",margin:"8px 0 0",fontStyle:"italic"}}>⚠ El cliente cargó {fmt(realTotal)} en sus productos · diferencia con lo declarado: {fmt(diff)}.</p>}
+      </Card>;
+    })()}
+
+    {/* Despacho real (RI) — el admin copia los impuestos tal cual de la factura del despachante/DHL.
+        Si está cargado, el presupuesto usa estos valores reales (no la fórmula). 13/06/2026. */}
+    {tab==="items"&&opClient?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&op.channel?.includes("blanco")&&(()=>{
+      const n=v=>{const x=Number(v);return v===""||v==null||isNaN(x)?0:x;};
+      const total=n(despacho.die)+n(despacho.est)+n(despacho.des)+n(despacho.iva);
+      const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      const cargado=total>0;
+      const numOrNull=v=>{const x=Number(v);return v===""||v==null||isNaN(x)?null:x;};
+      const saveDespacho=async()=>{
+        setSavingDespacho(true);
+        try{
+          const body={despacho_die_usd:numOrNull(despacho.die),despacho_estadistica_usd:numOrNull(despacho.est),despacho_desaduanaje_usd:numOrNull(despacho.des),despacho_iva_usd:numOrNull(despacho.iva)};
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
+          setOp(p=>({...p,...body}));
+          await autoSyncBudget(true); // recalcula budget_taxes/total con los valores reales
+          flash("Despacho real guardado · presupuesto recalculado");
+        }catch(e){console.error("save despacho",e);flash("Error al guardar despacho");}
+        setSavingDespacho(false);
+      };
+      const field=(label,key,hint)=>(
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</label>
+          <input type="number" step="0.01" inputMode="decimal" value={despacho[key]} onChange={e=>setDespacho(d=>({...d,[key]:e.target.value}))} placeholder="0.00"
+            style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:"9px 11px",color:"#fff",fontSize:13.5,fontVariantNumeric:"tabular-nums",width:"100%"}}/>
+          {hint&&<span style={{fontSize:10,color:"rgba(255,255,255,0.35)"}}>{hint}</span>}
+        </div>
+      );
+      return <Card title="🧾 Despacho real (cliente RI)">
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>Copiá los impuestos tal cual figuran en la factura del despachante/DHL. Si cargás esto, el presupuesto del RI usa <strong style={{color:"rgba(255,255,255,0.7)"}}>estos valores reales</strong> en vez del estimado de la fórmula. Incluye IVA (su recupero como crédito fiscal es asunto del cliente con su contador).</p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
+          {field("Derechos (DIE)","die")}
+          {field("Estadística","est")}
+          {field("Desaduanaje","des","Procesamiento + multiline + otros")}
+          {field("IVA importación","iva")}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",marginTop:14,background:cargado?"rgba(74,222,128,0.08)":"rgba(255,255,255,0.04)",border:`1px solid ${cargado?"rgba(74,222,128,0.25)":"rgba(255,255,255,0.1)"}`,borderRadius:8}}>
+          <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>TOTAL IMPUESTOS (real)</span>
+          <span style={{fontSize:16,fontWeight:700,color:cargado?"#4ade80":"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{fmt(total)}</span>
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
+          <Btn small onClick={saveDespacho} disabled={savingDespacho}>{savingDespacho?"Guardando...":"💾 Guardar despacho y recalcular"}</Btn>
+        </div>
+        {!cargado&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>Sin cargar todavía: el presupuesto usa el estimado de la fórmula sobre el valor declarado.</p>}
       </Card>;
     })()}
 
