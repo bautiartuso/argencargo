@@ -208,7 +208,7 @@ function OperationsList({token,onSelect,onNew}){
   const [selectedIds,setSelectedIds]=useState(new Set());
   const [bulkAction,setBulkAction]=useState(null); // {action:"setStatus"|"delete"|"markCollected", value?}
   const [bulkRunning,setBulkRunning]=useState(false);
-  const [attFilter,setAttFilter]=useState(null); // categoría de atención activa: "stale"|"noBudget"|"noEta"|"unpaid" — filtra la lista
+  const [attFilter,setAttFilter]=useState(null); // categoría de atención activa: "stale"|"noBudget"|"noEta" — filtra la lista
   const toggleSelected=(id)=>setSelectedIds(p=>{const n=new Set(p);n.has(id)?n.delete(id):n.add(id);return n;});
   const clearSelection=()=>setSelectedIds(new Set());
   const selectAll=(rows)=>setSelectedIds(new Set(rows.map(o=>o.id)));
@@ -328,12 +328,11 @@ function OperationsList({token,onSelect,onNew}){
   const daysSince=(dateStr)=>dateStr?Math.floor((Date.now()-new Date(dateStr).getTime())/86400000):0;
   const staleOps=ops.filter(o=>{const limit=STALE_DAYS[o.status];if(!limit)return false;const since=daysSince(o.updated_at||o.created_at);return since>=limit;});
   const noBudgetOps=ops.filter(o=>!["operacion_cerrada","cancelada","pendiente"].includes(o.status)&&Number(o.budget_total||0)<=0);
-  const unpaidClosedOps=ops.filter(o=>{const s=calcSaldo(o);return s!==null&&s>0&&["entregada","operacion_cerrada"].includes(o.status);});
   const noEtaOps=ops.filter(o=>["en_transito","arribo_argentina"].includes(o.status)&&!o.eta);
-  const attentionTotal=staleOps.length+noBudgetOps.length+unpaidClosedOps.length+noEtaOps.length;
+  const attentionTotal=staleOps.length+noBudgetOps.length+noEtaOps.length;
   // Filtro por tarjeta de atención: al tocar una card, la lista se filtra a esa categoría.
-  const attArrays={stale:staleOps,noBudget:noBudgetOps,noEta:noEtaOps,unpaid:unpaidClosedOps};
-  const attLabels={stale:"Estancadas",noBudget:"Sin presupuesto",noEta:"Sin ETA",unpaid:"Cobradas con saldo"};
+  const attArrays={stale:staleOps,noBudget:noBudgetOps,noEta:noEtaOps};
+  const attLabels={stale:"Estancadas",noBudget:"Sin presupuesto",noEta:"Sin ETA"};
   const attIds=attFilter&&attArrays[attFilter]?new Set(attArrays[attFilter].map(o=>o.id)):null;
   const toggleAtt=(k)=>setAttFilter(f=>f===k?null:k);
   const AttCard=({n,label,color,onClick,active})=><button onClick={onClick} style={{flex:"1 1 160px",minWidth:140,padding:"14px 16px",background:active?`${color}28`:n>0?`${color}10`:"rgba(255,255,255,0.02)",border:`1.5px solid ${active?color:n>0?color+"50":"rgba(255,255,255,0.05)"}`,boxShadow:active?`0 0 0 1px ${color}, 0 4px 16px ${color}30`:"none",borderRadius:12,cursor:n>0?"pointer":"default",textAlign:"left",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(n>0&&!active)e.currentTarget.style.background=`${color}20`;}} onMouseLeave={e=>{if(n>0&&!active)e.currentTarget.style.background=`${color}10`;}}>
@@ -363,7 +362,6 @@ function OperationsList({token,onSelect,onNew}){
       <AttCard n={staleOps.length} label="Estancadas" color="#f87171" active={attFilter==="stale"} onClick={()=>{if(staleOps.length)toggleAtt("stale");}}/>
       <AttCard n={noBudgetOps.length} label="Sin presupuesto" color="#fbbf24" active={attFilter==="noBudget"} onClick={()=>{if(noBudgetOps.length)toggleAtt("noBudget");}}/>
       <AttCard n={noEtaOps.length} label="Sin ETA" color="#60a5fa" active={attFilter==="noEta"} onClick={()=>{if(noEtaOps.length)toggleAtt("noEta");}}/>
-      <AttCard n={unpaidClosedOps.length} label="Cobradas con saldo" color="#a78bfa" active={attFilter==="unpaid"} onClick={()=>{if(unpaidClosedOps.length)toggleAtt("unpaid");}}/>
     </div>}
     {attFilter&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"8px 14px",background:"rgba(184,149,106,0.10)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:10}}>
       <span style={{fontSize:12.5,fontWeight:700,color:GOLD_LIGHT}}>Filtrando: {attLabels[attFilter]} <span style={{color:"rgba(255,255,255,0.55)",fontWeight:600}}>({attArrays[attFilter]?.length||0})</span></span>
