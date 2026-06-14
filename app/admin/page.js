@@ -872,14 +872,17 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     if(!force && op.budget_mode==="manual")return; // ← Manual: el admin maneja los números a mano, no pisamos
     try{
       // Refetch TODO fresco para evitar closures stale de tariffs/overrides (puede haber cambiado desde que se cargó la op).
-      const[fit,fpk,ft,fov,fcl,fop]=await Promise.all([
+      const[fit,fpk,ft,fov,fcl,fop,ffii]=await Promise.all([
         dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*`}),
         dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*`}),
         dq("tariffs",{token,filters:"?select=*"}),
         op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([]),
         op.client_id?dq("clients",{token,filters:`?id=eq.${op.client_id}&select=tax_condition`}):Promise.resolve([]),
-        dq("operations",{token,filters:`?id=eq.${op.id}&select=channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status`})
+        dq("operations",{token,filters:`?id=eq.${op.id}&select=channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status`}),
+        dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=quantity,unit_price_declared_usd`})
       ]);
+      // Declarados FRESCOS (no el state declaredItems, que puede estar vacío por closure stale en el sync de montaje).
+      const declFresh=Array.isArray(ffii)?ffii:[];
       const its=Array.isArray(fit)?fit:[];const pks=Array.isArray(fpk)?fpk:[];
       // Gestión Integral (AUTO): el total que ve el cliente es la suma de productos × cantidad
       // ("puesto en Argentina" acordado), NO el motor genérico de flete+impuestos. Lo manejamos
@@ -901,7 +904,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       if(isBlanco&&its.length===0)return;
       if(!isBlanco&&pks.length===0)return;
       // RI: impuestos sobre el valor declarado (flight_invoice_items de esta op).
-      const{totalTax,flete,seguro,totalAbonar,surcharge}=calcOpBudget(opForCalc,its,pks,tariffsFresh,config,overridesFresh,clientFresh,declaredItems);
+      const{totalTax,flete,seguro,totalAbonar,surcharge}=calcOpBudget(opForCalc,its,pks,tariffsFresh,config,overridesFresh,clientFresh,declFresh);
       await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}});
       setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}));
     }catch(e){console.error("autoSync budget",e);}
