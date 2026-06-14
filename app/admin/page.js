@@ -321,7 +321,9 @@ function OperationsList({token,onSelect,onNew}){
     }
     let va=a[sortCol],vb=b[sortCol];if(sortCol==="client"){va=a.clients?`${a.clients.first_name} ${a.clients.last_name}`:"";vb=b.clients?`${b.clients.first_name} ${b.clients.last_name}`:"";}if(sortCol==="origin"){va=getOrigin(a);vb=getOrigin(b);}if(sortCol==="ganancia"){va=calcGan(a);vb=calcGan(b);}if(va==null)va="";if(vb==null)vb="";if(typeof va==="string")va=va.toLowerCase();if(typeof vb==="string")vb=vb.toLowerCase();if(va<vb)return sortDir==="asc"?-1:1;if(va>vb)return sortDir==="asc"?1:-1;return 0;
   });
-  const toggleSort=(col)=>{if(sortCol===col){setSortDir(d=>d==="asc"?"desc":"asc");}else{setSortCol(col);setSortDir("asc");}};
+  // Ciclo al tocar una columna: asc → desc → sin orden (vuelve al orden por defecto "smart").
+  // El 3er click "suelta" el orden, así no queda clavado por tocar el encabezado.
+  const toggleSort=(col)=>{if(sortCol===col){if(sortDir==="asc"){setSortDir("desc");}else{setSortCol("smart");setSortDir("asc");}}else{setSortCol(col);setSortDir("asc");}};
   const SH=({label,col,narrow,alignRight})=><th onClick={()=>toggleSort(col)} style={{padding:alignRight?"14px 24px 14px 16px":narrow?"14px 8px 14px 16px":"14px 16px",textAlign:"center",fontSize:10,fontWeight:700,color:sortCol===col?GOLD_LIGHT:"rgba(255,255,255,0.45)",textTransform:"uppercase",cursor:"pointer",userSelect:"none",letterSpacing:"0.08em",transition:"color 150ms",...(narrow?{width:"1%",whiteSpace:"nowrap"}:{})}}>{label}{sortCol===col?<span style={{marginLeft:6,fontSize:9}}>{sortDir==="asc"?"▲":"▼"}</span>:null}</th>;
   // Cards "qué necesita atención": cuenta ops por categoría problemática
   const STALE_DAYS={en_deposito_origen:14,en_preparacion:10,en_transito:30,arribo_argentina:7,en_aduana:14,entregada:30};
