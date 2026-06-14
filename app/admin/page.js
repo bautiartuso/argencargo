@@ -5542,12 +5542,13 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       // Recalcular cada op
       for(const op of opsUnique){
         try{
-          const [its,pks,fcl,fop,overr]=await Promise.all([
+          const [its,pks,fcl,fop,overr,fii]=await Promise.all([
             dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),
             dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*`}),
             op.client_id?dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*&limit=1`}):Promise.resolve([]),
             dq("operations",{token,filters:`?id=eq.${op.id}&select=*&limit=1`}),
-            op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([])
+            op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([]),
+            dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=quantity,unit_price_declared_usd`})
           ]);
           const client=Array.isArray(fcl)?fcl[0]:null;
           const opFresh=Array.isArray(fop)?fop[0]:null;
@@ -5556,8 +5557,8 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           const pksArr=Array.isArray(pks)?pks:[];
           const isBlanco=opForCalc.channel?.includes("blanco");
           if((isBlanco&&itsArr.length===0)||(!isBlanco&&pksArr.length===0)){err++;continue;}
-          // RI: impuestos sobre el valor declarado (items=flight_invoice_items de este vuelo).
-          const declForOp=items.filter(d=>d.operation_id===op.id);
+          // RI: impuestos sobre el valor declarado (fetch fresco de flight_invoice_items).
+          const declForOp=Array.isArray(fii)?fii:[];
           const {totalTax,flete,seguro,totalAbonar,surcharge}=calcOpBudget(opForCalc,itsArr,pksArr,tarFresh||[],configMap,overr||[],client,declForOp);
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}});
           ok++;
@@ -5663,6 +5664,8 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         setCompressState(null);
         onFlash(`✓ Vuelo comprimido ${proposed.original_count} → ${proposed.compressed_count} items · ops del cliente intactas — clasificá los productos en cada op`);
         onReload();
+        // Sincronización automática: tras comprimir, recalcular presupuestos (RI → impuestos sobre declarado).
+        try{await recalcAllBudgets();}catch(e){console.error("auto recalc post-compress",e);}
       }catch(e){
         console.error("compress flight apply error",e);
         setCompressState(s=>({...s,applying:false,error:e.message}));
@@ -5711,6 +5714,8 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       setCompressState(null);
       onFlash(`✓ ${proposed.original_count} → ${proposed.compressed_count} items · cliente ve precios originales · backup guardado`);
       onReload();
+      // Sincronización automática: tras comprimir, recalcular presupuestos (RI → impuestos sobre declarado).
+      try{await recalcAllBudgets();}catch(e){console.error("auto recalc post-compress",e);}
     }catch(e){
       console.error("compress apply error",e);
       setCompressState(s=>({...s,applying:false,error:e.message}));
