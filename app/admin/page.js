@@ -1104,17 +1104,29 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const collected=Number(op.collected_amount||0);
     const creditApp=Number(op.credit_applied_usd||0); // saldo a favor aplicado a esta op
     const debtApp=Number(op.debt_applied_usd||0); // deuda anterior sumada a esta op
+    const yaPago=totAnt+collected; // anticipos + cobros ya recibidos
     // Saldo real = (budget + deuda anterior) - (anticipos + cobros + saldo a favor aplicado)
     const saldo=Math.max(0,bt+debtApp-totAnt-collected-creditApp);
-    const creditTxt=creditApp>0?`\n\n_Se debitó USD ${creditApp.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} del saldo a favor que tenías en tu cuenta._`:"";
-    const saldoTxt=(saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}*`:"")+creditTxt;
+    const fmt=v=>Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+    // Desglose: si hay deuda anterior, anticipos o saldo a favor aplicados, mostramos
+    // Presupuesto + los ajustes → saldo, para que el cliente entienda de dónde sale el número.
+    const adjLines=[];
+    if(debtApp>0)adjLines.push(`Deuda anterior: + USD ${fmt(debtApp)}`);
+    if(yaPago>0)adjLines.push(`Ya abonado: − USD ${fmt(yaPago)}`);
+    if(creditApp>0)adjLines.push(`Saldo a favor: − USD ${fmt(creditApp)}`);
+    const hasAdj=adjLines.length>0;
+    // saldoTxt (retiro): bloque completo Presupuesto + ajustes + saldo a abonar (o solo el saldo si no hay ajustes).
+    const saldoTxt=saldo>0
+      ?(hasAdj?`\n\nPresupuesto: USD ${fmt(bt)}\n${adjLines.join("\n")}\n\n*Saldo a abonar: USD ${fmt(saldo)}*`:`\n\n*Saldo a abonar: USD ${fmt(saldo)}*`)
+      :"";
+    // ajustesTxt: solo las líneas de ajuste (para wa_envio, que ya tiene su propio subtotal importación+envío).
+    const ajustesTxt=hasAdj?`\n${adjLines.join("\n")}`:"";
     // Si la op tiene envío a domicilio, usar template wa_envio (con desglose) en lugar de wa_retiro.
     // Para retiro: Canal B (negro) usa wa_retiro_b (con lista de tracking). Canal A usa wa_retiro.
     const useEnvio=trigger==="retiro"&&op.shipping_to_door&&envioCost>0;
     const isCanalB=op.channel?.includes("negro");
     const tplKey=useEnvio?"wa_envio":(trigger==="retiro"&&isCanalB?"wa_retiro_b":`wa_${trigger}`);
     const tpl=waTpls.find(t=>t.key===tplKey);
-    const fmt=v=>Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
     // Lista de tracking numbers de los bultos de la op (para template wa_retiro Canal B y otros)
     let trackingList="";
     try{
@@ -1122,10 +1134,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const tracks=(Array.isArray(pkgsForList)?pkgsForList:[]).map(p=>p.national_tracking).filter(Boolean);
       trackingList=tracks.length>0?tracks.join("\n"):"(sin tracking cargado)";
     }catch(e){console.error("trackingList",e);trackingList="";}
-    // Si se aplicó saldo a favor / deuda anterior a esta op, lo mostramos al cliente.
-    const saldoFavorTxt=creditApp>0?` (ya se descontaron USD ${fmt(creditApp)} que tenías a favor!)`:"";
-    const deudaTxt=debtApp>0?` (incluye USD ${fmt(debtApp)} de deuda anterior)`:"";
-    const data={firstName,opCode,desc,portalLink,saldoTxt,saldoFavorTxt,deudaTxt,trackingList,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
+    const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt,trackingList,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
     const msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Av. Callao 1137.${saldoTxt}`;
     // api.whatsapp.com/send maneja mejor emojis multi-byte que wa.me (que a veces los muestra como "?").
@@ -9015,10 +9024,18 @@ function ComunicacionesPanel({token}){
     const collected=Number(op.collected_amount||0);
     const creditApp=Number(op.credit_applied_usd||0);
     const debtApp=Number(op.debt_applied_usd||0);
+    const yaPago=totAnt+collected;
     const saldo=Math.max(0,bt+debtApp-totAnt-collected-creditApp);
-    const creditTxt=creditApp>0?`\n\n_Se debitó USD ${creditApp.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} del saldo a favor que tenías en tu cuenta._`:"";
-    const saldoTxt=(saldo>0?`\n\n*Saldo a abonar: USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}*`:"")+creditTxt;
-    const data={firstName,opCode,desc,portalLink,saldoTxt};
+    const fmt=v=>Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+    // Desglose: Presupuesto + deuda anterior / − ya abonado / − saldo a favor → saldo.
+    const adjLines=[];
+    if(debtApp>0)adjLines.push(`Deuda anterior: + USD ${fmt(debtApp)}`);
+    if(yaPago>0)adjLines.push(`Ya abonado: − USD ${fmt(yaPago)}`);
+    if(creditApp>0)adjLines.push(`Saldo a favor: − USD ${fmt(creditApp)}`);
+    const hasAdj=adjLines.length>0;
+    const saldoTxt=saldo>0?(hasAdj?`\n\nPresupuesto: USD ${fmt(bt)}\n${adjLines.join("\n")}\n\n*Saldo a abonar: USD ${fmt(saldo)}*`:`\n\n*Saldo a abonar: USD ${fmt(saldo)}*`):"";
+    const ajustesTxt=hasAdj?`\n${adjLines.join("\n")}`:"";
+    const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt};
     const key=`wa_${trigger}`;
     const tpl=templates.find(t=>t.key===key);
     if(tpl)return interp(tpl.body,data);
