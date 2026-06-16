@@ -874,7 +874,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const trigger=triggerMap[rest.status];
       if(trigger){try{const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger})});const resp=await r.json();if(resp?.ok)flash(`✉️ Email ${trigger} enviado al cliente`);else if(resp?.skipped==="already_sent"){/* silencioso: el mail ya fue enviado antes */}else if(resp?.skipped)flash(`⚠️ Email ${trigger} NO enviado: ${resp.skipped}`);else{console.error("email error",resp);flash(`❌ Email ${trigger} falló: ${resp?.error||"ver consola"}`);}}catch(e){console.error("email error",e);flash(`❌ Email ${trigger} falló: ${e.message}`);}}
     }
-    setOp(p=>({...p,closed_at:rest.closed_at}));flash("Operación guardada"+tierVoucherMsg);setSaving(false);
+    setOp(p=>({...p,closed_at:rest.closed_at}));
+    // Recalcular el presupuesto tras guardar: flags como has_battery (recargo $2/kg), has_phones
+    // o channel cambian el flete/impuestos. Sin esto, el budget_total quedaba viejo y el WhatsApp/
+    // presupuesto no reflejaban el recargo. autoSyncBudget se auto-protege (no pisa modo manual ni GI).
+    try{await autoSyncBudget();}catch(e){console.error("autoSync tras saveOp",e);}
+    flash("Operación guardada"+tierVoucherMsg);setSaving(false);
     // Auto-sync del presupuesto después de cualquier save (por si cambiaron flags que afectan el cálculo: has_phones, has_battery, channel, etc.)
     autoSyncBudget();
   };
