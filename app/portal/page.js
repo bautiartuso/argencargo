@@ -1452,8 +1452,14 @@ function CalculatorPage({token,client}){
     // Marítimo Integral AC (B) — siempre disponible (incluso para ropa/calzado <5 CBM).
     // Si totCBM>0 hay dimensiones cargadas. No chequeamos noDims porque puede estar en true por edge UX.
     if(totCBM>0){const fleteRate=getFleteRate("maritimo_b",totCBM);const flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
-      channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",isBlanco:false,
-        flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,cbm:totCBM,unit:`${totCBM.toFixed(4)} CBM`});}
+      const negroTotal=flete+sur.amt;
+      // Sin marca + CBM > 0,5: si el Marítimo blanco (LCL/FCL) está disponible y es MÁS BARATO,
+      // no mostrar el Marítimo Integral AC (negro) — así el cliente no se confunde con dos opciones
+      // marítimas. (Con marca no aplica: el blanco no se ofrece, sólo se muestra el negro.)
+      const mBlanco=channels.find(c=>c.key==="maritimo_a_china");
+      const hideNegro=!hasBrand&&totCBM>0.5&&mBlanco&&mBlanco.total<negroTotal;
+      if(!hideNegro)channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",isBlanco:false,
+        flete,surcharge:sur.amt,surchargePct:sur.pct,total:negroTotal,cbm:totCBM,unit:`${totCBM.toFixed(4)} CBM`});}
     setResults({channels,totWeight,totCBM,blockMaritimoLclRestricted,blockMaritimoLclLowFob,blockMaritimoLclMinCbm,requiredFobMaritimo,isRestricted,totalFob});setStep(4);
   };
 
