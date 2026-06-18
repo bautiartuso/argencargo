@@ -818,7 +818,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
     const sp=await dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setSupplierPayments(Array.isArray(sp)?sp:[]);
     // Vuelo de la op (para mostrar el flete como fila virtual en Costos GI: fecha + código de vuelo).
-    if(op.service_type==="gestion_integral"){const fo=await dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=cost_share_usd,flights(flight_code,departed_at,eta,created_at,payment_method)`});setFlightInfo(Array.isArray(fo)&&fo[0]?fo[0]:null);}else setFlightInfo(null);
+    if(op.service_type==="gestion_integral"){const fo=await dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=cost_share_usd,flights(flight_code,dispatched_at,created_at,payment_method)`});setFlightInfo(Array.isArray(fo)&&fo[0]?fo[0]:null);}else setFlightInfo(null);
     const cp=await dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setClientPayments(Array.isArray(cp)?cp:[]);
     await loadCCBalance();setLo(false);
     // Auto-sincronizar el presupuesto después de cargar la op (en caso de que esté desactualizado).
@@ -1903,7 +1903,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               {/* Fila VIRTUAL del flete del vuelo (no es un operation_supplier_payment — ya está en la CC del agente). */}
               {isAereoBlancoGI&&opCostFlete>0&&(()=>{
                 const fl=flightInfo?.flights;
-                const fdate=fl?(fl.departed_at||fl.eta||fl.created_at):null;
+                const fdate=fl?(fl.dispatched_at||fl.created_at):null;
                 return <tr style={{borderBottom:"1px solid rgba(255,255,255,0.04)",background:"rgba(96,165,250,0.05)"}}>
                   <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fdate?new Date(String(fdate).slice(0,10)+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}):"—"}</td>
                   <td style={{padding:"10px 14px",textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}><span style={{color:"#c084fc",fontWeight:700}}>USD {opCostFlete.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></td>
