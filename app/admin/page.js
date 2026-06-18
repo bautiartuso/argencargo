@@ -1786,9 +1786,16 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       // Soporte multi-moneda: USD directo vs ARS (pendiente de dolarización hasta cierre TC).
       // type='payment' suma, type='refund' resta (reembolsos del proveedor).
       const sign=(p)=>p.type==="refund"?-1:1;
-      const totalCosto=supplierPayments.reduce((s,p)=>s+sign(p)*Number(p.amount_usd||0),0);
+      const supplierUsd=supplierPayments.reduce((s,p)=>s+sign(p)*Number(p.amount_usd||0),0);
+      // Costos del despacho (SOLO aéreo blanco / canal A): flete del vuelo + impuestos + etc.
+      // Se suman al total para que coincida con la pestaña Finanzas. El flete (vía CC del vuelo)
+      // se considera ya pagado.
+      const isAereoBlancoGI=op.channel==="aereo_blanco";
+      const opCostFlete=Number(op.cost_flete||0);
+      const opCostsExtra=isAereoBlancoGI?(opCostFlete+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)):0;
+      const totalCosto=supplierUsd+opCostsExtra;
       const totalCostoArs=supplierPayments.reduce((s,p)=>s+sign(p)*Number(p.amount_ars||0),0);
-      const totalPagadoCosto=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+sign(p)*Number(p.amount_usd||0),0);
+      const totalPagadoCosto=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+sign(p)*Number(p.amount_usd||0),0)+opCostsExtra;
       const totalPendCosto=totalCosto-totalPagadoCosto;
       const totalReembolsos=supplierPayments.filter(p=>p.type==="refund").reduce((s,p)=>s+Number(p.amount_usd||0),0);
       const addCost=async()=>{
@@ -1873,16 +1880,15 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           </>}
         </div>
 
-        {/* Costos a nivel operación (no pasan por el ledger del proveedor): flete del vuelo, impuestos, etc.
-            Antes el flete del vuelo no se veía en GI; acá queda visible. */}
-        {(()=>{
-          const rows=[["Flete internacional (del vuelo)",Number(op.cost_flete||0)],["Impuestos",Number(op.cost_impuestos_reales||0)],["Gasto documental",Number(op.cost_gasto_documental||0)],["Seguro",Number(op.cost_seguro||0)],["Flete local",Number(op.cost_flete_local||0)],["Otros",Number(op.cost_otros||0)]].filter(([,v])=>Math.abs(v)>0.005);
-          if(!rows.length)return null;
+        {/* Desglose de costos (igual al de Finanzas): producto + costos del despacho (flete del vuelo,
+            impuestos, etc.). Solo en aéreo blanco / canal A. */}
+        {isAereoBlancoGI&&opCostsExtra>0&&(()=>{
           const fmt2=v=>`USD ${Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-          return <div style={{marginBottom:16,padding:"12px 16px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:10}}>
-            <p style={{fontSize:11,fontWeight:700,color:"#60a5fa",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Costos del despacho (además del proveedor)</p>
-            {rows.map(([l,v])=><div key={l} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13,color:"rgba(255,255,255,0.82)"}}><span>{l}</span><span style={{fontVariantNumeric:"tabular-nums"}}>{fmt2(v)}</span></div>)}
-            <p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"8px 0 0",fontStyle:"italic"}}>El flete sale del reparto del costo del vuelo. Se descuentan en la ganancia (pestaña Finanzas).</p>
+          const rows=[["Producto (proveedor)",supplierUsd],["Flete internacional (del vuelo)",opCostFlete],["Impuestos",Number(op.cost_impuestos_reales||0)],["Gasto documental",Number(op.cost_gasto_documental||0)],["Seguro",Number(op.cost_seguro||0)],["Flete local",Number(op.cost_flete_local||0)],["Otros",Number(op.cost_otros||0)]].filter(([,v])=>Math.abs(v)>0.005);
+          return <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"16px 20px",marginBottom:16}}>
+            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Desglose de costos</p>
+            {rows.map(([l,v])=><div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:13,color:"rgba(255,255,255,0.8)",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><span>{l}</span><span style={{fontVariantNumeric:"tabular-nums"}}>{fmt2(v)}</span></div>)}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"9px 0 0",fontSize:14,fontWeight:800,color:"#ff6b6b"}}><span>TOTAL COSTOS</span><span style={{fontVariantNumeric:"tabular-nums"}}>{fmt2(totalCosto)}</span></div>
           </div>;
         })()}
 
@@ -2470,7 +2476,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       // Antes NO se contaban acá → la ganancia salía inflada (ignoraba el flete del vuelo).
       const opCostFlete=Number(op.cost_flete||0);
       const opCostImp=Number(op.cost_impuestos_reales||0);
-      const opCostsExtra=opCostFlete+opCostImp+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0);
+      // Solo aéreo blanco / canal A (consistente con la pestaña Costos).
+      const isAereoBlancoGI=op.channel==="aereo_blanco";
+      const opCostsExtra=isAereoBlancoGI?(opCostFlete+opCostImp+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)):0;
       const totalCostos=supplierSum+opCostsExtra;
       // Los costos a nivel op (flete del vuelo vía CC, etc.) se consideran comprometidos/pagados.
       const costoPagado=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+signCost(p)*Number(p.amount_usd||0),0)+opCostsExtra;
