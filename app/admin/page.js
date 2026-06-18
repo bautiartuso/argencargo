@@ -632,6 +632,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:""});const [cobroEditor,setCobroEditor]=useState(null);const [giroEditor,setGiroEditor]=useState(null);const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const [declaredItems,setDeclaredItems]=useState([]); // flight_invoice_items de esta op (valor declarado a Aduana, para RI)
+  const [flightInfo,setFlightInfo]=useState(null); // {cost_share_usd, flights:{flight_code,departed_at,...}} — para fila virtual de flete en Costos GI
   // Despacho REAL (RI): valores copiados de la factura del despachante/DHL. Si están cargados,
   // los impuestos del presupuesto los toman de acá (no de la fórmula).
   const [despacho,setDespacho]=useState({die:initOp.despacho_die_usd??"",est:initOp.despacho_estadistica_usd??"",des:initOp.despacho_desaduanaje_usd??"",iva:initOp.despacho_iva_usd??""});
@@ -816,6 +817,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     if(op.client_id){const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*`});setOpClient(Array.isArray(cl)?cl[0]:null);const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);}
     const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
     const sp=await dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setSupplierPayments(Array.isArray(sp)?sp:[]);
+    // Vuelo de la op (para mostrar el flete como fila virtual en Costos GI: fecha + código de vuelo).
+    if(op.service_type==="gestion_integral"){const fo=await dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=cost_share_usd,flights(flight_code,departed_at,eta,created_at,payment_method)`});setFlightInfo(Array.isArray(fo)&&fo[0]?fo[0]:null);}else setFlightInfo(null);
     const cp=await dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setClientPayments(Array.isArray(cp)?cp:[]);
     await loadCCBalance();setLo(false);
     // Auto-sincronizar el presupuesto después de cargar la op (en caso de que esté desactualizado).
@@ -1880,20 +1883,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           </>}
         </div>
 
-        {/* Desglose de costos (igual al de Finanzas): producto + costos del despacho (flete del vuelo,
-            impuestos, etc.). Solo en aéreo blanco / canal A. */}
-        {isAereoBlancoGI&&opCostsExtra>0&&(()=>{
-          const fmt2=v=>`USD ${Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-          const rows=[["Producto (proveedor)",supplierUsd],["Flete internacional (del vuelo)",opCostFlete],["Impuestos",Number(op.cost_impuestos_reales||0)],["Gasto documental",Number(op.cost_gasto_documental||0)],["Seguro",Number(op.cost_seguro||0)],["Flete local",Number(op.cost_flete_local||0)],["Otros",Number(op.cost_otros||0)]].filter(([,v])=>Math.abs(v)>0.005);
-          return <div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"16px 20px",marginBottom:16}}>
-            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Desglose de costos</p>
-            {rows.map(([l,v])=><div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:13,color:"rgba(255,255,255,0.8)",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><span>{l}</span><span style={{fontVariantNumeric:"tabular-nums"}}>{fmt2(v)}</span></div>)}
-            <div style={{display:"flex",justifyContent:"space-between",padding:"9px 0 0",fontSize:14,fontWeight:800,color:"#ff6b6b"}}><span>TOTAL COSTOS</span><span style={{fontVariantNumeric:"tabular-nums"}}>{fmt2(totalCosto)}</span></div>
-          </div>;
-        })()}
-
-        {/* Tabla de costos */}
-        {supplierPayments.length>0?<div style={{background:"rgba(0,0,0,0.18)",borderRadius:10,overflow:"hidden",marginBottom:16}}>
+        {/* Tabla de costos. Incluye una fila VIRTUAL del flete del vuelo (GI aéreo blanco): se ve como
+            un costo más pero NO es un registro real del ledger — el flete ya está descontado en la
+            cuenta corriente del agente, registrarlo acá lo duplicaría. */}
+        {(supplierPayments.length>0||(isAereoBlancoGI&&opCostFlete>0))?<div style={{background:"rgba(0,0,0,0.18)",borderRadius:10,overflow:"hidden",marginBottom:16}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead>
               <tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.02)"}}>
@@ -1907,6 +1900,20 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               </tr>
             </thead>
             <tbody>
+              {/* Fila VIRTUAL del flete del vuelo (no es un operation_supplier_payment — ya está en la CC del agente). */}
+              {isAereoBlancoGI&&opCostFlete>0&&(()=>{
+                const fl=flightInfo?.flights;
+                const fdate=fl?(fl.departed_at||fl.eta||fl.created_at):null;
+                return <tr style={{borderBottom:"1px solid rgba(255,255,255,0.04)",background:"rgba(96,165,250,0.05)"}}>
+                  <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fdate?new Date(String(fdate).slice(0,10)+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}):"—"}</td>
+                  <td style={{padding:"10px 14px",textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}><span style={{color:"#c084fc",fontWeight:700}}>USD {opCostFlete.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></td>
+                  <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.75)"}}>Flete internacional</td>
+                  <td style={{padding:"10px 14px",color:GOLD_LIGHT,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11}}>{fl?.flight_code||<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>}</td>
+                  <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.6)"}}>Cuenta corriente (agente)</td>
+                  <td style={{padding:"10px 14px"}}><span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",letterSpacing:"0.05em"}}>✓ PAGADO</span></td>
+                  <td style={{padding:"10px 14px",textAlign:"right",whiteSpace:"nowrap"}}><span title="Sale del reparto del costo del vuelo. Ya está descontado en la cuenta corriente del agente — no se registra acá para no duplicarlo." style={{fontSize:9,fontWeight:700,padding:"3px 7px",borderRadius:4,background:"rgba(96,165,250,0.15)",color:"#60a5fa",letterSpacing:"0.04em",textTransform:"uppercase",cursor:"help"}}>Auto · del vuelo</span></td>
+                </tr>;
+              })()}
               {supplierPayments.map(p=>{const isRefund=p.type==="refund";const rowBg=isRefund?"rgba(34,197,94,0.04)":"transparent";return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",background:rowBg}}>
                 <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
                   {new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}
