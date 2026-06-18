@@ -4329,7 +4329,7 @@ function Calculator({token,clients}){
         <div style={{marginTop:14}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>COTIZACIÓN CLIENTE</p>
           {ch.isBlanco?<>
-            {row("Flete",ch.flete)}{ch.battExtra>0&&row("Recargo baterías",ch.battExtra)}{row("Seguro",ch.seguro)}
+            {row(ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete",ch.flete)}{ch.battExtra>0&&row("Recargo baterías",ch.battExtra)}{row("Seguro",ch.seguro)}
             {row(`Derechos (${ncm?.import_duty_rate||0}%)`,ch.derechos)}{row(`TE (${ncm?.statistics_rate||0}%)`,ch.tasa_e)}{row(`IVA (${ncm?.iva_rate??21}%)`,ch.iva)}
             {ch.isMar?<>{row("IVA Adic. (20%)",ch.ivaAdic)}{row("IIGG (6%)",ch.iigg)}{row("IIBB (5%)",ch.iibb)}</>:<>{row("Gasto doc.",ch.gastoDoc)}{row("IVA desemb.",ch.ivaDesemb)}</>}
           </>:<>
@@ -9921,7 +9921,7 @@ function AdminCalculator({token}){
     const effTotal=eff?.effTotal||ch.totalAbonar||0;
     // Sección 1: Servicios (flete + seguro)
     const rowsServicios=[];
-    if(Number(ch.flete||0)>0)rowsServicios.push(`<div class="row"><span>Flete</span><span>USD ${fmt(ch.flete)}</span></div>`);
+    if(Number(ch.flete||0)>0)rowsServicios.push(`<div class="row"><span>${ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete"}</span><span>USD ${fmt(ch.flete)}</span></div>`);
     if(Number(ch.seguro||0)>0)rowsServicios.push(`<div class="row"><span>Seguro</span><span>USD ${fmt(ch.seguro)}</span></div>`);
     // Sección 2: Aduana / impuestos
     const rowsAduana=[];
@@ -10126,7 +10126,7 @@ function AdminCalculator({token}){
             <p style={{fontSize:10,color:"rgba(251,191,36,0.85)",margin:"3px 0 0",lineHeight:1.4,fontWeight:500}}>{ch.notVisibleToClient}</p>
           </div>}
           <div style={{flex:1,display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>
-            {Number(ch.flete||0)>0&&<div style={rowStyle}><span>Flete</span><span style={valStyle}>USD {fmt(ch.flete)}</span></div>}
+            {Number(ch.flete||0)>0&&<div style={rowStyle}><span>{ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete"}</span><span style={valStyle}>USD {fmt(ch.flete)}</span></div>}
             {Number(ch.seguro||0)>0&&<div style={rowStyle}><span>Seguro</span><span style={valStyle}>USD {fmt(ch.seguro)}</span></div>}
             {bd.isBlanco&&<>
               {bd.derechos>0&&<div style={rowStyle}><span>Derechos importación</span><span style={valStyle}>USD {fmt(bd.derechos)}</span></div>}

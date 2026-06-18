@@ -1156,7 +1156,7 @@ function printPortalCalcPdf({ch,products,totalFob,origin,clientName,delivCost=0}
     });
   }
   const rowsServicios=[];
-  if(Number(ch.flete||0)>0)rowsServicios.push(`<div class="row"><span>Flete</span><span>USD ${fmt(ch.flete)}</span></div>`);
+  if(Number(ch.flete||0)>0)rowsServicios.push(`<div class="row"><span>${ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete"}</span><span>USD ${fmt(ch.flete)}</span></div>`);
   if(Number(ch.seguro||0)>0)rowsServicios.push(`<div class="row"><span>Seguro</span><span>USD ${fmt(ch.seguro)}</span></div>`);
   if(Number(ch.surcharge||0)>0)rowsServicios.push(`<div class="row"><span>Recargo por valor${ch.surchargePct?` (${ch.surchargePct}%)`:""}</span><span>USD ${fmt(ch.surcharge)}</span></div>`);
   if(delivCost>0)rowsServicios.push(`<div class="row"><span>Envío CABA</span><span>USD ${fmt(delivCost)}</span></div>`);
@@ -1493,7 +1493,7 @@ function CalculatorPage({token,client}){
   };
   const makeWAMsg=(ch)=>{const{totWeight,totCBM}=calcTotals();const name=client?`${client.first_name} ${client.last_name}`:"Cliente";const code=client?.client_code||"—";const flag=origin==="USA"?"\ud83c\uddfa\ud83c\uddf8":origin==="Espa\u00f1a"?"\ud83c\uddea\ud83c\uddf8":"\ud83c\udde8\ud83c\uddf3";const isAereo=ch.key?.includes("aereo");const delivCost=getShipCost(delivery,calcTotals().totWeight);const total=ch.total+delivCost;
     const usdF=v=>`USD ${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-    if(ch.isBlanco){return encodeURIComponent(`Hola Bautista! Acabo de cotizar una importación y quiero avanzar con la operación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${prodSummary}*\n\nTipo de envío: *${ch.name}*\n\nValor Total: *${usdF(totalFob)}*\n${isAereo?`Peso Total: *${totWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg*`:`CBM Total: *${totCBM.toFixed(4)} m³*`}\n\nImpuestos estimados: *${usdF(ch.totalImp||0)}*\nFlete Internacional: *${usdF(ch.flete||0)}*\nSeguro: *${usdF(ch.seguro||0)}*\nEntrega en Destino: *${autoDelivLabel}*\nTotal estimado: *${usdF(total)}*\n\nCódigo cliente: *${code}*`);}
+    if(ch.isBlanco){return encodeURIComponent(`Hola Bautista! Acabo de cotizar una importación y quiero avanzar con la operación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${prodSummary}*\n\nTipo de envío: *${ch.name}*\n\nValor Total: *${usdF(totalFob)}*\n${isAereo?`Peso Total: *${totWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg*`:`CBM Total: *${totCBM.toFixed(4)} m³*`}\n\nImpuestos estimados: *${usdF(ch.totalImp||0)}*\n${ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete Internacional"}: *${usdF(ch.flete||0)}*\nSeguro: *${usdF(ch.seguro||0)}*\nEntrega en Destino: *${autoDelivLabel}*\nTotal estimado: *${usdF(total)}*\n\nCódigo cliente: *${code}*`);}
     return encodeURIComponent(`Hola Bautista! Acabo de cotizar una importación y quiero avanzar con la operación!\n\nOrigen: *${origin}* ${flag}\nMercadería: *${prodSummary}*\n\nTipo de envío: *${ch.name}*\n\nValor Total: *${usdF(totalFob)}*\n${isAereo?`Peso Total: *${totWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg*`:`CBM Total: *${totCBM.toFixed(4)} m³*`}\nEntrega en Destino: *${autoDelivLabel}*\nCosto de importación: *${usdF(total)}*\n\nCódigo cliente: *${code}*`);};
 
   const usd=v=>`USD ${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
@@ -1588,7 +1588,7 @@ function CalculatorPage({token,client}){
             <h3 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{mc.name}</h3>
             <button onClick={()=>setExpandedCh(null)} style={{fontSize:20,background:"none",border:"none",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>✕</button>
           </div>
-          {row("Servicio Integral ARGENCARGO",mc.flete)}
+          {row(mc.key==="maritimo_a_china"?"Servicio marítimo de importación":"Servicio Integral ARGENCARGO",mc.flete)}
           {mc.surcharge>0&&row(`Recargo valor (${mc.surchargePct}%)`,mc.surcharge)}
           {delivCost>0&&row("Envío CABA",delivCost)}
           {row("TOTAL",total,true,true)}
