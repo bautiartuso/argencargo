@@ -10922,19 +10922,21 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
   })();},[token]);
   const fmt=n=>`USD ${Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const fk=n=>`${Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
+  // Parseo es-AR: "65,9" → 65.9 ; "2.636,50" → 2636.5 ; "2636" → 2636 ; "65.9" → 65.9.
+  const num=s=>{if(s==null)return 0;let t=String(s).trim();if(!t)return 0;if(t.indexOf(",")>=0)t=t.replace(/\./g,"").replace(",",".");const v=parseFloat(t);return isNaN(v)?0:v;};
   const rateFor=(weight,clientId)=>{
     let ch=null;for(const r of tariffs){const mn=Number(r.min_qty||0);const mx=r.max_qty!=null?Number(r.max_qty):Infinity;if(weight>=mn&&weight<mx){ch=r;break;}}
     if(!ch&&tariffs.length)ch=tariffs[tariffs.length-1];if(!ch)return 0;
     const ov=overrides.find(o=>o.client_id===clientId&&o.tariff_id===ch.id);return ov?Number(ov.custom_rate):Number(ch.rate);
   };
-  const dec=Number(pesoTotal)||0,pag=Number(importe)||0,fl=Number(fleteLocal)||0;
-  const valid=bultos.filter(b=>b.client_id&&(Number(b.peso)||0)>0);
-  const sumA=valid.reduce((s,b)=>s+(Number(b.peso)||0),0);
+  const dec=num(pesoTotal),pag=num(importe),fl=num(fleteLocal);
+  const valid=bultos.filter(b=>b.client_id&&num(b.peso)>0);
+  const sumA=valid.reduce((s,b)=>s+num(b.peso),0);
   const factor=sumA>0?Math.max(1,dec/sumA):1;
   const sumP=sumA*factor;
   const costPerUnit=sumP>0?(pag+fl)/sumP:0;
   const groups={};
-  valid.forEach(b=>{const pr=(Number(b.peso)||0)*factor;if(!groups[b.client_id])groups[b.client_id]={prorated:0,bultos:[]};groups[b.client_id].prorated+=pr;groups[b.client_id].bultos.push({...b,prorated:pr});});
+  valid.forEach(b=>{const pr=num(b.peso)*factor;if(!groups[b.client_id])groups[b.client_id]={prorated:0,bultos:[]};groups[b.client_id].prorated+=pr;groups[b.client_id].bultos.push({...b,prorated:pr});});
   const rateByClient={};Object.keys(groups).forEach(cid=>{rateByClient[cid]=rateFor(Math.max(groups[cid].prorated,1),cid);});
   const opList=Object.keys(groups).map(cid=>{const g=groups[cid];const billW=Math.max(g.prorated,1);const rate=rateByClient[cid]||0;const ing=billW*rate;const cf=sumP>0?pag*g.prorated/sumP:0;const cl=sumP>0?fl*g.prorated/sumP:0;const cli=allClients.find(c=>c.id===cid);return{cid,cli,prorated:g.prorated,ingreso:ing,costFlete:cf,costLocal:cl,ganancia:ing-cf-cl,bultos:g.bultos};});
   const totIngreso=opList.reduce((s,o)=>s+o.ingreso,0);
@@ -11000,7 +11002,7 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
     <div style={card}>
       <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:12}}><span style={{color:BLUE,fontSize:16}}>▦</span><h3 style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>Bultos</h3></div>
       <div style={{display:"grid",gridTemplateColumns:"1.5fr 1.1fr .7fr .8fr 1fr 28px",gap:8,fontSize:10,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.04em",padding:"0 0 4px"}}><span>Cliente</span><span>Cód. seguimiento</span><span style={{textAlign:"right"}}>Peso</span><span style={{textAlign:"right"}}>Prorrateo</span><span style={{textAlign:"right"}}>Ganancia</span><span></span></div>
-      {bultos.map((b,i)=>{const pb=valid.includes(b)?(()=>{const pr=(Number(b.peso)||0)*factor;const rate=b.client_id?(rateByClient[b.client_id]||0):0;const ing=pr*rate;const g=ing-pr*costPerUnit;return{pr,g};})():null;return <div key={i} style={{display:"grid",gridTemplateColumns:"1.5fr 1.1fr .7fr .8fr 1fr 28px",gap:8,alignItems:"center",padding:"7px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+      {bultos.map((b,i)=>{const pb=valid.includes(b)?(()=>{const pr=num(b.peso)*factor;const rate=b.client_id?(rateByClient[b.client_id]||0):0;const ing=pr*rate;const g=ing-pr*costPerUnit;return{pr,g};})():null;return <div key={i} style={{display:"grid",gridTemplateColumns:"1.5fr 1.1fr .7fr .8fr 1fr 28px",gap:8,alignItems:"center",padding:"7px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
         <select value={b.client_id} onChange={e=>upd(i,"client_id",e.target.value)} style={{...inp,cursor:"pointer",color:b.client_id?"#fff":"rgba(255,255,255,0.4)"}}><option value="" style={{background:"#0F1F3A"}}>Cliente…</option>{clientOpts.map(c=><option key={c.value} value={c.value} style={{background:"#0F1F3A"}}>{c.code}</option>)}</select>
         <input value={b.tracking} onChange={e=>upd(i,"tracking",e.target.value)} placeholder="AR-…" style={{...inp,fontSize:12}}/>
         <input value={b.peso} onChange={e=>upd(i,"peso",e.target.value)} placeholder="0" inputMode="decimal" style={{...inp,textAlign:"right"}}/>
