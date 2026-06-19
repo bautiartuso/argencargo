@@ -1141,7 +1141,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       trackingList=tracks.length>0?tracks.join("\n"):"(sin tracking cargado)";
       bultosCount=arr.reduce((s,p)=>s+(Number(p.quantity)||1),0);
     }catch(e){console.error("trackingList",e);trackingList="";}
-    const creditNote=creditApp>0?`\n_(ya descontamos USD ${fmt(creditApp)} de tu saldo a favor)_`:"";
+    // Aclaración para el cliente: si tenía deuda anterior (ya sumada) o saldo a favor (ya descontado).
+    const creditNote=(debtApp>0?`\n_(ya incluye USD ${fmt(debtApp)} de deuda anterior de tu cuenta)_`:"")+(creditApp>0?`\n_(ya descontamos USD ${fmt(creditApp)} de tu saldo a favor)_`:"");
     const origen=op.origin||"China";
     const flag=op.origin==="USA"?"🇺🇸":"🇨🇳";
     const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt,trackingList,bultosCount,origen,flag,creditNote,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
