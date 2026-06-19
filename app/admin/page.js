@@ -1128,7 +1128,9 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     // Para retiro: Canal B (negro) usa wa_retiro_b (con lista de tracking). Canal A usa wa_retiro.
     const useEnvio=trigger==="retiro"&&op.shipping_to_door&&envioCost>0;
     const isCanalB=op.channel?.includes("negro");
-    const tplKey=useEnvio?"wa_envio":(trigger==="retiro"&&isCanalB?"wa_retiro_b":`wa_${trigger}`);
+    const isMaritimoCh=op.channel?.includes("maritimo");
+    // Retiro: marítimo usa sus propios templates (con origen+bandera); aéreo B usa wa_retiro_b; aéreo A wa_retiro.
+    const tplKey=useEnvio?"wa_envio":(trigger==="retiro"&&isMaritimoCh?(isCanalB?"wa_retiro_maritimo_b":"wa_retiro_maritimo_a"):(trigger==="retiro"&&isCanalB?"wa_retiro_b":`wa_${trigger}`));
     const tpl=waTpls.find(t=>t.key===tplKey);
     // Lista de tracking numbers de los bultos de la op (para template wa_retiro Canal B y otros)
     let trackingList="";let bultosCount=0;
@@ -1139,7 +1141,10 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       trackingList=tracks.length>0?tracks.join("\n"):"(sin tracking cargado)";
       bultosCount=arr.reduce((s,p)=>s+(Number(p.quantity)||1),0);
     }catch(e){console.error("trackingList",e);trackingList="";}
-    const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt,trackingList,bultosCount,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
+    const creditNote=creditApp>0?`\n_(ya descontamos USD ${fmt(creditApp)} de tu saldo a favor)_`:"";
+    const origen=op.origin||"China";
+    const flag=op.origin==="USA"?"🇺🇸":"🇨🇳";
+    const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt,trackingList,bultosCount,origen,flag,creditNote,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
     const msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Av. Callao 1137.${saldoTxt}`;
     // api.whatsapp.com/send maneja mejor emojis multi-byte que wa.me (que a veces los muestra como "?").
