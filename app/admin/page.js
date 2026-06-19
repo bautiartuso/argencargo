@@ -1131,13 +1131,15 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const tplKey=useEnvio?"wa_envio":(trigger==="retiro"&&isCanalB?"wa_retiro_b":`wa_${trigger}`);
     const tpl=waTpls.find(t=>t.key===tplKey);
     // Lista de tracking numbers de los bultos de la op (para template wa_retiro Canal B y otros)
-    let trackingList="";
+    let trackingList="";let bultosCount=0;
     try{
-      const pkgsForList=await dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=package_number,national_tracking&order=package_number.asc`});
-      const tracks=(Array.isArray(pkgsForList)?pkgsForList:[]).map(p=>p.national_tracking).filter(Boolean);
+      const pkgsForList=await dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=package_number,national_tracking,quantity&order=package_number.asc`});
+      const arr=Array.isArray(pkgsForList)?pkgsForList:[];
+      const tracks=arr.map(p=>p.national_tracking).filter(Boolean);
       trackingList=tracks.length>0?tracks.join("\n"):"(sin tracking cargado)";
+      bultosCount=arr.reduce((s,p)=>s+(Number(p.quantity)||1),0);
     }catch(e){console.error("trackingList",e);trackingList="";}
-    const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt,trackingList,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
+    const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt,trackingList,bultosCount,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
     const msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Av. Callao 1137.${saldoTxt}`;
     // api.whatsapp.com/send maneja mejor emojis multi-byte que wa.me (que a veces los muestra como "?").
@@ -2043,8 +2045,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
           <Inp label="Alto cm" type="number" value={pk.height_cm} onChange={v=>chPkg(i,"height_cm",v)} step="0.1" small/>
           <Inp label="Peso unit. kg" type="number" value={pk.gross_weight_kg} onChange={v=>chPkg(i,"gross_weight_kg",v)} step="0.1" small/>
         </div>
-        {/* Foto del bulto cargada por el agente */}
-        <div style={{marginTop:12,padding:"10px 12px",background:pk.photo_url?"rgba(34,197,94,0.06)":"rgba(251,191,36,0.06)",border:`1px solid ${pk.photo_url?"rgba(34,197,94,0.18)":"rgba(251,191,36,0.2)"}`,borderRadius:8,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        {/* Foto del bulto: SOLO Aéreo A (canal blanco). En los otros 3 canales no hay foto. */}
+        {op.channel==="aereo_blanco"&&<div style={{marginTop:12,padding:"10px 12px",background:pk.photo_url?"rgba(34,197,94,0.06)":"rgba(251,191,36,0.06)",border:`1px solid ${pk.photo_url?"rgba(34,197,94,0.18)":"rgba(251,191,36,0.2)"}`,borderRadius:8,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           {pk.photo_url?<>
             <a href={pk.photo_url} target="_blank" rel="noopener noreferrer"><img src={pk.photo_url} alt="" style={{width:60,height:60,objectFit:"cover",borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",cursor:"zoom-in"}}/></a>
             <div style={{flex:1,minWidth:160}}>
@@ -2059,7 +2061,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
               <p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>El agente aún no subió foto de la mercadería</p>
             </div>
           </>}
-        </div>
+        </div>}
         {(bruto>0||vw>0)&&<div style={{display:"flex",gap:16,marginTop:8,fontSize:11,color:"rgba(255,255,255,0.4)"}}><span>Bruto total: <strong style={{color:"#fff"}}>{bruto.toFixed(1)} kg</strong></span>{vw>0&&<span>Vol: <strong style={{color:"#fff"}}>{vw.toFixed(1)} kg</strong></span>}{cbm>0&&<span>CBM: <strong style={{color:"#fff"}}>{cbm.toFixed(4)} m³</strong></span>}{vw>bruto&&<span style={{color:"#fb923c"}}>Volumétrico mayor</span>}</div>}
       </div>;})}
       {pkgs.length>0&&(()=>{let pf=0,totGW=0,totCBM=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/agentVolDiv)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});return <div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:12,marginTop:8,display:"flex",gap:20,alignItems:"baseline",flexWrap:"wrap"}}><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>PESO FACTURABLE</p><p style={{fontSize:16,fontWeight:700,color:IC,margin:0}}>{pf.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>PESO BRUTO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{totGW.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div><div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px"}}>CBM TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{totCBM.toFixed(4)} m³</p></div>{op.created_by_agent_id&&<div style={{marginLeft:"auto"}}><p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:0}}>Divisor agente: <strong style={{color:"#fff"}}>÷{agentVolDiv}</strong></p></div>}</div>;})()}
@@ -10932,8 +10934,13 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
   const dec=num(pesoTotal),pag=num(importe),fl=num(fleteLocal);
   const valid=bultos.filter(b=>b.client_id&&num(b.peso)>0);
   const sumA=valid.reduce((s,b)=>s+num(b.peso),0);
-  const factor=sumA>0?Math.max(1,dec/sumA):1;
+  // Prorrateo topado en +10%: no le puedo cargar más de un 10% extra a un cliente. Si la
+  // diferencia supera el 10%, esos kg NO se trasladan y el costo lo asume Argencargo (baja la ganancia).
+  const rawFactor=sumA>0?Math.max(1,dec/sumA):1;
+  const factor=Math.min(rawFactor,1.10);
+  const capped=rawFactor>1.1001;
   const sumP=sumA*factor;
+  const uncoveredKg=Math.max(0,dec-sumP);
   const costPerUnit=sumP>0?(pag+fl)/sumP:0;
   const groups={};
   valid.forEach(b=>{const pr=num(b.peso)*factor;if(!groups[b.client_id])groups[b.client_id]={prorated:0,bultos:[]};groups[b.client_id].prorated+=pr;groups[b.client_id].bultos.push({...b,prorated:pr});});
@@ -11013,8 +11020,8 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
       <button onClick={addB} style={{width:"100%",marginTop:10,padding:"9px",background:"none",border:"1px dashed rgba(255,255,255,0.15)",borderRadius:9,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:12.5}}>+ Agregar bulto</button>
     </div>
 
-    {valid.length>0&&<div style={{fontSize:12.5,lineHeight:1.5,borderRadius:10,padding:"11px 14px",marginBottom:14,...(diff<-0.005?{background:"rgba(232,161,60,0.1)",border:"1px solid rgba(232,161,60,0.3)",color:"#E8A13C"}:diff>0.005?{background:BLUE_SOFT,border:"1px solid "+BLUE_BORDER,color:BLUE}:{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.6)"})}}>
-      {diff<-0.005?<>Pesó <b>{fk(Math.abs(diff))}</b> menos que el total ({fk(sumA)} vs {fk(dec)}). Prorrateo <b>×{factor.toFixed(4)}</b> para cubrir los kg pagados — no perdés plata.</>:diff>0.005?<>Pesó <b>{fk(diff)}</b> más que el total ({fk(sumA)} vs {fk(dec)}). Se cobra el real — la diferencia es ganancia extra.</>:<>El peso coincide con el total. Sin ajuste.</>}
+    {valid.length>0&&<div style={{fontSize:12.5,lineHeight:1.5,borderRadius:10,padding:"11px 14px",marginBottom:14,...(capped?{background:"rgba(242,101,113,0.1)",border:"1px solid rgba(242,101,113,0.32)",color:"#F26571"}:diff<-0.005?{background:"rgba(232,161,60,0.1)",border:"1px solid rgba(232,161,60,0.3)",color:"#E8A13C"}:diff>0.005?{background:BLUE_SOFT,border:"1px solid "+BLUE_BORDER,color:BLUE}:{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.6)"})}}>
+      {capped?<>Pesó <b>{fk(Math.abs(diff))}</b> menos ({fk(sumA)} vs {fk(dec)}). El prorrateo se topa en <b>+10%</b> — no le puedo cargar más al cliente. Quedan <b>{fk(uncoveredKg)}</b> sin trasladar (≈ <b>{fmt(uncoveredKg*tarifaCompra)}</b>): ese costo lo asumís vos.</>:diff<-0.005?<>Pesó <b>{fk(Math.abs(diff))}</b> menos que el total ({fk(sumA)} vs {fk(dec)}). Prorrateo <b>×{factor.toFixed(4)}</b> para cubrir los kg pagados — no perdés plata.</>:diff>0.005?<>Pesó <b>{fk(diff)}</b> más que el total ({fk(sumA)} vs {fk(dec)}). Se cobra el real — la diferencia es ganancia extra.</>:<>El peso coincide con el total. Sin ajuste.</>}
     </div>}
 
     {opList.length>0&&<div style={card}>
