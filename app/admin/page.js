@@ -11012,9 +11012,10 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
     </div>
 
     <div style={card}>
-      <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:12}}><span style={{color:BLUE,fontSize:16}}>▦</span><h3 style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>Bultos</h3></div>
-      <div style={{display:"grid",gridTemplateColumns:"1.5fr 1.1fr .7fr .8fr 1fr 28px",gap:8,fontSize:10,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.04em",padding:"0 0 4px"}}><span>Cliente</span><span>Cód. seguimiento</span><span style={{textAlign:"right"}}>Peso</span><span style={{textAlign:"right"}}>Prorrateo</span><span style={{textAlign:"right"}}>Ganancia</span><span></span></div>
-      {bultos.map((b,i)=>{const pb=valid.includes(b)?(()=>{const pr=num(b.peso)*factor;const rate=b.client_id?(rateByClient[b.client_id]||0):0;const ing=pr*rate;const g=ing-pr*costPerUnit;return{pr,g};})():null;return <div key={i} style={{display:"grid",gridTemplateColumns:"1.5fr 1.1fr .7fr .8fr 1fr 28px",gap:8,alignItems:"center",padding:"7px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+      {(()=>{const nb=bultos.filter(b=>num(b.peso)>0).length;return <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:12}}><span style={{color:BLUE,fontSize:16}}>▦</span><h3 style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>Bultos <span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)",fontWeight:400}}>· {nb} {nb===1?"bulto":"bultos"}</span></h3></div>;})()}
+      <div style={{display:"grid",gridTemplateColumns:"24px 1.5fr 1.1fr .7fr .8fr 1fr 28px",gap:8,fontSize:10,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.04em",padding:"0 0 4px"}}><span style={{textAlign:"center"}}>#</span><span>Cliente</span><span>Cód. seguimiento</span><span style={{textAlign:"right"}}>Peso</span><span style={{textAlign:"right"}}>Prorrateo</span><span style={{textAlign:"right"}}>Ganancia</span><span></span></div>
+      {bultos.map((b,i)=>{const pb=valid.includes(b)?(()=>{const pr=num(b.peso)*factor;const rate=b.client_id?(rateByClient[b.client_id]||0):0;const ing=pr*rate;const g=ing-pr*costPerUnit;return{pr,g};})():null;return <div key={i} style={{display:"grid",gridTemplateColumns:"24px 1.5fr 1.1fr .7fr .8fr 1fr 28px",gap:8,alignItems:"center",padding:"7px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+        <span style={{textAlign:"center",fontSize:11.5,color:"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{i+1}</span>
         <select value={b.client_id} onChange={e=>upd(i,"client_id",e.target.value)} style={{...inp,cursor:"pointer",color:b.client_id?"#fff":"rgba(255,255,255,0.4)"}}><option value="" style={{background:"#0F1F3A"}}>Cliente…</option>{clientOpts.map(c=><option key={c.value} value={c.value} style={{background:"#0F1F3A"}}>{c.code}</option>)}</select>
         <input value={b.tracking} onChange={e=>upd(i,"tracking",e.target.value)} placeholder="AR-…" style={{...inp,fontSize:12}}/>
         <input value={b.peso} onChange={e=>upd(i,"peso",e.target.value)} placeholder="0" inputMode="decimal" style={{...inp,textAlign:"right"}}/>
@@ -11030,7 +11031,7 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
     </div>}
 
     {opList.length>0&&<div style={card}>
-      <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:6}}><span style={{color:BLUE,fontSize:16}}>✓</span><h3 style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>Operaciones a crear <span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)",fontWeight:400}}>· {opList.length} {opList.length===1?"operación":"operaciones"}</span></h3></div>
+      <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:6}}><span style={{color:BLUE,fontSize:16}}>✓</span><h3 style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>Operaciones a crear <span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)",fontWeight:400}}>· {opList.length} {opList.length===1?"operación":"operaciones"} · {valid.length} {valid.length===1?"bulto":"bultos"}</span></h3></div>
       {opList.map(op=><div key={op.cid} style={{border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"11px 13px",marginTop:10}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7,flexWrap:"wrap",gap:6}}>
           <div style={{fontSize:13,fontWeight:600,color:"#fff"}}>{op.cli?.client_code||"—"} <span style={{color:"rgba(255,255,255,0.5)",fontWeight:400}}>· {op.cli?`${op.cli.first_name||""} ${op.cli.last_name||""}`:""}</span></div>
