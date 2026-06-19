@@ -10772,6 +10772,7 @@ function AdminDashboard({session,onLogout}){
   const navSections=[
     {section:"Operativa",items:[
       {key:"operations",label:"Operaciones",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},
+      {key:"carga_dia",label:"Carga del día · USA",p:["M22 2L11 13","M22 2l-7 20-4-9-9-4 20-7z"]},
       {key:"agents",label:"Agentes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},
       {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
       {key:"tasks",label:"Tareas",p:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"]},
@@ -10871,6 +10872,7 @@ function AdminDashboard({session,onLogout}){
       {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
+      {page==="carga_dia"&&<CargaDelDiaPanel token={token} allClients={allClients} onCreated={()=>setPage("operations")}/>}
       {page==="tasks"&&<AdminTasks token={token}/>}
       {page==="comms"&&<ComunicacionesPanel token={token}/>}
       {page==="intel"&&<IntelligencePanel token={token} allClients={allClients}/>}
@@ -10888,6 +10890,151 @@ function AdminDashboard({session,onLogout}){
       {page==="gi_requests"&&<GiAdminPanel token={token} clients={allClients}/>}
       {page==="settings"&&<AdminSettings token={token} session={session}/>}
     </div></div>
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARGA DEL DÍA · AÉREO ESTADOS UNIDOS (Aéreo B USA)
+// Carga masiva: peso/importe que me cobró el proveedor + bultos (cliente+tracking+peso).
+// Prorrateo ASIMÉTRICO: si los bultos pesan MENOS que lo declarado, escala los pesos
+// facturables hasta el declarado (no perder plata); si pesan MÁS, cobra el real (ganancia extra).
+// Agrupa bultos por cliente → 1 op por cliente (status entregada, ETA del día).
+// Costos (compra prorrateada + flete local prorrateado) → libro diario con la fecha del pago.
+// Ingreso diferido: NO se asienta hasta cobrar (flujo existente vía cobros).
+// ═══════════════════════════════════════════════════════════════
+function CargaDelDiaPanel({token,allClients=[],onCreated}){
+  const BLUE="#3B7DD8",BLUE_SOFT="rgba(59,125,216,0.12)",BLUE_BORDER="rgba(59,125,216,0.35)";
+  const today=new Date().toISOString().slice(0,10);
+  const [proveedor,setProveedor]=useState("All Red Corp");
+  const [fecha,setFecha]=useState(today);
+  const [pesoTotal,setPesoTotal]=useState("");
+  const [importe,setImporte]=useState("");
+  const [fleteLocal,setFleteLocal]=useState("");
+  const [metodo,setMetodo]=useState("transferencia");
+  const [bultos,setBultos]=useState([{client_id:"",tracking:"",peso:""}]);
+  const [tariffs,setTariffs]=useState([]);
+  const [overrides,setOverrides]=useState([]);
+  const [creating,setCreating]=useState(false);
+  const [msg,setMsg]=useState("");
+  useEffect(()=>{(async()=>{
+    const t=await dq("tariffs",{token,filters:"?service_key=eq.aereo_b_usa&type=eq.rate&select=*&order=min_qty.asc"});setTariffs(Array.isArray(t)?t:[]);
+    const o=await dq("client_tariff_overrides",{token,filters:"?select=client_id,tariff_id,custom_rate"});setOverrides(Array.isArray(o)?o:[]);
+  })();},[token]);
+  const fmt=n=>`USD ${Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const fk=n=>`${Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
+  const rateFor=(weight,clientId)=>{
+    let ch=null;for(const r of tariffs){const mn=Number(r.min_qty||0);const mx=r.max_qty!=null?Number(r.max_qty):Infinity;if(weight>=mn&&weight<mx){ch=r;break;}}
+    if(!ch&&tariffs.length)ch=tariffs[tariffs.length-1];if(!ch)return 0;
+    const ov=overrides.find(o=>o.client_id===clientId&&o.tariff_id===ch.id);return ov?Number(ov.custom_rate):Number(ch.rate);
+  };
+  const dec=Number(pesoTotal)||0,pag=Number(importe)||0,fl=Number(fleteLocal)||0;
+  const valid=bultos.filter(b=>b.client_id&&(Number(b.peso)||0)>0);
+  const sumA=valid.reduce((s,b)=>s+(Number(b.peso)||0),0);
+  const factor=sumA>0?Math.max(1,dec/sumA):1;
+  const sumP=sumA*factor;
+  const costPerUnit=sumP>0?(pag+fl)/sumP:0;
+  const groups={};
+  valid.forEach(b=>{const pr=(Number(b.peso)||0)*factor;if(!groups[b.client_id])groups[b.client_id]={prorated:0,bultos:[]};groups[b.client_id].prorated+=pr;groups[b.client_id].bultos.push({...b,prorated:pr});});
+  const rateByClient={};Object.keys(groups).forEach(cid=>{rateByClient[cid]=rateFor(Math.max(groups[cid].prorated,1),cid);});
+  const opList=Object.keys(groups).map(cid=>{const g=groups[cid];const billW=Math.max(g.prorated,1);const rate=rateByClient[cid]||0;const ing=billW*rate;const cf=sumP>0?pag*g.prorated/sumP:0;const cl=sumP>0?fl*g.prorated/sumP:0;const cli=allClients.find(c=>c.id===cid);return{cid,cli,prorated:g.prorated,ingreso:ing,costFlete:cf,costLocal:cl,ganancia:ing-cf-cl,bultos:g.bultos};});
+  const totIngreso=opList.reduce((s,o)=>s+o.ingreso,0);
+  const totEgreso=pag+fl;
+  const totGan=totIngreso-totEgreso;
+  const diff=sumA-dec;
+  const tarifaCompra=dec>0?pag/dec:0;
+  const upd=(i,k,v)=>setBultos(p=>p.map((b,j)=>j===i?{...b,[k]:v}:b));
+  const addB=()=>setBultos(p=>[...p,{client_id:"",tracking:"",peso:""}]);
+  const rmB=i=>setBultos(p=>p.length>1?p.filter((_,j)=>j!==i):p);
+  const clientOpts=(allClients||[]).map(c=>({value:c.id,code:c.client_code,label:`${c.client_code} · ${c.first_name||""} ${c.last_name||""}`}));
+  const crear=async()=>{
+    if(opList.length===0){setMsg("⚠ Cargá al menos un bulto con cliente y peso.");return;}
+    if(dec<=0||pag<=0){setMsg("⚠ Completá peso total e importe abonado.");return;}
+    setCreating(true);setMsg("");
+    try{
+      const existing=await dq("operations",{token,filters:"?select=operation_code"});
+      const used=new Set((Array.isArray(existing)?existing:[]).map(e=>parseInt(String(e.operation_code||"").replace("AC-","")) ).filter(n=>!isNaN(n)));
+      let nx=1;const nextCode=()=>{while(used.has(nx))nx++;used.add(nx);return "AC-"+String(nx).padStart(4,"0");};
+      const r2=n=>Math.round(Number(n||0)*100)/100;
+      let created=0;
+      for(const op of opList){
+        const code=nextCode();
+        const body={operation_code:code,client_id:op.cid,channel:"aereo_negro",origin:"USA",service_type:"courier",status:"entregada",eta:fecha,closed_at:new Date().toISOString(),has_phones:false,budget_mode:"auto",budget_total:r2(op.ingreso),budget_flete:r2(op.ingreso),budget_taxes:0,budget_seguro:0,budget_surcharge:0,cost_flete:r2(op.costFlete),cost_flete_local:r2(op.costLocal),cost_flete_method:metodo,cost_flete_paid_at:fecha,description:"Aéreo USA · carga "+fecha};
+        const r=await dq("operations",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
+        const opId=Array.isArray(r)&&r[0]?r[0].id:(r&&r.id);
+        if(!opId)continue;
+        let pn=0;for(const b of op.bultos){pn++;await dq("operation_packages",{method:"POST",token,body:{operation_id:opId,package_number:pn,quantity:1,gross_weight_kg:r2(b.prorated),national_tracking:b.tracking||null}});}
+        if(op.costFlete>0.005)await dq("finance_entries",{method:"POST",token,body:{date:fecha,type:"gasto",description:"Flete Aéreo USA "+code+" · "+proveedor,amount:r2(op.costFlete),currency:"USD",payment_method:metodo,is_paid:true,auto_generated:true,operation_id:opId}});
+        if(op.costLocal>0.005)await dq("finance_entries",{method:"POST",token,body:{date:fecha,type:"gasto",description:"Flete local "+code,amount:r2(op.costLocal),currency:"USD",payment_method:metodo,is_paid:true,auto_generated:true,operation_id:opId}});
+        created++;
+      }
+      setMsg("✓ "+created+" operación"+(created!==1?"es":"")+" creada"+(created!==1?"s":"")+" · listas para retirar · ETA "+fecha);
+      setBultos([{client_id:"",tracking:"",peso:""}]);setPesoTotal("");setImporte("");setFleteLocal("");
+      if(onCreated)setTimeout(()=>onCreated(),1600);
+    }catch(e){console.error("crear carga",e);setMsg("❌ Error al crear: "+(e.message||e));}
+    setCreating(false);
+  };
+  const lbl={display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
+  const inp={width:"100%",padding:"9px 11px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:9,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontVariantNumeric:"tabular-nums"};
+  const card={background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"16px 18px",marginBottom:14};
+  const mc={background:"rgba(255,255,255,0.03)",borderRadius:10,padding:"12px 14px"};
+  return <div style={{maxWidth:980,margin:"0 auto"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:11}}>
+        <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Carga del día</h2>
+        <span style={{fontSize:12,color:BLUE,background:BLUE_SOFT,borderRadius:8,padding:"5px 12px",fontWeight:600}}>✈ Aéreo Estados Unidos</span>
+      </div>
+      <div><label style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginRight:8}}>Fecha</label><input type="date" value={fecha} onChange={e=>setFecha(e.target.value)} style={{...inp,width:160,display:"inline-block"}}/></div>
+    </div>
+
+    <div style={card}>
+      <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:14}}><span style={{color:BLUE,fontSize:16}}>▣</span><input value={proveedor} onChange={e=>setProveedor(e.target.value)} style={{...inp,width:"auto",minWidth:200,fontWeight:600,fontSize:14}}/><span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>· proveedor</span></div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
+        <div><label style={lbl}>Peso total (kg)</label><input value={pesoTotal} onChange={e=>setPesoTotal(e.target.value)} placeholder="0" inputMode="decimal" style={inp}/></div>
+        <div><label style={lbl}>Importe abonado (USD)</label><input value={importe} onChange={e=>setImporte(e.target.value)} placeholder="0" inputMode="decimal" style={inp}/></div>
+        <div><label style={lbl}>Tarifa compra (USD/kg)</label><div style={{...mc,fontVariantNumeric:"tabular-nums",color:"#fff",fontSize:13}}>{tarifaCompra.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>
+        <div><label style={lbl}>Gasto flete local (USD)</label><input value={fleteLocal} onChange={e=>setFleteLocal(e.target.value)} placeholder="0" inputMode="decimal" style={inp}/></div>
+        <div><label style={lbl}>Método de pago</label><select value={metodo} onChange={e=>setMetodo(e.target.value)} style={{...inp,cursor:"pointer"}}><option value="transferencia" style={{background:"#0F1F3A"}}>Transferencia</option><option value="efectivo" style={{background:"#0F1F3A"}}>Efectivo</option><option value="tarjeta_credito" style={{background:"#0F1F3A"}}>Tarjeta crédito</option></select></div>
+      </div>
+    </div>
+
+    <div style={card}>
+      <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:12}}><span style={{color:BLUE,fontSize:16}}>▦</span><h3 style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>Bultos</h3></div>
+      <div style={{display:"grid",gridTemplateColumns:"1.5fr 1.1fr .7fr .8fr 1fr 28px",gap:8,fontSize:10,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.04em",padding:"0 0 4px"}}><span>Cliente</span><span>Cód. seguimiento</span><span style={{textAlign:"right"}}>Peso</span><span style={{textAlign:"right"}}>Prorrateo</span><span style={{textAlign:"right"}}>Ganancia</span><span></span></div>
+      {bultos.map((b,i)=>{const pb=valid.includes(b)?(()=>{const pr=(Number(b.peso)||0)*factor;const rate=b.client_id?(rateByClient[b.client_id]||0):0;const ing=pr*rate;const g=ing-pr*costPerUnit;return{pr,g};})():null;return <div key={i} style={{display:"grid",gridTemplateColumns:"1.5fr 1.1fr .7fr .8fr 1fr 28px",gap:8,alignItems:"center",padding:"7px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+        <select value={b.client_id} onChange={e=>upd(i,"client_id",e.target.value)} style={{...inp,cursor:"pointer",color:b.client_id?"#fff":"rgba(255,255,255,0.4)"}}><option value="" style={{background:"#0F1F3A"}}>Cliente…</option>{clientOpts.map(c=><option key={c.value} value={c.value} style={{background:"#0F1F3A"}}>{c.code}</option>)}</select>
+        <input value={b.tracking} onChange={e=>upd(i,"tracking",e.target.value)} placeholder="AR-…" style={{...inp,fontSize:12}}/>
+        <input value={b.peso} onChange={e=>upd(i,"peso",e.target.value)} placeholder="0" inputMode="decimal" style={{...inp,textAlign:"right"}}/>
+        <span style={{textAlign:"right",fontSize:12.5,color:"rgba(255,255,255,0.8)",fontVariantNumeric:"tabular-nums"}}>{pb?fk(pb.pr):"—"}</span>
+        <span style={{textAlign:"right",fontSize:12.5,fontWeight:600,fontVariantNumeric:"tabular-nums",color:pb?(pb.g>=0?"#3FD18B":"#F26571"):"rgba(255,255,255,0.3)"}}>{pb?(pb.g<0?"−":"")+fmt(Math.abs(pb.g)):"—"}</span>
+        <button onClick={()=>rmB(i)} title="Quitar" style={{background:"none",border:"none",color:"rgba(255,255,255,0.3)",cursor:"pointer",fontSize:15}}>×</button>
+      </div>;})}
+      <button onClick={addB} style={{width:"100%",marginTop:10,padding:"9px",background:"none",border:"1px dashed rgba(255,255,255,0.15)",borderRadius:9,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:12.5}}>+ Agregar bulto</button>
+    </div>
+
+    {valid.length>0&&<div style={{fontSize:12.5,lineHeight:1.5,borderRadius:10,padding:"11px 14px",marginBottom:14,...(diff<-0.005?{background:"rgba(232,161,60,0.1)",border:"1px solid rgba(232,161,60,0.3)",color:"#E8A13C"}:diff>0.005?{background:BLUE_SOFT,border:"1px solid "+BLUE_BORDER,color:BLUE}:{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.6)"})}}>
+      {diff<-0.005?<>Pesó <b>{fk(Math.abs(diff))}</b> menos que el total ({fk(sumA)} vs {fk(dec)}). Prorrateo <b>×{factor.toFixed(4)}</b> para cubrir los kg pagados — no perdés plata.</>:diff>0.005?<>Pesó <b>{fk(diff)}</b> más que el total ({fk(sumA)} vs {fk(dec)}). Se cobra el real — la diferencia es ganancia extra.</>:<>El peso coincide con el total. Sin ajuste.</>}
+    </div>}
+
+    {opList.length>0&&<div style={card}>
+      <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:6}}><span style={{color:BLUE,fontSize:16}}>✓</span><h3 style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>Operaciones a crear <span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)",fontWeight:400}}>· {opList.length} {opList.length===1?"operación":"operaciones"}</span></h3></div>
+      {opList.map(op=><div key={op.cid} style={{border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"11px 13px",marginTop:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7,flexWrap:"wrap",gap:6}}>
+          <div style={{fontSize:13,fontWeight:600,color:"#fff"}}>{op.cli?.client_code||"—"} <span style={{color:"rgba(255,255,255,0.5)",fontWeight:400}}>· {op.cli?`${op.cli.first_name||""} ${op.cli.last_name||""}`:""}</span></div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:11,color:BLUE,background:BLUE_SOFT,borderRadius:7,padding:"3px 9px"}}>Lista para retirar</span><span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>ETA {fecha}</span></div>
+        </div>
+        {op.bultos.map((b,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"rgba(255,255,255,0.6)",padding:"2px 0"}}><span style={{color:BLUE}}>▪ <span style={{color:"rgba(255,255,255,0.7)"}}>{b.tracking||"(sin tracking)"}</span></span><span>{fk(b.prorated)}</span></div>)}
+        <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid rgba(255,255,255,0.06)",marginTop:6,paddingTop:6,fontSize:12.5}}><span style={{color:"rgba(255,255,255,0.5)"}}>{fk(op.prorated)} · ganancia</span><span style={{fontWeight:600,color:op.ganancia>=0?"#3FD18B":"#F26571"}}>{op.ganancia<0?"−":""}{fmt(Math.abs(op.ganancia))}</span></div>
+      </div>)}
+    </div>}
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1.2fr",gap:12,marginBottom:14}}>
+      <div style={mc}><p style={{...lbl,marginBottom:6}}>Ingreso de carga</p><p style={{fontSize:19,fontWeight:600,margin:0,fontVariantNumeric:"tabular-nums",color:"#fff"}}>{fmt(totIngreso)}</p></div>
+      <div style={mc}><p style={{...lbl,marginBottom:6}}>Egreso de carga</p><p style={{fontSize:19,fontWeight:600,margin:0,fontVariantNumeric:"tabular-nums",color:"rgba(255,255,255,0.7)"}}>{fmt(totEgreso)}</p></div>
+      <div style={{...mc,border:"1px solid "+BLUE_BORDER}}><p style={{...lbl,marginBottom:6}}>Ganancia de carga · {fecha.slice(8,10)}/{fecha.slice(5,7)}</p><p style={{fontSize:22,fontWeight:700,margin:0,fontVariantNumeric:"tabular-nums",color:totGan>=0?"#3FD18B":"#F26571"}}>{totGan<0?"−":""}{fmt(Math.abs(totGan))}</p></div>
+    </div>
+
+    {msg&&<p style={{fontSize:13,margin:"0 0 12px",color:/^[❌⚠]/.test(msg)?"#F26571":"#3FD18B",fontWeight:600}}>{msg}</p>}
+    <button onClick={crear} disabled={creating||opList.length===0} style={{width:"100%",padding:"13px",fontSize:14,fontWeight:700,borderRadius:11,border:"none",cursor:creating||opList.length===0?"not-allowed":"pointer",background:creating||opList.length===0?"rgba(255,255,255,0.06)":BLUE,color:creating||opList.length===0?"rgba(255,255,255,0.3)":"#fff"}}>{creating?"Creando operaciones…":opList.length>0?`Crear ${opList.length} ${opList.length===1?"operación":"operaciones"} · listas para retirar`:"Cargá los bultos"}</button>
   </div>;
 }
 
