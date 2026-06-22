@@ -1492,7 +1492,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const isPhonesBUsaInline=op.channel==="aereo_negro"&&isUSA&&op.has_phones;
       const svcKey=isPhonesBUsaInline?"aereo_b_usa_celulares":(op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="aereo_negro"?(isUSA?"aereo_b_usa":"aereo_b_china"):op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b");
       // Canal B aéreo (negro): cobra por peso BRUTO (totGW). Canal A aéreo: peso facturable (pf). Marítimo: CBM.
-      const fleteAmt=op.channel?.includes("aereo")?(op.channel==="aereo_negro"?Math.max(totGW,1):pf):(op.channel==="maritimo_blanco"?Math.max(totCBM,0.5):totCBM);
+      const fleteAmt=op.channel?.includes("aereo")?(op.channel==="aereo_negro"?Math.max(totGW,0.5):pf):(op.channel==="maritimo_blanco"?Math.max(totCBM,0.5):totCBM);
       const getRate=(sk,amt)=>{const rates=tariffs.filter(t=>t.service_key===sk&&t.type==="rate");for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amt>=min&&amt<max){const ov=clientOverrides.find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):Number(r.rate);}}return rates.length?Number(rates[rates.length-1].rate):0;};
       // Tarifa: toma del service_key calculado arriba (incluye aereo_b_usa_celulares si aplica).
       const fleteRate=getRate(svcKey,fleteAmt);flete=fleteAmt*fleteRate;
