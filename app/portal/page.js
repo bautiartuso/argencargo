@@ -1320,7 +1320,7 @@ function CalculatorPage({token,client}){
     const{totWeight,totVol,totCBM,billable}=calcTotals();const channels=[];
     // En USA solo hay marítimo Integral AC, que SIEMPRE permite ropa (no aplica restricción del 01/05)
     // Aéreo Integral AC (USA) — usa peso BRUTO, no volumétrico
-    if(totWeight>0){const bw=Math.max(totWeight,1);const fleteRate=hasPhones?65:getFleteRate("aereo_b_usa",bw);const flete=bw*fleteRate;const sur=getSurcharge("aereo_b_usa",totalFob,bw);
+    if(totWeight>0){const bw=Math.max(totWeight,0.5);const fleteRate=hasPhones?65:getFleteRate("aereo_b_usa",bw);const flete=bw*fleteRate;const sur=getSurcharge("aereo_b_usa",totalFob,bw);
       channels.push({key:"aereo_b_usa",name:"Aéreo Integral AC",info:"48-72 hs hábiles",flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totWeight.toFixed(1)} kg`});}
     // Marítimo Integral AC — solo si NO es celulares. Si totCBM>0 hay dimensiones cargadas.
     if(!hasPhones&&totCBM>0){const fleteRate=getFleteRate("maritimo_b",totCBM);const flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);

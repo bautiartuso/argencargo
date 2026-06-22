@@ -4220,7 +4220,7 @@ function Calculator({token,clients}){
   const calculate=()=>{
     const{totWeight,totCBM}=calcTotals();const channels=[];
     if(origin==="USA"){
-      if(totWeight>0){const{rate,cost}=hasPhones?{rate:65,cost:0}:getFleteRate("aereo_b_usa",totWeight);const flete=totWeight*rate;const fCost=totWeight*cost;const sur=getSurcharge("aereo_b_usa",totalFob,totWeight);
+      if(totWeight>0){const bw=Math.max(totWeight,0.5);const{rate,cost}=hasPhones?{rate:65,cost:0}:getFleteRate("aereo_b_usa",bw);const flete=bw*rate;const fCost=bw*cost;const sur=getSurcharge("aereo_b_usa",totalFob,bw);
         channels.push({key:"aereo_b_usa",name:"Aéreo Integral AC",info:"48-72 hs",isBlanco:false,flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totWeight.toFixed(1)} kg`});}
       if(!hasPhones&&!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_b",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
         channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",isBlanco:false,flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totCBM.toFixed(4)} CBM`});}
@@ -4263,7 +4263,7 @@ function Calculator({token,clients}){
           derechos:sumItems(itemsFict,"derechos"),tasa_e:sumItems(itemsFict,"tasa_e"),iva:sumItems(itemsFict,"iva"),gastoDoc:sumItems(itemsFict,"desembolso"),ivaDesemb:sumItems(itemsFict,"ivaDesemb"),
           items:itemsFict,cifReal,cifFict,impReal,impFict,gananciaImp,unit:`${factBill.toFixed(1)} kg`});}
       // Aéreo Integral AC (B) — peso bruto mínimo 5 kg (China)
-      if(totWeight>0){const bw=Math.max(totWeight,5);const{rate,cost}=getFleteRate("aereo_b_china",bw);const flete=bw*rate;const fCost=bw*cost;const sur=getSurcharge("aereo_b_china",totalFob,bw);
+      if(totWeight>0){const bw=Math.max(totWeight,0.5);const{rate,cost}=getFleteRate("aereo_b_china",bw);const flete=bw*rate;const fCost=bw*cost;const sur=getSurcharge("aereo_b_china",totalFob,bw);
         channels.push({key:"aereo_b_china",name:"Aéreo Integral AC",info:"10-15 días",isBlanco:false,flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${bw.toFixed(1)} kg`});}
       // Marítimo Carga LCL/FCL (A) — omitido si hay marca
       if(!hasBrand&&!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_a_china",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;
@@ -10950,8 +10950,8 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
   const costPerUnit=sumP>0?(pag+fl)/sumP:0;
   const groups={};
   valid.forEach(b=>{const pr=num(b.peso)*factor;if(!groups[b.client_id])groups[b.client_id]={prorated:0,bultos:[]};groups[b.client_id].prorated+=pr;groups[b.client_id].bultos.push({...b,prorated:pr});});
-  const rateByClient={};Object.keys(groups).forEach(cid=>{rateByClient[cid]=rateFor(Math.max(groups[cid].prorated,1),cid);});
-  const opList=Object.keys(groups).map(cid=>{const g=groups[cid];const billW=Math.max(g.prorated,1);const rate=rateByClient[cid]||0;const ing=billW*rate;const cf=sumP>0?pag*g.prorated/sumP:0;const cl=sumP>0?fl*g.prorated/sumP:0;const cli=allClients.find(c=>c.id===cid);return{cid,cli,prorated:g.prorated,ingreso:ing,costFlete:cf,costLocal:cl,ganancia:ing-cf-cl,bultos:g.bultos};});
+  const rateByClient={};Object.keys(groups).forEach(cid=>{rateByClient[cid]=rateFor(Math.max(groups[cid].prorated,0.5),cid);});
+  const opList=Object.keys(groups).map(cid=>{const g=groups[cid];const billW=Math.max(g.prorated,0.5);const rate=rateByClient[cid]||0;const ing=billW*rate;const cf=sumP>0?pag*g.prorated/sumP:0;const cl=sumP>0?fl*g.prorated/sumP:0;const cli=allClients.find(c=>c.id===cid);return{cid,cli,prorated:g.prorated,ingreso:ing,costFlete:cf,costLocal:cl,ganancia:ing-cf-cl,bultos:g.bultos};});
   const totIngreso=opList.reduce((s,o)=>s+o.ingreso,0);
   const totEgreso=pag+fl;
   const totGan=totIngreso-totEgreso;
