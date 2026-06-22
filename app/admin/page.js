@@ -1032,6 +1032,8 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
   const reloadEvents=async()=>{const ev=await dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`});setEvents(Array.isArray(ev)?ev:[]);};
 
   const savePkg=async(pk)=>{const{id,...rest}=pk;delete rest.created_at;await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});flash("Bulto guardado");autoSyncBudget();};
+  const [savingPkgs,setSavingPkgs]=useState(false);
+  const saveAllPkgs=async()=>{setSavingPkgs(true);try{for(const pk of pkgs){const{id,...rest}=pk;delete rest.created_at;await dq("operation_packages",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});}flash(`✓ ${pkgs.length} bulto${pkgs.length!==1?"s":""} guardado${pkgs.length!==1?"s":""}`);await autoSyncBudget();}catch(e){console.error("saveAllPkgs",e);flash("❌ Error al guardar bultos");}setSavingPkgs(false);};
   const addPkg=async()=>{const num=pkgs.length+1;await dq("operation_packages",{method:"POST",token,body:{operation_id:op.id,package_number:num,quantity:1}});await reloadPkgs();flash("Bulto agregado");autoSyncBudget();};
   const delPkg=async(id)=>{await dq("operation_packages",{method:"DELETE",token,filters:`?id=eq.${id}`});await reloadPkgs();flash("Bulto eliminado");autoSyncBudget();};
 
@@ -2030,27 +2032,36 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </Card>;
     })()}
 
-    {tab==="packages"&&<Card title="Bultos" actions={<div style={{display:"flex",gap:6}}>{pkgs.length>0&&<Btn small variant="secondary" onClick={()=>printPackageLabels({op,packages:pkgs,items,client:opClient})}>🏷️ Imprimir etiquetas</Btn>}<Btn onClick={addPkg} small>+ Agregar bulto</Btn></div>}>
+    {tab==="packages"&&<Card title="Bultos" actions={<div style={{display:"flex",gap:6}}>{pkgs.length>0&&<Btn small variant="secondary" onClick={()=>printPackageLabels({op,packages:pkgs,items,client:opClient})}>🏷️ Imprimir etiquetas</Btn>}<Btn onClick={addPkg} small variant="secondary">+ Agregar bulto</Btn>{pkgs.length>0&&<Btn onClick={saveAllPkgs} small disabled={savingPkgs}>{savingPkgs?"Guardando…":"💾 Guardar"}</Btn>}</div>}>
       {pkgs.map((pk,i)=>{const q=Number(pk.quantity||1),l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0),gw=Number(pk.gross_weight_kg||0);const bruto=gw*q;const vw=l&&w&&h?((l*w*h)/agentVolDiv)*q:0;const cbm=l&&w&&h?((l*w*h)/1000000)*q:0;return <div key={pk.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:10,flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
             <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Bulto {pk.package_number}</p>
             {pk.created_at&&<span style={{fontSize:10,color:"rgba(255,255,255,0.45)",fontWeight:500}}>· cargado {new Date(pk.created_at).toLocaleString("es-AR",{day:"2-digit",month:"short",year:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>}
           </div>
-          <div style={{display:"flex",gap:6}}><Btn onClick={()=>savePkg(pk)} small variant="secondary">Guardar</Btn><Btn onClick={()=>movePkgToOp(pk)} small variant="secondary" title="Mover este bulto a otra operación (cliente equivocado)">↪ Mover</Btn><Btn onClick={()=>delPkg(pk.id)} small variant="danger">Eliminar</Btn></div>
+          <div style={{display:"flex",gap:6}}><Btn onClick={()=>movePkgToOp(pk)} small variant="secondary" title="Mover este bulto a otra operación (cliente equivocado)">↪ Mover</Btn><Btn onClick={()=>delPkg(pk.id)} small variant="danger">Eliminar</Btn></div>
         </div>
-        <Inp label="Seguimiento nacional" value={pk.national_tracking} onChange={v=>chPkg(i,"national_tracking",v)} placeholder="Código de seguimiento nacional" small/>
-        {Array.isArray(pk.consolidated_from_trackings)&&pk.consolidated_from_trackings.length>0&&<div style={{margin:"-4px 0 8px",padding:"6px 10px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:6,display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
+        {/* Aéreo B (negro/integral): factura por peso bruto, las dimensiones no importan → solo Seguimiento + Cantidad + Peso en una fila. */}
+        {op.channel==="aereo_negro"?
+          <div style={{display:"grid",gridTemplateColumns:"2.4fr 0.8fr 1.1fr",gap:"0 12px"}}>
+            <Inp label="Seguimiento nacional" value={pk.national_tracking} onChange={v=>chPkg(i,"national_tracking",v)} placeholder="Código de seguimiento" small/>
+            <Inp label="Cantidad" type="number" value={pk.quantity} onChange={v=>chPkg(i,"quantity",v?parseInt(v):1)} small/>
+            <Inp label="Peso kg" type="number" value={pk.gross_weight_kg} onChange={v=>chPkg(i,"gross_weight_kg",v)} step="0.1" small/>
+          </div>
+        :<>
+          <Inp label="Seguimiento nacional" value={pk.national_tracking} onChange={v=>chPkg(i,"national_tracking",v)} placeholder="Código de seguimiento nacional" small/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 12px"}}>
+            <Inp label="Cantidad" type="number" value={pk.quantity} onChange={v=>chPkg(i,"quantity",v?parseInt(v):1)} small/>
+            <Inp label="Largo cm" type="number" value={pk.length_cm} onChange={v=>chPkg(i,"length_cm",v)} step="0.1" small/>
+            <Inp label="Ancho cm" type="number" value={pk.width_cm} onChange={v=>chPkg(i,"width_cm",v)} step="0.1" small/>
+            <Inp label="Alto cm" type="number" value={pk.height_cm} onChange={v=>chPkg(i,"height_cm",v)} step="0.1" small/>
+            <Inp label="Peso unit. kg" type="number" value={pk.gross_weight_kg} onChange={v=>chPkg(i,"gross_weight_kg",v)} step="0.1" small/>
+          </div>
+        </>}
+        {Array.isArray(pk.consolidated_from_trackings)&&pk.consolidated_from_trackings.length>0&&<div style={{margin:"6px 0 0",padding:"6px 10px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:6,display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
           <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.04em"}}>Originales consolidados:</span>
           {pk.consolidated_from_trackings.map((tr,k)=><span key={k} style={{fontSize:10.5,padding:"2px 7px",borderRadius:4,background:"rgba(96,165,250,0.14)",color:"#60a5fa",fontFamily:"monospace"}}>{tr}</span>)}
         </div>}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 12px"}}>
-          <Inp label="Cantidad" type="number" value={pk.quantity} onChange={v=>chPkg(i,"quantity",v?parseInt(v):1)} small/>
-          <Inp label="Largo cm" type="number" value={pk.length_cm} onChange={v=>chPkg(i,"length_cm",v)} step="0.1" small/>
-          <Inp label="Ancho cm" type="number" value={pk.width_cm} onChange={v=>chPkg(i,"width_cm",v)} step="0.1" small/>
-          <Inp label="Alto cm" type="number" value={pk.height_cm} onChange={v=>chPkg(i,"height_cm",v)} step="0.1" small/>
-          <Inp label="Peso unit. kg" type="number" value={pk.gross_weight_kg} onChange={v=>chPkg(i,"gross_weight_kg",v)} step="0.1" small/>
-        </div>
         {/* Foto del bulto: SOLO Aéreo A (canal blanco). En los otros 3 canales no hay foto. */}
         {op.channel==="aereo_blanco"&&<div style={{marginTop:12,padding:"10px 12px",background:pk.photo_url?"rgba(34,197,94,0.06)":"rgba(251,191,36,0.06)",border:`1px solid ${pk.photo_url?"rgba(34,197,94,0.18)":"rgba(251,191,36,0.2)"}`,borderRadius:8,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           {pk.photo_url?<>
