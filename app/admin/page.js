@@ -197,7 +197,7 @@ const OPS_FILTERS_KEY="ac_ops_filters";
 const loadOpsFilters=()=>{try{if(typeof window==="undefined")return{};return JSON.parse(localStorage.getItem(OPS_FILTERS_KEY)||"{}")||{};}catch{return{};}};
 
 function OperationsList({token,onSelect,onNew}){
-  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [lo,setLo]=useState(true);
+  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [ncmMissingByOp,setNcmMissingByOp]=useState({});const [lo,setLo]=useState(true);
   const [search,setSearch]=useState(()=>loadOpsFilters().search||"");
   const [fStatuses,setFStatuses]=useState(()=>{const v=loadOpsFilters().fStatuses;return Array.isArray(v)?v:[];});
   const [fChannels,setFChannels]=useState(()=>{const v=loadOpsFilters().fChannels;return Array.isArray(v)?v:[];});
@@ -208,7 +208,7 @@ function OperationsList({token,onSelect,onNew}){
   const [selectedIds,setSelectedIds]=useState(new Set());
   const [bulkAction,setBulkAction]=useState(null); // {action:"setStatus"|"delete"|"markCollected", value?}
   const [bulkRunning,setBulkRunning]=useState(false);
-  const [attFilter,setAttFilter]=useState(null); // categoría de atención activa: "stale"|"noBudget"|"noEta" — filtra la lista
+  const [attFilter,setAttFilter]=useState(null); // categoría de atención activa: "stale"|"noBudget"|"noEta"|"noNcm" — filtra la lista
   const toggleSelected=(id)=>setSelectedIds(p=>{const n=new Set(p);n.has(id)?n.delete(id):n.add(id);return n;});
   const clearSelection=()=>setSelectedIds(new Set());
   const selectAll=(rows)=>setSelectedIds(new Set(rows.map(o=>o.id)));
@@ -250,7 +250,7 @@ function OperationsList({token,onSelect,onNew}){
   };
   // Peso por estado: mayor valor = más cerca de entrega (aparece arriba)
   const STATUS_WEIGHT={entregada:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
-  useEffect(()=>{(async()=>{const [o,pm,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,giro_status,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd"})]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);setLo(false);})();},[token]);
+  useEffect(()=>{(async()=>{const [o,pm,cp,it]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,giro_status,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd"}),dq("operation_items",{token,filters:"?select=operation_id,ncm_code,description"})]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);const nmap={};(Array.isArray(it)?it:[]).forEach(r=>{const desc=(r.description||"").trim();const hasNcm=r.ncm_code&&String(r.ncm_code).trim();if(desc&&!hasNcm)nmap[r.operation_id]=true;});setNcmMissingByOp(nmap);setLo(false);})();},[token]);
   // Saldo pendiente del cliente. Considera:
   // - pagos ya recibidos (collected_amount si la op está cobrada, o operation_client_payments si es GI)
   // - crédito aplicado de CC (credit_applied_usd)
@@ -331,10 +331,12 @@ function OperationsList({token,onSelect,onNew}){
   const staleOps=ops.filter(o=>{const limit=STALE_DAYS[o.status];if(!limit)return false;const since=daysSince(o.updated_at||o.created_at);return since>=limit;});
   const noBudgetOps=ops.filter(o=>!["operacion_cerrada","cancelada","pendiente"].includes(o.status)&&Number(o.budget_total||0)<=0);
   const noEtaOps=ops.filter(o=>["en_transito","arribo_argentina"].includes(o.status)&&!o.eta);
-  const attentionTotal=staleOps.length+noBudgetOps.length+noEtaOps.length;
+  // Sin NCM: solo canales en blanco (aéreo/marítimo), no-GI, con algún producto que falta clasificar.
+  const noNcmOps=ops.filter(o=>(o.channel==="aereo_blanco"||o.channel==="maritimo_blanco")&&o.service_type!=="gestion_integral"&&!["operacion_cerrada","cancelada"].includes(o.status)&&ncmMissingByOp[o.id]);
+  const attentionTotal=staleOps.length+noBudgetOps.length+noEtaOps.length+noNcmOps.length;
   // Filtro por tarjeta de atención: al tocar una card, la lista se filtra a esa categoría.
-  const attArrays={stale:staleOps,noBudget:noBudgetOps,noEta:noEtaOps};
-  const attLabels={stale:"Estancadas",noBudget:"Sin presupuesto",noEta:"Sin ETA"};
+  const attArrays={stale:staleOps,noBudget:noBudgetOps,noEta:noEtaOps,noNcm:noNcmOps};
+  const attLabels={stale:"Estancadas",noBudget:"Sin presupuesto",noEta:"Sin ETA",noNcm:"Sin NCM"};
   const attIds=attFilter&&attArrays[attFilter]?new Set(attArrays[attFilter].map(o=>o.id)):null;
   const toggleAtt=(k)=>setAttFilter(f=>f===k?null:k);
   const AttCard=({n,label,color,onClick,active})=><button onClick={onClick} style={{flex:"1 1 160px",minWidth:140,padding:"14px 16px",background:active?`${color}28`:n>0?`${color}10`:"rgba(255,255,255,0.02)",border:`1.5px solid ${active?color:n>0?color+"50":"rgba(255,255,255,0.05)"}`,boxShadow:active?`0 0 0 1px ${color}, 0 4px 16px ${color}30`:"none",borderRadius:12,cursor:n>0?"pointer":"default",textAlign:"left",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(n>0&&!active)e.currentTarget.style.background=`${color}20`;}} onMouseLeave={e=>{if(n>0&&!active)e.currentTarget.style.background=`${color}10`;}}>
@@ -364,6 +366,7 @@ function OperationsList({token,onSelect,onNew}){
       <AttCard n={staleOps.length} label="Estancadas" color="#f87171" active={attFilter==="stale"} onClick={()=>{if(staleOps.length)toggleAtt("stale");}}/>
       <AttCard n={noBudgetOps.length} label="Sin presupuesto" color="#fbbf24" active={attFilter==="noBudget"} onClick={()=>{if(noBudgetOps.length)toggleAtt("noBudget");}}/>
       <AttCard n={noEtaOps.length} label="Sin ETA" color="#60a5fa" active={attFilter==="noEta"} onClick={()=>{if(noEtaOps.length)toggleAtt("noEta");}}/>
+      <AttCard n={noNcmOps.length} label="Sin NCM" color="#a78bfa" active={attFilter==="noNcm"} onClick={()=>{if(noNcmOps.length)toggleAtt("noNcm");}}/>
     </div>}
     {attFilter&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,padding:"8px 14px",background:"rgba(184,149,106,0.10)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:10}}>
       <span style={{fontSize:12.5,fontWeight:700,color:GOLD_LIGHT}}>Filtrando: {attLabels[attFilter]} <span style={{color:"rgba(255,255,255,0.55)",fontWeight:600}}>({attArrays[attFilter]?.length||0})</span></span>
