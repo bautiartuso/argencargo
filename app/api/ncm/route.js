@@ -227,9 +227,10 @@ export async function POST(req) {
     }
 
     // Clasificar: con imagen → vision, sin imagen → texto
+    let _claudeErr = null;
     const claudeResult = image
-      ? await classifyWithClaudeVision(image, description, image_mime).catch(e => { console.error("Claude vision error:", e?.status||"", e.message); return null; })
-      : await classifyWithClaude(description).catch(e => { console.error("Claude error:", e.message); return null; });
+      ? await classifyWithClaudeVision(image, description, image_mime).catch(e => { _claudeErr = `${e?.status||""} ${e.message}`; console.error("Claude vision error:", e?.status||"", e.message); return null; })
+      : await classifyWithClaude(description).catch(e => { _claudeErr = `${e?.status||""} ${e.message}`; console.error("Claude error:", e.message); return null; });
 
     if (claudeResult?.ncm_code) {
       // Si vino guess_description de visión, lo devolvemos para que el cliente rellene el campo
@@ -253,7 +254,7 @@ export async function POST(req) {
       });
     }
 
-    return Response.json({ error: "No se pudo clasificar la mercadería", fallback: true }, { status: 200 });
+    return Response.json({ error: "No se pudo clasificar la mercadería", fallback: true, _debug: _claudeErr }, { status: 200 });
   } catch (e) {
     console.error("NCM route error:", e.message);
     return Response.json({ error: e.message, fallback: true }, { status: 200 });
