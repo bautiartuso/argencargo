@@ -161,7 +161,7 @@ function OpProgress({status,isAereo,onActionClick,isGI,channel,hasItems,lostInCu
   const key=lostInCustoms?"aduana":(statusToKey[status]||"proveedor");
   const si=STEPS.findIndex(s=>s.k===key);
   const isDoc=status==="en_preparacion"&&showDoc&&!hasItems;
-  return <div className="op-progress" style={{display:"flex",alignItems:"flex-start",padding:"14px 0 4px",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.06)",margin:"12px 0 14px",position:"relative"}}>
+  return <div className="op-progress" style={{display:"flex",alignItems:"flex-start",padding:"18px 0 10px",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.06)",margin:"12px 0 14px",position:"relative"}}>
     {STEPS.map((s,i)=>{
       const done=i<si;const cur=i===si;
       const isAlert=cur&&s.k==="documentacion"&&isDoc;
@@ -171,13 +171,13 @@ function OpProgress({status,isAereo,onActionClick,isGI,channel,hasItems,lostInCu
       const dotBorder=done?GOLD:cur?GOLD_LIGHT:"rgba(255,255,255,0.12)";
       const dotShadow=cur?"0 0 14px rgba(232,208,152,0.45)":"none";
       const labelColor=cur?GOLD_LIGHT:done?"rgba(255,255,255,0.78)":"rgba(255,255,255,0.32)";
-      return <div key={s.k} onClick={handleClick} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6,position:"relative",cursor:handleClick?"pointer":"default"}}>
+      return <div key={s.k} onClick={handleClick} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:9,position:"relative",cursor:handleClick?"pointer":"default"}}>
         {/* Línea conectora */}
         {i<STEPS.length-1&&<div style={{position:"absolute",left:"50%",right:"-50%",top:6,height:2,background:done?GOLD:"rgba(255,255,255,0.10)",zIndex:0}}/>}
         {/* Dot minimal (sin "pelota" grande) */}
         <div style={{width:cur?14:12,height:cur?14:12,borderRadius:"50%",background:done?GOLD:cur?GOLD_LIGHT:"transparent",border:done||cur?"none":"1.5px solid rgba(255,255,255,0.22)",boxShadow:cur?"0 0 0 3px rgba(232,208,152,0.20)":"none",position:"relative",zIndex:1,transition:"all 200ms"}}/>
         {/* Label */}
-        <span style={{fontSize:10,fontWeight:cur?600:500,color:isAlert?"#fbbf24":labelColor,textAlign:"center",lineHeight:1.2,letterSpacing:"0.005em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{isAlert?"Completar":s.l}</span>
+        <span style={{fontSize:11.5,fontWeight:cur?600:500,color:isAlert?"#fbbf24":labelColor,textAlign:"center",lineHeight:1.3,letterSpacing:"0.005em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{isAlert?"Completar":s.l}</span>
       </div>;
     })}
   </div>;
@@ -205,16 +205,19 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     })();
     const ps={good:{c:"#22c55e",bg:"rgba(34,197,94,0.10)",bd:"rgba(34,197,94,0.4)"},orange:{c:"#fb923c",bg:"rgba(251,146,60,0.10)",bd:"rgba(251,146,60,0.4)"},info:{c:"#60a5fa",bg:"rgba(96,165,250,0.10)",bd:"rgba(96,165,250,0.4)"},warn:{c:"#fbbf24",bg:"rgba(251,191,36,0.10)",bd:"rgba(251,191,36,0.4)"},muted:{c:"#94a3b8",bg:"rgba(148,163,184,0.10)",bd:"rgba(148,163,184,0.4)"}}[pillVariant];
     const saldoTxt=(()=>{
-      // Op retenida en aduana: el cliente no debe pagar nada. Falta abonar = 0.
-      if(op.lost_in_customs_at)return{txt:"USD 0,00",isPaid:true};
+      const fmt=(n)=>`USD ${Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
       const bt=Number(op.budget_total||0);
-      if(bt<=0)return{txt:t("common.pending"),isPending:true};
+      // Op retenida en aduana: el cliente no debe pagar nada.
+      if(op.lost_in_customs_at)return{txt:"USD 0,00",isPaid:true,label:"Abonado"};
+      // Op saldada / cerrada → mostramos el total como "Abonado", NO "Falta abonar".
+      if(op.is_collected||op.status==="operacion_cerrada")return{txt:bt>0?fmt(bt):"—",isPaid:true,label:"Abonado"};
+      if(bt<=0)return{txt:t("common.pending"),isPending:true,label:t("imports.remaining")};
       const pmtTot=Number(pmtsByOp[op.id]||0);
       const ant=Number(op.total_anticipos||0);
       const cliPaid=Number(cliPmtsByOp[op.id]||0);
       const saldo=Math.max(0,bt-cliPaid+Math.max(0,pmtTot-ant));
-      if(saldo<0.01)return{txt:"PAGADO ✓",isPaid:true};
-      return{txt:`USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`};
+      if(saldo<0.01)return{txt:fmt(bt),isPaid:true,label:"Abonado"};
+      return{txt:fmt(saldo),label:t("imports.remaining")};
     })();
     return <div key={op.id} className="ac-cli-op-card" onClick={()=>onSelect(op)}>
     <div className="ac-cli-op-head">
@@ -241,7 +244,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
         <span className="v">{op.channel?t("channel."+op.channel).replace(" Comercial","").replace(" Carga LCL/FCL",""):"—"}</span>
       </div>}
       {op.service_type!=="gestion_integral"&&<div className="ac-cli-op-foot-item">
-        <span className="l">{t("imports.remaining")}</span>
+        <span className="l">{saldoTxt.label||t("imports.remaining")}</span>
         <span className={`v${saldoTxt.isPaid||saldoTxt.isPending?"":" gold"}`} style={saldoTxt.isPaid?{color:"#22c55e"}:saldoTxt.isPending?{color:"rgba(255,255,255,0.5)",fontWeight:500}:{}}>{saldoTxt.txt}</span>
       </div>}
       <button onClick={(e)=>{e.stopPropagation();onSelect(op);}}>{t("common.viewDetail")} →</button>
