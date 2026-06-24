@@ -4353,7 +4353,7 @@ function Calculator({token,clients}){
         <div style={{marginTop:14}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>COTIZACIÓN CLIENTE</p>
           {ch.isBlanco?<>
-            {row(ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete",ch.flete)}{ch.battExtra>0&&row("Recargo baterías",ch.battExtra)}{row("Seguro",ch.seguro)}
+            {row(ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete",ch.flete)}{ch.battExtra>0&&row("Recargo por baterías",ch.battExtra)}{row("Seguro",ch.seguro)}
             {row(`Derechos (${ncm?.import_duty_rate||0}%)`,ch.derechos)}{row(`TE (${ncm?.statistics_rate||0}%)`,ch.tasa_e)}{row(`IVA (${ncm?.iva_rate??21}%)`,ch.iva)}
             {ch.isMar?<>{row("IVA Adic. (20%)",ch.ivaAdic)}{row("IIGG (6%)",ch.iigg)}{row("IIBB (5%)",ch.iibb)}</>:<>{row("Gasto doc.",ch.gastoDoc)}{row("IVA desemb.",ch.ivaDesemb)}</>}
           </>:<>
@@ -9789,7 +9789,8 @@ function QuotesList({token}){
                   {isBest&&<span style={{fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:999,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase"}}>Mejor</span>}
                 </div>
                 {!isB&&row("Impuestos",ch.totalTax)}
-                {row(isB?"Servicio Integral":"Flete internacional",ch.flete)}
+                {row(isB?"Servicio Integral":"Flete internacional",Number(ch.flete||0)-Number(ch.battExtra||0))}
+                {Number(ch.battExtra||0)>0&&row("Recargo por baterías",ch.battExtra)}
                 {!isB&&row("Seguro",ch.seguro)}
                 {ch.shipCost>0&&row("Envío a domicilio",ch.shipCost)}
                 <div style={{display:"flex",justifyContent:"space-between",padding:"9px 0 0",borderTop:`1px solid ${isBest?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.08)"}`,marginTop:6}}>
@@ -9948,7 +9949,10 @@ function AdminCalculator({token}){
     const effTotal=eff?.effTotal||ch.totalAbonar||0;
     // Sección 1: Servicios (flete + seguro)
     const rowsServicios=[];
-    if(Number(ch.flete||0)>0)rowsServicios.push(`<div class="row"><span>${ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete"}</span><span>USD ${fmt(ch.flete)}</span></div>`);
+    const battExtraPdf=Number(ch.battExtra||0);
+    const fleteBasePdf=Number(ch.flete||0)-battExtraPdf;
+    if(fleteBasePdf>0)rowsServicios.push(`<div class="row"><span>${ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete"}</span><span>USD ${fmt(fleteBasePdf)}</span></div>`);
+    if(battExtraPdf>0)rowsServicios.push(`<div class="row"><span>Recargo por baterías</span><span>USD ${fmt(battExtraPdf)}</span></div>`);
     if(Number(ch.seguro||0)>0)rowsServicios.push(`<div class="row"><span>Seguro</span><span>USD ${fmt(ch.seguro)}</span></div>`);
     // Sección 2: Aduana / impuestos
     const rowsAduana=[];

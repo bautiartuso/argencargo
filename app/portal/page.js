@@ -1160,6 +1160,7 @@ function printPortalCalcPdf({ch,products,totalFob,origin,clientName,delivCost=0}
   }
   const rowsServicios=[];
   if(Number(ch.flete||0)>0)rowsServicios.push(`<div class="row"><span>${ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete"}</span><span>USD ${fmt(ch.flete)}</span></div>`);
+  if(Number(ch.battExtra||0)>0)rowsServicios.push(`<div class="row"><span>Recargo por baterías</span><span>USD ${fmt(ch.battExtra)}</span></div>`);
   if(Number(ch.seguro||0)>0)rowsServicios.push(`<div class="row"><span>Seguro</span><span>USD ${fmt(ch.seguro)}</span></div>`);
   if(Number(ch.surcharge||0)>0)rowsServicios.push(`<div class="row"><span>Recargo por valor${ch.surchargePct?` (${ch.surchargePct}%)`:""}</span><span>USD ${fmt(ch.surcharge)}</span></div>`);
   if(delivCost>0)rowsServicios.push(`<div class="row"><span>Envío CABA</span><span>USD ${fmt(delivCost)}</span></div>`);
@@ -1598,6 +1599,7 @@ function CalculatorPage({token,client}){
             <button onClick={()=>setExpandedCh(null)} style={{fontSize:20,background:"none",border:"none",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>✕</button>
           </div>
           {row(mc.key==="maritimo_a_china"?"Servicio marítimo de importación":"Servicio Integral ARGENCARGO",mc.flete)}
+          {mc.battExtra>0&&row("Recargo por baterías",mc.battExtra)}
           {mc.surcharge>0&&row(`Recargo valor (${mc.surchargePct}%)`,mc.surcharge)}
           {delivCost>0&&row("Envío CABA",delivCost)}
           {row("TOTAL",total,true,true)}
@@ -1812,7 +1814,7 @@ function CalculatorPage({token,client}){
           </div>)}
           <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
             {row("Costo de envío",modalCh.flete)}
-            {modalCh.battExtra>0&&row("Recargo baterías",modalCh.battExtra)}
+            {modalCh.battExtra>0&&row("Recargo por baterías",modalCh.battExtra)}
             {row("Seguro",modalCh.seguro)}
             {delivCost>0&&row("Envío CABA",delivCost)}
             {row("TOTAL",modalCh.total+delivCost,true,true)}
