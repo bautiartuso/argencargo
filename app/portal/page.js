@@ -1015,14 +1015,14 @@ function ProfilePage({client,token}){
   const exportHistory=async(format)=>{
     setExporting(true);
     try{
-      const ops=await dq("operations",{token,filters:`?client_id=eq.${client.id}&select=operation_code,description,channel,origin,status,budget_total,collected_amount,is_collected,created_at,closed_at,delivered_at,eta,international_tracking,international_carrier&order=created_at.desc`});
+      const ops=await dq("operations",{token,filters:`?client_id=eq.${client.id}&select=operation_code,description,channel,origin,status,budget_total,collected_amount,is_collected,created_at,closed_at,delivered_at,eta&order=created_at.desc`});
       const opsArr=Array.isArray(ops)?ops:[];
       if(opsArr.length===0){alert("No tenés importaciones para exportar todavía.");setExporting(false);return;}
       const chLbl={aereo_blanco:"Aéreo Courier Comercial",aereo_negro:"Aéreo Integral AC",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
       const stLbl={pendiente:"Pendiente",en_deposito_origen:"En depósito",en_preparacion:"En preparación",en_transito:"En tránsito",arribo_argentina:"Arribó",en_aduana:"En aduana",entregada:"Entregada",operacion_cerrada:"Cerrada",cancelada:"Cancelada"};
       if(format==="csv"){
-        const headers=["Código","Descripción","Origen","Canal","Estado","Tracking","Carrier","Fecha creación","Fecha entrega","Presupuesto USD","Cobrado USD","Cobrada"];
-        const rows=opsArr.map(o=>[o.operation_code,`"${(o.description||"").replace(/"/g,'""')}"`,o.origin||"",chLbl[o.channel]||o.channel||"",stLbl[o.status]||o.status||"",o.international_tracking||"",o.international_carrier||"",o.created_at?o.created_at.slice(0,10):"",o.delivered_at?o.delivered_at.slice(0,10):"",Number(o.budget_total||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),Number(o.collected_amount||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),o.is_collected?"Sí":"No"].join(","));
+        const headers=["Código","Descripción","Origen","Canal","Estado","Fecha creación","Fecha entrega","Presupuesto USD","Cobrado USD","Cobrada"];
+        const rows=opsArr.map(o=>[o.operation_code,`"${(o.description||"").replace(/"/g,'""')}"`,o.origin||"",chLbl[o.channel]||o.channel||"",stLbl[o.status]||o.status||"",o.created_at?o.created_at.slice(0,10):"",o.delivered_at?o.delivered_at.slice(0,10):"",Number(o.budget_total||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),Number(o.collected_amount||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}),o.is_collected?"Sí":"No"].join(","));
         const csv=[headers.join(","),...rows].join("\n");
         const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
         const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`mis-importaciones-${client.client_code}-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(url);

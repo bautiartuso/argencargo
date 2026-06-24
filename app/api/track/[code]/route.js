@@ -20,7 +20,7 @@ export async function GET(req, { params }) {
   }
   const codeNorm = code.replace("AC", "AC-").replace("AC--", "AC-");
 
-  const ops = await sb(`/rest/v1/operations?select=id,operation_code,description,status,channel,origin,eta,arrived_in_argentina_at,delivered_at,created_at,international_tracking,international_carrier&operation_code=eq.${codeNorm}&limit=1`);
+  const ops = await sb(`/rest/v1/operations?select=id,operation_code,description,status,channel,origin,eta,arrived_in_argentina_at,delivered_at,created_at&operation_code=eq.${codeNorm}&limit=1`);
   if (!Array.isArray(ops) || ops.length === 0) {
     return Response.json({ error: "operación no encontrada", code: codeNorm }, { status: 404 });
   }
@@ -46,8 +46,6 @@ export async function GET(req, { params }) {
     created_at: op.created_at,
     arrived_in_argentina_at: op.arrived_in_argentina_at,
     delivered_at: op.delivered_at,
-    international_carrier: op.international_carrier || null,
-    international_tracking: op.international_tracking || null,
     events: filtered.map(e => ({
       title: e.title,
       description: e.description,

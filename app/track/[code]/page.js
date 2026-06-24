@@ -129,8 +129,6 @@ export default function PublicTrackPage() {
             {data.origin && <div><p style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.45)", margin: 0, textTransform: "uppercase" }}>Origen</p><p style={{ fontSize: 13, fontWeight: 600, color: "#fff", margin: "3px 0 0" }}>{data.origin}</p></div>}
             {data.eta && !isClosed && <div><p style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.45)", margin: 0, textTransform: "uppercase" }}>ETA</p><p style={{ fontSize: 13, fontWeight: 600, color: GOLD_LIGHT, margin: "3px 0 0" }}>{formatDate(data.eta, false)}</p></div>}
             {data.delivered_at && <div><p style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.45)", margin: 0, textTransform: "uppercase" }}>Entregada</p><p style={{ fontSize: 13, fontWeight: 600, color: "#22c55e", margin: "3px 0 0" }}>{formatDate(data.delivered_at, false)}</p></div>}
-            {data.international_carrier && <div><p style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.45)", margin: 0, textTransform: "uppercase" }}>Carrier</p><p style={{ fontSize: 13, fontWeight: 600, color: "#fff", margin: "3px 0 0" }}>{data.international_carrier}</p></div>}
-            {data.international_tracking && <div><p style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.45)", margin: 0, textTransform: "uppercase" }}>Tracking</p><p style={{ fontSize: 12, fontWeight: 600, color: "#fff", margin: "3px 0 0", fontFamily: "monospace" }}>{data.international_tracking}</p></div>}
           </div>
         </div>
 
