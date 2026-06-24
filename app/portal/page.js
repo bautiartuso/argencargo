@@ -195,7 +195,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
   const name=client?`${client.first_name} ${client.last_name}`:"";
   const code=client?.client_code||"";
   const stats=[{l:t("home.totalImports"),v:ops.length,c:"#fff"},{l:t("home.inProgress"),v:act.length,c:GOLD_LIGHT},{l:t("home.completed"),v:past.length,c:"#22c55e"},{l:t("home.reports"),v:null,btn:true}];
-  const gd=(o)=>{const d=o.description||"";return d.length>60?(t("imports.consolidated")||"CONSOLIDADO"):d.toUpperCase();};
+  const gd=(o)=>{const d=(o.description||"").trim();if(!d)return o.channel?.includes("maritimo")?"Carga marítima":o.channel?.includes("aereo")?"Carga aérea":"Importación";return d.length>60?(t("imports.consolidated")||"Consolidado"):d;};
   // renderOp con clases .ac-cli-* del mockup (cards alargadas, espaciosas)
   const renderOp=(op)=>{
     const isA=op.channel?.includes("aereo");
