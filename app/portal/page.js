@@ -827,7 +827,7 @@ function OperationDetail({op,token,client,onBack}){
           </div>
         </>}
         {!isGI&&!isB&&bTax>0&&bRow("Total Impuestos",bTax)}
-        {!isGI&&bFlete>0&&bRow(isB?"Servicio Integral ARGENCARGO":"Flete internacional",bFlete)}
+        {!isGI&&(isB?(bt-shipCost):bFlete)>0&&bRow(isB?"Servicio Integral ARGENCARGO":"Flete internacional",isB?(bt-shipCost):bFlete)}
         {!isGI&&!isB&&bSeg>0&&bRow("Seguro de carga",bSeg)}
         {!isGI&&shipCost>0&&bRow("Envío a Domicilio",shipCost)}
         {!isGI&&pmtTotal>0&&bRow(`Gestión de pagos${pmtAnticipado>0?` (cobrado USD ${pmtAnticipado.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de USD ${pmtTotal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}`,pmtPendiente,false,false,pmtPendiente>0?"#fb923c":"#22c55e")}
@@ -953,18 +953,18 @@ function OperationDetail({op,token,client,onBack}){
             {dd("Largo",pk.l?`${pk.l} cm`:"—")}
             {dd("Alto",pk.h?`${pk.h} cm`:"—")}
             {dd("Ancho",pk.w?`${pk.w} cm`:"—")}
-            {dd("Peso Bruto",pk.gw?`${pk.gw} kg`:"—")}
-            {dd("Peso Vol.",pk.vw?`${pk.vw.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—")}
+            {!isMar&&dd("Peso Bruto",pk.gw?`${pk.gw} kg`:"—")}
+            {isAer&&dd("Peso Vol.",pk.vw?`${pk.vw.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—")}
             {dd("CBM",pk.cbm?`${pk.cbm.toFixed(4)} m³`:"—")}
           </div>
         </div>
-        {pk.l&&pk.w&&pk.h&&pk.vw>pk.gw&&<p style={{fontSize:11,fontWeight:600,color:"#f59e0b",margin:"8px 0 0",lineHeight:1.4,background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:6,padding:"6px 10px"}}>⚠️ El peso volumétrico ({pk.vw.toFixed(1)} kg) supera al peso bruto ({pk.gw.toFixed(1)} kg). Se facturará por peso volumétrico.</p>}
+        {isAer&&pk.l&&pk.w&&pk.h&&pk.vw>pk.gw&&<p style={{fontSize:11,fontWeight:600,color:"#f59e0b",margin:"8px 0 0",lineHeight:1.4,background:"rgba(245,158,11,0.08)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:6,padding:"6px 10px"}}>⚠️ El peso volumétrico ({pk.vw.toFixed(1)} kg) supera al peso bruto ({pk.gw.toFixed(1)} kg). Se facturará por peso volumétrico.</p>}
       </div>)}
       {openSections.packages&&<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:14,display:"flex",gap:28,flexWrap:"wrap",alignItems:"center"}}>
         {isAer&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px",textTransform:"uppercase"}}>Peso Facturable</p><p style={{fontSize:16,fontWeight:700,color:IC,margin:0}}>{pf.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div>}
         {isMar&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px",textTransform:"uppercase"}}>CBM Total</p><p style={{fontSize:16,fontWeight:700,color:IC,margin:0}}>{totCBM.toFixed(4)} m³</p></div>}
-        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px",textTransform:"uppercase"}}>Peso Bruto Total</p><p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.6)",margin:0}}>{totGW.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div>
-        <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px",textTransform:"uppercase"}}>Peso Vol. Total</p><p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.6)",margin:0}}>{totVW.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div>
+        {!isMar&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px",textTransform:"uppercase"}}>Peso Bruto Total</p><p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.6)",margin:0}}>{totGW.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div>}
+        {isAer&&<div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 2px",textTransform:"uppercase"}}>Peso Vol. Total</p><p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.6)",margin:0}}>{totVW.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div>}
       </div>}
     </div>})()}
     {!loading&&events.length>0&&<div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem"}}>
