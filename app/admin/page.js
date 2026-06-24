@@ -11095,8 +11095,12 @@ function MaritimePanel({token,allClients=[]}){
   const [editingContainer,setEditingContainer]=useState(null); // {warehouse} nuevo | row al editar
   const [selectedShipments,setSelectedShipments]=useState(new Set()); // ids para crear op consolidada
   const [creatingOp,setCreatingOp]=useState(false);
+  const [collapsedCont,setCollapsedCont]=useState(new Set()); // contenedores colapsados (para no ver todo desplegado)
   const [msg,setMsg]=useState("");
   const flash=(t)=>{setMsg(t);setTimeout(()=>setMsg(""),3000);};
+  // Fecha estimada de entrega de la mercadería = arribo estimado a puerto (eta) + 2 semanas.
+  const deliveryEtaStr=(eta)=>{if(!eta)return null;const d=new Date(eta+"T12:00:00");d.setDate(d.getDate()+14);return d.toISOString().slice(0,10);};
+  const toggleCont=(id)=>setCollapsedCont(prev=>{const n=new Set(prev);if(n.has(id))n.delete(id);else n.add(id);return n;});
 
   // Cambio de estado de un shipment.
   //  proveedor → en_deposito (con fecha de recepción)
@@ -11536,24 +11540,36 @@ function MaritimePanel({token,allClients=[]}){
             const cbmC=list.reduce((s,sh)=>s+cbmOf(sh.id),0);
             const bulC=list.reduce((s,sh)=>s+bultosOf(sh.id),0);
             const chip=contChip(c.status);
-            return <div style={{padding:"9px 18px",background:"rgba(184,149,106,0.06)",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            const collapsed=collapsedCont.has(c.id);
+            const delEta=deliveryEtaStr(c.eta);
+            const dateChip=(icon,label,val,col)=><span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap"}}>{icon} {label} <strong style={{color:col,fontFeatureSettings:'"tnum"'}}>{val}</strong></span>;
+            return <div onClick={()=>toggleCont(c.id)} title={collapsed?"Abrir":"Cerrar"} style={{padding:"10px 18px",background:"rgba(184,149,106,0.06)",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",cursor:"pointer"}}>
+              <div style={{display:"flex",alignItems:"center",gap:9,flexWrap:"wrap",flex:1,minWidth:0}}>
+                <span style={{fontSize:12,color:IC,transition:"transform 200ms",transform:collapsed?"rotate(0deg)":"rotate(90deg)",display:"inline-block",userSelect:"none"}}>▶</span>
                 <span style={{fontSize:12.5,fontWeight:800,color:IC}}>🚢 {c.code}</span>
+                {c.shipping_line&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#93c5fd",letterSpacing:"0.03em"}}>⚓ {c.shipping_line}</span>}
                 <span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:4,background:chip.bg,color:chip.fg,letterSpacing:"0.05em"}}>{chip.l}</span>
-                <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>{list.length} carga{list.length!==1?"s":""} · {bulC} bulto{bulC!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{c.departed_at?` · salió ${fmtD(c.departed_at)}`:""}{c.eta?` · ETA ${fmtD(c.eta)}`:""}</span>
-                {c.notes&&<span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>· {c.notes}</span>}
+                <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>{list.length} carga{list.length!==1?"s":""} · {bulC} bulto{bulC!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong></span>
               </div>
-              <div style={{display:"flex",gap:5,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
-                {c.status==="en_transito"&&<button onClick={()=>setContainerStatus(c,"arribado")} title="Marcar arribado: el contenedor pasa al historial" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer"}}>⚓ Arribó</button>}
-                <button onClick={()=>setEditingContainer(c)} title="Editar contenedor" style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.06)",color:"#60a5fa",cursor:"pointer"}}>✎</button>
-                <button onClick={()=>delContainer(c)} title="Eliminar contenedor" style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
+              <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+                  {c.departed_at&&dateChip("🛫","Salió",fmtD(c.departed_at),"rgba(255,255,255,0.7)")}
+                  {c.eta&&dateChip("⚓","Puerto",fmtD(c.eta),"#93c5fd")}
+                  {delEta&&dateChip("📦","Entrega est.",fmtD(delEta),"#4ade80")}
+                </div>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+                  {c.status==="en_transito"&&<button onClick={()=>setContainerStatus(c,"arribado")} title="Marcar arribado: el contenedor pasa al historial" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer"}}>⚓ Arribó</button>}
+                  <button onClick={()=>setEditingContainer(c)} title="Editar contenedor" style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.06)",color:"#60a5fa",cursor:"pointer"}}>✎</button>
+                  <button onClick={()=>delContainer(c)} title="Eliminar contenedor" style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
+                </div>
               </div>
+              {c.notes&&!collapsed&&<p style={{width:"100%",fontSize:10.5,color:"rgba(255,255,255,0.4)",fontStyle:"italic",margin:"2px 0 0"}}>■ {c.notes}</p>}
             </div>;
           };
           return <div>
             {whConts.map(c=><div key={c.id}>
               {contHeader(c)}
-              {(byCont[c.id]||[]).length>0?renderTable(byCont[c.id]):<p style={{padding:"10px 18px",fontSize:11.5,color:"rgba(255,255,255,0.35)",fontStyle:"italic",margin:0}}>Sin cargas asignadas — tildá cargas con el checkbox y usá el selector "🚢 Contenedor…" de la barra de selección.</p>}
+              {!collapsedCont.has(c.id)&&((byCont[c.id]||[]).length>0?renderTable(byCont[c.id]):<p style={{padding:"10px 18px",fontSize:11.5,color:"rgba(255,255,255,0.35)",fontStyle:"italic",margin:0}}>Sin cargas asignadas — tildá cargas con el checkbox y usá el selector "🚢 Contenedor…" de la barra de selección.</p>)}
             </div>)}
             {whConts.length>0&&noneList.length>0&&<div style={{padding:"9px 18px",background:"rgba(255,255,255,0.025)",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
               <span style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,0.6)"}}>📦 Sin contenedor asignado</span>
@@ -11589,8 +11605,8 @@ function MaritimePanel({token,allClients=[]}){
           return <div key={c.id} style={{borderTop:"1px solid rgba(255,255,255,0.05)"}}>
             <div style={{padding:"11px 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
               <div style={{flex:1,minWidth:260}}>
-                <p style={{fontSize:13,fontWeight:800,color:"#fff",margin:"0 0 3px"}}>🚢 {c.code} <span style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)"}}>· 📦 {c.warehouse}</span></p>
-                <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:0}}>Salió {fmtD(c.departed_at)} · Arribó {fmtD(c.arrived_at)} · {cShips.length} carga{cShips.length!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{c.notes?` · ${c.notes}`:""}</p>
+                <p style={{fontSize:13,fontWeight:800,color:"#fff",margin:"0 0 3px"}}>🚢 {c.code} {c.shipping_line&&<span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#93c5fd"}}>⚓ {c.shipping_line}</span>} <span style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)"}}>· 📦 {c.warehouse}</span></p>
+                <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:0}}>Salió {fmtD(c.departed_at)} · ⚓ Puerto {fmtD(c.eta)} · 📦 Entrega est. {fmtD(deliveryEtaStr(c.eta))} · Arribó {fmtD(c.arrived_at)} · {cShips.length} carga{cShips.length!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{c.notes?` · ${c.notes}`:""}</p>
                 {opCodes.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:6}}>
                   {opCodes.map(oc=><span key={oc} style={{fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,fontFamily:"monospace"}}>🔗 {oc}</span>)}
                 </div>}
@@ -11648,14 +11664,17 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
   const [code,setCode]=useState(editing?.code||"");
   // Sin estado "armándose": el contenedor se crea cuando YA salió → nace en tránsito.
   const [status,setStatus]=useState(editing?.status||"en_transito");
+  const [shippingLine,setShippingLine]=useState(editing?.shipping_line||"");
   const [departedAt,setDepartedAt]=useState(editing?.departed_at||new Date().toISOString().slice(0,10));
   const [eta,setEta]=useState(editing?.eta||"");
   const [notes,setNotes]=useState(editing?.notes||"");
   const [saving,setSaving]=useState(false);
+  // Entrega estimada de la mercadería = arribo a puerto + 2 semanas (calculado, no editable).
+  const delEta=eta?(()=>{const d=new Date(eta+"T12:00:00");d.setDate(d.getDate()+14);return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});})():null;
   const save=async()=>{
     if(!code.trim()){alertDialog("Cargá el código del contenedor (ej: MSKU1234567 o Contenedor 1)");return;}
     setSaving(true);
-    const body={code:code.trim(),status,departed_at:departedAt||null,eta:eta||null,notes:notes.trim()||null};
+    const body={code:code.trim(),status,shipping_line:shippingLine.trim()||null,departed_at:departedAt||null,eta:eta||null,notes:notes.trim()||null};
     try{
       if(editing?.id)await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
       else await dq("maritime_containers",{method:"POST",token,body:{...body,warehouse}});
@@ -11668,10 +11687,20 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
         <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>🚢 {editing?"Editar":"Nuevo"} contenedor <span style={{color:"#60a5fa",fontSize:13}}>· {editing?.warehouse||warehouse}</span></h3>
         <button onClick={onCancel} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
       </div>
-      <Inp label="Código / Identificación" value={code} onChange={setCode} placeholder="Ej: MSKU1234567"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+        <Inp label="Código / N° contenedor" value={code} onChange={setCode} placeholder="Ej: MSKU1234567"/>
+        <Inp label="Naviera" value={shippingLine} onChange={setShippingLine} placeholder="Ej: Maersk, MSC, COSCO…"/>
+      </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
         <Inp label="Fecha de salida" type="date" value={departedAt} onChange={setDepartedAt}/>
-        <Inp label="ETA Argentina" type="date" value={eta} onChange={setEta}/>
+        <Inp label="Arribo estimado a puerto" type="date" value={eta} onChange={setEta}/>
+      </div>
+      <div style={{margin:"-4px 0 12px",padding:"9px 12px",background:delEta?"rgba(34,197,94,0.07)":"rgba(255,255,255,0.03)",border:`1px solid ${delEta?"rgba(34,197,94,0.22)":"rgba(255,255,255,0.08)"}`,borderRadius:8,display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:16}}>📦</span>
+        <div>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>Entrega estimada de la mercadería</p>
+          <p style={{fontSize:13.5,fontWeight:700,color:delEta?"#4ade80":"rgba(255,255,255,0.4)",margin:"1px 0 0"}}>{delEta||"— (cargá el arribo a puerto)"}<span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.35)",marginLeft:6}}>{delEta?"· 2 semanas después del puerto":""}</span></p>
+        </div>
       </div>
       <div style={{marginBottom:12}}>
         <label style={{display:"block",fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Estado</label>
@@ -11679,7 +11708,7 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
           {[{k:"en_transito",l:"🚢 En tránsito"},{k:"arribado",l:"⚓ Arribado"}].map(o=><button key={o.k} onClick={()=>setStatus(o.k)} style={{flex:1,padding:"7px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:status===o.k?"rgba(96,165,250,0.25)":"transparent",color:status===o.k?"#60a5fa":"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
         </div>
       </div>
-      <Inp label="Notas (opcional)" value={notes} onChange={setNotes} placeholder="Naviera, booking, observaciones…"/>
+      <Inp label="Notas (opcional)" value={notes} onChange={setNotes} placeholder="Booking, observaciones…"/>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
         <Btn variant="secondary" small onClick={onCancel} disabled={saving}>Cancelar</Btn>
         <Btn small onClick={save} disabled={saving}>{saving?"Guardando…":(editing?"Guardar":"+ Crear contenedor")}</Btn>
