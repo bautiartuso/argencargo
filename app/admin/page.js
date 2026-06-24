@@ -10933,7 +10933,7 @@ function AdminDashboard({session,onLogout}){
       {page==="comms"&&<ComunicacionesPanel token={token}/>}
       {page==="intel"&&<IntelligencePanel token={token} allClients={allClients}/>}
       {page==="tickets"&&<TicketsPanel token={token} allClients={allClients}/>}
-      {page==="dashboard"&&<><FinanceDashboard token={token}/><OperationalAnalytics token={token}/><DashboardKPIs token={token}/><RetentionLTVCard token={token}/></>}
+      {page==="dashboard"&&<FinanceDashboard token={token}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="maritime"&&<MaritimePanel token={token} allClients={allClients}/>}
       {page==="purchase_notifs"&&<PurchaseNotificationsAdmin token={token} allClients={allClients} onCreateOp={op=>{setPage("operations");setSelOp(op);}} mode="client"/>}
