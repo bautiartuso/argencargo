@@ -2858,13 +2858,46 @@ function ReferralsPage({token,client}){
   </div>;
 }
 
+// Sección "Tu carga marítima en camino": cargas que ya están en un contenedor pero
+// todavía no son operación. Solo lectura, sin precio. No muestra naviera ni N° de contenedor.
+function MaritimeCargoSection({cargo}){
+  if(!cargo||cargo.length===0)return null;
+  const fmtD=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"}):"—";
+  const statusChip=(c)=>c.container_status==="arribado"
+    ?{l:"⚓ Arribó al puerto",bg:"rgba(34,197,94,0.12)",fg:"#4ade80"}
+    :{l:"🚢 En tránsito marítimo",bg:"rgba(96,165,250,0.12)",fg:"#60a5fa"};
+  const cell=(label,val,col)=><div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</p><p style={{fontSize:14,fontWeight:700,color:col,margin:0,fontVariantNumeric:"tabular-nums"}}>{val}</p></div>;
+  return <div style={{marginBottom:24}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+      <h2 style={{fontSize:15,fontWeight:800,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>🚢 Tu carga marítima en camino</h2>
+      <span style={{fontSize:11,fontWeight:700,color:"#60a5fa",background:"rgba(96,165,250,0.12)",padding:"2px 9px",borderRadius:999}}>{cargo.length}</span>
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {cargo.map(c=>{const st=statusChip(c);return <div key={c.id} style={{background:"linear-gradient(135deg,rgba(96,165,250,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(96,165,250,0.18)",borderRadius:14,padding:"16px 18px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap",marginBottom:12}}>
+          <p style={{fontSize:14.5,fontWeight:700,color:"#fff",margin:0,flex:1,minWidth:0}}>{c.description||"Carga marítima"}</p>
+          <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:6,background:st.bg,color:st.fg,whiteSpace:"nowrap"}}>{st.l}</span>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
+          {cell("⚓ ETA Pto. Buenos Aires",fmtD(c.eta_puerto),"#93c5fd")}
+          {cell("📦 Entrega estimada",fmtD(c.entrega_estimada),"#4ade80")}
+          {cell("Bultos",String(c.bultos||0),"#fff")}
+        </div>
+      </div>;})}
+    </div>
+    <p style={{fontSize:11.5,color:"rgba(255,255,255,0.4)",margin:"10px 2px 0",fontStyle:"italic"}}>Estamos preparando tu operación. Cuando tu carga arribe, vas a ver acá el detalle completo y el total a abonar.</p>
+  </div>;
+}
+
 function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
-  const [page,setPage]=useState("imports");const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);const [pendingVouchersCount,setPendingVouchersCount]=useState(0);
+  const [page,setPage]=useState("imports");const [ops,setOps]=useState([]);const [itemsByOp,setItemsByOp]=useState({});const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [selOp,setSelOp]=useState(null);const [lo,setLo]=useState(false);const [pendingVouchersCount,setPendingVouchersCount]=useState(0);const [mCargo,setMCargo]=useState([]);
   const loadOps=async()=>{setLo(true);
     // Filtro explícito por client_id: normalmente RLS lo hace solo para clientes logueados,
     // pero en admin preview mode el token es de admin (ve TODO) y necesitamos filtrar acá.
     const cId=client?.id;
     if(!cId){setLo(false);return;}
+    // Cargas marítimas en camino (en contenedor, todavía sin operación) — vía endpoint con whitelist.
+    fetch("/api/portal/maritime-cargo",{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json()).then(d=>setMCargo(Array.isArray(d?.cargo)?d.cargo:[])).catch(()=>setMCargo([]));
     const [r,it,pm,cp,tv]=await Promise.all([
       dq("operations",{token,filters:`?client_id=eq.${cId}&select=*&order=created_at.desc`}),
       dq("operation_items",{token,filters:`?select=operation_id,operations!inner(client_id)&operations.client_id=eq.${cId}`}),
@@ -2882,7 +2915,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
   useEffect(()=>{const h=(e)=>{if(e?.detail){setPage(e.detail);setSelOp(null);}};if(typeof window!=="undefined")window.addEventListener("ac_nav",h);return()=>{if(typeof window!=="undefined")window.removeEventListener("ac_nav",h);};},[]);
   const clientWithCount={...client,_pending_vouchers_count:pendingVouchersCount};
   return <DashShell page={page} setPage={p=>{setPage(p);setSelOp(null);}} role="cliente" client={client} user={user} onLogout={onLogout} token={token}>
-    {page==="imports"&&!selOp&&<><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp}/>}</>}
+    {page==="imports"&&!selOp&&<><HolidayBanner/>{lo?<div style={{padding:"1rem 0"}}><div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:28}}>{[0,1,2,3].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"20px 22px"}}><Skeleton w={80} h={10} style={{marginBottom:12}}/><Skeleton w={60} h={28}/></div>)}</div>{[0,1,2].map(i=><div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:"1.5rem 1.75rem",marginBottom:14}}><div style={{display:"flex",gap:10,marginBottom:14}}><Skeleton w={100} h={14}/><Skeleton w={130} h={20} br={999}/></div><Skeleton w="50%" h={20} style={{marginBottom:16}}/><div style={{display:"flex",gap:12,marginBottom:14}}>{[0,1,2,3,4,5,6,7].map(j=><Skeleton key={j} w={38} h={38} br={999}/>)}</div><div style={{display:"flex",gap:28}}><Skeleton w={70} h={30}/><Skeleton w={80} h={30}/><Skeleton w={120} h={30}/></div></div>)}</div>:<><MaritimeCargoSection cargo={mCargo}/><OperationsList ops={ops} onSelect={setSelOp} client={clientWithCount} token={token} onReload={loadOps} itemsByOp={itemsByOp} pmtsByOp={pmtsByOp} cliPmtsByOp={cliPmtsByOp}/></>}</>}
     {page==="imports"&&selOp&&<OperationDetail op={selOp} token={token} client={client} onBack={()=>setSelOp(null)}/>}
     {page==="profile"&&<ProfilePage client={client} token={token}/>}
     {page==="purchases"&&<PurchaseNotificationsPage token={token} client={client}/>}
