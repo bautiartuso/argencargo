@@ -2891,7 +2891,6 @@ function MaritimeCargoSection({cargo}){
         </div>
       </div>;})}
     </div>
-    <p style={{fontSize:11.5,color:"rgba(255,255,255,0.4)",margin:"10px 2px 0",fontStyle:"italic"}}>Estamos preparando tu operación. Cuando tu carga arribe, vas a ver acá el detalle completo y el total a abonar.</p>
   </div>;
 }
 
