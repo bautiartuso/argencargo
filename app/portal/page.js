@@ -173,12 +173,9 @@ function OpProgress({status,isAereo,onActionClick,isGI,channel,hasItems,lostInCu
       const labelColor=cur?GOLD_LIGHT:done?"rgba(255,255,255,0.78)":"rgba(255,255,255,0.32)";
       return <div key={s.k} onClick={handleClick} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6,position:"relative",cursor:handleClick?"pointer":"default"}}>
         {/* Línea conectora */}
-        {i<STEPS.length-1&&<div style={{position:"absolute",left:"50%",right:"-50%",top:13,height:2,background:done?GOLD:"rgba(255,255,255,0.08)",zIndex:0}}/>}
-        {/* Dot */}
-        <div style={{width:28,height:28,borderRadius:"50%",background:dotBg,border:`2px solid ${dotBorder}`,display:"flex",alignItems:"center",justifyContent:"center",position:"relative",zIndex:1,boxShadow:dotShadow,animation:cur?"pulse 1.8s ease-in-out infinite":"none",transition:"all 200ms"}}>
-          {/* Inner dot oscuro para done y current — efecto bullseye */}
-          {(done||cur)&&<span style={{width:cur?10:8,height:cur?10:8,borderRadius:"50%",background:"#0A1628",animation:cur?"pulse 1.8s ease-in-out infinite":"none"}}/>}
-        </div>
+        {i<STEPS.length-1&&<div style={{position:"absolute",left:"50%",right:"-50%",top:6,height:2,background:done?GOLD:"rgba(255,255,255,0.10)",zIndex:0}}/>}
+        {/* Dot minimal (sin "pelota" grande) */}
+        <div style={{width:cur?14:12,height:cur?14:12,borderRadius:"50%",background:done?GOLD:cur?GOLD_LIGHT:"transparent",border:done||cur?"none":"1.5px solid rgba(255,255,255,0.22)",boxShadow:cur?"0 0 0 3px rgba(232,208,152,0.20)":"none",position:"relative",zIndex:1,transition:"all 200ms"}}/>
         {/* Label */}
         <span style={{fontSize:10,fontWeight:cur?600:500,color:isAlert?"#fbbf24":labelColor,textAlign:"center",lineHeight:1.2,letterSpacing:"0.005em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{isAlert?"Completar":s.l}</span>
       </div>;
@@ -802,7 +799,6 @@ function OperationDetail({op,token,client,onBack}){
         <button onClick={()=>toggleSection("budget")} style={{flex:1,minWidth:200,display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",padding:0}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>PRESUPUESTO</h3><span style={{color:"rgba(255,255,255,0.4)",fontSize:14}}>{openSections.budget?"▲":"▼"}</span></button>
         {hasBudget&&!isGI&&<button onClick={downloadPdf} style={{fontSize:11,fontWeight:700,padding:"6px 12px",borderRadius:8,border:"1.5px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",whiteSpace:"nowrap"}}>📄 Presupuesto</button>}
         {!isGI&&["entregada","operacion_cerrada"].includes(op.status)&&<button onClick={downloadClosingPdf} style={{fontSize:11,fontWeight:700,padding:"6px 12px",borderRadius:8,border:"1.5px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>📋 Resumen final</button>}
-        <button onClick={async()=>{const url=`${window.location.origin}/track/${op.operation_code}`;if(navigator.share){try{await navigator.share({title:`Seguimiento ${op.operation_code}`,text:`Seguí mi importación en Argencargo: ${op.operation_code}`,url});}catch(e){}}else{try{await navigator.clipboard.writeText(url);alert("Link copiado al portapapeles ✓\n\n"+url);}catch{prompt("Link público de seguimiento:",url);}}}} style={{fontSize:11,fontWeight:700,padding:"6px 12px",borderRadius:8,border:"1.5px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",whiteSpace:"nowrap"}}>🔗 Compartir tracking</button>
       </div>
       {openSections.budget&&hasBudget?<div>
         {isGI&&<>
@@ -864,7 +860,7 @@ function OperationDetail({op,token,client,onBack}){
         })()}
       </div>:openSections.budget?<p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:0}}>Presupuesto pendiente de confirmación</p>:null}
     </div>;})()}
-    {!loading&&!isGI&&items.length>0&&<div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem",marginBottom:16}}>
+    {false/* Sección PRODUCTOS removida: estaba duplicada con 'Productos declarados' (arriba). */&&!isGI&&items.length>0&&<div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem",marginBottom:16}}>
       <button onClick={()=>toggleSection("products")} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",background:"none",border:"none",cursor:"pointer",padding:0,marginBottom:openSections.products?14:0}}><h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>PRODUCTOS ({items.length})</h3><span style={{color:"rgba(255,255,255,0.4)",fontSize:14}}>{openSections.products?"▲":"▼"}</span></button>
       {openSections.products&&items.map((it,i)=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const exp=expItem===it.id;return <div key={it.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.08)":"none"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0"}}><div style={{flex:1}}><p style={{fontSize:14,color:"#fff",margin:0,fontWeight:500}}>{it.description}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{it.quantity} unidades</p></div>
