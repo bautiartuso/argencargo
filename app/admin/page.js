@@ -8660,15 +8660,19 @@ function FinanceDashboard({token}){
   const fixedCostsManual=finEntries.filter(e=>e.auto_generated===false&&e.type==="gasto");
   const totalCostOp=periodOps.reduce((s,o)=>s+calcGan(o).cost,0); // legacy, used elsewhere
 
-  // By channel with margin
-  const byChannel={};periodOps.forEach(o=>{const ch=o.channel||"unknown";if(!byChannel[ch])byChannel[ch]={count:0,ing:0,cost:0};byChannel[ch].count++;const g=calcGan(o);byChannel[ch].ing+=g.ing;byChannel[ch].cost+=g.cost;});
+  // Ganancia CONSUMADA: solo ops efectivamente cobradas, filtradas por fecha de cobro
+  // (la ganancia se consuma cuando se cobra; mientras no se cobre, no figura como ganancia).
+  const cobradoOps=ops.filter(o=>o.is_collected&&!o.lost_in_customs_at&&periodFilter(o.collection_date||o.closed_at?.slice(0,10)));
 
-  // By origin
+  // By channel with margin (sobre ops cobradas)
+  const byChannel={};cobradoOps.forEach(o=>{const ch=o.channel||"unknown";if(!byChannel[ch])byChannel[ch]={count:0,ing:0,cost:0};byChannel[ch].count++;const g=calcGan(o);byChannel[ch].ing+=g.ing;byChannel[ch].cost+=g.cost;});
+
+  // By origin (cerradas del período, como antes)
   const byOrigin={};periodOps.forEach(o=>{const or=o.origin||"China";if(!byOrigin[or])byOrigin[or]={count:0,ing:0};byOrigin[or].count++;byOrigin[or].ing+=calcGan(o).ing;});
 
-  // Top clients sorted by PROFIT
-  const byClient={};periodOps.forEach(o=>{const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—";if(!byClient[cn])byClient[cn]={count:0,ing:0,gan:0};byClient[cn].count++;const g=calcGan(o);byClient[cn].ing+=g.ing;byClient[cn].gan+=g.gan;});
-  const topClients=Object.entries(byClient).sort((a,b)=>b[1].gan-a[1].gan).slice(0,5);
+  // Top clients sorted by PROFIT (sobre ops cobradas)
+  const byClient={};cobradoOps.forEach(o=>{const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—";if(!byClient[cn])byClient[cn]={count:0,ing:0,gan:0};byClient[cn].count++;const g=calcGan(o);byClient[cn].ing+=g.ing;byClient[cn].gan+=g.gan;});
+  const topClients=Object.entries(byClient).sort((a,b)=>b[1].gan-a[1].gan).slice(0,8);
   const maxClientGan=topClients.length>0?Math.max(...topClients.map(([,d])=>Math.abs(d.gan)),1):1;
 
   // Monthly profit (last 6 months) — usando MISMA lógica que el KPI principal: flujo del libro diario completo
@@ -8912,7 +8916,7 @@ function FinanceDashboard({token}){
         </div>;});})()}
         {Object.keys(byChannel).length===0&&<p style={{color:"rgba(255,255,255,0.45)"}}>Sin datos</p>}
       </Card>
-      <Card title="Top clientes por rentabilidad">
+      <Card title="Top clientes por ganancia">
         {topClients.length>0?topClients.map(([name,d],i)=>{const mg=d.ing>0?((d.gan/d.ing)*100):0;const pct=(Math.abs(d.gan)/maxClientGan)*100;return <div key={name} style={{marginBottom:12}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
             <div><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{i+1}. {name}</span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:8}}>({d.count} ops)</span></div>
