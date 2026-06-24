@@ -2873,11 +2873,14 @@ function MaritimeCargoSection({cargo}){
       <span style={{fontSize:11,fontWeight:700,color:"#60a5fa",background:"rgba(96,165,250,0.12)",padding:"2px 9px",borderRadius:999}}>{cargo.length}</span>
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      {cargo.map(c=>{const st=statusChip(c);return <div key={c.id} style={{background:"linear-gradient(135deg,rgba(96,165,250,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(96,165,250,0.18)",borderRadius:14,padding:"16px 18px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap",marginBottom:12}}>
-          <p style={{fontSize:14.5,fontWeight:700,color:"#fff",margin:0,flex:1,minWidth:0}}>{c.description||"Carga marítima"}</p>
+      {cargo.map(c=>{const st=statusChip(c);const descs=Array.isArray(c.descriptions)?c.descriptions:(c.description?[c.description]:[]);const multi=descs.length>1;return <div key={c.id} style={{background:"linear-gradient(135deg,rgba(96,165,250,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(96,165,250,0.18)",borderRadius:14,padding:"16px 18px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap",marginBottom:multi?10:12}}>
+          <p style={{fontSize:14.5,fontWeight:700,color:"#fff",margin:0,flex:1,minWidth:0}}>{multi?`${descs.length} productos`:(descs[0]||"Carga marítima")}</p>
           <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:6,background:st.bg,color:st.fg,whiteSpace:"nowrap"}}>{st.l}</span>
         </div>
+        {multi&&<ul style={{margin:"0 0 12px",padding:"0 0 0 2px",listStyle:"none",display:"flex",flexDirection:"column",gap:3}}>
+          {descs.map((d,i)=><li key={i} style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",display:"flex",gap:7}}><span style={{color:"#60a5fa"}}>·</span>{d}</li>)}
+        </ul>}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
           {cell("⚓ ETA Pto. Buenos Aires",fmtD(c.eta_puerto),"#93c5fd")}
           {cell("📦 Entrega estimada",fmtD(c.entrega_estimada),"#4ade80")}

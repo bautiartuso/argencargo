@@ -68,18 +68,25 @@ export async function GET(req) {
   const bultos = {};
   (Array.isArray(pkgs) ? pkgs : []).forEach(p => { bultos[p.shipment_id] = (bultos[p.shipment_id] || 0) + Number(p.quantity || 1); });
 
-  const cargo = list.map(s => {
-    const c = contMap[s.container_id] || {};
-    return {
-      id: s.id,
-      description: s.product_description || null,
-      shipment_status: s.status || null,        // proveedor | en_deposito | en_camino_ar
-      container_status: c.status || null,        // en_transito | arribado
-      bultos: bultos[s.id] || 0,
-      eta_puerto: c.eta || null,
-      entrega_estimada: plus14(c.eta),
-    };
+  // Agrupar por contenedor: todas las cargas del cliente en un mismo contenedor son
+  // UNA sola operación futura → una sola tarjeta. Distinto contenedor → tarjetas separadas.
+  const groups = {};
+  list.forEach(s => {
+    const cid = s.container_id;
+    if (!groups[cid]) {
+      const c = contMap[cid] || {};
+      groups[cid] = {
+        id: cid,
+        descriptions: [],
+        bultos: 0,
+        container_status: c.status || null,       // en_transito | arribado
+        eta_puerto: c.eta || null,
+        entrega_estimada: plus14(c.eta),
+      };
+    }
+    if (s.product_description) groups[cid].descriptions.push(s.product_description);
+    groups[cid].bultos += (bultos[s.id] || 0);
   });
 
-  return Response.json({ cargo });
+  return Response.json({ cargo: Object.values(groups) });
 }
