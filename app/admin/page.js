@@ -2170,11 +2170,13 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
         tal cual de la factura del despachante/DHL; si está cargado, el presupuesto usa estos
         valores reales (no la fórmula). 13/06/2026. */}
     {tab==="finance"&&!isGI&&opClient?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&op.channel?.includes("blanco")&&(()=>{
-      const n=v=>{const x=Number(v);return v===""||v==null||isNaN(x)?0:x;};
+      // Parser es-AR: acepta coma decimal y puntos de miles ("1.059,71") además de punto ("448.62").
+      const num=v=>{if(v==null)return NaN;let s=String(v).trim();if(s==="")return NaN;if(s.includes(","))s=s.replace(/\./g,"").replace(",",".");return Number(s);};
+      const n=v=>{const x=num(v);return isNaN(x)?0:x;};
       const total=n(despacho.die)+n(despacho.est)+n(despacho.des)+n(despacho.iva);
       const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
       const cargado=total>0;
-      const numOrNull=v=>{const x=Number(v);return v===""||v==null||isNaN(x)?null:x;};
+      const numOrNull=v=>{const x=num(v);return v===""||v==null||isNaN(x)?null:x;};
       const saveDespacho=async()=>{
         setSavingDespacho(true);
         try{
@@ -2189,7 +2191,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       const field=(label,key,hint)=>(
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
           <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{label}</label>
-          <input type="number" step="0.01" inputMode="decimal" value={despacho[key]} onChange={e=>setDespacho(d=>({...d,[key]:e.target.value}))} placeholder="0.00"
+          <input type="text" inputMode="decimal" value={despacho[key]} onChange={e=>setDespacho(d=>({...d,[key]:e.target.value}))} placeholder="0,00"
             style={{background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:"9px 11px",color:"#fff",fontSize:13.5,fontVariantNumeric:"tabular-nums",width:"100%"}}/>
           {hint&&<span style={{fontSize:10,color:"rgba(255,255,255,0.35)"}}>{hint}</span>}
         </div>
