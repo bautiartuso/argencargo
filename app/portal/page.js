@@ -2897,7 +2897,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     const cId=client?.id;
     if(!cId){setLo(false);return;}
     // Cargas marítimas en camino (en contenedor, todavía sin operación) — vía endpoint con whitelist.
-    fetch("/api/portal/maritime-cargo",{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json()).then(d=>setMCargo(Array.isArray(d?.cargo)?d.cargo:[])).catch(()=>setMCargo([]));
+    fetch(`/api/portal/maritime-cargo?client_id=${cId}`,{headers:{Authorization:`Bearer ${token}`}}).then(r=>r.json()).then(d=>setMCargo(Array.isArray(d?.cargo)?d.cargo:[])).catch(()=>setMCargo([]));
     const [r,it,pm,cp,tv]=await Promise.all([
       dq("operations",{token,filters:`?client_id=eq.${cId}&select=*&order=created_at.desc`}),
       dq("operation_items",{token,filters:`?select=operation_id,operations!inner(client_id)&operations.client_id=eq.${cId}`}),

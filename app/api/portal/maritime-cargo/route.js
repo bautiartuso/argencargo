@@ -30,16 +30,25 @@ export async function GET(req) {
   const auth = req.headers.get("authorization") || "";
   const tok = auth.replace(/^Bearer\s+/i, "").trim();
   if (!tok) return Response.json({ cargo: [] }, { status: 401 });
+  const reqClientId = new URL(req.url).searchParams.get("client_id");
 
-  // Verificar el JWT del cliente → user id (no confiamos en ningún client_id del request).
+  // Verificar el JWT → user id.
   const user = await fetch(`${SB_URL}/auth/v1/user`, {
     headers: { apikey: SB_ANON, Authorization: `Bearer ${tok}` },
   }).then(r => (r.ok ? r.json() : null)).catch(() => null);
   if (!user?.id) return Response.json({ cargo: [] }, { status: 401 });
 
-  // Resolver el cliente a partir del usuario autenticado.
+  // Cliente propio (login real de cliente).
   const cl = await svc(`/rest/v1/clients?auth_user_id=eq.${user.id}&select=id&limit=1`);
-  const clientId = Array.isArray(cl) && cl[0]?.id;
+  const ownClientId = Array.isArray(cl) && cl[0]?.id;
+  // ¿El que pregunta es admin? (para el modo preview del portal, donde el token es de admin).
+  const prof = await svc(`/rest/v1/profiles?id=eq.${user.id}&select=role&limit=1`);
+  const isAdmin = Array.isArray(prof) && prof[0]?.role === "admin";
+
+  // Cliente efectivo: el propio (cliente real), o el pedido por un admin en preview.
+  // Nunca dejamos que un cliente pida los datos de otro.
+  let clientId = ownClientId || null;
+  if (reqClientId && (isAdmin || reqClientId === ownClientId)) clientId = reqClientId;
   if (!clientId) return Response.json({ cargo: [] });
 
   // Cargas del cliente que están en un contenedor y todavía no son operación.
