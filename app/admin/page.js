@@ -8838,16 +8838,25 @@ function FinanceDashboard({token}){
         return {code:o.operation_code,client:o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—",bt,pagado:totalPagado,falta};
       }).filter(x=>x.falta>0);
       const pendienteListas=opsListasParaEntregar.reduce((s,x)=>s+x.falta,0);
-      return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:24}}>
-        {/* Cash disponible */}
-        <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.08),rgba(34,197,94,0.02))":"linear-gradient(135deg,rgba(255,80,80,0.08),rgba(255,80,80,0.02))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.22)":"rgba(255,80,80,0.22)"}`,borderRadius:14,padding:"16px 20px"}}>
+      const porCobrar=pendienteListas+girosColgados;
+      const porPagar=girosPendientes;
+      const pendienteNeto=porCobrar-porPagar;
+      return <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14,marginBottom:24}}>
+        {/* Cash disponible — SOLO plata real, sin proyecciones */}
+        <div style={{background:cashDisponible>=0?"linear-gradient(135deg,rgba(34,197,94,0.08),rgba(34,197,94,0.02))":"linear-gradient(135deg,rgba(255,80,80,0.08),rgba(255,80,80,0.02))",border:`1px solid ${cashDisponible>=0?"rgba(34,197,94,0.22)":"rgba(255,80,80,0.22)"}`,borderRadius:14,padding:"16px 20px",display:"flex",flexDirection:"column"}}>
+          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>💵 Cash disponible</p>
+          <p style={{fontSize:28,fontWeight:800,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{usd(cashDisponible)}</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"auto 0 0",paddingTop:8}}>Plata real (cobrado − pagado). No incluye por cobrar ni por pagar.</p>
+        </div>
+        {/* Pendientes — plata que falta entrar/salir, todavía NO es cash */}
+        <div style={{background:"linear-gradient(135deg,rgba(251,191,36,0.06),rgba(251,191,36,0.015))",border:"1px solid rgba(251,191,36,0.22)",borderRadius:14,padding:"16px 20px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,marginBottom:10}}>
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>💵 Cash disponible</p>
-            <p style={{fontSize:26,fontWeight:800,color:cashDisponible>=0?"#22c55e":"#ff6b6b",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{usd(cashDisponible)}</p>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.08em"}}>⏳ Pendientes (neto)</p>
+            <p style={{fontSize:22,fontWeight:800,color:pendienteNeto>=0?"#fbbf24":"#fb923c",margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{pendienteNeto>=0?"+":"−"}{usd(Math.abs(pendienteNeto))}</p>
           </div>
-          {(deudaTCUsd>0||girosColgados>0||girosPendientes>0||pendienteListas>0)&&<div style={{display:"flex",flexDirection:"column",gap:5,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+          {(porCobrar>0||porPagar>0)?<div style={{display:"flex",flexDirection:"column",gap:5,paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
             {pendienteListas>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}} title={opsListasParaEntregar.map(o=>`${o.code} · ${o.client}: ${usd(o.falta)}`).join("\n")}>
-              <span style={{color:"#fbbf24"}}>📦 Por cobrar (ops listas para entregar)</span>
+              <span style={{color:"#fbbf24"}}>📦 Por cobrar (listas para retirar)</span>
               <span style={{color:"#fbbf24",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>+{usd(pendienteListas)}</span>
             </div>}
             {girosColgados>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}} title={girosColgadosDetail.map(d=>`${d.code}: ${usd(d.real)}`).join("\n")}>
@@ -8858,11 +8867,7 @@ function FinanceDashboard({token}){
               <span style={{color:"#60a5fa"}}>⏳ Giro pendiente de enviar</span>
               <span style={{color:"#60a5fa",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>−{usd(girosPendientes)}</span>
             </div>}
-            {deudaTCUsd>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}}>
-              <span style={{color:"#a78bfa"}}>💳 Deuda TC (no descontada todavía)</span>
-              <span style={{color:"#a78bfa",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>−{usd(deudaTCUsd)}</span>
-            </div>}
-          </div>}
+          </div>:<p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.3)",margin:"6px 0 0",textAlign:"center"}}>Sin pendientes</p>}
         </div>
         {/* Deuda Tarjeta de Crédito */}
         <div style={{background:deudaTCArs>0||deudaTCUsd>0?"linear-gradient(135deg,rgba(251,146,60,0.08),rgba(251,146,60,0.02))":"rgba(255,255,255,0.025)",border:`1px solid ${deudaTCArs>0||deudaTCUsd>0?"rgba(251,146,60,0.22)":"rgba(255,255,255,0.06)"}`,borderRadius:14,padding:"16px 20px"}}>
@@ -8885,6 +8890,28 @@ function FinanceDashboard({token}){
     })()}
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
+      <Card title="Ganancia por canal">
+        {(()=>{const entries=Object.entries(byChannel);const maxGan=Math.max(...entries.map(([,d])=>Math.abs(d.ing-d.cost)),1);return entries.map(([ch,d])=>{const gan=d.ing-d.cost;const mg=d.ing>0?((gan/d.ing)*100):0;const pct=(Math.abs(gan)/maxGan)*100;return <div key={ch} style={{marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+            <div><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{CM[ch]||ch}</span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:8}}>({d.count} ops)</span></div>
+            <div><span style={{fontSize:13,fontWeight:700,color:gan>0?"#22c55e":"#ff6b6b"}}>{usd(gan)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:8}}>{mg.toFixed(1)}%</span></div>
+          </div>
+          {bar(pct,gan>0?"#22c55e":"#ff6b6b")}
+        </div>;});})()}
+        {Object.keys(byChannel).length===0&&<p style={{color:"rgba(255,255,255,0.45)"}}>Sin ops cobradas en el período</p>}
+      </Card>
+      <Card title="Top clientes por ganancia">
+        {topClients.length>0?topClients.map(([name,d],i)=>{const mg=d.ing>0?((d.gan/d.ing)*100):0;const pct=(Math.abs(d.gan)/maxClientGan)*100;return <div key={name} style={{marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+            <div><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{i+1}. {name}</span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:8}}>({d.count} ops)</span></div>
+            <div><span style={{fontSize:13,fontWeight:700,color:d.gan>0?"#22c55e":"#ff6b6b"}}>{usd(d.gan)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:8}}>{mg.toFixed(1)}%</span></div>
+          </div>
+          {bar(pct,d.gan>0?"#22c55e":"#ff6b6b")}
+        </div>;}):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin ops cobradas en el período</p>}
+      </Card>
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
       <Card title="Ganancia mensual (últimos 6 meses)">
         {monthly.map((m,i)=>{const pct=(Math.abs(m.gan)/maxMonthGan)*100;return <div key={i} style={{marginBottom:10}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
@@ -8902,28 +8929,6 @@ function FinanceDashboard({token}){
           </div>
           {bar(pct,IC)}
         </div>;})}
-      </Card>
-    </div>
-
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
-      <Card title="Ganancia por canal">
-        {(()=>{const entries=Object.entries(byChannel);const maxGan=Math.max(...entries.map(([,d])=>Math.abs(d.ing-d.cost)),1);return entries.map(([ch,d])=>{const gan=d.ing-d.cost;const mg=d.ing>0?((gan/d.ing)*100):0;const pct=(Math.abs(gan)/maxGan)*100;return <div key={ch} style={{marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-            <div><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{CM[ch]||ch}</span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:8}}>({d.count} ops)</span></div>
-            <div><span style={{fontSize:13,fontWeight:700,color:gan>0?"#22c55e":"#ff6b6b"}}>{usd(gan)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:8}}>{mg.toFixed(1)}%</span></div>
-          </div>
-          {bar(pct,gan>0?"#22c55e":"#ff6b6b")}
-        </div>;});})()}
-        {Object.keys(byChannel).length===0&&<p style={{color:"rgba(255,255,255,0.45)"}}>Sin datos</p>}
-      </Card>
-      <Card title="Top clientes por ganancia">
-        {topClients.length>0?topClients.map(([name,d],i)=>{const mg=d.ing>0?((d.gan/d.ing)*100):0;const pct=(Math.abs(d.gan)/maxClientGan)*100;return <div key={name} style={{marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-            <div><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{i+1}. {name}</span><span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:8}}>({d.count} ops)</span></div>
-            <div><span style={{fontSize:13,fontWeight:700,color:d.gan>0?"#22c55e":"#ff6b6b"}}>{usd(d.gan)}</span><span style={{fontSize:10,color:"rgba(255,255,255,0.4)",marginLeft:8}}>{mg.toFixed(1)}%</span></div>
-          </div>
-          {bar(pct,d.gan>0?"#22c55e":"#ff6b6b")}
-        </div>;}):<p style={{color:"rgba(255,255,255,0.45)"}}>Sin datos</p>}
       </Card>
     </div>
 
