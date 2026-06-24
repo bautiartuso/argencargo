@@ -11553,8 +11553,8 @@ function MaritimePanel({token,allClients=[]}){
               </div>
               <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
                 <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
-                  {c.departed_at&&dateChip("🛫","Salió",fmtD(c.departed_at),"rgba(255,255,255,0.7)")}
-                  {c.eta&&dateChip("⚓","Puerto",fmtD(c.eta),"#93c5fd")}
+                  {c.departed_at&&dateChip("🛳️","Salió",fmtD(c.departed_at),"rgba(255,255,255,0.7)")}
+                  {c.eta&&dateChip("⚓","ETA Pto. Buenos Aires",fmtD(c.eta),"#93c5fd")}
                   {delEta&&dateChip("📦","Entrega est.",fmtD(delEta),"#4ade80")}
                 </div>
                 <div style={{display:"flex",gap:5,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
@@ -11606,7 +11606,7 @@ function MaritimePanel({token,allClients=[]}){
             <div style={{padding:"11px 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
               <div style={{flex:1,minWidth:260}}>
                 <p style={{fontSize:13,fontWeight:800,color:"#fff",margin:"0 0 3px"}}>🚢 {c.code} {c.shipping_line&&<span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#93c5fd"}}>⚓ {c.shipping_line}</span>} <span style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)"}}>· 📦 {c.warehouse}</span></p>
-                <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:0}}>Salió {fmtD(c.departed_at)} · ⚓ Puerto {fmtD(c.eta)} · 📦 Entrega est. {fmtD(deliveryEtaStr(c.eta))} · Arribó {fmtD(c.arrived_at)} · {cShips.length} carga{cShips.length!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{c.notes?` · ${c.notes}`:""}</p>
+                <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:0}}>🛳️ Salió {fmtD(c.departed_at)} · ⚓ ETA Pto. Buenos Aires {fmtD(c.eta)} · 📦 Entrega est. {fmtD(deliveryEtaStr(c.eta))} · Arribó {fmtD(c.arrived_at)} · {cShips.length} carga{cShips.length!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{c.notes?` · ${c.notes}`:""}</p>
                 {opCodes.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:6}}>
                   {opCodes.map(oc=><span key={oc} style={{fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,fontFamily:"monospace"}}>🔗 {oc}</span>)}
                 </div>}
@@ -11693,7 +11693,7 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
         <Inp label="Fecha de salida" type="date" value={departedAt} onChange={setDepartedAt}/>
-        <Inp label="Arribo estimado a puerto" type="date" value={eta} onChange={setEta}/>
+        <Inp label="ETA Puerto Buenos Aires" type="date" value={eta} onChange={setEta}/>
       </div>
       <div style={{margin:"-4px 0 12px",padding:"9px 12px",background:delEta?"rgba(34,197,94,0.07)":"rgba(255,255,255,0.03)",border:`1px solid ${delEta?"rgba(34,197,94,0.22)":"rgba(255,255,255,0.08)"}`,borderRadius:8,display:"flex",alignItems:"center",gap:8}}>
         <span style={{fontSize:16}}>📦</span>
