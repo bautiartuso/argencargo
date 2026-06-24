@@ -4936,7 +4936,10 @@ function FinancePanel({token}){
   // los eventos se ordenan cronológicamente real. Si solo hay date, devolvemos date+T12:00
   // para que quede a "media tarde" del día (los eventos con hora real lo desplazan).
   const tsOf=(dateOnly,fullTs)=>{
-    if(fullTs)return String(fullTs);
+    // Usamos el timestamp fino SOLO si cae el mismo día que la fecha mostrada (dateOnly).
+    // Si fullTs es de otro día (ej. cobro con collection_date ≠ closed_at), ordenar por la
+    // fecha mostrada — sino la fila se muestra con una fecha pero se ordena con otra.
+    if(fullTs&&(!dateOnly||dateOnly==="—"||String(fullTs).slice(0,10)===dateOnly))return String(fullTs);
     if(!dateOnly||dateOnly==="—")return "";
     return `${dateOnly}T12:00:00+00`;
   };
