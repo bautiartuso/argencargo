@@ -259,14 +259,10 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     </div>}
   </div>;};
   return <div>
-    {/* Header compacto con saludo */}
-    <div style={{marginBottom:18}}>
-      <h2 style={{fontSize:14,fontWeight:600,color:"rgba(255,255,255,0.72)",margin:0,letterSpacing:"-0.005em"}}>👋 <strong style={{color:"#fff",fontWeight:700}}>{t("home.hello",{name:client?.first_name||t("common.client")})}</strong></h2>
-      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>{t("home.subtitle")} · <strong style={{color:GOLD_LIGHT}}>{new Date().toLocaleDateString("es-AR",{weekday:"long",day:"2-digit",month:"long"})}</strong></p>
-    </div>
-
-    {/* Hero grid — usa clases del mockup (.ac-cli-*) sin inline styles */}
-    {(()=>{
+    {/* Saludo + hero (categoría / saldo a favor / en curso) ocultos por pedido del cliente:
+        el portal arranca directo en la carga marítima / operaciones. Se deja el bloque
+        desactivado con `false&&` por si se quiere reactivar. */}
+    {false&&(()=>{
       const tier=client?.tier||"standard";
       const ti=getTierInfo(tier);
       const lifetime=Number(client?.lifetime_points_earned||0);
