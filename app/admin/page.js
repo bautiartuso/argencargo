@@ -8547,14 +8547,20 @@ function OperationalAnalytics({token}){
 }
 
 function FinanceDashboard({token}){
-  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [clientPmts,setClientPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});
+  const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [clientPmts,setClientPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});const [selDay,setSelDay]=useState(()=>new Date().toISOString().slice(0,10));const [selWeekMon,setSelWeekMon]=useState(()=>{const n=new Date();const dow=(n.getDay()+6)%7;const m=new Date(n);m.setDate(n.getDate()-dow);return m.toISOString().slice(0,10);});
   useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status,giro_payment_method,giro_tarjeta_paid"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
 
   const now=new Date();const thisMonth=now.getMonth();const thisYear=now.getFullYear();
   const today=now.toISOString().slice(0,10);const weekAgo=new Date(now-7*86400000).toISOString().slice(0,10);
   const parseLocalDate=(d)=>{const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return{y:Number(y),m:Number(m)-1,d:Number(day),ds:s};}return{y:0,m:0,d:0,ds:""};};
+  // Día y semana seleccionables (cualquier día / cualquier semana, no solo hoy / esta).
+  const addDaysStr=(ds,n)=>{const[y,m,d]=String(ds).split("-").map(Number);const dt=new Date(Date.UTC(y,m-1,d));dt.setUTCDate(dt.getUTCDate()+n);return dt.toISOString().slice(0,10);};
+  const mondayOfToday=()=>{const n=new Date();const dow=(n.getDay()+6)%7;const m=new Date(n);m.setDate(n.getDate()-dow);return m.toISOString().slice(0,10);};
+  const weekEnd=addDaysStr(selWeekMon,6);
+  const MN3=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  const fmtDM=(ds)=>{const[,mm,dd]=String(ds).split("-").map(Number);return `${dd} ${MN3[mm-1]}`;};
   const [selY,selM]=(selMonth||"").split("-").map(Number);
-  const filterByPeriod=(items,dateField)=>{if(period==="all")return items;return items.filter(i=>{if(!i[dateField])return false;const p=parseLocalDate(i[dateField]);if(period==="today")return p.ds===today;if(period==="week")return p.ds>=weekAgo;if(period==="month")return p.m===(selM-1)&&p.y===selY;if(period==="year")return p.y===thisYear;return true;});};
+  const filterByPeriod=(items,dateField)=>{if(period==="all")return items;return items.filter(i=>{if(!i[dateField])return false;const p=parseLocalDate(i[dateField]);if(period==="day"||period==="today")return p.ds===selDay;if(period==="week")return p.ds>=selWeekMon&&p.ds<=weekEnd;if(period==="month")return p.m===(selM-1)&&p.y===selY;if(period==="year")return p.y===thisYear;return true;});};
 
   const closedOps=ops.filter(o=>o.status==="operacion_cerrada");
   const activeOps=ops.filter(o=>o.status!=="operacion_cerrada"&&o.status!=="cancelada");
@@ -8594,7 +8600,7 @@ function FinanceDashboard({token}){
   // No se limita a "ops cerradas". Suma TODOS los movimientos del período: cobros, pagos parciales,
   // costos de ops cuando se pagaron realmente, pagos a proveedor (GI), comisiones de giro y giros,
   // finance_entries (manuales y auto-generadas), anticipos a agentes.
-  const periodFilter=(ds)=>{if(!ds)return false;const p=parseLocalDate(ds);if(period==="all")return true;if(period==="today")return p.ds===today;if(period==="week")return p.ds>=weekAgo;if(period==="month")return p.m===(selM-1)&&p.y===selY;if(period==="year")return p.y===thisYear;return true;};
+  const periodFilter=(ds)=>{if(!ds)return false;const p=parseLocalDate(ds);if(period==="all")return true;if(period==="day"||period==="today")return p.ds===selDay;if(period==="week")return p.ds>=selWeekMon&&p.ds<=weekEnd;if(period==="month")return p.m===(selM-1)&&p.y===selY;if(period==="year")return p.y===thisYear;return true;};
   const isCobrada=(o)=>o.is_collected;
   // Ingresos del período
   let totalIng=0;
@@ -8730,7 +8736,17 @@ function FinanceDashboard({token}){
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
       <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Dashboard Financiero</h2>
-      <div style={{display:"flex",gap:8,alignItems:"center"}}>{[{k:"week",l:"Semana"},{k:"month",l:"Mes"},{k:"year",l:"Año"},{k:"all",l:"Total"}].map(p=><button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k==="month")setSelMonth(`${thisYear}-${String(thisMonth+1).padStart(2,"0")}`);}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:period===p.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:period===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:period===p.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{p.l}</button>)}
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>{[{k:"day",l:"Día"},{k:"week",l:"Semana"},{k:"month",l:"Mes"},{k:"year",l:"Año"},{k:"all",l:"Total"}].map(p=><button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k==="month")setSelMonth(`${thisYear}-${String(thisMonth+1).padStart(2,"0")}`);if(p.k==="day")setSelDay(new Date().toISOString().slice(0,10));if(p.k==="week")setSelWeekMon(mondayOfToday());}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:period===p.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:period===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:period===p.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{p.l}</button>)}
+        {period==="day"&&<div style={{display:"flex",alignItems:"center",gap:6,marginLeft:8}}>
+          <button onClick={()=>setSelDay(d=>addDaysStr(d,-1))} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.028)",color:"#fff",cursor:"pointer"}}>←</button>
+          <input type="date" value={selDay} max={today} onChange={e=>e.target.value&&setSelDay(e.target.value)} style={{padding:"4px 8px",fontSize:12.5,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.028)",color:"#fff",cursor:"pointer",colorScheme:"dark"}}/>
+          <button onClick={()=>setSelDay(d=>d<today?addDaysStr(d,1):d)} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.028)",color:"#fff",cursor:"pointer"}}>→</button>
+        </div>}
+        {period==="week"&&<div style={{display:"flex",alignItems:"center",gap:6,marginLeft:8}}>
+          <button onClick={()=>setSelWeekMon(w=>addDaysStr(w,-7))} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.028)",color:"#fff",cursor:"pointer"}}>←</button>
+          <span style={{fontSize:13,fontWeight:700,color:"#fff",minWidth:130,textAlign:"center"}}>{fmtDM(selWeekMon)} – {fmtDM(weekEnd)}</span>
+          <button onClick={()=>setSelWeekMon(w=>addDaysStr(w,7))} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.028)",color:"#fff",cursor:"pointer"}}>→</button>
+        </div>}
         {period==="month"&&<div style={{display:"flex",alignItems:"center",gap:6,marginLeft:8}}>
           <button onClick={()=>{const[y,m]=selMonth.split("-").map(Number);const d=new Date(y,m-2,1);setSelMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);}} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.028)",color:"#fff",cursor:"pointer"}}>←</button>
           <span style={{fontSize:13,fontWeight:700,color:"#fff",minWidth:100,textAlign:"center"}}>{(()=>{const MN=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];return `${MN[selM-1]} ${selY}`;})()}</span>
@@ -8752,7 +8768,7 @@ function FinanceDashboard({token}){
         <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"10px 0 0",lineHeight:1.3}}>Cobros + anticipos + reembolsos</p>
       </div>
       <div style={{background:"linear-gradient(135deg,rgba(255,80,80,0.06),rgba(255,80,80,0.01))",border:"1.5px solid rgba(255,80,80,0.25)",borderRadius:16,padding:"22px 22px",minWidth:0}}>
-        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Costos</p>
+        <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Egresos</p>
         <p style={{fontSize:30,fontWeight:800,color:"#ff6b6b",margin:0,lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{usd(totalCost)}</p>
         <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"10px 0 0",lineHeight:1.3}}>Costos op + gastos fijos + comisiones</p>
       </div>
