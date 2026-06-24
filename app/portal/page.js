@@ -180,7 +180,7 @@ function OpProgress({status,isAereo,onActionClick,isGI,channel,hasItems,lostInCu
           {(done||cur)&&<span style={{width:cur?10:8,height:cur?10:8,borderRadius:"50%",background:"#0A1628",animation:cur?"pulse 1.8s ease-in-out infinite":"none"}}/>}
         </div>
         {/* Label */}
-        <span style={{fontSize:9.5,fontWeight:cur?700:600,color:isAlert?"#fbbf24":labelColor,textAlign:"center",lineHeight:1.2,letterSpacing:"0.04em",textTransform:"uppercase",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{isAlert?"COMPLETAR":s.l}</span>
+        <span style={{fontSize:10,fontWeight:cur?600:500,color:isAlert?"#fbbf24":labelColor,textAlign:"center",lineHeight:1.2,letterSpacing:"0.005em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{isAlert?"Completar":s.l}</span>
       </div>;
     })}
   </div>;
@@ -225,7 +225,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
         <span className="ac-cli-op-code">{op.operation_code}</span>
         <span className="ac-cli-pill" style={{color:ps.c,background:ps.bg,borderColor:ps.bd}}>
           <span className="pdot" style={{background:ps.c,boxShadow:`0 0 6px ${ps.c}`}}/>
-          {op.lost_in_customs_at?"RETENIDA EN ADUANA":t("opStatus."+op.status)}
+          {op.lost_in_customs_at?"Retenida en aduana":t("opStatus."+op.status)}
         </span>
         {op.service_type==="gestion_integral"&&<span style={{fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:6,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase",border:`1px solid ${GOLD_DEEP}`}}>Gestión Integral</span>}
       </div>
@@ -622,10 +622,10 @@ function OperationDetail({op,token,client,onBack}){
         <span style={{fontSize:18,fontWeight:700,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{op.operation_code}</span>
         <span style={{width:1,height:16,background:"rgba(255,255,255,0.12)"}}/>
         {isGI&&<span className="ac-gi-pulse" style={{fontSize:11,fontWeight:800,padding:"7px 16px",borderRadius:8,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.15em",textTransform:"uppercase",border:`1.5px solid ${GOLD_DEEP}`,boxShadow:`${GOLD_GLOW}, inset 0 1px 0 rgba(255,255,255,0.4)`}}>{t("acc.gi")}</span>}
-        {(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status)&&!op.lost_in_customs_at;const color=op.lost_in_customs_at?"#f87171":st.c;return <span style={{fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:999,color,border:`1px solid ${color}40`,background:`${color}14`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.05em",textTransform:"uppercase"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:color,boxShadow:isActive?`0 0 8px `:"none"}}/>{op.lost_in_customs_at?"RETENIDA EN ADUANA":t("opStatus."+op.status)}</span>;})()}
+        {(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status)&&!op.lost_in_customs_at;const color=op.lost_in_customs_at?"#f87171":st.c;return <span style={{fontSize:11,fontWeight:600,padding:"4px 11px 4px 9px",borderRadius:999,color,border:`1px solid ${color}40`,background:`${color}14`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.01em"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:color,boxShadow:isActive?`0 0 8px `:"none"}}/>{op.lost_in_customs_at?"Retenida en aduana":t("opStatus."+op.status)}</span>;})()}
         {op.eta&&op.status!=="entregada"&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.55)",letterSpacing:"0.02em",marginLeft:"auto"}}>ETA · <span style={{color:"#fff",fontWeight:600}}>{formatDate(op.eta)}</span></span>}
       </div>
-      <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 12px",textTransform:"uppercase"}}>{op.description}</h2>
+      <h2 style={{fontSize:20,fontWeight:600,color:"#fff",margin:"0 0 12px"}}>{op.description||(op.channel?.includes("maritimo")?"Carga marítima":op.channel?.includes("aereo")?"Carga aérea":"Importación")}</h2>
       <OpProgress status={op.status} isAereo={isA} isGI={isGI} channel={op.channel} hasItems={items.length>0} lostInCustoms={!!op.lost_in_customs_at}/>
       {op.lost_in_customs_at&&<div style={{marginTop:6,marginBottom:14,padding:"12px 16px",background:"linear-gradient(135deg,rgba(248,113,113,0.10),rgba(248,113,113,0.03))",border:"1.5px solid rgba(248,113,113,0.35)",borderRadius:12}}>
         <p style={{fontSize:12,fontWeight:800,color:"#fca5a5",margin:0,letterSpacing:"0.05em",textTransform:"uppercase"}}>🚨 Carga retenida en aduana</p>
