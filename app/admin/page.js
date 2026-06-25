@@ -11133,6 +11133,7 @@ function MaritimePanel({token,allClients=[]}){
   const [packages,setPackages]=useState([]);
   const [items,setItems]=useState([]);
   const [mtTariffs,setMtTariffs]=useState([]);const [mtConfig,setMtConfig]=useState({});
+  const [mtOverrides,setMtOverrides]=useState({}); // overrides de tarifa por client_id (mapa)
   const [whs,setWhs]=useState([]);
   const [lo,setLo]=useState(true);
   const [originFilter,setOriginFilter]=useState("china");
@@ -11259,7 +11260,7 @@ function MaritimePanel({token,allClients=[]}){
 
   const load=async()=>{
     setLo(true);
-    const [sh,pk,it,wh,ct,tf,cf]=await Promise.all([
+    const [sh,pk,it,wh,ct,tf,cf,ov]=await Promise.all([
       dq("maritime_shipments",{token,filters:"?select=*,operations(operation_code)&order=created_at.desc"}),
       dq("maritime_packages",{token,filters:"?select=*&order=bulto_number.asc"}),
       dq("maritime_items",{token,filters:"?select=*&order=sort_order.asc"}),
@@ -11267,6 +11268,7 @@ function MaritimePanel({token,allClients=[]}){
       dq("maritime_containers",{token,filters:"?select=*&order=created_at.asc"}),
       dq("tariffs",{token,filters:"?select=*"}),
       dq("calc_config",{token,filters:"?select=*"}),
+      dq("client_tariff_overrides",{token,filters:"?select=*"}),
     ]);
     setShipments(Array.isArray(sh)?sh:[]);
     setPackages(Array.isArray(pk)?pk:[]);
@@ -11275,6 +11277,7 @@ function MaritimePanel({token,allClients=[]}){
     setContainers(Array.isArray(ct)?ct:[]);
     setMtTariffs(Array.isArray(tf)?tf:[]);
     const cfg={};(Array.isArray(cf)?cf:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setMtConfig(cfg);
+    const ovMap={};(Array.isArray(ov)?ov:[]).forEach(r=>{(ovMap[r.client_id]=ovMap[r.client_id]||[]).push(r);});setMtOverrides(ovMap);
     setLo(false);
   };
   useEffect(()=>{load();},[token]);
@@ -11321,7 +11324,8 @@ function MaritimePanel({token,allClients=[]}){
   // Total de bultos = suma de quantity (un row de qty=3 cuenta como 3 bultos)
   const bultosOf=(shId)=>packages.filter(p=>p.shipment_id===shId).reduce((s,p)=>s+Number(p.quantity||1),0);
   // Importe estimado a cobrar de un contenedor: presupuesto marítimo integral (flete CBM +
-  // recargo por valor) por cliente, sumado. Estimación (sin overrides por cliente).
+  // recargo por valor) por cliente, sumado. Aplica las tarifas especiales (overrides) de
+  // cada cliente, así el estimado coincide con lo que se cobra cuando se crea la op.
   const importeContainer=(list)=>{
     if(!list||!list.length||!mtTariffs.length)return null;
     const byCli={};list.forEach(sh=>{if(sh.client_id)(byCli[sh.client_id]=byCli[sh.client_id]||[]).push(sh);});
@@ -11331,9 +11335,21 @@ function MaritimePanel({token,allClients=[]}){
       const its=items.filter(it=>sids.has(it.shipment_id)).map(it=>({unit_price_usd:Number(it.unit_price_usd||0),quantity:Number(it.quantity||1),import_duty_rate:0,statistics_rate:0,iva_rate:21}));
       const pks=packages.filter(p=>sids.has(p.shipment_id)).map(p=>({quantity:Number(p.quantity||1),gross_weight_kg:0,length_cm:Number(p.length_cm||0),width_cm:Number(p.width_cm||0),height_cm:Number(p.height_cm||0)}));
       const cli=allClients.find(x=>x.id===cid)||{};
-      try{const b=calcOpBudget({channel:"maritimo_negro",origin:ships[0].origin==="usa"?"USA":"China",shipping_to_door:false,shipping_cost:0,has_battery:false,has_phones:false},its,pks,mtTariffs,mtConfig,[],{tax_condition:cli.tax_condition||"consumidor_final"});total+=Number(b.totalAbonar||0);}catch(e){}
+      const overrides=mtOverrides[cid]||[];
+      try{const b=calcOpBudget({channel:"maritimo_negro",origin:ships[0].origin==="usa"?"USA":"China",shipping_to_door:false,shipping_cost:0,has_battery:false,has_phones:false},its,pks,mtTariffs,mtConfig,overrides,{tax_condition:cli.tax_condition||"consumidor_final"});total+=Number(b.totalAbonar||0);}catch(e){}
     });
     return total;
+  };
+  // Total a cobrar de todos los contenedores EN TRÁNSITO de un depósito (suma de importeContainer).
+  const importeWarehouseEnTransito=(warehouse)=>{
+    const conts=containers.filter(c=>c.warehouse===warehouse&&c.status==="en_transito");
+    let total=0,any=false;
+    conts.forEach(c=>{
+      const lst=shipments.filter(s=>!s.operation_id&&s.container_id===c.id);
+      const v=importeContainer(lst);
+      if(v!=null){total+=v;any=true;}
+    });
+    return any?total:null;
   };
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
@@ -11549,6 +11565,7 @@ function MaritimePanel({token,allClients=[]}){
       const totalCbm=wsList.reduce((s,sh)=>s+cbmOf(sh.id),0);
       const totalBultos=wsList.reduce((s,sh)=>s+bultosOf(sh.id),0);
       const pending=wsList.filter(sh=>cbmOf(sh.id)===0).length;
+      const importeWh=importeWarehouseEnTransito(wh); // total a cobrar de contenedores en tránsito
       const isWhOpen=expandedWh.has(wh);
       const toggleWh=()=>setExpandedWh(prev=>{const n=new Set(prev);if(n.has(wh))n.delete(wh);else n.add(wh);return n;});
       return <div key={wh} style={{marginBottom:14,background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
@@ -11558,6 +11575,7 @@ function MaritimePanel({token,allClients=[]}){
             <div style={{flex:1}}>
               <p style={{fontSize:11,fontWeight:800,color:"#60a5fa",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>📦 Depósito {wh}</p>
               <p style={{fontSize:13,color:"rgba(255,255,255,0.75)",margin:0}}>{wsList.length} pedido{wsList.length!==1?"s":""} · {totalBultos} bulto{totalBultos!==1?"s":""} · <strong style={{color:"#fff"}}>CBM {totalCbm.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{pending>0?` (+ ${pending} pendiente${pending!==1?"s":""})`:""}</p>
+              {importeWh!=null&&importeWh>0&&<p style={{fontSize:12.5,margin:"5px 0 0",display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px",borderRadius:8,background:"rgba(34,197,94,0.12)",color:"#4ade80",fontWeight:700}} title="Total estimado a cobrar de todos los contenedores en tránsito de este depósito (con tarifas por cliente)">💰 A cobrar en tránsito: USD {importeWh.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
               {whByName[wh]?.rotulo&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",fontStyle:"italic"}}>Rótulo: <span style={{color:IC,fontWeight:600}}>{whByName[wh].rotulo}</span></p>}
             </div>
           </div>
@@ -11696,11 +11714,19 @@ function MaritimePanel({token,allClients=[]}){
               {contHeader(c)}
               {!collapsedCont.has(c.id)&&((byCont[c.id]||[]).length>0?renderTable(byCont[c.id]):<p style={{padding:"10px 18px",fontSize:11.5,color:"rgba(255,255,255,0.35)",fontStyle:"italic",margin:0}}>Sin cargas asignadas — tildá cargas con el checkbox y usá el selector "🚢 Contenedor…" de la barra de selección.</p>)}
             </div>)}
-            {whConts.length>0&&noneList.length>0&&<div style={{padding:"9px 18px",background:"rgba(255,255,255,0.025)",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
-              <span style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,0.6)"}}>📦 Sin contenedor asignado</span>
-              <span style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginLeft:8}}>{noneList.length} carga{noneList.length!==1?"s":""} · CBM {noneList.reduce((s,sh)=>s+cbmOf(sh.id),0).toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</span>
-            </div>}
-            {(whConts.length===0?wsList.length>0:noneList.length>0)&&renderTable(whConts.length===0?wsList:noneList)}
+            {whConts.length>0&&noneList.length>0&&(()=>{
+              const noneKey=`__none_${wh}`;
+              const noneCollapsed=collapsedCont.has(noneKey);
+              return <>
+                <div onClick={()=>toggleCont(noneKey)} title={noneCollapsed?"Abrir":"Cerrar"} style={{padding:"9px 18px",background:"rgba(255,255,255,0.025)",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.05)",display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
+                  <span style={{fontSize:11,color:"rgba(255,255,255,0.5)",transition:"transform 200ms",transform:noneCollapsed?"rotate(0deg)":"rotate(90deg)",display:"inline-block",userSelect:"none"}}>▶</span>
+                  <span style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,0.6)"}}>📦 Sin contenedor asignado</span>
+                  <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>{noneList.length} carga{noneList.length!==1?"s":""} · CBM {noneList.reduce((s,sh)=>s+cbmOf(sh.id),0).toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</span>
+                </div>
+                {!noneCollapsed&&renderTable(noneList)}
+              </>;
+            })()}
+            {whConts.length===0&&wsList.length>0&&renderTable(wsList)}
             <div style={{padding:"10px 18px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
               <button onClick={()=>setEditingContainer({warehouse:wh})} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1.5px dashed rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.05)",color:"#60a5fa",cursor:"pointer"}}>+ 🚢 Nuevo contenedor en {wh}</button>
             </div>
