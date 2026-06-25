@@ -11342,12 +11342,64 @@ function MaritimePanel({token,allClients=[]}){
     await dq("maritime_containers",{method:"DELETE",token,filters:`?id=eq.${c.id}`});
     flash(`Contenedor ${c.code} eliminado`);load();
   };
+  // Al arribar el contenedor: crear automáticamente UNA operación por cliente con las
+  // cargas de ese contenedor que todavía no son operación. Presupuesto auto (flete CBM +
+  // recargo por valor). Nace en 'arribo_argentina' (llegó a puerto, falta aduana ~2 sem);
+  // NO se manda el mail de retiro todavía — eso es al marcar la op 'lista para retirar'.
+  const createOpsForContainer=async(c)=>{
+    const conShips=shipments.filter(s=>s.container_id===c.id&&!s.operation_id);
+    const byClient={};
+    conShips.forEach(s=>{if(s.client_id)(byClient[s.client_id]=byClient[s.client_id]||[]).push(s);});
+    const clientIds=Object.keys(byClient);
+    if(clientIds.length===0)return "";
+    const [tariffsR,cfgR,lastR]=await Promise.all([
+      dq("tariffs",{token,filters:"?select=*"}),
+      dq("calc_config",{token,filters:"?select=*"}),
+      dq("operations",{token,filters:"?select=operation_code&order=created_at.desc&limit=1"})
+    ]);
+    const tariffs=Array.isArray(tariffsR)?tariffsR:[];
+    const config={};(Array.isArray(cfgR)?cfgR:[]).forEach(r=>{config[r.key]=Number(r.value);});
+    let nextNum=Array.isArray(lastR)&&lastR[0]?.operation_code?(parseInt(String(lastR[0].operation_code).replace(/\D/g,""),10)||0):0;
+    const deliveryEta=deliveryEtaStr(c.eta);
+    let created=0;
+    for(const cid of clientIds){
+      const ships=byClient[cid];const ids=ships.map(s=>s.id);
+      const client=allClients.find(x=>x.id===cid)||{};
+      const origin=ships[0].origin==="usa"?"USA":"China";
+      const [itR,pkR,ovR]=await Promise.all([
+        dq("maritime_items",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=*&order=shipment_id.asc,sort_order.asc`}),
+        dq("maritime_packages",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=*&order=shipment_id.asc,bulto_number.asc`}),
+        dq("client_tariff_overrides",{token,filters:`?client_id=eq.${cid}&select=*`})
+      ]);
+      const mItems=Array.isArray(itR)?itR:[];const mPkgs=Array.isArray(pkR)?pkR:[];const overrides=Array.isArray(ovR)?ovR:[];
+      const desc=ships.map(s=>s.product_description).filter(Boolean).join(" · ");
+      const calcItems=mItems.map(it=>({unit_price_usd:Number(it.unit_price_usd||0),quantity:Number(it.quantity||1),import_duty_rate:0,statistics_rate:0,iva_rate:21}));
+      const calcPkgs=mPkgs.map(p=>({quantity:Number(p.quantity||1),gross_weight_kg:0,length_cm:Number(p.length_cm||0),width_cm:Number(p.width_cm||0),height_cm:Number(p.height_cm||0)}));
+      const opLike={channel:"maritimo_negro",origin,shipping_to_door:false,shipping_cost:0,has_battery:false,has_phones:false};
+      let bud={flete:0,seguro:0,surcharge:0,totalTax:0,totalAbonar:0};
+      try{bud=calcOpBudget(opLike,calcItems,calcPkgs,tariffs,config,overrides,{tax_condition:client.tax_condition||"consumidor_final"});}catch(e){console.error("budget calc op cont",e);}
+      nextNum++;const newCode=`AC-${String(nextNum).padStart(4,"0")}`;
+      const opBody={operation_code:newCode,client_id:cid,channel:"maritimo_negro",status:"arribo_argentina",origin,description:desc||null,eta:deliveryEta||null,budget_mode:"auto",budget_total:Number(bud.totalAbonar||0),budget_flete:Number(bud.flete||0),budget_surcharge:Number(bud.surcharge||0),budget_seguro:Number(bud.seguro||0),budget_taxes:Number(bud.totalTax||0)};
+      const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
+      const op=Array.isArray(r)?r[0]:r;
+      if(!op?.id)continue;
+      for(const id of ids)await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{operation_id:op.id}});
+      const trackByShipment={};ships.forEach(s=>{trackByShipment[s.id]=s.tracking_number||null;});
+      let pkgNum=0;
+      for(const p of mPkgs){pkgNum++;await dq("operation_packages",{method:"POST",token,body:{operation_id:op.id,package_number:pkgNum,quantity:Number(p.quantity||1),length_cm:p.length_cm||null,width_cm:p.width_cm||null,height_cm:p.height_cm||null,national_tracking:trackByShipment[p.shipment_id]||null}});}
+      for(const it of mItems)await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:it.description||null,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_usd||0),notes:it.notes||null}});
+      created++;
+    }
+    return created>0?` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} (1 por cliente, en aduana)`:"";
+  };
   const setContainerStatus=async(c,status)=>{
     const body={status};
     if(status==="arribado")body.arrived_at=new Date().toISOString().slice(0,10);
     if(status==="en_transito")body.arrived_at=null; // volver atrás desde arribado
     await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});
-    flash(`Contenedor ${c.code} → ${status==="en_transito"?"en tránsito":"arribado"}`);load();
+    let extra="";
+    if(status==="arribado"){try{extra=await createOpsForContainer(c);}catch(e){console.error("auto-ops arribo",e);extra=" · ⚠️ error creando ops (ver consola)";}}
+    flash(`Contenedor ${c.code} → ${status==="en_transito"?"en tránsito":"arribado"}${extra}`);load();
   };
   // Vincular cargas YA OPERADAS (con operation_id, sin contenedor) a un contenedor del historial.
   // Sirve para reconstruir el registro de qué vino en cada contenedor con ops anteriores a esta feature.
