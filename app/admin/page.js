@@ -4357,8 +4357,7 @@ function Calculator({token,clients}){
             {row(`Derechos (${ncm?.import_duty_rate||0}%)`,ch.derechos)}{row(`TE (${ncm?.statistics_rate||0}%)`,ch.tasa_e)}{row(`IVA (${ncm?.iva_rate??21}%)`,ch.iva)}
             {ch.isMar?<>{row("IVA Adic. (20%)",ch.ivaAdic)}{row("IIGG (6%)",ch.iigg)}{row("IIBB (5%)",ch.iibb)}</>:<>{row("Gasto doc.",ch.gastoDoc)}{row("IVA desemb.",ch.ivaDesemb)}</>}
           </>:<>
-            {row("Servicio Integral ARGENCARGO",ch.flete)}
-            {ch.surcharge>0&&row(`Recargo valor (${ch.surchargePct}%)`,ch.surcharge)}
+            {row("Servicio Integral de importación",Number(ch.flete||0)+Number(ch.surcharge||0))}
           </>}
           {delivCost>0&&row("Envío CABA",delivCost)}
           {row("TOTAL CLIENTE",clientTotal,true,true)}
@@ -9976,7 +9975,11 @@ function AdminCalculator({token}){
     const rowsServicios=[];
     const battExtraPdf=Number(ch.battExtra||0);
     const fleteBasePdf=Number(ch.flete||0)-battExtraPdf;
-    if(fleteBasePdf>0)rowsServicios.push(`<div class="row"><span>${ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete"}</span><span>USD ${fmt(fleteBasePdf)}</span></div>`);
+    // Recargo por valor: NO se discrimina, va folded dentro del Servicio Integral de importación.
+    const surchargePdf=Number(ch.surcharge||0);
+    const svcLabelPdf=ch.key==="maritimo_a_china"?"Servicio marítimo de importación":(surchargePdf>0?"Servicio Integral de importación":"Flete");
+    const svcAmtPdf=fleteBasePdf+surchargePdf;
+    if(svcAmtPdf>0)rowsServicios.push(`<div class="row"><span>${svcLabelPdf}</span><span>USD ${fmt(svcAmtPdf)}</span></div>`);
     if(battExtraPdf>0)rowsServicios.push(`<div class="row"><span>Recargo por baterías</span><span>USD ${fmt(battExtraPdf)}</span></div>`);
     if(Number(ch.seguro||0)>0)rowsServicios.push(`<div class="row"><span>Seguro</span><span>USD ${fmt(ch.seguro)}</span></div>`);
     // Sección 2: Aduana / impuestos
@@ -9993,7 +9996,7 @@ function AdminCalculator({token}){
       if(bd.isAereo&&desEff>0)rowsAduana.push(`<div class="row"><span>Desaduanaje (gastos documentales)</span><span>USD ${fmt(desEff)}</span></div>`);
       if(bd.isAereo&&ivaDesEff>0)rowsAduana.push(`<div class="row"><span>IVA 21% sobre desaduanaje</span><span>USD ${fmt(ivaDesEff)}</span></div>`);
     }
-    if(Number(ch.surcharge||0)>0)rowsServicios.push(`<div class="row"><span>Recargo por valor${ch.surchargePct?` (${ch.surchargePct}%)`:""}</span><span>USD ${fmt(ch.surcharge)}</span></div>`);
+    // (Recargo por valor ya folded arriba en el Servicio Integral — no se muestra como fila aparte.)
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Cotización Argencargo</title><style>
       /* @page con margin 0 hace que el navegador no tenga espacio para imprimir su header/footer
          (fecha, URL "about:blank", título, número de página). El contenido lleva su propio padding. */
@@ -10182,7 +10185,7 @@ function AdminCalculator({token}){
             <p style={{fontSize:10,color:"rgba(251,191,36,0.85)",margin:"3px 0 0",lineHeight:1.4,fontWeight:500}}>{ch.notVisibleToClient}</p>
           </div>}
           <div style={{flex:1,display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>
-            {Number(ch.flete||0)>0&&<div style={rowStyle}><span>{ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete"}</span><span style={valStyle}>USD {fmt(ch.flete)}</span></div>}
+            {(Number(ch.flete||0)+Number(ch.surcharge||0))>0&&<div style={rowStyle}><span>{ch.key==="maritimo_a_china"?"Servicio marítimo de importación":(Number(ch.surcharge||0)>0?"Servicio Integral de importación":"Flete")}</span><span style={valStyle}>USD {fmt(Number(ch.flete||0)+Number(ch.surcharge||0))}</span></div>}
             {Number(ch.seguro||0)>0&&<div style={rowStyle}><span>Seguro</span><span style={valStyle}>USD {fmt(ch.seguro)}</span></div>}
             {bd.isBlanco&&<>
               {bd.derechos>0&&<div style={rowStyle}><span>Derechos importación</span><span style={valStyle}>USD {fmt(bd.derechos)}</span></div>}
@@ -10206,7 +10209,7 @@ function AdminCalculator({token}){
                 {hasOv&&Math.abs(desEff-(bd.desembolsoAuto||0))>0.01&&<p style={{fontSize:10,color:"#fbbf24",margin:"2px 0 0",fontStyle:"italic"}}>Override (auto: USD {fmt(bd.desembolsoAuto||0)})</p>}
               </div>}
             </>}
-            {Number(ch.surcharge||0)>0&&<div style={rowStyle}><span>Recargo valor{ch.surchargePct?` (${ch.surchargePct}%)`:""}</span><span style={valStyle}>USD {fmt(ch.surcharge)}</span></div>}
+            {/* Recargo por valor folded en el Servicio Integral (no se discrimina como fila). */}
             {/* Detalle del recargo: solo aplica a canales B (no blanco). Si no hay recargo, mostramos
                 el vpu actual y el próximo umbral — para que se entienda por qué no aplicó. */}
             {!bd.isBlanco&&ch.vpu>0&&<div style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",padding:"4px 0 0",borderTop:"1px dashed rgba(255,255,255,0.05)",marginTop:2}}>

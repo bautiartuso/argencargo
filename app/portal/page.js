@@ -822,7 +822,7 @@ function OperationDetail({op,token,client,onBack}){
           </div>
         </>}
         {!isGI&&!isB&&bTax>0&&bRow("Total Impuestos",bTax)}
-        {!isGI&&(isB?(bt-shipCost):bFlete)>0&&bRow(isB?"Servicio Integral ARGENCARGO":"Flete internacional",isB?(bt-shipCost):bFlete)}
+        {!isGI&&(isB?(bt-shipCost):bFlete)>0&&bRow(isB?"Servicio Integral de importación":"Flete internacional",isB?(bt-shipCost):bFlete)}
         {!isGI&&!isB&&bSeg>0&&bRow("Seguro de carga",bSeg)}
         {!isGI&&shipCost>0&&bRow("Envío a Domicilio",shipCost)}
         {!isGI&&pmtTotal>0&&bRow(`Gestión de pagos${pmtAnticipado>0?` (cobrado USD ${pmtAnticipado.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de USD ${pmtTotal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}`,pmtPendiente,false,false,pmtPendiente>0?"#fb923c":"#22c55e")}
@@ -1154,10 +1154,9 @@ function printPortalCalcPdf({ch,products,totalFob,origin,clientName,delivCost=0}
     });
   }
   const rowsServicios=[];
-  if(Number(ch.flete||0)>0)rowsServicios.push(`<div class="row"><span>${ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete"}</span><span>USD ${fmt(ch.flete)}</span></div>`);
+  if((Number(ch.flete||0)+Number(ch.surcharge||0))>0)rowsServicios.push(`<div class="row"><span>${ch.key==="maritimo_a_china"?"Servicio marítimo de importación":(Number(ch.surcharge||0)>0?"Servicio Integral de importación":"Flete")}</span><span>USD ${fmt(Number(ch.flete||0)+Number(ch.surcharge||0))}</span></div>`);
   if(Number(ch.battExtra||0)>0)rowsServicios.push(`<div class="row"><span>Recargo por baterías</span><span>USD ${fmt(ch.battExtra)}</span></div>`);
   if(Number(ch.seguro||0)>0)rowsServicios.push(`<div class="row"><span>Seguro</span><span>USD ${fmt(ch.seguro)}</span></div>`);
-  if(Number(ch.surcharge||0)>0)rowsServicios.push(`<div class="row"><span>Recargo por valor${ch.surchargePct?` (${ch.surchargePct}%)`:""}</span><span>USD ${fmt(ch.surcharge)}</span></div>`);
   if(delivCost>0)rowsServicios.push(`<div class="row"><span>Envío CABA</span><span>USD ${fmt(delivCost)}</span></div>`);
   const rowsAduana=[];
   if(isBlanco){
@@ -1593,9 +1592,8 @@ function CalculatorPage({token,client}){
             <h3 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{mc.name}</h3>
             <button onClick={()=>setExpandedCh(null)} style={{fontSize:20,background:"none",border:"none",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>✕</button>
           </div>
-          {row(mc.key==="maritimo_a_china"?"Servicio marítimo de importación":"Servicio Integral ARGENCARGO",mc.flete)}
+          {row(mc.key==="maritimo_a_china"?"Servicio marítimo de importación":"Servicio Integral de importación",Number(mc.flete||0)+Number(mc.surcharge||0))}
           {mc.battExtra>0&&row("Recargo por baterías",mc.battExtra)}
-          {mc.surcharge>0&&row(`Recargo valor (${mc.surchargePct}%)`,mc.surcharge)}
           {delivCost>0&&row("Envío CABA",delivCost)}
           {row("TOTAL",total,true,true)}
         </div>
@@ -1815,8 +1813,7 @@ function CalculatorPage({token,client}){
             {row("TOTAL",modalCh.total+delivCost,true,true)}
           </div>
           </>:<div>
-            {row("Servicio Integral ARGENCARGO",modalCh.flete)}
-            {modalCh.surcharge>0&&row(`Recargo valor (${modalCh.surchargePct}%)`,modalCh.surcharge)}
+            {row("Servicio Integral de importación",Number(modalCh.flete||0)+Number(modalCh.surcharge||0))}
             {delivCost>0&&row("Envío CABA",delivCost)}
             {row("TOTAL",modalCh.total+delivCost,true,true)}
           </div>}
