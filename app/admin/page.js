@@ -3297,6 +3297,25 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
             }
           }
         }
+        // Flete local / otros cargados en ARS (cualquier canal NO marítimo blanco):
+        // costBody grabó cost_X=numOrNull(op.cost_X) que viene en 0 cuando el monto se cargó en ARS.
+        // El libro diario y la Rentabilidad leen cost_flete_local / cost_otros en USD, así que hay que
+        // dolarizar y persistir el USD final. (Marítimo blanco ya lo hace en su bloque de arriba.)
+        if(!isMarBl){
+          const arsFix={};
+          for(const prefix of ["cost_flete_local","cost_otros"]){
+            const cur=op[`${prefix}_currency`]||"USD";
+            const arsAmt=Number(op[`${prefix}_ars`]||0);
+            const rate=Number(op[`${prefix}_exchange_rate`]||0);
+            if(cur==="ARS"&&arsAmt>0&&rate>0){
+              arsFix[prefix]=Math.round((arsAmt/rate)*100)/100;
+            }
+          }
+          if(Object.keys(arsFix).length){
+            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:arsFix});
+            setOp(p=>({...p,...arsFix}));
+          }
+        }
         // Auto-create/update consolidated "Costos" entry in finanzas (USD costs)
         const totalCostosUSD=Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0);
         flash("Costos guardados");setSaving(false);
