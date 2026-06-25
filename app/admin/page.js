@@ -11113,6 +11113,7 @@ function MaritimePanel({token,allClients=[]}){
   const [shipments,setShipments]=useState([]);
   const [packages,setPackages]=useState([]);
   const [items,setItems]=useState([]);
+  const [mtTariffs,setMtTariffs]=useState([]);const [mtConfig,setMtConfig]=useState({});
   const [whs,setWhs]=useState([]);
   const [lo,setLo]=useState(true);
   const [originFilter,setOriginFilter]=useState("china");
@@ -11239,18 +11240,22 @@ function MaritimePanel({token,allClients=[]}){
 
   const load=async()=>{
     setLo(true);
-    const [sh,pk,it,wh,ct]=await Promise.all([
+    const [sh,pk,it,wh,ct,tf,cf]=await Promise.all([
       dq("maritime_shipments",{token,filters:"?select=*,operations(operation_code)&order=created_at.desc"}),
       dq("maritime_packages",{token,filters:"?select=*&order=bulto_number.asc"}),
       dq("maritime_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("maritime_warehouses",{token,filters:"?select=*&order=sort_order.asc,name.asc"}),
       dq("maritime_containers",{token,filters:"?select=*&order=created_at.asc"}),
+      dq("tariffs",{token,filters:"?select=*"}),
+      dq("calc_config",{token,filters:"?select=*"}),
     ]);
     setShipments(Array.isArray(sh)?sh:[]);
     setPackages(Array.isArray(pk)?pk:[]);
     setItems(Array.isArray(it)?it:[]);
     setWhs(Array.isArray(wh)?wh:[]);
     setContainers(Array.isArray(ct)?ct:[]);
+    setMtTariffs(Array.isArray(tf)?tf:[]);
+    const cfg={};(Array.isArray(cf)?cf:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setMtConfig(cfg);
     setLo(false);
   };
   useEffect(()=>{load();},[token]);
@@ -11296,6 +11301,21 @@ function MaritimePanel({token,allClients=[]}){
   const cbmOf=(shId)=>packages.filter(p=>p.shipment_id===shId).reduce((s,p)=>s+Number(p.cbm||0),0);
   // Total de bultos = suma de quantity (un row de qty=3 cuenta como 3 bultos)
   const bultosOf=(shId)=>packages.filter(p=>p.shipment_id===shId).reduce((s,p)=>s+Number(p.quantity||1),0);
+  // Importe estimado a cobrar de un contenedor: presupuesto marítimo integral (flete CBM +
+  // recargo por valor) por cliente, sumado. Estimación (sin overrides por cliente).
+  const importeContainer=(list)=>{
+    if(!list||!list.length||!mtTariffs.length)return null;
+    const byCli={};list.forEach(sh=>{if(sh.client_id)(byCli[sh.client_id]=byCli[sh.client_id]||[]).push(sh);});
+    let total=0;
+    Object.entries(byCli).forEach(([cid,ships])=>{
+      const sids=new Set(ships.map(s=>s.id));
+      const its=items.filter(it=>sids.has(it.shipment_id)).map(it=>({unit_price_usd:Number(it.unit_price_usd||0),quantity:Number(it.quantity||1),import_duty_rate:0,statistics_rate:0,iva_rate:21}));
+      const pks=packages.filter(p=>sids.has(p.shipment_id)).map(p=>({quantity:Number(p.quantity||1),gross_weight_kg:0,length_cm:Number(p.length_cm||0),width_cm:Number(p.width_cm||0),height_cm:Number(p.height_cm||0)}));
+      const cli=allClients.find(x=>x.id===cid)||{};
+      try{const b=calcOpBudget({channel:"maritimo_negro",origin:ships[0].origin==="usa"?"USA":"China",shipping_to_door:false,shipping_cost:0,has_battery:false,has_phones:false},its,pks,mtTariffs,mtConfig,[],{tax_condition:cli.tax_condition||"consumidor_final"});total+=Number(b.totalAbonar||0);}catch(e){}
+    });
+    return total;
+  };
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   const downloadPdf=(warehouse,origin,lang="es",withValues=true)=>{
@@ -11625,7 +11645,7 @@ function MaritimePanel({token,allClients=[]}){
             const list=byCont[c.id]||[];
             const cbmC=list.reduce((s,sh)=>s+cbmOf(sh.id),0);
             const bulC=list.reduce((s,sh)=>s+bultosOf(sh.id),0);
-            const chip=contChip(c.status);
+            const importeC=importeContainer(list);
             const collapsed=collapsedCont.has(c.id);
             const delEta=deliveryEtaStr(c.eta);
             const dateChip=(icon,label,val,col)=><span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap"}}>{icon} {label} <strong style={{color:col,fontFeatureSettings:'"tnum"'}}>{val}</strong></span>;
@@ -11634,8 +11654,8 @@ function MaritimePanel({token,allClients=[]}){
                 <span style={{fontSize:12,color:IC,transition:"transform 200ms",transform:collapsed?"rotate(0deg)":"rotate(90deg)",display:"inline-block",userSelect:"none"}}>▶</span>
                 <span style={{fontSize:12.5,fontWeight:800,color:IC}}>🚢 {c.code}</span>
                 {c.shipping_line&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#93c5fd",letterSpacing:"0.03em"}}>⚓ {c.shipping_line}</span>}
-                <span style={{fontSize:9.5,fontWeight:800,padding:"2px 8px",borderRadius:4,background:chip.bg,color:chip.fg,letterSpacing:"0.05em"}}>{chip.l}</span>
                 <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>{list.length} carga{list.length!==1?"s":""} · {bulC} bulto{bulC!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong></span>
+                {importeC!=null&&importeC>0&&<span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:5,background:"rgba(34,197,94,0.12)",color:"#4ade80",letterSpacing:"0.02em"}} title="Importe estimado a cobrar (flete + recargo por valor, sin overrides)">💰 A cobrar est. USD {importeC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
                 <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
