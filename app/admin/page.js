@@ -11344,8 +11344,8 @@ function MaritimePanel({token,allClients=[]}){
   };
   // Al arribar el contenedor: crear automáticamente UNA operación por cliente con las
   // cargas de ese contenedor que todavía no son operación. Presupuesto auto (flete CBM +
-  // recargo por valor). Nace en 'arribo_argentina' (llegó a puerto, falta aduana ~2 sem);
-  // NO se manda el mail de retiro todavía — eso es al marcar la op 'lista para retirar'.
+  // recargo por valor). Nace en 'entregada' (LISTA PARA RETIRAR) y se manda el mail de
+  // retiro al cliente — igual que el flujo manual createOperationFromShipments.
   const createOpsForContainer=async(c)=>{
     const conShips=shipments.filter(s=>s.container_id===c.id&&!s.operation_id);
     const byClient={};
@@ -11379,7 +11379,7 @@ function MaritimePanel({token,allClients=[]}){
       let bud={flete:0,seguro:0,surcharge:0,totalTax:0,totalAbonar:0};
       try{bud=calcOpBudget(opLike,calcItems,calcPkgs,tariffs,config,overrides,{tax_condition:client.tax_condition||"consumidor_final"});}catch(e){console.error("budget calc op cont",e);}
       nextNum++;const newCode=`AC-${String(nextNum).padStart(4,"0")}`;
-      const opBody={operation_code:newCode,client_id:cid,channel:"maritimo_negro",status:"arribo_argentina",origin,description:desc||null,eta:deliveryEta||null,budget_mode:"auto",budget_total:Number(bud.totalAbonar||0),budget_flete:Number(bud.flete||0),budget_surcharge:Number(bud.surcharge||0),budget_seguro:Number(bud.seguro||0),budget_taxes:Number(bud.totalTax||0)};
+      const opBody={operation_code:newCode,client_id:cid,channel:"maritimo_negro",status:"entregada",closed_at:new Date().toISOString(),origin,description:desc||null,eta:deliveryEta||null,budget_mode:"auto",budget_total:Number(bud.totalAbonar||0),budget_flete:Number(bud.flete||0),budget_surcharge:Number(bud.surcharge||0),budget_seguro:Number(bud.seguro||0),budget_taxes:Number(bud.totalTax||0)};
       const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
       const op=Array.isArray(r)?r[0]:r;
       if(!op?.id)continue;
@@ -11388,9 +11388,11 @@ function MaritimePanel({token,allClients=[]}){
       let pkgNum=0;
       for(const p of mPkgs){pkgNum++;await dq("operation_packages",{method:"POST",token,body:{operation_id:op.id,package_number:pkgNum,quantity:Number(p.quantity||1),length_cm:p.length_cm||null,width_cm:p.width_cm||null,height_cm:p.height_cm||null,national_tracking:trackByShipment[p.shipment_id]||null}});}
       for(const it of mItems)await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:it.description||null,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_usd||0),notes:it.notes||null}});
+      // Mail "lista para retirar" al cliente (igual que cualquier op que pasa a entregada).
+      try{await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"retiro"})});}catch(e){console.error("notify retiro auto",e);}
       created++;
     }
-    return created>0?` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} (1 por cliente, en aduana)`:"";
+    return created>0?` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} · LISTA${created>1?"S":""} PARA RETIRAR · mail enviado`:"";
   };
   const setContainerStatus=async(c,status)=>{
     const body={status};
