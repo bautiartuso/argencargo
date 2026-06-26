@@ -11565,7 +11565,7 @@ function MaritimePanel({token,allClients=[]}){
     {/* Form nuevo / editar — modal centrado para que no se pierda contexto al editar desde abajo */}
     {showNew&&<div onClick={()=>{setShowNew(false);setEditingId(null);}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 20px",overflowY:"auto"}}>
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:920,background:"#0F1F3A",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",margin:"auto"}}>
-        <MaritimeForm token={token} editing={editingId?shipments.find(s=>s.id===editingId):null} packages={editingId?packages.filter(p=>p.shipment_id===editingId):[]} items={editingId?items.filter(it=>it.shipment_id===editingId):[]} allClients={allClients} warehouses={whs} shipments={shipments} onCreateWarehouse={()=>setEditingWh({})} onSave={()=>{setShowNew(false);setEditingId(null);load();}} onCancel={()=>{setShowNew(false);setEditingId(null);}}/>
+        <MaritimeForm token={token} editing={editingId?shipments.find(s=>s.id===editingId):null} packages={editingId?packages.filter(p=>p.shipment_id===editingId):[]} items={editingId?items.filter(it=>it.shipment_id===editingId):[]} allClients={allClients} warehouses={whs} shipments={shipments} containers={containers} onCreateWarehouse={()=>setEditingWh({})} onSave={()=>{setShowNew(false);setEditingId(null);load();}} onCancel={()=>{setShowNew(false);setEditingId(null);}}/>
       </div>
     </div>}
 
@@ -11897,7 +11897,7 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
   </div>;
 }
 
-function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehouses=[],shipments=[],onCreateWarehouse,onSave,onCancel}){
+function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehouses=[],shipments=[],containers=[],onCreateWarehouse,onSave,onCancel}){
   const defaultWh=editing?warehouses.find(w=>w.name===editing.warehouse):warehouses[0];
   const [warehouseId,setWarehouseId]=useState(defaultWh?.id||"");
   const [trackingNumber,setTrackingNumber]=useState(editing?.tracking_number||"");
@@ -11905,6 +11905,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   const [productDescription,setProductDescription]=useState(editing?.product_description||"");
   const [clientId,setClientId]=useState(editing?.client_id||"");
   const [clientName,setClientName]=useState(editing?.client_name_snapshot||"");
+  const [containerId,setContainerId]=useState(editing?.container_id||"");
   const [pkgs,setPkgs]=useState(packages.length>0?packages.map(p=>({...p,length_cm:p.length_cm||"",width_cm:p.width_cm||"",height_cm:p.height_cm||"",quantity:p.quantity||1})):[{quantity:1,length_cm:"",width_cm:"",height_cm:""}]);
   const [its,setIts]=useState(items.length>0?items.map(i=>({...i,quantity:i.quantity||"",unit_price_usd:i.unit_price_usd||""})):[]);
   const [saving,setSaving]=useState(false);
@@ -11927,6 +11928,9 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       const existingInWh=shipments.filter(s=>s.warehouse===selectedWh.name&&s.id!==editing?.id).length;
       code=`#${existingInWh+1}`;
     }
+    // Contenedor: solo válido si pertenece al depósito elegido (sino se descarta).
+    const newCont=containers.some(c=>c.id===containerId&&c.warehouse===selectedWh.name)?containerId:null;
+    const prevCont=editing?.container_id||null;
     const body={
       shipment_code:code,
       tracking_number:trackingNumber.trim()||null,
@@ -11936,8 +11940,13 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       warehouse:selectedWh.name,
       client_id:clientId||null,
       client_name_snapshot:clientName.trim()||null,
+      container_id:newCont,
       updated_at:new Date().toISOString(),
     };
+    // Sincronizar estado con la asignación de contenedor (igual que el selector de la barra):
+    // asignar contenedor → 'en tránsito'; quitarlo → vuelve a 'en depósito'.
+    if(newCont&&newCont!==prevCont)body.status="en_camino_ar";
+    else if(!newCont&&prevCont)body.status="en_deposito";
     let shId=editing?.id;
     if(editing){
       await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
@@ -11960,7 +11969,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   return <div style={{marginBottom:20,padding:18,background:"rgba(96,165,250,0.04)",border:"1.5px solid rgba(96,165,250,0.25)",borderRadius:12}}>
     <h3 style={{fontSize:14,fontWeight:700,color:"#60a5fa",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{editing?"✎ Editar pedido marítimo":"+ Nuevo pedido marítimo"}</h3>
     <div style={{display:"grid",gridTemplateColumns:"2fr auto",gap:"0 12px",alignItems:"end"}}>
-      <Sel label="Depósito" value={warehouseId} onChange={setWarehouseId} options={[{value:"",label:"— Elegí un depósito —"},...warehouses.map(w=>({value:w.id,label:`${w.origin==="usa"?"🇺🇸":"🇨🇳"} ${w.name}`}))]}/>
+      <Sel label="Depósito" value={warehouseId} onChange={v=>{setWarehouseId(v);const wh=warehouses.find(w=>w.id===v);const c=containers.find(x=>x.id===containerId);if(containerId&&(!c||c.warehouse!==wh?.name))setContainerId("");}} options={[{value:"",label:"— Elegí un depósito —"},...warehouses.map(w=>({value:w.id,label:`${w.origin==="usa"?"🇺🇸":"🇨🇳"} ${w.name}`}))]}/>
       <div style={{marginBottom:12}}><Btn small variant="secondary" onClick={onCreateWarehouse}>+ Nuevo depósito</Btn></div>
     </div>
     {selectedWh?.rotulo&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"-6px 0 12px",fontStyle:"italic"}}>Rótulo del depósito: <span style={{color:IC,fontWeight:600}}>{selectedWh.rotulo}</span></p>}
@@ -11973,6 +11982,13 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       <Sel label="Cliente" value={clientId} onChange={v=>{setClientId(v);const c=allClients.find(x=>x.id===v);if(c)setClientName(`${c.first_name||""} ${c.last_name||""}`.trim());}} options={[{value:"",label:"— Seleccioná —"},...allClients.map(c=>({value:c.id,label:`${c.client_code||""} - ${c.first_name||""} ${c.last_name||""}`.trim()}))]}/>
       <Inp label="Nombre cliente (override)" value={clientName} onChange={setClientName} placeholder="Si no está cargado el cliente"/>
     </div>
+    {selectedWh&&(()=>{
+      const whConts=containers.filter(c=>c.warehouse===selectedWh.name&&c.status!=="arribado");
+      return <div>
+        <Sel label="Contenedor" value={containerId} onChange={setContainerId} options={[{value:"",label:"— Sin contenedor (queda en depósito) —"},...whConts.map(c=>({value:c.id,label:`🚢 ${c.code}${c.shipping_line?` · ${c.shipping_line}`:""}`}))]}/>
+        <p style={{fontSize:10.5,color:containerId?"#60a5fa":"rgba(255,255,255,0.4)",margin:"-6px 0 8px",fontStyle:"italic"}}>{containerId?"Al asignar un contenedor, la carga pasa a 'en tránsito'.":whConts.length===0?"Este depósito no tiene contenedores en tránsito (creá uno desde el panel).":"Sin contenedor: la carga queda en depósito."}</p>
+      </div>;
+    })()}
 
     {/* Bultos */}
     <div style={{marginTop:12,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
