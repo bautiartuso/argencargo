@@ -11148,7 +11148,7 @@ function MaritimePanel({token,allClients=[]}){
   const [editingContainer,setEditingContainer]=useState(null); // {warehouse} nuevo | row al editar
   const [selectedShipments,setSelectedShipments]=useState(new Set()); // ids para crear op consolidada
   const [creatingOp,setCreatingOp]=useState(false);
-  const [collapsedCont,setCollapsedCont]=useState(new Set()); // contenedores colapsados (para no ver todo desplegado)
+  const [expandedCont,setExpandedCont]=useState(new Set()); // contenedores ABIERTOS (default: todos cerrados; el usuario los abre)
   const [msg,setMsg]=useState("");
   const flash=(t)=>{setMsg(t);setTimeout(()=>setMsg(""),3000);};
   // Fecha estimada de entrega de la mercadería = arribo estimado a puerto (eta) + 2 semanas.
@@ -11156,7 +11156,7 @@ function MaritimePanel({token,allClients=[]}){
   // ETA efectiva = ETA a puerto + días de demora por transbordo (Brasil, etc.). 0 = sin transbordo.
   const tbDays=(c)=>Number(c?.transbordo_dias||0);
   const effEta=(c)=>{if(!c?.eta)return c?.eta||null;const d=tbDays(c);if(!d)return c.eta;const x=new Date(c.eta+"T12:00:00");x.setDate(x.getDate()+d);return x.toISOString().slice(0,10);};
-  const toggleCont=(id)=>setCollapsedCont(prev=>{const n=new Set(prev);if(n.has(id))n.delete(id);else n.add(id);return n;});
+  const toggleCont=(id)=>setExpandedCont(prev=>{const n=new Set(prev);if(n.has(id))n.delete(id);else n.add(id);return n;});
 
   // Cambio de estado de un shipment.
   //  proveedor → en_deposito (con fecha de recepción)
@@ -11695,7 +11695,7 @@ function MaritimePanel({token,allClients=[]}){
             const cbmC=list.reduce((s,sh)=>s+cbmOf(sh.id),0);
             const bulC=list.reduce((s,sh)=>s+bultosOf(sh.id),0);
             const importeC=importeContainer(list);
-            const collapsed=collapsedCont.has(c.id);
+            const collapsed=!expandedCont.has(c.id);
             const eEta=effEta(c);const tb=tbDays(c);
             const delEta=deliveryEtaStr(eEta);
             const dateChip=(icon,label,val,col)=><span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap"}}>{icon} {label} <strong style={{color:col,fontFeatureSettings:'"tnum"'}}>{val}</strong></span>;
@@ -11726,11 +11726,11 @@ function MaritimePanel({token,allClients=[]}){
           return <div>
             {whConts.map(c=><div key={c.id}>
               {contHeader(c)}
-              {!collapsedCont.has(c.id)&&((byCont[c.id]||[]).length>0?renderTable(byCont[c.id]):<p style={{padding:"10px 18px",fontSize:11.5,color:"rgba(255,255,255,0.35)",fontStyle:"italic",margin:0}}>Sin cargas asignadas — tildá cargas con el checkbox y usá el selector "🚢 Contenedor…" de la barra de selección.</p>)}
+              {expandedCont.has(c.id)&&((byCont[c.id]||[]).length>0?renderTable(byCont[c.id]):<p style={{padding:"10px 18px",fontSize:11.5,color:"rgba(255,255,255,0.35)",fontStyle:"italic",margin:0}}>Sin cargas asignadas — tildá cargas con el checkbox y usá el selector "🚢 Contenedor…" de la barra de selección.</p>)}
             </div>)}
             {whConts.length>0&&noneList.length>0&&(()=>{
               const noneKey=`__none_${wh}`;
-              const noneCollapsed=collapsedCont.has(noneKey);
+              const noneCollapsed=!expandedCont.has(noneKey);
               return <>
                 <div onClick={()=>toggleCont(noneKey)} title={noneCollapsed?"Abrir":"Cerrar"} style={{padding:"9px 18px",background:"rgba(255,255,255,0.025)",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.05)",display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
                   <span style={{fontSize:11,color:"rgba(255,255,255,0.5)",transition:"transform 200ms",transform:noneCollapsed?"rotate(0deg)":"rotate(90deg)",display:"inline-block",userSelect:"none"}}>▶</span>
