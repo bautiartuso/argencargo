@@ -11893,9 +11893,9 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
           {[{k:"en_transito",l:"🚢 En tránsito"},{k:"arribado",l:"⚓ Arribado"}].map(o=><button key={o.k} onClick={()=>setStatus(o.k)} style={{flex:1,padding:"7px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:status===o.k?"rgba(96,165,250,0.25)":"transparent",color:status===o.k?"#60a5fa":"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
         </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:"0 12px"}}>
-        <Inp label="Notas (opcional)" value={notes} onChange={setNotes} placeholder="Booking, observaciones…"/>
-        <Inp label="Costo estimado (USD)" type="number" value={costEst} onChange={setCostEst} placeholder="Para estimar ganancia"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+        <Inp label="Notas (opcional)" value={notes} onChange={setNotes} placeholder="Booking, obs…"/>
+        <Inp label="Costo estimado USD" type="number" value={costEst} onChange={setCostEst} placeholder="Ej: 1800"/>
       </div>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
         <Btn variant="secondary" small onClick={onCancel} disabled={saving}>Cancelar</Btn>
