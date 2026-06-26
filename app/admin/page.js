@@ -11610,7 +11610,7 @@ function MaritimePanel({token,allClients=[]}){
           // Los contenedores ARRIBADOS salen del flujo activo → viven en la sección
           // "Historial de contenedores" al pie de la página (junto con sus cargas).
           const arrivedIds=new Set(containers.filter(c=>c.status==="arribado").map(c=>c.id));
-          const whConts=containers.filter(c=>c.warehouse===wh&&c.status!=="arribado");
+          const whConts=containers.filter(c=>c.warehouse===wh&&c.status!=="arribado").sort((a,b)=>{const ea=effEta(a),eb=effEta(b);if(!ea&&!eb)return 0;if(!ea)return 1;if(!eb)return -1;return ea.localeCompare(eb);});
           const byCont={};wsList.forEach(s=>{
             if(s.container_id&&arrivedIds.has(s.container_id))return; // va al historial, no al activo
             const k=s.container_id&&whConts.some(c=>c.id===s.container_id)?s.container_id:"__none";
