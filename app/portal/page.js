@@ -2893,6 +2893,13 @@ function MaritimeCargoSection({cargo}){
           {cell("📦 Entrega estimada",fmtD(c.entrega_estimada),"#4ade80")}
           {cell("Bultos",String(c.bultos||0),"#fff")}
         </div>
+        {c.total_estimado!=null&&<div style={{marginTop:12,padding:"11px 14px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div>
+            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.6)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>💵 Total a abonar (estimado)</p>
+            <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>Sujeto a confirmación al arribo</p>
+          </div>
+          <span style={{fontSize:19,fontWeight:800,color:"#4ade80",fontVariantNumeric:"tabular-nums"}}>USD {Number(c.total_estimado).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        </div>}
         {c.transbordo&&<div style={{marginTop:12,padding:"9px 12px",background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:9,display:"flex",alignItems:"center",gap:9}}>
           <span style={{fontSize:16}}>🔄</span>
           <p style={{fontSize:12,color:"#fdba74",margin:0,lineHeight:1.45}}>El barco hace un <b>transbordo en {c.transbordo.lugar}</b>, lo que suma una demora aproximada de <b>{c.transbordo.dias} días</b>. Las fechas de arribo y entrega de arriba ya incluyen esta demora.</p>

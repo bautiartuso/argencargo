@@ -63,11 +63,38 @@ export async function GET(req) {
   const contMap = {};
   (Array.isArray(conts) ? conts : []).forEach(c => { contMap[c.id] = c; });
 
-  // Bultos por carga.
+  // Bultos + CBM por carga.
   const shipIds = list.map(s => s.id);
-  const pkgs = await svc(`/rest/v1/maritime_packages?shipment_id=in.(${shipIds.join(",")})&select=shipment_id,quantity`);
-  const bultos = {};
-  (Array.isArray(pkgs) ? pkgs : []).forEach(p => { bultos[p.shipment_id] = (bultos[p.shipment_id] || 0) + Number(p.quantity || 1); });
+  const pkgs = await svc(`/rest/v1/maritime_packages?shipment_id=in.(${shipIds.join(",")})&select=shipment_id,quantity,cbm`);
+  const bultos = {}, cbmByShip = {};
+  (Array.isArray(pkgs) ? pkgs : []).forEach(p => {
+    bultos[p.shipment_id] = (bultos[p.shipment_id] || 0) + Number(p.quantity || 1);
+    cbmByShip[p.shipment_id] = (cbmByShip[p.shipment_id] || 0) + Number(p.cbm || 0);
+  });
+
+  // FOB por carga (para el recargo por valor) + tarifas marítimas + overrides del cliente,
+  // para estimar el total a abonar (mismo criterio que el panel admin).
+  const its = await svc(`/rest/v1/maritime_items?shipment_id=in.(${shipIds.join(",")})&select=shipment_id,unit_price_usd,quantity`);
+  const fobByShip = {};
+  (Array.isArray(its) ? its : []).forEach(it => { fobByShip[it.shipment_id] = (fobByShip[it.shipment_id] || 0) + Number(it.unit_price_usd || 0) * Number(it.quantity || 1); });
+  const tariffs = await svc(`/rest/v1/tariffs?service_key=eq.maritimo_b&select=id,type,min_qty,max_qty,rate`);
+  const ovs = await svc(`/rest/v1/client_tariff_overrides?client_id=eq.${clientId}&select=tariff_id,custom_rate`);
+  const tList = Array.isArray(tariffs) ? tariffs : [];
+  const mbRates = tList.filter(t => t.type === "rate").map(t => ({ id: t.id, min: Number(t.min_qty || 0), max: t.max_qty != null ? Number(t.max_qty) : Infinity, rate: Number(t.rate || 0) })).sort((a, b) => a.min - b.min);
+  const mbSurch = tList.filter(t => t.type === "surcharge").map(t => ({ min: Number(t.min_qty || 0), rate: Number(t.rate || 0) })).sort((a, b) => b.min - a.min);
+  const ovMap = {};
+  (Array.isArray(ovs) ? ovs : []).forEach(o => { ovMap[o.tariff_id] = Number(o.custom_rate); });
+  const fleteRate = (cbm) => {
+    for (const r of mbRates) { if (cbm >= r.min && cbm < r.max) return ovMap[r.id] != null ? ovMap[r.id] : r.rate; }
+    const last = mbRates[mbRates.length - 1];
+    return last ? (ovMap[last.id] != null ? ovMap[last.id] : last.rate) : 0;
+  };
+  const surchargeFor = (fob, cbm) => {
+    if (!(fob > 0 && cbm > 0)) return 0;
+    const vpu = fob / cbm;
+    for (const s of mbSurch) { if (vpu >= s.min) return Math.round(fob * (s.rate / 100) * 100) / 100; }
+    return 0;
+  };
 
   // Agrupar por contenedor: todas las cargas del cliente en un mismo contenedor son
   // UNA sola operación futura → una sola tarjeta. Distinto contenedor → tarjetas separadas.
@@ -83,6 +110,8 @@ export async function GET(req) {
         id: cid,
         descriptions: [],
         bultos: 0,
+        _cbm: 0,
+        _fob: 0,
         container_status: c.status || null,       // en_transito | arribado
         eta_puerto: eEta,
         entrega_estimada: plus14(eEta),
@@ -91,7 +120,17 @@ export async function GET(req) {
     }
     if (s.product_description) groups[cid].descriptions.push(s.product_description);
     groups[cid].bultos += (bultos[s.id] || 0);
+    groups[cid]._cbm += (cbmByShip[s.id] || 0);
+    groups[cid]._fob += (fobByShip[s.id] || 0);
   });
 
-  return Response.json({ cargo: Object.values(groups) });
+  // Total a abonar estimado por contenedor = flete (CBM combinado × rango) + recargo por valor.
+  const cargo = Object.values(groups).map(g => {
+    const flete = g._cbm * fleteRate(g._cbm);
+    const total = Math.round((flete + surchargeFor(g._fob, g._cbm)) * 100) / 100;
+    const { _cbm, _fob, ...rest } = g;
+    return { ...rest, total_estimado: total > 0 ? total : null };
+  });
+
+  return Response.json({ cargo });
 }
