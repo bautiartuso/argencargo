@@ -18,6 +18,16 @@ const GOLD_GRADIENT="linear-gradient(135deg, #B8956A 0%, #E8D098 50%, #B8956A 10
 const GOLD_GLOW="0 0 20px rgba(184,149,106,0.25)";
 const GOLD_GLOW_STRONG="0 0 28px rgba(184,149,106,0.4)";
 const IC=GOLD_LIGHT; // IC (accent) alias al oro claro
+// Aviso único al cliente (se muestra una sola vez; se recuerda en clients.announcement_seen).
+// Para un aviso futuro, cambiar la KEY y el contenido → vuelve a aparecer una vez por cliente.
+const ANNOUNCEMENT={
+  key:"courier_price_drop_2026_06",
+  emoji:"✈️",
+  title:"¡Bajamos el precio del Courier Comercial!",
+  intro:"Buenas noticias: ajustamos a la baja nuestra tarifa de courier aéreo. Estos son los nuevos valores por kilo:",
+  rows:[["0 – 60 kg","USD 14 / kg"],["60 – 100 kg","USD 13 / kg"],["Más de 100 kg","USD 12 / kg"]],
+  foot:"Aplica a tus próximas importaciones. ¡Gracias por elegir Argencargo!",
+};
 // Tier system: Silver / Gold / Diamond
 const TIERS={
   standard:{label:"Standard",min:0,next:100,color:"#94a3b8",light:"rgba(148,163,184,0.9)",gradient:"linear-gradient(135deg,#475569,#64748b,#475569)",glow:"0 0 18px rgba(100,116,139,0.2)",bonus:0,discount:0,icon:"○"},
@@ -2935,6 +2945,30 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
 // el flag en la DB para no volver a aparecer. Puede re-lanzarse desde
 // la página "Mi Cuenta" con el botón "Ver tutorial de nuevo".
 // ═══════════════════════════════════════════════════════════════
+function AnnouncementModal({client,token,onClose}){
+  const [closing,setClosing]=useState(false);
+  const dismiss=async()=>{
+    if(closing)return;
+    setClosing(true);
+    try{await dq("clients",{method:"PATCH",token,filters:`?id=eq.${client.id}`,body:{announcement_seen:ANNOUNCEMENT.key}});}catch(e){console.error("announcement dismiss",e);}
+    onClose();
+  };
+  return <div onClick={dismiss} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(5,12,24,0.78)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div onClick={e=>e.stopPropagation()} style={{maxWidth:460,width:"100%",background:"linear-gradient(180deg, rgba(20,30,48,0.98), rgba(12,20,36,0.98))",border:"1px solid rgba(184,149,106,0.35)",borderRadius:18,padding:"30px 28px",boxShadow:"0 24px 70px rgba(0,0,0,0.5)",textAlign:"center"}}>
+      <div style={{fontSize:40,marginBottom:8}}>{ANNOUNCEMENT.emoji}</div>
+      <h2 style={{fontSize:20,fontWeight:800,margin:"0 0 10px",background:GOLD_GRADIENT,WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>{ANNOUNCEMENT.title}</h2>
+      <p style={{fontSize:13.5,color:"rgba(255,255,255,0.7)",margin:"0 0 18px",lineHeight:1.5}}>{ANNOUNCEMENT.intro}</p>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>
+        {ANNOUNCEMENT.rows.map(([k,v],i)=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.18)",borderRadius:10}}>
+          <span style={{fontSize:13,color:"rgba(255,255,255,0.75)"}}>{k}</span>
+          <span style={{fontSize:15,fontWeight:800,color:GOLD_LIGHT,fontFeatureSettings:'"tnum"'}}>{v}</span>
+        </div>)}
+      </div>
+      <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:"0 0 18px",fontStyle:"italic"}}>{ANNOUNCEMENT.foot}</p>
+      <button onClick={dismiss} disabled={closing} style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:GOLD_GRADIENT,color:"#1a1206",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{closing?"...":"¡Entendido!"}</button>
+    </div>
+  </div>;
+}
 function TutorialOverlay({client,token,onClose,onComplete}){
   const [i,setI]=useState(0);
   const [closing,setClosing]=useState(false);
@@ -3237,6 +3271,7 @@ export default function Page(){
     </div>}
     <div style={{paddingTop:adminPreview?38:0}}><Dashboard profile={profile} client={client} user={session.user} token={session.token} onLogout={logout} onRestartTutorial={()=>setShowTutorial(true)}/></div>
     {(showTutorial||(client&&!adminPreview&&!client.tutorial_completed))&&<TutorialOverlay client={client} token={session.token} onClose={()=>setShowTutorial(false)} onComplete={()=>setClient(c=>c?{...c,tutorial_completed:true}:c)}/>}
+    {client&&!adminPreview&&client.tutorial_completed&&client.announcement_seen!==ANNOUNCEMENT.key&&<AnnouncementModal client={client} token={session.token} onClose={()=>setClient(c=>c?{...c,announcement_seen:ANNOUNCEMENT.key}:c)}/>}
   </>;
   if(okMsg)return <><ToastStack/><AuthPage><div style={{textAlign:"center"}}><p style={{fontSize:15,color:"rgba(255,255,255,0.65)",margin:"0 0 24px"}}>{okMsg}</p><PBtn onClick={()=>{setOkMsg("");setView("login");setForm(INIT);setStep(0);}}>{t("auth.login.cta")} →</PBtn></div></AuthPage></>;
   const ST=[t("profile.personalData"),t("profile.shippingData"),t("auth.taxCondition")];
