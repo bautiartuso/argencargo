@@ -11323,20 +11323,29 @@ function MaritimePanel({token,allClients=[]}){
   const cbmOf=(shId)=>packages.filter(p=>p.shipment_id===shId).reduce((s,p)=>s+Number(p.cbm||0),0);
   // Total de bultos = suma de quantity (un row de qty=3 cuenta como 3 bultos)
   const bultosOf=(shId)=>packages.filter(p=>p.shipment_id===shId).reduce((s,p)=>s+Number(p.quantity||1),0);
-  // Importe estimado a cobrar de un contenedor: presupuesto marítimo integral (flete CBM +
-  // recargo por valor) por cliente, sumado. Aplica las tarifas especiales (overrides) de
-  // cada cliente, así el estimado coincide con lo que se cobra cuando se crea la op.
+  // Tarifa marítimo_b (USD/m³) según el RANGO de CBM, con override del cliente.
+  const mbRatesSorted=mtTariffs.filter(t=>t.service_key==="maritimo_b"&&t.type==="rate").map(t=>({id:t.id,min:Number(t.min_qty||0),max:t.max_qty!=null?Number(t.max_qty):Infinity,rate:Number(t.rate||0)})).sort((a,b)=>a.min-b.min);
+  const mbSurchSorted=mtTariffs.filter(t=>t.service_key==="maritimo_b"&&t.type==="surcharge").map(t=>({min:Number(t.min_qty||0),rate:Number(t.rate||0)})).sort((a,b)=>b.min-a.min);
+  const fleteRateForCbm=(cbm,overrides)=>{
+    for(const r of mbRatesSorted){if(cbm>=r.min&&cbm<r.max){const ov=(overrides||[]).find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):r.rate;}}
+    const last=mbRatesSorted[mbRatesSorted.length-1];return last?last.rate:0;
+  };
+  // Recargo por valor (canal B): si vpu = FOB/CBM supera el umbral, cobra ese % del FOB.
+  const surchargeForValue=(fob,cbm)=>{if(!(fob>0&&cbm>0))return 0;const vpu=fob/cbm;for(const s of mbSurchSorted){if(vpu>=s.min)return Math.round(fob*(s.rate/100)*100)/100;}return 0;};
+  // Importe estimado a cobrar de un contenedor. Por CLIENTE se trata como UNA sola operación:
+  // se SUMA el CBM de todas sus cargas del contenedor y RECIÉN AHÍ se aplica el rango de tarifa
+  // (no carga por carga). a cobrar = flete (CBM combinado × rango) + recargo por valor.
   const importeContainer=(list)=>{
     if(!list||!list.length||!mtTariffs.length)return null;
     const byCli={};list.forEach(sh=>{if(sh.client_id)(byCli[sh.client_id]=byCli[sh.client_id]||[]).push(sh);});
     let total=0;
     Object.entries(byCli).forEach(([cid,ships])=>{
       const sids=new Set(ships.map(s=>s.id));
-      const its=items.filter(it=>sids.has(it.shipment_id)).map(it=>({unit_price_usd:Number(it.unit_price_usd||0),quantity:Number(it.quantity||1),import_duty_rate:0,statistics_rate:0,iva_rate:21}));
-      const pks=packages.filter(p=>sids.has(p.shipment_id)).map(p=>({quantity:Number(p.quantity||1),gross_weight_kg:0,length_cm:Number(p.length_cm||0),width_cm:Number(p.width_cm||0),height_cm:Number(p.height_cm||0)}));
-      const cli=allClients.find(x=>x.id===cid)||{};
+      const cbm=ships.reduce((s,sh)=>s+cbmOf(sh.id),0);
+      const fob=items.filter(it=>sids.has(it.shipment_id)).reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
       const overrides=mtOverrides[cid]||[];
-      try{const b=calcOpBudget({channel:"maritimo_negro",origin:ships[0].origin==="usa"?"USA":"China",shipping_to_door:false,shipping_cost:0,has_battery:false,has_phones:false},its,pks,mtTariffs,mtConfig,overrides,{tax_condition:cli.tax_condition||"consumidor_final"});total+=Number(b.totalAbonar||0);}catch(e){}
+      const flete=cbm*fleteRateForCbm(cbm,overrides);
+      total+=flete+surchargeForValue(fob,cbm);
     });
     return total;
   };
@@ -11350,18 +11359,6 @@ function MaritimePanel({token,allClients=[]}){
       if(v!=null){total+=v;any=true;}
     });
     return any?total:null;
-  };
-  // ── Costo de flete (canal B integral): único costo del marítimo. cbm × USD/m³ ──
-  // Tarifa de la carga = override propio (cost_per_cbm) o el default del depósito.
-  const rateOf=(sh)=>{const r=sh.cost_per_cbm;if(r!=null&&r!=="")return Number(r);const w=whByName[sh.warehouse];return w&&w.default_cost_per_cbm!=null?Number(w.default_cost_per_cbm):0;};
-  const costOf=(sh)=>cbmOf(sh.id)*rateOf(sh);
-  const costContainer=(list)=>(list||[]).reduce((s,sh)=>s+costOf(sh),0);
-  // Guarda la tarifa USD/m³ de una carga (null = usar default del depósito).
-  const saveRate=async(sh,val)=>{
-    const v=String(val).trim();const r=v===""?null:Number(v.replace(",","."));
-    if(r!=null&&!isFinite(r))return;
-    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{cost_per_cbm:r}});
-    setShipments(prev=>prev.map(s=>s.id===sh.id?{...s,cost_per_cbm:r}:s));
   };
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
@@ -11446,11 +11443,7 @@ function MaritimePanel({token,allClients=[]}){
       let bud={flete:0,seguro:0,surcharge:0,totalTax:0,totalAbonar:0};
       try{bud=calcOpBudget(opLike,calcItems,calcPkgs,tariffs,config,overrides,{tax_condition:client.tax_condition||"consumidor_final"});}catch(e){console.error("budget calc op cont",e);}
       nextNum++;const newCode=`AC-${String(nextNum).padStart(4,"0")}`;
-      // Costo de flete (canal B): suma de (CBM × USD/m³) de las cargas del cliente. Se asocia
-      // como gasto con fecha de pago = día del arribo (que es cuando el dueño paga el flete).
-      const costFlete=Math.round(ships.reduce((s,sh)=>s+costOf(sh),0)*100)/100;
-      const arribDate=c.arrived_at||new Date().toISOString().slice(0,10);
-      const opBody={operation_code:newCode,client_id:cid,channel:"maritimo_negro",status:"entregada",closed_at:new Date().toISOString(),origin,description:desc||null,eta:deliveryEta||null,budget_mode:"auto",budget_total:Number(bud.totalAbonar||0),budget_flete:Number(bud.flete||0),budget_surcharge:Number(bud.surcharge||0),budget_seguro:Number(bud.seguro||0),budget_taxes:Number(bud.totalTax||0),...(costFlete>0?{cost_flete:costFlete,cost_flete_method:"transferencia",cost_flete_paid_at:arribDate}:{})};
+      const opBody={operation_code:newCode,client_id:cid,channel:"maritimo_negro",status:"entregada",closed_at:new Date().toISOString(),origin,description:desc||null,eta:deliveryEta||null,budget_mode:"auto",budget_total:Number(bud.totalAbonar||0),budget_flete:Number(bud.flete||0),budget_surcharge:Number(bud.surcharge||0),budget_seguro:Number(bud.seguro||0),budget_taxes:Number(bud.totalTax||0)};
       const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
       const op=Array.isArray(r)?r[0]:r;
       if(!op?.id)continue;
@@ -11689,16 +11682,6 @@ function MaritimePanel({token,allClients=[]}){
                     {shItems.length===0?<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin detalle cargado</p>:<table style={{width:"100%",fontSize:11.5,borderCollapse:"collapse"}}><tbody>{shItems.map((it,i)=><tr key={it.id} style={{borderBottom:i<shItems.length-1?"1px solid rgba(255,255,255,0.04)":"none"}}><td style={{padding:"3px 0",color:"rgba(255,255,255,0.7)"}}>{it.description}</td><td style={{padding:"3px 0",color:"rgba(255,255,255,0.55)",textAlign:"right",whiteSpace:"nowrap"}}>{it.quantity} u. × {usd(it.unit_price_usd)}</td><td style={{padding:"3px 0",textAlign:"right",color:GOLD_LIGHT,fontFeatureSettings:'"tnum"',fontWeight:600,whiteSpace:"nowrap"}}>{usd(Number(it.quantity||0)*Number(it.unit_price_usd||0))}</td></tr>)}</tbody></table>}
                   </div>
                 </div>
-                <div style={{marginTop:12,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",padding:"8px 11px",background:"rgba(34,197,94,0.05)",border:"1px solid rgba(34,197,94,0.15)",borderRadius:8}} onClick={e=>e.stopPropagation()}>
-                  <span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Costo flete</span>
-                  <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,color:"rgba(255,255,255,0.6)"}}>USD/m³
-                    <input type="number" step="any" defaultValue={sh.cost_per_cbm??""} placeholder={whByName[sh.warehouse]?.default_cost_per_cbm!=null?String(whByName[sh.warehouse].default_cost_per_cbm):"0"} onBlur={e=>{if(String(e.target.value).trim()!==String(sh.cost_per_cbm??""))saveRate(sh,e.target.value);}} style={{width:84,padding:"4px 7px",fontSize:12,borderRadius:5,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",fontFeatureSettings:'"tnum"'}}/>
-                  </span>
-                  <span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>× CBM {cbm.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})} =</span>
-                  <span style={{fontSize:13,fontWeight:800,color:"#f87171",fontFeatureSettings:'"tnum"'}}>USD {costOf(sh).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-                  {sh.cost_per_cbm==null&&whByName[sh.warehouse]?.default_cost_per_cbm!=null&&<span style={{fontSize:10,color:"rgba(255,255,255,0.35)",fontStyle:"italic"}}>tarifa default del depósito</span>}
-                  {sh.cost_per_cbm==null&&whByName[sh.warehouse]?.default_cost_per_cbm==null&&<span style={{fontSize:10,color:"#fbbf24",fontStyle:"italic"}}>⚠️ sin tarifa — cargá USD/m³ o el default del depósito</span>}
-                </div>
                 {sh.notes&&<p style={{fontSize:11,color:"#fbbf24",fontStyle:"italic",margin:"10px 0 0",padding:"6px 10px",background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:6}}>■ {sh.notes}</p>}
               </td></tr>}
             </Fragment>;
@@ -11709,8 +11692,6 @@ function MaritimePanel({token,allClients=[]}){
             const cbmC=list.reduce((s,sh)=>s+cbmOf(sh.id),0);
             const bulC=list.reduce((s,sh)=>s+bultosOf(sh.id),0);
             const importeC=importeContainer(list);
-            const costC=costContainer(list);
-            const gananciaC=importeC!=null?importeC-costC:null;
             const collapsed=collapsedCont.has(c.id);
             const delEta=deliveryEtaStr(c.eta);
             const dateChip=(icon,label,val,col)=><span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap"}}>{icon} {label} <strong style={{color:col,fontFeatureSettings:'"tnum"'}}>{val}</strong></span>;
@@ -11720,9 +11701,7 @@ function MaritimePanel({token,allClients=[]}){
                 <span style={{fontSize:12.5,fontWeight:800,color:IC}}>🚢 {c.code}</span>
                 {c.shipping_line&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#93c5fd",letterSpacing:"0.03em"}}>⚓ {c.shipping_line}</span>}
                 <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>{list.length} carga{list.length!==1?"s":""} · {bulC} bulto{bulC!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong></span>
-                {importeC!=null&&importeC>0&&<span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:5,background:"rgba(34,197,94,0.12)",color:"#4ade80",letterSpacing:"0.02em"}} title="Importe estimado a cobrar (flete + recargo por valor, con tarifas por cliente)">💰 A cobrar est. USD {importeC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
-                {costC>0&&<span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:5,background:"rgba(248,113,113,0.1)",color:"#f87171",letterSpacing:"0.02em"}} title="Costo de flete estimado (CBM × USD/m³ por carga). Abrí cada carga para ajustar la tarifa.">📦 Costo USD {costC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
-                {gananciaC!=null&&costC>0&&<span style={{fontSize:11,fontWeight:800,padding:"2px 9px",borderRadius:5,background:gananciaC>=0?"rgba(74,222,128,0.16)":"rgba(248,113,113,0.16)",color:gananciaC>=0?"#4ade80":"#f87171",letterSpacing:"0.02em"}} title="Ganancia estimada = a cobrar − costo de flete">📈 Ganancia est. USD {gananciaC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+                {importeC!=null&&importeC>0&&<span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:5,background:"rgba(34,197,94,0.12)",color:"#4ade80",letterSpacing:"0.02em"}} title="Importe estimado a cobrar (flete + recargo por valor). Por cliente: se suma el CBM de todas sus cargas y se aplica el rango de tarifa.">💰 A cobrar est. USD {importeC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
                 <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
@@ -12023,13 +12002,12 @@ function WarehouseForm({token,editing,onSave,onCancel}){
   const [name,setName]=useState(editing?.name||"");
   const [rotulo,setRotulo]=useState(editing?.rotulo||"");
   const [origin,setOrigin]=useState(editing?.origin||"china");
-  const [costCbm,setCostCbm]=useState(editing?.default_cost_per_cbm!=null?String(editing.default_cost_per_cbm):"");
   const [saving,setSaving]=useState(false);
   const save=async()=>{
     if(!name.trim()){alertDialog("Cargá el nombre del depósito");return;}
     setSaving(true);
     const newName=name.trim();
-    const body={name:newName,rotulo:rotulo.trim()||null,origin,default_cost_per_cbm:costCbm.trim()===""?null:Number(costCbm.replace(",","."))};
+    const body={name:newName,rotulo:rotulo.trim()||null,origin};
     if(editing?.id){
       const oldName=editing.name;
       await dq("maritime_warehouses",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
@@ -12051,7 +12029,6 @@ function WarehouseForm({token,editing,onSave,onCancel}){
       <Sel label="Origen" value={origin} onChange={setOrigin} options={[{value:"china",label:"🇨🇳 China"},{value:"usa",label:"🇺🇸 USA"}]}/>
     </div>
     <Inp label="Rótulo de llegada (se imprime en el PDF del consolidado)" value={rotulo} onChange={setRotulo} placeholder="Ej: MARÍTIMO MR. SHI / MISS HUANG (código cliente)"/>
-    <Inp label="Costo de flete default (USD por m³)" value={costCbm} onChange={setCostCbm} placeholder="Ej: 2000 (se puede ajustar por carga)"/>
     <div style={{display:"flex",gap:10,marginTop:14,justifyContent:"flex-end"}}>
       <Btn variant="secondary" onClick={onCancel}>Cancelar</Btn>
       <Btn onClick={save} disabled={saving}>{saving?"Guardando...":(editing?.id?"Guardar cambios":"Crear depósito")}</Btn>
