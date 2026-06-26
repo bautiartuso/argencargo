@@ -3104,6 +3104,21 @@ export default function Page(){
   const ch=f=>v=>{setForm(p=>({...p,[f]:v}));setErrors(p=>({...p,[f]:undefined}));setGErr("");};
   const val=s=>{const e={};if(s===0){if(!form.first_name.trim())e.first_name="Requerido";if(!form.last_name.trim())e.last_name="Requerido";if(!form.whatsapp.trim())e.whatsapp="Requerido";else if(form.whatsapp.replace(/\D/g,"").length<10)e.whatsapp="Número inválido (mínimo 10 dígitos)";if(!form.email.trim())e.email="Requerido";else if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))e.email="Email inválido";if(!form.password)e.password="Requerido";else if(form.password.length<6)e.password="Mínimo 6 caracteres";if(form.password!==form.confirm_password)e.confirm_password="No coinciden";}if(s===1){if(!form.street.trim())e.street="Requerido";if(!form.postal_code.trim())e.postal_code="Requerido";if(!form.city.trim())e.city="Requerido";if(!form.province)e.province="Requerido";}if(s===2&&form.tax_condition==="responsable_inscripto"){if(!form.company_name.trim())e.company_name="Requerido";if(!form.cuit.trim())e.cuit="Requerido";else if(form.cuit.replace(/\D/g,"").length!==11)e.cuit="CUIT inválido (debe tener 11 dígitos)";}setErrors(e);return !Object.keys(e).length;};
   const gc=(fn,ln)=>(fn.substring(0,3)+ln.substring(0,3)).toUpperCase();
+  // Inserta el cliente reintentando con sufijo numérico si el client_code ya existe.
+  // Dos personas con iniciales iguales generan el mismo código (ej. "Martin Briones" y
+  // "Martin Briet" → MARBRI). Por RLS el cliente no puede leer códigos ajenos para chequear
+  // antes, así que se reintenta ante el conflicto de unicidad (MARBRI → MARBR2 → MARBR3 …).
+  const insertClientUnique=async(token,body)=>{
+    const base=(body.client_code||"").toUpperCase();
+    for(let i=0;i<12;i++){
+      const code=i===0?base:`${base.slice(0,5)}${i+1}`;
+      const r=await dq("clients",{method:"POST",token,body:{...body,client_code:code}});
+      if(Array.isArray(r)&&r[0]?.id)return r;
+      const isDup=r&&(r.code==="23505"||/client_code|duplicate|unique/i.test(`${r.message||""} ${r.details||""}`));
+      if(!isDup)return r; // otro error (no de unicidad) → no tiene sentido reintentar
+    }
+    return null;
+  };
   const createClient=async(token,uid)=>{
     const code=gc(form.first_name.trim(),form.last_name.trim());
     // Si vino con ?ref=CODE en la URL, buscar el referidor por client_code
@@ -3117,7 +3132,7 @@ export default function Page(){
     }catch{}
     const body={auth_user_id:uid,first_name:form.first_name.trim(),last_name:form.last_name.trim(),whatsapp:form.whatsapp.trim(),email:form.email.trim(),tax_condition:form.tax_condition,company_name:form.tax_condition==="responsable_inscripto"?form.company_name.trim():null,cuit:form.tax_condition==="responsable_inscripto"?form.cuit.trim():null,street:form.street.trim(),floor_apt:form.floor_apt.trim()||null,postal_code:form.postal_code.trim(),city:form.city.trim(),province:form.province,client_code:code};
     if(referredById)body.referred_by_client_id=referredById;
-    const result=await dq("clients",{method:"POST",token,body});
+    const result=await insertClientUnique(token,body);
     // Limpiar el ref code del localStorage post-registro
     if(referredById){try{localStorage.removeItem("ac_ref_code");}catch{}}
     return result;
@@ -3127,7 +3142,7 @@ export default function Page(){
     try{if(cliente?.id){fetch("/api/notify/welcome",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${a.access_token}`},body:JSON.stringify({client_id:cliente.id})}).catch(()=>{});}}catch{}
   }catch{setGErr("Error de conexión.");}setLoading(false);};
   const doLogin=async()=>{setLoading(true);setGErr("");if(!form.email||!form.password){setGErr("Completá email y contraseña");setLoading(false);return;}try{const r=await ac("token?grant_type=password",{email:form.email,password:form.password});if(r.error||r.error_description||r.msg){setGErr("Email o contraseña incorrectos");setLoading(false);return;}const token=r.access_token,uid=r.user.id;const p=await dq("profiles",{token,filters:`?id=eq.${uid}&select=*`});const prof=Array.isArray(p)?p[0]:null;if(prof?.role==="cliente"){let c=await dq("clients",{token,filters:`?auth_user_id=eq.${uid}&select=*`});let cl=Array.isArray(c)?c[0]:null;
-      if(!cl&&r.user?.user_metadata){const m=r.user.user_metadata;if(m.first_name){const code=(m.first_name.substring(0,3)+m.last_name.substring(0,3)).toUpperCase();const nc=await dq("clients",{method:"POST",token,body:{auth_user_id:uid,first_name:m.first_name,last_name:m.last_name,whatsapp:m.whatsapp||"",email:r.user.email,tax_condition:m.tax_condition||"ninguna",company_name:m.company_name||null,cuit:m.cuit||null,street:m.street||"",floor_apt:m.floor_apt||null,postal_code:m.postal_code||"",city:m.city||"",province:m.province||"",client_code:code}});cl=Array.isArray(nc)?nc[0]:nc;}}
+      if(!cl&&r.user?.user_metadata){const m=r.user.user_metadata;if(m.first_name){const code=(m.first_name.substring(0,3)+m.last_name.substring(0,3)).toUpperCase();const nc=await insertClientUnique(token,{auth_user_id:uid,first_name:m.first_name,last_name:m.last_name,whatsapp:m.whatsapp||"",email:r.user.email,tax_condition:m.tax_condition||"ninguna",company_name:m.company_name||null,cuit:m.cuit||null,street:m.street||"",floor_apt:m.floor_apt||null,postal_code:m.postal_code||"",city:m.city||"",province:m.province||"",client_code:code});cl=Array.isArray(nc)?nc[0]:nc;}}
       setClient(cl);}const ss={token,refresh_token:r.refresh_token,user:r.user};saveSession(ss);setSession(ss);setProfile(prof);}catch{setGErr("Email o contraseña incorrectos. Verificá tus datos e intentá de nuevo.");}setLoading(false);};
   const logout=()=>{clearSession();setSession(null);setClient(null);setProfile(null);setForm(INIT);setStep(0);setView("login");setGErr("");setOkMsg("");};
 
