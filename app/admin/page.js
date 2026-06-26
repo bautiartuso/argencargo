@@ -11695,6 +11695,8 @@ function MaritimePanel({token,allClients=[]}){
             const cbmC=list.reduce((s,sh)=>s+cbmOf(sh.id),0);
             const bulC=list.reduce((s,sh)=>s+bultosOf(sh.id),0);
             const importeC=importeContainer(list);
+            const costEstC=Number(c.cost_estimado||0);
+            const gananciaC=(importeC!=null&&costEstC>0)?importeC-costEstC:null;
             const collapsed=!expandedCont.has(c.id);
             const eEta=effEta(c);const tb=tbDays(c);
             const delEta=deliveryEtaStr(eEta);
@@ -11706,6 +11708,8 @@ function MaritimePanel({token,allClients=[]}){
                 {c.shipping_line&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#93c5fd",letterSpacing:"0.03em"}}>⚓ {c.shipping_line}</span>}
                 <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>{list.length} carga{list.length!==1?"s":""} · {bulC} bulto{bulC!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong></span>
                 {importeC!=null&&importeC>0&&<span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:5,background:"rgba(34,197,94,0.12)",color:"#4ade80",letterSpacing:"0.02em"}} title="Importe estimado a cobrar (flete + recargo por valor). Por cliente: se suma el CBM de todas sus cargas y se aplica el rango de tarifa.">💰 A cobrar est. USD {importeC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+                {costEstC>0&&<span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:5,background:"rgba(248,113,113,0.1)",color:"#f87171",letterSpacing:"0.02em"}} title="Costo estimado del contenedor (editable en ✎ contenedor).">📦 Costo est. USD {costEstC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+                {gananciaC!=null&&<span style={{fontSize:11,fontWeight:800,padding:"2px 9px",borderRadius:5,background:gananciaC>=0?"rgba(74,222,128,0.16)":"rgba(248,113,113,0.16)",color:gananciaC>=0?"#4ade80":"#f87171",letterSpacing:"0.02em"}} title="Ganancia estimada = a cobrar − costo estimado">📈 Ganancia est. USD {gananciaC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
                 {tb>0&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,146,60,0.15)",color:"#fb923c",letterSpacing:"0.02em"}} title={`Transbordo en ${c.transbordo_lugar||"Brasil"} — la ETA y la entrega se corren ${tb} días. El cliente ve la fecha actualizada en su portal.`}>🔄 Transbordo {c.transbordo_lugar||"Brasil"} · +{tb}d</span>}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
@@ -11836,6 +11840,7 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
   const [transbordo,setTransbordo]=useState((editing?.transbordo_dias||0)>0);
   const [tbDias,setTbDias]=useState(editing?.transbordo_dias?String(editing.transbordo_dias):"15");
   const [tbLugar,setTbLugar]=useState(editing?.transbordo_lugar||"Brasil");
+  const [costEst,setCostEst]=useState(editing?.cost_estimado!=null?String(editing.cost_estimado):"");
   const [saving,setSaving]=useState(false);
   // Entrega estimada = ETA a puerto + demora por transbordo + 2 semanas (calculado, no editable).
   const tbAdd=transbordo?(Number(tbDias)||0):0;
@@ -11843,7 +11848,7 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
   const save=async()=>{
     if(!code.trim()){alertDialog("Cargá el código del contenedor (ej: MSKU1234567 o Contenedor 1)");return;}
     setSaving(true);
-    const body={code:code.trim(),status,shipping_line:shippingLine.trim()||null,departed_at:departedAt||null,eta:eta||null,notes:notes.trim()||null,transbordo_dias:transbordo?(Number(tbDias)||0):0,transbordo_lugar:transbordo?(tbLugar.trim()||"Brasil"):null};
+    const body={code:code.trim(),status,shipping_line:shippingLine.trim()||null,departed_at:departedAt||null,eta:eta||null,notes:notes.trim()||null,transbordo_dias:transbordo?(Number(tbDias)||0):0,transbordo_lugar:transbordo?(tbLugar.trim()||"Brasil"):null,cost_estimado:costEst.trim()===""?null:Number(costEst.replace(",","."))};
     try{
       if(editing?.id)await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
       else await dq("maritime_containers",{method:"POST",token,body:{...body,warehouse}});
@@ -11888,7 +11893,10 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
           {[{k:"en_transito",l:"🚢 En tránsito"},{k:"arribado",l:"⚓ Arribado"}].map(o=><button key={o.k} onClick={()=>setStatus(o.k)} style={{flex:1,padding:"7px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:status===o.k?"rgba(96,165,250,0.25)":"transparent",color:status===o.k?"#60a5fa":"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
         </div>
       </div>
-      <Inp label="Notas (opcional)" value={notes} onChange={setNotes} placeholder="Booking, observaciones…"/>
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:"0 12px"}}>
+        <Inp label="Notas (opcional)" value={notes} onChange={setNotes} placeholder="Booking, observaciones…"/>
+        <Inp label="Costo estimado (USD)" type="number" value={costEst} onChange={setCostEst} placeholder="Para estimar ganancia"/>
+      </div>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
         <Btn variant="secondary" small onClick={onCancel} disabled={saving}>Cancelar</Btn>
         <Btn small onClick={save} disabled={saving}>{saving?"Guardando…":(editing?"Guardar":"+ Crear contenedor")}</Btn>
