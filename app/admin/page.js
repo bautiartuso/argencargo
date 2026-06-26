@@ -11153,6 +11153,9 @@ function MaritimePanel({token,allClients=[]}){
   const flash=(t)=>{setMsg(t);setTimeout(()=>setMsg(""),3000);};
   // Fecha estimada de entrega de la mercadería = arribo estimado a puerto (eta) + 2 semanas.
   const deliveryEtaStr=(eta)=>{if(!eta)return null;const d=new Date(eta+"T12:00:00");d.setDate(d.getDate()+14);return d.toISOString().slice(0,10);};
+  // ETA efectiva = ETA a puerto + días de demora por transbordo (Brasil, etc.). 0 = sin transbordo.
+  const tbDays=(c)=>Number(c?.transbordo_dias||0);
+  const effEta=(c)=>{if(!c?.eta)return c?.eta||null;const d=tbDays(c);if(!d)return c.eta;const x=new Date(c.eta+"T12:00:00");x.setDate(x.getDate()+d);return x.toISOString().slice(0,10);};
   const toggleCont=(id)=>setCollapsedCont(prev=>{const n=new Set(prev);if(n.has(id))n.delete(id);else n.add(id);return n;});
 
   // Cambio de estado de un shipment.
@@ -11424,7 +11427,7 @@ function MaritimePanel({token,allClients=[]}){
     const tariffs=Array.isArray(tariffsR)?tariffsR:[];
     const config={};(Array.isArray(cfgR)?cfgR:[]).forEach(r=>{config[r.key]=Number(r.value);});
     let nextNum=Array.isArray(lastR)&&lastR[0]?.operation_code?(parseInt(String(lastR[0].operation_code).replace(/\D/g,""),10)||0):0;
-    const deliveryEta=deliveryEtaStr(c.eta);
+    const deliveryEta=deliveryEtaStr(effEta(c));
     let created=0;
     for(const cid of clientIds){
       const ships=byClient[cid];const ids=ships.map(s=>s.id);
@@ -11693,7 +11696,8 @@ function MaritimePanel({token,allClients=[]}){
             const bulC=list.reduce((s,sh)=>s+bultosOf(sh.id),0);
             const importeC=importeContainer(list);
             const collapsed=collapsedCont.has(c.id);
-            const delEta=deliveryEtaStr(c.eta);
+            const eEta=effEta(c);const tb=tbDays(c);
+            const delEta=deliveryEtaStr(eEta);
             const dateChip=(icon,label,val,col)=><span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap"}}>{icon} {label} <strong style={{color:col,fontFeatureSettings:'"tnum"'}}>{val}</strong></span>;
             return <div onClick={()=>toggleCont(c.id)} title={collapsed?"Abrir":"Cerrar"} style={{padding:"10px 18px",background:"rgba(184,149,106,0.06)",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",cursor:"pointer"}}>
               <div style={{display:"flex",alignItems:"center",gap:9,flexWrap:"wrap",flex:1,minWidth:0}}>
@@ -11702,11 +11706,12 @@ function MaritimePanel({token,allClients=[]}){
                 {c.shipping_line&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#93c5fd",letterSpacing:"0.03em"}}>⚓ {c.shipping_line}</span>}
                 <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>{list.length} carga{list.length!==1?"s":""} · {bulC} bulto{bulC!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong></span>
                 {importeC!=null&&importeC>0&&<span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:5,background:"rgba(34,197,94,0.12)",color:"#4ade80",letterSpacing:"0.02em"}} title="Importe estimado a cobrar (flete + recargo por valor). Por cliente: se suma el CBM de todas sus cargas y se aplica el rango de tarifa.">💰 A cobrar est. USD {importeC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+                {tb>0&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,146,60,0.15)",color:"#fb923c",letterSpacing:"0.02em"}} title={`Transbordo en ${c.transbordo_lugar||"Brasil"} — la ETA y la entrega se corren ${tb} días. El cliente ve la fecha actualizada en su portal.`}>🔄 Transbordo {c.transbordo_lugar||"Brasil"} · +{tb}d</span>}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
                 <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
                   {c.departed_at&&dateChip("🛳️","Salió",fmtD(c.departed_at),"rgba(255,255,255,0.7)")}
-                  {c.eta&&dateChip("⚓","ETA Pto. Buenos Aires",fmtD(c.eta),"#93c5fd")}
+                  {eEta&&dateChip("⚓","ETA Pto. Buenos Aires",fmtD(eEta),tb>0?"#fb923c":"#93c5fd")}
                   {delEta&&dateChip("📦","Entrega est.",fmtD(delEta),"#4ade80")}
                 </div>
                 <div style={{display:"flex",gap:5,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
@@ -11828,13 +11833,17 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
   const [departedAt,setDepartedAt]=useState(editing?.departed_at||new Date().toISOString().slice(0,10));
   const [eta,setEta]=useState(editing?.eta||"");
   const [notes,setNotes]=useState(editing?.notes||"");
+  const [transbordo,setTransbordo]=useState((editing?.transbordo_dias||0)>0);
+  const [tbDias,setTbDias]=useState(editing?.transbordo_dias?String(editing.transbordo_dias):"15");
+  const [tbLugar,setTbLugar]=useState(editing?.transbordo_lugar||"Brasil");
   const [saving,setSaving]=useState(false);
-  // Entrega estimada de la mercadería = arribo a puerto + 2 semanas (calculado, no editable).
-  const delEta=eta?(()=>{const d=new Date(eta+"T12:00:00");d.setDate(d.getDate()+14);return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});})():null;
+  // Entrega estimada = ETA a puerto + demora por transbordo + 2 semanas (calculado, no editable).
+  const tbAdd=transbordo?(Number(tbDias)||0):0;
+  const delEta=eta?(()=>{const d=new Date(eta+"T12:00:00");d.setDate(d.getDate()+14+tbAdd);return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});})():null;
   const save=async()=>{
     if(!code.trim()){alertDialog("Cargá el código del contenedor (ej: MSKU1234567 o Contenedor 1)");return;}
     setSaving(true);
-    const body={code:code.trim(),status,shipping_line:shippingLine.trim()||null,departed_at:departedAt||null,eta:eta||null,notes:notes.trim()||null};
+    const body={code:code.trim(),status,shipping_line:shippingLine.trim()||null,departed_at:departedAt||null,eta:eta||null,notes:notes.trim()||null,transbordo_dias:transbordo?(Number(tbDias)||0):0,transbordo_lugar:transbordo?(tbLugar.trim()||"Brasil"):null};
     try{
       if(editing?.id)await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
       else await dq("maritime_containers",{method:"POST",token,body:{...body,warehouse}});
@@ -11861,6 +11870,17 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
           <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>Entrega estimada de la mercadería</p>
           <p style={{fontSize:13.5,fontWeight:700,color:delEta?"#4ade80":"rgba(255,255,255,0.4)",margin:"1px 0 0"}}>{delEta||"— (cargá el arribo a puerto)"}<span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.35)",marginLeft:6}}>{delEta?"· 2 semanas después del puerto":""}</span></p>
         </div>
+      </div>
+      <div style={{marginBottom:12,padding:"10px 12px",background:transbordo?"rgba(251,146,60,0.07)":"rgba(255,255,255,0.03)",border:`1px solid ${transbordo?"rgba(251,146,60,0.28)":"rgba(255,255,255,0.08)"}`,borderRadius:8}}>
+        <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:12.5,fontWeight:600,color:"rgba(255,255,255,0.85)"}}>
+          <input type="checkbox" checked={transbordo} onChange={e=>setTransbordo(e.target.checked)} style={{cursor:"pointer",accentColor:"#fb923c",width:16,height:16}}/>
+          🔄 Hace transbordo (demora extra)
+        </label>
+        {transbordo&&<div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:"0 12px",marginTop:10}}>
+          <Inp label="Lugar del transbordo" value={tbLugar} onChange={setTbLugar} placeholder="Ej: Brasil"/>
+          <Inp label="Días de demora" type="number" value={tbDias} onChange={setTbDias} placeholder="15"/>
+        </div>}
+        {transbordo&&<p style={{fontSize:10.5,color:"#fb923c",margin:"6px 0 0",fontStyle:"italic"}}>La ETA y la entrega se corren {Number(tbDias)||0} días. El cliente ve la fecha actualizada y un aviso de demora en su portal.</p>}
       </div>
       <div style={{marginBottom:12}}>
         <label style={{display:"block",fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Estado</label>

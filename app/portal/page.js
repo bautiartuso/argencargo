@@ -2889,10 +2889,14 @@ function MaritimeCargoSection({cargo}){
           {descs.map((d,i)=><li key={i} style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",display:"flex",gap:7}}><span style={{color:"#60a5fa"}}>·</span>{d}</li>)}
         </ul>}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
-          {cell("⚓ ETA Pto. Buenos Aires",fmtD(c.eta_puerto),"#93c5fd")}
+          {cell("⚓ ETA Pto. Buenos Aires",fmtD(c.eta_puerto),c.transbordo?"#fb923c":"#93c5fd")}
           {cell("📦 Entrega estimada",fmtD(c.entrega_estimada),"#4ade80")}
           {cell("Bultos",String(c.bultos||0),"#fff")}
         </div>
+        {c.transbordo&&<div style={{marginTop:12,padding:"9px 12px",background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:9,display:"flex",alignItems:"center",gap:9}}>
+          <span style={{fontSize:16}}>🔄</span>
+          <p style={{fontSize:12,color:"#fdba74",margin:0,lineHeight:1.45}}>El barco hace un <b>transbordo en {c.transbordo.lugar}</b>, lo que suma una demora aproximada de <b>{c.transbordo.dias} días</b>. Las fechas de arribo y entrega de arriba ya incluyen esta demora.</p>
+        </div>}
       </div>;})}
     </div>
   </div>;

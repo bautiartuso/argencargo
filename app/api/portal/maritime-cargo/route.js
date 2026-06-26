@@ -19,12 +19,13 @@ async function svc(path) {
   return r.ok ? r.json() : null;
 }
 
-const plus14 = (d) => {
+const addDays = (d, n) => {
   if (!d) return null;
   const x = new Date(d + "T12:00:00");
-  x.setDate(x.getDate() + 14);
+  x.setDate(x.getDate() + (Number(n) || 0));
   return x.toISOString().slice(0, 10);
 };
+const plus14 = (d) => addDays(d, 14);
 
 export async function GET(req) {
   const auth = req.headers.get("authorization") || "";
@@ -58,7 +59,7 @@ export async function GET(req) {
 
   // Contenedores (solo eta + status — NUNCA code ni shipping_line).
   const contIds = [...new Set(list.map(s => s.container_id).filter(Boolean))];
-  const conts = contIds.length ? await svc(`/rest/v1/maritime_containers?id=in.(${contIds.join(",")})&select=id,eta,status`) : [];
+  const conts = contIds.length ? await svc(`/rest/v1/maritime_containers?id=in.(${contIds.join(",")})&select=id,eta,status,transbordo_dias,transbordo_lugar`) : [];
   const contMap = {};
   (Array.isArray(conts) ? conts : []).forEach(c => { contMap[c.id] = c; });
 
@@ -75,13 +76,17 @@ export async function GET(req) {
     const cid = s.container_id;
     if (!groups[cid]) {
       const c = contMap[cid] || {};
+      const tbDias = Number(c.transbordo_dias || 0);
+      // ETA efectiva = ETA a puerto + demora por transbordo. La entrega = ETA efectiva + 2 semanas.
+      const eEta = tbDias > 0 ? addDays(c.eta, tbDias) : (c.eta || null);
       groups[cid] = {
         id: cid,
         descriptions: [],
         bultos: 0,
         container_status: c.status || null,       // en_transito | arribado
-        eta_puerto: c.eta || null,
-        entrega_estimada: plus14(c.eta),
+        eta_puerto: eEta,
+        entrega_estimada: plus14(eEta),
+        transbordo: tbDias > 0 ? { dias: tbDias, lugar: c.transbordo_lugar || "Brasil" } : null,
       };
     }
     if (s.product_description) groups[cid].descriptions.push(s.product_description);
