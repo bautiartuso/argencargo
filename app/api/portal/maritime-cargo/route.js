@@ -130,6 +130,13 @@ export async function GET(req) {
     const total = Math.round((flete + surchargeFor(g._fob, g._cbm)) * 100) / 100;
     const { _cbm, _fob, ...rest } = g;
     return { ...rest, total_estimado: total > 0 ? total : null };
+  }).sort((a, b) => {
+    // Orden por fecha de llegada (ETA a puerto) ascendente; sin ETA al final.
+    const ea = a.eta_puerto, eb = b.eta_puerto;
+    if (!ea && !eb) return 0;
+    if (!ea) return 1;
+    if (!eb) return -1;
+    return ea.localeCompare(eb);
   });
 
   return Response.json({ cargo });
