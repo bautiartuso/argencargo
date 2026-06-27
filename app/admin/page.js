@@ -11335,33 +11335,52 @@ function MaritimePanel({token,allClients=[]}){
   };
   // Recargo por valor (canal B): si vpu = FOB/CBM supera el umbral, cobra ese % del FOB.
   const surchargeForValue=(fob,cbm)=>{if(!(fob>0&&cbm>0))return 0;const vpu=fob/cbm;for(const s of mbSurchSorted){if(vpu>=s.min)return Math.round(fob*(s.rate/100)*100)/100;}return 0;};
-  // Importe estimado a cobrar de un contenedor. Por CLIENTE se trata como UNA sola operación:
-  // se SUMA el CBM de todas sus cargas del contenedor y RECIÉN AHÍ se aplica el rango de tarifa
-  // (no carga por carga). a cobrar = flete (CBM combinado × rango) + recargo por valor.
-  const importeContainer=(list)=>{
-    if(!list||!list.length||!mtTariffs.length)return null;
-    const byCli={};list.forEach(sh=>{if(sh.client_id)(byCli[sh.client_id]=byCli[sh.client_id]||[]).push(sh);});
-    let total=0;
+  // Importe a cobrar por CLIENTE en un contenedor: se trata como UNA operación (CBM combinado
+  // de sus cargas × rango + recargo). Devuelve un mapa {client_id: importe}.
+  const clientImportes=(list)=>{
+    const byCli={};(list||[]).forEach(sh=>{if(sh.client_id)(byCli[sh.client_id]=byCli[sh.client_id]||[]).push(sh);});
+    const out={};
     Object.entries(byCli).forEach(([cid,ships])=>{
       const sids=new Set(ships.map(s=>s.id));
       const cbm=ships.reduce((s,sh)=>s+cbmOf(sh.id),0);
       const fob=items.filter(it=>sids.has(it.shipment_id)).reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
       const overrides=mtOverrides[cid]||[];
-      const flete=cbm*fleteRateForCbm(cbm,overrides);
-      total+=flete+surchargeForValue(fob,cbm);
+      out[cid]=cbm*fleteRateForCbm(cbm,overrides)+surchargeForValue(fob,cbm);
     });
-    return total;
+    return out;
   };
-  // Total a cobrar de todos los contenedores EN TRÁNSITO de un depósito (suma de importeContainer).
-  const importeWarehouseEnTransito=(warehouse)=>{
+  const importeContainer=(list)=>{
+    if(!list||!list.length||!mtTariffs.length)return null;
+    return Object.values(clientImportes(list)).reduce((s,v)=>s+v,0);
+  };
+  // Costo estimado por carga (lo carga el admin) → costo del contenedor = suma de sus cargas.
+  const costOfShip=(sh)=>Number(sh?.cost_estimado||0);
+  const costContainer=(list)=>(list||[]).reduce((s,sh)=>s+costOfShip(sh),0);
+  // Importe a cobrar imputado a UNA carga = importe de su operación (cliente) prorrateado por CBM.
+  const importeOfShip=(sh,list)=>{
+    if(!sh?.client_id)return 0;
+    const imp=clientImportes(list)[sh.client_id]||0;
+    const cli=(list||[]).filter(s=>s.client_id===sh.client_id);
+    const cbmCli=cli.reduce((s,x)=>s+cbmOf(x.id),0);
+    return cbmCli>0?imp*(cbmOf(sh.id)/cbmCli):imp/Math.max(cli.length,1);
+  };
+  // Total del depósito (contenedores EN TRÁNSITO): {importe, costo, ganancia}.
+  const whEnTransito=(warehouse)=>{
     const conts=containers.filter(c=>c.warehouse===warehouse&&c.status==="en_transito");
-    let total=0,any=false;
+    let importe=0,costo=0,any=false;
     conts.forEach(c=>{
       const lst=shipments.filter(s=>!s.operation_id&&s.container_id===c.id);
       const v=importeContainer(lst);
-      if(v!=null){total+=v;any=true;}
+      if(v!=null){importe+=v;costo+=costContainer(lst);any=true;}
     });
-    return any?total:null;
+    return any?{importe,costo,ganancia:importe-costo}:null;
+  };
+  // Guarda el costo estimado de una carga (null = sin costo).
+  const saveShipCost=async(sh,val)=>{
+    const v=String(val).trim();const r=v===""?null:Number(v.replace(",","."));
+    if(r!=null&&!isFinite(r))return;
+    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{cost_estimado:r}});
+    setShipments(prev=>prev.map(s=>s.id===sh.id?{...s,cost_estimado:r}:s));
   };
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
@@ -11577,7 +11596,7 @@ function MaritimePanel({token,allClients=[]}){
       const totalCbm=wsList.reduce((s,sh)=>s+cbmOf(sh.id),0);
       const totalBultos=wsList.reduce((s,sh)=>s+bultosOf(sh.id),0);
       const pending=wsList.filter(sh=>cbmOf(sh.id)===0).length;
-      const importeWh=importeWarehouseEnTransito(wh); // total a cobrar de contenedores en tránsito
+      const whTot=whEnTransito(wh); // {importe, costo, ganancia} de contenedores en tránsito
       const isWhOpen=expandedWh.has(wh);
       const toggleWh=()=>setExpandedWh(prev=>{const n=new Set(prev);if(n.has(wh))n.delete(wh);else n.add(wh);return n;});
       return <div key={wh} style={{marginBottom:14,background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
@@ -11587,7 +11606,7 @@ function MaritimePanel({token,allClients=[]}){
             <div style={{flex:1}}>
               <p style={{fontSize:11,fontWeight:800,color:"#60a5fa",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>📦 Depósito {wh}</p>
               <p style={{fontSize:13,color:"rgba(255,255,255,0.75)",margin:0}}>{wsList.length} pedido{wsList.length!==1?"s":""} · {totalBultos} bulto{totalBultos!==1?"s":""} · <strong style={{color:"#fff"}}>CBM {totalCbm.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{pending>0?` (+ ${pending} pendiente${pending!==1?"s":""})`:""}</p>
-              {importeWh!=null&&importeWh>0&&<p style={{fontSize:12.5,margin:"5px 0 0",display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px",borderRadius:8,background:"rgba(34,197,94,0.12)",color:"#4ade80",fontWeight:700}} title="Total estimado a cobrar de todos los contenedores en tránsito de este depósito (con tarifas por cliente)">💰 A cobrar en tránsito: USD {importeWh.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+              {whTot&&whTot.importe>0&&<p style={{fontSize:12.5,margin:"5px 0 0",display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px",borderRadius:8,background:whTot.ganancia>=0?"rgba(34,197,94,0.12)":"rgba(248,113,113,0.12)",color:whTot.ganancia>=0?"#4ade80":"#f87171",fontWeight:700}} title={`Ganancia estimada en tránsito = a cobrar − costos cargados. A cobrar: USD ${whTot.importe.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} · Costo: USD ${whTot.costo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}>📈 Ganancia est. en tránsito: USD {whTot.ganancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
               {whByName[wh]?.rotulo&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",fontStyle:"italic"}}>Rótulo: <span style={{color:IC,fontWeight:600}}>{whByName[wh].rotulo}</span></p>}
             </div>
           </div>
@@ -11685,6 +11704,16 @@ function MaritimePanel({token,allClients=[]}){
                     {shItems.length===0?<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin detalle cargado</p>:<table style={{width:"100%",fontSize:11.5,borderCollapse:"collapse"}}><tbody>{shItems.map((it,i)=><tr key={it.id} style={{borderBottom:i<shItems.length-1?"1px solid rgba(255,255,255,0.04)":"none"}}><td style={{padding:"3px 0",color:"rgba(255,255,255,0.7)"}}>{it.description}</td><td style={{padding:"3px 0",color:"rgba(255,255,255,0.55)",textAlign:"right",whiteSpace:"nowrap"}}>{it.quantity} u. × {usd(it.unit_price_usd)}</td><td style={{padding:"3px 0",textAlign:"right",color:GOLD_LIGHT,fontFeatureSettings:'"tnum"',fontWeight:600,whiteSpace:"nowrap"}}>{usd(Number(it.quantity||0)*Number(it.unit_price_usd||0))}</td></tr>)}</tbody></table>}
                   </div>
                 </div>
+                <div style={{marginTop:12,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"9px 12px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8}} onClick={e=>e.stopPropagation()}>
+                  <span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Costo est. de esta operación</span>
+                  <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,color:"rgba(255,255,255,0.6)"}}>USD
+                    <input type="number" step="any" defaultValue={sh.cost_estimado??""} placeholder="0" onBlur={e=>{if(String(e.target.value).trim()!==String(sh.cost_estimado??""))saveShipCost(sh,e.target.value);}} style={{width:96,padding:"5px 8px",fontSize:12.5,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",fontFeatureSettings:'"tnum"'}}/>
+                  </span>
+                  {(()=>{const imp=importeOfShip(sh,list);const cost=costOfShip(sh);const gan=imp-cost;return <>
+                    <span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>A cobrar est. <strong style={{color:"#4ade80",fontFeatureSettings:'"tnum"'}}>{usd(imp)}</strong></span>
+                    <span style={{fontSize:13,fontWeight:800,color:gan>=0?"#4ade80":"#f87171",fontFeatureSettings:'"tnum"'}}>📈 Ganancia est. {usd(gan)}</span>
+                  </>;})()}
+                </div>
                 {sh.notes&&<p style={{fontSize:11,color:"#fbbf24",fontStyle:"italic",margin:"10px 0 0",padding:"6px 10px",background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:6}}>■ {sh.notes}</p>}
               </td></tr>}
             </Fragment>;
@@ -11695,8 +11724,8 @@ function MaritimePanel({token,allClients=[]}){
             const cbmC=list.reduce((s,sh)=>s+cbmOf(sh.id),0);
             const bulC=list.reduce((s,sh)=>s+bultosOf(sh.id),0);
             const importeC=importeContainer(list);
-            const costEstC=Number(c.cost_estimado||0);
-            const gananciaC=(importeC!=null&&costEstC>0)?importeC-costEstC:null;
+            const costEstC=costContainer(list); // suma de costos estimados de las cargas
+            const gananciaC=importeC!=null?importeC-costEstC:null;
             const collapsed=!expandedCont.has(c.id);
             const eEta=effEta(c);const tb=tbDays(c);
             const delEta=deliveryEtaStr(eEta);
@@ -11707,9 +11736,8 @@ function MaritimePanel({token,allClients=[]}){
                 <span style={{fontSize:12.5,fontWeight:800,color:IC}}>🚢 {c.code}</span>
                 {c.shipping_line&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#93c5fd",letterSpacing:"0.03em"}}>⚓ {c.shipping_line}</span>}
                 <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>{list.length} carga{list.length!==1?"s":""} · {bulC} bulto{bulC!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong></span>
-                {importeC!=null&&importeC>0&&<span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:5,background:"rgba(34,197,94,0.12)",color:"#4ade80",letterSpacing:"0.02em"}} title="Importe estimado a cobrar (flete + recargo por valor). Por cliente: se suma el CBM de todas sus cargas y se aplica el rango de tarifa.">💰 A cobrar est. USD {importeC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
-                {costEstC>0&&<span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:5,background:"rgba(248,113,113,0.1)",color:"#f87171",letterSpacing:"0.02em"}} title="Costo estimado del contenedor (editable en ✎ contenedor).">📦 Costo est. USD {costEstC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
-                {gananciaC!=null&&<span style={{fontSize:11,fontWeight:800,padding:"2px 9px",borderRadius:5,background:gananciaC>=0?"rgba(74,222,128,0.16)":"rgba(248,113,113,0.16)",color:gananciaC>=0?"#4ade80":"#f87171",letterSpacing:"0.02em"}} title="Ganancia estimada = a cobrar − costo estimado">📈 Ganancia est. USD {gananciaC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+                {costEstC>0&&<span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:5,background:"rgba(248,113,113,0.1)",color:"#f87171",letterSpacing:"0.02em"}} title="Costo estimado del contenedor = suma de los costos cargados en cada carga.">📦 Costo est. USD {costEstC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+                {gananciaC!=null&&<span style={{fontSize:11,fontWeight:800,padding:"2px 9px",borderRadius:5,background:gananciaC>=0?"rgba(74,222,128,0.16)":"rgba(248,113,113,0.16)",color:gananciaC>=0?"#4ade80":"#f87171",letterSpacing:"0.02em"}} title={`Ganancia estimada = a cobrar − costo. A cobrar: USD ${(importeC||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} · Costo: USD ${costEstC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}>📈 Ganancia est. USD {gananciaC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
                 {tb>0&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,146,60,0.15)",color:"#fb923c",letterSpacing:"0.02em"}} title={`Transbordo en ${c.transbordo_lugar||"Brasil"} — la ETA y la entrega se corren ${tb} días. El cliente ve la fecha actualizada en su portal.`}>🔄 Transbordo {c.transbordo_lugar||"Brasil"} · +{tb}d</span>}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
@@ -11840,7 +11868,6 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
   const [transbordo,setTransbordo]=useState((editing?.transbordo_dias||0)>0);
   const [tbDias,setTbDias]=useState(editing?.transbordo_dias?String(editing.transbordo_dias):"15");
   const [tbLugar,setTbLugar]=useState(editing?.transbordo_lugar||"Brasil");
-  const [costEst,setCostEst]=useState(editing?.cost_estimado!=null?String(editing.cost_estimado):"");
   const [saving,setSaving]=useState(false);
   // Entrega estimada = ETA a puerto + demora por transbordo + 2 semanas (calculado, no editable).
   const tbAdd=transbordo?(Number(tbDias)||0):0;
@@ -11848,7 +11875,7 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
   const save=async()=>{
     if(!code.trim()){alertDialog("Cargá el código del contenedor (ej: MSKU1234567 o Contenedor 1)");return;}
     setSaving(true);
-    const body={code:code.trim(),status,shipping_line:shippingLine.trim()||null,departed_at:departedAt||null,eta:eta||null,notes:notes.trim()||null,transbordo_dias:transbordo?(Number(tbDias)||0):0,transbordo_lugar:transbordo?(tbLugar.trim()||"Brasil"):null,cost_estimado:costEst.trim()===""?null:Number(costEst.replace(",","."))};
+    const body={code:code.trim(),status,shipping_line:shippingLine.trim()||null,departed_at:departedAt||null,eta:eta||null,notes:notes.trim()||null,transbordo_dias:transbordo?(Number(tbDias)||0):0,transbordo_lugar:transbordo?(tbLugar.trim()||"Brasil"):null};
     try{
       if(editing?.id)await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
       else await dq("maritime_containers",{method:"POST",token,body:{...body,warehouse}});
@@ -11893,10 +11920,7 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
           {[{k:"en_transito",l:"🚢 En tránsito"},{k:"arribado",l:"⚓ Arribado"}].map(o=><button key={o.k} onClick={()=>setStatus(o.k)} style={{flex:1,padding:"7px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:status===o.k?"rgba(96,165,250,0.25)":"transparent",color:status===o.k?"#60a5fa":"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
         </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
-        <Inp label="Notas (opcional)" value={notes} onChange={setNotes} placeholder="Booking, obs…"/>
-        <Inp label="Costo estimado USD" type="number" value={costEst} onChange={setCostEst} placeholder="Ej: 1800"/>
-      </div>
+      <Inp label="Notas (opcional)" value={notes} onChange={setNotes} placeholder="Booking, observaciones…"/>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
         <Btn variant="secondary" small onClick={onCancel} disabled={saving}>Cancelar</Btn>
         <Btn small onClick={save} disabled={saving}>{saving?"Guardando…":(editing?"Guardar":"+ Crear contenedor")}</Btn>
