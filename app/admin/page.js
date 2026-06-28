@@ -11938,6 +11938,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   const [clientId,setClientId]=useState(editing?.client_id||"");
   const [clientName,setClientName]=useState(editing?.client_name_snapshot||"");
   const [containerId,setContainerId]=useState(editing?.container_id||"");
+  const [costEst,setCostEst]=useState(editing?.cost_estimado!=null?String(editing.cost_estimado):"");
   const [pkgs,setPkgs]=useState(packages.length>0?packages.map(p=>({...p,length_cm:p.length_cm||"",width_cm:p.width_cm||"",height_cm:p.height_cm||"",quantity:p.quantity||1})):[{quantity:1,length_cm:"",width_cm:"",height_cm:""}]);
   const [its,setIts]=useState(items.length>0?items.map(i=>({...i,quantity:i.quantity||"",unit_price_usd:i.unit_price_usd||""})):[]);
   const [saving,setSaving]=useState(false);
@@ -11973,6 +11974,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       client_id:clientId||null,
       client_name_snapshot:clientName.trim()||null,
       container_id:newCont,
+      cost_estimado:costEst.trim()===""?null:Number(costEst.replace(",",".")),
       updated_at:new Date().toISOString(),
     };
     // Sincronizar estado con la asignación de contenedor (igual que el selector de la barra):
@@ -12021,6 +12023,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
         <p style={{fontSize:10.5,color:containerId?"#60a5fa":"rgba(255,255,255,0.4)",margin:"-6px 0 8px",fontStyle:"italic"}}>{containerId?"Al asignar un contenedor, la carga pasa a 'en tránsito'.":whConts.length===0?"Este depósito no tiene contenedores en tránsito (creá uno desde el panel).":"Sin contenedor: la carga queda en depósito."}</p>
       </div>;
     })()}
+    <Inp label="Costo estimado de la operación (USD)" type="number" value={costEst} onChange={setCostEst} placeholder="Costo de flete/gastos — para estimar la ganancia"/>
 
     {/* Bultos */}
     <div style={{marginTop:12,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
