@@ -11519,7 +11519,7 @@ function MaritimePanel({token,allClients=[]}){
     const config={};(Array.isArray(cfgR)?cfgR:[]).forEach(r=>{config[r.key]=Number(r.value);});
     let nextNum=Array.isArray(lastR)&&lastR[0]?.operation_code?(parseInt(String(lastR[0].operation_code).replace(/\D/g,""),10)||0):0;
     const deliveryEta=deliveryEtaStr(effEta(c));
-    let created=0;
+    let created=0;const createdOps=[];
     for(const cid of clientIds){
       const ships=byClient[cid];const ids=ships.map(s=>s.id);
       const client=allClients.find(x=>x.id===cid)||{};
@@ -11548,18 +11548,30 @@ function MaritimePanel({token,allClients=[]}){
       for(const it of mItems)await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:it.description||null,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_usd||0),notes:it.notes||null}});
       // Mail "lista para retirar" al cliente (igual que cualquier op que pasa a entregada).
       try{await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"retiro"})});}catch(e){console.error("notify retiro auto",e);}
+      createdOps.push({id:op.id,code:newCode,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(bud.totalAbonar||0)});
       created++;
     }
-    return created>0?` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} · LISTA${created>1?"S":""} PARA RETIRAR · mail enviado`:"";
+    return {msg:created>0?` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} · LISTA${created>1?"S":""} PARA RETIRAR · mail enviado`:"",ops:createdOps};
   };
+  const [costModal,setCostModal]=useState(null); // {code, ops:[{id,code,clientName,budget}]} para cargar costos
   const setContainerStatus=async(c,status)=>{
     const body={status};
     if(status==="arribado")body.arrived_at=new Date().toISOString().slice(0,10);
     if(status==="en_transito")body.arrived_at=null; // volver atrás desde arribado
     await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});
-    let extra="";
-    if(status==="arribado"){try{extra=await createOpsForContainer(c);}catch(e){console.error("auto-ops arribo",e);extra=" · ⚠️ error creando ops (ver consola)";}}
-    flash(`Contenedor ${c.code} → ${status==="en_transito"?"en tránsito":"arribado"}${extra}`);load();
+    let extra="";let newOps=[];
+    if(status==="arribado"){try{const r=await createOpsForContainer(c);extra=r.msg;newOps=r.ops||[];}catch(e){console.error("auto-ops arribo",e);extra=" · ⚠️ error creando ops (ver consola)";}}
+    flash(`Contenedor ${c.code} → ${status==="en_transito"?"en tránsito":"arribado"}${extra}`);
+    await load();
+    if(newOps.length>0)setCostModal({code:c.code,ops:newOps});
+  };
+  // Abrir el modal de costos para un contenedor ya arribado (carga retroactiva).
+  const openCostModalForContainer=async(c)=>{
+    const opIds=[...new Set(shipments.filter(s=>s.container_id===c.id&&s.operation_id).map(s=>s.operation_id))];
+    if(opIds.length===0){alertDialog("Este contenedor no tiene operaciones creadas.");return;}
+    const ops=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,budget_total,cost_flete,clients(first_name,last_name)&order=operation_code.asc`});
+    const list=(Array.isArray(ops)?ops:[]).map(o=>({id:o.id,code:o.operation_code,clientName:o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"",budget:Number(o.budget_total||0),cost_flete:Number(o.cost_flete||0)}));
+    setCostModal({code:c.code,ops:list});
   };
   // Vincular cargas YA OPERADAS (con operation_id, sin contenedor) a un contenedor del historial.
   // Sirve para reconstruir el registro de qué vino en cada contenedor con ops anteriores a esta feature.
@@ -11883,6 +11895,7 @@ function MaritimePanel({token,allClients=[]}){
                 </div>}
               </div>
               <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                <button onClick={()=>openCostModalForContainer(c)} title="Cargar el costo de cada operación de este contenedor" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#4ade80",cursor:"pointer"}}>💲 Costos</button>
                 <button onClick={()=>{setLinkingContainer(c);setLinkSel(new Set());}} title="Vincular cargas ya operadas que no figuran en ningún contenedor" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>🔗 Vincular cargas</button>
                 <button onClick={()=>setContainerStatus(c,"en_transito")} title="Volver a en tránsito" style={{padding:"4px 8px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.45)",cursor:"pointer"}}>↶</button>
                 <button onClick={()=>setEditingContainer(c)} style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.06)",color:"#60a5fa",cursor:"pointer"}}>✎</button>
@@ -11924,10 +11937,66 @@ function MaritimePanel({token,allClients=[]}){
 
     {/* Modal contenedor (crear / editar) */}
     {editingContainer&&<ContainerForm token={token} editing={editingContainer.id?editingContainer:null} warehouse={editingContainer.warehouse} onSave={()=>{setEditingContainer(null);load();}} onCancel={()=>setEditingContainer(null)}/>}
+    {costModal&&<MaritimeCostModal data={costModal} token={token} onClose={()=>setCostModal(null)} onSaved={()=>{setCostModal(null);load();flash("✅ Costos guardados");}}/>}
   </div>;
 }
 
 // Form de contenedor marítimo: código, estado, fechas y notas. Pertenece a UN depósito.
+// Modal de carga de costos por operación al arribar un contenedor marítimo.
+// Por cada op: costo, moneda (USD/ARS + TC), fecha de pago, guía. Método: efectivo.
+function MaritimeCostModal({data,token,onClose,onSaved}){
+  const today=new Date().toISOString().slice(0,10);
+  const [rows,setRows]=useState(()=>(data.ops||[]).map(o=>({...o,amount:o.cost_flete?String(o.cost_flete):"",cur:"USD",tc:"",fecha:today,guia:""})));
+  const [saving,setSaving]=useState(false);
+  const upd=(i,k,v)=>setRows(p=>p.map((r,j)=>j===i?{...r,[k]:v}:r));
+  const num=(v)=>Number(String(v??"").replace(",","."));
+  const usdOf=(r)=>{const a=num(r.amount);if(!isFinite(a)||a<=0)return 0;if(r.cur==="ARS"){const t=num(r.tc);return t>0?Math.round((a/t)*100)/100:0;}return a;};
+  const save=async()=>{
+    setSaving(true);
+    try{
+      for(const r of rows){
+        const raw=String(r.amount).trim();if(raw==="")continue;
+        const a=num(r.amount);if(!isFinite(a)||a<=0)continue;
+        const ars=r.cur==="ARS";const t=num(r.tc);
+        if(ars&&!(t>0)){alertDialog(`${r.code}: cargá el tipo de cambio para el costo en ARS`);setSaving(false);return;}
+        const body={cost_flete:usdOf(r),cost_flete_method:"efectivo",cost_flete_paid_at:r.fecha||today,cost_flete_currency:ars?"ARS":"USD",cost_flete_ars:ars?a:null,cost_flete_exchange_rate:ars?t:null,cost_flete_guia:r.guia?.trim()||null};
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body});
+      }
+      onSaved&&onSaved();
+    }catch(e){console.error("save costos cont",e);alertDialog("Error guardando costos: "+(e.message||e));setSaving(false);}
+  };
+  const inpS={width:"100%",padding:"7px 9px",fontSize:12.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.14)",borderRadius:7,background:"rgba(0,0,0,0.25)",color:"#fff",outline:"none",fontFamily:"inherit"};
+  const lblS={display:"block",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.45)",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.05em"};
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1100,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"34px 20px",overflowY:"auto"}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:760,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",margin:"auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+        <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>💲 Costos del contenedor <span style={{color:"#4ade80",fontSize:13}}>· {data.code}</span></h3>
+        <button onClick={onClose} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+      </div>
+      <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:"0 0 16px"}}>Cargá el costo de flete de cada operación. Se paga en efectivo. Dejá vacío el costo si todavía no lo sabés.</p>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {rows.map((r,i)=>{const u=usdOf(r);return <div key={r.id} style={{padding:"12px 14px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8,flexWrap:"wrap",gap:6}}>
+            <span style={{fontSize:13,fontWeight:800,color:IC,fontFamily:"monospace"}}>{r.code} <span style={{color:"rgba(255,255,255,0.7)",fontFamily:"inherit",fontWeight:600}}>· {r.clientName||"—"}</span></span>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>A cobrar: <b style={{color:"#4ade80"}}>USD {Number(r.budget||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b></span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:r.cur==="ARS"?"1fr 0.8fr 0.9fr 1fr 1.2fr":"1fr 0.8fr 1fr 1.2fr",gap:"0 10px",alignItems:"end"}}>
+            <div><label style={lblS}>Costo {r.cur==="ARS"?"(ARS)":"(USD)"}</label><input type="number" step="any" value={r.amount} onChange={e=>upd(i,"amount",e.target.value)} placeholder="0" style={inpS}/></div>
+            <div><label style={lblS}>Moneda</label><select value={r.cur} onChange={e=>upd(i,"cur",e.target.value)} style={{...inpS,cursor:"pointer"}}><option value="USD" style={{background:"#0F1F3A"}}>USD</option><option value="ARS" style={{background:"#0F1F3A"}}>ARS</option></select></div>
+            {r.cur==="ARS"&&<div><label style={lblS}>T. cambio</label><input type="number" step="any" value={r.tc} onChange={e=>upd(i,"tc",e.target.value)} placeholder="Ej: 1510" style={inpS}/></div>}
+            <div><label style={lblS}>Fecha pago</label><input type="date" value={r.fecha} onChange={e=>upd(i,"fecha",e.target.value)} style={inpS}/></div>
+            <div><label style={lblS}>Guía</label><input value={r.guia} onChange={e=>upd(i,"guia",e.target.value)} placeholder="N° de guía / ref." style={inpS}/></div>
+          </div>
+          {r.cur==="ARS"&&u>0&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"6px 0 0"}}>= USD {u.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+        </div>;})}
+      </div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:16}}>
+        <Btn variant="secondary" small onClick={onClose} disabled={saving}>Cancelar</Btn>
+        <Btn small onClick={save} disabled={saving}>{saving?"Guardando…":"Guardar costos"}</Btn>
+      </div>
+    </div>
+  </div>;
+}
 function ContainerForm({token,editing,warehouse,onSave,onCancel}){
   const [code,setCode]=useState(editing?.code||"");
   // Sin estado "armándose": el contenedor se crea cuando YA salió → nace en tránsito.
