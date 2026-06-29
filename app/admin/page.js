@@ -11959,7 +11959,7 @@ function MaritimeCostModal({data,token,onClose,onSaved}){
         const a=num(r.amount);if(!isFinite(a)||a<=0)continue;
         const ars=r.cur==="ARS";const t=num(r.tc);
         if(ars&&!(t>0)){alertDialog(`${r.code}: cargá el tipo de cambio para el costo en ARS`);setSaving(false);return;}
-        const body={cost_flete:usdOf(r),cost_flete_method:"efectivo",cost_flete_paid_at:r.fecha||today,cost_flete_currency:ars?"ARS":"USD",cost_flete_ars:ars?a:null,cost_flete_exchange_rate:ars?t:null,cost_flete_guia:r.guia?.trim()||null};
+        const body={cost_flete:usdOf(r),cost_flete_method:"efectivo",cost_flete_paid_at:r.fecha||today,cost_flete_currency:ars?"ARS":"USD",cost_flete_ars:ars?a:null,cost_flete_exchange_rate:ars?t:null};
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body});
       }
       onSaved&&onSaved();
@@ -11980,12 +11980,11 @@ function MaritimeCostModal({data,token,onClose,onSaved}){
             <span style={{fontSize:13,fontWeight:800,color:IC,fontFamily:"monospace"}}>{r.code} <span style={{color:"rgba(255,255,255,0.7)",fontFamily:"inherit",fontWeight:600}}>· {r.clientName||"—"}</span></span>
             <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>A cobrar: <b style={{color:"#4ade80"}}>USD {Number(r.budget||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b></span>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:r.cur==="ARS"?"1fr 0.8fr 0.9fr 1fr 1.2fr":"1fr 0.8fr 1fr 1.2fr",gap:"0 10px",alignItems:"end"}}>
+          <div style={{display:"grid",gridTemplateColumns:r.cur==="ARS"?"1fr 0.8fr 0.9fr 1fr":"1fr 0.8fr 1fr",gap:"0 10px",alignItems:"end"}}>
             <div><label style={lblS}>Costo {r.cur==="ARS"?"(ARS)":"(USD)"}</label><input type="number" step="any" value={r.amount} onChange={e=>upd(i,"amount",e.target.value)} placeholder="0" style={inpS}/></div>
             <div><label style={lblS}>Moneda</label><select value={r.cur} onChange={e=>upd(i,"cur",e.target.value)} style={{...inpS,cursor:"pointer"}}><option value="USD" style={{background:"#0F1F3A"}}>USD</option><option value="ARS" style={{background:"#0F1F3A"}}>ARS</option></select></div>
             {r.cur==="ARS"&&<div><label style={lblS}>T. cambio</label><input type="number" step="any" value={r.tc} onChange={e=>upd(i,"tc",e.target.value)} placeholder="Ej: 1510" style={inpS}/></div>}
             <div><label style={lblS}>Fecha pago</label><input type="date" value={r.fecha} onChange={e=>upd(i,"fecha",e.target.value)} style={inpS}/></div>
-            <div><label style={lblS}>Guía</label><input value={r.guia} onChange={e=>upd(i,"guia",e.target.value)} placeholder="N° de guía / ref." style={inpS}/></div>
           </div>
           {r.cur==="ARS"&&u>0&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"6px 0 0"}}>= USD {u.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
         </div>;})}
