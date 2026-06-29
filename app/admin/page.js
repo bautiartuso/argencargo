@@ -6538,6 +6538,31 @@ function AgentsPanel({token}){
   const opsInFlightIds=new Set(flightOps.map(fo=>fo.operation_id));
   const availableForFlight=depositOps.filter(o=>o.consolidation_confirmed&&!opsInFlightIds.has(o.id)&&opsWithDocs.has(o.id));
   const opPackages=(opId)=>depositPkgs.filter(p=>p.operation_id===opId);
+  // Exportar presupuesto en PDF (como la calculadora) para una op del depósito:
+  // recalcula el budget fresco con la tarifa vigente de la op y arma el PDF de cotización.
+  const [pdfBusy,setPdfBusy]=useState(null);
+  const exportQuotePdf=async(o)=>{
+    setPdfBusy(o.id);
+    try{
+      const [tar,cfg,its,pks,ovr,cl,fii]=await Promise.all([
+        dq("tariffs",{token,filters:"?select=*"}),
+        dq("calc_config",{token,filters:"?select=*"}),
+        dq("operation_items",{token,filters:`?operation_id=eq.${o.id}&select=*&order=created_at.asc`}),
+        dq("operation_packages",{token,filters:`?operation_id=eq.${o.id}&select=*&order=package_number.asc`}),
+        o.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${o.client_id}&select=*`}):Promise.resolve([]),
+        o.client_id?dq("clients",{token,filters:`?id=eq.${o.client_id}&select=*&limit=1`}):Promise.resolve([]),
+        dq("flight_invoice_items",{token,filters:`?operation_id=eq.${o.id}&select=quantity,unit_price_declared_usd`}),
+      ]);
+      const config={};(Array.isArray(cfg)?cfg:[]).forEach(r=>{config[r.key]=Number(r.value);});
+      const items=Array.isArray(its)?its:[];const pkgs=Array.isArray(pks)?pks:[];
+      const client=Array.isArray(cl)?cl[0]:null;const overrides=Array.isArray(ovr)?ovr:[];
+      const decl=Array.isArray(fii)?fii:[];
+      const b=calcOpBudget(o,items,pkgs,Array.isArray(tar)?tar:[],config,overrides,client,decl);
+      const opForPdf={...o,budget_taxes:b.totalTax,budget_flete:b.flete,budget_seguro:b.seguro,budget_surcharge:b.surcharge||0,budget_total:b.totalAbonar};
+      printQuotePdf({op:opForPdf,items,pkgs});
+    }catch(e){console.error("export presupuesto",e);alertDialog("No se pudo generar el presupuesto: "+(e.message||e));}
+    setPdfBusy(null);
+  };
   // ---- Merge de items duplicados (misma descripción) ----
   // Suma cantidades y promedia precio unitario ponderado por cantidad → total FOB no cambia.
   const normDesc=(s)=>String(s||"").trim().toLowerCase().replace(/\s+/g," ");
@@ -6952,6 +6977,7 @@ function AgentsPanel({token}){
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
                       <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Detalle de {o.operation_code}</span>
                       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        {itemsOfOp.length>0&&pkgsOfOp.length>0&&<button onClick={(e)=>{e.stopPropagation();exportQuotePdf(o);}} disabled={pdfBusy===o.id} title="Generar presupuesto en PDF para el cliente (como la calculadora)" style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.1)",color:IC,cursor:pdfBusy===o.id?"wait":"pointer",opacity:pdfBusy===o.id?0.6:1}}>{pdfBusy===o.id?"Generando…":"📄 Presupuesto PDF"}</button>}
                         {rpk?.status==="pending"&&<span style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)"}}>⏳ Reempaque pedido</span>}
                         {rpk?.status==="done"&&(()=>{const before=Number(rpk.original_billable_kg||0),after=Number(rpk.new_billable_kg||0),delta=before-after;const hasSnap=Array.isArray(rpk.original_packages_snapshot)||Array.isArray(rpk.new_packages_snapshot);const isOpen=expandedRepack===o.id;return <>
                           <span title={`${before.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg → ${after.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`} style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)"}}>✅ Reempaque hecho{delta>0?` (−${delta.toFixed(1)} kg)`:""}</span>
