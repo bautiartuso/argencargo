@@ -1150,7 +1150,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const creditNote=(debtApp>0?`\n_(ya incluye USD ${fmt(debtApp)} de deuda anterior de tu cuenta)_`:"")+(creditApp>0?`\n_(ya descontamos USD ${fmt(creditApp)} de tu saldo a favor)_`:"");
     const origen=op.origin||"China";
     const flag=op.origin==="USA"?"🇺🇸":"🇨🇳";
-    const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt,trackingList,bultosCount,origen,flag,creditNote,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo>0?saldo:bt)};
+    const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt,trackingList,bultosCount,origen,flag,creditNote,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo)};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
     const msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Av. Callao 1137.${saldoTxt}`;
     // api.whatsapp.com/send maneja mejor emojis multi-byte que wa.me (que a veces los muestra como "?").
