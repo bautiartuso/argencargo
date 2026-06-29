@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "rea
 import { calcOpBudget } from "../../lib/calc";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
-import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printSimplifiedDeclaration, printMaritimePdf, printFacturaC } from "../../lib/pdf-templates";
+import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
 import IntelligencePanel from "./components/IntelligencePanel";
 import TicketsPanel from "./components/TicketsPanel";
 
@@ -6541,25 +6541,65 @@ function AgentsPanel({token}){
   // Exportar presupuesto en PDF (como la calculadora) para una op del depósito:
   // recalcula el budget fresco con la tarifa vigente de la op y arma el PDF de cotización.
   const [pdfBusy,setPdfBusy]=useState(null);
+  // Presupuesto PDF (formato "Cotización Argencargo"), SOLO aéreo A (Courier Comercial).
+  // Auto-clasifica la NCM de los productos que no la tengan (IA) antes de armar la coti.
   const exportQuotePdf=async(o)=>{
     setPdfBusy(o.id);
     try{
-      const [tar,cfg,its,pks,ovr,cl,fii]=await Promise.all([
+      let [tar,cfg,its,pks,ovr,cl]=await Promise.all([
         dq("tariffs",{token,filters:"?select=*"}),
         dq("calc_config",{token,filters:"?select=*"}),
         dq("operation_items",{token,filters:`?operation_id=eq.${o.id}&select=*&order=created_at.asc`}),
         dq("operation_packages",{token,filters:`?operation_id=eq.${o.id}&select=*&order=package_number.asc`}),
         o.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${o.client_id}&select=*`}):Promise.resolve([]),
         o.client_id?dq("clients",{token,filters:`?id=eq.${o.client_id}&select=*&limit=1`}):Promise.resolve([]),
-        dq("flight_invoice_items",{token,filters:`?operation_id=eq.${o.id}&select=quantity,unit_price_declared_usd`}),
       ]);
       const config={};(Array.isArray(cfg)?cfg:[]).forEach(r=>{config[r.key]=Number(r.value);});
-      const items=Array.isArray(its)?its:[];const pkgs=Array.isArray(pks)?pks:[];
+      let items=Array.isArray(its)?its:[];const pkgs=Array.isArray(pks)?pks:[];
       const client=Array.isArray(cl)?cl[0]:null;const overrides=Array.isArray(ovr)?ovr:[];
-      const decl=Array.isArray(fii)?fii:[];
-      const b=calcOpBudget(o,items,pkgs,Array.isArray(tar)?tar:[],config,overrides,client,decl);
-      const opForPdf={...o,budget_taxes:b.totalTax,budget_flete:b.flete,budget_seguro:b.seguro,budget_surcharge:b.surcharge||0,budget_total:b.totalAbonar};
-      printQuotePdf({op:opForPdf,items,pkgs});
+      // Auto-clasificar NCM faltante (IA) y persistir en operation_items.
+      for(const it of items){
+        const hasNcm=it.ncm_code&&String(it.ncm_code).trim();
+        if(hasNcm||!it.description?.trim())continue;
+        try{
+          const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
+          const d=await r.json();
+          if(d?.ncm_code){
+            const patch={ncm_code:d.ncm_code,import_duty_rate:Number(d.import_duty_rate??35),statistics_rate:Number(d.statistics_rate??3),iva_rate:Number(d.iva_rate??21)};
+            await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:patch});
+            Object.assign(it,patch);
+          }
+        }catch(e){console.error("ncm auto",it.id,e);}
+      }
+      // Flete/seguro/total con la tarifa vigente de la op; desglose de impuestos por NCM.
+      const b=calcOpBudget(o,items,pkgs,Array.isArray(tar)?tar:[],config,overrides,client);
+      const isUSA=o.origin==="USA",isRI=client?.tax_condition==="responsable_inscripto";
+      let pf=0,totGW=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const bk=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(bk,v);totGW+=bk;});
+      const totFob=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
+      const aereoMinKg=isUSA?1:5;
+      const certFlRate=isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5);
+      const certFl=isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate;
+      const seguroB=(totFob+certFl)*0.01;const cif=totFob+certFl+seguroB;
+      const tabla=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];
+      const getDes=(c)=>{for(const[max,amt]of tabla)if(c<max)return amt;return 120;};
+      let derechos=0,tasaE=0,iva=0;
+      items.forEach(it=>{
+        const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const pct=totFob>0?itemFob/totFob:1;
+        const iCert=certFl*pct;const iSeg=(itemFob+iCert)*0.01;const iCif=itemFob+iCert+iSeg;
+        const dr=(it.import_duty_rate==null||it.import_duty_rate==="")?0:Number(it.import_duty_rate)/100;
+        const te=(it.statistics_rate==null||it.statistics_rate==="")?0:Number(it.statistics_rate)/100;
+        const ivaR=(it.iva_rate==null||it.iva_rate==="")?0.21:Number(it.iva_rate)/100;
+        const die=iCif*dr,tasa=iCif*te,bi=iCif+die+tasa;derechos+=die;tasaE+=tasa;iva+=bi*ivaR;
+      });
+      const desembolso=getDes(cif);const ivaDesembolso=desembolso*0.21;
+      printAereoAQuotePdf({
+        clientName:client?`${client.first_name||""} ${client.last_name||""}`.trim():(o.clients?`${o.clients.first_name||""}`.trim():""),
+        origin:o.origin||"China",fleteAmt:b.fleteAmt||Math.max(pf,aereoMinKg),
+        products:items.map(it=>({description:it.description,quantity:it.quantity,unit_price_usd:it.unit_price_usd,ncm_code:it.ncm_code})),
+        flete:b.flete,battExtra:b.battExtra||0,surcharge:b.surcharge||0,seguro:b.seguro,
+        derechos,tasaE,iva,desembolso,ivaDesembolso,
+        totalFob:totFob,totalImport:b.totalAbonar,
+      });
     }catch(e){console.error("export presupuesto",e);alertDialog("No se pudo generar el presupuesto: "+(e.message||e));}
     setPdfBusy(null);
   };
@@ -6977,7 +7017,7 @@ function AgentsPanel({token}){
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
                       <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Detalle de {o.operation_code}</span>
                       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                        {itemsOfOp.length>0&&pkgsOfOp.length>0&&<button onClick={(e)=>{e.stopPropagation();exportQuotePdf(o);}} disabled={pdfBusy===o.id} title="Generar presupuesto en PDF para el cliente (como la calculadora)" style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.1)",color:IC,cursor:pdfBusy===o.id?"wait":"pointer",opacity:pdfBusy===o.id?0.6:1}}>{pdfBusy===o.id?"Generando…":"📄 Presupuesto PDF"}</button>}
+                        {o.channel==="aereo_blanco"&&itemsOfOp.length>0&&pkgsOfOp.length>0&&<button onClick={(e)=>{e.stopPropagation();exportQuotePdf(o);}} disabled={pdfBusy===o.id} title="Generar presupuesto en PDF para el cliente (clasifica la NCM faltante con IA)" style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.1)",color:IC,cursor:pdfBusy===o.id?"wait":"pointer",opacity:pdfBusy===o.id?0.6:1}}>{pdfBusy===o.id?"Clasificando y generando…":"📄 Presupuesto PDF"}</button>}
                         {rpk?.status==="pending"&&<span style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)"}}>⏳ Reempaque pedido</span>}
                         {rpk?.status==="done"&&(()=>{const before=Number(rpk.original_billable_kg||0),after=Number(rpk.new_billable_kg||0),delta=before-after;const hasSnap=Array.isArray(rpk.original_packages_snapshot)||Array.isArray(rpk.new_packages_snapshot);const isOpen=expandedRepack===o.id;return <>
                           <span title={`${before.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg → ${after.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`} style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)"}}>✅ Reempaque hecho{delta>0?` (−${delta.toFixed(1)} kg)`:""}</span>
