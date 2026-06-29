@@ -1742,12 +1742,17 @@ function CalculatorPage({token,client}){
       // Guard: con ciertas combinaciones (ej. mercadería con marca + peso ≤15kg + sin CBM)
       // NINGÚN canal queda disponible → channels=[]. Sin este guard, el reduce de abajo
       // tiraba "Reduce of empty array with no initial value" y crasheaba toda la página.
-      if(results.channels.length===0)return <div style={{background:"rgba(251,191,36,0.06)",border:"1.5px solid rgba(251,191,36,0.35)",borderRadius:16,padding:"2rem",textAlign:"center"}}>
+      if(results.channels.length===0){
+        // Mensaje de WhatsApp con TODA la info que cargó el cliente (productos + bultos), para cotizar a mano.
+        const prodLines=products.filter(p=>(p.description||"").trim()||toN(p.unit_price)>0).map((p,i)=>`Mercadería ${i+1}: ${p.description||"—"}\nCantidad: ${p.quantity||1}\nValor unitario: USD ${toN(p.unit_price).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`).join("\n\n");
+        const pkgLines=pkgs.filter(p=>toN(p.weight)>0||toN(p.length)>0).map((p,i)=>{const dims=(toN(p.length)&&toN(p.width)&&toN(p.height))?`${p.length}×${p.width}×${p.height} cm`:"sin dimensiones";return `Bulto ${i+1}:\nCantidad: ${p.qty||1}\nDimensiones: ${dims}\nPeso: ${toN(p.weight)||0} kg`;}).join("\n\n");
+        const waMsg=`Hola! Coticé en el portal pero mi carga necesita cotización a medida.${prodLines?`\n\n${prodLines}`:""}${pkgLines?`\n\n${pkgLines}`:""}`;
+        return <div style={{background:"rgba(251,191,36,0.06)",border:"1.5px solid rgba(251,191,36,0.35)",borderRadius:16,padding:"2rem",textAlign:"center"}}>
         <p style={{fontSize:34,margin:"0 0 10px"}}>🤝</p>
         <p style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 8px"}}>Esta carga necesita cotización a medida</p>
         <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 auto 18px",maxWidth:480,lineHeight:1.6}}>Por las características de tu carga (peso, volumen o tipo de mercadería) ningún canal automático aplica. Escribinos y te armamos la mejor opción en minutos.</p>
-        <a href={`https://wa.me/5491125088580?text=${encodeURIComponent(`Hola! Coticé en el portal pero mi carga necesita cotización a medida. Mercadería: ${products.map(p=>p.description).filter(Boolean).join(", ")||"—"} · Peso: ${results.totWeight} kg`)}`} target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"13px 28px",fontSize:14,fontWeight:700,borderRadius:10,background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",textDecoration:"none",boxShadow:"0 4px 18px rgba(34,197,94,0.3)"}}>💬 Cotizar por WhatsApp</a>
-      </div>;
+        <a href={`https://wa.me/5491125088580?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"13px 28px",fontSize:14,fontWeight:700,borderRadius:10,background:"linear-gradient(135deg,#22c55e,#16a34a)",color:"#fff",textDecoration:"none",boxShadow:"0 4px 18px rgba(34,197,94,0.3)"}}>💬 Cotizar por WhatsApp</a>
+      </div>;}
       const cheapest=results.channels.reduce((a,b)=>a.total<b.total?a:b);const delivCost=getShipCost(delivery,calcTotals().totWeight);
       const aereos=results.channels.filter(c=>c.key.includes("aereo"));const maritimos=results.channels.filter(c=>c.key.includes("maritimo"));
       const renderCard=(ch)=>{const isCheapest=ch.key===cheapest.key;const isFastest=ch.key==="aereo_a_china";const isAereo=ch.key.includes("aereo");const total=ch.total+delivCost;
