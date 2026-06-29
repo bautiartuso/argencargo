@@ -1121,9 +1121,11 @@ function RatesPage({token,client}){
   useEffect(()=>{(async()=>{const [t,ov]=await Promise.all([dq("tariffs",{token,filters:"?select=*&order=service_key.asc,sort_order.asc"}),client?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${client.id}&select=*`}):Promise.resolve([])]);setTariffs(Array.isArray(t)?t:[]);setOverrides(Array.isArray(ov)?ov:[]);setLo(false);})();},[token,client?.id]);
   const getRate=(t)=>{const ov=overrides.find(o=>o.tariff_id===t.id);return ov?{rate:ov.custom_rate,promo:true,base:t.rate}:{rate:t.rate,promo:false,base:t.rate};};
   const hideRanges=svc=>svc==="maritimo_b";
+  // Solo la versión vigente HOY de cada tarifa (oculta versiones históricas).
+  const _tnow=Date.now();const tariffsNow=tariffs.filter(t=>(t.effective_from==null||Date.parse(t.effective_from)<=_tnow)&&(t.effective_to==null||_tnow<Date.parse(t.effective_to)));
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>{tr("common.loading")}</p>;
   return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 24px",letterSpacing:"-0.02em"}}>{tr("rates.title")}</h2>
-    {SERVICES_C.map(svc=>{const rates=tariffs.filter(t=>t.service_key===svc.key&&t.type==="rate");const specials=tariffs.filter(t=>t.service_key===svc.key&&t.type==="special");if(!rates.length)return null;
+    {SERVICES_C.map(svc=>{const rates=tariffsNow.filter(t=>t.service_key===svc.key&&t.type==="rate");const specials=tariffsNow.filter(t=>t.service_key===svc.key&&t.type==="special");if(!rates.length)return null;
     return <div key={svc.key} style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>{svc.label}</h3>{svc.info&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",padding:"4px 10px",background:"rgba(255,255,255,0.028)",borderRadius:6}}>{svc.info}</span>}</div>
       {hideRanges(svc.key)?<div style={{textAlign:"center",padding:"16px 0"}}><p style={{fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 8px"}}>{tr("rates.varies")}</p><p style={{fontSize:14,fontWeight:600,color:IC,margin:0}}>{tr("rates.askForQuote")}</p></div>:
@@ -1321,7 +1323,9 @@ function CalculatorPage({token,client}){
   });
 
   const getEffRate=(t)=>{const ov=overrides.find(o=>o.tariff_id===t.id);return ov?Number(ov.custom_rate):Number(t.rate);};
-  const getFleteRate=(svcKey,amount)=>{const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate");for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return getEffRate(r);}return rates.length?getEffRate(rates[rates.length-1]):0;};
+  // Cotización nueva → tarifa vigente HOY (ignora versiones históricas).
+  const tariffNowOk=t=>{const n=Date.now();return (t.effective_from==null||Date.parse(t.effective_from)<=n)&&(t.effective_to==null||n<Date.parse(t.effective_to));};
+  const getFleteRate=(svcKey,amount)=>{const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate"&&tariffNowOk(t));for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return getEffRate(r);}return rates.length?getEffRate(rates[rates.length-1]):0;};
   const getSurcharge=(svcKey,totalVal,amount)=>{const surcharges=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty)-Number(a.min_qty));if(amount<=0)return{pct:0,amt:0};const vpu=totalVal/amount;for(const s of surcharges){if(vpu>=Number(s.min_qty))return{pct:Number(s.rate),amt:totalVal*(Number(s.rate)/100)};}return{pct:0,amt:0};};
 
   const calculateUSA=()=>{
