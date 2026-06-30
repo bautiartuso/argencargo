@@ -1744,8 +1744,8 @@ function CalculatorPage({token,client}){
       // tiraba "Reduce of empty array with no initial value" y crasheaba toda la página.
       if(results.channels.length===0){
         // Mensaje de WhatsApp con TODA la info que cargó el cliente (productos + bultos), para cotizar a mano.
-        const prodLines=products.filter(p=>(p.description||"").trim()||toN(p.unit_price)>0).map((p,i)=>`Mercadería ${i+1}: ${p.description||"—"}\nCantidad: ${p.quantity||1}\nValor unitario: USD ${toN(p.unit_price).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`).join("\n\n");
-        const pkgLines=pkgs.filter(p=>toN(p.weight)>0||toN(p.length)>0).map((p,i)=>{const dims=(toN(p.length)&&toN(p.width)&&toN(p.height))?`${p.length}×${p.width}×${p.height} cm`:"sin dimensiones";return `Bulto ${i+1}:\nCantidad: ${p.qty||1}\nDimensiones: ${dims}\nPeso: ${toN(p.weight)||0} kg`;}).join("\n\n");
+        const prodLines=products.filter(p=>(p.description||"").trim()||toN(p.unit_price)>0).map((p,i)=>`🏷️ *Mercadería ${i+1}*\nDescripción: ${p.description||"—"}\nCantidad: ${p.quantity||1}\nValor unitario: USD ${toN(p.unit_price).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`).join("\n\n");
+        const pkgLines=pkgs.filter(p=>toN(p.weight)>0||toN(p.length)>0).map((p,i)=>{const dims=(toN(p.length)&&toN(p.width)&&toN(p.height))?`${p.length}×${p.width}×${p.height} cm`:"sin dimensiones";return `📦 *Bulto ${i+1}*\nDimensiones: ${dims}\nPeso unitario: ${toN(p.weight)||0} kg\nCantidad: ${p.qty||1}`;}).join("\n\n");
         const waMsg=`Hola! Coticé en el portal pero mi carga necesita cotización a medida.${prodLines?`\n\n${prodLines}`:""}${pkgLines?`\n\n${pkgLines}`:""}`;
         return <div style={{background:"rgba(251,191,36,0.06)",border:"1.5px solid rgba(251,191,36,0.35)",borderRadius:16,padding:"2rem",textAlign:"center"}}>
         <p style={{fontSize:34,margin:"0 0 10px"}}>🤝</p>
