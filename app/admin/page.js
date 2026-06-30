@@ -11578,6 +11578,7 @@ function MaritimePanel({token,allClients=[]}){
   const [linkingContainer,setLinkingContainer]=useState(null); // contenedor al que se vinculan
   const [linkSel,setLinkSel]=useState(new Set());
   const [histOpen,setHistOpen]=useState(false); // sección historial de contenedores arribados
+  const [closedHistDep,setClosedHistDep]=useState(new Set()); // depósitos colapsados dentro del historial
   const linkOperatedShipments=async()=>{
     const ids=[...linkSel];
     if(!linkingContainer||ids.length===0)return;
@@ -11886,12 +11887,14 @@ function MaritimePanel({token,allClients=[]}){
         </div>
         {histOpen&&Object.entries(byWh).sort(([a],[b])=>a.localeCompare(b)).map(([wh,conts])=>{
           const whGan=conts.reduce((s,c)=>s+gananciaOf(c),0);
+          const depClosed=closedHistDep.has(wh);
+          const toggleDep=()=>setClosedHistDep(prev=>{const n=new Set(prev);if(n.has(wh))n.delete(wh);else n.add(wh);return n;});
           return <div key={wh}>
-            <div style={{padding:"9px 18px",background:"rgba(96,165,250,0.05)",borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              <span style={{fontSize:11.5,fontWeight:800,color:"#60a5fa",textTransform:"uppercase",letterSpacing:"0.05em"}}>📦 Depósito {wh} <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {conts.length} contenedor{conts.length!==1?"es":""}</span></span>
+            <div onClick={toggleDep} title={depClosed?"Abrir":"Cerrar"} style={{padding:"9px 18px",background:"rgba(96,165,250,0.05)",borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",cursor:"pointer"}}>
+              <span style={{fontSize:11.5,fontWeight:800,color:"#60a5fa",textTransform:"uppercase",letterSpacing:"0.05em",display:"inline-flex",alignItems:"center",gap:8}}><span style={{fontSize:11,transition:"transform 200ms",transform:depClosed?"rotate(0deg)":"rotate(90deg)",display:"inline-block",userSelect:"none"}}>▶</span>📦 Depósito {wh} <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {conts.length} contenedor{conts.length!==1?"es":""}</span></span>
               <span style={{fontSize:11.5,fontWeight:700,color:whGan>=0?"#4ade80":"#f87171"}}>📈 Ganancia: USD {usd2(whGan)}</span>
             </div>
-            {conts.map(c=>{
+            {!depClosed&&conts.map(c=>{
               const cShips=shipments.filter(s=>s.container_id===c.id);
               const cbmC=cShips.reduce((s,sh)=>s+cbmOf(sh.id),0);
               const opCodes=[...new Set(cShips.map(s=>s.operations?.operation_code).filter(Boolean))];
