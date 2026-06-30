@@ -11336,7 +11336,7 @@ function MaritimePanel({token,allClients=[]}){
   const load=async()=>{
     setLo(true);
     const [sh,pk,it,wh,ct,tf,cf,ov]=await Promise.all([
-      dq("maritime_shipments",{token,filters:"?select=*,operations(operation_code)&order=created_at.desc"}),
+      dq("maritime_shipments",{token,filters:"?select=*,operations(operation_code,budget_total,cost_flete)&order=created_at.desc"}),
       dq("maritime_packages",{token,filters:"?select=*&order=bulto_number.asc"}),
       dq("maritime_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("maritime_warehouses",{token,filters:"?select=*&order=sort_order.asc,name.asc"}),
@@ -11870,6 +11870,11 @@ function MaritimePanel({token,allClients=[]}){
       const arrived=containers.filter(c=>c.status==="arribado").sort((a,b)=>String(b.arrived_at||"").localeCompare(String(a.arrived_at||"")));
       if(arrived.length===0)return null;
       const fmtD=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"}):"—";
+      const usd2=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+      // Ganancia REAL del contenedor = suma por op (a cobrar − costo de flete cargado).
+      const gananciaOf=(c)=>{const sh=shipments.filter(s=>s.container_id===c.id&&s.operation_id&&s.operations);const byOp={};sh.forEach(s=>{byOp[s.operation_id]=s.operations;});return Object.values(byOp).reduce((g,o)=>g+(Number(o.budget_total||0)-Number(o.cost_flete||0)),0);};
+      const byWh={};arrived.forEach(c=>{const k=c.warehouse||"Sin depósito";(byWh[k]=byWh[k]||[]).push(c);});
+      const grandTotal=arrived.reduce((s,c)=>s+gananciaOf(c),0);
       return <div style={{marginTop:26,background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,overflow:"hidden"}}>
         <div onClick={()=>setHistOpen(p=>!p)} style={{padding:"14px 18px",background:"rgba(34,197,94,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",gap:10,flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -11877,31 +11882,41 @@ function MaritimePanel({token,allClients=[]}){
             <p style={{fontSize:13,fontWeight:800,color:"#22c55e",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>⚓ Historial de contenedores arribados</p>
             <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{arrived.length} contenedor{arrived.length!==1?"es":""}</span>
           </div>
+          <span style={{fontSize:12.5,fontWeight:800,padding:"3px 11px",borderRadius:8,background:grandTotal>=0?"rgba(74,222,128,0.16)":"rgba(248,113,113,0.16)",color:grandTotal>=0?"#4ade80":"#f87171"}} title="Ganancia total de los contenedores arribados (a cobrar − costos)">📈 Ganancia total: USD {usd2(grandTotal)}</span>
         </div>
-        {histOpen&&arrived.map(c=>{
-          const cShips=shipments.filter(s=>s.container_id===c.id);
-          const cbmC=cShips.reduce((s,sh)=>s+cbmOf(sh.id),0);
-          const opCodes=[...new Set(cShips.map(s=>s.operations?.operation_code).filter(Boolean))];
-          return <div key={c.id} style={{borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-            <div style={{padding:"11px 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
-              <div style={{flex:1,minWidth:260}}>
-                <p style={{fontSize:13,fontWeight:800,color:"#fff",margin:"0 0 3px"}}>🚢 {c.code} {c.shipping_line&&<span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#93c5fd"}}>⚓ {c.shipping_line}</span>} <span style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)"}}>· 📦 {c.warehouse}</span></p>
-                <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:0}}>🛳️ Salió {fmtD(c.departed_at)} · ⚓ ETA Pto. Buenos Aires {fmtD(c.eta)} · 📦 Entrega est. {fmtD(deliveryEtaStr(c.eta))} · Arribó {fmtD(c.arrived_at)} · {cShips.length} carga{cShips.length!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{c.notes?` · ${c.notes}`:""}</p>
-                {opCodes.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:6}}>
-                  {opCodes.map(oc=><span key={oc} style={{fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,fontFamily:"monospace"}}>🔗 {oc}</span>)}
-                </div>}
-                {cShips.length>0&&<div style={{marginTop:6}}>
-                  {cShips.map(s=><p key={s.id} style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0"}}>· {s.product_description||"—"} <span style={{color:"rgba(255,255,255,0.35)"}}>({s.client_name_snapshot||"—"})</span>{s.operations?.operation_code?<span style={{color:IC,fontFamily:"monospace",marginLeft:5}}>{s.operations.operation_code}</span>:<span style={{color:"#fbbf24",marginLeft:5,fontStyle:"italic"}}>sin operar</span>}</p>)}
-                </div>}
-              </div>
-              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                <button onClick={()=>openCostModalForContainer(c)} title="Cargar el costo de cada operación de este contenedor" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#4ade80",cursor:"pointer"}}>💲 Costos</button>
-                <button onClick={()=>{setLinkingContainer(c);setLinkSel(new Set());}} title="Vincular cargas ya operadas que no figuran en ningún contenedor" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>🔗 Vincular cargas</button>
-                <button onClick={()=>setContainerStatus(c,"en_transito")} title="Volver a en tránsito" style={{padding:"4px 8px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.45)",cursor:"pointer"}}>↶</button>
-                <button onClick={()=>setEditingContainer(c)} style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.06)",color:"#60a5fa",cursor:"pointer"}}>✎</button>
-                <button onClick={()=>delContainer(c)} style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
-              </div>
+        {histOpen&&Object.entries(byWh).sort(([a],[b])=>a.localeCompare(b)).map(([wh,conts])=>{
+          const whGan=conts.reduce((s,c)=>s+gananciaOf(c),0);
+          return <div key={wh}>
+            <div style={{padding:"9px 18px",background:"rgba(96,165,250,0.05)",borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:11.5,fontWeight:800,color:"#60a5fa",textTransform:"uppercase",letterSpacing:"0.05em"}}>📦 Depósito {wh} <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {conts.length} contenedor{conts.length!==1?"es":""}</span></span>
+              <span style={{fontSize:11.5,fontWeight:700,color:whGan>=0?"#4ade80":"#f87171"}}>📈 Ganancia: USD {usd2(whGan)}</span>
             </div>
+            {conts.map(c=>{
+              const cShips=shipments.filter(s=>s.container_id===c.id);
+              const cbmC=cShips.reduce((s,sh)=>s+cbmOf(sh.id),0);
+              const opCodes=[...new Set(cShips.map(s=>s.operations?.operation_code).filter(Boolean))];
+              const gan=gananciaOf(c);
+              return <div key={c.id} style={{borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+                <div style={{padding:"11px 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:260}}>
+                    <p style={{fontSize:13,fontWeight:800,color:"#fff",margin:"0 0 3px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>🚢 {c.code} {c.shipping_line&&<span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#93c5fd"}}>⚓ {c.shipping_line}</span>}<span style={{fontSize:10.5,fontWeight:800,padding:"2px 8px",borderRadius:5,background:gan>=0?"rgba(74,222,128,0.16)":"rgba(248,113,113,0.16)",color:gan>=0?"#4ade80":"#f87171"}}>📈 Ganancia: USD {usd2(gan)}</span></p>
+                    <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:0}}>🛳️ Salió {fmtD(c.departed_at)} · ⚓ ETA Pto. Buenos Aires {fmtD(c.eta)} · 📦 Entrega est. {fmtD(deliveryEtaStr(c.eta))} · Arribó {fmtD(c.arrived_at)} · {cShips.length} carga{cShips.length!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{c.notes?` · ${c.notes}`:""}</p>
+                    {opCodes.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:6}}>
+                      {opCodes.map(oc=><span key={oc} style={{fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,fontFamily:"monospace"}}>🔗 {oc}</span>)}
+                    </div>}
+                    {cShips.length>0&&<div style={{marginTop:6}}>
+                      {cShips.map(s=><p key={s.id} style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0"}}>· {s.product_description||"—"} <span style={{color:"rgba(255,255,255,0.35)"}}>({s.client_name_snapshot||"—"})</span>{s.operations?.operation_code?<span style={{color:IC,fontFamily:"monospace",marginLeft:5}}>{s.operations.operation_code}</span>:<span style={{color:"#fbbf24",marginLeft:5,fontStyle:"italic"}}>sin operar</span>}</p>)}
+                    </div>}
+                  </div>
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                    <button onClick={()=>openCostModalForContainer(c)} title="Cargar el costo de cada operación de este contenedor" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#4ade80",cursor:"pointer"}}>💲 Costos</button>
+                    <button onClick={()=>setContainerStatus(c,"en_transito")} title="Volver a en tránsito" style={{padding:"4px 8px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.45)",cursor:"pointer"}}>↶</button>
+                    <button onClick={()=>setEditingContainer(c)} style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.06)",color:"#60a5fa",cursor:"pointer"}}>✎</button>
+                    <button onClick={()=>delContainer(c)} style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
+                  </div>
+                </div>
+              </div>;
+            })}
           </div>;
         })}
       </div>;
