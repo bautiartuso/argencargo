@@ -10243,7 +10243,7 @@ function AdminCalculator({token}){
         <input value={pk.weight} onChange={e=>chPkg(i,"weight",e.target.value)} placeholder="Peso kg" style={inputStyle}/>
         {pkgs.length>1&&<button onClick={()=>rmPkg(i)} style={{padding:"7px 9px",fontSize:11,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>×</button>}
       </div>)}
-      <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>FOB total: <strong style={{color:IC}}>USD {fmt(totalFob)}</strong> · CBM total: <strong style={{color:IC}}>{totCBM.toFixed(4)} m³</strong></p>
+      {(()=>{const _gw=pkgs.reduce((s,p)=>s+toN(p.weight)*Number(p.qty||1),0);const _pf=pkgs.reduce((s,p)=>{const q=Number(p.qty||1),gw=toN(p.weight),l=toN(p.length),w=toN(p.width),h=toN(p.height);return s+Math.max(gw*q,(l&&w&&h)?((l*w*h)/5000)*q:0);},0);return <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>FOB total: <strong style={{color:IC}}>USD {fmt(totalFob)}</strong> · CBM total: <strong style={{color:IC}}>{totCBM.toFixed(4)} m³</strong> · Peso facturable: <strong style={{color:IC}}>{fmt(_pf)} kg</strong> · Peso bruto: <strong style={{color:IC}}>{fmt(_gw)} kg</strong></p>;})()}
     </div>
     {/* Calcular */}
     {(()=>{const unclassified=!hasBrand&&products.filter(p=>toN(p.unit_price)>0&&!p.ncm);const blocked=totalFob<=0||unclassified.length>0;return <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:18,flexWrap:"wrap"}}>
