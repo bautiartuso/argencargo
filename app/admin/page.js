@@ -201,9 +201,11 @@ function OperationsList({token,onSelect,onNew}){
   const [search,setSearch]=useState(()=>loadOpsFilters().search||"");
   const [fStatuses,setFStatuses]=useState(()=>{const v=loadOpsFilters().fStatuses;return Array.isArray(v)?v:[];});
   const [fChannels,setFChannels]=useState(()=>{const v=loadOpsFilters().fChannels;return Array.isArray(v)?v:[];});
+  const [fOrigin,setFOrigin]=useState(()=>loadOpsFilters().fOrigin||""); // "" | "China" | "USA"
+  const [fEta,setFEta]=useState(()=>loadOpsFilters().fEta||""); // YYYY-MM-DD
   const [sortCol,setSortCol]=useState(()=>loadOpsFilters().sortCol||"smart");
   const [sortDir,setSortDir]=useState(()=>loadOpsFilters().sortDir||"asc");
-  useEffect(()=>{try{localStorage.setItem(OPS_FILTERS_KEY,JSON.stringify({search,fStatuses,fChannels,sortCol,sortDir}));}catch{}},[search,fStatuses,fChannels,sortCol,sortDir]);
+  useEffect(()=>{try{localStorage.setItem(OPS_FILTERS_KEY,JSON.stringify({search,fStatuses,fChannels,fOrigin,fEta,sortCol,sortDir}));}catch{}},[search,fStatuses,fChannels,fOrigin,fEta,sortCol,sortDir]);
   const [showStatusDrop,setShowStatusDrop]=useState(false);const [showChannelDrop,setShowChannelDrop]=useState(false);const [pageClosed,setPageClosed]=useState(1);const CLOSED_PER_PAGE=25;
   const [selectedIds,setSelectedIds]=useState(new Set());
   const [bulkAction,setBulkAction]=useState(null); // {action:"setStatus"|"delete"|"markCollected", value?}
@@ -276,7 +278,7 @@ function OperationsList({token,onSelect,onNew}){
   const toggleStatus=(s)=>setFStatuses(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
   const toggleChannel=(c)=>setFChannels(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c]);
   const getOrigin=(op)=>op.origin||"China";
-  const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannels.length>0&&!fChannels.includes(o.channel))return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
+  const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannels.length>0&&!fChannels.includes(o.channel))return false;if(fOrigin&&String(o.origin||"").toLowerCase()!==fOrigin.toLowerCase())return false;if(fEta&&String(o.eta||"").slice(0,10)!==fEta)return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
   const calcGan=(o)=>{
     // Op perdida en aduana: ingreso 0 (no se cobra), la "ganancia" es la pérdida operativa (-costos).
     let ing;
@@ -379,6 +381,16 @@ function OperationsList({token,onSelect,onNew}){
       </div>
       <div style={{position:"relative"}}><button onClick={()=>setShowChannelDrop(p=>!p)} style={{padding:"10px 14px",fontSize:12,border:`1px solid ${fChannels.length>0?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,borderRadius:8,background:fChannels.length>0?"rgba(184,149,106,0.10)":"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>{fChannels.length>0?`${fChannels.length} canal${fChannels.length>1?"es":""}`:"Todos los canales"} ▼</button>
         {showChannelDrop&&<div style={{position:"absolute",top:"100%",left:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:8,zIndex:10,minWidth:180}}>{CHANNELS.map(c=><label key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",cursor:"pointer",borderRadius:4}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}><input type="checkbox" checked={fChannels.includes(c)} onChange={()=>toggleChannel(c)}/><span style={{fontSize:12,color:"#fff",fontWeight:600}}>{CM[c]}</span></label>)}<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:4}}><button onClick={()=>{setFChannels([]);setShowChannelDrop(false);}} style={{fontSize:11,color:IC,background:"none",border:"none",cursor:"pointer",padding:"4px 8px"}}>Limpiar canales</button></div></div>}
+      </div>
+      <select value={fOrigin} onChange={e=>setFOrigin(e.target.value)} style={{padding:"10px 14px",fontSize:12,border:`1px solid ${fOrigin?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,borderRadius:8,background:fOrigin?"rgba(184,149,106,0.10)":"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer"}}>
+        <option value="" style={{background:"#142038"}}>Todos los orígenes</option>
+        <option value="China" style={{background:"#142038"}}>🇨🇳 China</option>
+        <option value="USA" style={{background:"#142038"}}>🇺🇸 USA</option>
+      </select>
+      <div style={{display:"inline-flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:11,color:"rgba(255,255,255,0.45)",fontWeight:600}}>ETA</span>
+        <input type="date" value={fEta} onChange={e=>setFEta(e.target.value)} title="Filtrar por fecha de ETA" style={{padding:"9px 12px",fontSize:12,border:`1px solid ${fEta?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,borderRadius:8,background:fEta?"rgba(184,149,106,0.10)":"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontFamily:"inherit"}}/>
+        {fEta&&<button onClick={()=>setFEta("")} title="Limpiar ETA" style={{padding:"6px 9px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>✕</button>}
       </div>
       {sortCol!=="smart"&&<button onClick={()=>{setSortCol("smart");setSortDir("asc");}} style={{padding:"10px 14px",fontSize:11,fontWeight:600,border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:8,background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>↻ Restaurar orden</button>}
     </div>
