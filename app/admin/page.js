@@ -10021,7 +10021,7 @@ function AdminCalculator({token}){
     const p=products[i];if(!p.description?.trim())return;
     setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:true}:x));
     try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:p.description})});const d=await r.json();
-      setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false,ncm:d?.ncm_code?{ncm_code:d.ncm_code,ncm_description:d.ncm_description||p.description,import_duty_rate:d.import_duty_rate||35,statistics_rate:d.statistics_rate||3,iva_rate:d.iva_rate??21}:null}:x));
+      setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false,ncm:d?.ncm_code?{ncm_code:d.ncm_code,ncm_description:d.ncm_description||p.description,import_duty_rate:d.import_duty_rate??35,statistics_rate:d.statistics_rate??3,iva_rate:d.iva_rate??21}:null}:x));
     }catch(e){setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false}:x));}
   };
   const calculate=()=>{
