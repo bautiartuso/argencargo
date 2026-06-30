@@ -10922,7 +10922,7 @@ function AdminDashboard({session,onLogout}){
   const navSections=[
     {section:"Operativa",items:[
       {key:"operations",label:"Operaciones",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},
-      {key:"carga_dia",label:"Cargas USA",p:["M22 2L11 13","M22 2l-7 20-4-9-9-4 20-7z"]},
+      {key:"carga_dia",label:"Aéreo B",p:["M22 2L11 13","M22 2l-7 20-4-9-9-4 20-7z"]},
       {key:"agents",label:"Agentes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},
       {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
       {key:"tasks",label:"Tareas",p:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"]},
@@ -11056,6 +11056,7 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
   const BLUE="#3B7DD8",BLUE_SOFT="rgba(59,125,216,0.12)",BLUE_BORDER="rgba(59,125,216,0.35)";
   const today=new Date().toISOString().slice(0,10);
   const [proveedor,setProveedor]=useState("All Red Corp");
+  const [origin,setOrigin]=useState("USA"); // USA | China — define la tarifa (aereo_b_usa/china) y la descripción
   const [fecha,setFecha]=useState(today);
   const [pesoTotal,setPesoTotal]=useState("");
   const [importe,setImporte]=useState("");
@@ -11067,9 +11068,10 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
   const [creating,setCreating]=useState(false);
   const [msg,setMsg]=useState("");
   useEffect(()=>{(async()=>{
-    const t=await dq("tariffs",{token,filters:"?service_key=eq.aereo_b_usa&type=eq.rate&select=*&order=min_qty.asc"});setTariffs(Array.isArray(t)?t:[]);
+    const svc=origin==="USA"?"aereo_b_usa":"aereo_b_china";
+    const t=await dq("tariffs",{token,filters:`?service_key=eq.${svc}&type=eq.rate&select=*&order=min_qty.asc`});setTariffs(Array.isArray(t)?t:[]);
     const o=await dq("client_tariff_overrides",{token,filters:"?select=client_id,tariff_id,custom_rate"});setOverrides(Array.isArray(o)?o:[]);
-  })();},[token]);
+  })();},[token,origin]);
   const fmt=n=>`USD ${Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const fk=n=>`${Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
   // Parseo es-AR: "65,9" → 65.9 ; "2.636,50" → 2636.5 ; "2636" → 2636 ; "65.9" → 65.9.
@@ -11115,12 +11117,13 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
       let created=0;
       for(const op of opList){
         const code=nextCode();
-        const body={operation_code:code,client_id:op.cid,channel:"aereo_negro",origin:"USA",service_type:"courier",status:"entregada",eta:fecha,closed_at:new Date().toISOString(),has_phones:false,budget_mode:"auto",budget_total:r2(op.ingreso),budget_flete:r2(op.ingreso),budget_taxes:0,budget_seguro:0,budget_surcharge:0,cost_flete:r2(op.costFlete),cost_flete_local:r2(op.costLocal),cost_flete_method:metodo,cost_flete_paid_at:fecha,description:"Aéreo USA · carga "+fecha};
+        const origLbl=origin==="USA"?"USA":"China";
+        const body={operation_code:code,client_id:op.cid,channel:"aereo_negro",origin,service_type:"courier",status:"entregada",eta:fecha,closed_at:new Date().toISOString(),has_phones:false,budget_mode:"auto",budget_total:r2(op.ingreso),budget_flete:r2(op.ingreso),budget_taxes:0,budget_seguro:0,budget_surcharge:0,cost_flete:r2(op.costFlete),cost_flete_local:r2(op.costLocal),cost_flete_method:metodo,cost_flete_paid_at:fecha,description:"Aéreo "+origLbl+" · carga "+fecha};
         const r=await dq("operations",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
         const opId=Array.isArray(r)&&r[0]?r[0].id:(r&&r.id);
         if(!opId)continue;
         let pn=0;for(const b of op.bultos){pn++;await dq("operation_packages",{method:"POST",token,body:{operation_id:opId,package_number:pn,quantity:1,gross_weight_kg:r2(b.prorated),national_tracking:b.tracking||null}});}
-        if(op.costFlete>0.005)await dq("finance_entries",{method:"POST",token,body:{date:fecha,type:"gasto",description:"Flete Aéreo USA "+code+" · "+proveedor,amount:r2(op.costFlete),currency:"USD",payment_method:metodo,is_paid:true,auto_generated:true,operation_id:opId}});
+        if(op.costFlete>0.005)await dq("finance_entries",{method:"POST",token,body:{date:fecha,type:"gasto",description:"Flete Aéreo "+origLbl+" "+code+" · "+proveedor,amount:r2(op.costFlete),currency:"USD",payment_method:metodo,is_paid:true,auto_generated:true,operation_id:opId}});
         if(op.costLocal>0.005)await dq("finance_entries",{method:"POST",token,body:{date:fecha,type:"gasto",description:"Flete local "+code,amount:r2(op.costLocal),currency:"USD",payment_method:metodo,is_paid:true,auto_generated:true,operation_id:opId}});
         created++;
       }
@@ -11136,9 +11139,11 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
   const mc={background:"rgba(255,255,255,0.03)",borderRadius:10,padding:"12px 14px"};
   return <div style={{maxWidth:980,margin:"0 auto"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
-      <div style={{display:"flex",alignItems:"center",gap:11}}>
-        <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Carga del día</h2>
-        <span style={{fontSize:12,color:BLUE,background:BLUE_SOFT,borderRadius:8,padding:"5px 12px",fontWeight:600}}>✈ Aéreo Estados Unidos</span>
+      <div style={{display:"flex",alignItems:"center",gap:11,flexWrap:"wrap"}}>
+        <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Carga del día · Aéreo B</h2>
+        <div style={{display:"inline-flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:9,border:"1px solid rgba(255,255,255,0.08)"}}>
+          {[{k:"USA",l:"🇺🇸 USA"},{k:"China",l:"🇨🇳 China"}].map(o=><button key={o.k} onClick={()=>setOrigin(o.k)} style={{padding:"5px 12px",fontSize:12,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:origin===o.k?BLUE_SOFT:"transparent",color:origin===o.k?BLUE:"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
+        </div>
       </div>
       <div><label style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginRight:8}}>Fecha</label><input type="date" value={fecha} onChange={e=>setFecha(e.target.value)} style={{...inp,width:160,display:"inline-block"}}/></div>
     </div>
