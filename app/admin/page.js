@@ -5939,7 +5939,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.source_item_id}`,body:opItemBody});
           }
           ok++;
-          if(d.intervention?.required)detectedInterventions.push({description:it.description,ncm:d.ncm_code,types:d.intervention.types||[],reason:d.intervention.reason||null});
+          if(d.intervention?.required)detectedInterventions.push({id:it.id,description:it.description,ncm:d.ncm_code,types:d.intervention.types||[],reason:d.intervention.reason||null});
         }
       }catch(e){console.error("ncm error",e);}
     }
@@ -5953,6 +5953,26 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       onFlash(`✨ ${ok}/${pending.length} HS codes asignados — sin intervenciones detectadas`);
     }
     onReload();
+  };
+  // Revisa intervención contra el HS CODE ACTUAL de cada item (a diferencia de autoClassifyHs, que solo
+  // clasifica los que no tienen HS). Hace falta porque si el usuario reclasifica un item a mano con otro
+  // código, el banner de intervenciones queda pegado al código viejo — esto lo recalcula desde cero.
+  const [checkingInterventions,setCheckingInterventions]=useState(false);
+  const recheckInterventions=async()=>{
+    const withHs=items.filter(it=>it.hs_code&&it.hs_code.trim());
+    if(withHs.length===0){setInterventionWarnings([]);onFlash("Ningún item tiene HS code todavía");return;}
+    setCheckingInterventions(true);
+    const fresh=[];
+    for(const it of withHs){
+      try{
+        const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({check_ncm_only:it.hs_code.trim()})});
+        const d=await r.json();
+        if(d?.intervention?.required)fresh.push({id:it.id,description:it.description,ncm:it.hs_code,types:d.intervention.types||[],reason:d.intervention.reason||null});
+      }catch(e){console.error("recheck intervention error",e);}
+    }
+    setInterventionWarnings(fresh);
+    setCheckingInterventions(false);
+    onFlash(fresh.length>0?`⚠ ${fresh.length} item(s) con intervención según su HS actual`:"✓ Sin intervenciones con los HS actuales");
   };
   // --- Editar datos de despacho (costo, peso, carrier, tracking) y recalcular cost_share por op ---
   const [editCost,setEditCost]=useState(false);
@@ -6262,7 +6282,10 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         {interventionWarnings.length>0&&<div style={{padding:"12px 14px",background:"rgba(251,191,36,0.10)",border:"1.5px solid rgba(251,191,36,0.4)",borderRadius:10,marginTop:10}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:6}}>
             <span style={{fontSize:12,fontWeight:800,color:"#fbbf24",textTransform:"uppercase",letterSpacing:"0.05em"}}>⚠ {interventionWarnings.length} {interventionWarnings.length===1?"item":"items"} con posible intervención de organismo</span>
-            <button onClick={()=>setInterventionWarnings([])} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:18,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <button onClick={recheckInterventions} disabled={checkingInterventions} title="Vuelve a chequear intervención contra el HS code actual de cada item (por si reclasificaste alguno a mano)" style={{fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:6,border:"1px solid rgba(251,191,36,0.35)",background:"rgba(251,191,36,0.08)",color:"#fbbf24",cursor:checkingInterventions?"wait":"pointer",opacity:checkingInterventions?0.6:1}}>{checkingInterventions?"Revisando…":"🔄 Revisar con HS actual"}</button>
+              <button onClick={()=>setInterventionWarnings([])} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:18,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+            </div>
           </div>
           <ul style={{margin:0,paddingLeft:18,listStyle:"disc"}}>
             {interventionWarnings.map((w,i)=><li key={i} style={{fontSize:12,color:"rgba(255,255,255,0.85)",marginBottom:4}}>
@@ -6275,7 +6298,8 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           {items.some(it=>it.description&&it.description.trim()&&(!it.hs_code||!it.hs_code.trim()))&&<button onClick={autoClassifyHs} disabled={classifyingHs} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:classifyingHs?"wait":"pointer",opacity:classifyingHs?0.6:1}}>{classifyingHs?"Clasificando…":"✨ Auto-completar HS Code (IA)"}</button>}
           {needsCompression&&!flight.invoice_presented_at&&opsCompressible.map(({opId,opCode,count,target})=><button key={opId} onClick={()=>openCompressFor(opId,target)} title={`Comprimir los ${count} items de ${opCode} a ${target} (otras ops aportan ${totalInvoiceItems-count} al total). Límite RG 5608: ${MAX_INVOICE_ITEMS} por factura.`} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🗜 Comprimir {opCode} ({count} → ≤{target})</button>)}
           {needsCompression&&!flight.invoice_presented_at&&<button onClick={()=>openCompressForFlight(MAX_INVOICE_ITEMS)} title={`Comprimir TODOS los items del vuelo (cross-ops). Útil cuando varias ops del mismo cliente repiten mercadería y la compresión por op no agrupa entre sí. Sólo reescribe la declaración del vuelo — los productos en las ops del cliente quedan intactos y los clasificás después manualmente.`} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(167,139,250,0.5)",background:"rgba(167,139,250,0.14)",color:"#a78bfa",cursor:"pointer"}}>🗜 Comprimir VUELO completo ({totalInvoiceItems} → ≤{MAX_INVOICE_ITEMS}) · no toca ops</button>}
-          {!flight.invoice_presented_at&&items.length>0&&<button onClick={async()=>{await saveAllItems();onFlash("Guardando y recalculando presupuestos…");await recalcAllBudgets();}} disabled={recalcing} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:recalcing?"wait":"pointer",opacity:recalcing?0.6:1}}>{recalcing?"Recalculando…":"💾 Guardar y recalcular presupuestos"}</button>}
+          {items.some(it=>it.hs_code&&it.hs_code.trim())&&<button onClick={recheckInterventions} disabled={checkingInterventions} title="Revisa intervención contra el HS code actual de cada item (útil si reclasificaste alguno a mano)" style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(251,191,36,0.35)",background:"rgba(251,191,36,0.08)",color:"#fbbf24",cursor:checkingInterventions?"wait":"pointer",opacity:checkingInterventions?0.6:1}}>{checkingInterventions?"Revisando…":"🔄 Revisar intervenciones (HS actual)"}</button>}
+          {!flight.invoice_presented_at&&items.length>0&&<button onClick={async()=>{await saveAllItems();onFlash("Guardando y recalculando presupuestos…");await recalcAllBudgets();await recheckInterventions();}} disabled={recalcing} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:recalcing?"wait":"pointer",opacity:recalcing?0.6:1}}>{recalcing?"Recalculando…":"💾 Guardar y recalcular presupuestos"}</button>}
         </div>
       </div>}
       {flight.status==="preparando"&&<div style={{marginTop:16,padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>

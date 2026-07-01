@@ -220,7 +220,16 @@ function enforceInterventionByNcm(ncm_code, currentIntervention) {
 
 export async function POST(req) {
   try {
-    const { description, image, image_mime } = await req.json();
+    const { description, image, image_mime, check_ncm_only } = await req.json();
+
+    // Modo "solo chequear intervención de un NCM ya asignado" — no reclasifica, no llama a la IA.
+    // Se usa para revisar items que el usuario ya reclasificó manualmente con otro código,
+    // así el chequeo de intervención sigue el código ACTUAL en vez de quedar pegado al viejo.
+    if (check_ncm_only) {
+      const intervention = enforceInterventionByNcm(check_ncm_only, { required: false, types: [], reason: null });
+      return Response.json({ ncm_code: check_ncm_only, intervention, source: "rules-only" });
+    }
+
     if (!description && !image) return Response.json({ error: "Description or image required" }, { status: 400 });
 
     // Si NO hay imagen, primero probar overrides por descripción (rápido y barato)
