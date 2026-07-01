@@ -289,9 +289,13 @@ function OperationsList({token,onSelect,onNew}){
       const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
       const cash=isArs&&rate>0?raw/rate:raw;
       // Sumar solo crédito de CC aplicado (es ingreso real ya recibido en su momento). El descuento NO suma — es plata que no entró.
-      // Capear cash al budget_total: si pagó de más, el excedente va a CC, no es ingreso de la op
+      // Capear cash al budget_total: si pagó de más, el excedente va a CC, no es ingreso de la op.
+      // EXCEPCIÓN: si hay extra_charge_usd (cargo adicional explícito, no un error de pago), ese excedente
+      // SÍ es ingreso real de esta operación y no se debe capear — si no, "Ganancia por canal"/"Top clientes"
+      // quedan por debajo de lo que el panel de Rentabilidad (que sí lo suma) muestra para la misma op.
       const bt=Number(o.budget_total||0);
-      const cashForOp=bt>0?Math.min(cash,bt):cash;
+      const extraCharge=Number(o.extra_charge_usd||0);
+      const cashForOp=extraCharge>0.01?cash:(bt>0?Math.min(cash,bt):cash);
       ing=cashForOp+Number(o.credit_applied_usd||0);
       // Fallback: si la op está cobrada pero no tiene collected_amount cargado, usar presupuesto
       if(ing<=0)ing=Number(o.budget_total||0);
@@ -8702,7 +8706,10 @@ function FinanceDashboard({token}){
       const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
       const cash=isArs&&rate>0?raw/rate:raw;
       const bt=Number(o.budget_total||0);
-      const cashForOp=bt>0?Math.min(cash,bt):cash;
+      // Si hay extra_charge_usd (cargo adicional explícito), ese excedente es ingreso real y no se capea
+      // al presupuesto — mismo criterio que el otro calcGan() y que el KPI de caja de arriba.
+      const extraCharge=Number(o.extra_charge_usd||0);
+      const cashForOp=extraCharge>0.01?cash:(bt>0?Math.min(cash,bt):cash);
       baseIng=cashForOp+Number(o.credit_applied_usd||0);
     } else {
       baseIng=Number(o.budget_total||0);
