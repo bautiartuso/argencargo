@@ -8762,6 +8762,11 @@ function FinanceDashboard({token}){
   const fixedCostsManual=finEntries.filter(e=>e.auto_generated===false&&e.type==="gasto");
   const totalCostOp=periodOps.reduce((s,o)=>s+calcGan(o).cost,0); // legacy, used elsewhere
 
+  // Gastos fijos del período (Meta ads, Vercel, Claude, salarios, comisiones, etc.) — no atados a ninguna
+  // operación puntual, por eso "Ganancia por canal" no los resta. Se muestran acá aparte para llegar
+  // a un resultado devengado neto real (no solo margen operativo por canal).
+  const periodFixedCosts=finEntries.filter(e=>e.auto_generated===false&&e.type==="gasto"&&!(e.payment_method==="tarjeta_credito"&&!e.is_paid)&&periodFilter(e.date)).reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
+
   // Ganancia CONSUMADA: solo ops efectivamente cobradas, filtradas por fecha de cobro
   // (la ganancia se consuma cuando se cobra; mientras no se cobre, no figura como ganancia).
   const cobradoOps=ops.filter(o=>o.is_collected&&!o.lost_in_customs_at&&periodFilter(o.collection_date||o.closed_at?.slice(0,10)));
@@ -9001,6 +9006,20 @@ function FinanceDashboard({token}){
           {bar(pct,gan>0?"#22c55e":"#ff6b6b")}
         </div>;});})()}
         {Object.keys(byChannel).length===0&&<p style={{color:"rgba(255,255,255,0.45)"}}>Sin ops cobradas en el período</p>}
+        {(()=>{const totalCanalGan=Object.values(byChannel).reduce((s,d)=>s+(d.ing-d.cost),0);const netDevengado=totalCanalGan-periodFixedCosts;return <div style={{marginTop:16,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Margen operativo (por canal)</span>
+            <span style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.7)"}}>{usd(totalCanalGan)}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Gastos fijos del período</span>
+            <span style={{fontSize:13,fontWeight:600,color:"#ff6b6b"}}>−{usd(periodFixedCosts)}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+            <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>Ganancia devengada neta</span>
+            <span style={{fontSize:16,fontWeight:800,color:netDevengado>=0?"#22c55e":"#ff6b6b"}}>{usd(netDevengado)}</span>
+          </div>
+        </div>;})()}
       </Card>
       <Card title="Top clientes por ganancia">
         {topClients.length>0?topClients.map(([name,d],i)=>{const mg=d.ing>0?((d.gan/d.ing)*100):0;const pct=(Math.abs(d.gan)/maxClientGan)*100;return <div key={name} style={{marginBottom:12}}>
