@@ -8762,11 +8762,6 @@ function FinanceDashboard({token}){
   const fixedCostsManual=finEntries.filter(e=>e.auto_generated===false&&e.type==="gasto");
   const totalCostOp=periodOps.reduce((s,o)=>s+calcGan(o).cost,0); // legacy, used elsewhere
 
-  // Gastos fijos del período (Meta ads, Vercel, Claude, salarios, comisiones, etc.) — no atados a ninguna
-  // operación puntual, por eso "Ganancia por canal" no los resta. Se muestran acá aparte para llegar
-  // a un resultado devengado neto real (no solo margen operativo por canal).
-  const periodFixedCosts=finEntries.filter(e=>e.auto_generated===false&&e.type==="gasto"&&!(e.payment_method==="tarjeta_credito"&&!e.is_paid)&&periodFilter(e.date)).reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
-
   // Ganancia CONSUMADA: solo ops efectivamente cobradas, filtradas por fecha de cobro
   // (la ganancia se consuma cuando se cobra; mientras no se cobre, no figura como ganancia).
   const cobradoOps=ops.filter(o=>o.is_collected&&!o.lost_in_customs_at&&periodFilter(o.collection_date||o.closed_at?.slice(0,10)));
@@ -9006,20 +9001,6 @@ function FinanceDashboard({token}){
           {bar(pct,gan>0?"#22c55e":"#ff6b6b")}
         </div>;});})()}
         {Object.keys(byChannel).length===0&&<p style={{color:"rgba(255,255,255,0.45)"}}>Sin ops cobradas en el período</p>}
-        {(()=>{const totalCanalGan=Object.values(byChannel).reduce((s,d)=>s+(d.ing-d.cost),0);const netDevengado=totalCanalGan-periodFixedCosts;return <div style={{marginTop:16,paddingTop:14,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Margen operativo (por canal)</span>
-            <span style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.7)"}}>{usd(totalCanalGan)}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Gastos fijos del período</span>
-            <span style={{fontSize:13,fontWeight:600,color:"#ff6b6b"}}>−{usd(periodFixedCosts)}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-            <span style={{fontSize:13,fontWeight:700,color:"#fff"}}>Ganancia devengada neta</span>
-            <span style={{fontSize:16,fontWeight:800,color:netDevengado>=0?"#22c55e":"#ff6b6b"}}>{usd(netDevengado)}</span>
-          </div>
-        </div>;})()}
       </Card>
       <Card title="Top clientes por ganancia">
         {topClients.length>0?topClients.map(([name,d],i)=>{const mg=d.ing>0?((d.gan/d.ing)*100):0;const pct=(Math.abs(d.gan)/maxClientGan)*100;return <div key={name} style={{marginBottom:12}}>
@@ -9071,39 +9052,56 @@ function FinanceDashboard({token}){
         const devIng=opsClosedInMonth.reduce((s,o)=>s+calcGan(o).ing,0);
         const devCostOp=opsClosedInMonth.reduce((s,o)=>s+calcGan(o).cost,0);
         // Gastos fijos: por fecha del gasto (incluye tarjeta pendiente)
-        const devCostFijos=fixedCostsManual.filter(e=>inMonth(e.date)).reduce((s,e)=>s+Number(e.amount||0),0);
+        const devCostFijos=fixedCostsManual.filter(e=>inMonth(e.date)).reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
         const devGan=devIng-devCostOp-devCostFijos;
 
-        // === CAJA (Cash Flow) ===
-        // Cash in: pagos parciales del cliente (operation_client_payments) + ops cobradas SIN pagos parciales (legacy) + pmts client_paid
-        const opsWithClientPmts=new Set(clientPmts.map(p=>p.operation_id));
-        const cashInOpsLegacy=ops.filter(o=>o.is_collected&&inMonth(o.collection_date)&&!opsWithClientPmts.has(o.id)).reduce((s,o)=>{
-          const amt=Number(o.collected_amount||o.budget_total||0);
-          const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
-          return s+(isArs&&rate?amt/rate:amt);
-        },0);
-        const cashInClientPmts=clientPmts.filter(p=>inMonth(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
-        const cashInPmts=Object.values(pmtsByOp).flat().filter(p=>p.client_paid&&inMonth(p.client_paid_date)).reduce((s,p)=>s+Number(p.client_paid_amount_usd??p.client_amount_usd??0),0);
-        const cashIn=cashInOpsLegacy+cashInClientPmts+cashInPmts;
-        // Cash out: costos ops pagados (no CC, ya que CC es anticipo) en closed_at del mes + gastos is_paid + giros debitados + anticipos
-        const cashOutOps=opsClosedInMonth.reduce((s,o)=>{
+        // === CAJA (Cash Flow) === misma lógica exacta que el KPI "Ganancia neta del período" de arriba
+        // (totalIng/totalCost), parametrizada por mes en vez de por el selector de período. Clave: los
+        // costos de una operación se imputan a la fecha en que REALMENTE se pagaron, no a la fecha en que
+        // cerró la operación — si no, un costo pagado en mayo de una op cerrada en junio aparecería como
+        // "salida de caja de junio", inflando el neto de caja del mes.
+        let cashIn=0;
+        ops.filter(o=>o.is_collected&&o.service_type!=="gestion_integral"&&inMonth(o.collection_date||o.closed_at?.slice(0,10))).forEach(o=>{
+          const opPmts=clientPmts.filter(p=>p.operation_id===o.id);
+          if(opPmts.length>0)return;
+          const raw=Number(o.collected_amount||o.budget_total||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
+          const cash=isArs&&rate>0?raw/rate:raw;
+          const collectedUsd=cash;const overpay=Math.max(0,collectedUsd-Number(o.budget_total||0));
+          const creditApp=Number(o.credit_applied_usd||0);const extraCharge=Number(o.extra_charge_usd||0);
+          const cashInOp=extraCharge>0.01?collectedUsd:(collectedUsd+overpay-creditApp);
+          if(cashInOp>0)cashIn+=cashInOp;
+        });
+        cashIn+=clientPmts.filter(p=>inMonth(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+        cashIn+=Object.values(pmtsByOp).flat().filter(p=>p.client_paid&&inMonth(p.client_paid_date)).reduce((s,p)=>s+Number(p.client_paid_amount_usd??p.client_amount_usd??0),0);
+        cashIn+=supplierPmts.filter(p=>p.is_paid&&p.type==="refund"&&inMonth(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+        cashIn+=finEntries.filter(e=>e.type==="ingreso"&&inMonth(e.date)).reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
+        cashIn+=agentMvs.filter(m=>m.type==="refund"&&inMonth(m.date)).reduce((s,m)=>{const recv=m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);return s+recv;},0);
+
+        let cashOut=0;
+        ops.forEach(o=>{
           const fleteMethod=o.cost_flete_method||"cuenta_corriente";
-          const fleteCash=fleteMethod==="cuenta_corriente"?0:Number(o.cost_flete||0);
-          return s+fleteCash+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
-        },0);
-        // Gestión Integral: cada pago al proveedor aparece en el mes de payment_date (no closed_at)
-        const cashOutSupplierPmts=supplierPmts.filter(p=>p.is_paid&&inMonth(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
-        // Gastos con tarjeta: solo salen de cash cuando is_paid=true (la tarjeta se debitó)
-        const cashOutFijos=fixedCostsManual.filter(e=>e.is_paid&&inMonth(e.date)).reduce((s,e)=>s+Number(e.amount||0),0);
-        // Giros: salen de cash cuando se confirman y no están pendientes de tarjeta
-        const cashOutGiros=Object.values(pmtsByOp).flat().filter(p=>{
-          const tarjetaPendiente=p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid;
-          if(p.giro_status!=="confirmado"||tarjetaPendiente)return false;
-          const giroFecha=p.giro_tarjeta_paid_at?p.giro_tarjeta_paid_at.slice(0,10):p.giro_date;
-          return inMonth(giroFecha);
-        }).reduce((s,p)=>s+Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0),0);
-        const cashOutAnticipos=agentMvs.filter(mv=>mv.type==="anticipo"&&inMonth(mv.date)).reduce((s,mv)=>s+Number(mv.amount_usd||0),0);
-        const cashOut=cashOutOps+cashOutFijos+cashOutGiros+cashOutAnticipos+cashOutSupplierPmts;
+          const closedDate=o.closed_at?.slice(0,10)||null;
+          const pickDate=(paid)=>paid?.slice(0,10)||closedDate;
+          const pickDateStrict=(paid)=>paid?.slice(0,10)||null;
+          const fleteIsTC=fleteMethod==="tarjeta_credito";
+          const fleteDate=fleteIsTC?pickDateStrict(o.cost_flete_paid_at):pickDate(o.cost_flete_paid_at);
+          if(fleteMethod!=="cuenta_corriente"&&Number(o.cost_flete||0)>0&&fleteDate&&inMonth(fleteDate))cashOut+=Number(o.cost_flete);
+          const segDate=pickDate(o.cost_seguro_paid_at);
+          if(Number(o.cost_seguro||0)>0&&segDate&&inMonth(segDate))cashOut+=Number(o.cost_seguro);
+          const flDate=pickDate(o.cost_flete_local_paid_at);
+          if(Number(o.cost_flete_local||0)>0&&flDate&&inMonth(flDate))cashOut+=Number(o.cost_flete_local);
+          const otDate=pickDate(o.cost_otros_paid_at);
+          if(Number(o.cost_otros||0)>0&&otDate&&inMonth(otDate))cashOut+=Number(o.cost_otros);
+        });
+        cashOut+=supplierPmts.filter(p=>p.is_paid&&p.type!=="refund"&&inMonth(p.payment_date)).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+        Object.values(pmtsByOp).flat().forEach(p=>{
+          if(p.giro_status==="confirmado"&&Number(p.cost_comision_giro||0)>0&&inMonth(p.giro_date||p.client_paid_date))cashOut+=Number(p.cost_comision_giro);
+          const tarjetaPend=p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid;
+          const giroDate=p.giro_tarjeta_paid_at?p.giro_tarjeta_paid_at.slice(0,10):p.giro_date;
+          if(p.giro_status==="confirmado"&&!tarjetaPend&&Number(p.giro_amount_usd||0)>0&&inMonth(giroDate))cashOut+=Number(p.giro_amount_usd);
+        });
+        cashOut+=finEntries.filter(e=>e.type==="gasto"&&!(e.payment_method==="tarjeta_credito"&&!e.is_paid)&&inMonth(e.date)).reduce((s,e)=>{const c=e.currency==="ARS"&&Number(e.exchange_rate||0)>0?Number(e.amount||0)/Number(e.exchange_rate):Number(e.amount||0);return s+c;},0);
+        cashOut+=agentMvs.filter(m=>m.type==="anticipo"&&inMonth(m.date)).reduce((s,m)=>{const recv=m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd||0);return s+recv;},0);
         const cashNeto=cashIn-cashOut;
 
         rows.push({label:`${MN2[m]} ${y}`,m,y,devIng,devCost:devCostOp+devCostFijos,devGan,cashIn,cashOut,cashNeto,opsCount:opsClosedInMonth.length});
