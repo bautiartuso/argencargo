@@ -10014,6 +10014,8 @@ function AdminCalculator({token}){
   const [clientId,setClientId]=useState(""); // id del cliente del sistema (o "" si free-text)
   const [clientName,setClientName]=useState(""); // texto en el input; coincide con cliente del sistema o se carga a mano
   const [showClientList,setShowClientList]=useState(false);
+  const [clientOverrides,setClientOverrides]=useState([]); // tarifas custom del cliente del sistema seleccionado
+  useEffect(()=>{if(!clientId){setClientOverrides([]);return;}(async()=>{const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${clientId}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);})();},[clientId,token]);
   const [taxCond,setTaxCond]=useState("monotributo"); // 'responsable_inscripto' | 'monotributo'
   const [origin,setOrigin]=useState("China");
   const [hasBrand,setHasBrand]=useState(false);
@@ -10024,6 +10026,9 @@ function AdminCalculator({token}){
   // Override manual del desaduanaje (gastos documentales aduana) por canal. Si el admin lo bonifica,
   // se ingresa un valor menor y el total se recalcula. Si está vacío, se usa el auto de la tabla.
   const [desembolsoOverride,setDesembolsoOverride]=useState({}); // {[chKey]: string}
+  // Override manual del valor USD/kg del Courier Comercial para esta cotización puntual
+  // (no toca la tarifa general ni la del cliente, solo esta cotización).
+  const [rateOverride,setRateOverride]=useState({}); // {[chKey]: string}
   const toN=(v)=>{const n=Number(String(v||"").replace(",","."));return isNaN(n)?0:n;};
   // Desglose por canal: mismo math que calc.js, expone los componentes (derechos, tasa estadística, IVA,
   // adicionales marítimos, desaduanaje) para mostrar y permitir override del desaduanaje.
@@ -10090,7 +10095,7 @@ function AdminCalculator({token}){
     const client={tax_condition:taxCond};
     const all=channelsForOrigin(origin).map(ch=>{
       const opLike={channel:CHANNEL_MAP[ch.key],origin,shipping_to_door:false,shipping_cost:0,has_battery:hasBattery,has_phones:false};
-      try{const r=calcOpBudget(opLike,items,pks,tariffs||[],config||{},[],client);const bd=computeBreakdown(ch.key,items,pks,client);return{...ch,...r,bd};}catch(e){console.error("calc",ch.key,e);return null;}
+      try{const r=calcOpBudget(opLike,items,pks,tariffs||[],config||{},clientOverrides,client);const bd=computeBreakdown(ch.key,items,pks,client);return{...ch,...r,bd};}catch(e){console.error("calc",ch.key,e);return null;}
     }).filter(Boolean).map(ch=>{
       // En la calculadora del admin queremos VER siempre los canales (decide manualmente
       // si los ofrece al cliente o no). Las reglas del portal pasan a ser solo "avisos".
@@ -10259,6 +10264,7 @@ function AdminCalculator({token}){
         <label style={labelStyle}>Cliente (texto libre o del sistema)</label>
         <input value={clientName} onChange={e=>{setClientName(e.target.value);setClientId("");setShowClientList(true);}} onFocus={()=>setShowClientList(true)} onBlur={()=>setTimeout(()=>setShowClientList(false),180)} placeholder="Buscá un cliente o escribí un nombre" style={inputStyle}/>
         {clientId&&<span style={{position:"absolute",right:8,top:30,fontSize:9.5,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)",letterSpacing:"0.04em"}}>DEL SISTEMA</span>}
+        {clientId&&clientOverrides.length>0&&<p style={{fontSize:11,color:IC,margin:"4px 0 0",fontWeight:600}}>Usando {clientOverrides.length} tarifa(s) custom de este cliente</p>}
         {showClientList&&(()=>{const q=clientName.trim().toLowerCase();const matches=allClients.filter(c=>{if(!q)return true;const s=`${c.client_code||""} ${c.first_name||""} ${c.last_name||""}`.toLowerCase();return s.includes(q);}).slice(0,8);return matches.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,boxShadow:"0 8px 28px rgba(0,0,0,0.5)",zIndex:5,maxHeight:240,overflowY:"auto"}}>
           {matches.map(c=>{const name=`${c.first_name||""} ${c.last_name||""}`.trim();const taxLabel=c.tax_condition==="responsable_inscripto"?"RI":c.tax_condition==="monotributo"?"Mono":"";return <div key={c.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{setClientId(c.id);setClientName(name);if(c.tax_condition==="responsable_inscripto"||c.tax_condition==="monotributo")setTaxCond(c.tax_condition);setShowClientList(false);}} style={{padding:"8px 12px",fontSize:12,color:"#fff",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.04)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
             <span><strong style={{fontFamily:"monospace",color:IC}}>{c.client_code||"—"}</strong> <span style={{color:"rgba(255,255,255,0.85)"}}>{name||"(sin nombre)"}</span></span>
@@ -10320,12 +10326,17 @@ function AdminCalculator({token}){
         const hasOv=ovStr!=null&&String(ovStr).trim()!=="";
         const desEff=hasOv?toN(ovStr):bd.desembolsoAuto||0;
         const ivaDesEff=desEff*0.21;
+        // Override manual del USD/kg — solo para Courier Comercial (aereo_a_china).
+        const rateOvStr=ch.key==="aereo_a_china"?rateOverride[ch.key]:null;
+        const hasRateOv=rateOvStr!=null&&String(rateOvStr).trim()!=="";
+        const fleteRateEff=hasRateOv?toN(rateOvStr):Number(ch.fleteRate||0);
+        const fleteEff=hasRateOv?(Number(ch.fleteAmt||0)*fleteRateEff+Number(ch.battExtra||0)):Number(ch.flete||0);
         let effTotalImp=0;
         if(bd.isBlanco&&bd.isAereo)effTotalImp=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+desEff+ivaDesEff;
         else if(bd.isBlanco&&bd.isMaritimo)effTotalImp=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
         const effTotal=bd.isBlanco
-          ?(Number(ch.flete||0)+Number(ch.seguro||0)+effTotalImp)
-          :(Number(ch.flete||0)+Number(ch.surcharge||0));
+          ?(fleteEff+Number(ch.seguro||0)+effTotalImp)
+          :(fleteEff+Number(ch.surcharge||0));
         const rowStyle={display:"flex",justifyContent:"space-between",alignItems:"baseline",fontSize:11.5,color:"rgba(255,255,255,0.65)"};
         const valStyle={color:"#fff",fontWeight:600,fontVariantNumeric:"tabular-nums"};
         return <div key={ch.key} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:`1px solid ${ch.notVisibleToClient?"rgba(251,191,36,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:10,display:"flex",flexDirection:"column"}}>
@@ -10336,7 +10347,14 @@ function AdminCalculator({token}){
             <p style={{fontSize:10,color:"rgba(251,191,36,0.85)",margin:"3px 0 0",lineHeight:1.4,fontWeight:500}}>{ch.notVisibleToClient}</p>
           </div>}
           <div style={{flex:1,display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>
-            {(Number(ch.flete||0)+Number(ch.surcharge||0))>0&&<div style={rowStyle}><span>{ch.key==="maritimo_a_china"?"Servicio marítimo de importación":(Number(ch.surcharge||0)>0?"Servicio Integral de importación":"Flete")}</span><span style={valStyle}>USD {fmt(Number(ch.flete||0)+Number(ch.surcharge||0))}</span></div>}
+            {(fleteEff+Number(ch.surcharge||0))>0&&<div style={rowStyle}><span>{ch.key==="maritimo_a_china"?"Servicio marítimo de importación":(Number(ch.surcharge||0)>0?"Servicio Integral de importación":"Flete")}</span><span style={valStyle}>USD {fmt(fleteEff+Number(ch.surcharge||0))}</span></div>}
+            {ch.key==="aereo_a_china"&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"6px 10px",background:"rgba(184,149,106,0.06)",borderRadius:7,border:"1px dashed rgba(184,149,106,0.25)"}}>
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.7)"}}>USD/kg <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>(editable, solo esta cotización)</span></span>
+              <div style={{display:"flex",alignItems:"center",gap:4}}>
+                <input value={hasRateOv?rateOvStr:String(Number(ch.fleteRate||0))} onChange={e=>setRateOverride(p=>({...p,[ch.key]:e.target.value}))} style={{width:56,padding:"4px 7px",fontSize:11.5,border:`1px solid ${hasRateOv?IC:"rgba(255,255,255,0.15)"}`,borderRadius:5,background:"rgba(0,0,0,0.3)",color:hasRateOv?IC:"#fff",outline:"none",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums"}}/>
+                {hasRateOv&&<button onClick={()=>setRateOverride(p=>{const c={...p};delete c[ch.key];return c;})} title="Volver a la tarifa del cliente/base" style={{padding:"2px 6px",fontSize:10,borderRadius:4,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>↻</button>}
+              </div>
+            </div>}
             {Number(ch.seguro||0)>0&&<div style={rowStyle}><span>Seguro</span><span style={valStyle}>USD {fmt(ch.seguro)}</span></div>}
             {bd.isBlanco&&<>
               {bd.derechos>0&&<div style={rowStyle}><span>Derechos importación</span><span style={valStyle}>USD {fmt(bd.derechos)}</span></div>}
@@ -10376,7 +10394,7 @@ function AdminCalculator({token}){
             <p style={{fontSize:10,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total estimado</p>
             <p style={{fontSize:20,fontWeight:800,color:IC,margin:"2px 0 0",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {fmt(effTotal)}</p>
           </div>
-          <button onClick={()=>printPdf(ch,{desEff,ivaDesEff,effTotalImp,effTotal,bd})} style={{width:"100%",padding:"9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>📄 Exportar PDF cotización</button>
+          <button onClick={()=>printPdf(hasRateOv?{...ch,flete:fleteEff,fleteRate:fleteRateEff}:ch,{desEff,ivaDesEff,effTotalImp,effTotal,bd})} style={{width:"100%",padding:"9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>📄 Exportar PDF cotización</button>
         </div>;
       })}
     </div>}
