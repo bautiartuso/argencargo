@@ -1146,13 +1146,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       :"";
     // ajustesTxt: solo las líneas de ajuste (para wa_envio, que ya tiene su propio subtotal importación+envío).
     const ajustesTxt=hasAdj?`\n${adjLines.join("\n")}`:"";
-    // Si la op tiene envío a domicilio, usar template wa_envio (con desglose) en lugar de wa_retiro.
-    // Para retiro: Canal B (negro) usa wa_retiro_b (con lista de tracking). Canal A usa wa_retiro.
+    // Si la op tiene envío a domicilio PRE-cargado, usar template wa_envio (con desglose) en lugar
+    // de wa_retiro. El resto de "retiro" (todos los canales) ahora usa un único template simple que
+    // apunta al link de /retiro/[token] — ahí el cliente elige entrega y forma de pago, así que ya
+    // no hace falta un texto distinto por canal (wa_retiro_b / wa_retiro_maritimo_a/b quedaron sin uso).
     const useEnvio=trigger==="retiro"&&op.shipping_to_door&&envioCost>0;
-    const isCanalB=op.channel?.includes("negro");
-    const isMaritimoCh=op.channel?.includes("maritimo");
-    // Retiro: marítimo usa sus propios templates (con origen+bandera); aéreo B usa wa_retiro_b; aéreo A wa_retiro.
-    const tplKey=useEnvio?"wa_envio":(trigger==="retiro"&&isMaritimoCh?(isCanalB?"wa_retiro_maritimo_b":"wa_retiro_maritimo_a"):(trigger==="retiro"&&isCanalB?"wa_retiro_b":`wa_${trigger}`));
+    const tplKey=useEnvio?"wa_envio":`wa_${trigger}`;
     const tpl=waTpls.find(t=>t.key===tplKey);
     // Lista de tracking numbers de los bultos de la op (para template wa_retiro Canal B y otros)
     let trackingList="";let bultosCount=0;
@@ -1167,13 +1166,14 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const creditNote=(debtApp>0?`\n_(ya incluye USD ${fmt(debtApp)} de deuda anterior de tu cuenta)_`:"")+(creditApp>0?`\n_(ya descontamos USD ${fmt(creditApp)} de tu saldo a favor)_`:"");
     const origen=op.origin||"China";
     const flag=op.origin==="USA"?"🇺🇸":"🇨🇳";
-    const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt,trackingList,bultosCount,origen,flag,creditNote,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo)};
+    const retiroLink=op.delivery_public_token?`https://argencargo.com.ar/retiro/${op.delivery_public_token}`:"";
+    const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt,trackingList,bultosCount,origen,flag,creditNote,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo),retiroLink};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
     let msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Av. Callao 1137.${saldoTxt}`;
-    // "Retiro": adjuntamos el link de confirmación (envío/retiro + forma de pago) en vez de pedirle
-    // todo por chat. El cliente completa ahí y la elección queda guardada en la solapa "Entrega".
-    if(trigger==="retiro"&&op.delivery_public_token){
-      msg+=`\n\n👉 Completá acá los datos de entrega y forma de pago:\nhttps://argencargo.com.ar/retiro/${op.delivery_public_token}`;
+    // Si el template no incluye {{retiroLink}} (ej. wa_envio, o el fallback sin template), lo adjuntamos
+    // igual — así el cliente siempre puede confirmar entrega + forma de pago desde el link.
+    if(trigger==="retiro"&&retiroLink&&!(tpl&&tpl.body.includes("{{retiroLink}}"))){
+      msg+=`\n\n👉 Completá acá los datos de entrega y forma de pago:\n${retiroLink}`;
     }
     // api.whatsapp.com/send maneja mejor emojis multi-byte que wa.me (que a veces los muestra como "?").
     window.open(`https://api.whatsapp.com/send?phone=${wa}&text=${encodeURIComponent(msg)}`,"_blank");
