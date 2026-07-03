@@ -3976,14 +3976,14 @@ function EntregasPanel({token,onOpenOp}){
   const [q,setQ]=useState("");
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
-  // Universo: toda op a la que ya se le mandó el WhatsApp de "carga lista" (delivery_ready_at, se
-  // fija la primera vez que se dispara ese mensaje) y todavía no se entregó físicamente. El status
-  // contable de la op (operacion_cerrada, entregada, etc.) es independiente de si ya se hizo la
-  // entrega física — cerrar la op porque ya se cobró NO implica que se entregó, así que no filtramos
-  // por status.
+  // Universo: toda op lista para entregar y todavía no entregada físicamente. Dos formas de
+  // calificar (OR): (a) status=entregada — sigue sentada esperando que la retiren/envíen, esté o
+  // no en el flujo nuevo del link; (b) delivery_ready_at seteado — ya entró al flujo nuevo (se le
+  // mandó el WhatsApp con el link) en algún momento, aunque después haya cambiado de status (ej.
+  // se cerró la op porque ya se cobró — cerrarla NO implica que se entregó).
   const load=async()=>{
     setLo(true);
-    const r=await dq("operations",{token,filters:"?delivery_ready_at=not.is.null&delivery_completed_at=is.null&select=id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_completed_at,delivery_public_token,client_id,clients(first_name,last_name,client_code,whatsapp)&order=eta.desc"});
+    const r=await dq("operations",{token,filters:"?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_completed_at,delivery_public_token,client_id,clients(first_name,last_name,client_code,whatsapp)&order=eta.desc"});
     const list=Array.isArray(r)?r:[];
     setRows(list);
     if(list.length>0){
@@ -4023,42 +4023,49 @@ function EntregasPanel({token,onOpenOp}){
   const sinConfirmar=filtered.filter(o=>!o.delivery_confirmed_at);
   const confirmadas=filtered.filter(o=>o.delivery_confirmed_at);
 
-  const cardHeader=(o,actions,paidBadge)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
-    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-      <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:13,fontWeight:700,color:GOLD_LIGHT}}>{o.operation_code}</span>
-      <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
-      {o.clients?.client_code&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{o.clients.client_code}</span>}
-      <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>· {CHANNEL_NAME_MAP[o.channel]||o.channel}</span>
-      {paidBadge}
-    </div>
-    <div style={{display:"flex",gap:8,alignItems:"center"}}>{actions}</div>
+  const cardHeader=(o,paidBadge)=><div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
+    <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:13,fontWeight:700,color:GOLD_LIGHT}}>{o.operation_code}</span>
+    <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
+    {o.clients?.client_code&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{o.clients.client_code}</span>}
+    <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>· {CHANNEL_NAME_MAP[o.channel]||o.channel}</span>
+    {paidBadge}
   </div>;
+
+  // Columna de acciones a la derecha, apiladas una arriba de otra — separadas del contenido por
+  // un borde vertical para que no queden "sueltas" flotando junto al header.
+  const actionsCol=(actions)=><div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0,width:170,paddingLeft:16,borderLeft:"1px solid rgba(255,255,255,0.08)"}}>{actions}</div>;
 
   const pendingCard=(o)=>{
     const bultos=bultosByOp[o.id]||0;
-    return <div key={o.id} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:10}}>
-      {cardHeader(o,<>
-        <Btn small variant="secondary" onClick={()=>copyLink(o)}>📋 Copiar link</Btn>
-        <Btn small variant="secondary" onClick={()=>markDelivered(o)}>✓ Marcar como entregado</Btn>
-        <Btn small variant="secondary" onClick={()=>onOpenOp(o)}>Ver operación →</Btn>
+    return <div key={o.id} style={{display:"flex",gap:16,padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:10}}>
+      <div style={{flex:1,minWidth:0}}>
+        {cardHeader(o)}
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:0}}>{bultos} bulto{bultos===1?"":"s"} · El cliente todavía no completó el link de carga lista (entrega + forma de pago).</p>
+      </div>
+      {actionsCol(<>
+        <Btn small variant="secondary" fullWidth onClick={()=>copyLink(o)}>📋 Copiar link</Btn>
+        <Btn small variant="secondary" fullWidth onClick={()=>markDelivered(o)}>✓ Marcar entregado</Btn>
+        <Btn small fullWidth onClick={()=>onOpenOp(o)}>Ver operación →</Btn>
       </>)}
-      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"8px 0 0"}}>{bultos} bulto{bultos===1?"":"s"} · El cliente todavía no completó el link de carga lista (entrega + forma de pago).</p>
     </div>;
   };
 
   const card=(o)=>{
     const paid=!!o.is_collected;
     const bultos=bultosByOp[o.id]||0;
-    return <div key={o.id} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:10}}>
-      {cardHeader(o,<>
-        <Btn small onClick={()=>markDelivered(o)}>✓ Marcar como entregado</Btn>
-        <Btn small variant="secondary" onClick={()=>onOpenOp(o)}>Ver operación →</Btn>
-      </>,<span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:6,background:paid?"rgba(34,197,94,0.12)":"rgba(251,191,36,0.1)",color:paid?"#22c55e":"#fbbf24",border:`1px solid ${paid?"rgba(34,197,94,0.3)":"rgba(251,191,36,0.3)"}`}}>{paid?"Pagado":"Sin pagar"}</span>)}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:10}}>
-        <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Entrega</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{entregaLabel(o)}</p>{o.delivery_choice==="propio"&&o.delivery_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"1px 0 0"}}>{o.delivery_address}</p>}</div>
-        <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Bultos</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{bultos||"—"}</p></div>
-        <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Total</p><p style={{fontSize:12.5,fontWeight:700,color:GOLD_LIGHT,margin:0}}>{usd(totalFor(o))}</p></div>
+    return <div key={o.id} style={{display:"flex",gap:16,padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:10}}>
+      <div style={{flex:1,minWidth:0}}>
+        {cardHeader(o,<span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:6,background:paid?"rgba(34,197,94,0.12)":"rgba(251,191,36,0.1)",color:paid?"#22c55e":"#fbbf24",border:`1px solid ${paid?"rgba(34,197,94,0.3)":"rgba(251,191,36,0.3)"}`}}>{paid?"Pagado":"Sin pagar"}</span>)}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+          <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Entrega</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{entregaLabel(o)}</p>{o.delivery_choice==="propio"&&o.delivery_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"1px 0 0"}}>{o.delivery_address}</p>}</div>
+          <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Bultos</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{bultos||"—"}</p></div>
+          <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Total</p><p style={{fontSize:12.5,fontWeight:700,color:GOLD_LIGHT,margin:0}}>{usd(totalFor(o))}</p></div>
+        </div>
       </div>
+      {actionsCol(<>
+        <Btn small fullWidth onClick={()=>markDelivered(o)}>✓ Marcar entregado</Btn>
+        <Btn small variant="secondary" fullWidth onClick={()=>onOpenOp(o)}>Ver operación →</Btn>
+      </>)}
     </div>;
   };
 
