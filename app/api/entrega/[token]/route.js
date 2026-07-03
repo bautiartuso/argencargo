@@ -161,6 +161,14 @@ export async function POST(req, { params }) {
   const saldo = Math.max(0, bt + debtApp - totAnt - collected - creditApp);
   const finalTotal = Math.round((saldo + deliveryCost) * 100) / 100;
 
+  // El costo de envío a domicilio es parte de lo que el cliente debe pagar — se suma al
+  // budget_total real de la op (no solo a un total mostrado ad-hoc) para que quede reflejado en
+  // Presupuesto y Finanzas, Rentabilidad, cobros, etc. Solo se suma la primera vez que confirma
+  // (si ya había confirmado antes, delivery_confirmed_at ya estaba seteado) para no duplicarlo
+  // si el cliente reenvía el formulario.
+  const alreadyConfirmed = !!op.delivery_confirmed_at;
+  const newBudgetTotal = !alreadyConfirmed && deliveryCost > 0 ? Math.round((bt + deliveryCost) * 100) / 100 : bt;
+
   await sbFetch(`/operations?id=eq.${op.id}`, {
     method: "PATCH",
     body: JSON.stringify({
@@ -168,6 +176,7 @@ export async function POST(req, { params }) {
       delivery_zone: delivery_choice === "propio" ? delivery_zone : null,
       delivery_address: delivery_choice === "propio" ? (delivery_address || null) : null,
       delivery_cost_usd: deliveryCost,
+      budget_total: newBudgetTotal,
       payment_method_chosen: payment_method,
       delivery_confirmed_at: new Date().toISOString(),
     }),

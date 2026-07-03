@@ -4000,14 +4000,15 @@ function EntregasPanel({token,onOpenOp}){
     setRows(p=>p.filter(r=>r.id!==o.id));
   };
 
+  // budget_total ya incluye el costo de envío a domicilio (se suma al confirmar en /retiro/[token]) —
+  // no volver a sumarlo acá.
   const totalFor=(o)=>{
     const bt=Number(o.budget_total||0);
     const debtApp=Number(o.debt_applied_usd||0);
     const creditApp=Number(o.credit_applied_usd||0);
     const totAnt=Number(o.total_anticipos||0);
     const collected=usdCollected(o);
-    const saldo=Math.max(0,bt+debtApp-totAnt-collected-creditApp);
-    return Math.round((saldo+Number(o.delivery_cost_usd||0))*100)/100;
+    return Math.round(Math.max(0,bt+debtApp-totAnt-collected-creditApp)*100)/100;
   };
   const isDomicilio=(o)=>o.delivery_choice==="propio"||o.delivery_choice==="carrier";
   const entregaLabel=(o)=>o.delivery_choice==="oficina"?"Retiro por oficina":o.delivery_choice==="propio"?`Envío a domicilio · ${o.delivery_zone||""}`:"Envío por transportista";
@@ -4121,9 +4122,10 @@ function EntregaTab({op,opClient,token,onMarkDelivered}){
   const creditApp=Number(op.credit_applied_usd||0);
   const totAnt=Number(op.total_anticipos||0);
   const collected=usdCollected(op);
-  const saldo=Math.max(0,bt+debtApp-totAnt-collected-creditApp);
+  // budget_total ya incluye el costo de envío a domicilio (se suma al confirmar en /retiro/[token]) —
+  // no volver a sumarlo acá, solo lo mostramos como referencia informativa abajo.
+  const total=Math.round(Math.max(0,bt+debtApp-totAnt-collected-creditApp)*100)/100;
   const deliveryCost=Number(op.delivery_cost_usd||0);
-  const total=Math.round((saldo+deliveryCost)*100)/100;
 
   const entregaLabel=op.delivery_choice==="oficina"?"Retiro por oficina":op.delivery_choice==="propio"?`Envío a domicilio · ${op.delivery_zone||""}`:"Envío por transportista";
   const payLabel=op.payment_method_chosen==="efectivo"?"Efectivo":op.payment_method_chosen==="transferencia"?"Transferencia en pesos":"Cripto (USDT)";
