@@ -48,6 +48,14 @@ export default function EntregaPublica({ params }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  // Si el envío pasa a ser por transportista externo, efectivo queda bloqueado — hay que sacarlo
+  // de la selección. Este efecto va ANTES de cualquier return temprano (loading/err/!data) para no
+  // violar las reglas de hooks (la cantidad de hooks debe ser la misma en cada render).
+  useEffect(() => {
+    if (delivery === "carrier" && payment === "efectivo") setPayment("transferencia");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [delivery]);
+
   if (loading) return <div style={pageStyle()}><p style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>Cargando…</p></div>;
   if (err) return <div style={pageStyle()}><div style={{ maxWidth: 440, padding: 30, background: "rgba(255,255,255,0.04)", borderRadius: 14, textAlign: "center" }}><p style={{ fontSize: 15, fontWeight: 600, color: "#f87171" }}>{err}</p></div></div>;
   if (!data) return null;
@@ -68,7 +76,6 @@ export default function EntregaPublica({ params }) {
   const total = Math.round((saldo + deliveryCost) * 100) / 100;
 
   const efectivoBlocked = delivery === "carrier";
-  useEffectSyncPayment(efectivoBlocked, payment, setPayment);
 
   const confirm = async () => {
     setConfirming(true);
@@ -185,11 +192,6 @@ export default function EntregaPublica({ params }) {
       </div>
     </div>
   </div>;
-}
-
-// Si cambia a un envío que bloquea efectivo mientras el cliente ya tenía efectivo elegido, lo pasamos a transferencia.
-function useEffectSyncPayment(blocked, payment, setPayment) {
-  useEffect(() => { if (blocked && payment === "efectivo") setPayment("transferencia"); }, [blocked]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 function OptRow({ selected, onClick, label, meta, price, disabled }) {
