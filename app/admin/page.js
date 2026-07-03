@@ -647,8 +647,8 @@ function OperationNotesPanel({opId,token}){
   </div>;
 }
 
-function OperationEditor({op:initOp,token,onBack,onDelete}){
-  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState("general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:""});const [cobroEditor,setCobroEditor]=useState(null);const [giroEditor,setGiroEditor]=useState(null);const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
+function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
+  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState(initialTab||"general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:""});const [cobroEditor,setCobroEditor]=useState(null);const [giroEditor,setGiroEditor]=useState(null);const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const [declaredItems,setDeclaredItems]=useState([]); // flight_invoice_items de esta op (valor declarado a Aduana, para RI)
   const [flightInfo,setFlightInfo]=useState(null); // {cost_share_usd, flights:{flight_code,departed_at,...}} — para fila virtual de flete en Costos GI
@@ -3945,6 +3945,94 @@ function CloseChecklistModal({op,items,payments,clientPayments,supplierPayments,
         <Btn variant="secondary" onClick={onCancel} small>Cancelar</Btn>
         <Btn onClick={onConfirm} small>{allPass?"✓ Cerrar":"⚠️ Cerrar igual"}</Btn>
       </div>
+    </div>
+  </div>;
+}
+
+const CHANNEL_NAME_MAP={aereo_blanco:"Aéreo Courier Comercial",aereo_negro:"Aéreo Integral AC",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
+
+function EntregasPanel({token,onOpenOp}){
+  const [rows,setRows]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [filter,setFilter]=useState("pendientes"); // pendientes | coordinadas | todas
+  const [q,setQ]=useState("");
+  const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+
+  const load=async()=>{
+    setLo(true);
+    const r=await dq("operations",{token,filters:"?delivery_confirmed_at=not.is.null&select=id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_coordinated_at,client_id,clients(first_name,last_name,client_code,whatsapp)&order=delivery_confirmed_at.desc"});
+    setRows(Array.isArray(r)?r:[]);
+    setLo(false);
+  };
+  useEffect(()=>{load();},[token]);
+
+  const markCoordinated=async(o)=>{
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_coordinated_at:new Date().toISOString()}});
+    setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_coordinated_at:new Date().toISOString()}:r));
+  };
+
+  const totalFor=(o)=>{
+    const bt=Number(o.budget_total||0);
+    const debtApp=Number(o.debt_applied_usd||0);
+    const creditApp=Number(o.credit_applied_usd||0);
+    const totAnt=Number(o.total_anticipos||0);
+    const collected=o.is_collected?Number(o.collected_amount||0):0;
+    const saldo=Math.max(0,bt+debtApp-totAnt-collected-creditApp);
+    return Math.round((saldo+Number(o.delivery_cost_usd||0))*100)/100;
+  };
+  const entregaLabel=(o)=>o.delivery_choice==="oficina"?"Retiro por oficina":o.delivery_choice==="propio"?`Envío a domicilio · ${o.delivery_zone||""}`:"Envío por transportista";
+  const payLabel=(o)=>o.payment_method_chosen==="efectivo"?"Efectivo":o.payment_method_chosen==="transferencia"?"Transferencia":o.payment_method_chosen==="crypto"?"Cripto":"—";
+
+  const filtered=rows.filter(o=>{
+    if(filter==="pendientes"&&o.delivery_coordinated_at)return false;
+    if(filter==="coordinadas"&&!o.delivery_coordinated_at)return false;
+    if(q.trim()){
+      const s=`${o.operation_code} ${o.clients?.first_name||""} ${o.clients?.last_name||""} ${o.clients?.client_code||""}`.toLowerCase();
+      if(!s.includes(q.trim().toLowerCase()))return false;
+    }
+    return true;
+  });
+  const pendCount=rows.filter(o=>!o.delivery_coordinated_at).length;
+
+  if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
+      <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Entregas</h2>
+      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por código o cliente..." style={{padding:"9px 14px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",minWidth:220}}/>
+    </div>
+    <div style={{display:"flex",gap:8,marginBottom:16}}>
+      {[{k:"pendientes",l:`Pendientes de coordinar${pendCount>0?` (${pendCount})`:""}`},{k:"coordinadas",l:"Coordinadas"},{k:"todas",l:"Todas"}].map(f=><button key={f.k} onClick={()=>setFilter(f.k)} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1.5px solid ${filter===f.k?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.1)"}`,background:filter===f.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:filter===f.k?GOLD_LIGHT:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{f.l}</button>)}
+    </div>
+    {filtered.length===0&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Sin confirmaciones{filter==="pendientes"?" pendientes":filter==="coordinadas"?" coordinadas":""}.</p>}
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {filtered.map(o=>{
+        const client=o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—";
+        const pending=!o.delivery_coordinated_at;
+        return <div key={o.id} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:`1px solid ${pending?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.06)"}`,borderRadius:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:13,fontWeight:700,color:GOLD_LIGHT}}>{o.operation_code}</span>
+              <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{client}</span>
+              {o.clients?.client_code&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{o.clients.client_code}</span>}
+              <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>· {CHANNEL_NAME_MAP[o.channel]||o.channel}</span>
+              {pending
+                ?<span style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:6,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Pendiente</span>
+                :<span style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.4)",border:"1px solid rgba(255,255,255,0.1)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Coordinado</span>}
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              {pending&&<Btn small variant="secondary" onClick={()=>markCoordinated(o)}>✓ Marcar coordinado</Btn>}
+              <Btn small onClick={()=>onOpenOp(o)}>Ver operación →</Btn>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginTop:10}}>
+            <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Entrega</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{entregaLabel(o)}</p>{o.delivery_choice==="propio"&&o.delivery_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"1px 0 0"}}>{o.delivery_address}</p>}</div>
+            <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Pago</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{payLabel(o)}</p></div>
+            <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Total</p><p style={{fontSize:12.5,fontWeight:700,color:GOLD_LIGHT,margin:0}}>{usd(totalFor(o))}</p></div>
+            <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Confirmó</p><p style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",margin:0}}>{formatDate(o.delivery_confirmed_at)}</p></div>
+          </div>
+        </div>;
+      })}
     </div>
   </div>;
 }
@@ -11077,6 +11165,7 @@ function AdminDashboard({session,onLogout}){
   const initNav=readNav()||{};
   const [page,setPage]=useState(initNav.page||"operations");
   const [selOp,setSelOp]=useState(initNav.selOp||null);
+  const [selOpTab,setSelOpTab]=useState(null); // solapa inicial al entrar a una op desde otro panel (ej. "Entregas")
   const [selClient,setSelClient]=useState(initNav.selClient||null);
   const [newOp,setNewOp]=useState(false);
   const [allClients,setAllClients]=useState([]);
@@ -11094,6 +11183,7 @@ function AdminDashboard({session,onLogout}){
   const navSections=[
     {section:"Operativa",items:[
       {key:"operations",label:"Operaciones",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},
+      {key:"entregas",label:"Entregas",p:["M3 9l9-6 9 6-9 6-9-6z","M3 9v6l9 6 9-6V9"]},
       {key:"agents",label:"Agentes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},
       {key:"carga_dia",label:"Aéreo B",p:["M22 2L11 13","M22 2l-7 20-4-9-9-4 20-7z"]},
       {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
@@ -11190,7 +11280,7 @@ function AdminDashboard({session,onLogout}){
       <div className="ac-admin-main-inner" style={{maxWidth:1400,margin:"0 auto",padding:"28px 32px"}}>
       {page==="today"&&<TodayDashboard token={token} onNav={setPage} onSelectOp={op=>{setPage("operations");setSelOp(op);}} onSelectFlight={f=>{setPage("agents");}}/>}
       {page==="operations"&&!selOp&&!newOp&&<OperationsList token={token} onSelect={setSelOp} onNew={()=>setNewOp(true)}/>}
-      {page==="operations"&&selOp&&<OperationEditor op={selOp} token={token} onBack={()=>setSelOp(null)} onDelete={()=>setSelOp(null)}/>}
+      {page==="operations"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}
       {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
@@ -11200,6 +11290,7 @@ function AdminDashboard({session,onLogout}){
       {page==="intel"&&<IntelligencePanel token={token} allClients={allClients}/>}
       {page==="tickets"&&<TicketsPanel token={token} allClients={allClients}/>}
       {page==="dashboard"&&<FinanceDashboard token={token}/>}
+      {page==="entregas"&&<EntregasPanel token={token} onOpenOp={(op)=>{setPage("operations");setSelOp(op);setSelOpTab("entrega");}}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="maritime"&&<MaritimePanel token={token} allClients={allClients}/>}
       {page==="purchase_notifs"&&<PurchaseNotificationsAdmin token={token} allClients={allClients} onCreateOp={op=>{setPage("operations");setSelOp(op);}} mode="client"/>}
