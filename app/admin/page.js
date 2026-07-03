@@ -1098,6 +1098,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     ...(isCanalB?[]:[{k:"items",l:"Productos"}]),
     {k:"packages",l:"Bultos"},
     ...(isCanalB?[]:[{k:"tracking",l:"Seguimiento"}]),
+    {k:"entrega",l:"Entrega"},
     {k:"comms",l:"Comunicaciones"}
   ];
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
@@ -1168,7 +1169,12 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
     const flag=op.origin==="USA"?"🇺🇸":"🇨🇳";
     const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt,trackingList,bultosCount,origen,flag,creditNote,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo)};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
-    const msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Av. Callao 1137.${saldoTxt}`;
+    let msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Av. Callao 1137.${saldoTxt}`;
+    // "Retiro": adjuntamos el link de confirmación (envío/retiro + forma de pago) en vez de pedirle
+    // todo por chat. El cliente completa ahí y la elección queda guardada en la solapa "Entrega".
+    if(trigger==="retiro"&&op.delivery_public_token){
+      msg+=`\n\n👉 Completá acá los datos de entrega y forma de pago:\nhttps://argencargo.com.ar/retiro/${op.delivery_public_token}`;
+    }
     // api.whatsapp.com/send maneja mejor emojis multi-byte que wa.me (que a veces los muestra como "?").
     window.open(`https://api.whatsapp.com/send?phone=${wa}&text=${encodeURIComponent(msg)}`,"_blank");
     // Log en op_communications + marcar sent_notifications
@@ -1295,7 +1301,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
       </div>
     </div>}
     {/* Tabs estilo Linear: pill flotante para el tab activo + scroll horizontal en mobile */}
-    <div className="ac-editor-tabs" style={{display:"flex",gap:2,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"nowrap",overflowX:"auto",WebkitOverflowScrolling:"touch",position:"relative"}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"11px 18px",fontSize:12,fontWeight:active?700:600,border:"none",background:active?"linear-gradient(180deg,rgba(184,149,106,0.10),transparent)":"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",whiteSpace:"nowrap",borderRadius:"6px 6px 0 0",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.85)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.5)";e.currentTarget.style.background="transparent";}}}>{t.l}</button>;})}</div>
+    <div className="ac-editor-tabs" style={{display:"flex",gap:2,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"nowrap",overflowX:"auto",WebkitOverflowScrolling:"touch",position:"relative"}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"11px 18px",fontSize:12,fontWeight:active?700:600,border:"none",background:active?"linear-gradient(180deg,rgba(184,149,106,0.10),transparent)":"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",whiteSpace:"nowrap",borderRadius:"6px 6px 0 0",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.85)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.5)";e.currentTarget.style.background="transparent";}}}>{t.k==="entrega"&&op.delivery_confirmed_at&&!op.delivery_coordinated_at&&<span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 2px rgba(34,197,94,0.25)",display:"inline-block"}}/>}{t.l}</button>;})}</div>
     {repackReq&&repackReq.status==="pending"&&<div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.4)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <div style={{flex:1,minWidth:200}}>
         <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:0}}>⏳ Reempaque pendiente — el agente todavía no completó</p>
@@ -3727,6 +3733,7 @@ function OperationEditor({op:initOp,token,onBack,onDelete}){
 
     </>}
 
+    {tab==="entrega"&&<EntregaTab op={op} opClient={opClient} token={token} onMarkCoordinated={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_coordinated_at:new Date().toISOString()}});setOp(p=>({...p,delivery_coordinated_at:new Date().toISOString()}));flash("Marcado como coordinado");}}/>}
     {tab==="comms"&&<CommsLog opId={op.id} token={token}/>}
     {showCloseChecklist&&<CloseChecklistModal op={op} items={items} payments={payments} clientPayments={clientPayments} supplierPayments={supplierPayments} onCancel={()=>{setShowCloseChecklist(false);setOp(p=>({...p,status:initOp.status}));}} onConfirm={async()=>{setShowCloseChecklist(false);await executeSave();}}/>}
     {facturaModal&&(()=>{
@@ -3940,6 +3947,93 @@ function CloseChecklistModal({op,items,payments,clientPayments,supplierPayments,
       </div>
     </div>
   </div>;
+}
+
+function EntregaTab({op,opClient,token,onMarkCoordinated}){
+  const [tc,setTc]=useState("");
+  const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const retiroLink=op.delivery_public_token?`https://argencargo.com.ar/retiro/${op.delivery_public_token}`:null;
+  const copyLink=()=>{if(!retiroLink)return;navigator.clipboard?.writeText(retiroLink);};
+  if(!op.delivery_confirmed_at){
+    return <Card title="Entrega">
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Todavía no tenemos la confirmación del cliente (envío/retiro + forma de pago). El link se manda automáticamente con el WhatsApp de "carga lista" — también podés copiarlo desde acá.</p>
+      {retiroLink&&<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <code style={{flex:1,minWidth:220,padding:"9px 12px",fontSize:12,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:GOLD_LIGHT,overflowWrap:"anywhere"}}>{retiroLink}</code>
+        <Btn small variant="secondary" onClick={copyLink}>📋 Copiar</Btn>
+      </div>}
+    </Card>;
+  }
+
+  const bt=Number(op.budget_total||0);
+  const debtApp=Number(op.debt_applied_usd||0);
+  const creditApp=Number(op.credit_applied_usd||0);
+  const totAnt=Number(op.total_anticipos||0);
+  const collected=op.is_collected?Number(op.collected_amount||0):0;
+  const saldo=Math.max(0,bt+debtApp-totAnt-collected-creditApp);
+  const deliveryCost=Number(op.delivery_cost_usd||0);
+  const total=Math.round((saldo+deliveryCost)*100)/100;
+
+  const entregaLabel=op.delivery_choice==="oficina"?"Retiro por oficina":op.delivery_choice==="propio"?`Envío a domicilio · ${op.delivery_zone||""}`:"Envío por transportista";
+  const payLabel=op.payment_method_chosen==="efectivo"?"Efectivo":op.payment_method_chosen==="transferencia"?"Transferencia en pesos":"Cripto (USDT)";
+  const registeredAddr=`${opClient?.street||""}${opClient?.floor_apt?" "+opClient.floor_apt:""}${opClient?.city?", "+opClient.city:""}`.trim();
+  const addrChanged=op.delivery_choice==="propio"&&op.delivery_address&&registeredAddr&&op.delivery_address.trim()!==registeredAddr;
+
+  const tcNum=Number(String(tc).replace(",","."))||0;
+  const ars=Math.round(total*tcNum);
+  const waMsg=`${op.operation_code}\n\n$ ${ars>0?ars.toLocaleString("es-AR"):"—"}\n\nTitular: DAPA SRL\nAlias: rojo.pagos`;
+  const openWa=()=>{
+    const wa=String(opClient?.whatsapp||"").replace(/[^0-9]/g,"");
+    if(!wa){alert("El cliente no tiene WhatsApp cargado.");return;}
+    window.open(`https://api.whatsapp.com/send?phone=${wa}&text=${encodeURIComponent(waMsg)}`,"_blank");
+  };
+
+  return <Card title="Entrega">
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+      <span style={{width:8,height:8,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 3px rgba(34,197,94,0.2)"}}/>
+      <span style={{fontSize:13,fontWeight:800,color:"#22c55e"}}>El cliente confirmó su carga lista</span>
+      <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:"auto"}}>{formatDate(op.delivery_confirmed_at)}</span>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
+      <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"10px 12px"}}>
+        <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Entrega</p>
+        <p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>{entregaLabel}</p>
+        {op.delivery_choice==="propio"&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>{op.delivery_address}</p>}
+        {addrChanged&&<p style={{fontSize:10.5,fontWeight:700,color:"#fbbf24",margin:"6px 0 0",background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.3)",borderRadius:6,padding:"3px 8px",display:"inline-block"}}>⚠ Dirección distinta a la registrada</p>}
+      </div>
+      <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"10px 12px"}}>
+        <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Forma de pago</p>
+        <p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>{payLabel}</p>
+        {op.payment_method_chosen==="transferencia"&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Falta pasarle el monto por WhatsApp</p>}
+      </div>
+      <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"10px 12px"}}>
+        <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Total confirmado</p>
+        <p style={{fontSize:15,fontWeight:800,color:GOLD_LIGHT,margin:0}}>{usd(total)}</p>
+        {deliveryCost>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Incluye envío (+{usd(deliveryCost)})</p>}
+      </div>
+    </div>
+
+    {op.payment_method_chosen==="transferencia"&&!op.delivery_coordinated_at&&<div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"14px 16px",marginBottom:14}}>
+      <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 10px"}}>Calcular monto en pesos</p>
+      <div style={{display:"flex",gap:24,alignItems:"flex-end",marginBottom:12}}>
+        <div>
+          <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Tipo de cambio</p>
+          <input value={tc} onChange={e=>setTc(e.target.value)} placeholder="1050" style={{width:100,padding:"7px 9px",fontSize:14,fontWeight:700,border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
+        </div>
+        <div>
+          <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Monto en pesos</p>
+          <p style={{fontSize:18,fontWeight:800,color:GOLD_LIGHT,margin:0}}>{ars>0?`$ ${ars.toLocaleString("es-AR")}`:"—"}</p>
+        </div>
+      </div>
+      <pre style={{margin:0,padding:"11px 13px",borderRadius:8,background:"rgba(34,197,94,0.06)",border:"1px dashed rgba(34,197,94,0.3)",fontFamily:"'SF Mono','JetBrains Mono',monospace",fontSize:12.5,color:"#d7f5e3",whiteSpace:"pre-wrap",lineHeight:1.7}}>{waMsg}</pre>
+      <div style={{display:"flex",gap:8,marginTop:12}}>
+        <Btn small onClick={openWa} disabled={ars<=0}>💬 Enviar por WhatsApp</Btn>
+      </div>
+    </div>}
+
+    {op.delivery_coordinated_at
+      ?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>✓ Marcado como coordinado el {formatDate(op.delivery_coordinated_at)}</p>
+      :<Btn small variant="secondary" onClick={onMarkCoordinated}>✓ Marcar como coordinado</Btn>}
+  </Card>;
 }
 
 function CommsLog({opId,token}){
