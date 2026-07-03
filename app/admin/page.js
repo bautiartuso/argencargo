@@ -1181,8 +1181,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     try{
       const sentKey=`wa_${trigger}`;
       const newSent={...(op.sent_notifications||{}),[sentKey]:new Date().toISOString()};
-      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{sent_notifications:newSent}});
-      setOp(p=>({...p,sent_notifications:newSent}));
+      const patchBody={sent_notifications:newSent};
+      // wa_retiro = se le manda al cliente el link de "carga lista" → entra a la cola de Entregas
+      // hasta que se marque delivery_completed_at, sin importar el status contable que tome después.
+      if(trigger==="retiro"&&!op.delivery_ready_at)patchBody.delivery_ready_at=new Date().toISOString();
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:patchBody});
+      setOp(p=>({...p,...patchBody}));
       await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"whatsapp",direction:"out",content:msg}});
     }catch(e){console.error("wa log",e);}
     flash(`💬 WhatsApp ${trigger} abierto`);
@@ -3972,12 +3976,14 @@ function EntregasPanel({token,onOpenOp}){
   const [q,setQ]=useState("");
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
-  // Universo: toda op "lista para entregar" (status=entregada, se le manda el WhatsApp con el
-  // link de carga lista) que todavía no se entregó físicamente. Incluye las que el cliente ya
-  // coordinó por el link (delivery_confirmed_at) Y las que todavía no lo completó.
+  // Universo: toda op a la que ya se le mandó el WhatsApp de "carga lista" (delivery_ready_at, se
+  // fija la primera vez que se dispara ese mensaje) y todavía no se entregó físicamente. El status
+  // contable de la op (operacion_cerrada, entregada, etc.) es independiente de si ya se hizo la
+  // entrega física — cerrar la op porque ya se cobró NO implica que se entregó, así que no filtramos
+  // por status.
   const load=async()=>{
     setLo(true);
-    const r=await dq("operations",{token,filters:"?status=eq.entregada&delivery_completed_at=is.null&select=id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_completed_at,delivery_public_token,client_id,clients(first_name,last_name,client_code,whatsapp)&order=eta.desc"});
+    const r=await dq("operations",{token,filters:"?delivery_ready_at=not.is.null&delivery_completed_at=is.null&select=id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_completed_at,delivery_public_token,client_id,clients(first_name,last_name,client_code,whatsapp)&order=eta.desc"});
     const list=Array.isArray(r)?r:[];
     setRows(list);
     if(list.length>0){
@@ -4064,12 +4070,7 @@ function EntregasPanel({token,onOpenOp}){
     </div>
     {filtered.length===0&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Sin entregas pendientes.</p>}
 
-    {sinConfirmar.length>0&&<div style={{marginBottom:28}}>
-      <h3 style={{fontSize:14,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.005em"}}>⏳ Pendientes de coordinar por el cliente <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>({sinConfirmar.length})</span></h3>
-      <div style={{display:"flex",flexDirection:"column",gap:10}}>{sinConfirmar.map(pendingCard)}</div>
-    </div>}
-
-    {confirmadas.length>0&&<div>
+    {confirmadas.length>0&&<div style={{marginBottom:sinConfirmar.length>0?28:0}}>
       <h3 style={{fontSize:14,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.005em"}}>📦 Pendientes de entregar <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>({confirmadas.length})</span></h3>
       {/* Primero separa por forma de pago, después por tipo de entrega — así podés coordinar en tandas */}
       <div style={{display:"flex",flexDirection:"column",gap:28}}>
@@ -4091,6 +4092,11 @@ function EntregasPanel({token,onOpenOp}){
           </div>;
         })}
       </div>
+    </div>}
+
+    {sinConfirmar.length>0&&<div>
+      <h3 style={{fontSize:14,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.005em"}}>⏳ Pendientes de coordinar por el cliente <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>({sinConfirmar.length})</span></h3>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>{sinConfirmar.map(pendingCard)}</div>
     </div>}
   </div>;
 }
@@ -9497,8 +9503,12 @@ function ComunicacionesPanel({token}){
     const op=ops.find(x=>x.id===opId);
     if(!op)return;
     const newSent={...(op.sent_notifications||{}),[triggerKey]:new Date().toISOString()};
-    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opId}`,body:{sent_notifications:newSent}});
-    setOps(p=>p.map(x=>x.id===opId?{...x,sent_notifications:newSent}:x));
+    const patchBody={sent_notifications:newSent};
+    // wa_retiro = se le manda al cliente el link de "carga lista" → entra a la cola de Entregas
+    // hasta que se marque delivery_completed_at, sin importar el status contable que tome después.
+    if(triggerKey==="wa_retiro"&&!op.delivery_ready_at)patchBody.delivery_ready_at=new Date().toISOString();
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opId}`,body:patchBody});
+    setOps(p=>p.map(x=>x.id===opId?{...x,...patchBody}:x));
   };
 
   const interp=(text,data)=>{if(!text)return "";return String(text).replace(/\{\{(\w+)\}\}/g,(_,k)=>data[k]!=null?String(data[k]):"");};
