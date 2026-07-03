@@ -28,6 +28,18 @@ function inferZone(city, province) {
   return null;
 }
 
+// collected_amount puede estar cargado en ARS (collection_currency) — convertir a USD antes de
+// restar, si no el saldo (y el total) da mal para cualquier cobro que no esté en USD.
+function usdCollected(op) {
+  if (!op.is_collected) return 0;
+  const raw = Number(op.collected_amount || 0);
+  if (op.collection_currency === "ARS") {
+    const rate = Number(op.collection_exchange_rate || 0);
+    return rate > 0 ? raw / rate : 0;
+  }
+  return raw;
+}
+
 function fullAddress(c) {
   const parts = [c.street, c.floor_apt].filter(Boolean).join(", ");
   return [parts, c.city].filter(Boolean).join(", ");
@@ -86,7 +98,7 @@ export async function GET(req, { params }) {
       credit_applied_usd: Number(op.credit_applied_usd || 0),
       debt_applied_usd: Number(op.debt_applied_usd || 0),
       total_anticipos: Number(op.total_anticipos || 0),
-      collected_amount: op.is_collected ? Number(op.collected_amount || 0) : 0,
+      collected_amount: usdCollected(op),
       delivery_choice: op.delivery_choice,
       delivery_zone: op.delivery_zone,
       delivery_address: op.delivery_address,
@@ -145,7 +157,7 @@ export async function POST(req, { params }) {
   const debtApp = Number(op.debt_applied_usd || 0);
   const creditApp = Number(op.credit_applied_usd || 0);
   const totAnt = Number(op.total_anticipos || 0);
-  const collected = op.is_collected ? Number(op.collected_amount || 0) : 0;
+  const collected = usdCollected(op);
   const saldo = Math.max(0, bt + debtApp - totAnt - collected - creditApp);
   const finalTotal = Math.round((saldo + deliveryCost) * 100) / 100;
 

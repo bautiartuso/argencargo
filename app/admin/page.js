@@ -1301,7 +1301,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       </div>
     </div>}
     {/* Tabs estilo Linear: pill flotante para el tab activo + scroll horizontal en mobile */}
-    <div className="ac-editor-tabs" style={{display:"flex",gap:2,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"nowrap",overflowX:"auto",WebkitOverflowScrolling:"touch",position:"relative"}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"11px 18px",fontSize:12,fontWeight:active?700:600,border:"none",background:active?"linear-gradient(180deg,rgba(184,149,106,0.10),transparent)":"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",whiteSpace:"nowrap",borderRadius:"6px 6px 0 0",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.85)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.5)";e.currentTarget.style.background="transparent";}}}>{t.k==="entrega"&&op.delivery_confirmed_at&&!op.delivery_paid_at&&<span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 2px rgba(34,197,94,0.25)",display:"inline-block"}}/>}{t.l}</button>;})}</div>
+    <div className="ac-editor-tabs" style={{display:"flex",gap:2,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"nowrap",overflowX:"auto",WebkitOverflowScrolling:"touch",position:"relative"}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"11px 18px",fontSize:12,fontWeight:active?700:600,border:"none",background:active?"linear-gradient(180deg,rgba(184,149,106,0.10),transparent)":"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",whiteSpace:"nowrap",borderRadius:"6px 6px 0 0",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.85)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.5)";e.currentTarget.style.background="transparent";}}}>{t.k==="entrega"&&op.delivery_confirmed_at&&!op.delivery_completed_at&&<span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 2px rgba(34,197,94,0.25)",display:"inline-block"}}/>}{t.l}</button>;})}</div>
     {repackReq&&repackReq.status==="pending"&&<div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.4)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <div style={{flex:1,minWidth:200}}>
         <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:0}}>⏳ Reempaque pendiente — el agente todavía no completó</p>
@@ -3733,7 +3733,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
 
     </>}
 
-    {tab==="entrega"&&<EntregaTab op={op} opClient={opClient} token={token} onMarkPaid={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_paid_at:new Date().toISOString()}});setOp(p=>({...p,delivery_paid_at:new Date().toISOString()}));flash("Marcado como pagado");}}/>}
+    {tab==="entrega"&&<EntregaTab op={op} opClient={opClient} token={token} onMarkDelivered={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_completed_at:new Date().toISOString()}});setOp(p=>({...p,delivery_completed_at:new Date().toISOString()}));flash("Marcado como entregado");}}/>}
     {tab==="comms"&&<CommsLog opId={op.id} token={token}/>}
     {showCloseChecklist&&<CloseChecklistModal op={op} items={items} payments={payments} clientPayments={clientPayments} supplierPayments={supplierPayments} onCancel={()=>{setShowCloseChecklist(false);setOp(p=>({...p,status:initOp.status}));}} onConfirm={async()=>{setShowCloseChecklist(false);await executeSave();}}/>}
     {facturaModal&&(()=>{
@@ -3953,17 +3953,29 @@ const CHANNEL_NAME_MAP={aereo_blanco:"Aéreo Courier Comercial",aereo_negro:"Aé
 
 const PAY_GROUPS=[{k:"efectivo",l:"💵 Efectivo"},{k:"transferencia",l:"🏦 Transferencia"},{k:"crypto",l:"₿ Cripto"}];
 
+// Convierte collected_amount a USD si el cobro se cargó en ARS — el bug anterior lo
+// trataba siempre como USD y hacía que el saldo (y por ende el Total) diera 0 por error.
+const usdCollected=(o)=>{
+  if(!o.is_collected)return 0;
+  const raw=Number(o.collected_amount||0);
+  if(o.collection_currency==="ARS"){
+    const rate=Number(o.collection_exchange_rate||0);
+    return rate>0?raw/rate:0;
+  }
+  return raw;
+};
+
 function EntregasPanel({token,onOpenOp}){
   const [rows,setRows]=useState([]);
   const [bultosByOp,setBultosByOp]=useState({});
   const [lo,setLo]=useState(true);
-  const [filter,setFilter]=useState("nopagadas"); // nopagadas | pagadas | todas
+  const [filter,setFilter]=useState("pendientes"); // pendientes | entregadas | todas
   const [q,setQ]=useState("");
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   const load=async()=>{
     setLo(true);
-    const r=await dq("operations",{token,filters:"?delivery_confirmed_at=not.is.null&select=id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_paid_at,client_id,clients(first_name,last_name,client_code,whatsapp)&order=delivery_confirmed_at.desc"});
+    const r=await dq("operations",{token,filters:"?delivery_confirmed_at=not.is.null&select=id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_completed_at,client_id,clients(first_name,last_name,client_code,whatsapp)&order=delivery_confirmed_at.desc"});
     const list=Array.isArray(r)?r:[];
     setRows(list);
     if(list.length>0){
@@ -3975,13 +3987,13 @@ function EntregasPanel({token,onOpenOp}){
   };
   useEffect(()=>{load();},[token]);
 
-  const markPaid=async(o)=>{
-    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_paid_at:new Date().toISOString()}});
-    setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_paid_at:new Date().toISOString()}:r));
+  const markDelivered=async(o)=>{
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_completed_at:new Date().toISOString()}});
+    setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_completed_at:new Date().toISOString()}:r));
   };
-  const unmarkPaid=async(o)=>{
-    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_paid_at:null}});
-    setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_paid_at:null}:r));
+  const unmarkDelivered=async(o)=>{
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_completed_at:null}});
+    setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_completed_at:null}:r));
   };
 
   const totalFor=(o)=>{
@@ -3989,7 +4001,7 @@ function EntregasPanel({token,onOpenOp}){
     const debtApp=Number(o.debt_applied_usd||0);
     const creditApp=Number(o.credit_applied_usd||0);
     const totAnt=Number(o.total_anticipos||0);
-    const collected=o.is_collected?Number(o.collected_amount||0):0;
+    const collected=usdCollected(o);
     const saldo=Math.max(0,bt+debtApp-totAnt-collected-creditApp);
     return Math.round((saldo+Number(o.delivery_cost_usd||0))*100)/100;
   };
@@ -3997,32 +4009,34 @@ function EntregasPanel({token,onOpenOp}){
   const entregaLabel=(o)=>o.delivery_choice==="oficina"?"Retiro por oficina":o.delivery_choice==="propio"?`Envío a domicilio · ${o.delivery_zone||""}`:"Envío por transportista";
 
   const filtered=rows.filter(o=>{
-    if(filter==="nopagadas"&&o.delivery_paid_at)return false;
-    if(filter==="pagadas"&&!o.delivery_paid_at)return false;
+    if(filter==="pendientes"&&o.delivery_completed_at)return false;
+    if(filter==="entregadas"&&!o.delivery_completed_at)return false;
     if(q.trim()){
       const s=`${o.operation_code} ${o.clients?.first_name||""} ${o.clients?.last_name||""} ${o.clients?.client_code||""}`.toLowerCase();
       if(!s.includes(q.trim().toLowerCase()))return false;
     }
     return true;
   });
-  const noPagadasCount=rows.filter(o=>!o.delivery_paid_at).length;
+  const pendientesCount=rows.filter(o=>!o.delivery_completed_at).length;
 
   const card=(o)=>{
     const client=o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—";
-    const paid=!!o.delivery_paid_at;
+    const delivered=!!o.delivery_completed_at;
+    const paid=!!o.is_collected;
     const bultos=bultosByOp[o.id]||0;
-    return <div key={o.id} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:`1px solid ${paid?"rgba(255,255,255,0.06)":"rgba(34,197,94,0.25)"}`,borderRadius:10}}>
+    return <div key={o.id} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:`1px solid ${delivered?"rgba(255,255,255,0.06)":"rgba(34,197,94,0.25)"}`,borderRadius:10}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:13,fontWeight:700,color:GOLD_LIGHT}}>{o.operation_code}</span>
           <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{client}</span>
           {o.clients?.client_code&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{o.clients.client_code}</span>}
           <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>· {CHANNEL_NAME_MAP[o.channel]||o.channel}</span>
+          <span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:6,background:paid?"rgba(34,197,94,0.12)":"rgba(251,191,36,0.1)",color:paid?"#22c55e":"#fbbf24",border:`1px solid ${paid?"rgba(34,197,94,0.3)":"rgba(251,191,36,0.3)"}`}}>{paid?"Pagado":"Sin pagar"}</span>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          {paid
-            ?<Btn small variant="secondary" onClick={()=>unmarkPaid(o)}>↺ Marcar sin pagar</Btn>
-            :<Btn small onClick={()=>markPaid(o)}>✓ Marcar como pagado</Btn>}
+          {delivered
+            ?<Btn small variant="secondary" onClick={()=>unmarkDelivered(o)}>↺ Marcar sin entregar</Btn>
+            :<Btn small onClick={()=>markDelivered(o)}>✓ Marcar como entregado</Btn>}
           <Btn small variant="secondary" onClick={()=>onOpenOp(o)}>Ver operación →</Btn>
         </div>
       </div>
@@ -4030,7 +4044,7 @@ function EntregasPanel({token,onOpenOp}){
         <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Entrega</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{entregaLabel(o)}</p>{o.delivery_choice==="propio"&&o.delivery_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"1px 0 0"}}>{o.delivery_address}</p>}</div>
         <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Bultos</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{bultos||"—"}</p></div>
         <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Total</p><p style={{fontSize:12.5,fontWeight:700,color:GOLD_LIGHT,margin:0}}>{usd(totalFor(o))}</p></div>
-        <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Estado</p><p style={{fontSize:12.5,fontWeight:700,color:paid?"#22c55e":"#fbbf24",margin:0}}>{paid?`Pagado · ${formatDate(o.delivery_paid_at)}`:"Sin pagar"}</p></div>
+        <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Estado</p><p style={{fontSize:12.5,fontWeight:700,color:delivered?"#22c55e":"#fbbf24",margin:0}}>{delivered?`Entregado · ${formatDate(o.delivery_completed_at)}`:"Pendiente de entregar"}</p></div>
       </div>
     </div>;
   };
@@ -4043,9 +4057,9 @@ function EntregasPanel({token,onOpenOp}){
       <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por código o cliente..." style={{padding:"9px 14px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",minWidth:220}}/>
     </div>
     <div style={{display:"flex",gap:8,marginBottom:20}}>
-      {[{k:"nopagadas",l:`Sin pagar${noPagadasCount>0?` (${noPagadasCount})`:""}`},{k:"pagadas",l:"Pagadas"},{k:"todas",l:"Todas"}].map(f=><button key={f.k} onClick={()=>setFilter(f.k)} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1.5px solid ${filter===f.k?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.1)"}`,background:filter===f.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:filter===f.k?GOLD_LIGHT:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{f.l}</button>)}
+      {[{k:"pendientes",l:`Pendientes de entregar${pendientesCount>0?` (${pendientesCount})`:""}`},{k:"entregadas",l:"Entregadas"},{k:"todas",l:"Todas"}].map(f=><button key={f.k} onClick={()=>setFilter(f.k)} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1.5px solid ${filter===f.k?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.1)"}`,background:filter===f.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:filter===f.k?GOLD_LIGHT:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{f.l}</button>)}
     </div>
-    {filtered.length===0&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Sin confirmaciones{filter==="nopagadas"?" sin pagar":filter==="pagadas"?" pagadas":""}.</p>}
+    {filtered.length===0&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Sin confirmaciones{filter==="pendientes"?" pendientes":filter==="entregadas"?" entregadas":""}.</p>}
     {/* Primero separa por forma de pago, después por tipo de entrega — así podés coordinar en tandas */}
     <div style={{display:"flex",flexDirection:"column",gap:28}}>
       {PAY_GROUPS.map(pg=>{
@@ -4069,7 +4083,7 @@ function EntregasPanel({token,onOpenOp}){
   </div>;
 }
 
-function EntregaTab({op,opClient,token,onMarkPaid}){
+function EntregaTab({op,opClient,token,onMarkDelivered}){
   const [tc,setTc]=useState("");
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const retiroLink=op.delivery_public_token?`https://argencargo.com.ar/retiro/${op.delivery_public_token}`:null;
@@ -4088,7 +4102,7 @@ function EntregaTab({op,opClient,token,onMarkPaid}){
   const debtApp=Number(op.debt_applied_usd||0);
   const creditApp=Number(op.credit_applied_usd||0);
   const totAnt=Number(op.total_anticipos||0);
-  const collected=op.is_collected?Number(op.collected_amount||0):0;
+  const collected=usdCollected(op);
   const saldo=Math.max(0,bt+debtApp-totAnt-collected-creditApp);
   const deliveryCost=Number(op.delivery_cost_usd||0);
   const total=Math.round((saldo+deliveryCost)*100)/100;
@@ -4111,6 +4125,7 @@ function EntregaTab({op,opClient,token,onMarkPaid}){
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
       <span style={{width:8,height:8,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 3px rgba(34,197,94,0.2)"}}/>
       <span style={{fontSize:13,fontWeight:800,color:"#22c55e"}}>El cliente confirmó su carga lista</span>
+      <span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:6,background:op.is_collected?"rgba(34,197,94,0.12)":"rgba(251,191,36,0.1)",color:op.is_collected?"#22c55e":"#fbbf24",border:`1px solid ${op.is_collected?"rgba(34,197,94,0.3)":"rgba(251,191,36,0.3)"}`}}>{op.is_collected?"Pagado":"Sin pagar"}</span>
       <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:"auto"}}>{formatDate(op.delivery_confirmed_at)}</span>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
@@ -4123,7 +4138,7 @@ function EntregaTab({op,opClient,token,onMarkPaid}){
       <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"10px 12px"}}>
         <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Forma de pago</p>
         <p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>{payLabel}</p>
-        {op.payment_method_chosen==="transferencia"&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Falta pasarle el monto por WhatsApp</p>}
+        {op.payment_method_chosen==="transferencia"&&!op.is_collected&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Falta pasarle el monto por WhatsApp</p>}
       </div>
       <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"10px 12px"}}>
         <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Total confirmado</p>
@@ -4132,7 +4147,7 @@ function EntregaTab({op,opClient,token,onMarkPaid}){
       </div>
     </div>
 
-    {op.payment_method_chosen==="transferencia"&&!op.delivery_paid_at&&<div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"14px 16px",marginBottom:14}}>
+    {op.payment_method_chosen==="transferencia"&&!op.is_collected&&<div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"14px 16px",marginBottom:14}}>
       <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 10px"}}>Calcular monto en pesos</p>
       <div style={{display:"flex",gap:24,alignItems:"flex-end",marginBottom:12}}>
         <div>
@@ -4150,9 +4165,9 @@ function EntregaTab({op,opClient,token,onMarkPaid}){
       </div>
     </div>}
 
-    {op.delivery_paid_at
-      ?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>✓ Marcado como pagado el {formatDate(op.delivery_paid_at)}</p>
-      :<Btn small variant="secondary" onClick={onMarkPaid}>✓ Marcar como pagado</Btn>}
+    {op.delivery_completed_at
+      ?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>✓ Marcado como entregado el {formatDate(op.delivery_completed_at)}</p>
+      :<Btn small variant="secondary" onClick={onMarkDelivered}>✓ Marcar como entregado</Btn>}
   </Card>;
 }
 
