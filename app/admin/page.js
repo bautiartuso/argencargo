@@ -3969,13 +3969,15 @@ function EntregasPanel({token,onOpenOp}){
   const [rows,setRows]=useState([]);
   const [bultosByOp,setBultosByOp]=useState({});
   const [lo,setLo]=useState(true);
-  const [filter,setFilter]=useState("pendientes"); // pendientes | entregadas | todas
   const [q,setQ]=useState("");
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
+  // Universo: toda op "lista para entregar" (status=entregada, se le manda el WhatsApp con el
+  // link de carga lista) que todavía no se entregó físicamente. Incluye las que el cliente ya
+  // coordinó por el link (delivery_confirmed_at) Y las que todavía no lo completó.
   const load=async()=>{
     setLo(true);
-    const r=await dq("operations",{token,filters:"?delivery_confirmed_at=not.is.null&select=id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_completed_at,client_id,clients(first_name,last_name,client_code,whatsapp)&order=delivery_confirmed_at.desc"});
+    const r=await dq("operations",{token,filters:"?status=eq.entregada&delivery_completed_at=is.null&select=id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_completed_at,delivery_public_token,client_id,clients(first_name,last_name,client_code,whatsapp)&order=eta.desc"});
     const list=Array.isArray(r)?r:[];
     setRows(list);
     if(list.length>0){
@@ -3989,11 +3991,7 @@ function EntregasPanel({token,onOpenOp}){
 
   const markDelivered=async(o)=>{
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_completed_at:new Date().toISOString()}});
-    setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_completed_at:new Date().toISOString()}:r));
-  };
-  const unmarkDelivered=async(o)=>{
-    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_completed_at:null}});
-    setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_completed_at:null}:r));
+    setRows(p=>p.filter(r=>r.id!==o.id));
   };
 
   const totalFor=(o)=>{
@@ -4007,44 +4005,52 @@ function EntregasPanel({token,onOpenOp}){
   };
   const isDomicilio=(o)=>o.delivery_choice==="propio"||o.delivery_choice==="carrier";
   const entregaLabel=(o)=>o.delivery_choice==="oficina"?"Retiro por oficina":o.delivery_choice==="propio"?`Envío a domicilio · ${o.delivery_zone||""}`:"Envío por transportista";
+  const copyLink=(o)=>{const link=`https://argencargo.com.ar/retiro/${o.delivery_public_token}`;navigator.clipboard?.writeText(link);toast("Link copiado","success");};
 
-  const filtered=rows.filter(o=>{
-    if(filter==="pendientes"&&o.delivery_completed_at)return false;
-    if(filter==="entregadas"&&!o.delivery_completed_at)return false;
-    if(q.trim()){
-      const s=`${o.operation_code} ${o.clients?.first_name||""} ${o.clients?.last_name||""} ${o.clients?.client_code||""}`.toLowerCase();
-      if(!s.includes(q.trim().toLowerCase()))return false;
-    }
-    return true;
-  });
-  const pendientesCount=rows.filter(o=>!o.delivery_completed_at).length;
+  const matchesQ=(o)=>{
+    if(!q.trim())return true;
+    const s=`${o.operation_code} ${o.clients?.first_name||""} ${o.clients?.last_name||""} ${o.clients?.client_code||""}`.toLowerCase();
+    return s.includes(q.trim().toLowerCase());
+  };
+  const filtered=rows.filter(matchesQ);
+  const sinConfirmar=filtered.filter(o=>!o.delivery_confirmed_at);
+  const confirmadas=filtered.filter(o=>o.delivery_confirmed_at);
+
+  const cardHeader=(o,actions,paidBadge)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+      <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:13,fontWeight:700,color:GOLD_LIGHT}}>{o.operation_code}</span>
+      <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
+      {o.clients?.client_code&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{o.clients.client_code}</span>}
+      <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>· {CHANNEL_NAME_MAP[o.channel]||o.channel}</span>
+      {paidBadge}
+    </div>
+    <div style={{display:"flex",gap:8,alignItems:"center"}}>{actions}</div>
+  </div>;
+
+  const pendingCard=(o)=>{
+    const bultos=bultosByOp[o.id]||0;
+    return <div key={o.id} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:10}}>
+      {cardHeader(o,<>
+        <Btn small variant="secondary" onClick={()=>copyLink(o)}>📋 Copiar link</Btn>
+        <Btn small variant="secondary" onClick={()=>markDelivered(o)}>✓ Marcar como entregado</Btn>
+        <Btn small variant="secondary" onClick={()=>onOpenOp(o)}>Ver operación →</Btn>
+      </>)}
+      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"8px 0 0"}}>{bultos} bulto{bultos===1?"":"s"} · El cliente todavía no completó el link de carga lista (entrega + forma de pago).</p>
+    </div>;
+  };
 
   const card=(o)=>{
-    const client=o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—";
-    const delivered=!!o.delivery_completed_at;
     const paid=!!o.is_collected;
     const bultos=bultosByOp[o.id]||0;
-    return <div key={o.id} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:`1px solid ${delivered?"rgba(255,255,255,0.06)":"rgba(34,197,94,0.25)"}`,borderRadius:10}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:13,fontWeight:700,color:GOLD_LIGHT}}>{o.operation_code}</span>
-          <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{client}</span>
-          {o.clients?.client_code&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{o.clients.client_code}</span>}
-          <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>· {CHANNEL_NAME_MAP[o.channel]||o.channel}</span>
-          <span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:6,background:paid?"rgba(34,197,94,0.12)":"rgba(251,191,36,0.1)",color:paid?"#22c55e":"#fbbf24",border:`1px solid ${paid?"rgba(34,197,94,0.3)":"rgba(251,191,36,0.3)"}`}}>{paid?"Pagado":"Sin pagar"}</span>
-        </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          {delivered
-            ?<Btn small variant="secondary" onClick={()=>unmarkDelivered(o)}>↺ Marcar sin entregar</Btn>
-            :<Btn small onClick={()=>markDelivered(o)}>✓ Marcar como entregado</Btn>}
-          <Btn small variant="secondary" onClick={()=>onOpenOp(o)}>Ver operación →</Btn>
-        </div>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginTop:10}}>
+    return <div key={o.id} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:10}}>
+      {cardHeader(o,<>
+        <Btn small onClick={()=>markDelivered(o)}>✓ Marcar como entregado</Btn>
+        <Btn small variant="secondary" onClick={()=>onOpenOp(o)}>Ver operación →</Btn>
+      </>,<span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:6,background:paid?"rgba(34,197,94,0.12)":"rgba(251,191,36,0.1)",color:paid?"#22c55e":"#fbbf24",border:`1px solid ${paid?"rgba(34,197,94,0.3)":"rgba(251,191,36,0.3)"}`}}>{paid?"Pagado":"Sin pagar"}</span>)}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:10}}>
         <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Entrega</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{entregaLabel(o)}</p>{o.delivery_choice==="propio"&&o.delivery_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"1px 0 0"}}>{o.delivery_address}</p>}</div>
         <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Bultos</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{bultos||"—"}</p></div>
         <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Total</p><p style={{fontSize:12.5,fontWeight:700,color:GOLD_LIGHT,margin:0}}>{usd(totalFor(o))}</p></div>
-        <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Estado</p><p style={{fontSize:12.5,fontWeight:700,color:delivered?"#22c55e":"#fbbf24",margin:0}}>{delivered?`Entregado · ${formatDate(o.delivery_completed_at)}`:"Pendiente de entregar"}</p></div>
       </div>
     </div>;
   };
@@ -4056,30 +4062,36 @@ function EntregasPanel({token,onOpenOp}){
       <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Entregas</h2>
       <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por código o cliente..." style={{padding:"9px 14px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",minWidth:220}}/>
     </div>
-    <div style={{display:"flex",gap:8,marginBottom:20}}>
-      {[{k:"pendientes",l:`Pendientes de entregar${pendientesCount>0?` (${pendientesCount})`:""}`},{k:"entregadas",l:"Entregadas"},{k:"todas",l:"Todas"}].map(f=><button key={f.k} onClick={()=>setFilter(f.k)} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1.5px solid ${filter===f.k?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.1)"}`,background:filter===f.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:filter===f.k?GOLD_LIGHT:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{f.l}</button>)}
-    </div>
-    {filtered.length===0&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Sin confirmaciones{filter==="pendientes"?" pendientes":filter==="entregadas"?" entregadas":""}.</p>}
-    {/* Primero separa por forma de pago, después por tipo de entrega — así podés coordinar en tandas */}
-    <div style={{display:"flex",flexDirection:"column",gap:28}}>
-      {PAY_GROUPS.map(pg=>{
-        const inGroup=filtered.filter(o=>(o.payment_method_chosen||"efectivo")===pg.k);
-        if(inGroup.length===0)return null;
-        const domicilio=inGroup.filter(isDomicilio);
-        const oficina=inGroup.filter(o=>!isDomicilio(o));
-        return <div key={pg.k}>
-          <h3 style={{fontSize:14,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.005em"}}>{pg.l} <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>({inGroup.length})</span></h3>
-          {oficina.length>0&&<div style={{marginBottom:domicilio.length>0?18:0}}>
-            <p style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>📦 Retiro por oficina ({oficina.length})</p>
-            <div style={{display:"flex",flexDirection:"column",gap:10}}>{oficina.map(card)}</div>
-          </div>}
-          {domicilio.length>0&&<div>
-            <p style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>🚚 Envío a domicilio ({domicilio.length})</p>
-            <div style={{display:"flex",flexDirection:"column",gap:10}}>{domicilio.map(card)}</div>
-          </div>}
-        </div>;
-      })}
-    </div>
+    {filtered.length===0&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Sin entregas pendientes.</p>}
+
+    {sinConfirmar.length>0&&<div style={{marginBottom:28}}>
+      <h3 style={{fontSize:14,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.005em"}}>⏳ Pendientes de coordinar por el cliente <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>({sinConfirmar.length})</span></h3>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>{sinConfirmar.map(pendingCard)}</div>
+    </div>}
+
+    {confirmadas.length>0&&<div>
+      <h3 style={{fontSize:14,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.005em"}}>📦 Pendientes de entregar <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>({confirmadas.length})</span></h3>
+      {/* Primero separa por forma de pago, después por tipo de entrega — así podés coordinar en tandas */}
+      <div style={{display:"flex",flexDirection:"column",gap:28}}>
+        {PAY_GROUPS.map(pg=>{
+          const inGroup=confirmadas.filter(o=>(o.payment_method_chosen||"efectivo")===pg.k);
+          if(inGroup.length===0)return null;
+          const domicilio=inGroup.filter(isDomicilio);
+          const oficina=inGroup.filter(o=>!isDomicilio(o));
+          return <div key={pg.k} style={{marginBottom:20}}>
+            <h4 style={{fontSize:13,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.005em"}}>{pg.l} <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>({inGroup.length})</span></h4>
+            {oficina.length>0&&<div style={{marginBottom:domicilio.length>0?18:0}}>
+              <p style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>📦 Retiro por oficina ({oficina.length})</p>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>{oficina.map(card)}</div>
+            </div>}
+            {domicilio.length>0&&<div>
+              <p style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>🚚 Envío a domicilio ({domicilio.length})</p>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>{domicilio.map(card)}</div>
+            </div>}
+          </div>;
+        })}
+      </div>
+    </div>}
   </div>;
 }
 
