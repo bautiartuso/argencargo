@@ -1562,7 +1562,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           for(const s of surchs){if(vpu>=Number(s.min_qty||0)){surchargePct=Number(s.rate||0);surcharge=Math.round(merchVal*(surchargePct/100)*100)/100;break;}}
         }
       }
-      totalAbonar=isBlanco?(totalTax+flete+seguro+shipCost):(flete+surcharge+shipCost);
+      totalAbonar=isBlanco?(totalTax+flete+seguro+shipCost):Math.round(flete+surcharge+shipCost);
       }
       const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
       const rw=(l,v)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>USD {v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
