@@ -1301,7 +1301,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       </div>
     </div>}
     {/* Tabs estilo Linear: pill flotante para el tab activo + scroll horizontal en mobile */}
-    <div className="ac-editor-tabs" style={{display:"flex",gap:2,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"nowrap",overflowX:"auto",WebkitOverflowScrolling:"touch",position:"relative"}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"11px 18px",fontSize:12,fontWeight:active?700:600,border:"none",background:active?"linear-gradient(180deg,rgba(184,149,106,0.10),transparent)":"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",whiteSpace:"nowrap",borderRadius:"6px 6px 0 0",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.85)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.5)";e.currentTarget.style.background="transparent";}}}>{t.k==="entrega"&&op.delivery_confirmed_at&&!op.delivery_coordinated_at&&<span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 2px rgba(34,197,94,0.25)",display:"inline-block"}}/>}{t.l}</button>;})}</div>
+    <div className="ac-editor-tabs" style={{display:"flex",gap:2,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"nowrap",overflowX:"auto",WebkitOverflowScrolling:"touch",position:"relative"}}>{tabs.map(t=>{const active=tab===t.k;return <button key={t.k} onClick={()=>setTab(t.k)} style={{padding:"11px 18px",fontSize:12,fontWeight:active?700:600,border:"none",background:active?"linear-gradient(180deg,rgba(184,149,106,0.10),transparent)":"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",whiteSpace:"nowrap",borderRadius:"6px 6px 0 0",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.85)";e.currentTarget.style.background="rgba(255,255,255,0.025)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.color="rgba(255,255,255,0.5)";e.currentTarget.style.background="transparent";}}}>{t.k==="entrega"&&op.delivery_confirmed_at&&!op.delivery_paid_at&&<span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 2px rgba(34,197,94,0.25)",display:"inline-block"}}/>}{t.l}</button>;})}</div>
     {repackReq&&repackReq.status==="pending"&&<div style={{marginBottom:16,padding:"12px 16px",background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.4)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <div style={{flex:1,minWidth:200}}>
         <p style={{fontSize:12,fontWeight:700,color:"#fbbf24",margin:0}}>⏳ Reempaque pendiente — el agente todavía no completó</p>
@@ -3733,7 +3733,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
 
     </>}
 
-    {tab==="entrega"&&<EntregaTab op={op} opClient={opClient} token={token} onMarkCoordinated={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_coordinated_at:new Date().toISOString()}});setOp(p=>({...p,delivery_coordinated_at:new Date().toISOString()}));flash("Marcado como coordinado");}}/>}
+    {tab==="entrega"&&<EntregaTab op={op} opClient={opClient} token={token} onMarkPaid={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_paid_at:new Date().toISOString()}});setOp(p=>({...p,delivery_paid_at:new Date().toISOString()}));flash("Marcado como pagado");}}/>}
     {tab==="comms"&&<CommsLog opId={op.id} token={token}/>}
     {showCloseChecklist&&<CloseChecklistModal op={op} items={items} payments={payments} clientPayments={clientPayments} supplierPayments={supplierPayments} onCancel={()=>{setShowCloseChecklist(false);setOp(p=>({...p,status:initOp.status}));}} onConfirm={async()=>{setShowCloseChecklist(false);await executeSave();}}/>}
     {facturaModal&&(()=>{
@@ -3951,24 +3951,37 @@ function CloseChecklistModal({op,items,payments,clientPayments,supplierPayments,
 
 const CHANNEL_NAME_MAP={aereo_blanco:"Aéreo Courier Comercial",aereo_negro:"Aéreo Integral AC",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
 
+const PAY_GROUPS=[{k:"efectivo",l:"💵 Efectivo"},{k:"transferencia",l:"🏦 Transferencia"},{k:"crypto",l:"₿ Cripto"}];
+
 function EntregasPanel({token,onOpenOp}){
   const [rows,setRows]=useState([]);
+  const [bultosByOp,setBultosByOp]=useState({});
   const [lo,setLo]=useState(true);
-  const [filter,setFilter]=useState("pendientes"); // pendientes | coordinadas | todas
+  const [filter,setFilter]=useState("nopagadas"); // nopagadas | pagadas | todas
   const [q,setQ]=useState("");
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   const load=async()=>{
     setLo(true);
-    const r=await dq("operations",{token,filters:"?delivery_confirmed_at=not.is.null&select=id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_coordinated_at,client_id,clients(first_name,last_name,client_code,whatsapp)&order=delivery_confirmed_at.desc"});
-    setRows(Array.isArray(r)?r:[]);
+    const r=await dq("operations",{token,filters:"?delivery_confirmed_at=not.is.null&select=id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_paid_at,client_id,clients(first_name,last_name,client_code,whatsapp)&order=delivery_confirmed_at.desc"});
+    const list=Array.isArray(r)?r:[];
+    setRows(list);
+    if(list.length>0){
+      const pk=await dq("operation_packages",{token,filters:`?operation_id=in.(${list.map(o=>o.id).join(",")})&select=operation_id,quantity`});
+      const m={};(Array.isArray(pk)?pk:[]).forEach(p=>{m[p.operation_id]=(m[p.operation_id]||0)+Number(p.quantity||1);});
+      setBultosByOp(m);
+    }
     setLo(false);
   };
   useEffect(()=>{load();},[token]);
 
-  const markCoordinated=async(o)=>{
-    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_coordinated_at:new Date().toISOString()}});
-    setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_coordinated_at:new Date().toISOString()}:r));
+  const markPaid=async(o)=>{
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_paid_at:new Date().toISOString()}});
+    setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_paid_at:new Date().toISOString()}:r));
+  };
+  const unmarkPaid=async(o)=>{
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_paid_at:null}});
+    setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_paid_at:null}:r));
   };
 
   const totalFor=(o)=>{
@@ -3980,19 +3993,47 @@ function EntregasPanel({token,onOpenOp}){
     const saldo=Math.max(0,bt+debtApp-totAnt-collected-creditApp);
     return Math.round((saldo+Number(o.delivery_cost_usd||0))*100)/100;
   };
+  const isDomicilio=(o)=>o.delivery_choice==="propio"||o.delivery_choice==="carrier";
   const entregaLabel=(o)=>o.delivery_choice==="oficina"?"Retiro por oficina":o.delivery_choice==="propio"?`Envío a domicilio · ${o.delivery_zone||""}`:"Envío por transportista";
-  const payLabel=(o)=>o.payment_method_chosen==="efectivo"?"Efectivo":o.payment_method_chosen==="transferencia"?"Transferencia":o.payment_method_chosen==="crypto"?"Cripto":"—";
 
   const filtered=rows.filter(o=>{
-    if(filter==="pendientes"&&o.delivery_coordinated_at)return false;
-    if(filter==="coordinadas"&&!o.delivery_coordinated_at)return false;
+    if(filter==="nopagadas"&&o.delivery_paid_at)return false;
+    if(filter==="pagadas"&&!o.delivery_paid_at)return false;
     if(q.trim()){
       const s=`${o.operation_code} ${o.clients?.first_name||""} ${o.clients?.last_name||""} ${o.clients?.client_code||""}`.toLowerCase();
       if(!s.includes(q.trim().toLowerCase()))return false;
     }
     return true;
   });
-  const pendCount=rows.filter(o=>!o.delivery_coordinated_at).length;
+  const noPagadasCount=rows.filter(o=>!o.delivery_paid_at).length;
+
+  const card=(o)=>{
+    const client=o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—";
+    const paid=!!o.delivery_paid_at;
+    const bultos=bultosByOp[o.id]||0;
+    return <div key={o.id} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:`1px solid ${paid?"rgba(255,255,255,0.06)":"rgba(34,197,94,0.25)"}`,borderRadius:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:13,fontWeight:700,color:GOLD_LIGHT}}>{o.operation_code}</span>
+          <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{client}</span>
+          {o.clients?.client_code&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{o.clients.client_code}</span>}
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>· {CHANNEL_NAME_MAP[o.channel]||o.channel}</span>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {paid
+            ?<Btn small variant="secondary" onClick={()=>unmarkPaid(o)}>↺ Marcar sin pagar</Btn>
+            :<Btn small onClick={()=>markPaid(o)}>✓ Marcar como pagado</Btn>}
+          <Btn small variant="secondary" onClick={()=>onOpenOp(o)}>Ver operación →</Btn>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginTop:10}}>
+        <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Entrega</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{entregaLabel(o)}</p>{o.delivery_choice==="propio"&&o.delivery_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"1px 0 0"}}>{o.delivery_address}</p>}</div>
+        <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Bultos</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{bultos||"—"}</p></div>
+        <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Total</p><p style={{fontSize:12.5,fontWeight:700,color:GOLD_LIGHT,margin:0}}>{usd(totalFor(o))}</p></div>
+        <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Estado</p><p style={{fontSize:12.5,fontWeight:700,color:paid?"#22c55e":"#fbbf24",margin:0}}>{paid?`Pagado · ${formatDate(o.delivery_paid_at)}`:"Sin pagar"}</p></div>
+      </div>
+    </div>;
+  };
 
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
 
@@ -4001,43 +4042,34 @@ function EntregasPanel({token,onOpenOp}){
       <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Entregas</h2>
       <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por código o cliente..." style={{padding:"9px 14px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",minWidth:220}}/>
     </div>
-    <div style={{display:"flex",gap:8,marginBottom:16}}>
-      {[{k:"pendientes",l:`Pendientes de coordinar${pendCount>0?` (${pendCount})`:""}`},{k:"coordinadas",l:"Coordinadas"},{k:"todas",l:"Todas"}].map(f=><button key={f.k} onClick={()=>setFilter(f.k)} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1.5px solid ${filter===f.k?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.1)"}`,background:filter===f.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:filter===f.k?GOLD_LIGHT:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{f.l}</button>)}
+    <div style={{display:"flex",gap:8,marginBottom:20}}>
+      {[{k:"nopagadas",l:`Sin pagar${noPagadasCount>0?` (${noPagadasCount})`:""}`},{k:"pagadas",l:"Pagadas"},{k:"todas",l:"Todas"}].map(f=><button key={f.k} onClick={()=>setFilter(f.k)} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1.5px solid ${filter===f.k?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.1)"}`,background:filter===f.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:filter===f.k?GOLD_LIGHT:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{f.l}</button>)}
     </div>
-    {filtered.length===0&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Sin confirmaciones{filter==="pendientes"?" pendientes":filter==="coordinadas"?" coordinadas":""}.</p>}
-    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {filtered.map(o=>{
-        const client=o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—";
-        const pending=!o.delivery_coordinated_at;
-        return <div key={o.id} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:`1px solid ${pending?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.06)"}`,borderRadius:10}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-              <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:13,fontWeight:700,color:GOLD_LIGHT}}>{o.operation_code}</span>
-              <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{client}</span>
-              {o.clients?.client_code&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{o.clients.client_code}</span>}
-              <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>· {CHANNEL_NAME_MAP[o.channel]||o.channel}</span>
-              {pending
-                ?<span style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:6,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Pendiente</span>
-                :<span style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.4)",border:"1px solid rgba(255,255,255,0.1)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Coordinado</span>}
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              {pending&&<Btn small variant="secondary" onClick={()=>markCoordinated(o)}>✓ Marcar coordinado</Btn>}
-              <Btn small onClick={()=>onOpenOp(o)}>Ver operación →</Btn>
-            </div>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginTop:10}}>
-            <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Entrega</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{entregaLabel(o)}</p>{o.delivery_choice==="propio"&&o.delivery_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"1px 0 0"}}>{o.delivery_address}</p>}</div>
-            <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Pago</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{payLabel(o)}</p></div>
-            <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Total</p><p style={{fontSize:12.5,fontWeight:700,color:GOLD_LIGHT,margin:0}}>{usd(totalFor(o))}</p></div>
-            <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Confirmó</p><p style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",margin:0}}>{formatDate(o.delivery_confirmed_at)}</p></div>
-          </div>
+    {filtered.length===0&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Sin confirmaciones{filter==="nopagadas"?" sin pagar":filter==="pagadas"?" pagadas":""}.</p>}
+    {/* Primero separa por forma de pago, después por tipo de entrega — así podés coordinar en tandas */}
+    <div style={{display:"flex",flexDirection:"column",gap:28}}>
+      {PAY_GROUPS.map(pg=>{
+        const inGroup=filtered.filter(o=>(o.payment_method_chosen||"efectivo")===pg.k);
+        if(inGroup.length===0)return null;
+        const domicilio=inGroup.filter(isDomicilio);
+        const oficina=inGroup.filter(o=>!isDomicilio(o));
+        return <div key={pg.k}>
+          <h3 style={{fontSize:14,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.005em"}}>{pg.l} <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>({inGroup.length})</span></h3>
+          {oficina.length>0&&<div style={{marginBottom:domicilio.length>0?18:0}}>
+            <p style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>📦 Retiro por oficina ({oficina.length})</p>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>{oficina.map(card)}</div>
+          </div>}
+          {domicilio.length>0&&<div>
+            <p style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>🚚 Envío a domicilio ({domicilio.length})</p>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>{domicilio.map(card)}</div>
+          </div>}
         </div>;
       })}
     </div>
   </div>;
 }
 
-function EntregaTab({op,opClient,token,onMarkCoordinated}){
+function EntregaTab({op,opClient,token,onMarkPaid}){
   const [tc,setTc]=useState("");
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const retiroLink=op.delivery_public_token?`https://argencargo.com.ar/retiro/${op.delivery_public_token}`:null;
@@ -4100,7 +4132,7 @@ function EntregaTab({op,opClient,token,onMarkCoordinated}){
       </div>
     </div>
 
-    {op.payment_method_chosen==="transferencia"&&!op.delivery_coordinated_at&&<div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"14px 16px",marginBottom:14}}>
+    {op.payment_method_chosen==="transferencia"&&!op.delivery_paid_at&&<div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"14px 16px",marginBottom:14}}>
       <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 10px"}}>Calcular monto en pesos</p>
       <div style={{display:"flex",gap:24,alignItems:"flex-end",marginBottom:12}}>
         <div>
@@ -4118,9 +4150,9 @@ function EntregaTab({op,opClient,token,onMarkCoordinated}){
       </div>
     </div>}
 
-    {op.delivery_coordinated_at
-      ?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>✓ Marcado como coordinado el {formatDate(op.delivery_coordinated_at)}</p>
-      :<Btn small variant="secondary" onClick={onMarkCoordinated}>✓ Marcar como coordinado</Btn>}
+    {op.delivery_paid_at
+      ?<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>✓ Marcado como pagado el {formatDate(op.delivery_paid_at)}</p>
+      :<Btn small variant="secondary" onClick={onMarkPaid}>✓ Marcar como pagado</Btn>}
   </Card>;
 }
 
@@ -11290,7 +11322,8 @@ function AdminDashboard({session,onLogout}){
       {page==="intel"&&<IntelligencePanel token={token} allClients={allClients}/>}
       {page==="tickets"&&<TicketsPanel token={token} allClients={allClients}/>}
       {page==="dashboard"&&<FinanceDashboard token={token}/>}
-      {page==="entregas"&&<EntregasPanel token={token} onOpenOp={(op)=>{setPage("operations");setSelOp(op);setSelOpTab("entrega");}}/>}
+      {page==="entregas"&&!selOp&&<EntregasPanel token={token} onOpenOp={(op)=>{setSelOp(op);setSelOpTab("entrega");}}/>}
+      {page==="entregas"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="maritime"&&<MaritimePanel token={token} allClients={allClients}/>}
       {page==="purchase_notifs"&&<PurchaseNotificationsAdmin token={token} allClients={allClients} onCreateOp={op=>{setPage("operations");setSelOp(op);}} mode="client"/>}
