@@ -4112,9 +4112,14 @@ function EntregasPanel({token,onOpenOp}){
 
 function EntregaTab({op,opClient,token,onMarkDelivered}){
   const [tc,setTc]=useState("");
+  const [wallet,setWallet]=useState("");
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const retiroLink=op.delivery_public_token?`https://argencargo.com.ar/retiro/${op.delivery_public_token}`:null;
   const copyLink=()=>{if(!retiroLink)return;navigator.clipboard?.writeText(retiroLink);};
+  useEffect(()=>{
+    if(op.payment_method_chosen!=="crypto")return;
+    (async()=>{const r=await dq("gi_settings",{token,filters:"?select=payment_crypto_wallet&limit=1"});setWallet(Array.isArray(r)&&r[0]?r[0].payment_crypto_wallet||"":"");})();
+  },[op.payment_method_chosen,token]);
   if(!op.delivery_confirmed_at){
     return <Card title="Entrega">
       <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Todavía no tenemos la confirmación del cliente (envío/retiro + forma de pago). El link se manda automáticamente con el WhatsApp de "carga lista" — también podés copiarlo desde acá.</p>
@@ -4140,9 +4145,15 @@ function EntregaTab({op,opClient,token,onMarkDelivered}){
   const registeredAddr=`${opClient?.street||""}${opClient?.floor_apt?" "+opClient.floor_apt:""}${opClient?.city?", "+opClient.city:""}`.trim();
   const addrChanged=op.delivery_choice==="propio"&&op.delivery_address&&registeredAddr&&op.delivery_address.trim()!==registeredAddr;
 
+  const opHeader=`${op.operation_code}${opClient?.client_code?` · ${opClient.client_code}`:""}`;
   const tcNum=Number(String(tc).replace(",","."))||0;
   const ars=Math.round(total*tcNum);
-  const waMsg=`${op.operation_code}\n\n$ ${ars>0?ars.toLocaleString("es-AR"):"—"}\n\nTitular: DAPA SRL\nAlias: rojo.pagos`;
+  const isTransferencia=op.payment_method_chosen==="transferencia";
+  const isCrypto=op.payment_method_chosen==="crypto";
+  const waMsg=isTransferencia
+    ?`${opHeader}\n\n$ ${ars>0?ars.toLocaleString("es-AR"):"—"}\n\nTitular: DAPA SRL\nAlias: rojo.pagos`
+    :`${opHeader}\n\n${usd(total)}\n\n${wallet||"(cargando billetera...)"}`;
+  const waMsgReady=isTransferencia?ars>0:!!wallet;
   const openWa=()=>{
     const wa=String(opClient?.whatsapp||"").replace(/[^0-9]/g,"");
     if(!wa){alert("El cliente no tiene WhatsApp cargado.");return;}
@@ -4166,7 +4177,7 @@ function EntregaTab({op,opClient,token,onMarkDelivered}){
       <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"10px 12px"}}>
         <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Forma de pago</p>
         <p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>{payLabel}</p>
-        {op.payment_method_chosen==="transferencia"&&!op.is_collected&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Falta pasarle el monto por WhatsApp</p>}
+        {(isTransferencia||isCrypto)&&!op.is_collected&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Falta pasarle {isTransferencia?"el monto":"la billetera"} por WhatsApp</p>}
       </div>
       <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"10px 12px"}}>
         <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Total confirmado</p>
@@ -4175,9 +4186,9 @@ function EntregaTab({op,opClient,token,onMarkDelivered}){
       </div>
     </div>
 
-    {op.payment_method_chosen==="transferencia"&&!op.is_collected&&<div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"14px 16px",marginBottom:14}}>
-      <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 10px"}}>Calcular monto en pesos</p>
-      <div style={{display:"flex",gap:24,alignItems:"flex-end",marginBottom:12}}>
+    {(isTransferencia||isCrypto)&&!op.is_collected&&<div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"14px 16px",marginBottom:14}}>
+      <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 10px"}}>{isTransferencia?"Calcular monto en pesos":"Datos para transferir"}</p>
+      {isTransferencia&&<div style={{display:"flex",gap:24,alignItems:"flex-end",marginBottom:12}}>
         <div>
           <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Tipo de cambio</p>
           <input value={tc} onChange={e=>setTc(e.target.value)} placeholder="1050" style={{width:100,padding:"7px 9px",fontSize:14,fontWeight:700,border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
@@ -4186,10 +4197,10 @@ function EntregaTab({op,opClient,token,onMarkDelivered}){
           <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Monto en pesos</p>
           <p style={{fontSize:18,fontWeight:800,color:GOLD_LIGHT,margin:0}}>{ars>0?`$ ${ars.toLocaleString("es-AR")}`:"—"}</p>
         </div>
-      </div>
+      </div>}
       <pre style={{margin:0,padding:"11px 13px",borderRadius:8,background:"rgba(34,197,94,0.06)",border:"1px dashed rgba(34,197,94,0.3)",fontFamily:"'SF Mono','JetBrains Mono',monospace",fontSize:12.5,color:"#d7f5e3",whiteSpace:"pre-wrap",lineHeight:1.7}}>{waMsg}</pre>
       <div style={{display:"flex",gap:8,marginTop:12}}>
-        <Btn small onClick={openWa} disabled={ars<=0}>💬 Enviar por WhatsApp</Btn>
+        <Btn small onClick={openWa} disabled={!waMsgReady}>💬 Enviar por WhatsApp</Btn>
       </div>
     </div>}
 

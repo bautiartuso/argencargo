@@ -27,7 +27,9 @@ export default async function Image() {
           background: '#0A1628',
         }}
       >
-        <img src={LOGO_WHITE} alt="Argencargo" width="180" height="49" style={{ display: 'flex' }} />
+        {/* Logo real es 1428x932 (ratio ~1.53:1) — width/height deben respetar esa proporción,
+            si no queda estirado/aplastado. */}
+        <img src={LOGO_WHITE} alt="Argencargo" width="280" height="183" style={{ display: 'flex' }} />
       </div>
     ),
     { ...size }

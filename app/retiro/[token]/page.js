@@ -90,7 +90,7 @@ export default function EntregaPublica({ params }) {
     setConfirmed(d);
   };
 
-  if (confirmed) return <ConfirmedView data={confirmed} delivery={delivery} zone={zone} clientName={clientName} paymentInfo={paymentInfo} opCode={op.operation_code} />;
+  if (confirmed) return <ConfirmedView data={confirmed} delivery={delivery} zone={zone} clientName={clientName} />;
 
   return <div style={pageStyle()}>
     <div style={cardStyle()}>
@@ -170,12 +170,8 @@ export default function EntregaPublica({ params }) {
 
           <div style={{ marginTop: 12 }}>
             <OptRow selected={payment === "efectivo"} onClick={() => !efectivoBlocked && setPayment("efectivo")} label="Efectivo" meta={efectivoBlocked ? "No disponible para envíos con transportista" : "En ARS o USD, al retirar o recibir"} disabled={efectivoBlocked} />
-            <OptRow selected={payment === "transferencia"} onClick={() => setPayment("transferencia")} label="Transferencia en pesos" meta="Al tipo de cambio del día" />
-            <OptRow selected={payment === "crypto"} onClick={() => setPayment("crypto")} label="Cripto" meta="USDT (TRC-20)" />
-            {payment === "crypto" && paymentInfo.crypto_wallet && <div style={payDetailStyle()}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: MUTED, marginBottom: 6 }}>Dirección USDT · TRC-20</div>
-              <div style={cbuBoxStyle()}>{paymentInfo.crypto_wallet}</div>
-            </div>}
+            <OptRow selected={payment === "transferencia"} onClick={() => setPayment("transferencia")} label="Transferencia en pesos" meta="Te pasamos el monto por WhatsApp" />
+            <OptRow selected={payment === "crypto"} onClick={() => setPayment("crypto")} label="Cripto" meta="USDT (TRC-20) · te pasamos la billetera por WhatsApp" />
           </div>
         </div>
 
@@ -210,7 +206,7 @@ function OptRow({ selected, onClick, label, meta, price, disabled }) {
   </div>;
 }
 
-function ConfirmedView({ data, delivery, zone, clientName, paymentInfo, opCode }) {
+function ConfirmedView({ data, delivery, zone, clientName }) {
   const payLabel = data.payment_method === "efectivo" ? "Efectivo" : data.payment_method === "transferencia" ? "Transferencia en pesos" : "Cripto (USDT)";
   const entregaLabel = delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${zone}` : "Envío por transportista";
   const what = delivery === "oficina" ? "tu retiro" : delivery === "propio" ? "la entrega en tu domicilio" : "el envío con el transportista";
@@ -228,7 +224,7 @@ function ConfirmedView({ data, delivery, zone, clientName, paymentInfo, opCode }
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "6px 0" }}><span style={{ color: MUTED }}>Total</span><span style={{ fontWeight: 800, color: GOLD_A }}>{fmt(data.total)}</span></div>
       </div>
       <div style={payDetailStyle()}>
-        {data.payment_method === "crypto" && data.crypto_wallet && <><div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: MUTED, marginBottom: 6 }}>Dirección USDT · TRC-20</div><div style={cbuBoxStyle()}>{data.crypto_wallet}</div></>}
+        {data.payment_method === "crypto" && <span>Te vamos a pasar por WhatsApp la billetera y el monto exacto a transferir.</span>}
         {data.payment_method === "transferencia" && <span>Te vamos a pasar por WhatsApp el monto exacto a transferir en pesos, al tipo de cambio del momento.</span>}
         {data.payment_method === "efectivo" && <span>Tené preparado el pago en efectivo (ARS o USD) para cuando {delivery === "oficina" ? "retires tu carga." : "la recibas."}</span>}
       </div>
@@ -253,5 +249,4 @@ function zoneBtnStyle(on) { return { display: "flex", flexDirection: "column", a
 function noteBoxStyle() { return { marginTop: 10, padding: "10px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.55, background: "#f4efe3", border: `1px solid ${LINE}`, color: "#4a4536" }; }
 function adjustCardStyle(credit) { return { display: "flex", alignItems: "center", gap: 9, padding: "10px 13px", borderRadius: 9, fontSize: 12, lineHeight: 1.4, marginTop: 10, background: credit ? "#eaf6ef" : "#fdf1ea", border: `1px solid ${credit ? "rgba(30,125,79,.25)" : "rgba(180,90,40,.25)"}`, color: credit ? "#1e5c3d" : "#7a4a28" }; }
 function payDetailStyle() { return { marginTop: 11, padding: "12px 14px", borderRadius: 9, background: "#f4efe3", border: `1px solid ${LINE}`, fontSize: 11.5, color: "#4a4536", lineHeight: 1.6 }; }
-function cbuBoxStyle() { return { fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 12, fontWeight: 700, color: INK, background: "#fff", border: `1px solid ${LINE}`, borderRadius: 6, padding: "6px 9px", display: "block", width: "100%", boxSizing: "border-box" }; }
 function ctaStyle(loading) { return { width: "100%", padding: "14px 20px", background: NAVY, color: "#fff", border: "none", borderRadius: 10, fontSize: 13.5, fontWeight: 700, letterSpacing: "0.03em", cursor: loading ? "wait" : "pointer", fontFamily: "inherit" }; }
