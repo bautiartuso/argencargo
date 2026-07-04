@@ -4041,33 +4041,39 @@ function EntregasPanel({token,onOpenOp}){
     list.forEach(o=>{const k=o.client_id||o.id;if(!map[k]){map[k]=[];order.push(k);}map[k].push(o);});
     return order.map(k=>map[k]);
   };
-  const renderGrouped=(list,renderCard)=>groupByClient(list).map(grp=>{
+  const renderGrouped=(list,renderCard,totalFn)=>groupByClient(list).map(grp=>{
     if(grp.length===1)return renderCard(grp[0]);
     const clientName=grp[0].clients?`${grp[0].clients.first_name||""} ${grp[0].clients.last_name||""}`.trim():"—";
-    return <div key={`grp-${grp[0].client_id}`} style={{border:"1px solid rgba(184,149,106,0.35)",borderRadius:12,padding:"10px 10px 8px",background:"rgba(184,149,106,0.04)"}}>
-      <p style={{fontSize:10,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:GOLD_LIGHT,margin:"0 0 8px 4px"}}>🔗 {clientName} · {grp.length} operaciones juntas</p>
-      <div style={{display:"flex",flexDirection:"column",gap:8}}>{grp.map(renderCard)}</div>
+    const grpTotal=totalFn?grp.reduce((s,o)=>s+totalFn(o),0):null;
+    return <div key={`grp-${grp[0].client_id}`} style={{border:"1px solid rgba(184,149,106,0.35)",borderRadius:10,padding:"8px 8px 6px",background:"rgba(184,149,106,0.04)"}}>
+      <p style={{fontSize:10,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:GOLD_LIGHT,margin:"0 0 6px 4px"}}>🔗 {clientName} · {grp.length} operaciones juntas{grpTotal!=null&&` · Total ${usd(grpTotal)}`}</p>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>{grp.map(renderCard)}</div>
     </div>;
   });
 
-  const cardHeader=(o,paidBadge)=><div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
-    <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:13,fontWeight:700,color:GOLD_LIGHT}}>{o.operation_code}</span>
-    <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
-    {o.clients?.client_code&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{o.clients.client_code}</span>}
-    <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>· {CHANNEL_NAME_MAP[o.channel]||o.channel}</span>
+  // Pill de "coordinado" clickeable en el header — no es un botón más en la columna de acciones
+  // (eso engordaba la card), es un distintivo de estado que también se puede tocar para togglear.
+  // Se marca cuando ya le mandaste al cliente el importe/dirección para pagar.
+  const coordPill=(o)=><span onClick={()=>toggleCoordinated(o)} title={o.delivery_coordinated_at?"Ya le pasaste el importe — tocar para deshacer":"Tocar cuando le mandes al cliente el importe a abonar"} style={{cursor:"pointer",fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:6,userSelect:"none",background:o.delivery_coordinated_at?"linear-gradient(135deg,#3b82f6,#2563eb)":"rgba(255,255,255,0.06)",color:o.delivery_coordinated_at?"#fff":"rgba(255,255,255,0.5)",border:`1px solid ${o.delivery_coordinated_at?"#3b82f6":"rgba(255,255,255,0.15)"}`,boxShadow:o.delivery_coordinated_at?"0 0 10px rgba(59,130,246,0.4)":"none"}}>{o.delivery_coordinated_at?"☎ Coordinado":"☎ Sin coordinar"}</span>;
+
+  const cardHeader=(o,paidBadge)=><div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+    <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:12.5,fontWeight:700,color:GOLD_LIGHT}}>{o.operation_code}</span>
+    <span style={{fontSize:12.5,fontWeight:600,color:"#fff"}}>{o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
+    {o.clients?.client_code&&<span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{o.clients.client_code}</span>}
+    <span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>· {CHANNEL_NAME_MAP[o.channel]||o.channel}</span>
     {paidBadge}
   </div>;
 
   // Columna de acciones a la derecha, apiladas una arriba de otra — separadas del contenido por
   // un borde vertical para que no queden "sueltas" flotando junto al header.
-  const actionsCol=(actions)=><div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0,width:170,paddingLeft:16,borderLeft:"1px solid rgba(255,255,255,0.08)"}}>{actions}</div>;
+  const actionsCol=(actions)=><div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0,width:150,paddingLeft:14,borderLeft:"1px solid rgba(255,255,255,0.08)"}}>{actions}</div>;
 
   const pendingCard=(o)=>{
     const bultos=bultosByOp[o.id]||0;
-    return <div key={o.id} style={{display:"flex",gap:16,padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:10}}>
+    return <div key={o.id} style={{display:"flex",gap:14,padding:"9px 12px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:9}}>
       <div style={{flex:1,minWidth:0}}>
         {cardHeader(o)}
-        <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:0}}>{bultos} bulto{bultos===1?"":"s"} · El cliente todavía no completó el link de carga lista (entrega + forma de pago).</p>
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:0}}>{bultos} bulto{bultos===1?"":"s"} · El cliente todavía no completó el link de carga lista (entrega + forma de pago).</p>
       </div>
       {actionsCol(<>
         <Btn small variant="secondary" fullWidth onClick={()=>copyLink(o)}>📋 Copiar link</Btn>
@@ -4079,22 +4085,20 @@ function EntregasPanel({token,onOpenOp}){
 
   const card=(o)=>{
     const paid=!!o.is_collected;
-    const coordinated=!!o.delivery_coordinated_at;
     const bultos=bultosByOp[o.id]||0;
-    return <div key={o.id} style={{display:"flex",gap:16,padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:10}}>
+    return <div key={o.id} style={{display:"flex",gap:14,padding:"9px 12px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:9}}>
       <div style={{flex:1,minWidth:0}}>
         {cardHeader(o,<>
           <span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:6,background:paid?"rgba(34,197,94,0.12)":"rgba(251,191,36,0.1)",color:paid?"#22c55e":"#fbbf24",border:`1px solid ${paid?"rgba(34,197,94,0.3)":"rgba(251,191,36,0.3)"}`}}>{paid?"Pagado":"Sin pagar"}</span>
-          {coordinated&&<span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:6,background:"rgba(96,165,250,0.12)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.3)"}}>📞 Coordinado</span>}
+          {coordPill(o)}
         </>)}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
-          <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Entrega</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{entregaLabel(o)}</p>{o.delivery_choice==="propio"&&o.delivery_address&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"1px 0 0"}}>{o.delivery_address}</p>}</div>
-          <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Bultos</p><p style={{fontSize:12.5,color:"#fff",margin:0}}>{bultos||"—"}</p></div>
-          <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Total</p><p style={{fontSize:12.5,fontWeight:700,color:GOLD_LIGHT,margin:0}}>{usd(totalFor(o))}</p></div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+          <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Entrega</p><p style={{fontSize:12,color:"#fff",margin:0}}>{entregaLabel(o)}</p>{o.delivery_choice==="propio"&&o.delivery_address&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.5)",margin:"1px 0 0"}}>{o.delivery_address}</p>}</div>
+          <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Bultos</p><p style={{fontSize:12,color:"#fff",margin:0}}>{bultos||"—"}</p></div>
+          <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Total</p><p style={{fontSize:12,fontWeight:700,color:GOLD_LIGHT,margin:0}}>{usd(totalFor(o))}</p></div>
         </div>
       </div>
       {actionsCol(<>
-        <Btn small variant={coordinated?"secondary":"primary"} fullWidth onClick={()=>toggleCoordinated(o)}>{coordinated?"↺ Sin coordinar":"📞 Marcar coordinado"}</Btn>
         <Btn small fullWidth onClick={()=>markDelivered(o)}>✓ Marcar entregado</Btn>
         <Btn small variant="secondary" fullWidth onClick={()=>onOpenOp(o)}>Ver operación →</Btn>
       </>)}
@@ -4123,7 +4127,7 @@ function EntregasPanel({token,onOpenOp}){
               if(inGroup.length===0)return null;
               return <div key={pg.k} style={{marginBottom:18}}>
                 <p style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>{pg.l} ({inGroup.length})</p>
-                <div style={{display:"flex",flexDirection:"column",gap:10}}>{renderGrouped(inGroup,card)}</div>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>{renderGrouped(inGroup,card,totalFor)}</div>
               </div>;
             })}
           </div>;
