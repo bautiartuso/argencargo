@@ -4024,6 +4024,23 @@ function EntregasPanel({token,onOpenOp}){
   const sinConfirmar=filtered.filter(o=>!o.delivery_confirmed_at);
   const confirmadas=filtered.filter(o=>o.delivery_confirmed_at);
 
+  // Si el mismo cliente tiene 2+ ops en la misma lista, las agrupamos visualmente (mismo marco,
+  // sin fundirlas en una sola card) — si viene a buscar mercadería se lleva todo junto, conviene
+  // que salte a la vista que son del mismo cliente sin perder que son operaciones distintas.
+  const groupByClient=(list)=>{
+    const order=[],map={};
+    list.forEach(o=>{const k=o.client_id||o.id;if(!map[k]){map[k]=[];order.push(k);}map[k].push(o);});
+    return order.map(k=>map[k]);
+  };
+  const renderGrouped=(list,renderCard)=>groupByClient(list).map(grp=>{
+    if(grp.length===1)return renderCard(grp[0]);
+    const clientName=grp[0].clients?`${grp[0].clients.first_name||""} ${grp[0].clients.last_name||""}`.trim():"—";
+    return <div key={`grp-${grp[0].client_id}`} style={{border:"1px solid rgba(184,149,106,0.35)",borderRadius:12,padding:"10px 10px 8px",background:"rgba(184,149,106,0.04)"}}>
+      <p style={{fontSize:10,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:GOLD_LIGHT,margin:"0 0 8px 4px"}}>🔗 {clientName} · {grp.length} operaciones juntas</p>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>{grp.map(renderCard)}</div>
+    </div>;
+  });
+
   const cardHeader=(o,paidBadge)=><div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
     <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:13,fontWeight:700,color:GOLD_LIGHT}}>{o.operation_code}</span>
     <span style={{fontSize:13,fontWeight:600,color:"#fff"}}>{o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
@@ -4092,11 +4109,11 @@ function EntregasPanel({token,onOpenOp}){
             <h4 style={{fontSize:13,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.005em"}}>{pg.l} <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>({inGroup.length})</span></h4>
             {oficina.length>0&&<div style={{marginBottom:domicilio.length>0?18:0}}>
               <p style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>📦 Retiro por oficina ({oficina.length})</p>
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>{oficina.map(card)}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>{renderGrouped(oficina,card)}</div>
             </div>}
             {domicilio.length>0&&<div>
               <p style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>🚚 Envío a domicilio ({domicilio.length})</p>
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>{domicilio.map(card)}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>{renderGrouped(domicilio,card)}</div>
             </div>}
           </div>;
         })}
@@ -4105,7 +4122,7 @@ function EntregasPanel({token,onOpenOp}){
 
     {sinConfirmar.length>0&&<div>
       <h3 style={{fontSize:14,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.005em"}}>⏳ Pendientes de coordinar por el cliente <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>({sinConfirmar.length})</span></h3>
-      <div style={{display:"flex",flexDirection:"column",gap:10}}>{sinConfirmar.map(pendingCard)}</div>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>{renderGrouped(sinConfirmar,pendingCard)}</div>
     </div>}
   </div>;
 }
