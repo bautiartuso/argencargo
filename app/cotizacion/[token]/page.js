@@ -132,7 +132,7 @@ export default function CotizacionPublica({ params }) {
     if (!txt.trim()) return null;
     if (/\bcaba\b|capital federal|ciudad aut[oó]noma/.test(txt)) return "CABA";
     if (/buenos aires|gba|provincia/.test(txt)) {
-      if (/(san isidro|vicente l[oó]pez|tigre|pilar|escobar|martinez|olivos|nordelta|beccar|acassuso|san fernando|del viso)/.test(txt)) return "GBA Norte";
+      if (/(san isidro|vicente l[oó]pez|tigre|pilar|escobar|maschwitz|martinez|olivos|nordelta|beccar|acassuso|san fernando|del viso)/.test(txt)) return "GBA Norte";
       if (/(lomas|quilmes|avellaneda|berazategui|lan[uú]s|florencio varela|adrogu[eé])/.test(txt)) return "GBA Sur";
       if (/(mor[oó]n|matanza|merlo|moreno|ituzaing[oó]|hurlingham|ramos mej[ií]a|haedo|caseros)/.test(txt)) return "GBA Oeste";
       return null; // no inferimos GBA genérico — mejor dejar que el socio elija
