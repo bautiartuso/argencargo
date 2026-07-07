@@ -11451,13 +11451,20 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
   const [bultos,setBultos]=useState([{client_id:"",tracking:"",peso:""}]);
   const [tariffs,setTariffs]=useState([]);
   const [overrides,setOverrides]=useState([]);
+  const [tariffsLoaded,setTariffsLoaded]=useState(false);
   const [creating,setCreating]=useState(false);
   const [msg,setMsg]=useState("");
   useEffect(()=>{(async()=>{
+    setTariffsLoaded(false);
     const svc=origin==="USA"?"aereo_b_usa":"aereo_b_china";
     const t=await dq("tariffs",{token,filters:`?service_key=eq.${svc}&type=eq.rate&select=*&order=min_qty.asc`});setTariffs(Array.isArray(t)?t:[]);
     const o=await dq("client_tariff_overrides",{token,filters:"?select=client_id,tariff_id,custom_rate"});setOverrides(Array.isArray(o)?o:[]);
+    setTariffsLoaded(true);
   })();},[token,origin]);
+  // Si el fetch de tarifas falla o vuelve vacío, rateFor() devuelve 0 en silencio y el ingreso
+  // (y el presupuesto de la op creada) quedaría en cero sin que se note — bloqueamos la creación
+  // y avisamos en vez de dejarlo pasar.
+  const tariffsMissing=tariffsLoaded&&tariffs.length===0;
   const fmt=n=>`USD ${Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const fk=n=>`${Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
   // Parseo es-AR: "65,9" → 65.9 ; "2.636,50" → 2636.5 ; "2636" → 2636 ; "65.9" → 65.9.
@@ -11494,6 +11501,7 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
   const crear=async()=>{
     if(opList.length===0){setMsg("⚠ Cargá al menos un bulto con cliente y peso.");return;}
     if(dec<=0||pag<=0){setMsg("⚠ Completá peso total e importe abonado.");return;}
+    if(tariffsMissing){setMsg("⚠ No hay tarifa cargada para Aéreo B · "+origin+" — no se puede crear con ingreso en USD 0,00.");return;}
     setCreating(true);setMsg("");
     try{
       const existing=await dq("operations",{token,filters:"?select=operation_code"});
@@ -11533,6 +11541,8 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
       </div>
       <div><label style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginRight:8}}>Fecha</label><input type="date" value={fecha} onChange={e=>setFecha(e.target.value)} style={{...inp,width:160,display:"inline-block"}}/></div>
     </div>
+
+    {tariffsMissing&&<div style={{fontSize:12.5,lineHeight:1.5,borderRadius:10,padding:"11px 14px",marginBottom:14,background:"rgba(242,101,113,0.1)",border:"1px solid rgba(242,101,113,0.32)",color:"#F26571"}}>⚠ No se encontró tarifa cargada para Aéreo B · {origin} — el ingreso daría USD 0,00 y no se puede crear la operación así. Revisá la tarifa en Configuración o recargá la página.</div>}
 
     <div style={card}>
       <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:14}}><span style={{color:BLUE,fontSize:16}}>▣</span><input value={proveedor} onChange={e=>setProveedor(e.target.value)} style={{...inp,width:"auto",minWidth:200,fontWeight:600,fontSize:14}}/><span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>· proveedor</span></div>
@@ -11583,7 +11593,7 @@ function CargaDelDiaPanel({token,allClients=[],onCreated}){
     </div>
 
     {msg&&<p style={{fontSize:13,margin:"0 0 12px",color:/^[❌⚠]/.test(msg)?"#F26571":"#3FD18B",fontWeight:600}}>{msg}</p>}
-    <button onClick={crear} disabled={creating||opList.length===0} style={{width:"100%",padding:"13px",fontSize:14,fontWeight:700,borderRadius:11,border:"none",cursor:creating||opList.length===0?"not-allowed":"pointer",background:creating||opList.length===0?"rgba(255,255,255,0.06)":BLUE,color:creating||opList.length===0?"rgba(255,255,255,0.3)":"#fff"}}>{creating?"Creando operaciones…":opList.length>0?`Crear ${opList.length} ${opList.length===1?"operación":"operaciones"} · listas para retirar`:"Cargá los bultos"}</button>
+    <button onClick={crear} disabled={creating||opList.length===0||tariffsMissing} style={{width:"100%",padding:"13px",fontSize:14,fontWeight:700,borderRadius:11,border:"none",cursor:creating||opList.length===0||tariffsMissing?"not-allowed":"pointer",background:creating||opList.length===0||tariffsMissing?"rgba(255,255,255,0.06)":BLUE,color:creating||opList.length===0||tariffsMissing?"rgba(255,255,255,0.3)":"#fff"}}>{creating?"Creando operaciones…":tariffsMissing?"Falta la tarifa — no se puede crear":opList.length>0?`Crear ${opList.length} ${opList.length===1?"operación":"operaciones"} · listas para retirar`:"Cargá los bultos"}</button>
   </div>;
 }
 
