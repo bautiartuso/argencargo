@@ -4673,7 +4673,7 @@ function Calculator({token,clients}){
         <div style={{display:"grid",gridTemplateColumns:noDims?"1fr 1fr":"1fr 1fr 1fr 1fr 1fr",gap:"0 10px"}}>
           <Inp label="Cant." type="number" value={pk.qty} onChange={v=>chPkg(i,"qty",v)} placeholder="1"/>
           {!noDims&&<><Inp label="Largo cm" type="number" value={pk.length} onChange={v=>chPkg(i,"length",v)} placeholder="60"/><Inp label="Ancho cm" type="number" value={pk.width} onChange={v=>chPkg(i,"width",v)} placeholder="40"/><Inp label="Alto cm" type="number" value={pk.height} onChange={v=>chPkg(i,"height",v)} placeholder="35"/></>}
-          <Inp label="Peso kg" type="number" value={pk.weight} onChange={v=>chPkg(i,"weight",v)} placeholder="12"/>
+          <Inp label="Peso kg" type="number" value={pk.weight} onChange={v=>chPkg(i,"weight",v)}/>
         </div>
       </div>)}
       <button onClick={addPkg} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar bulto</button>
@@ -4749,7 +4749,7 @@ function Calculator({token,clients}){
         <div style={{display:"grid",gridTemplateColumns:noDims?"1fr 1fr":"1fr 1fr 1fr 1fr 1fr",gap:"0 10px"}}>
           <Inp label="Cant." type="number" value={pk.qty} onChange={v=>chPkg(i,"qty",v)} placeholder="1"/>
           {!noDims&&<><Inp label="Largo cm" type="number" value={pk.length} onChange={v=>chPkg(i,"length",v)} placeholder="60"/><Inp label="Ancho cm" type="number" value={pk.width} onChange={v=>chPkg(i,"width",v)} placeholder="40"/><Inp label="Alto cm" type="number" value={pk.height} onChange={v=>chPkg(i,"height",v)} placeholder="35"/></>}
-          <Inp label="Peso kg" type="number" value={pk.weight} onChange={v=>chPkg(i,"weight",v)} placeholder="12"/>
+          <Inp label="Peso kg" type="number" value={pk.weight} onChange={v=>chPkg(i,"weight",v)}/>
         </div>
       </div>)}
       <button onClick={addPkg} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar bulto</button>
@@ -10243,7 +10243,7 @@ function QuotesList({token}){
               <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Largo cm</label><input type="number" value={pk.length||""} onChange={e=>chPkg(i,"length",e.target.value)} style={inpStyle} placeholder="60"/></div>
               <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Ancho cm</label><input type="number" value={pk.width||""} onChange={e=>chPkg(i,"width",e.target.value)} style={inpStyle} placeholder="40"/></div>
               <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Alto cm</label><input type="number" value={pk.height||""} onChange={e=>chPkg(i,"height",e.target.value)} style={inpStyle} placeholder="35"/></div>
-              <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Peso kg</label><input type="number" value={pk.weight||""} onChange={e=>chPkg(i,"weight",e.target.value)} style={inpStyle} placeholder="12"/></div>
+              <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Peso kg</label><input type="number" value={pk.weight||""} onChange={e=>chPkg(i,"weight",e.target.value)} style={inpStyle}/></div>
             </div>
           </div>;})}
           {/* Totales de bultos */}

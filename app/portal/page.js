@@ -1544,7 +1544,7 @@ function CalculatorPage({token,client}){
         <div className="grid-5" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 10px"}}>
           <Inp label="Cant. bultos" type="decimal" value={pk.qty} onChange={v=>chPkg(i,"qty",v)} placeholder="1"/>
           {!noDims&&<><Inp label="Largo (cm)" type="decimal" value={pk.length} onChange={v=>chPkg(i,"length",v)} placeholder="60"/><Inp label="Ancho (cm)" type="decimal" value={pk.width} onChange={v=>chPkg(i,"width",v)} placeholder="40"/><Inp label="Alto (cm)" type="decimal" value={pk.height} onChange={v=>chPkg(i,"height",v)} placeholder="35"/></>}
-          <Inp label="Peso (kg)" type="decimal" value={pk.weight} onChange={v=>chPkg(i,"weight",v)} placeholder="12"/>
+          <Inp label="Peso (kg)" type="decimal" value={pk.weight} onChange={v=>chPkg(i,"weight",v)}/>
         </div>
       </div>)}
       <button onClick={addPkg} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar otro bulto</button>
@@ -1695,7 +1695,7 @@ function CalculatorPage({token,client}){
         <div className="grid-5" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 10px"}}>
           <Inp label="Cant. bultos" type="decimal" value={pk.qty} onChange={v=>chPkg(i,"qty",v)} placeholder="1"/>
           {!noDims&&<><Inp label="Largo (cm)" type="decimal" value={pk.length} onChange={v=>chPkg(i,"length",v)} placeholder="60"/><Inp label="Ancho (cm)" type="decimal" value={pk.width} onChange={v=>chPkg(i,"width",v)} placeholder="40"/><Inp label="Alto (cm)" type="decimal" value={pk.height} onChange={v=>chPkg(i,"height",v)} placeholder="35"/></>}
-          <Inp label="Peso (kg)" type="decimal" value={pk.weight} onChange={v=>chPkg(i,"weight",v)} placeholder="12"/>
+          <Inp label="Peso (kg)" type="decimal" value={pk.weight} onChange={v=>chPkg(i,"weight",v)}/>
         </div>
         {(bruto>0||vol>0)&&<div style={{display:"flex",gap:16,marginTop:-4,marginBottom:4,fontSize:11,color:"rgba(255,255,255,0.4)"}}><span>Peso bruto total: <strong style={{color:"#fff"}}>{bruto.toFixed(1)} kg</strong></span>{!noDims&&vol>0&&<span>Peso volumétrico total: <strong style={{color:"#fff"}}>{vol.toFixed(1)} kg</strong></span>}</div>}
         {isVol&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:8,padding:"8px 12px",marginBottom:4}}><p style={{fontSize:12,color:"#fb923c",margin:0,fontWeight:500}}>Tené en cuenta que el peso volumétrico de este bulto es <strong>{vol.toFixed(1)} kg</strong> (mayor al bruto de {bruto.toFixed(1)} kg)</p></div>}
