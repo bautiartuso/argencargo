@@ -14,18 +14,36 @@ const sbFetch = async (path, init = {}) => {
   return { status: r.status, body: parsed };
 };
 
-// Misma heurística que /cotizacion/[token]: infiere zona de reparto propio a partir de la
-// localidad/provincia registrada del cliente. Si no matchea ninguna, se ofrece transportista externo.
-function inferZone(city, province) {
+function isCabaText(txt) {
+  return /\bcaba\b|capital federal|ciudad aut[oó]noma/.test(txt);
+}
+
+// Matchea la localidad del cliente contra la tabla delivery_localities (editable desde el admin,
+// sin necesidad de deploy). Solo busca match de GBA si el texto menciona Buenos Aires/GBA/provincia
+// — evita falsos positivos con localidades homónimas de otras provincias (ej. "Pilar, Córdoba").
+function matchLocality(city, province, localities) {
   const txt = `${city || ""} ${province || ""}`.toLowerCase();
   if (!txt.trim()) return null;
-  if (/\bcaba\b|capital federal|ciudad aut[oó]noma/.test(txt)) return "CABA";
-  if (/buenos aires|gba|provincia/.test(txt)) {
-    if (/(san isidro|vicente l[oó]pez|tigre|pilar|escobar|maschwitz|martinez|olivos|nordelta|beccar|acassuso|san fernando|del viso)/.test(txt)) return "GBA Norte";
-    if (/(lomas|quilmes|avellaneda|berazategui|lan[uú]s|florencio varela|adrogu[eé])/.test(txt)) return "GBA Sur";
-    if (/(mor[oó]n|matanza|merlo|moreno|ituzaing[oó]|hurlingham|ramos mej[ií]a|haedo|caseros)/.test(txt)) return "GBA Oeste";
+  if (isCabaText(txt)) return { name: "CABA", km_from_origin: 0, isCaba: true };
+  if (!/buenos aires|gba|provincia/.test(txt)) return null;
+  for (const loc of localities) {
+    const kws = String(loc.keywords || "").split(",").map(k => k.trim()).filter(Boolean);
+    if (kws.some(k => txt.includes(k))) return { ...loc, isCaba: false };
   }
   return null;
+}
+
+// Costo real acordado con el fletero: CABA fijo, GBA fijo + variable por km desde Callao 1137.
+// Se dolariza con un TC fijo (cargado a mano en Configuración, no una API en vivo) + un margen
+// fijo en USD para no perder con las fluctuaciones — la idea es no ganar con el envío, solo cubrir.
+function computeDeliveryCostUsd(match, cfg) {
+  if (!match) return 0;
+  const rate = Number(cfg.delivery_usd_ars_rate || 1515);
+  const margin = Number(cfg.delivery_margin_usd || 3);
+  const ars = match.isCaba
+    ? Number(cfg.delivery_caba_flat_ars || 15000)
+    : Number(cfg.delivery_gba_flat_ars || 25000) + Number(cfg.delivery_gba_per_km_ars || 1200) * Number(match.km_from_origin || 0);
+  return Math.round(ars / rate + margin);
 }
 
 // collected_amount puede estar cargado en ARS (collection_currency) — convertir a USD antes de
@@ -51,6 +69,19 @@ async function loadOpData(token) {
   return opRes.body[0];
 }
 
+const DELIVERY_CFG_KEYS = "delivery_caba_flat_ars,delivery_gba_flat_ars,delivery_gba_per_km_ars,delivery_usd_ars_rate,delivery_margin_usd";
+
+async function loadDeliveryPricing() {
+  const [configRes, locRes] = await Promise.all([
+    sbFetch(`/calc_config?key=in.(${DELIVERY_CFG_KEYS})&select=key,value`),
+    sbFetch(`/delivery_localities?active=eq.true&select=name,keywords,km_from_origin&order=sort_order.asc`),
+  ]);
+  const cfg = {};
+  (Array.isArray(configRes.body) ? configRes.body : []).forEach(r => { cfg[r.key] = Number(r.value); });
+  const localities = Array.isArray(locRes.body) ? locRes.body : [];
+  return { cfg, localities };
+}
+
 export async function GET(req, { params }) {
   if (!SB) return Response.json({ error: "Server config missing" }, { status: 500 });
   const { token } = await params;
@@ -59,10 +90,10 @@ export async function GET(req, { params }) {
   const op = await loadOpData(token);
   if (!op) return Response.json({ error: "No encontramos esta operación o el link expiró" }, { status: 404 });
 
-  const [pkgsRes, configRes, settingsRes] = await Promise.all([
+  const [pkgsRes, settingsRes, { cfg, localities }] = await Promise.all([
     sbFetch(`/operation_packages?operation_id=eq.${op.id}&select=package_number,quantity,gross_weight_kg,length_cm,width_cm,height_cm,national_tracking&order=package_number.asc`),
-    sbFetch(`/calc_config?key=in.(delivery_price_caba,delivery_price_amba)&select=key,value`),
     sbFetch(`/gi_settings?select=office_address,office_locality,office_hours,office_phone,payment_titular,payment_alias,payment_crypto_wallet&limit=1`),
+    loadDeliveryPricing(),
   ]);
 
   const pkgs = Array.isArray(pkgsRes.body) ? pkgsRes.body : [];
@@ -77,12 +108,11 @@ export async function GET(req, { params }) {
     pesoFacturable += Math.max(gw, vol);
   });
 
-  const configMap = {};
-  (Array.isArray(configRes.body) ? configRes.body : []).forEach(r => { configMap[r.key] = Number(r.value); });
   const settings = Array.isArray(settingsRes.body) && settingsRes.body[0] ? settingsRes.body[0] : {};
 
   const client = op.clients || {};
-  const inferredZone = inferZone(client.city, client.province);
+  const match = matchLocality(client.city, client.province, localities);
+  const price = match ? computeDeliveryCostUsd(match, cfg) : null;
 
   return Response.json({
     op: {
@@ -108,10 +138,9 @@ export async function GET(req, { params }) {
     client: { first_name: client.first_name, last_name: client.last_name },
     cargo: { bultos, tracking, peso_facturable: Math.round(pesoFacturable * 100) / 100 },
     delivery: {
-      inferred_zone: inferredZone,
+      inferred_zone: match ? match.name : null,
+      price: price,
       default_address: fullAddress(client),
-      price_caba: configMap.delivery_price_caba ?? 20,
-      price_amba: configMap.delivery_price_amba ?? 30,
       office_address: settings.office_address || "",
       office_locality: settings.office_locality || "",
       office_hours: settings.office_hours || "",
@@ -131,7 +160,7 @@ export async function POST(req, { params }) {
   if (!body || !body.delivery_choice || !body.payment_method) {
     return Response.json({ error: "Faltan datos: delivery_choice y payment_method" }, { status: 400 });
   }
-  const { delivery_choice, delivery_zone, delivery_address, payment_method } = body;
+  const { delivery_choice, delivery_address, payment_method } = body;
   if (!["oficina", "propio", "carrier"].includes(delivery_choice)) return Response.json({ error: "Entrega inválida" }, { status: 400 });
   if (!["efectivo", "transferencia", "crypto"].includes(payment_method)) return Response.json({ error: "Método de pago inválido" }, { status: 400 });
   if (payment_method === "efectivo" && delivery_choice === "carrier") {
@@ -141,16 +170,16 @@ export async function POST(req, { params }) {
   const op = await loadOpData(token);
   if (!op) return Response.json({ error: "No encontramos esta operación o el link expiró" }, { status: 404 });
 
-  const configRes = await sbFetch(`/calc_config?key=in.(delivery_price_caba,delivery_price_amba)&select=key,value`);
-  const configMap = {};
-  (Array.isArray(configRes.body) ? configRes.body : []).forEach(r => { configMap[r.key] = Number(r.value); });
-
-  // El costo de envío se calcula server-side — nunca se confía en un monto mandado por el cliente.
-  let deliveryCost = 0;
+  // El costo de envío se calcula server-side a partir de la localidad REGISTRADA del cliente —
+  // nunca se confía en una zona/monto mandado por el cliente.
+  const { cfg, localities } = await loadDeliveryPricing();
+  const client = op.clients || {};
+  const match = matchLocality(client.city, client.province, localities);
+  let deliveryCost = 0, deliveryZone = null;
   if (delivery_choice === "propio") {
-    if (delivery_zone === "CABA") deliveryCost = configMap.delivery_price_caba ?? 20;
-    else if (["GBA Norte", "GBA Sur", "GBA Oeste"].includes(delivery_zone)) deliveryCost = configMap.delivery_price_amba ?? 30;
-    else return Response.json({ error: "Zona inválida" }, { status: 400 });
+    if (!match) return Response.json({ error: "No encontramos una zona de envío propio para tu localidad" }, { status: 400 });
+    deliveryCost = computeDeliveryCostUsd(match, cfg);
+    deliveryZone = match.name;
   }
 
   const bt = Number(op.budget_total || 0);
@@ -173,7 +202,7 @@ export async function POST(req, { params }) {
     method: "PATCH",
     body: JSON.stringify({
       delivery_choice,
-      delivery_zone: delivery_choice === "propio" ? delivery_zone : null,
+      delivery_zone: delivery_choice === "propio" ? deliveryZone : null,
       delivery_address: delivery_choice === "propio" ? (delivery_address || null) : null,
       delivery_cost_usd: deliveryCost,
       budget_total: newBudgetTotal,
@@ -182,7 +211,7 @@ export async function POST(req, { params }) {
     }),
   });
 
-  const deliveryLabel = delivery_choice === "oficina" ? "Retiro por oficina" : delivery_choice === "propio" ? `Envío a domicilio · ${delivery_zone}` : "Envío por transportista (Via Cargo/Andreani)";
+  const deliveryLabel = delivery_choice === "oficina" ? "Retiro por oficina" : delivery_choice === "propio" ? `Envío a domicilio · ${deliveryZone}` : "Envío por transportista (Via Cargo/Andreani)";
   const payLabel = payment_method === "efectivo" ? "Efectivo" : payment_method === "transferencia" ? "Transferencia en pesos" : "Cripto (USDT)";
   try {
     await sbFetch(`/op_communications`, {
@@ -203,7 +232,7 @@ export async function POST(req, { params }) {
     ok: true,
     total: finalTotal,
     delivery_choice,
-    delivery_zone: delivery_choice === "propio" ? delivery_zone : null,
+    delivery_zone: deliveryZone,
     payment_method,
     crypto_wallet: payment_method === "crypto" ? wallet : null,
   });

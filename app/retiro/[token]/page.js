@@ -12,7 +12,6 @@ const MUTED = "#7a7362";
 
 const fmt = (n) => "USD " + Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const CHANNEL_NAME = { aereo_blanco: "Aéreo Courier Comercial", aereo_negro: "Aéreo Integral AC", maritimo_blanco: "Marítimo LCL/FCL", maritimo_negro: "Marítimo Integral AC" };
-const ZONES = ["CABA", "GBA Norte", "GBA Sur", "GBA Oeste"];
 
 export default function EntregaPublica({ params }) {
   const token = params?.token;
@@ -20,7 +19,6 @@ export default function EntregaPublica({ params }) {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
   const [delivery, setDelivery] = useState("oficina"); // oficina | propio | carrier
-  const [zone, setZone] = useState("CABA");
   const [address, setAddress] = useState("");
   const [addressChanged, setAddressChanged] = useState(false);
   const [payment, setPayment] = useState("efectivo");
@@ -34,12 +32,12 @@ export default function EntregaPublica({ params }) {
         const d = await r.json();
         if (!r.ok) { setErr(d.error || "No se pudo cargar"); setLoading(false); return; }
         setData(d);
-        const inferred = d.delivery.inferred_zone;
-        const hasPropio = ZONES.includes(inferred);
-        setZone(hasPropio ? inferred : "CABA");
-        setDelivery(hasPropio || !inferred ? "oficina" : "carrier");
+        // La localidad y el precio ya vienen calculados del server (tabla de zonas + fórmula del
+        // fletero) — acá solo decidimos qué opción de entrega precargar.
+        const hasPropio = d.delivery.price != null;
+        setDelivery(hasPropio || !d.delivery.inferred_zone ? "oficina" : "carrier");
         setAddress(d.delivery.default_address || "");
-        if (payment === "efectivo" && !hasPropio && !inferred) setPayment("transferencia");
+        if (payment === "efectivo" && !hasPropio && !d.delivery.inferred_zone) setPayment("transferencia");
         setLoading(false);
       } catch (e) {
         setErr("Error de red"); setLoading(false);
@@ -60,14 +58,13 @@ export default function EntregaPublica({ params }) {
   if (err) return <div style={pageStyle()}><div style={{ maxWidth: 440, padding: 30, background: "rgba(255,255,255,0.04)", borderRadius: 14, textAlign: "center" }}><p style={{ fontSize: 15, fontWeight: 600, color: "#f87171" }}>{err}</p></div></div>;
   if (!data) return null;
 
-  const { op, client, cargo, delivery: deliveryInfo, payment: paymentInfo } = data;
+  const { op, client, cargo, delivery: deliveryInfo } = data;
   const isBlanco = op.channel?.includes("blanco");
   const inferredZone = deliveryInfo.inferred_zone;
-  const hasPropio = ZONES.includes(inferredZone);
+  const hasPropio = deliveryInfo.price != null;
   const clientName = `${client.first_name || ""} ${client.last_name || ""}`.trim() || "Cliente";
 
-  const zonePrice = (z) => (z === "CABA" ? deliveryInfo.price_caba : deliveryInfo.price_amba);
-  const deliveryCost = delivery === "propio" ? zonePrice(zone) : 0;
+  const deliveryCost = delivery === "propio" ? deliveryInfo.price : 0;
   const debtApp = Number(op.debt_applied_usd || 0);
   const creditApp = Number(op.credit_applied_usd || 0);
   const totAnt = Number(op.total_anticipos || 0);
@@ -79,10 +76,11 @@ export default function EntregaPublica({ params }) {
 
   const confirm = async () => {
     setConfirming(true);
+    // La zona/precio los recalcula el server a partir de la localidad registrada — no se manda acá.
     const r = await fetch(`/api/entrega/${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delivery_choice: delivery, delivery_zone: delivery === "propio" ? zone : null, delivery_address: delivery === "propio" ? address : null, payment_method: payment }),
+      body: JSON.stringify({ delivery_choice: delivery, delivery_address: delivery === "propio" ? address : null, payment_method: payment }),
     });
     const d = await r.json();
     setConfirming(false);
@@ -90,7 +88,7 @@ export default function EntregaPublica({ params }) {
     setConfirmed(d);
   };
 
-  if (confirmed) return <ConfirmedView data={confirmed} delivery={delivery} zone={zone} clientName={clientName} />;
+  if (confirmed) return <ConfirmedView data={confirmed} delivery={delivery} clientName={clientName} />;
 
   return <div style={pageStyle()}>
     <div style={cardStyle()}>
@@ -139,14 +137,9 @@ export default function EntregaPublica({ params }) {
         <div style={stepStyle()}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>02</span><span style={stepTitleStyle()}>¿Cómo la recibís?</span></div>
           <OptRow selected={delivery === "oficina"} onClick={() => setDelivery("oficina")} label="Retiro por oficina" meta={`${deliveryInfo.office_address || ""}${deliveryInfo.office_locality ? " · " + deliveryInfo.office_locality : ""}${deliveryInfo.office_hours ? " · " + deliveryInfo.office_hours : ""}`} />
-          {hasPropio && <OptRow selected={delivery === "propio"} onClick={() => setDelivery("propio")} label="Envío a domicilio" meta="Coordinamos día y horario" price={"+ " + fmt(zonePrice(zone))} />}
+          {hasPropio && <OptRow selected={delivery === "propio"} onClick={() => setDelivery("propio")} label="Envío a domicilio" meta={`Coordinamos día y horario · ${inferredZone}`} price={"+ " + fmt(deliveryInfo.price)} />}
           {hasPropio && delivery === "propio" && <div style={{ marginTop: 10 }}>
-            <label style={fieldLblStyle()}>Zona</label>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {ZONES.map(z => <button key={z} type="button" onClick={() => setZone(z)} style={zoneBtnStyle(zone === z)}>{z} <span style={{ fontSize: 10, fontWeight: 700, color: zone === z ? GOLD_A : MUTED }}>+{fmt(zonePrice(z)).replace("USD ", "")}</span></button>)}
-            </div>
-            <p style={{ fontSize: 10, color: MUTED, marginTop: 8, lineHeight: 1.5 }}>Precargamos tu zona registrada. Si vas a recibirla en otra, elegí la que corresponda — el precio se actualiza solo.</p>
-            <label style={{ ...fieldLblStyle(), marginTop: 10 }}>Dirección de entrega</label>
+            <label style={fieldLblStyle()}>Dirección de entrega</label>
             <input value={address} onChange={e => { setAddress(e.target.value); setAddressChanged(e.target.value.trim() !== (deliveryInfo.default_address || "").trim()); }} style={inputStyle()} />
             <p style={{ fontSize: 10, color: MUTED, marginTop: 6, lineHeight: 1.5 }}>Precargamos la dirección registrada en tu cuenta — la podés editar si querés que te entreguemos en otra.</p>
             {addressChanged && <p style={{ fontSize: 10, color: "#8b6f4a", marginTop: 4, lineHeight: 1.5 }}>🖊️ Vas a pedir entrega en una dirección distinta a la registrada — se lo avisamos a Argencargo junto con tu confirmación.</p>}
@@ -161,7 +154,7 @@ export default function EntregaPublica({ params }) {
           <div style={{ padding: "15px 17px", borderRadius: 11, background: `linear-gradient(135deg,${GOLD_A},${GOLD_B})`, color: NAVY, display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 5px 16px rgba(184,149,106,0.25)" }}>
             <div>
               <p style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase" }}>Total a abonar</p>
-              <p style={{ fontSize: 10, fontWeight: 600, color: "rgba(10,22,40,0.65)", marginTop: 2 }}>{CHANNEL_NAME[op.channel] || op.channel} · {delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${zone}` : "Envío por transportista"}</p>
+              <p style={{ fontSize: 10, fontWeight: 600, color: "rgba(10,22,40,0.65)", marginTop: 2 }}>{CHANNEL_NAME[op.channel] || op.channel} · {delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${inferredZone}` : "Envío por transportista"}</p>
             </div>
             <p style={{ fontSize: 23, fontWeight: 800, letterSpacing: "-0.02em" }}>{fmt(total)}</p>
           </div>
@@ -206,9 +199,9 @@ function OptRow({ selected, onClick, label, meta, price, disabled }) {
   </div>;
 }
 
-function ConfirmedView({ data, delivery, zone, clientName }) {
+function ConfirmedView({ data, delivery, clientName }) {
   const payLabel = data.payment_method === "efectivo" ? "Efectivo" : data.payment_method === "transferencia" ? "Transferencia en pesos" : "Cripto (USDT)";
-  const entregaLabel = delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${zone}` : "Envío por transportista";
+  const entregaLabel = delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${data.delivery_zone || ""}` : "Envío por transportista";
   const what = delivery === "oficina" ? "tu retiro" : delivery === "propio" ? "la entrega en tu domicilio" : "el envío con el transportista";
   return <div style={pageStyle()}>
     <div style={{ maxWidth: 480, width: "100%", padding: "32px 28px", background: CREAM, color: INK, borderRadius: 16, boxShadow: "0 24px 80px rgba(0,0,0,0.55)" }}>
@@ -245,7 +238,6 @@ function rowStyle() { return { display: "flex", justifyContent: "space-between",
 function rowValStyle() { return { fontWeight: 700, color: INK }; }
 function fieldLblStyle() { return { fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: MUTED, display: "block", marginBottom: 5 }; }
 function inputStyle() { return { width: "100%", padding: "9px 11px", fontSize: 12.5, border: `1px solid ${LINE}`, borderRadius: 8, background: "#fff", color: INK, fontFamily: "inherit", boxSizing: "border-box" }; }
-function zoneBtnStyle(on) { return { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, padding: "7px 11px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", border: `1.5px solid ${on ? GOLD_A : LINE}`, background: on ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff", color: INK, fontSize: 11.5, fontWeight: 700 }; }
 function noteBoxStyle() { return { marginTop: 10, padding: "10px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.55, background: "#f4efe3", border: `1px solid ${LINE}`, color: "#4a4536" }; }
 function adjustCardStyle(credit) { return { display: "flex", alignItems: "center", gap: 9, padding: "10px 13px", borderRadius: 9, fontSize: 12, lineHeight: 1.4, marginTop: 10, background: credit ? "#eaf6ef" : "#fdf1ea", border: `1px solid ${credit ? "rgba(30,125,79,.25)" : "rgba(180,90,40,.25)"}`, color: credit ? "#1e5c3d" : "#7a4a28" }; }
 function payDetailStyle() { return { marginTop: 11, padding: "12px 14px", borderRadius: 9, background: "#f4efe3", border: `1px solid ${LINE}`, fontSize: 11.5, color: "#4a4536", lineHeight: 1.6 }; }
