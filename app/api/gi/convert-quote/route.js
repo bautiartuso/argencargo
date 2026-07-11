@@ -37,7 +37,6 @@ export async function POST(req) {
   }
 
   const totalKey = {
-    aereo_negro: "cost_courier_total_usd",
     aereo_blanco: "cost_aereo_int_total_usd",
     maritimo_negro: "cost_maritimo_lcl_total_usd",
     maritimo_blanco: "cost_maritimo_int_total_usd",

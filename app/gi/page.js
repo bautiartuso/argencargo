@@ -626,9 +626,9 @@ function RequestDetail({token,requestId,profileId,onBack,onStartWizard}){
 
     {/* Banner cuando está aceptada: aviso prominente para que el admin sepa que tiene que convertir */}
     {quoteRow?.status==="accepted"&&(()=>{
-      const total=Number(quoteRow.selected_delivery_cost_usd||0)+Number(({aereo_negro:"cost_courier_total_usd",aereo_blanco:"cost_aereo_int_total_usd",maritimo_negro:"cost_maritimo_lcl_total_usd",maritimo_blanco:"cost_maritimo_int_total_usd"})[quoteRow.selected_channel]?quoteRow[({aereo_negro:"cost_courier_total_usd",aereo_blanco:"cost_aereo_int_total_usd",maritimo_negro:"cost_maritimo_lcl_total_usd",maritimo_blanco:"cost_maritimo_int_total_usd"})[quoteRow.selected_channel]]||0:0);
+      const total=Number(quoteRow.selected_delivery_cost_usd||0)+Number(({aereo_blanco:"cost_aereo_int_total_usd",maritimo_negro:"cost_maritimo_lcl_total_usd",maritimo_blanco:"cost_maritimo_int_total_usd"})[quoteRow.selected_channel]?quoteRow[({aereo_blanco:"cost_aereo_int_total_usd",maritimo_negro:"cost_maritimo_lcl_total_usd",maritimo_blanco:"cost_maritimo_int_total_usd"})[quoteRow.selected_channel]]||0:0);
       const plan=(Array.isArray(quoteRow.payment_plan)?quoteRow.payment_plan:[{label:"Inicio",pct:30},{label:"Fin producción",pct:20},{label:"Contra entrega",pct:50}]).filter(s=>Number(s.pct||0)>0);
-      const chLabel={aereo_negro:"Aéreo Courier Comercial",aereo_blanco:"Aéreo Integral AC",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC"}[quoteRow.selected_channel]||quoteRow.selected_channel;
+      const chLabel={aereo_blanco:"Aéreo Courier Comercial",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC"}[quoteRow.selected_channel]||quoteRow.selected_channel;
       return <div style={{margin:"18px 0",padding:"18px 22px",background:"linear-gradient(135deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))",border:"1.5px solid rgba(34,197,94,0.35)",borderRadius:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12,marginBottom:12}}>
           <div>
@@ -795,8 +795,7 @@ function CommunicationsTab({token,quoteId,requestId,profileId,clientName,clientW
 // COTIZADOR WIZARD (3 steps)
 // ────────────────────────────────────────────
 const CHANNEL_DEFS=[
-  {key:"aereo_negro",name:"Aéreo Courier Comercial",time:"7 a 10 días hábiles"},
-  {key:"aereo_blanco",name:"Aéreo Integral AC",time:"10 a 15 días hábiles"},
+  {key:"aereo_blanco",name:"Aéreo Courier Comercial",time:"7 a 10 días hábiles"},
   // maritimo_blanco internamente = LCL/FCL (min 1 m³). maritimo_negro = Integral AC (sin mínimo).
   {key:"maritimo_blanco",name:"Marítimo LCL/FCL",time:"~ 60 días"},
   {key:"maritimo_negro",name:"Marítimo Integral AC",time:"~ 60 días"},
@@ -1120,8 +1119,7 @@ function CotizadorWizard({token,requestId,profileId,onBack}){
     setSaving(true);
     try{
       const ch=channelResults.reduce((acc,c)=>{
-        if(c.key==="aereo_negro"){acc.cost_courier_total_usd=Math.round(c.total*100)/100;acc.cost_courier_real_usd=Math.round(c.real*100)/100;}
-        else if(c.key==="aereo_blanco"){acc.cost_aereo_int_total_usd=Math.round(c.total*100)/100;acc.cost_aereo_int_real_usd=Math.round(c.real*100)/100;}
+        if(c.key==="aereo_blanco"){acc.cost_aereo_int_total_usd=Math.round(c.total*100)/100;acc.cost_aereo_int_real_usd=Math.round(c.real*100)/100;}
         else if(c.key==="maritimo_negro"){acc.cost_maritimo_lcl_total_usd=Math.round(c.total*100)/100;acc.cost_maritimo_lcl_real_usd=Math.round(c.real*100)/100;}
         else if(c.key==="maritimo_blanco"){acc.cost_maritimo_int_total_usd=Math.round(c.total*100)/100;acc.cost_maritimo_int_real_usd=Math.round(c.real*100)/100;}
         return acc;

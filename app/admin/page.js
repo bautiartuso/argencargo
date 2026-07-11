@@ -86,10 +86,10 @@ const dq=async(t,{method="GET",body,token,filters="",headers:h={}})=>{
 };
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},entregada:{l:"LISTA PARA RETIRAR",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
 // calcOpBudget se importa desde lib/calc.js (extraído para testing)
-const CM={aereo_blanco:"Aéreo A",aereo_negro:"Aéreo B",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B"};
+const CM={aereo_blanco:"Aéreo A",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B"};
 const STATUSES=Object.keys(SM);
 const CHANNELS=Object.keys(CM);
-const SERVICES=[{key:"aereo_a_china",label:"Aéreo A — China",unit:"kg",info:"7-10 días hábiles"},{key:"aereo_b_usa",label:"Aéreo B — USA (carga general)",unit:"kg",info:"48-72 hs hábiles"},{key:"aereo_b_usa_celulares",label:"Aéreo B — USA (celulares)",unit:"kg",info:"Tarifa especial celulares"},{key:"aereo_b_china",label:"Aéreo B — China",unit:"kg",info:"10-15 días hábiles"},{key:"maritimo_a_china",label:"Marítimo A — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo B — China/USA",unit:"cbm",info:""}];
+const SERVICES=[{key:"aereo_a_china",label:"Aéreo A — China",unit:"kg",info:"7-10 días hábiles"},{key:"maritimo_a_china",label:"Marítimo A — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo B — China/USA",unit:"cbm",info:""}];
 const formatDate=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return new Date(y,m-1,day).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});};
 // Versión corta para tablas: "14/04/26"
 const formatDateShort=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return `${day}/${m}/${y.slice(2)}`;}const dd=new Date(d);return `${String(dd.getDate()).padStart(2,"0")}/${String(dd.getMonth()+1).padStart(2,"0")}/${String(dd.getFullYear()).slice(2)}`;};
@@ -474,8 +474,8 @@ function NewOperation({token,clients,onBack,onCreated}){
     <Card>
       <Sel label="Cliente" value={form.client_id} onChange={ch("client_id")} options={clients.map(c=>({value:c.id,label:`${c.client_code} — ${c.first_name} ${c.last_name}`}))} ph="Seleccionar cliente"/>
       <Sel label="Tipo de servicio" value={form.service_type} onChange={ch("service_type")} options={[{value:"courier",label:"Courier — cliente compra, nosotros despachamos"},{value:"gestion_integral",label:"Gestión Integral — nosotros compramos y vendemos puesto en Argentina"}]}/>
-      <Sel label="Origen" value={form.origin} onChange={v=>{ch("origin")(v);if(v==="USA"&&(form.channel==="aereo_blanco"||form.channel==="maritimo_blanco"))ch("channel")("aereo_negro");}} options={[{value:"China",label:"China"},{value:"USA",label:"USA"}]}/>
-      <Sel label="Canal" value={form.channel} onChange={ch("channel")} options={form.origin==="USA"?[{value:"aereo_negro",label:"Aéreo B"},{value:"maritimo_negro",label:"Marítimo B"}]:CHANNELS.map(c=>({value:c,label:CM[c]}))}/>
+      <Sel label="Origen" value={form.origin} onChange={v=>{ch("origin")(v);if(v==="USA"&&form.channel!=="maritimo_negro")ch("channel")("maritimo_negro");}} options={[{value:"China",label:"China"},{value:"USA",label:"USA"}]}/>
+      <Sel label="Canal" value={form.channel} onChange={ch("channel")} options={form.origin==="USA"?[{value:"maritimo_negro",label:"Marítimo B"}]:CHANNELS.map(c=>({value:c,label:CM[c]}))}/>
       {form.service_type==="gestion_integral"&&<div style={{background:"rgba(168,85,247,0.08)",border:"1px solid rgba(168,85,247,0.2)",borderRadius:8,padding:"10px 12px",margin:"8px 0 12px",fontSize:12,color:"rgba(255,255,255,0.7)"}}>
         <b style={{color:"#c084fc"}}>Gestión Integral:</b> al cliente le cotizás un precio final puesto en Argentina (<code>budget_total</code>). Vos pagás al proveedor (<code>cost_producto_usd</code>) y asumís flete + impuestos. Ganancia = precio cliente − todos los costos. Lo configurás en el detalle de la op.
       </div>}
@@ -1408,10 +1408,6 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>¿La carga contiene baterías internas?</p>
           <div style={{display:"flex",gap:10}}>{[{k:true,icon:"⚡",l:"Sí, tiene baterías",sub:"Recargo $2/kg"},{k:false,icon:"✓",l:"No tiene baterías",sub:"Producto estándar"}].map(o=><div key={String(o.k)} onClick={()=>chOp("has_battery")(o.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:12,border:`1.5px solid ${(op.has_battery||false)===o.k?"#fb923c":"rgba(255,255,255,0.08)"}`,background:(op.has_battery||false)===o.k?"rgba(251,146,60,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer",transition:"all 0.15s"}}><p style={{fontSize:22,margin:"0 0 4px"}}>{o.icon}</p><p style={{fontSize:13,fontWeight:700,color:(op.has_battery||false)===o.k?"#fb923c":"rgba(255,255,255,0.55)",margin:"0 0 2px"}}>{o.l}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{o.sub}</p></div>)}</div>
         </div>}
-        {op.channel==="aereo_negro"&&op.origin==="USA"&&!isGI&&<div style={{marginBottom:12}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>¿La carga es de celulares?</p>
-          <div style={{display:"flex",gap:10}}>{[{k:true,icon:"📱",l:"Sí, celulares",sub:"Tarifa $65/kg"},{k:false,icon:"📦",l:"Carga general",sub:"Tarifa estándar"}].map(o=><div key={String(o.k)} onClick={()=>chOp("has_phones")(o.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:12,border:`1.5px solid ${(op.has_phones||false)===o.k?IC:"rgba(255,255,255,0.08)"}`,background:(op.has_phones||false)===o.k?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer",transition:"all 0.15s"}}><p style={{fontSize:22,margin:"0 0 4px"}}>{o.icon}</p><p style={{fontSize:13,fontWeight:700,color:(op.has_phones||false)===o.k?IC:"rgba(255,255,255,0.55)",margin:"0 0 2px"}}>{o.l}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{o.sub}</p></div>)}</div>
-        </div>}
         {op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&<div style={{padding:"12px 16px",background:op.consolidation_confirmed?"rgba(34,197,94,0.06)":"rgba(251,191,36,0.08)",border:`1px solid ${op.consolidation_confirmed?"rgba(34,197,94,0.2)":"rgba(251,191,36,0.25)"}`,borderRadius:10,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <div><p style={{fontSize:12,fontWeight:700,color:op.consolidation_confirmed?"#22c55e":"#fbbf24",margin:"0 0 2px"}}>{op.consolidation_confirmed?"✓ Consolidación confirmada":"⏳ Esperando confirmación de consolidación"}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{op.consolidation_confirmed?"El cliente confirmó que la carga está completa":"El cliente o vos deben confirmar que la carga está lista para enviar"}</p></div>
           {!op.consolidation_confirmed&&<Btn small onClick={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString()}});setOp(p=>({...p,consolidation_confirmed:true}));flash("Consolidación confirmada");}}>Marcar lista para enviar</Btn>}
@@ -1505,11 +1501,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         totalAbonar=Number(op.budget_total||0);
         // Aun con presupuesto guardado, derivar surchargePct del VPU+tarifas para que el label informe el tramo
         if(!isBlanco){
-          const isUSA=op.origin==="USA";
-          const isPhonesBUsaInline=op.channel==="aereo_negro"&&isUSA&&op.has_phones;
-          const svcKey=isPhonesBUsaInline?"aereo_b_usa_celulares":(op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="aereo_negro"?(isUSA?"aereo_b_usa":"aereo_b_china"):op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b");
+          const svcKey=op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b";
           const merchVal=Number(op.merchandise_value_usd||0)||totalFob;
-          const amtForVpu=op.channel?.includes("aereo")?(op.channel==="aereo_negro"?totGW:pf):totCBM;
+          const amtForVpu=op.channel?.includes("aereo")?pf:totCBM;
           if(merchVal>0&&amtForVpu>0){
             const vpu=merchVal/amtForVpu;
             const surchs=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty||0)-Number(a.min_qty||0));
@@ -1518,16 +1512,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         }
       } else {
       // Flete (uses client custom rate if available)
-      const isUSA=op.origin==="USA";
-      // Si es aéreo B USA + celulares, usa service_key especial (configurable + overrideable por cliente)
-      const isPhonesBUsaInline=op.channel==="aereo_negro"&&isUSA&&op.has_phones;
-      const svcKey=isPhonesBUsaInline?"aereo_b_usa_celulares":(op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="aereo_negro"?(isUSA?"aereo_b_usa":"aereo_b_china"):op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b");
-      // Canal B aéreo (negro): cobra por peso BRUTO (totGW). Canal A aéreo: peso facturable (pf). Marítimo: CBM.
-      const fleteAmt=op.channel?.includes("aereo")?(op.channel==="aereo_negro"?Math.max(totGW,0.5):pf):(op.channel==="maritimo_blanco"?Math.max(totCBM,0.5):totCBM);
+      const svcKey=op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b";
+      // Aéreo: peso facturable (pf). Marítimo: CBM.
+      const fleteAmt=op.channel?.includes("aereo")?pf:(op.channel==="maritimo_blanco"?Math.max(totCBM,0.5):totCBM);
       const tRefMs=op.created_at?Date.parse(op.created_at):Date.now();
       const tActive=t=>(t.effective_from==null||Date.parse(t.effective_from)<=tRefMs)&&(t.effective_to==null||tRefMs<Date.parse(t.effective_to));
       const getRate=(sk,amt)=>{const rates=tariffs.filter(t=>t.service_key===sk&&t.type==="rate"&&tActive(t));for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amt>=min&&amt<max){const ov=clientOverrides.find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):Number(r.rate);}}return rates.length?Number(rates[rates.length-1].rate):0;};
-      // Tarifa: toma del service_key calculado arriba (incluye aereo_b_usa_celulares si aplica).
       const fleteRate=getRate(svcKey,fleteAmt);flete=fleteAmt*fleteRate;
       // Recargo baterías solo en aéreo A (Courier Comercial) - $2 por kg
       if(op.channel==="aereo_blanco"&&op.has_battery)flete+=fleteAmt*2;
@@ -1559,7 +1549,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       // Recargo por valor mercadería (solo canal B)
       if(!isBlanco){
         const merchVal=Number(op.merchandise_value_usd||0)||totalFob;
-        const amtForVpu=op.channel?.includes("aereo")?(op.channel==="aereo_negro"?totGW:pf):totCBM;
+        const amtForVpu=op.channel?.includes("aereo")?pf:totCBM;
         if(merchVal>0&&amtForVpu>0){
           const vpu=merchVal/amtForVpu;
           const surchs=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty||0)-Number(a.min_qty||0));
@@ -1653,7 +1643,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <Btn small variant="secondary" onClick={async()=>{setSaving(true);const mv=Number(op.merchandise_value_usd||0)||null;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{merchandise_value_usd:mv}});setOp(p=>({...p,merchandise_value_usd:mv}));autoSyncBudget();flash("Valor mercadería guardado");setSaving(false);}} disabled={saving}>{saving?"...":"Guardar"}</Btn>
           </div>
           <span style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",flex:1,textAlign:"right",fontStyle:"italic"}}>
-            {(()=>{const amtForVpu=op.channel?.includes("aereo")?(op.channel==="aereo_negro"?totGW:pf):totCBM;const merchVal=Number(op.merchandise_value_usd||0)||totalFob;if(merchVal<=0||amtForVpu<=0)return "Cargá valor mercadería + bultos para ver recargo.";const vpu=merchVal/amtForVpu;const u=op.channel?.includes("aereo")?"kg":"CBM";return <>USD/{u}: <b style={{color:"#fff",fontStyle:"normal"}}>{vpu.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b> · {surchargePct>0?<span style={{color:GOLD_LIGHT,fontWeight:700,fontStyle:"normal"}}>Recargo {surchargePct}%</span>:<span style={{color:"rgba(255,255,255,0.4)",fontStyle:"normal"}}>sin recargo</span>}</>;})()}
+            {(()=>{const amtForVpu=op.channel?.includes("aereo")?pf:totCBM;const merchVal=Number(op.merchandise_value_usd||0)||totalFob;if(merchVal<=0||amtForVpu<=0)return "Cargá valor mercadería + bultos para ver recargo.";const vpu=merchVal/amtForVpu;const u=op.channel?.includes("aereo")?"kg":"CBM";return <>USD/{u}: <b style={{color:"#fff",fontStyle:"normal"}}>{vpu.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b> · {surchargePct>0?<span style={{color:GOLD_LIGHT,fontWeight:700,fontStyle:"normal"}}>Recargo {surchargePct}%</span>:<span style={{color:"rgba(255,255,255,0.4)",fontStyle:"normal"}}>sin recargo</span>}</>;})()}
           </span>
         </div>}
         {isManual?<>
@@ -2073,23 +2063,14 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           </div>
           <div style={{display:"flex",gap:6}}><Btn onClick={()=>movePkgToOp(pk)} small variant="secondary" title="Mover este bulto a otra operación (cliente equivocado)">↪ Mover</Btn><Btn onClick={()=>delPkg(pk.id)} small variant="danger">Eliminar</Btn></div>
         </div>
-        {/* Aéreo B (negro/integral): factura por peso bruto, las dimensiones no importan → solo Seguimiento + Cantidad + Peso en una fila. */}
-        {op.channel==="aereo_negro"?
-          <div style={{display:"grid",gridTemplateColumns:"2.4fr 0.8fr 1.1fr",gap:"0 12px"}}>
-            <Inp label="Seguimiento nacional" value={pk.national_tracking} onChange={v=>chPkg(i,"national_tracking",v)} placeholder="Código de seguimiento" small/>
-            <Inp label="Cantidad" type="number" value={pk.quantity} onChange={v=>chPkg(i,"quantity",v?parseInt(v):1)} small/>
-            <Inp label="Peso kg" type="number" value={pk.gross_weight_kg} onChange={v=>chPkg(i,"gross_weight_kg",v)} step="0.1" small/>
-          </div>
-        :<>
-          <Inp label="Seguimiento nacional" value={pk.national_tracking} onChange={v=>chPkg(i,"national_tracking",v)} placeholder="Código de seguimiento nacional" small/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 12px"}}>
-            <Inp label="Cantidad" type="number" value={pk.quantity} onChange={v=>chPkg(i,"quantity",v?parseInt(v):1)} small/>
-            <Inp label="Largo cm" type="number" value={pk.length_cm} onChange={v=>chPkg(i,"length_cm",v)} step="0.1" small/>
-            <Inp label="Ancho cm" type="number" value={pk.width_cm} onChange={v=>chPkg(i,"width_cm",v)} step="0.1" small/>
-            <Inp label="Alto cm" type="number" value={pk.height_cm} onChange={v=>chPkg(i,"height_cm",v)} step="0.1" small/>
-            <Inp label="Peso unit. kg" type="number" value={pk.gross_weight_kg} onChange={v=>chPkg(i,"gross_weight_kg",v)} step="0.1" small/>
-          </div>
-        </>}
+        <Inp label="Seguimiento nacional" value={pk.national_tracking} onChange={v=>chPkg(i,"national_tracking",v)} placeholder="Código de seguimiento nacional" small/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:"0 12px"}}>
+          <Inp label="Cantidad" type="number" value={pk.quantity} onChange={v=>chPkg(i,"quantity",v?parseInt(v):1)} small/>
+          <Inp label="Largo cm" type="number" value={pk.length_cm} onChange={v=>chPkg(i,"length_cm",v)} step="0.1" small/>
+          <Inp label="Ancho cm" type="number" value={pk.width_cm} onChange={v=>chPkg(i,"width_cm",v)} step="0.1" small/>
+          <Inp label="Alto cm" type="number" value={pk.height_cm} onChange={v=>chPkg(i,"height_cm",v)} step="0.1" small/>
+          <Inp label="Peso unit. kg" type="number" value={pk.gross_weight_kg} onChange={v=>chPkg(i,"gross_weight_kg",v)} step="0.1" small/>
+        </div>
         {Array.isArray(pk.consolidated_from_trackings)&&pk.consolidated_from_trackings.length>0&&<div style={{margin:"6px 0 0",padding:"6px 10px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:6,display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
           <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.04em"}}>Originales consolidados:</span>
           {pk.consolidated_from_trackings.map((tr,k)=><span key={k} style={{fontSize:10.5,padding:"2px 7px",borderRadius:4,background:"rgba(96,165,250,0.14)",color:"#60a5fa",fontFamily:"monospace"}}>{tr}</span>)}
@@ -3954,7 +3935,7 @@ function CloseChecklistModal({op,items,payments,clientPayments,supplierPayments,
   </div>;
 }
 
-const CHANNEL_NAME_MAP={aereo_blanco:"Aéreo Courier Comercial",aereo_negro:"Aéreo Integral AC",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
+const CHANNEL_NAME_MAP={aereo_blanco:"Aéreo Courier Comercial",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
 
 const PAY_GROUPS=[{k:"efectivo",l:"💵 Efectivo"},{k:"transferencia",l:"🏦 Transferencia"},{k:"crypto",l:"₿ Cripto"}];
 
@@ -4577,8 +4558,6 @@ function Calculator({token,clients}){
   const calculate=()=>{
     const{totWeight,totCBM}=calcTotals();const channels=[];
     if(origin==="USA"){
-      if(totWeight>0){const bw=Math.max(totWeight,0.5);const{rate,cost}=hasPhones?{rate:65,cost:0}:getFleteRate("aereo_b_usa",bw);const flete=bw*rate;const fCost=bw*cost;const sur=getSurcharge("aereo_b_usa",totalFob,bw);
-        channels.push({key:"aereo_b_usa",name:"Aéreo Integral AC",info:"48-72 hs",isBlanco:false,flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totWeight.toFixed(1)} kg`});}
       if(!hasPhones&&!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_b",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
         channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",isBlanco:false,flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totCBM.toFixed(4)} CBM`});}
     }
@@ -4619,9 +4598,6 @@ function Calculator({token,clients}){
           flete,fCost,seguro:segFict,battExtra,totalImp:impFict,totalSvc:flete+segFict+battExtra,total:impFict+flete+segFict+battExtra,
           derechos:sumItems(itemsFict,"derechos"),tasa_e:sumItems(itemsFict,"tasa_e"),iva:sumItems(itemsFict,"iva"),gastoDoc:sumItems(itemsFict,"desembolso"),ivaDesemb:sumItems(itemsFict,"ivaDesemb"),
           items:itemsFict,cifReal,cifFict,impReal,impFict,gananciaImp,unit:`${factBill.toFixed(1)} kg`});}
-      // Aéreo Integral AC (B) — peso bruto mínimo 5 kg (China)
-      if(totWeight>0){const bw=Math.max(totWeight,0.5);const{rate,cost}=getFleteRate("aereo_b_china",bw);const flete=bw*rate;const fCost=bw*cost;const sur=getSurcharge("aereo_b_china",totalFob,bw);
-        channels.push({key:"aereo_b_china",name:"Aéreo Integral AC",info:"10-15 días",isBlanco:false,flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${bw.toFixed(1)} kg`});}
       // Marítimo Carga LCL/FCL (A) — omitido si hay marca
       if(!hasBrand&&!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_a_china",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;
         const certFlFict=totCBM*certMarFict;const segFict=(totalFob+certFlFict)*0.01;const cifFict=totalFob+certFlFict+segFict;
@@ -7819,7 +7795,7 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
         newCode=typeof rpc==="string"?rpc:null;
         if(!newCode){alertDialog("Error generando código de op");setWorking(false);return;}
         // Canal: admin puede haber elegido en el modal. Default = negro (Integral AC) si no eligió
-        const channel=confirmChannel||(n.shipping_method==="maritimo"?"maritimo_negro":"aereo_negro");
+        const channel=confirmChannel||(n.shipping_method==="maritimo"?"maritimo_negro":"aereo_blanco");
         const origin=n.origin==="usa"?"USA":"China";
         // OJO: los trackings del aviso son national_trackings (tracking del proveedor en origen), no
         // el international_tracking del courier (DHL/FedEx). Ese se completa al despacho del vuelo.
@@ -7988,9 +7964,9 @@ function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"})
 
     {confirmAction&&(()=>{const {type,notif}=confirmAction;const cl=notif.clients;const trks=Array.isArray(notif.trackings)&&notif.trackings.length>0?notif.trackings:(notif.tracking_code?[{tracking_code:notif.tracking_code}]:[]);
       const isAereo=notif.shipping_method!=="maritimo";
-      // Opciones de canal según modalidad. Default seleccionado = negro (Integral AC, comportamiento previo)
+      // Opciones de canal según modalidad. Aéreo ya no tiene canal B (migrado a MyBox) → siempre Courier Comercial.
       const channelOpts=isAereo
-        ?[{k:"aereo_negro",l:"Aéreo Integral AC",sub:"Sin factura · canal B",icon:"📦"},{k:"aereo_blanco",l:"Aéreo Courier Comercial",sub:"Con factura · canal A",icon:"🏢"}]
+        ?[{k:"aereo_blanco",l:"Aéreo Courier Comercial",sub:"Con factura · canal A",icon:"🏢"}]
         :[{k:"maritimo_negro",l:"Marítimo Integral AC",sub:"Sin factura · canal B",icon:"📦"},{k:"maritimo_blanco",l:"Marítimo LCL/FCL",sub:"Con factura · canal A",icon:"🏢"}];
       const selChannel=confirmChannel||channelOpts[0].k;
       return <div onClick={()=>!working&&(setConfirmAction(null),setConfirmChannel(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -8952,7 +8928,7 @@ function OperationalAnalytics({token}){
   if(!data)return null;
   const NAVY="#152D54",AC="#3B7DD8";
   const card={background:"rgba(255,255,255,0.04)",borderRadius:12,border:"1px solid rgba(255,255,255,0.08)",padding:"14px 16px"};
-  const chLbl={aereo_blanco:"Aéreo A (courier)",aereo_negro:"Aéreo B (AC)",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B (AC)"};
+  const chLbl={aereo_blanco:"Aéreo A (courier)",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B (AC)"};
   return <div style={{marginBottom:28}}>
     <h2 style={{fontSize:16,fontWeight:700,color:"rgba(255,255,255,0.7)",margin:"20px 0 12px"}}>Analytics operacionales</h2>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12,marginBottom:14}}>
@@ -10001,17 +9977,15 @@ function QuotesList({token}){
   const addPkg=()=>{setEditPkgs(p=>[...p,{qty:"1",length:"",width:"",height:"",weight:""}]);setDirty(true);};
   const rmPkg=(i)=>{setEditPkgs(p=>p.filter((_,j)=>j!==i));setDirty(true);};
   // Breakdown computado desde editProds + editPkgs usando la misma lógica que el calculador
-  const CHANNEL_MAP={aereo_a_china:"aereo_blanco",aereo_b_china:"aereo_negro",aereo_b_usa:"aereo_negro",maritimo_a_china:"maritimo_blanco",maritimo_b:"maritimo_negro"};
+  const CHANNEL_MAP={aereo_a_china:"aereo_blanco",maritimo_a_china:"maritimo_blanco",maritimo_b:"maritimo_negro"};
   // Canales disponibles según origen.
   const channelsForOrigin=(origin)=>{
     if(origin==="USA")return[
-      {key:"aereo_b_usa",name:"Aéreo Integral AC — USA",info:"48-72 hs hábiles",type:"aereo_b"},
       {key:"maritimo_b",name:"Marítimo Integral AC",info:"45-55 días",type:"maritimo_b"},
     ];
     // China (default)
     return[
       {key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles",type:"aereo_a"},
-      {key:"aereo_b_china",name:"Aéreo Integral AC",info:"10-15 días hábiles",type:"aereo_b"},
       {key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"45-55 días",type:"maritimo_a"},
       {key:"maritimo_b",name:"Marítimo Integral AC",info:"45-55 días",type:"maritimo_b"},
     ];
@@ -10038,7 +10012,7 @@ function QuotesList({token}){
     try{
       const ck=channelKey||selQuote.channel_key;
       const quoteClient=selQuote.client_id?clientsMap[selQuote.client_id]:null;
-      const opLike={channel:CHANNEL_MAP[ck]||"aereo_negro",origin:selQuote.origin,shipping_to_door:selQuote.delivery&&selQuote.delivery!=="oficina",shipping_cost:0,has_battery:false};
+      const opLike={channel:CHANNEL_MAP[ck]||"aereo_blanco",origin:selQuote.origin,shipping_to_door:selQuote.delivery&&selQuote.delivery!=="oficina",shipping_cost:0,has_battery:false};
       const items=editProds.map(p=>({unit_price_usd:p.unit_price,quantity:p.quantity,import_duty_rate:p.ncm?.import_duty_rate||0,statistics_rate:p.ncm?.statistics_rate||0,iva_rate:p.ncm?.iva_rate??21,iva_additional_rate:20,iigg_rate:6,iibb_rate:5}));
       const pks=editPkgs.map(p=>({quantity:Number(p.qty||1),gross_weight_kg:Number(p.weight||0),length_cm:Number(p.length||0),width_cm:Number(p.width||0),height_cm:Number(p.height||0)}));
       const shipC=calcShippingCost(pks);
@@ -10379,10 +10353,10 @@ function AdminCalculator({token}){
     const desembolsoAuto=isBlanco&&isAereo?getDes(cif):0;
     return {certFl,seguro,cif,derechos,tasaE,iva,ivaAdic,iigg,iibb,desembolsoAuto,isBlanco,isAereo,isMaritimo};
   };
-  const CHANNEL_MAP={aereo_a_china:"aereo_blanco",aereo_b_china:"aereo_negro",aereo_b_usa:"aereo_negro",maritimo_a_china:"maritimo_blanco",maritimo_b:"maritimo_negro"};
+  const CHANNEL_MAP={aereo_a_china:"aereo_blanco",maritimo_a_china:"maritimo_blanco",maritimo_b:"maritimo_negro"};
   const channelsForOrigin=(o)=>o==="USA"
-    ?[{key:"aereo_b_usa",name:"Aéreo Integral AC — USA",info:"48-72 hs hábiles"},{key:"maritimo_b",name:"Marítimo Integral AC",info:"45-55 días"}]
-    :[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles"},{key:"aereo_b_china",name:"Aéreo Integral AC",info:"10-15 días hábiles"},{key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"45-55 días"},{key:"maritimo_b",name:"Marítimo Integral AC",info:"45-55 días"}];
+    ?[{key:"maritimo_b",name:"Marítimo Integral AC",info:"45-55 días"}]
+    :[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles"},{key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"45-55 días"},{key:"maritimo_b",name:"Marítimo Integral AC",info:"45-55 días"}];
   const totalFob=products.reduce((s,p)=>s+toN(p.unit_price)*Number(p.quantity||1),0);
   const totCBM=pkgs.reduce((s,p)=>{const q=Number(p.qty||1),l=toN(p.length),w=toN(p.width),h=toN(p.height);return s+(l&&w&&h?((l*w*h)/1000000)*q:0);},0);
   const overweight=pkgs.some(p=>toN(p.weight)>45);
@@ -11307,11 +11281,9 @@ function AdminDashboard({session,onLogout}){
       {key:"operations",label:"Operaciones",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},
       {key:"entregas",label:"Entregas",p:["M3 9l9-6 9 6-9 6-9-6z","M3 9v6l9 6 9-6V9"]},
       {key:"agents",label:"Agentes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},
-      {key:"carga_dia",label:"Aéreo B",p:["M22 2L11 13","M22 2l-7 20-4-9-9-4 20-7z"]},
       {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
       {key:"tasks",label:"Tareas",p:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"]},
       {key:"purchase_notifs",label:"Avisos de compra",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},
-      {key:"aereo_b_china",label:"Aéreo B China",p:["M22 2L11 13","M22 2l-7 20-4-9-9-4 20-7z"]},
       {key:"quotes",label:"Cotizaciones",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},
       {key:"calc",label:"Calculadora",p:["M9 2h6","M3 6h18","M9 12h.01","M15 12h.01","M9 16h.01","M15 16h.01","M9 20h.01","M15 20h.01","M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6"]},
     ]},
@@ -11406,7 +11378,6 @@ function AdminDashboard({session,onLogout}){
       {page==="operations"&&newOp&&<NewOperation token={token} clients={allClients} onBack={()=>setNewOp(false)} onCreated={op=>{setNewOp(false);setSelOp(op);}}/>}
       {page==="clients"&&!selClient&&<ClientsList token={token} onSelect={setSelClient}/>}
       {page==="clients"&&selClient&&<ClientDetail client={selClient} token={token} onBack={()=>setSelClient(null)} onSelectOp={op=>{setPage("operations");setSelClient(null);setSelOp(op);}} onDelete={()=>setSelClient(null)}/>}
-      {page==="carga_dia"&&<CargaDelDiaPanel token={token} allClients={allClients} onCreated={()=>setPage("operations")}/>}
       {page==="tasks"&&<AdminTasks token={token}/>}
       {page==="comms"&&<ComunicacionesPanel token={token}/>}
       {page==="intel"&&<IntelligencePanel token={token} allClients={allClients}/>}
@@ -11417,7 +11388,6 @@ function AdminDashboard({session,onLogout}){
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="maritime"&&<MaritimePanel token={token} allClients={allClients}/>}
       {page==="purchase_notifs"&&<PurchaseNotificationsAdmin token={token} allClients={allClients} onCreateOp={op=>{setPage("operations");setSelOp(op);}} mode="client"/>}
-      {page==="aereo_b_china"&&<PurchaseNotificationsAdmin token={token} allClients={allClients} onCreateOp={op=>{setPage("operations");setSelOp(op);}} mode="admin"/>}
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
@@ -11429,175 +11399,6 @@ function AdminDashboard({session,onLogout}){
   </div>;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// CARGA DEL DÍA · AÉREO ESTADOS UNIDOS (Aéreo B USA)
-// Carga masiva: peso/importe que me cobró el proveedor + bultos (cliente+tracking+peso).
-// Prorrateo ASIMÉTRICO: si los bultos pesan MENOS que lo declarado, escala los pesos
-// facturables hasta el declarado (no perder plata); si pesan MÁS, cobra el real (ganancia extra).
-// Agrupa bultos por cliente → 1 op por cliente (status entregada, ETA del día).
-// Costos (compra prorrateada + flete local prorrateado) → libro diario con la fecha del pago.
-// Ingreso diferido: NO se asienta hasta cobrar (flujo existente vía cobros).
-// ═══════════════════════════════════════════════════════════════
-function CargaDelDiaPanel({token,allClients=[],onCreated}){
-  const BLUE="#3B7DD8",BLUE_SOFT="rgba(59,125,216,0.12)",BLUE_BORDER="rgba(59,125,216,0.35)";
-  const today=new Date().toISOString().slice(0,10);
-  const [proveedor,setProveedor]=useState("All Red Corp");
-  const [origin,setOrigin]=useState("USA"); // USA | China — define la tarifa (aereo_b_usa/china) y la descripción
-  const [fecha,setFecha]=useState(today);
-  const [pesoTotal,setPesoTotal]=useState("");
-  const [importe,setImporte]=useState("");
-  const [fleteLocal,setFleteLocal]=useState("");
-  const [metodo,setMetodo]=useState("transferencia");
-  const [bultos,setBultos]=useState([{client_id:"",tracking:"",peso:""}]);
-  const [tariffs,setTariffs]=useState([]);
-  const [overrides,setOverrides]=useState([]);
-  const [tariffsLoaded,setTariffsLoaded]=useState(false);
-  const [creating,setCreating]=useState(false);
-  const [msg,setMsg]=useState("");
-  useEffect(()=>{(async()=>{
-    setTariffsLoaded(false);
-    const svc=origin==="USA"?"aereo_b_usa":"aereo_b_china";
-    const t=await dq("tariffs",{token,filters:`?service_key=eq.${svc}&type=eq.rate&select=*&order=min_qty.asc`});setTariffs(Array.isArray(t)?t:[]);
-    const o=await dq("client_tariff_overrides",{token,filters:"?select=client_id,tariff_id,custom_rate"});setOverrides(Array.isArray(o)?o:[]);
-    setTariffsLoaded(true);
-  })();},[token,origin]);
-  // Si el fetch de tarifas falla o vuelve vacío, rateFor() devuelve 0 en silencio y el ingreso
-  // (y el presupuesto de la op creada) quedaría en cero sin que se note — bloqueamos la creación
-  // y avisamos en vez de dejarlo pasar.
-  const tariffsMissing=tariffsLoaded&&tariffs.length===0;
-  const fmt=n=>`USD ${Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-  const fk=n=>`${Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
-  // Parseo es-AR: "65,9" → 65.9 ; "2.636,50" → 2636.5 ; "2636" → 2636 ; "65.9" → 65.9.
-  const num=s=>{if(s==null)return 0;let t=String(s).trim();if(!t)return 0;if(t.indexOf(",")>=0)t=t.replace(/\./g,"").replace(",",".");const v=parseFloat(t);return isNaN(v)?0:v;};
-  const rateFor=(weight,clientId)=>{
-    let ch=null;for(const r of tariffs){const mn=Number(r.min_qty||0);const mx=r.max_qty!=null?Number(r.max_qty):Infinity;if(weight>=mn&&weight<mx){ch=r;break;}}
-    if(!ch&&tariffs.length)ch=tariffs[tariffs.length-1];if(!ch)return 0;
-    const ov=overrides.find(o=>o.client_id===clientId&&o.tariff_id===ch.id);return ov?Number(ov.custom_rate):Number(ch.rate);
-  };
-  const dec=num(pesoTotal),pag=num(importe),fl=num(fleteLocal);
-  const valid=bultos.filter(b=>b.client_id&&num(b.peso)>0);
-  const sumA=valid.reduce((s,b)=>s+num(b.peso),0);
-  // Prorrateo topado en +10%: no le puedo cargar más de un 10% extra a un cliente. Si la
-  // diferencia supera el 10%, esos kg NO se trasladan y el costo lo asume Argencargo (baja la ganancia).
-  const rawFactor=sumA>0?Math.max(1,dec/sumA):1;
-  const factor=Math.min(rawFactor,1.10);
-  const capped=rawFactor>1.1001;
-  const sumP=sumA*factor;
-  const uncoveredKg=Math.max(0,dec-sumP);
-  const costPerUnit=sumP>0?(pag+fl)/sumP:0;
-  const groups={};
-  valid.forEach(b=>{const pr=num(b.peso)*factor;if(!groups[b.client_id])groups[b.client_id]={prorated:0,bultos:[]};groups[b.client_id].prorated+=pr;groups[b.client_id].bultos.push({...b,prorated:pr});});
-  const rateByClient={};Object.keys(groups).forEach(cid=>{rateByClient[cid]=rateFor(Math.max(groups[cid].prorated,0.5),cid);});
-  const opList=Object.keys(groups).map(cid=>{const g=groups[cid];const billW=Math.max(g.prorated,0.5);const rate=rateByClient[cid]||0;const ing=billW*rate;const cf=sumP>0?pag*g.prorated/sumP:0;const cl=sumP>0?fl*g.prorated/sumP:0;const cli=allClients.find(c=>c.id===cid);return{cid,cli,prorated:g.prorated,ingreso:ing,costFlete:cf,costLocal:cl,ganancia:ing-cf-cl,bultos:g.bultos};});
-  const totIngreso=opList.reduce((s,o)=>s+o.ingreso,0);
-  const totEgreso=pag+fl;
-  const totGan=totIngreso-totEgreso;
-  const diff=sumA-dec;
-  const tarifaCompra=dec>0?pag/dec:0;
-  const upd=(i,k,v)=>setBultos(p=>p.map((b,j)=>j===i?{...b,[k]:v}:b));
-  const addB=()=>setBultos(p=>[...p,{client_id:"",tracking:"",peso:""}]);
-  const rmB=i=>setBultos(p=>p.length>1?p.filter((_,j)=>j!==i):p);
-  const clientOpts=(allClients||[]).map(c=>({value:c.id,code:c.client_code,label:`${c.client_code} · ${c.first_name||""} ${c.last_name||""}`}));
-  const crear=async()=>{
-    if(opList.length===0){setMsg("⚠ Cargá al menos un bulto con cliente y peso.");return;}
-    if(dec<=0||pag<=0){setMsg("⚠ Completá peso total e importe abonado.");return;}
-    if(tariffsMissing){setMsg("⚠ No hay tarifa cargada para Aéreo B · "+origin+" — no se puede crear con ingreso en USD 0,00.");return;}
-    setCreating(true);setMsg("");
-    try{
-      const existing=await dq("operations",{token,filters:"?select=operation_code"});
-      const used=new Set((Array.isArray(existing)?existing:[]).map(e=>parseInt(String(e.operation_code||"").replace("AC-","")) ).filter(n=>!isNaN(n)));
-      let nx=1;const nextCode=()=>{while(used.has(nx))nx++;used.add(nx);return "AC-"+String(nx).padStart(4,"0");};
-      const r2=n=>Math.round(Number(n||0)*100)/100;
-      let created=0;
-      for(const op of opList){
-        const code=nextCode();
-        const origLbl=origin==="USA"?"USA":"China";
-        const body={operation_code:code,client_id:op.cid,channel:"aereo_negro",origin,service_type:"courier",status:"entregada",eta:fecha,closed_at:new Date().toISOString(),has_phones:false,budget_mode:"auto",budget_total:r2(op.ingreso),budget_flete:r2(op.ingreso),budget_taxes:0,budget_seguro:0,budget_surcharge:0,cost_flete:r2(op.costFlete),cost_flete_local:r2(op.costLocal),cost_flete_method:metodo,cost_flete_paid_at:fecha,description:"Aéreo "+origLbl+" · carga "+fecha};
-        const r=await dq("operations",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
-        const opId=Array.isArray(r)&&r[0]?r[0].id:(r&&r.id);
-        if(!opId)continue;
-        let pn=0;for(const b of op.bultos){pn++;await dq("operation_packages",{method:"POST",token,body:{operation_id:opId,package_number:pn,quantity:1,gross_weight_kg:r2(b.prorated),national_tracking:b.tracking||null}});}
-        if(op.costFlete>0.005)await dq("finance_entries",{method:"POST",token,body:{date:fecha,type:"gasto",description:"Flete Aéreo "+origLbl+" "+code+" · "+proveedor,amount:r2(op.costFlete),currency:"USD",payment_method:metodo,is_paid:true,auto_generated:true,operation_id:opId}});
-        if(op.costLocal>0.005)await dq("finance_entries",{method:"POST",token,body:{date:fecha,type:"gasto",description:"Flete local "+code,amount:r2(op.costLocal),currency:"USD",payment_method:metodo,is_paid:true,auto_generated:true,operation_id:opId}});
-        created++;
-      }
-      setMsg("✓ "+created+" operación"+(created!==1?"es":"")+" creada"+(created!==1?"s":"")+" · listas para retirar · ETA "+fecha);
-      setBultos([{client_id:"",tracking:"",peso:""}]);setPesoTotal("");setImporte("");setFleteLocal("");
-      if(onCreated)setTimeout(()=>onCreated(),1600);
-    }catch(e){console.error("crear carga",e);setMsg("❌ Error al crear: "+(e.message||e));}
-    setCreating(false);
-  };
-  const lbl={display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
-  const inp={width:"100%",padding:"9px 11px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:9,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",fontVariantNumeric:"tabular-nums"};
-  const card={background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"16px 18px",marginBottom:14};
-  const mc={background:"rgba(255,255,255,0.03)",borderRadius:10,padding:"12px 14px"};
-  return <div style={{maxWidth:980,margin:"0 auto"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
-      <div style={{display:"flex",alignItems:"center",gap:11,flexWrap:"wrap"}}>
-        <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Carga del día · Aéreo B</h2>
-        <div style={{display:"inline-flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:9,border:"1px solid rgba(255,255,255,0.08)"}}>
-          {[{k:"USA",l:"🇺🇸 USA"},{k:"China",l:"🇨🇳 China"}].map(o=><button key={o.k} onClick={()=>setOrigin(o.k)} style={{padding:"5px 12px",fontSize:12,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:origin===o.k?BLUE_SOFT:"transparent",color:origin===o.k?BLUE:"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
-        </div>
-      </div>
-      <div><label style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginRight:8}}>Fecha</label><input type="date" value={fecha} onChange={e=>setFecha(e.target.value)} style={{...inp,width:160,display:"inline-block"}}/></div>
-    </div>
-
-    {tariffsMissing&&<div style={{fontSize:12.5,lineHeight:1.5,borderRadius:10,padding:"11px 14px",marginBottom:14,background:"rgba(242,101,113,0.1)",border:"1px solid rgba(242,101,113,0.32)",color:"#F26571"}}>⚠ No se encontró tarifa cargada para Aéreo B · {origin} — el ingreso daría USD 0,00 y no se puede crear la operación así. Revisá la tarifa en Configuración o recargá la página.</div>}
-
-    <div style={card}>
-      <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:14}}><span style={{color:BLUE,fontSize:16}}>▣</span><input value={proveedor} onChange={e=>setProveedor(e.target.value)} style={{...inp,width:"auto",minWidth:200,fontWeight:600,fontSize:14}}/><span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>· proveedor</span></div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-        <div><label style={lbl}>Peso total (kg)</label><input value={pesoTotal} onChange={e=>setPesoTotal(e.target.value)} placeholder="0" inputMode="decimal" style={inp}/></div>
-        <div><label style={lbl}>Importe abonado (USD)</label><input value={importe} onChange={e=>setImporte(e.target.value)} placeholder="0" inputMode="decimal" style={inp}/></div>
-        <div><label style={lbl}>Tarifa compra (USD/kg)</label><div style={{...mc,fontVariantNumeric:"tabular-nums",color:"#fff",fontSize:13}}>{tarifaCompra.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>
-        <div><label style={lbl}>Gasto flete local (USD)</label><input value={fleteLocal} onChange={e=>setFleteLocal(e.target.value)} placeholder="0" inputMode="decimal" style={inp}/></div>
-        <div><label style={lbl}>Método de pago</label><select value={metodo} onChange={e=>setMetodo(e.target.value)} style={{...inp,cursor:"pointer"}}><option value="transferencia" style={{background:"#0F1F3A"}}>Transferencia</option><option value="efectivo" style={{background:"#0F1F3A"}}>Efectivo</option><option value="tarjeta_credito" style={{background:"#0F1F3A"}}>Tarjeta crédito</option></select></div>
-      </div>
-    </div>
-
-    <div style={card}>
-      {(()=>{const nb=bultos.filter(b=>num(b.peso)>0).length;return <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:12}}><span style={{color:BLUE,fontSize:16}}>▦</span><h3 style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>Bultos <span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)",fontWeight:400}}>· {nb} {nb===1?"bulto":"bultos"}</span></h3></div>;})()}
-      <div style={{display:"grid",gridTemplateColumns:"24px 1.5fr 1.1fr .7fr .8fr 1fr 28px",gap:8,fontSize:10,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.04em",padding:"0 0 4px"}}><span style={{textAlign:"center"}}>#</span><span>Cliente</span><span>Cód. seguimiento</span><span style={{textAlign:"right"}}>Peso</span><span style={{textAlign:"right"}}>Prorrateo</span><span style={{textAlign:"right"}}>Ganancia</span><span></span></div>
-      {bultos.map((b,i)=>{const pb=valid.includes(b)?(()=>{const pr=num(b.peso)*factor;const rate=b.client_id?(rateByClient[b.client_id]||0):0;const ing=pr*rate;const g=ing-pr*costPerUnit;return{pr,g};})():null;return <div key={i} style={{display:"grid",gridTemplateColumns:"24px 1.5fr 1.1fr .7fr .8fr 1fr 28px",gap:8,alignItems:"center",padding:"7px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-        <span style={{textAlign:"center",fontSize:11.5,color:"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{i+1}</span>
-        <select value={b.client_id} onChange={e=>upd(i,"client_id",e.target.value)} style={{...inp,cursor:"pointer",color:b.client_id?"#fff":"rgba(255,255,255,0.4)"}}><option value="" style={{background:"#0F1F3A"}}>Cliente…</option>{clientOpts.map(c=><option key={c.value} value={c.value} style={{background:"#0F1F3A"}}>{c.code}</option>)}</select>
-        <input value={b.tracking} onChange={e=>upd(i,"tracking",e.target.value)} placeholder="AR-…" style={{...inp,fontSize:12}}/>
-        <input value={b.peso} onChange={e=>upd(i,"peso",e.target.value)} placeholder="0" inputMode="decimal" style={{...inp,textAlign:"right"}}/>
-        <span style={{textAlign:"right",fontSize:12.5,color:"rgba(255,255,255,0.8)",fontVariantNumeric:"tabular-nums"}}>{pb?fk(pb.pr):"—"}</span>
-        <span style={{textAlign:"right",fontSize:12.5,fontWeight:600,fontVariantNumeric:"tabular-nums",color:pb?(pb.g>=0?"#3FD18B":"#F26571"):"rgba(255,255,255,0.3)"}}>{pb?(pb.g<0?"−":"")+fmt(Math.abs(pb.g)):"—"}</span>
-        <button onClick={()=>rmB(i)} title="Quitar" style={{background:"none",border:"none",color:"rgba(255,255,255,0.3)",cursor:"pointer",fontSize:15}}>×</button>
-      </div>;})}
-      <button onClick={addB} style={{width:"100%",marginTop:10,padding:"9px",background:"none",border:"1px dashed rgba(255,255,255,0.15)",borderRadius:9,color:"rgba(255,255,255,0.6)",cursor:"pointer",fontSize:12.5}}>+ Agregar bulto</button>
-    </div>
-
-    {valid.length>0&&<div style={{fontSize:12.5,lineHeight:1.5,borderRadius:10,padding:"11px 14px",marginBottom:14,...(capped?{background:"rgba(242,101,113,0.1)",border:"1px solid rgba(242,101,113,0.32)",color:"#F26571"}:diff<-0.005?{background:"rgba(232,161,60,0.1)",border:"1px solid rgba(232,161,60,0.3)",color:"#E8A13C"}:diff>0.005?{background:BLUE_SOFT,border:"1px solid "+BLUE_BORDER,color:BLUE}:{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.6)"})}}>
-      {capped?<>Pesó <b>{fk(Math.abs(diff))}</b> menos ({fk(sumA)} vs {fk(dec)}). El prorrateo se topa en <b>+10%</b> — no le puedo cargar más al cliente. Quedan <b>{fk(uncoveredKg)}</b> sin trasladar (≈ <b>{fmt(uncoveredKg*tarifaCompra)}</b>): ese costo lo asumís vos.</>:diff<-0.005?<>Pesó <b>{fk(Math.abs(diff))}</b> menos que el total ({fk(sumA)} vs {fk(dec)}). Prorrateo <b>×{factor.toFixed(4)}</b> para cubrir los kg pagados — no perdés plata.</>:diff>0.005?<>Pesó <b>{fk(diff)}</b> más que el total ({fk(sumA)} vs {fk(dec)}). Se cobra el real — la diferencia es ganancia extra.</>:<>El peso coincide con el total. Sin ajuste.</>}
-    </div>}
-
-    {opList.length>0&&<div style={card}>
-      <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:6}}><span style={{color:BLUE,fontSize:16}}>✓</span><h3 style={{fontSize:14,fontWeight:600,color:"#fff",margin:0}}>Operaciones a crear <span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)",fontWeight:400}}>· {opList.length} {opList.length===1?"operación":"operaciones"} · {valid.length} {valid.length===1?"bulto":"bultos"}</span></h3></div>
-      {opList.map(op=><div key={op.cid} style={{border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"11px 13px",marginTop:10}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7,flexWrap:"wrap",gap:6}}>
-          <div style={{fontSize:13,fontWeight:600,color:"#fff"}}>{op.cli?.client_code||"—"} <span style={{color:"rgba(255,255,255,0.5)",fontWeight:400}}>· {op.cli?`${op.cli.first_name||""} ${op.cli.last_name||""}`:""}</span></div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:11,color:BLUE,background:BLUE_SOFT,borderRadius:7,padding:"3px 9px"}}>Lista para retirar</span><span style={{fontSize:11.5,color:"rgba(255,255,255,0.4)"}}>ETA {fecha}</span></div>
-        </div>
-        {op.bultos.map((b,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"rgba(255,255,255,0.6)",padding:"2px 0"}}><span style={{color:BLUE}}>▪ <span style={{color:"rgba(255,255,255,0.7)"}}>{b.tracking||"(sin tracking)"}</span></span><span>{fk(b.prorated)}</span></div>)}
-        <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid rgba(255,255,255,0.06)",marginTop:6,paddingTop:6,fontSize:12.5}}><span style={{color:"rgba(255,255,255,0.5)"}}>{fk(op.prorated)} · ganancia</span><span style={{fontWeight:600,color:op.ganancia>=0?"#3FD18B":"#F26571"}}>{op.ganancia<0?"−":""}{fmt(Math.abs(op.ganancia))}</span></div>
-      </div>)}
-    </div>}
-
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1.2fr",gap:12,marginBottom:14}}>
-      <div style={mc}><p style={{...lbl,marginBottom:6}}>Ingreso de carga</p><p style={{fontSize:19,fontWeight:600,margin:0,fontVariantNumeric:"tabular-nums",color:"#fff"}}>{fmt(totIngreso)}</p></div>
-      <div style={mc}><p style={{...lbl,marginBottom:6}}>Egreso de carga</p><p style={{fontSize:19,fontWeight:600,margin:0,fontVariantNumeric:"tabular-nums",color:"rgba(255,255,255,0.7)"}}>{fmt(totEgreso)}</p></div>
-      <div style={{...mc,border:"1px solid "+BLUE_BORDER}}><p style={{...lbl,marginBottom:6}}>Ganancia de carga · {fecha.slice(8,10)}/{fecha.slice(5,7)}</p><p style={{fontSize:22,fontWeight:700,margin:0,fontVariantNumeric:"tabular-nums",color:totGan>=0?"#3FD18B":"#F26571"}}>{totGan<0?"−":""}{fmt(Math.abs(totGan))}</p></div>
-    </div>
-
-    {msg&&<p style={{fontSize:13,margin:"0 0 12px",color:/^[❌⚠]/.test(msg)?"#F26571":"#3FD18B",fontWeight:600}}>{msg}</p>}
-    <button onClick={crear} disabled={creating||opList.length===0||tariffsMissing} style={{width:"100%",padding:"13px",fontSize:14,fontWeight:700,borderRadius:11,border:"none",cursor:creating||opList.length===0||tariffsMissing?"not-allowed":"pointer",background:creating||opList.length===0||tariffsMissing?"rgba(255,255,255,0.06)":BLUE,color:creating||opList.length===0||tariffsMissing?"rgba(255,255,255,0.3)":"#fff"}}>{creating?"Creando operaciones…":tariffsMissing?"Falta la tarifa — no se puede crear":opList.length>0?`Crear ${opList.length} ${opList.length===1?"operación":"operaciones"} · listas para retirar`:"Cargá los bultos"}</button>
-  </div>;
-}
-
-// ═══════════════════════════════════════════════════════════════
 // MARITIME PANEL · pedidos marítimos en tránsito agrupados por depósito y origen.
 // ABM de shipments + bultos + items. Genera PDF por depósito (no mezcla).
 // ═══════════════════════════════════════════════════════════════

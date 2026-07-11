@@ -74,7 +74,7 @@ export async function POST(req, { params }) {
   if (!body || !body.channel || !body.delivery_zone) {
     return Response.json({ error: "Faltan datos: channel y delivery_zone" }, { status: 400 });
   }
-  const validChannels = ["aereo_negro", "aereo_blanco", "maritimo_negro", "maritimo_blanco"];
+  const validChannels = ["aereo_blanco", "maritimo_negro", "maritimo_blanco"];
   if (!validChannels.includes(body.channel)) return Response.json({ error: "Canal inválido" }, { status: 400 });
 
   // Buscar cotización
@@ -89,7 +89,6 @@ export async function POST(req, { params }) {
 
   // Calcular el total elegido
   const totalKey = {
-    aereo_negro: "cost_courier_total_usd",
     aereo_blanco: "cost_aereo_int_total_usd",
     maritimo_negro: "cost_maritimo_lcl_total_usd",
     maritimo_blanco: "cost_maritimo_int_total_usd",

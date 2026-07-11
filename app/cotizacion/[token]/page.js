@@ -8,8 +8,7 @@ const fmtUSD = (n) => "USD " + Number(n || 0).toLocaleString("es-AR", { minimumF
 const fmtUSD2 = (n) => "USD " + Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const CHANNEL_LABELS = {
-  aereo_negro: { name: "Aéreo Courier Comercial", transitMin: 7, transitMax: 10, transitUnit: "días hábiles", costKey: "cost_courier_total_usd" },
-  aereo_blanco: { name: "Aéreo Integral AC", transitMin: 10, transitMax: 15, transitUnit: "días hábiles", costKey: "cost_aereo_int_total_usd" },
+  aereo_blanco: { name: "Aéreo Courier Comercial", transitMin: 7, transitMax: 10, transitUnit: "días hábiles", costKey: "cost_aereo_int_total_usd" },
   // OJO con las keys: maritimo_blanco internamente apunta a LCL/FCL (con min 1 m³)
   // y maritimo_negro al servicio Integral AC (sin mínimo).
   maritimo_blanco: { name: "Marítimo LCL / FCL", transitMin: 60, transitMax: 60, transitUnit: "días", costKey: "cost_maritimo_int_total_usd" },
@@ -74,7 +73,7 @@ export default function CotizacionPublica({ params }) {
           .map(([key, def]) => ({ key, total: Number(d.quote[def.costKey] || 0) }))
           .filter(c => c.total > 0)
           .sort((a, b) => a.total - b.total);
-        const def = available[0]?.key || (someUSA ? "aereo_negro" : "aereo_blanco");
+        const def = available[0]?.key || (someUSA ? "maritimo_negro" : "aereo_blanco");
         setSelectedChannel(def);
         setLoading(false);
       } catch (e) {

@@ -80,7 +80,7 @@ const GOLD_LIGHT = "#D4B17A";
 
 function renderEmailHtml(r, periodLabel) {
   const LOGO = `${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
-  const channelLabels = { aereo_blanco: "Aéreo Courier Comercial", aereo_negro: "Aéreo Integral AC", maritimo_blanco: "Marítimo LCL/FCL", maritimo_negro: "Marítimo Integral AC" };
+  const channelLabels = { aereo_blanco: "Aéreo Courier Comercial", maritimo_blanco: "Marítimo LCL/FCL", maritimo_negro: "Marítimo Integral AC" };
   const ganColor = r.ganancia >= 0 ? "#22c55e" : "#ef4444";
   const margenColor = r.margen >= 30 ? "#22c55e" : r.margen >= 15 ? "#fbbf24" : "#ef4444";
 

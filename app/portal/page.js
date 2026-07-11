@@ -84,7 +84,7 @@ const SP={proveedor:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 
 const OS=[{k:"proveedor",l:"Proveedor"},{k:"warehouse",l:"Depósito"},{k:"documentacion",l:"Documentación"},{k:"en_transito",l:"En tránsito"},{k:"arribo",l:"Arribo"},{k:"aduana",l:"Aduana"},{k:"entrega",l:"A retirar"},{k:"cerrada",l:"Cerrada"}];
 const S2S={pendiente:0,en_deposito_origen:1,en_preparacion:2,en_transito:3,arribo_argentina:4,en_aduana:5,entregada:6,operacion_cerrada:7,cancelada:-1};
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},entregada:{l:"LISTA PARA RETIRAR",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
-const CM={aereo_blanco:"Aéreo Courier Comercial",aereo_negro:"Aéreo Integral AC",maritimo_blanco:"Marítimo Carga LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
+const CM={aereo_blanco:"Aéreo Courier Comercial",maritimo_blanco:"Marítimo Carga LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
 // Nav portal cliente — estructura definida por el usuario, sentence case
 const CN_SECTIONS=[
   {section:"Operaciones",items:[
@@ -1026,7 +1026,7 @@ function ProfilePage({client,token}){
       const ops=await dq("operations",{token,filters:`?client_id=eq.${client.id}&select=operation_code,description,channel,origin,status,budget_total,collected_amount,is_collected,created_at,closed_at,delivered_at,eta&order=created_at.desc`});
       const opsArr=Array.isArray(ops)?ops:[];
       if(opsArr.length===0){alert("No tenés importaciones para exportar todavía.");setExporting(false);return;}
-      const chLbl={aereo_blanco:"Aéreo Courier Comercial",aereo_negro:"Aéreo Integral AC",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
+      const chLbl={aereo_blanco:"Aéreo Courier Comercial",maritimo_blanco:"Marítimo LCL/FCL",maritimo_negro:"Marítimo Integral AC"};
       const stLbl={pendiente:"Pendiente",en_deposito_origen:"En depósito",en_preparacion:"En preparación",en_transito:"En tránsito",arribo_argentina:"Arribó",en_aduana:"En aduana",entregada:"Entregada",operacion_cerrada:"Cerrada",cancelada:"Cancelada"};
       if(format==="csv"){
         const headers=["Código","Descripción","Origen","Canal","Estado","Fecha creación","Fecha entrega","Presupuesto USD","Cobrado USD","Cobrada"];
@@ -1114,7 +1114,7 @@ function ProfilePage({client,token}){
     </div>
   </div>;
 }
-const SERVICES_C=[{key:"aereo_a_china",label:"Aéreo Courier Comercial — China",info:"Demora 7-10 días hábiles",unit:"kg"},{key:"aereo_b_usa",label:"Aéreo Integral AC — USA",info:"Demora 48-72 hs hábiles",unit:"kg"},{key:"aereo_b_china",label:"Aéreo Integral AC — China",info:"Demora 10-15 días hábiles",unit:"kg"},{key:"maritimo_a_china",label:"Marítimo Carga LCL/FCL — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo Integral AC",unit:"cbm",info:""}];
+const SERVICES_C=[{key:"aereo_a_china",label:"Aéreo Courier Comercial — China",info:"Demora 7-10 días hábiles",unit:"kg"},{key:"maritimo_a_china",label:"Marítimo Carga LCL/FCL — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo Integral AC",unit:"cbm",info:""}];
 function RatesPage({token,client}){
   const {t:tr}=useT();
   const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [lo,setLo]=useState(true);
@@ -1326,9 +1326,6 @@ function CalculatorPage({token,client}){
   const calculateUSA=()=>{
     const{totWeight,totVol,totCBM,billable}=calcTotals();const channels=[];
     // En USA solo hay marítimo Integral AC, que SIEMPRE permite ropa (no aplica restricción del 01/05)
-    // Aéreo Integral AC (USA) — usa peso BRUTO, no volumétrico
-    if(totWeight>0){const bw=Math.max(totWeight,0.5);const fleteRate=hasPhones?65:getFleteRate("aereo_b_usa",bw);const flete=bw*fleteRate;const sur=getSurcharge("aereo_b_usa",totalFob,bw);
-      channels.push({key:"aereo_b_usa",name:"Aéreo Integral AC",info:"48-72 hs hábiles",flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totWeight.toFixed(1)} kg`});}
     // Marítimo Integral AC — solo si NO es celulares. Si totCBM>0 hay dimensiones cargadas.
     if(!hasPhones&&totCBM>0){const fleteRate=getFleteRate("maritimo_b",totCBM);const flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
       channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totCBM.toFixed(4)} CBM`});}

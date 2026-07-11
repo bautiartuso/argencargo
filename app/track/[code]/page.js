@@ -26,7 +26,6 @@ const STATUS_INFO = {
 
 const CHANNEL_LABELS = {
   aereo_blanco: "Aéreo Courier Comercial",
-  aereo_negro: "Aéreo Integral AC",
   maritimo_blanco: "Marítimo Carga LCL/FCL",
   maritimo_negro: "Marítimo Integral AC",
 };
