@@ -90,6 +90,11 @@ const CM={aereo_blanco:"Aéreo A",maritimo_blanco:"Marítimo A",maritimo_negro:"
 const STATUSES=Object.keys(SM);
 const CHANNELS=Object.keys(CM);
 const SERVICES=[{key:"aereo_a_china",label:"Aéreo A — China",unit:"kg",info:"7-10 días hábiles"},{key:"maritimo_a_china",label:"Marítimo A — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo B — China/USA",unit:"cbm",info:""}];
+// Forma válida de un código NCM: dígitos, con o sin puntos (ej. "8517.62.72" o "84099910").
+const isValidNcmCode=(v)=>!!v&&/^\d{4}(\.?\d{2}){0,2}$/.test(String(v).trim());
+// Un item "necesita clasificación" si no tiene NCM con forma válida (ej. quedó "—" de una
+// compresión de items sin capítulo común — no cuenta como cargado) o le faltan tasas.
+const needsClassification=(it)=>!isValidNcmCode(it.ncm_code)||it.import_duty_rate==null||it.import_duty_rate===""||it.statistics_rate==null||it.statistics_rate===""||it.iva_rate==null||it.iva_rate==="";
 const formatDate=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return new Date(y,m-1,day).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});}return new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"});};
 // Versión corta para tablas: "14/04/26"
 const formatDateShort=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return `${day}/${m}/${y.slice(2)}`;}const dd=new Date(d);return `${String(dd.getDate()).padStart(2,"0")}/${String(dd.getMonth()+1).padStart(2,"0")}/${String(dd.getFullYear()).slice(2)}`;};
@@ -252,7 +257,7 @@ function OperationsList({token,onSelect,onNew}){
   };
   // Peso por estado: mayor valor = más cerca de entrega (aparece arriba)
   const STATUS_WEIGHT={entregada:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
-  useEffect(()=>{(async()=>{const [o,pm,cp,it]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,giro_status,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd"}),dq("operation_items",{token,filters:"?select=operation_id,ncm_code,description"})]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);const nmap={};(Array.isArray(it)?it:[]).forEach(r=>{const desc=(r.description||"").trim();const hasNcm=r.ncm_code&&String(r.ncm_code).trim();if(desc&&!hasNcm)nmap[r.operation_id]=true;});setNcmMissingByOp(nmap);setLo(false);})();},[token]);
+  useEffect(()=>{(async()=>{const [o,pm,cp,it]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,giro_status,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd"}),dq("operation_items",{token,filters:"?select=operation_id,ncm_code,description"})]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);const nmap={};(Array.isArray(it)?it:[]).forEach(r=>{const desc=(r.description||"").trim();if(desc&&!isValidNcmCode(r.ncm_code))nmap[r.operation_id]=true;});setNcmMissingByOp(nmap);setLo(false);})();},[token]);
   // Saldo pendiente del cliente. Considera:
   // - pagos ya recibidos (collected_amount si la op está cobrada, o operation_client_payments si es GI)
   // - crédito aplicado de CC (credit_applied_usd)
@@ -981,10 +986,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   // Clasificar TODOS los items: si no tienen NCM → IA. Si tienen NCM pero no tasas → llenar tasas con IA. Si tienen todo → saltear.
   const [classifyingAll,setClassifyingAll]=useState(false);
   const autoClassifyAll=async()=>{
-    // Items que necesitan algo: o no tienen NCM, o no tienen tasas
-    const pending=items.filter(it=>it.description&&it.description.trim()&&(
-      !it.ncm_code||it.import_duty_rate==null||it.import_duty_rate===""||it.statistics_rate==null||it.statistics_rate===""||it.iva_rate==null||it.iva_rate===""
-    ));
+    const pending=items.filter(it=>it.description&&it.description.trim()&&needsClassification(it));
     if(pending.length===0){flash("Todos los items ya tienen NCM y tasas");return;}
     setClassifyingAll(true);
     flash(`Clasificando ${pending.length} items con IA…`);
@@ -994,8 +996,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
         const d=await r.json();
         if(d?.ncm_code){
-          // Si el item ya tiene NCM cargado a mano (no vacío), respetarlo y solo llenar tasas
-          const finalNcm=it.ncm_code&&it.ncm_code.trim()?it.ncm_code:d.ncm_code;
+          // Si el item ya tiene un NCM válido cargado a mano, respetarlo y solo llenar tasas.
+          // "Válido" = tiene forma de código NCM real (dígitos, con o sin puntos) — un valor
+          // basura como "—" (que puede quedar de una compresión de items sin capítulo común)
+          // NO cuenta como cargado, así se puede re-clasificar y arreglarlo acá.
+          const finalNcm=isValidNcmCode(it.ncm_code)?it.ncm_code:d.ncm_code;
           // ⚠ NO usar `||` con valores numéricos: 0 es falsy y se sobrescribiría con 35.
           // Para NCMs como 8517.62.72 (smartwatch), DIE legítimo = 0%.
           const numOr=(...vals)=>{for(const v of vals){if(v!=null&&v!=="")return Number(v);}return 0;};
@@ -1734,12 +1739,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         <span style={{fontSize:20,fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>USD {Number(op.budget_total||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
       </div>
     </Card>}
-    {tab==="items"&&<Card title="Productos" actions={<div style={{display:"flex",gap:6}}>{!isGI&&items.some(it=>it.description&&it.description.trim()&&(!it.ncm_code||it.import_duty_rate==null||it.import_duty_rate===""||it.statistics_rate==null||it.statistics_rate===""||it.iva_rate==null||it.iva_rate===""))&&<button onClick={autoClassifyAll} disabled={classifyingAll} title="Para cada producto: clasifica NCM si falta, y rellena DIE/TE/IVA con la base arancelaria. Sincroniza presupuesto al final." style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.12)",color:"#a78bfa",cursor:classifyingAll?"wait":"pointer",opacity:classifyingAll?0.6:1}}>{classifyingAll?"⏳ Clasificando…":"✨ Clasificar todos los NCM (IA)"}</button>}<Btn onClick={addItem} small>+ Agregar producto</Btn></div>}>
+    {tab==="items"&&<Card title="Productos" actions={<div style={{display:"flex",gap:6}}>{!isGI&&items.some(it=>it.description&&it.description.trim()&&needsClassification(it))&&<button onClick={autoClassifyAll} disabled={classifyingAll} title="Para cada producto: clasifica NCM si falta, y rellena DIE/TE/IVA con la base arancelaria. Sincroniza presupuesto al final." style={{padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.12)",color:"#a78bfa",cursor:classifyingAll?"wait":"pointer",opacity:classifyingAll?0.6:1}}>{classifyingAll?"⏳ Clasificando…":"✨ Clasificar todos los NCM (IA)"}</button>}<Btn onClick={addItem} small>+ Agregar producto</Btn></div>}>
       {items.map((it,i)=>{const fob=Number(it.unit_price_usd||0)*Number(it.quantity||1);return <div key={it.id} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:"16px 0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:10,gap:10,flexWrap:"wrap"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
             <p style={{fontSize:13,fontWeight:700,color:IC,margin:0}}>Producto {i+1} — FOB: USD {fob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-            {!isGI&&(it.ncm_code?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.25)",fontFamily:"monospace",fontWeight:700}}>NCM {it.ncm_code}</span>:it.description?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.25)",fontWeight:700}}>SIN NCM</span>:null)}
+            {!isGI&&(isValidNcmCode(it.ncm_code)?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.25)",fontFamily:"monospace",fontWeight:700}}>NCM {it.ncm_code}</span>:it.description?<span style={{fontSize:10,padding:"3px 8px",borderRadius:4,background:"rgba(251,191,36,0.12)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.25)",fontWeight:700}}>SIN NCM</span>:null)}
           </div>
           <div style={{display:"flex",gap:6}}>
             <Btn onClick={()=>saveItem(it)} small variant="secondary">Guardar</Btn>
@@ -6888,8 +6893,7 @@ function AgentsPanel({token}){
       const client=Array.isArray(cl)?cl[0]:null;const overrides=Array.isArray(ovr)?ovr:[];
       // Auto-clasificar NCM faltante (IA) y persistir en operation_items.
       for(const it of items){
-        const hasNcm=it.ncm_code&&String(it.ncm_code).trim();
-        if(hasNcm||!it.description?.trim())continue;
+        if(isValidNcmCode(it.ncm_code)||!it.description?.trim())continue;
         try{
           const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
           const d=await r.json();
@@ -7113,7 +7117,7 @@ function AgentsPanel({token}){
       const opIds=opsBlanco.map(o=>o.id);
       const checkItems=await dq("operation_items",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=id,operation_id,description,ncm_code,import_duty_rate,statistics_rate,iva_rate`});
       const codeOf=Object.fromEntries(opsBlanco.map(o=>[o.id,o.operation_code]));
-      const pending=(Array.isArray(checkItems)?checkItems:[]).filter(i=>i.description&&i.description.trim()&&(!i.ncm_code||i.ncm_code.trim()===""||i.import_duty_rate==null||i.import_duty_rate===""||i.statistics_rate==null||i.statistics_rate===""||i.iva_rate==null||i.iva_rate===""));
+      const pending=(Array.isArray(checkItems)?checkItems:[]).filter(i=>i.description&&i.description.trim()&&needsClassification(i));
       const unresolved=[];
       if(pending.length>0){
         flash(`✨ Auto-clasificando ${pending.length} item${pending.length>1?"s":""} con IA…`);

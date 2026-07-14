@@ -133,11 +133,17 @@ export async function POST(req) {
       const totalAmount = groupItems.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price_usd || 0), 0);
       const unit_price_usd = totalQty > 0 ? Number((totalAmount / totalQty).toFixed(4)) : 0;
       if (totalQty <= 0) continue;
+      // hs_code solo se guarda si tiene forma de código NCM real (dígitos, opcionalmente con
+      // puntos). Si el grupo mezcla items sin capítulo NCM común, el modelo a veces devuelve un
+      // placeholder tipo "—" o "N/A" en vez de omitirlo — eso quedaría guardado tal cual y el
+      // admin nunca podría re-clasificar el item (se lo toma como "NCM ya cargado a mano").
+      const hsRaw = typeof g.hs_code === "string" ? g.hs_code.trim() : "";
+      const hs_code = /^\d{4}(\.?\d{2}){0,2}$/.test(hsRaw) ? hsRaw : null;
       groups.push({
         description: g.description.trim(),
         quantity: totalQty,
         unit_price_usd,
-        hs_code: typeof g.hs_code === "string" && g.hs_code.trim() ? g.hs_code.trim() : null,
+        hs_code,
         source_indices: validIndices,
       });
     }
