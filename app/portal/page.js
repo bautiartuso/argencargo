@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, WhatsAppFab } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { printQuotePdf, printClosingPdf } from "../../lib/pdf-templates";
+import { applyAntidumpingFloor } from "../../lib/calc";
 import HolidayBanner from "../components/HolidayBanner";
 import { useT, LANGS } from "../../lib/i18n-portal";
 import SupportPage from "./components/SupportPage";
@@ -1405,10 +1406,21 @@ function CalculatorPage({token,client}){
     const certAerReal=config.cert_flete_aereo_real||2.5;const certAerFict=config.cert_flete_aereo_ficticio||3.5;
     const certMarFict=config.cert_flete_maritimo_ficticio||100;
 
-    // Per-item tax calculation helper
-    const calcItemTaxes=(p,certFleteTotal,isMaritimo,totalCif)=>{
-      const itemFob=toN(p.unit_price)*(toN(p.quantity)||1);const pct=totalFob>0?itemFob/totalFob:1;
-      const itemCertFl=certFleteTotal*pct;const itemSeg=(itemFob+itemCertFl)*0.01;const itemCif=itemFob+itemCertFl+itemSeg;
+    // Antidumping calzado (NCM cap. 64): la base imponible para DIE/TE/IVA usa el piso
+    // aunque el precio real cargado sea menor — el FOB real ("fob" acá abajo) no se toca.
+    const floorTaxUnitPrice=(prods)=>{
+      const inputs=prods.map(p=>({unit_price:toN(p.unit_price),quantity:toN(p.quantity)||1,ncm_code:p.ncm?.ncm_code}));
+      const floored=applyAntidumpingFloor(inputs,config);
+      return prods.map((_,i)=>floored[i].unit_price);
+    };
+    // Per-item tax calculation helper. taxUnitPrice (si viene) reemplaza p.unit_price SOLO
+    // para calcular la base imponible — el fob devuelto sigue siendo el real.
+    const calcItemTaxes=(p,certFleteTotal,isMaritimo,totalCif,taxUnitPrice)=>{
+      const qty=toN(p.quantity)||1;
+      const itemFob=toN(p.unit_price)*qty;
+      const itemFobTax=(taxUnitPrice!=null?taxUnitPrice:toN(p.unit_price))*qty;
+      const pct=totalFob>0?itemFob/totalFob:1;
+      const itemCertFl=certFleteTotal*pct;const itemSeg=(itemFobTax+itemCertFl)*0.01;const itemCif=itemFobTax+itemCertFl+itemSeg;
       const dr=Number(p.ncm?.import_duty_rate||0)/100;const te=Number(p.ncm?.statistics_rate||0)/100;const ivaR=Number(p.ncm?.iva_rate??21)/100;
       const derechos=itemCif*dr;const tasa_e=itemCif*te;const baseImp=itemCif+derechos+tasa_e;const iva=baseImp*ivaR;
       let totalImp=derechos+tasa_e+iva;let extras={};
@@ -1423,8 +1435,12 @@ function CalculatorPage({token,client}){
     const overweightPkg=pkgs.find(pk=>Number(pk.weight||0)>45);
     if(!hasBrand&&!overweightPkg&&facturable>0){const facturableBill=Math.max(facturable,MIN_KG_AEREO_CHINA);const fleteRate=getFleteRate("aereo_a_china",facturableBill);const flete=facturableBill*fleteRate;
       const certFlete=isRI?(totWeight*certAerReal):(facturableBill*certAerFict);
-      const seguro=(totalFob+certFlete)*0.01;const totalCif=totalFob+certFlete+seguro;const battExtra=hasBattery?facturableBill*2:0;
-      const items=products.filter(p=>toN(p.unit_price)>0).map(p=>calcItemTaxes(p,certFlete,false,totalCif));
+      const seguro=(totalFob+certFlete)*0.01;const battExtra=hasBattery?facturableBill*2:0;
+      const validProds=products.filter(p=>toN(p.unit_price)>0);
+      const taxUnitPrices=floorTaxUnitPrice(validProds);
+      const taxFob=validProds.reduce((s,p,i)=>s+taxUnitPrices[i]*(toN(p.quantity)||1),0);
+      const totalCif=taxFob+certFlete+(taxFob+certFlete)*0.01;
+      const items=validProds.map((p,i)=>calcItemTaxes(p,certFlete,false,totalCif,taxUnitPrices[i]));
       const totalImp=items.reduce((s,it)=>s+it.totalImp,0);const totalSvc=flete+seguro+battExtra;
       channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles",isBlanco:true,
         flete,seguro,battExtra,totalImp,totalSvc,total:totalImp+totalSvc,items,
@@ -1447,8 +1463,9 @@ function CalculatorPage({token,client}){
     if(!hasBrand&&!blockMaritimoLclRestricted&&!blockMaritimoLclLowFob&&!blockMaritimoLclMinCbm&&totCBM>0){const cbmFact=Math.max(totCBM,0.5);const fleteRate=getFleteRate("maritimo_a_china",cbmFact);const flete=cbmFact*fleteRate;
       const certFlete=totCBM*certMarFict;
       const seguro=(totalFob+certFlete)*0.01;
-      const totalCifMar=totalFob+certFlete+seguro;
-      const items=products.filter(p=>toN(p.unit_price)>0).map(p=>calcItemTaxes(p,certFlete,true,totalCifMar));
+      const validProdsMar=products.filter(p=>toN(p.unit_price)>0);
+      const taxUnitPricesMar=floorTaxUnitPrice(validProdsMar);
+      const items=validProdsMar.map((p,i)=>calcItemTaxes(p,certFlete,true,0,taxUnitPricesMar[i]));
       const totalImp=items.reduce((s,it)=>s+it.totalImp,0);const totalSvc=flete+seguro;
       channels.push({key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"",isBlanco:true,isMar:true,
         flete,seguro,totalImp,totalSvc,total:totalImp+totalSvc,items,cbm:totCBM,unit:`${totCBM.toFixed(4)} CBM`});}

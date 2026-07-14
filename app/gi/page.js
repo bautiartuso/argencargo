@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { calcOpBudget } from "../../lib/calc";
+import { calcOpBudget, applyAntidumpingFloor } from "../../lib/calc";
 import { printGiQuotePdf } from "../../lib/pdf-templates";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
@@ -1036,6 +1036,7 @@ function CotizadorWizard({token,requestId,profileId,onBack}){
       import_duty_rate:p.import_duty_rate?Number(p.import_duty_rate):0,
       statistics_rate:p.statistics_rate?Number(p.statistics_rate):0,
       iva_rate:p.iva_rate?Number(p.iva_rate):21,
+      ncm_code:p.ncm_code||null,
     }));
     // Convertir packing por producto a array global (multiplicando cada uno por su pkg_count y quantity)
     const pkgs=products.flatMap(p=>{
@@ -1250,6 +1251,12 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
       totGW+=gw*q;
       totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;
     });
+    // Antidumping calzado: solo afecta la base imponible (die/te/iva/desemb) — el fob real
+    // devuelto en el breakdown no cambia.
+    const floorInputs=products.map(x=>({unit_price:Number(x.unit_cost_usd||0),quantity:Number(x.quantity||0),ncm_code:x.ncm_code}));
+    const floored=applyAntidumpingFloor(floorInputs,config);
+    const totalFobAllTax=floored.reduce((s,f)=>s+f.unit_price*f.quantity,0);
+    const itemFobTax=floored[productIdx].unit_price*Number(p.quantity||0);
     const totalFobAll=products.reduce((s,x)=>s+Number(x.unit_cost_usd||0)*Number(x.quantity||0),0);
     const isRI=client?.tax_condition==="responsable_inscripto";
     visibleChannels.forEach(ch=>{
@@ -1259,11 +1266,11 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
       const isMaritimo=ch.key?.includes("maritimo");
       const certRate=isAereo?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
       const certFlAmt=isAereo?(isRI?totGW*certRate:pf*certRate):totCBM*certRate;
-      const segTotal=(totalFobAll+certFlAmt)*0.01;
-      const cifTotal=totalFobAll+certFlAmt+segTotal;
+      const segTotal=(totalFobAllTax+certFlAmt)*0.01;
+      const cifTotal=totalFobAllTax+certFlAmt+segTotal;
       const iCert=certFlAmt*pct;
-      const iSeg=(itemFob+iCert)*0.01;
-      const iCif=itemFob+iCert+iSeg;
+      const iSeg=(itemFobTax+iCert)*0.01;
+      const iCif=itemFobTax+iCert+iSeg;
       const dr=p.import_duty_rate===""||p.import_duty_rate==null?0:Number(p.import_duty_rate)/100;
       const te=p.statistics_rate===""||p.statistics_rate==null?0:Number(p.statistics_rate)/100;
       const ivaR=p.iva_rate===""||p.iva_rate==null?0.21:Number(p.iva_rate)/100;

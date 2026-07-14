@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
-import { calcOpBudget } from "../../lib/calc";
+import { calcOpBudget, applyAntidumpingFloor } from "../../lib/calc";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
@@ -1529,7 +1529,13 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       // Impuestos per-item sobre CIF proporcional
       const getDesembolso=(c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;};
       totalTax=0;
-      if(isBlanco){items.forEach(it=>{const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const pct=totalFob>0?itemFob/totalFob:1;
+      if(isBlanco){
+        // Antidumping calzado: solo afecta la base imponible (DIE/TE/IVA/desaduanaje) — el
+        // FOB real / seguro facturado no cambian.
+        const taxItems=applyAntidumpingFloor(items,config);
+        const taxFobLocal=taxItems!==items?taxItems.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0):totalFob;
+        const taxCifLocal=taxFobLocal!==totalFob?taxFobLocal+certFlAmt+(taxFobLocal+certFlAmt)*0.01:cif;
+        taxItems.forEach(it=>{const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const pct=taxFobLocal>0?itemFob/taxFobLocal:1;
         const iCert=certFlAmt*pct;const iSeg=(itemFob+iCert)*0.01;const iCif=itemFob+iCert+iSeg;
         // OJO: chequear null/"" — un 0 explícito es válido (admin lo seteó). El ||N trataba 0 como falsy.
         const dr=(it.import_duty_rate==null||it.import_duty_rate==="")?0:Number(it.import_duty_rate)/100;
@@ -1543,8 +1549,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           const iibbR=(it.iibb_rate==null||it.iibb_rate==="")?0.05:Number(it.iibb_rate)/100;
           t+=bi*ivaAdicR+bi*iiggR+bi*iibbR;
         }
-        else{const desemb=getDesembolso(cif)*pct;t+=desemb+desemb*0.21;}
-        totalTax+=t;});}
+        else{const desemb=getDesembolso(taxCifLocal)*pct;t+=desemb+desemb*0.21;}
+        totalTax+=t;});
+      }
       const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
       // Recargo por valor mercadería (solo canal B)
       if(!isBlanco){
@@ -4499,6 +4506,10 @@ function TariffsManager({token}){
   useEffect(()=>{if(!certLoaded){(async()=>{const r=await dq("calc_config",{token,filters:"?key=like.cert_flete_*&select=*"});setCertConfig(Array.isArray(r)?r:[]);setCertLoaded(true);})();}},[token,certLoaded]);
   const saveCertConfig=async(key,val)=>{await dq("calc_config",{method:"PATCH",token,filters:`?key=eq.${key}`,body:{value:Number(val)}});flash("Guardado");};
   const getCert=(key)=>certConfig.find(c=>c.key===key);
+  // Antidumping calzado (NCM cap. 64): piso de valor imponible por par para DIE/TE/IVA.
+  const [adConfig,setAdConfig]=useState(null);const [adLoaded,setAdLoaded]=useState(false);
+  useEffect(()=>{if(!adLoaded){(async()=>{const r=await dq("calc_config",{token,filters:"?key=eq.antidumping_calzado_usd_par&select=*"});setAdConfig(Array.isArray(r)&&r[0]?r[0]:null);setAdLoaded(true);})();}},[token,adLoaded]);
+  const saveAdConfig=async(val)=>{await dq("calc_config",{method:"PATCH",token,filters:"?key=eq.antidumping_calzado_usd_par",body:{value:Number(val)}});flash("Guardado");};
 
   if(!selSvc)return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Tarifas</h2>{msg&&<span style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{msg}</span>}</div>
@@ -4510,6 +4521,8 @@ function TariffsManager({token}){
         {k:"cert_flete_maritimo_real",l:"Marítimo REAL (USD/CBM)"},
         {k:"cert_flete_maritimo_ficticio",l:"Marítimo FICTICIO (USD/CBM)"}
       ].map(f=>{const c=getCert(f.k);return <div key={f.k} style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4}}>{f.l}</label><input type="number" value={c?.value||""} onChange={e=>{setCertConfig(p=>p.map(x=>x.key===f.k?{...x,value:e.target.value}:x));}} onBlur={e=>saveCertConfig(f.k,e.target.value)} step="0.1" style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div>;})}</div></Card>}
+    {adLoaded&&<Card title="Antidumping"><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"-8px 0 12px"}}>Valor imponible mínimo por par de calzado (NCM cap. 64) para DIE/tasa estadística/IVA — se aplica aunque el precio real pagado sea menor. El FOB real y lo que abona el cliente no se tocan.</p>
+      <div style={{maxWidth:260}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4}}>Piso calzado (USD/par)</label><input type="number" value={adConfig?.value??""} onChange={e=>setAdConfig(p=>({...p,value:e.target.value}))} onBlur={e=>saveAdConfig(e.target.value)} step="0.01" style={{width:"100%",padding:"8px 10px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></div></Card>}
     {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:SERVICES.map(svc=>{const svcRates=tariffs.filter(t=>t.service_key===svc.key&&t.type==="rate"&&tNowOk(t));if(!svcRates.length)return null;return <div key={svc.key} onClick={()=>setSelSvc(svc.key)} style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"16px 20px",marginBottom:8,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.028)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.028)";}}><div><p style={{fontSize:15,fontWeight:600,color:"#fff",margin:0}}>{svc.label}</p>{svc.info&&<p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{svc.info}</p>}</div><div style={{display:"flex",alignItems:"center",gap:12}}>{svcRates.map(r=><span key={r.id} style={{fontSize:11,color:isCost?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.5)"}}>{r.label}: ${isCost?Number(r.cost||0):Number(r.rate)}</span>)}<span style={{color:IC,fontSize:12,fontWeight:600}}>Editar →</span></div></div>;})}</div>;
   const svcInfo=SERVICES.find(s=>s.key===selSvc);
   return <div>
@@ -6898,16 +6911,21 @@ function AgentsPanel({token}){
       const seguroB=(totFob+certFl)*0.01;const cif=totFob+certFl+seguroB;
       const tabla=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];
       const getDes=(c)=>{for(const[max,amt]of tabla)if(c<max)return amt;return 120;};
+      // Antidumping calzado: solo afecta la BASE IMPONIBLE (derechos/tasa/IVA) — el FOB real
+      // (totFob, seguro, "Valor FOB" mostrado) no cambia.
+      const taxItems=applyAntidumpingFloor(items,config);
+      const taxFob=taxItems!==items?taxItems.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0):totFob;
       let derechos=0,tasaE=0,iva=0;
-      items.forEach(it=>{
-        const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const pct=totFob>0?itemFob/totFob:1;
+      taxItems.forEach(it=>{
+        const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const pct=taxFob>0?itemFob/taxFob:1;
         const iCert=certFl*pct;const iSeg=(itemFob+iCert)*0.01;const iCif=itemFob+iCert+iSeg;
         const dr=(it.import_duty_rate==null||it.import_duty_rate==="")?0:Number(it.import_duty_rate)/100;
         const te=(it.statistics_rate==null||it.statistics_rate==="")?0:Number(it.statistics_rate)/100;
         const ivaR=(it.iva_rate==null||it.iva_rate==="")?0.21:Number(it.iva_rate)/100;
         const die=iCif*dr,tasa=iCif*te,bi=iCif+die+tasa;derechos+=die;tasaE+=tasa;iva+=bi*ivaR;
       });
-      const desembolso=getDes(cif);const ivaDesembolso=desembolso*0.21;
+      const taxCif=taxFob!==totFob?taxFob+certFl+(taxFob+certFl)*0.01:cif;
+      const desembolso=getDes(taxCif);const ivaDesembolso=desembolso*0.21;
       printAereoAQuotePdf({
         clientName:client?`${client.first_name||""} ${client.last_name||""}`.trim():(o.clients?`${o.clients.first_name||""}`.trim():""),
         origin:o.origin||"China",fleteAmt:b.fleteAmt||Math.max(pf,aereoMinKg),
@@ -10013,7 +10031,7 @@ function QuotesList({token}){
       const ck=channelKey||selQuote.channel_key;
       const quoteClient=selQuote.client_id?clientsMap[selQuote.client_id]:null;
       const opLike={channel:CHANNEL_MAP[ck]||"aereo_blanco",origin:selQuote.origin,shipping_to_door:selQuote.delivery&&selQuote.delivery!=="oficina",shipping_cost:0,has_battery:false};
-      const items=editProds.map(p=>({unit_price_usd:p.unit_price,quantity:p.quantity,import_duty_rate:p.ncm?.import_duty_rate||0,statistics_rate:p.ncm?.statistics_rate||0,iva_rate:p.ncm?.iva_rate??21,iva_additional_rate:20,iigg_rate:6,iibb_rate:5}));
+      const items=editProds.map(p=>({unit_price_usd:p.unit_price,quantity:p.quantity,import_duty_rate:p.ncm?.import_duty_rate||0,statistics_rate:p.ncm?.statistics_rate||0,iva_rate:p.ncm?.iva_rate??21,iva_additional_rate:20,iigg_rate:6,iibb_rate:5,ncm_code:p.ncm?.ncm_code||null}));
       const pks=editPkgs.map(p=>({quantity:Number(p.qty||1),gross_weight_kg:Number(p.weight||0),length_cm:Number(p.length||0),width_cm:Number(p.width||0),height_cm:Number(p.height||0)}));
       const shipC=calcShippingCost(pks);
       opLike.shipping_cost=shipC;
@@ -10328,10 +10346,15 @@ function AdminCalculator({token}){
     const tabla=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];
     const getDes=(c)=>{for(const[max,amt]of tabla)if(c<max)return amt;return 120;};
     let derechos=0,tasaE=0,iva=0,ivaAdic=0,iigg=0,iibb=0;
+    // Antidumping calzado: solo afecta la base imponible (DIE/TE/IVA/desaduanaje) — el
+    // FOB real / seguro mostrado no cambian.
+    const taxItems=isBlanco?applyAntidumpingFloor(items,config):items;
+    const taxFob=taxItems!==items?taxItems.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0):totFob;
+    const taxCif=taxFob!==totFob?taxFob+certFl+(taxFob+certFl)*0.01:cif;
     if(isBlanco){
-      items.forEach(it=>{
+      taxItems.forEach(it=>{
         const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);
-        const pct=totFob>0?itemFob/totFob:1;
+        const pct=taxFob>0?itemFob/taxFob:1;
         const iCert=certFl*pct;
         const iSeg=(itemFob+iCert)*0.01;
         const iCif=itemFob+iCert+iSeg;
@@ -10350,7 +10373,7 @@ function AdminCalculator({token}){
         }
       });
     }
-    const desembolsoAuto=isBlanco&&isAereo?getDes(cif):0;
+    const desembolsoAuto=isBlanco&&isAereo?getDes(taxCif):0;
     return {certFl,seguro,cif,derechos,tasaE,iva,ivaAdic,iigg,iibb,desembolsoAuto,isBlanco,isAereo,isMaritimo};
   };
   const CHANNEL_MAP={aereo_a_china:"aereo_blanco",maritimo_a_china:"maritimo_blanco",maritimo_b:"maritimo_negro"};
@@ -10368,7 +10391,7 @@ function AdminCalculator({token}){
     }catch(e){setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false}:x));}
   };
   const calculate=()=>{
-    const items=products.filter(p=>toN(p.unit_price)>0).map(p=>({unit_price_usd:toN(p.unit_price),quantity:Number(p.quantity||1),import_duty_rate:p.ncm?.import_duty_rate||0,statistics_rate:p.ncm?.statistics_rate||0,iva_rate:p.ncm?.iva_rate??21,iva_additional_rate:20,iigg_rate:6,iibb_rate:5}));
+    const items=products.filter(p=>toN(p.unit_price)>0).map(p=>({unit_price_usd:toN(p.unit_price),quantity:Number(p.quantity||1),import_duty_rate:p.ncm?.import_duty_rate||0,statistics_rate:p.ncm?.statistics_rate||0,iva_rate:p.ncm?.iva_rate??21,iva_additional_rate:20,iigg_rate:6,iibb_rate:5,ncm_code:p.ncm?.ncm_code||null}));
     const pks=pkgs.map(p=>({quantity:Number(p.qty||1),gross_weight_kg:toN(p.weight),length_cm:toN(p.length),width_cm:toN(p.width),height_cm:toN(p.height)}));
     const client={tax_condition:taxCond};
     const all=channelsForOrigin(origin).map(ch=>{
