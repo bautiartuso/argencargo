@@ -66,11 +66,40 @@ export async function POST(req) {
     const totalFob = items.reduce((s, it) => s + Number(it.quantity || 0) * Number(it.unit_price_usd || 0), 0);
     const userMsg = `Comprimí estos ${items.length} items a MÁXIMO ${maxItems} grupos. Total FOB original: USD ${totalFob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (debe coincidir con la suma del output).\n\n${itemsList}`;
 
-    const text = await callClaudeText({
-      system: SYSTEM_PROMPT,
-      user: userMsg,
-      max_tokens: 4000,
-    });
+    const JSON_SCHEMA = {
+      type: "object",
+      properties: {
+        groups: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              description: { type: "string" },
+              hs_code: { type: "string" },
+              source_indices: { type: "array", items: { type: "integer" } },
+            },
+            required: ["description", "source_indices"],
+          },
+        },
+      },
+      required: ["groups"],
+    };
+
+    // Forzamos structured output (json_schema) en vez de confiar en "devolvé SOLO JSON" por prompt —
+    // así el modelo no puede devolver texto/markdown alrededor ni JSON malformado, y se elimina la
+    // clase de error "invalid JSON from model" que antes solo se podía resolver reintentando a mano.
+    let text;
+    try {
+      text = await callClaudeText({
+        system: SYSTEM_PROMPT,
+        user: userMsg,
+        max_tokens: 4000,
+        json_schema: JSON_SCHEMA,
+      });
+    } catch (e) {
+      // Si el fallback a OpenAI entra en juego, json_schema no aplica ahí — reintentamos una vez sin schema.
+      text = await callClaudeText({ system: SYSTEM_PROMPT, user: userMsg, max_tokens: 4000 });
+    }
 
     let parsed;
     try {
