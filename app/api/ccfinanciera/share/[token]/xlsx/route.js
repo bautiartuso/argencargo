@@ -4,12 +4,17 @@
 
 import * as XLSX from "xlsx";
 
+// Sin esto, Next.js cachea las respuestas de fetch() del route handler y el Excel quedaría
+// pegado a un snapshot viejo en vez de traer los movimientos actuales.
+export const dynamic = "force-dynamic";
+
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 
 async function sb(path, init = {}) {
   const r = await fetch(`${SB_URL}${path}`, {
     ...init,
+    cache: "no-store",
     headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, ...(init.headers || {}) },
   });
   return r.json();

@@ -2,12 +2,17 @@
 // Endpoint público read-only para que SOLFIN vea la CC sin login.
 // Valida el token activo y devuelve los movimientos.
 
+// Sin esto, Next.js cachea las respuestas de fetch() del route handler (Data Cache) y esta
+// página pública queda pegada a un snapshot viejo en vez de leer los movimientos actuales.
+export const dynamic = "force-dynamic";
+
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 
 async function sb(path, init = {}) {
   const r = await fetch(`${SB_URL}${path}`, {
     ...init,
+    cache: "no-store",
     headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, ...(init.headers || {}) },
   });
   return r.json();
@@ -31,7 +36,7 @@ export async function GET(_req, { params }) {
       ok: true,
       share: { label: tokenRow[0].label, created_at: tokenRow[0].created_at },
       movements: Array.isArray(movs) ? movs : [],
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return Response.json({ ok: false, error: e.message }, { status: 500 });
   }
