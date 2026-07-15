@@ -89,7 +89,16 @@ export default function SharePage({ params }) {
               </p>
             </div>
           </div>
-          <span style={{ fontSize: 10, fontWeight: 700, padding: "5px 12px", borderRadius: 999, background: "rgba(96,165,250,0.12)", color: "#60a5fa", border: "1px solid rgba(96,165,250,0.3)", letterSpacing: "0.06em", textTransform: "uppercase" }}>👁 Vista lectura</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <a
+              href={`/api/ccfinanciera/share/${encodeURIComponent(params.token)}/xlsx`}
+              download
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, padding: "8px 14px", borderRadius: 8, background: "linear-gradient(135deg, #B8956A, #E8D098)", color: T.bg, textDecoration: "none", letterSpacing: "0.02em" }}
+            >
+              📥 Descargar Excel
+            </a>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "5px 12px", borderRadius: 999, background: "rgba(96,165,250,0.12)", color: "#60a5fa", border: "1px solid rgba(96,165,250,0.3)", letterSpacing: "0.06em", textTransform: "uppercase" }}>👁 Vista lectura</span>
+          </div>
         </div>
       </header>
       <main style={{ maxWidth: 1200, margin: "0 auto", padding: isMobile ? "16px 14px 40px" : "20px 22px 40px" }}>
