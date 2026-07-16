@@ -926,7 +926,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         dq("tariffs",{token,filters:"?select=*"}),
         op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([]),
         op.client_id?dq("clients",{token,filters:`?id=eq.${op.client_id}&select=tax_condition`}):Promise.resolve([]),
-        dq("operations",{token,filters:`?id=eq.${op.id}&select=channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status,despacho_die_usd,despacho_estadistica_usd,despacho_desaduanaje_usd,despacho_iva_usd`}),
+        dq("operations",{token,filters:`?id=eq.${op.id}&select=channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status,despacho_die_usd,despacho_estadistica_usd,despacho_desaduanaje_usd,despacho_iva_usd,ri_argencargo_collects_taxes`}),
         dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=quantity,unit_price_declared_usd`})
       ]);
       // Declarados FRESCOS (no el state declaredItems, que puede estar vacío por closure stale en el sync de montaje).
@@ -1569,8 +1569,10 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         }
       }
       const deliveryCostInline=Number(op.delivery_cost_usd||0);
-      totalAbonar=isBlanco?(totalTax+flete+seguro+shipCost+deliveryCostInline):Math.round(flete+surcharge+shipCost+deliveryCostInline);
+      const billedTaxInline=(!isRI||op.ri_argencargo_collects_taxes)?totalTax:0;
+      totalAbonar=isBlanco?(billedTaxInline+flete+seguro+shipCost+deliveryCostInline):Math.round(flete+surcharge+shipCost+deliveryCostInline);
       }
+      const taxesBilledByArgencargo=!isRI||!!op.ri_argencargo_collects_taxes;
       const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
       const rw=(l,v)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>USD {v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
       const isManual=op.budget_mode==="manual";
@@ -1647,6 +1649,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           <button onClick={()=>setBudgetMode("manual")} disabled={saving} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",background:isManual?"linear-gradient(135deg,#fb923c,#f97316)":"transparent",color:isManual?"#0A1628":"rgba(255,255,255,0.6)",cursor:saving?"wait":"pointer",letterSpacing:"0.04em"}}>✎ MANUAL</button>
         </div>
       }>
+        {isRI&&isBlanco&&<div style={{marginBottom:14,padding:"10px 14px",background:taxesBilledByArgencargo?"rgba(34,197,94,0.06)":"rgba(96,165,250,0.05)",border:`1px solid ${taxesBilledByArgencargo?"rgba(34,197,94,0.25)":"rgba(96,165,250,0.15)"}`,borderRadius:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:saving?"wait":"pointer",flex:1}}>
+            <input type="checkbox" checked={!!op.ri_argencargo_collects_taxes} disabled={saving} onChange={async e=>{const v=e.target.checked;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_argencargo_collects_taxes:v}});setOp(p=>({...p,ri_argencargo_collects_taxes:v}));await autoSyncBudget(true);flash(v?"Ahora Argencargo cobra los impuestos de esta op":"El RI vuelve a pagar los impuestos directo al despachante");setSaving(false);}} style={{width:16,height:16,cursor:"pointer"}}/>
+            <span style={{fontSize:12.5,color:"rgba(255,255,255,0.75)"}}>Argencargo cobra los impuestos de esta op <span style={{color:"rgba(255,255,255,0.45)"}}>(excepción — por defecto el RI los abona directo al despachante/transportista)</span></span>
+          </label>
+        </div>}
         {/* Canal B: input para valor de mercadería (base del recargo por valor) */}
         {!isBlanco&&<div style={{marginBottom:14,padding:"10px 14px",background:"rgba(96,165,250,0.05)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10,display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:"0.06em",whiteSpace:"nowrap"}}>Valor mercadería (USD)</span>
@@ -1672,7 +1680,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           </>}
         </>:<>
           {isBlanco?<>
-            {rw("Total Impuestos",totalTax)}
+            {rw(taxesBilledByArgencargo?"Total Impuestos":"Impuestos (informativo, no cobrado — RI paga directo)",totalTax)}
             {rw("Flete internacional",flete)}
             {rw("Seguro de carga",seguro)}
           </>:<>
@@ -1680,6 +1688,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             {surcharge>0&&rw(`Recargo por valor (${surchargePct}%)`,surcharge)}
           </>}
         </>}
+        {isBlanco&&!isManual&&!taxesBilledByArgencargo&&totalTax>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"2px 0 8px",fontStyle:"italic"}}>El RI abona estos impuestos directo al despachante/transportista — no están incluidos en el total a abonar a Argencargo.</p>}
         {shipCost>0&&rw("Envío a domicilio",shipCost)}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}>
           <span style={{fontSize:16,fontWeight:700,color:"#fff"}}>TOTAL A ABONAR</span>
@@ -6937,6 +6946,7 @@ function AgentsPanel({token}){
         flete:b.flete,battExtra:b.battExtra||0,surcharge:b.surcharge||0,seguro:b.seguro,
         derechos,tasaE,iva,desembolso,ivaDesembolso,
         totalFob:totFob,totalImport:b.totalAbonar,
+        taxesBilledByArgencargo:b.taxesBilledByArgencargo,
       });
     }catch(e){console.error("export presupuesto",e);alertDialog("No se pudo generar el presupuesto: "+(e.message||e));}
     setPdfBusy(null);
