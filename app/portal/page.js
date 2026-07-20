@@ -1501,7 +1501,12 @@ function CalculatorPage({token,client}){
     // Dedup: si ya hay un save en vuelo para este canal, ignorar
     if(saveInFlightRef.current[ch.key])return;
     const{totWeight,totCBM}=calcTotals();
-    const body={client_id:client?.id||null,client_name:client?`${client.first_name} ${client.last_name}`:"Anónimo",client_code:client?.client_code||"—",origin,channel_key:ch.key,channel_name:ch.name,products:products,packages:pkgs,delivery,total_fob:totalFob,total_weight:totWeight,total_cbm:totCBM,total_cost:ch.total+(getShipCost(delivery,calcTotals().totWeight))};
+    // Normalizar unit_price/quantity a número real antes de guardar — el input tolera coma
+    // decimal ("2,9") para que el cliente escriba cómodo, pero si se guarda el string tal cual,
+    // cualquier lector que haga Number(p.unit_price) directo (ej. el visor de cotizaciones del
+    // admin) da NaN en vez de 2.9.
+    const productsToSave=products.map(p=>({...p,unit_price:toN(p.unit_price),quantity:toN(p.quantity)||1}));
+    const body={client_id:client?.id||null,client_name:client?`${client.first_name} ${client.last_name}`:"Anónimo",client_code:client?.client_code||"—",origin,channel_key:ch.key,channel_name:ch.name,products:productsToSave,packages:pkgs,delivery,total_fob:totalFob,total_weight:totWeight,total_cbm:totCBM,total_cost:ch.total+(getShipCost(delivery,calcTotals().totWeight))};
     saveInFlightRef.current[ch.key]=true;
     try{
       const existingId=savedQuoteIdsRef.current[ch.key];
