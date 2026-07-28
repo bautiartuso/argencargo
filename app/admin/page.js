@@ -298,17 +298,17 @@ function OperationsList({token,onSelect,onNew}){
       const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
       const cash=isArs&&rate>0?raw/rate:raw;
       // Sumar solo crédito de CC aplicado (es ingreso real ya recibido en su momento). El descuento NO suma — es plata que no entró.
-      // Capear cash al budget_total: si pagó de más, el excedente va a CC, no es ingreso de la op.
-      // EXCEPCIÓN: si hay extra_charge_usd (cargo adicional explícito, no un error de pago), ese excedente
-      // SÍ es ingreso real de esta operación y no se debe capear — si no, "Ganancia por canal"/"Top clientes"
-      // quedan por debajo de lo que el panel de Rentabilidad (que sí lo suma) muestra para la misma op.
-      const bt=Number(o.budget_total||0);
+      // Capear el cash al total que ESTA op tenía para cobrar: presupuesto + deuda anterior aplicada.
+      // Incluir debt_applied_usd es clave: cuando el cliente paga acá la deuda de ops anteriores, esa
+      // plata es ingreso real de esta op. Capeando solo al presupuesto, el recupero se perdía — las ops
+      // viejas quedaban a pérdida y acá tampoco aparecía. Rentabilidad ya usaba este mismo criterio.
+      // EXCEPCIÓN: con extra_charge_usd (cargo adicional explícito) no se capea nada.
+      const bt=Number(o.budget_total||0)+Number(o.debt_applied_usd||0);
       const extraCharge=Number(o.extra_charge_usd||0);
       const cashForOp=extraCharge>0.01?cash:(bt>0?Math.min(cash,bt):cash);
       ing=cashForOp+Number(o.credit_applied_usd||0);
-      // Fallback: la op esta marcada cobrada pero nunca se registro por cuanto. Asumimos el
-      // presupuesto para no mostrar ganancia 0 — ganAsumida() lo marca en la UI.
-      if(ing<=0)ing=Number(o.budget_total||0);
+      // Sin monto, sin crédito y sin cobros = no entró plata. El ingreso queda en 0 y la op cae a
+      // pérdida por sus costos. Antes caía al presupuesto y mostraba una ganancia que no existió.
     } else {
       ing=Number(o.budget_total||0);
     }
@@ -472,7 +472,7 @@ function OperationsList({token,onSelect,onNew}){
             ?<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,fontWeight:700,padding:"4px 10px",borderRadius:999,color:"#fca5a5",background:"rgba(239,68,68,0.10)",border:"1px solid rgba(239,68,68,0.35)",letterSpacing:"0.06em",textTransform:"uppercase"}}><span style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:"#f87171"}}/>Pérdida</span>
             :<span style={{color:"rgba(255,255,255,0.5)"}}>{formatDateShort(op.collection_date||op.closed_at)}</span>}</td>:<><td style={{padding:"14px 16px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{formatDateShort(op.eta)}</td><td style={{padding:"14px 24px 14px 16px",whiteSpace:"nowrap",fontSize:12.5,fontWeight:700,fontVariantNumeric:"tabular-nums",textAlign:"right",color:saldo===null?"rgba(255,255,255,0.35)":saldo===0?"#22c55e":GOLD_LIGHT}}>{saldo===null?<span style={{fontWeight:500}}>—</span>:saldo===0?"Cobrada":`USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</td></>}
           {showGanancia&&<td style={{padding:"14px 24px 14px 16px",fontWeight:700,textAlign:"right",color:gan>0?"#22c55e":gan<0?"#ff6b6b":"rgba(255,255,255,0.4)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{(()=>{
-            const realIng=op.is_collected?Number(op.collected_amount||op.budget_total||0):Number(op.budget_total||0);
+            const realIng=op.is_collected?Number(op.collected_amount||0):Number(op.budget_total||0);
             const hasData=realIng>0||Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)>0;
             if(!hasData)return "—";
             const sign=gan<0?"-":"";
@@ -2780,7 +2780,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       // Es solo informativo — NO se suma al cobro porque no es plata que entró.
       const discountApplied=Number(op.discount_applied_usd||0);
       // Cobro real = cash recibido + crédito de CC. Si nunca se cargó cobro, fallback al presupuesto para no romper la card.
-      const cobro=(cobroUsd+creditApplied)||presupuesto;
+      // Si la op esta cobrada, el ingreso es el real (cash + credito CC), sin caer al presupuesto:
+      // marcada cobrada sin monto = no entro plata. El fallback queda como proyeccion en ops abiertas.
+      const cobro=op.is_collected?(cobroUsd+creditApplied):((cobroUsd+creditApplied)||presupuesto);
       const feePct=Number(op.collection_fee_pct||0);const isTransf=op.collection_method==="transferencia";
       // La comisión de la financiera se guarda en CADA cobro (cada transferencia puede tener su %),
       // así que se suma cobro por cobro y no desde un único collection_fee_pct de la op — que quedaba
@@ -5457,7 +5459,7 @@ function FinancePanel({token}){
   allOps.forEach(o=>{
     // Si la op tiene pagos parciales, los agregamos más abajo (evita duplicar)
     if(o.is_collected&&!opsWithClientPmts.has(o.id)){
-      const amt=Number(o.collected_amount||o.budget_total||0);
+      const amt=Number(o.collected_amount||0);
       const isArs=o.collection_currency==="ARS";
       const rate=Number(o.collection_exchange_rate||0);
       const collectedUsd=isArs&&rate?amt/rate:amt;
@@ -8335,7 +8337,7 @@ function RetentionLTVCard({token}){
     for(const op of opsArr){
       const cli=op.client_id;if(!cli)continue;
       let revenue=pmtByOp[op.id]||0;
-      if(revenue===0&&op.is_collected)revenue=Number(op.collected_amount||op.budget_total||0);
+      if(revenue===0&&op.is_collected)revenue=Number(op.collected_amount||0);
       if(!ltvByClient[cli])ltvByClient[cli]={ltv:0,ops:0,firstOp:null,lastOp:null};
       ltvByClient[cli].ltv+=revenue;
       ltvByClient[cli].ops++;
@@ -8641,7 +8643,7 @@ function FinanceDashboard({token}){
     if(o.lost_in_customs_at){
       baseIng=0;
     } else if(o.is_collected){
-      const raw=Number(o.collected_amount||o.budget_total||0);
+      const raw=Number(o.is_collected?(o.collected_amount||0):(o.collected_amount||o.budget_total||0));
       const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
       const cash=isArs&&rate>0?raw/rate:raw;
       const bt=Number(o.budget_total||0);
@@ -8679,7 +8681,7 @@ function FinanceDashboard({token}){
   ops.filter(o=>o.is_collected&&o.service_type!=="gestion_integral"&&periodFilter(o.collection_date||o.closed_at?.slice(0,10))).forEach(o=>{
     const opPmts=clientPmts.filter(p=>p.operation_id===o.id);
     if(opPmts.length>0)return; // se cuentan en clientPmts loop
-    const raw=Number(o.collected_amount||o.budget_total||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
+    const raw=Number(o.is_collected?(o.collected_amount||0):(o.collected_amount||o.budget_total||0));const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
     const cash=isArs&&rate>0?raw/rate:raw;
     const collectedUsd=cash;const overpay=Math.max(0,collectedUsd-Number(o.budget_total||0));
     const creditApp=Number(o.credit_applied_usd||0);const extraCharge=Number(o.extra_charge_usd||0);
@@ -8756,7 +8758,7 @@ function FinanceDashboard({token}){
     // Ingresos: cobros legacy + clientPmts + pmts.client_paid + supplier refunds + finance_entries ingresos + agent refunds
     ops.filter(o=>o.is_collected&&o.service_type!=="gestion_integral"&&inThisMonth(o.collection_date||o.closed_at?.slice(0,10))).forEach(o=>{
       const opPmts=clientPmts.filter(p=>p.operation_id===o.id);if(opPmts.length>0)return;
-      const raw=Number(o.collected_amount||o.budget_total||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const cash=isArs&&rate>0?raw/rate:raw;
+      const raw=Number(o.is_collected?(o.collected_amount||0):(o.collected_amount||o.budget_total||0));const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const cash=isArs&&rate>0?raw/rate:raw;
       const overpay=Math.max(0,cash-Number(o.budget_total||0));const creditApp=Number(o.credit_applied_usd||0);const extraCharge=Number(o.extra_charge_usd||0);
       const cashIn=extraCharge>0.01?cash:(cash+overpay-creditApp);if(cashIn>0)mIng+=cashIn;
     });
@@ -9034,7 +9036,7 @@ function FinanceDashboard({token}){
         ops.filter(o=>o.is_collected&&o.service_type!=="gestion_integral"&&inMonth(o.collection_date||o.closed_at?.slice(0,10))).forEach(o=>{
           const opPmts=clientPmts.filter(p=>p.operation_id===o.id);
           if(opPmts.length>0)return;
-          const raw=Number(o.collected_amount||o.budget_total||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
+          const raw=Number(o.is_collected?(o.collected_amount||0):(o.collected_amount||o.budget_total||0));const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
           const cash=isArs&&rate>0?raw/rate:raw;
           const collectedUsd=cash;const overpay=Math.max(0,collectedUsd-Number(o.budget_total||0));
           const creditApp=Number(o.credit_applied_usd||0);const extraCharge=Number(o.extra_charge_usd||0);
