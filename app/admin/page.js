@@ -4072,7 +4072,8 @@ const usdCollected=(o)=>{
 const DELIVERY_GROUPS=[
   {k:"oficina",l:"📦 Retiro por oficina",match:o=>o.delivery_choice!=="propio"&&o.delivery_choice!=="carrier"},
   {k:"propio",l:"🚚 Envío a domicilio · Flete privado",match:o=>o.delivery_choice==="propio"},
-  {k:"carrier",l:"📮 Envío por transportista",match:o=>o.delivery_choice==="carrier"},
+  {k:"carrier_sucursal",l:"📮 Transportista · a sucursal",match:o=>o.delivery_choice==="carrier"&&o.carrier_mode!=="domicilio"},
+  {k:"carrier_domicilio",l:"📮 Transportista · a domicilio",match:o=>o.delivery_choice==="carrier"&&o.carrier_mode==="domicilio"},
 ];
 
 function EntregasPanel({token,onOpenOp}){
@@ -4090,7 +4091,7 @@ function EntregasPanel({token,onOpenOp}){
   //      pierden de vista al marcarlas entregadas, como pasaba antes.
   const load=async()=>{
     setLo(true);
-    const sel="id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,client_id,created_at,clients(first_name,last_name,client_code,whatsapp,email,street,floor_apt,city,province,postal_code)";
+    const sel="id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,street,floor_apt,city,province,postal_code)";
     const [pend,entr]=await Promise.all([
       dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${sel}&order=eta.desc`}),
       dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.false&select=${sel}&order=delivery_completed_at.desc&limit=200`}).catch(()=>[]),
@@ -4152,12 +4153,18 @@ function EntregasPanel({token,onOpenOp}){
   // Etiquetas de despacho (transportista) / hoja de ruta (flete propio). Una hoja imprimible con
   // los datos que hacen falta en la calle: quién, dónde, cuántos bultos y si hay que cobrar.
   const imprimirEtiquetas=(grupo,ops)=>{
-    const esCarrier=grupo==="carrier";
+    const esCarrier=String(grupo).startsWith("carrier");
+    const aDomicilio=grupo==="carrier_domicilio";
     const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
     const etiquetas=ops.map(o=>{
       const c=o.clients||{};
-      const nombre=`${c.first_name||""} ${c.last_name||""}`.trim()||"—";
-      const dir=o.delivery_address||[c.street,c.floor_apt,c.city,c.province,c.postal_code].filter(Boolean).join(", ")||"Dirección a confirmar";
+      const dc=o.delivery_contact||{};
+      const nombre=esCarrier&&(dc.nombre||dc.apellido)
+        ?`${dc.nombre||""} ${dc.apellido||""}`.trim()
+        :(`${c.first_name||""} ${c.last_name||""}`.trim()||"—");
+      const dir=esCarrier
+        ?(aDomicilio?[dc.direccion,dc.piso].filter(Boolean).join(", ")||"Dirección a confirmar":"Retira en sucursal")
+        :(o.delivery_address||[c.street,c.floor_apt,c.city,c.province,c.postal_code].filter(Boolean).join(", ")||"Dirección a confirmar");
       const bultos=bultosByOp[o.id]||0;
       const saldo=saldoFor(o);
       const enEfectivo=(o.payment_method_chosen||"efectivo")==="efectivo";
@@ -4165,11 +4172,11 @@ function EntregasPanel({token,onOpenOp}){
         <div class="et-head"><span class="et-code">${esc(o.operation_code)}</span><span class="et-bultos">${bultos} ${bultos===1?"bulto":"bultos"}</span></div>
         <div class="et-nombre">${esc(nombre)}${c.client_code?` <span class="et-cod">${esc(c.client_code)}</span>`:""}</div>
         <div class="et-dir">${esc(dir)}</div>
-        <div class="et-datos">${c.whatsapp?`<span>Tel ${esc(c.whatsapp)}</span>`:""}${esCarrier&&c.email?`<span>${esc(c.email)}</span>`:""}</div>
+        <div class="et-datos">${(esCarrier?dc.telefono:c.whatsapp)?`<span>Tel ${esc(esCarrier?dc.telefono:c.whatsapp)}</span>`:""}${esCarrier&&dc.dni?`<span>DNI ${esc(dc.dni)}</span>`:""}${esCarrier&&(dc.email||c.email)?`<span>${esc(dc.email||c.email)}</span>`:""}</div>
         ${enEfectivo?(saldo>0.005?`<div class="et-cobrar">💵 Paga al recibir · cobrar USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>`:`<div class="et-cobrar pagado">✓ Ya está pagado — no cobrar nada</div>`):(saldo>0.005?`<div class="et-cobrar pagado">Saldo USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} — no se cobra en la entrega</div>`:`<div class="et-cobrar pagado">✓ Pagado</div>`)}
       </div>`;
     }).join("");
-    const titulo=esCarrier?"Etiquetas de despacho · Transportista":"Hoja de ruta · Flete privado";
+    const titulo=esCarrier?`Etiquetas de despacho · Transportista · ${aDomicilio?"a domicilio":"a sucursal"}`:"Hoja de ruta · Flete privado";
     const hoy=new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"});
     const html=`<!doctype html><html><head><meta charset="utf-8"><title>${titulo}</title><style>
       @page{size:A4;margin:0}
@@ -4314,7 +4321,7 @@ function EntregasPanel({token,onOpenOp}){
         if(inGroup.length===0)return null;
         const ordenadas=[...inGroup].sort((a,b)=>new Date(a.delivery_confirmed_at||a.created_at)-new Date(b.delivery_confirmed_at||b.created_at));
         return <Bloque key={g.k} titulo={<>{g.l} <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {inGroup.length}</span></>}
-          accion={(g.k==="propio"||g.k==="carrier")&&<Btn small variant="secondary" onClick={()=>imprimirEtiquetas(g.k,ordenadas)}>🖨 {g.k==="carrier"?"Etiquetas de despacho":"Hoja de ruta"}</Btn>}>
+          accion={g.k!=="oficina"&&<Btn small variant="secondary" onClick={()=>imprimirEtiquetas(g.k,ordenadas)}>🖨 {g.k.startsWith("carrier")?"Etiquetas de despacho":"Hoja de ruta"}</Btn>}>
           <table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
             <Cabecera/>
             <tbody>{filasPorMetodo(ordenadas,"confirmada")}</tbody>

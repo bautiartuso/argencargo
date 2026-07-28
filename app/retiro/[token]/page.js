@@ -24,7 +24,8 @@ export default function EntregaPublica({ params }) {
   const [payment, setPayment] = useState("efectivo");
   // Quien recibe, solo para envio por transportista (Andreani): el despacho exige el DNI. Se
   // precarga con los datos del cliente, pero es editable porque a veces recibe otra persona.
-  const [contacto, setContacto] = useState({ nombre: "", apellido: "", dni: "", email: "" });
+  const [carrierMode, setCarrierMode] = useState(""); // sucursal | domicilio (solo con transportista)
+  const [contacto, setContacto] = useState({ nombre: "", apellido: "", dni: "", email: "", telefono: "", direccion: "", piso: "" });
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
 
@@ -42,10 +43,13 @@ export default function EntregaPublica({ params }) {
         setAddress(d.delivery.default_address || "");
         if (payment === "efectivo" && !hasPropio && !d.delivery.inferred_zone) setPayment("transferencia");
         setContacto((c) => ({
+          ...c,
           nombre: c.nombre || d.client?.first_name || "",
           apellido: c.apellido || d.client?.last_name || "",
           dni: c.dni || d.client?.dni || "",
           email: c.email || d.client?.email || "",
+          telefono: c.telefono || d.client?.whatsapp || "",
+          direccion: c.direccion || d.delivery?.default_address || "",
         }));
         setLoading(false);
       } catch (e) {
@@ -86,15 +90,18 @@ export default function EntregaPublica({ params }) {
   const confirm = async () => {
     // Andreani no despacha sin DNI del destinatario, asi que se pide antes de confirmar.
     if (delivery === "carrier") {
+      if (!carrierMode) { alert("Elegí si lo recibís en sucursal o en tu domicilio."); return; }
       if (!contacto.nombre.trim() || !contacto.apellido.trim()) { alert("Completá nombre y apellido de quien recibe."); return; }
       if (contacto.dni.replace(/\D/g, "").length < 7) { alert("Completá el DNI de quien recibe — el transportista lo necesita para el despacho."); return; }
+      if (contacto.telefono.replace(/\D/g, "").length < 8) { alert("Completá el teléfono de quien recibe — el transportista llama antes de entregar."); return; }
+      if (carrierMode === "domicilio" && !contacto.direccion.trim()) { alert("Completá la dirección de entrega."); return; }
     }
     setConfirming(true);
     // La zona/precio los recalcula el server a partir de la localidad registrada — no se manda acá.
     const r = await fetch(`/api/entrega/${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delivery_choice: delivery, delivery_address: delivery === "propio" ? address : null, payment_method: payment, delivery_contact: delivery === "carrier" ? contacto : null }),
+      body: JSON.stringify({ delivery_choice: delivery, delivery_address: delivery === "propio" ? address : null, payment_method: payment, delivery_contact: delivery === "carrier" ? contacto : null, carrier_mode: delivery === "carrier" ? carrierMode : null }),
     });
     const d = await r.json();
     setConfirming(false);
@@ -159,22 +166,44 @@ export default function EntregaPublica({ params }) {
             {addressChanged && <p style={{ fontSize: 10, color: "#8b6f4a", marginTop: 4, lineHeight: 1.5 }}>🖊️ Vas a pedir entrega en una dirección distinta a la registrada — se lo avisamos a Argencargo junto con tu confirmación.</p>}
           </div>}
           {!hasPropio && <OptRow selected={delivery === "carrier"} onClick={() => setDelivery("carrier")} label="Envío por Via Cargo / Andreani" meta="Tu zona está fuera del reparto propio de Argencargo" price="A coordinar" />}
-                  </div>
 
-          {/* Datos de quien recibe: Andreani no despacha sin DNI del destinatario. Se precargan con
-              los del cliente pero son editables, porque a veces recibe otra persona. */}
+          {/* Con transportista hay dos modalidades y piden datos distintos: a sucursal alcanza con
+              quién retira; a domicilio se suma la dirección. */}
           {!hasPropio && delivery === "carrier" && (
-            <div style={{ marginTop: 12, padding: "13px 15px", borderRadius: 12, background: "rgba(10,22,40,0.04)", border: "1px solid rgba(10,22,40,0.10)" }}>
-              <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(10,22,40,0.55)", margin: "0 0 3px" }}>Datos de quien recibe</p>
-              <p style={{ fontSize: 11.5, color: "rgba(10,22,40,0.55)", margin: "0 0 10px", lineHeight: 1.45 }}>El transportista pide el DNI del destinatario para poder despachar.</p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <input value={contacto.nombre} onChange={(e) => setContacto((c) => ({ ...c, nombre: e.target.value }))} placeholder="Nombre" style={contactInputStyle()} />
-                <input value={contacto.apellido} onChange={(e) => setContacto((c) => ({ ...c, apellido: e.target.value }))} placeholder="Apellido" style={contactInputStyle()} />
-                <input value={contacto.dni} onChange={(e) => setContacto((c) => ({ ...c, dni: e.target.value }))} placeholder="DNI" inputMode="numeric" style={contactInputStyle()} />
-                <input value={contacto.email} onChange={(e) => setContacto((c) => ({ ...c, email: e.target.value }))} placeholder="Email (opcional)" style={contactInputStyle()} />
+            <div style={{ marginTop: 12 }}>
+              <label style={fieldLblStyle()}>¿Cómo querés recibirlo?</label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                {[
+                  { k: "sucursal", t: "En sucursal", d: "Lo retirás en la sucursal más cercana" },
+                  { k: "domicilio", t: "En tu domicilio", d: "Te lo llevan a la dirección que indiques" },
+                ].map((m) => (
+                  <div key={m.k} onClick={() => setCarrierMode(m.k)} style={{ padding: "11px 13px", borderRadius: 11, cursor: "pointer", border: `1.5px solid ${carrierMode === m.k ? "#B8956A" : "rgba(10,22,40,0.14)"}`, background: carrierMode === m.k ? "rgba(184,149,106,0.10)" : "#fff" }}>
+                    <p style={{ fontSize: 13.5, fontWeight: 700, color: "#0A1628", margin: 0 }}>{carrierMode === m.k ? "◉ " : "○ "}{m.t}</p>
+                    <p style={{ fontSize: 11, color: MUTED, margin: "3px 0 0", lineHeight: 1.4 }}>{m.d}</p>
+                  </div>
+                ))}
               </div>
+
+              {carrierMode && (
+                <div style={{ padding: "13px 15px", borderRadius: 12, background: "rgba(10,22,40,0.035)", border: "1px solid rgba(10,22,40,0.10)" }}>
+                  <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(10,22,40,0.55)", margin: "0 0 3px" }}>Datos de quien recibe</p>
+                  <p style={{ fontSize: 11.5, color: MUTED, margin: "0 0 10px", lineHeight: 1.45 }}>El transportista pide el DNI del destinatario para poder despachar.</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <input value={contacto.nombre} onChange={(e) => setContacto((c) => ({ ...c, nombre: e.target.value }))} placeholder="Nombre" style={contactInputStyle()} />
+                    <input value={contacto.apellido} onChange={(e) => setContacto((c) => ({ ...c, apellido: e.target.value }))} placeholder="Apellido" style={contactInputStyle()} />
+                    <input value={contacto.dni} onChange={(e) => setContacto((c) => ({ ...c, dni: e.target.value }))} placeholder="DNI" inputMode="numeric" style={contactInputStyle()} />
+                    <input value={contacto.telefono} onChange={(e) => setContacto((c) => ({ ...c, telefono: e.target.value }))} placeholder="Teléfono" inputMode="tel" style={contactInputStyle()} />
+                    <input value={contacto.email} onChange={(e) => setContacto((c) => ({ ...c, email: e.target.value }))} placeholder="Email" style={{ ...contactInputStyle(), gridColumn: "1 / -1" }} />
+                    {carrierMode === "domicilio" && <>
+                      <input value={contacto.direccion} onChange={(e) => setContacto((c) => ({ ...c, direccion: e.target.value }))} placeholder="Dirección (calle y número)" style={{ ...contactInputStyle(), gridColumn: "1 / -1" }} />
+                      <input value={contacto.piso} onChange={(e) => setContacto((c) => ({ ...c, piso: e.target.value }))} placeholder="Piso / depto (si lleva)" style={{ ...contactInputStyle(), gridColumn: "1 / -1" }} />
+                    </>}
+                  </div>
+                </div>
+              )}
             </div>
           )}
+        </div>
 
         {/* 03 — total y pago */}
         <div style={stepStyle()}>
