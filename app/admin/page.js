@@ -3051,13 +3051,19 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             }
             const newTotal=prevTotal+cobroUsdPreview;
             const upd={collected_amount:newTotal,total_anticipos:newTotal,collection_method:newCobro.metodo,collection_currency:"USD",collection_date:newCobro.fecha};
-            if(budgetEffective>0&&newTotal>=budgetEffective-0.01)upd.is_collected=true;
+            // Registrar un cobro NO cierra la op: el cierre es explícito, con "Cerrar cobro", que es
+            // donde se pregunta qué hacer con un sobrante o un faltante. Si se cerrara sola al llegar
+            // al presupuesto, un excedente quedaría sin resolver (le pasó a AC-0315 con USD 14,15).
             await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});
             setOp(p=>({...p,...upd}));
             setNewCobro({monto:"",metodo:newCobro.metodo,moneda:newCobro.moneda,comision:newCobro.comision,tc:newCobro.tc,fecha:new Date().toISOString().slice(0,10),receipt_url:"",receipt_name:"",receipt_kb:0,destino:newCobro.destino});
             await load();
             const restante=Math.round((budgetEffective-newTotal)*100)/100;
-            flash(restante>0.01?`✓ Cobro registrado · saldo USD ${restante.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"✓ Cobro registrado · op cobrada");
+            flash(restante>0.01
+              ?`✓ Cobro registrado · saldo USD ${restante.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`
+              :restante<-0.01
+                ?`✓ Cobro registrado · pagó USD ${Math.abs(restante).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de más — cerrá el cobro para decidir qué hacer`
+                :"✓ Cobro registrado · saldo $0, ya podés cerrar el cobro");
           }catch(e){alertDialog("Error: "+e.message);}
           setSavingCobro(false);
         };
