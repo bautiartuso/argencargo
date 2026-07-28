@@ -2759,8 +2759,20 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       // Cobro real = cash recibido + crédito de CC. Si nunca se cargó cobro, fallback al presupuesto para no romper la card.
       const cobro=(cobroUsd+creditApplied)||presupuesto;
       const feePct=Number(op.collection_fee_pct||0);const isTransf=op.collection_method==="transferencia";
-      // La comisión solo aplica al cash real que recibiste por transferencia (no al crédito de CC ni descuento)
-      const comision=isTransf?cobroUsd*(feePct/100):0;
+      // La comisión de la financiera se guarda en CADA cobro (cada transferencia puede tener su %),
+      // así que se suma cobro por cobro y no desde un único collection_fee_pct de la op — que quedaba
+      // en 0 y hacía que la comisión no se descontara nunca del cobro neto.
+      // Solo aplica al cash real recibido por transferencia, no al crédito de CC ni al descuento.
+      const comisionPagos=clientPayments.reduce((s2,p)=>{
+        const pct=Number(p.commission_pct||0);
+        if(pct<=0)return s2;
+        const rate=Number(p.exchange_rate||0);
+        const enUsd=p.currency==="ARS"&&rate>0?(Number(p.amount_ars||0)*(pct/100))/rate:Number(p.amount_usd||0)*(pct/100);
+        return s2+enUsd;
+      },0);
+      // Fallback a collection_fee_pct para ops viejas cargadas con el formulario anterior.
+      const comision=comisionPagos>0?comisionPagos:(isTransf?cobroUsd*(feePct/100):0);
+      const comisionPctShown=cobroUsd>0?Math.round((comision/cobroUsd)*1000)/10:feePct;
       const ingresoNeto=cobro-comision;
       // Gestión de pagos: solo contar plata real (cobros confirmados y giros confirmados).
       //  - pmtRevenue: client_paid_amount_usd (o budgeted) cuando client_paid=true. Sino 0.
@@ -3761,7 +3773,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           <div style={{background:"rgba(34,197,94,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(34,197,94,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>COBRO NETO</p><p style={{fontSize:18,fontWeight:700,color:"#22c55e",margin:0}}>USD {ingresoNeto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
           <div style={{background:"rgba(255,80,80,0.06)",borderRadius:12,padding:14,border:"1px solid rgba(255,80,80,0.12)",textAlign:"center"}}><p style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px"}}>COSTOS</p><p style={{fontSize:18,fontWeight:700,color:"#ff6b6b",margin:0}}>USD {totalCostos.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
         </div>
-        {rw("Cobro bruto",cobro)}{comision>0&&rw(`Comisión transferencia (${feePct}%)`,-comision,false,"#ff6b6b")}{rw("Cobro neto",ingresoNeto)}{discountApplied>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Descuento aplicado (no cobrado)</span><span style={{fontSize:12,fontWeight:600,color:"#fbbf24"}}>USD {discountApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>}
+        {rw("Cobro bruto",cobro)}{comision>0&&rw(`Comisión financiera (${comisionPctShown}%)`,-comision,false,"#ff6b6b")}{rw("Cobro neto",ingresoNeto)}{discountApplied>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Descuento aplicado (no cobrado)</span><span style={{fontSize:12,fontWeight:600,color:"#fbbf24"}}>USD {discountApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>}
         {costProducto>0&&<>{rw("Costo producto",costProducto,false,"#c084fc")}<div style={{height:6}}/></>}
         {(()=>{
           // Bloques presu vs costo real por concepto. Si el cobro neto al cliente difiere del
