@@ -162,12 +162,37 @@ function AnimNum({value,format=v=>v,duration=700}){
 
 function NotifBell({token}){
   const [open,setOpen]=useState(false);const [notifs,setNotifs]=useState([]);const [unread,setUnread]=useState(0);
+  // Estado del push en ESTE dispositivo. Las suscripciones son por dispositivo/navegador, asi que
+  // el panel puede estar activado en la compu y no en el celular.
+  const [pushState,setPushState]=useState("checking"); // checking | off | on | unsupported | blocked
+  const [pushMsg,setPushMsg]=useState("");
+  useEffect(()=>{(async()=>{
+    try{
+      if(!("serviceWorker"in navigator)||!("PushManager"in window)||!("Notification"in window)){setPushState("unsupported");return;}
+      if(Notification.permission==="denied"){setPushState("blocked");return;}
+      const reg=await navigator.serviceWorker.getRegistration("/admin");
+      const sub=reg?await reg.pushManager.getSubscription():null;
+      setPushState(sub&&Notification.permission==="granted"?"on":"off");
+    }catch(e){setPushState("off");}
+  })();},[open]);
+  const activar=async()=>{
+    setPushMsg("Activando…");
+    const r=await activarPushAdmin(token);
+    if(r.ok){setPushState("on");setPushMsg("");toast("Notificaciones activadas en este dispositivo","success");}
+    else{setPushMsg(r.error||"No se pudo activar");}
+  };
   const load=async()=>{const r=await dq("notifications",{token,filters:"?select=*&order=created_at.desc&limit=20"});const list=Array.isArray(r)?r:[];setNotifs(list);setUnread(list.filter(n=>!n.read).length);};
   useEffect(()=>{load();const iv=setInterval(load,60000);return()=>clearInterval(iv);},[token]);
   const markRead=async(id)=>{await dq("notifications",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{read:true}});setNotifs(p=>p.map(n=>n.id===id?{...n,read:true}:n));setUnread(p=>Math.max(0,p-1));};
   const markAllRead=async()=>{const ids=notifs.filter(n=>!n.read).map(n=>n.id);if(ids.length===0)return;await dq("notifications",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})`,body:{read:true}});setNotifs(p=>p.map(n=>({...n,read:true})));setUnread(0);};
   return <div style={{position:"relative"}}><button onClick={()=>setOpen(p=>!p)} style={{background:"none",border:"none",cursor:"pointer",padding:4,position:"relative"}}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>{unread>0&&<span style={{position:"absolute",top:0,right:0,width:16,height:16,borderRadius:"50%",background:"#ef4444",color:"#fff",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>{unread}</span>}</button>
-  {open&&<><div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setOpen(false)}/><div style={{position:"fixed",right:16,top:60,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflowY:"auto",background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",zIndex:1000}}><div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:"#fff"}}>Notificaciones</span>{unread>0&&<button onClick={markAllRead} style={{fontSize:10,color:IC,background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:5,padding:"3px 8px",cursor:"pointer",fontWeight:700}}>Marcar todas leídas</button>}</div>{notifs.length===0?<p style={{padding:"20px 16px",fontSize:13,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>Sin notificaciones</p>:notifs.map(n=><div key={n.id} onClick={()=>!n.read&&markRead(n.id)} style={{padding:"10px 16px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:n.read?"default":"pointer",background:n.read?"transparent":"rgba(184,149,106,0.06)"}}><p style={{fontSize:12,fontWeight:n.read?400:600,color:n.read?"rgba(255,255,255,0.5)":"#fff",margin:0}}>{n.title||"Notificación"}</p>{n.body&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{n.body}</p>}<p style={{fontSize:10,color:"rgba(255,255,255,0.25)",margin:"4px 0 0"}}>{formatDate(n.created_at)}</p></div>)}</div></>}
+  {open&&<><div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setOpen(false)}/><div style={{position:"fixed",right:16,top:60,width:"min(340px, calc(100vw - 32px))",maxHeight:400,overflowY:"auto",background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",zIndex:1000}}><div style={{padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:"#fff"}}>Notificaciones</span>{pushState==="on"&&<span title="Este dispositivo recibe notificaciones push" style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(34,197,94,0.14)",color:"#22c55e"}}>PUSH ON</span>}{unread>0&&<button onClick={markAllRead} style={{fontSize:10,color:IC,background:"rgba(184,149,106,0.1)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:5,padding:"3px 8px",cursor:"pointer",fontWeight:700}}>Marcar todas leídas</button>}</div>{(pushState==="off"||pushState==="blocked"||pushMsg)&&<div style={{padding:"11px 16px",borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(96,165,250,0.06)"}}>
+    {pushState==="blocked"
+      ?<p style={{fontSize:11.5,color:"rgba(255,255,255,0.7)",margin:0,lineHeight:1.5}}>Las notificaciones están <strong>bloqueadas</strong> para este sitio. Habilitalas en los ajustes del navegador para recibir avisos en este dispositivo.</p>
+      :<><p style={{fontSize:11.5,color:"rgba(255,255,255,0.7)",margin:"0 0 8px",lineHeight:1.5}}>Este dispositivo todavía no recibe avisos push. En iPhone hay que abrir el panel desde la app instalada en la pantalla de inicio.</p>
+        <button onClick={activar} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1px solid rgba(96,165,250,0.45)",background:"rgba(96,165,250,0.14)",color:"#93c5fd",cursor:"pointer"}}>🔔 Activar notificaciones</button></>}
+    {pushMsg&&<p style={{fontSize:11,color:"#fbbf24",margin:"7px 0 0",lineHeight:1.45}}>{pushMsg}</p>}
+  </div>}{notifs.length===0?<p style={{padding:"20px 16px",fontSize:13,color:"rgba(255,255,255,0.4)",textAlign:"center",margin:0}}>Sin notificaciones</p>:notifs.map(n=><div key={n.id} onClick={()=>!n.read&&markRead(n.id)} style={{padding:"10px 16px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:n.read?"default":"pointer",background:n.read?"transparent":"rgba(184,149,106,0.06)"}}><p style={{fontSize:12,fontWeight:n.read?400:600,color:n.read?"rgba(255,255,255,0.5)":"#fff",margin:0}}>{n.title||"Notificación"}</p>{n.body&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>{n.body}</p>}<p style={{fontSize:10,color:"rgba(255,255,255,0.25)",margin:"4px 0 0"}}>{formatDate(n.created_at)}</p></div>)}</div></>}
   </div>;
 }
 
@@ -12371,6 +12396,29 @@ function WarehouseForm({token,editing,onSave,onCancel}){
 // nada que los reciba. sw-admin.js es solo push (el admin no necesita andar offline).
 // Pide permiso una sola vez y se re-suscribe solo si el permiso ya estaba dado pero se perdio la
 // suscripcion (reinstalacion de la PWA, datos borrados, etc).
+// Suscribe al push del admin. TIENE que llamarse desde un gesto del usuario (un click): iOS solo
+// permite Notification.requestPermission() dentro de un handler de evento, si no lo ignora sin avisar.
+// Devuelve {ok} o {error} para poder mostrar el motivo real en pantalla.
+async function activarPushAdmin(token){
+  try{
+    if(!("serviceWorker"in navigator)||!("PushManager"in window)||!("Notification"in window))
+      return {error:"Este navegador no soporta notificaciones push."};
+    const VAPID_PUB=typeof process!=="undefined"?(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY||""):"";
+    if(!VAPID_PUB)return {error:"Falta configurar la clave VAPID en el servidor."};
+    if(Notification.permission==="denied")
+      return {error:"Las notificaciones están bloqueadas para este sitio. Habilitalas en los ajustes del navegador y volvé a intentar."};
+    const perm=Notification.permission==="granted"?"granted":await Notification.requestPermission();
+    if(perm!=="granted")return {error:"No se dio permiso para notificaciones."};
+    const reg=await navigator.serviceWorker.register("/sw-admin.js",{scope:"/admin"});
+    await navigator.serviceWorker.ready;
+    const b64ToUint8=(b64)=>{const pad="=".repeat((4-b64.length%4)%4);const st=(b64+pad).replace(/-/g,"+").replace(/_/g,"/");const raw=atob(st);const out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out;};
+    const sub=(await reg.pushManager.getSubscription())||await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToUint8(VAPID_PUB)});
+    const r=await fetch("/api/push/subscribe",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({subscription:sub.toJSON(),portal:"admin"})});
+    if(!r.ok)return {error:"No se pudo guardar la suscripción en el servidor."};
+    return {ok:true};
+  }catch(e){return {error:e.message||"Error activando notificaciones."};}
+}
+
 function useAdminPush(token){
   useEffect(()=>{
     if(!token)return;
@@ -12383,11 +12431,10 @@ function useAdminPush(token){
       try{
         const reg=await navigator.serviceWorker.register("/sw-admin.js",{scope:"/admin"});
         await navigator.serviceWorker.ready;
-        if(Notification.permission==="denied")return;
-        if(Notification.permission==="default"){
-          const res=await Notification.requestPermission();
-          if(res!=="granted")return;
-        }
+        // Solo auto-suscribe si el permiso ya esta concedido (ej. se perdio la suscripcion al
+        // reinstalar la PWA). Pedirlo requiere un gesto del usuario — lo hace el boton de la
+        // campanita — porque iOS ignora requestPermission() llamado al cargar la pagina.
+        if(Notification.permission!=="granted")return;
         const existing=await reg.pushManager.getSubscription();
         if(existing)return;
         const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToUint8(VAPID_PUB)});
