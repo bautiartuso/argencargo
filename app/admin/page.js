@@ -10397,6 +10397,7 @@ function AdminCalculator({token}){
     setAllClients(Array.isArray(cl)?cl:[]);
   })();},[token]);
   const [clientId,setClientId]=useState(""); // id del cliente del sistema (o "" si free-text)
+  const [linkGenerado,setLinkGenerado]=useState(null);const [generandoLink,setGenerandoLink]=useState(false);
   const [clientName,setClientName]=useState(""); // texto en el input; coincide con cliente del sistema o se carga a mano
   const [showClientList,setShowClientList]=useState(false);
   const [clientOverrides,setClientOverrides]=useState([]); // tarifas custom del cliente del sistema seleccionado
@@ -10507,6 +10508,7 @@ function AdminCalculator({token}){
       return true;
     });
     setResults({channels:all,totalFob,totCBM,taxCond,origin,clientName,hasBrand,hasBattery});
+    setLinkGenerado(null); // el link anterior quedó viejo: los números cambiaron
   };
   const fmt=(n)=>Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
   const printPdf=(ch,eff)=>{
@@ -10788,6 +10790,55 @@ function AdminCalculator({token}){
         </div>;
       })}
     </div>}
+
+    {/* Guardar la cotización y generar el link para el cliente. La calculadora exporta PDF por
+        canal, pero el PDF muestra una sola opción: con el link el cliente compara las tres y elige,
+        y la elección vuelve como aviso. */}
+    {results&&results.channels.length>0&&(()=>{
+      const generarLink=async()=>{
+        setGenerandoLink(true);
+        try{
+          const alts=results.channels.map(c=>({key:c.key,name:c.name,info:c.info,type:c.type,flete:Number(c.flete||0),seguro:Number(c.seguro||0),shipCost:Number(c.shipCost||0),totalTax:Number(c.totalTax||0),totalAbonar:Number(c.totalAbonar||0)}));
+          const cli=clientId?allClients.find(c=>c.id===clientId):null;
+          const tok=`${Date.now().toString(36)}${Math.random().toString(36).slice(2,12)}`;
+          const body={
+            client_id:clientId||null,
+            client_name:results.clientName||cli?`${cli?.first_name||""} ${cli?.last_name||""}`.trim()||results.clientName:results.clientName||null,
+            client_code:cli?.client_code||null,
+            origin:results.origin||null,
+            channel_key:alts[0].key,channel_name:alts[0].name,
+            products,packages:pkgs,
+            total_fob:results.totalFob,total_cbm:results.totCBM,
+            total_cost:alts[0].totalAbonar,
+            channel_alternatives:alts,
+            visible_channels:alts.map(a=>a.key),
+            status:"pending",
+            public_token:tok,
+            sent_at:new Date().toISOString(),
+            expires_at:new Date(Date.now()+10*24*60*60*1000).toISOString(),
+          };
+          const r=await dq("quotes",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
+          const creada=Array.isArray(r)?r[0]:r;
+          if(!creada?.id)throw new Error(creada?.message||"No se pudo guardar la cotización");
+          const url=`https://argencargo.com.ar/presupuesto/${tok}`;
+          setLinkGenerado(url);
+          navigator.clipboard?.writeText(url);
+          toast("Cotización guardada · link copiado","success");
+        }catch(e){alertDialog("Error: "+e.message);}
+        setGenerandoLink(false);
+      };
+      return <div style={{marginTop:16,padding:"15px 18px",borderRadius:12,background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.22)"}}>
+        <p style={{fontSize:12.5,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>🔗 Link para que el cliente elija</p>
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"0 0 11px",lineHeight:1.5}}>Guarda esta cotización con las {results.channels.length} opciones y genera un link donde el cliente compara tiempos y precios, y elige. Válido 10 días. Cuando elija te llega el aviso.</p>
+        {linkGenerado
+          ?<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            <code style={{flex:1,minWidth:220,fontSize:11.5,color:"#93c5fd",background:"rgba(0,0,0,0.25)",padding:"8px 10px",borderRadius:8,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{linkGenerado}</code>
+            <button onClick={()=>{navigator.clipboard?.writeText(linkGenerado);toast("Link copiado","success");}} style={{padding:"8px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.12)",color:"#60a5fa",cursor:"pointer"}}>📋 Copiar</button>
+            <a href={linkGenerado} target="_blank" rel="noopener noreferrer" style={{padding:"8px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.6)",textDecoration:"none"}}>👁 Ver</a>
+          </div>
+          :<Btn small onClick={generarLink} disabled={generandoLink}>{generandoLink?"Guardando…":"🔗 Guardar y generar link"}</Btn>}
+      </div>;
+    })()}
   </div>;
 }
 
