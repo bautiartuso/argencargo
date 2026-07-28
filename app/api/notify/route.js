@@ -75,6 +75,38 @@ async function fetchTemplate(key) {
   return Array.isArray(arr) && arr[0] ? arr[0] : null;
 }
 
+// Elige la variante del mail de cierre segun el historial de resenas del cliente:
+//   · ya dejo resena alguna vez -> variante corta, sin volver a pedirsela
+//   · 4+ ops cerradas y ninguna resena -> variante mas insistente
+//   · resto -> el mail de cierre de siempre
+// Si algo falla, cae al template original: nunca deja de mandarse el mail por esto.
+async function templateKeyCierre(op, client) {
+  const base = "email_cerrada";
+  try {
+    if (!client?.id) return base;
+    const cerradasR = await fetch(
+      `${SB_URL}/rest/v1/operations?client_id=eq.${client.id}&status=in.(operacion_cerrada,entregada)&select=id`,
+      { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } }
+    );
+    const cerradas = await cerradasR.json();
+    const ids = (Array.isArray(cerradas) ? cerradas : []).map((o) => o.id).filter(Boolean);
+    if (ids.length === 0) return base;
+    const fbR = await fetch(
+      `${SB_URL}/rest/v1/op_feedback?operation_id=in.(${ids.join(",")})&select=id&limit=1`,
+      { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } }
+    );
+    const fb = await fbR.json();
+    const yaReseno = Array.isArray(fb) && fb.length > 0;
+    if (yaReseno) return "email_cerrada_ya_reseno";
+    // La op que se esta cerrando ahora cuenta, asi que el umbral se mide sobre lo ya cerrado.
+    if (ids.length >= 4) return "email_cerrada_insistente";
+    return base;
+  } catch (e) {
+    console.error("[notify] templateKeyCierre", e.message);
+    return base;
+  }
+}
+
 // Plantillas de email HTML por trigger (leídas de DB)
 async function renderEmail(trigger, op, client) {
   const firstName = client?.first_name || "";
@@ -85,7 +117,9 @@ async function renderEmail(trigger, op, client) {
   const data = { firstName, opCode, desc, portalLink, feedbackLink };
   const NAVY = "#152D54"; const AC = "#3B7DD8";
 
-  const tpl = await fetchTemplate(`email_${trigger}`);
+  // El cierre tiene tres variantes segun si el cliente ya dejo resena; el resto usa su unico template.
+  const tplKey = trigger === "cerrada" ? await templateKeyCierre(op, client) : `email_${trigger}`;
+  const tpl = (await fetchTemplate(tplKey)) || (trigger === "cerrada" ? await fetchTemplate("email_cerrada") : null);
   if (!tpl) return null;
 
   const subject = interpolate(tpl.subject, data);
@@ -93,13 +127,14 @@ async function renderEmail(trigger, op, client) {
   const body = interpolate(tpl.body, data);
   const ctaText = tpl.cta_text;
 
-  const ctaLink = trigger === "cerrada" ? null : (trigger === "arribo" ? portalLink : portalLink);
+  const pideResena = trigger === "cerrada" && tplKey !== "email_cerrada_ya_reseno";
+  const ctaLink = pideResena ? null : portalLink;
 
   const button = (href, text, color = AC) =>
     `<div style="text-align:center;margin:24px 0"><a href="${href}" style="display:inline-block;padding:14px 32px;background:${color};color:#fff;text-decoration:none;font-weight:700;border-radius:8px;font-size:15px">${text}</a></div>`;
 
   // Para cerrada: renderizamos 5 estrellas clickables en vez de botón CTA.
-  const extraHtml = trigger === "cerrada"
+  const extraHtml = pideResena
     ? `<div style="text-align:center;margin:24px 0;padding:20px;background:#f5f7fa;border-radius:12px">
         <p style="font-size:13px;color:#666;margin:0 0 12px;font-weight:600">Tocá las estrellas según tu experiencia:</p>
         <div>${[1,2,3,4,5].map(n => `<a href="${BASE_URL}/feedback?op=${opCode}&r=${n}" style="text-decoration:none;font-size:40px;color:#fbbf24;margin:0 4px;display:inline-block">★</a>`).join("")}</div>
@@ -175,7 +210,7 @@ export async function POST(req) {
       return Response.json({ error: "trigger inválido" }, { status: 400 });
 
     // Fetch op + client
-    const opArr = await sb(`/rest/v1/operations?id=eq.${op_id}&select=*,clients(first_name,last_name,email)`);
+    const opArr = await sb(`/rest/v1/operations?id=eq.${op_id}&select=*,clients(id,first_name,last_name,email)`);
     const op = Array.isArray(opArr) ? opArr[0] : null;
     if (!op) return Response.json({ error: "op no encontrada" }, { status: 404 });
     const client = op.clients;
