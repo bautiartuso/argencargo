@@ -688,17 +688,16 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   const [pendingRedemptions,setPendingRedemptions]=useState([]);
   const [cancelRedemptionTarget,setCancelRedemptionTarget]=useState(null);
   const [cancelingRedemption,setCancelingRedemption]=useState(false);
-  const [showAddPayment,setShowAddPayment]=useState(false);
-  const [savingAddPayment,setSavingAddPayment]=useState(false);
   const [cobroDecision,setCobroDecision]=useState(null); // {kind:"overpay"|"underpay", diff, resolve}
   const askCobroDecision=(kind,diff)=>new Promise(resolve=>setCobroDecision({kind,diff,resolve}));
   // Modal genérico para pedir un monto (reemplaza window.prompt). Devuelve Promise<number|null>.
   const [amountModal,setAmountModal]=useState(null); // {title, subtitle, defaultValue, max, resolve}
   const askAmount=(cfg)=>new Promise(resolve=>setAmountModal({...cfg,resolve}));
-  // ars_destination: solo aplica a transferencias en ARS. "financiera" = la plata entra a la CC
-  // de SOLFIN (genera movimiento automatico + comprobante visible en el link compartido);
-  // "propia" = entra a cuenta propia y no toca la CC de la financiera.
-  const [addPaymentForm,setAddPaymentForm]=useState({amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",payment_date:new Date().toISOString().slice(0,10),notes:"",ars_destination:"financiera",commission_pct:"",receipt_url:""});
+  // Formulario inline de cobro (no modal). La moneda se deriva del metodo: transferencia -> ARS,
+  // cripto -> USD, efectivo -> la elige el admin. destino solo aplica a transferencias en ARS:
+  // "financiera" entra a la CC de SOLFIN (genera movimiento), "propia" va a cuenta propia.
+  const [newCobro,setNewCobro]=useState({monto:"",metodo:"transferencia",moneda:"USD",comision:"2,5",tc:"",fecha:new Date().toISOString().slice(0,10),receipt_url:"",destino:"financiera"});
+  const [savingCobro,setSavingCobro]=useState(false);
   const [uploadingReceipt,setUploadingReceipt]=useState(false);
   // Badge de destino ARS + miniatura del comprobante, para las tablas de cobros de la op.
   const pmtExtras=(p)=>{
@@ -711,7 +710,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       </a>}
     </span>;
   };
-  const uploadReceipt=async(file)=>{
+  const uploadCobroReceipt=async(file)=>{
     if(!file)return;
     if(!file.type?.startsWith("image/")){alertDialog("El comprobante tiene que ser una imagen");return;}
     if(file.size>8*1024*1024){alertDialog("El comprobante no puede pesar mas de 8 MB");return;}
@@ -721,110 +720,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const filename=`${op.operation_code}_${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
       const r=await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/${filename}`,{method:"POST",headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY,"Content-Type":file.type,"x-upsert":"false"},body:file});
       if(!r.ok)throw new Error((await r.text().catch(()=>""))||"Error subiendo el comprobante");
-      setAddPaymentForm(p=>({...p,receipt_url:`${SB_URL}/storage/v1/object/public/solfin-comprobantes/${filename}`}));
+      setNewCobro(p=>({...p,receipt_url:`${SB_URL}/storage/v1/object/public/solfin-comprobantes/${filename}`}));
     }catch(e){alertDialog("Error: "+e.message);}
     setUploadingReceipt(false);
-  };
-  const submitAddPayment=async()=>{
-    const amtUsd=Number(addPaymentForm.amount_usd);
-    const amtArs=Number(addPaymentForm.amount_ars);
-    const rate=Number(addPaymentForm.exchange_rate);
-    let finalAmtUsd=amtUsd;
-    if(addPaymentForm.currency==="ARS"){
-      if(!amtArs||amtArs<=0||!rate||rate<=0){alertDialog("Para pagos en ARS necesitás monto ARS y tipo de cambio");return;}
-      finalAmtUsd=amtArs/rate;
-    } else {
-      if(!amtUsd||amtUsd<=0){alertDialog("Ingresá el monto USD");return;}
-    }
-    if(!addPaymentForm.payment_date){alertDialog("Cargá la fecha del cobro");return;}
-    const budgetTot=Number(op.budget_total||0);
-    setSavingAddPayment(true);
-    try{
-      // FIX data-loss: si la op tiene collected_amount cargado via legacy form pero NO hay partials,
-      // convertir ese monto en un partial payment primero para no perderlo al sincronizar collected_amount.
-      let prevTotal=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
-      const legacyCollected=(()=>{
-        const raw=Number(op.collected_amount||0);
-        const isArs=op.collection_currency==="ARS";
-        const r=Number(op.collection_exchange_rate||0);
-        return isArs&&r>0?raw/r:raw;
-      })();
-      if(clientPayments.length===0&&legacyCollected>0.01){
-        const legacyBody={
-          operation_id:op.id,
-          payment_date:op.collection_date||addPaymentForm.payment_date,
-          amount_usd:legacyCollected,
-          currency:op.collection_currency||"USD",
-          payment_method:op.collection_method||"transferencia",
-          notes:"Cobro previo (migrado del registro legacy)",
-        };
-        if(op.collection_currency==="ARS"&&Number(op.collection_exchange_rate||0)>0){
-          legacyBody.amount_ars=Number(op.collected_amount||0);
-          legacyBody.exchange_rate=Number(op.collection_exchange_rate||0);
-        }
-        const insLegacy=await dq("operation_client_payments",{method:"POST",token,body:legacyBody,headers:{Prefer:"return=representation"}});
-        const insertedLegacy=Array.isArray(insLegacy)?insLegacy[0]:insLegacy;
-        if(!insertedLegacy||!insertedLegacy.id){
-          const msg=insertedLegacy?.message||insertedLegacy?.error||"No se pudo preservar el cobro previo.";
-          alertDialog("❌ "+msg);
-          setSavingAddPayment(false);
-          return;
-        }
-        prevTotal=legacyCollected;
-      }
-      const isArsTransfer=addPaymentForm.currency==="ARS"&&addPaymentForm.payment_method==="transferencia";
-      const aFinanciera=isArsTransfer&&addPaymentForm.ars_destination==="financiera";
-      const comPct=Number(String(addPaymentForm.commission_pct||"").replace(",","."))||0;
-      const body={operation_id:op.id,payment_date:addPaymentForm.payment_date,amount_usd:finalAmtUsd,currency:addPaymentForm.currency,payment_method:addPaymentForm.payment_method,notes:addPaymentForm.notes||null,receipt_url:addPaymentForm.receipt_url||null};
-      if(addPaymentForm.currency==="ARS"){body.amount_ars=amtArs;body.exchange_rate=rate;}
-      if(isArsTransfer){body.ars_destination=addPaymentForm.ars_destination;body.commission_pct=aFinanciera?comPct:null;}
-      const ins1=await dq("operation_client_payments",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
-      const inserted1=Array.isArray(ins1)?ins1[0]:ins1;
-      if(!inserted1||!inserted1.id){const msg=inserted1?.message||inserted1?.error||"El pago no se pudo guardar.";alertDialog("❌ "+msg);setSavingAddPayment(false);return;}
-      // Transferencia ARS que entra a la financiera → movimiento automático en la CC de SOLFIN.
-      // Va con client_payment_id (ON DELETE CASCADE) para que si se borra el cobro no quede
-      // colgado un movimiento fantasma inflando el saldo de la CC.
-      if(aFinanciera){
-        const comAmount=Math.round(amtArs*(comPct/100)*100)/100;
-        const cliCode=opClient?.client_code?` · ${opClient.client_code}`:"";
-        try{
-          await dq("cc_solfin_movements",{method:"POST",token,body:{
-            date:addPaymentForm.payment_date,
-            type:"ingreso",
-            currency:"ARS",
-            amount:amtArs,
-            commission_pct:comPct||null,
-            commission_amount:comPct>0?comAmount:null,
-            net_amount:amtArs-comAmount,
-            provisional_rate:rate,
-            description:`Cobro ${op.operation_code}${cliCode}`,
-            image_url:addPaymentForm.receipt_url||null,
-            operation_id:op.id,
-            client_payment_id:inserted1.id,
-            auto_generated:true,
-          }});
-        }catch(e){
-          console.error("cc solfin mov",e);
-          alertDialog("⚠ El cobro se guardó, pero no se pudo crear el movimiento en la CC de la financiera: "+e.message);
-        }
-      }
-      const newTotal=prevTotal+finalAmtUsd;
-      const opUpdate={collected_amount:newTotal};
-      if(budgetTot>0&&newTotal>=budgetTot-0.01){
-        opUpdate.is_collected=true;
-        opUpdate.collection_date=addPaymentForm.payment_date;
-        opUpdate.collection_method=addPaymentForm.payment_method;
-        opUpdate.collection_currency=addPaymentForm.currency;
-        if(addPaymentForm.currency==="ARS")opUpdate.collection_exchange_rate=rate;
-      }
-      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:opUpdate});
-      setOp(p=>({...p,...opUpdate}));
-      await load();
-      setMsg(newTotal>=budgetTot?`✓ Cobro registrado · op cobrada (saldo $0)`:`✓ Cobro registrado · saldo USD ${(budgetTot-newTotal).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
-      setTimeout(()=>setMsg(""),4000);
-      setShowAddPayment(false);
-    }catch(e){alertDialog("Error: "+e.message);}
-    setSavingAddPayment(false);
   };
   // Sistema de puntos/recompensas DESACTIVADO (11/06/2026): no se cargan canjes pendientes,
   // así el bloque de "Canje de puntos pendiente" nunca aparece. Reactivar restaurando el query.
@@ -3117,7 +3015,88 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         const totalParciales=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
         const saldoParciales=budgetTot-totalParciales;
         const hasPartials=clientPayments.length>0;
-        return <Card title="Cobro" actions={<div style={{display:"flex",gap:6}}><Btn small onClick={()=>{setAddPaymentForm({amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",payment_date:new Date().toISOString().slice(0,10),notes:"",ars_destination:"financiera",commission_pct:"",receipt_url:""});setShowAddPayment(true);}}>+ Registrar cobro</Btn></div>}>
+        // Cobros al estilo MyBox: la lista de lo cobrado arriba y un formulario inline abajo.
+        // Se pueden registrar todos los cobros que hagan falta (pasa seguido que el cliente manda
+        // dos o tres transferencias por separado) y el total sale de la suma, no de un campo manual.
+        const monedaCobro=newCobro.metodo==="cripto"?"USD":newCobro.metodo==="transferencia"?"ARS":newCobro.moneda;
+        const esArsCobro=monedaCobro==="ARS";
+        const nMonto=Number(String(newCobro.monto||"").replace(",","."))||0;
+        const nTc=Number(String(newCobro.tc||"").replace(",","."))||0;
+        const nCom=Number(String(newCobro.comision||"").replace(",","."))||0;
+        const cobroUsdPreview=esArsCobro?(nTc>0?nMonto/nTc:0):nMonto;
+        const comArsPreview=Math.round(nMonto*(nCom/100)*100)/100;
+        const esTransfArs=newCobro.metodo==="transferencia"&&esArsCobro;
+        const cobradoUsd=cobroEffective;
+        const saldoCobro=Math.round((budgetEffective-cobradoUsd)*100)/100;
+
+        const registrarCobro=async()=>{
+          if(nMonto<=0){alertDialog("Cargá el monto cobrado.");return;}
+          if(esArsCobro&&nTc<=0){alertDialog("Cargá el tipo de cambio ARS/USD.");return;}
+          if(!newCobro.fecha){alertDialog("Cargá la fecha del cobro.");return;}
+          setSavingCobro(true);
+          try{
+            // Si la op traía un cobro cargado en el formulario viejo y todavía no hay cobros
+            // registrados, lo convertimos en el primero para no perderlo al re-sincronizar el total.
+            let prevTotal=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
+            const legacy=(()=>{const raw=Number(op.collected_amount||0);const r=Number(op.collection_exchange_rate||0);return op.collection_currency==="ARS"&&r>0?raw/r:raw;})();
+            if(clientPayments.length===0&&legacy>0.01){
+              const lb={operation_id:op.id,payment_date:op.collection_date||newCobro.fecha,amount_usd:legacy,currency:op.collection_currency||"USD",payment_method:op.collection_method||"transferencia",notes:"Cobro previo (migrado del registro anterior)"};
+              if(op.collection_currency==="ARS"&&Number(op.collection_exchange_rate||0)>0){lb.amount_ars=Number(op.collected_amount||0);lb.exchange_rate=Number(op.collection_exchange_rate||0);}
+              const insL=await dq("operation_client_payments",{method:"POST",token,body:lb,headers:{Prefer:"return=representation"}});
+              const okL=Array.isArray(insL)?insL[0]:insL;
+              if(!okL?.id){alertDialog("❌ No se pudo preservar el cobro previo.");setSavingCobro(false);return;}
+              prevTotal=legacy;
+            }
+            const body={operation_id:op.id,payment_date:newCobro.fecha,amount_usd:cobroUsdPreview,currency:monedaCobro,payment_method:newCobro.metodo,receipt_url:newCobro.receipt_url||null};
+            if(esArsCobro){body.amount_ars=nMonto;body.exchange_rate=nTc;}
+            if(esTransfArs){body.ars_destination=newCobro.destino;body.commission_pct=newCobro.destino==="financiera"?nCom:null;}
+            const ins=await dq("operation_client_payments",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
+            const inserted=Array.isArray(ins)?ins[0]:ins;
+            if(!inserted?.id){alertDialog("❌ "+(inserted?.message||inserted?.error||"El cobro no se pudo guardar."));setSavingCobro(false);return;}
+            // Transferencia ARS que entra a la financiera → movimiento automático en la CC de SOLFIN,
+            // atado al cobro (ON DELETE CASCADE) para que borrar el cobro no deje saldo fantasma.
+            if(esTransfArs&&newCobro.destino==="financiera"){
+              try{
+                await dq("cc_solfin_movements",{method:"POST",token,body:{date:newCobro.fecha,type:"ingreso",currency:"ARS",amount:nMonto,commission_pct:nCom||null,commission_amount:nCom>0?comArsPreview:null,net_amount:nMonto-comArsPreview,provisional_rate:nTc,description:`Cobro ${op.operation_code}${opClient?.client_code?` · ${opClient.client_code}`:""}`,image_url:newCobro.receipt_url||null,operation_id:op.id,client_payment_id:inserted.id,auto_generated:true}});
+              }catch(e){console.error("cc solfin mov",e);alertDialog("⚠ El cobro se guardó, pero no se pudo crear el movimiento en la CC de la financiera: "+e.message);}
+            }
+            const newTotal=prevTotal+cobroUsdPreview;
+            const upd={collected_amount:newTotal,total_anticipos:newTotal,collection_method:newCobro.metodo,collection_currency:"USD",collection_date:newCobro.fecha};
+            if(budgetEffective>0&&newTotal>=budgetEffective-0.01)upd.is_collected=true;
+            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});
+            setOp(p=>({...p,...upd}));
+            setNewCobro({monto:"",metodo:newCobro.metodo,moneda:newCobro.moneda,comision:newCobro.comision,tc:newCobro.tc,fecha:new Date().toISOString().slice(0,10),receipt_url:"",destino:newCobro.destino});
+            await load();
+            const restante=Math.round((budgetEffective-newTotal)*100)/100;
+            flash(restante>0.01?`✓ Cobro registrado · saldo USD ${restante.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"✓ Cobro registrado · op cobrada");
+          }catch(e){alertDialog("Error: "+e.message);}
+          setSavingCobro(false);
+        };
+
+        const borrarCobro=async(pmt)=>{
+          if(!await confirmDialog("¿Eliminar este cobro? Si generó movimiento en la CC de la financiera, también se elimina."))return;
+          await dq("operation_client_payments",{method:"DELETE",token,filters:`?id=eq.${pmt.id}`});
+          const newTot=clientPayments.filter(x=>x.id!==pmt.id).reduce((s,x)=>s+Number(x.amount_usd||0),0);
+          const upd={collected_amount:newTot,total_anticipos:newTot};
+          if(newTot<budgetEffective-0.01)upd.is_collected=false;
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});
+          setOp(p=>({...p,...upd}));
+          await load();
+          flash("Cobro eliminado");
+        };
+
+        const fld=(label,node,w)=><div style={{flex:w||"1 1 150px",minWidth:120}}>
+          <label style={{display:"block",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>
+          {node}
+        </div>;
+        const inpStyle={width:"100%",boxSizing:"border-box",padding:"9px 11px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"};
+        const selStyle={...inpStyle,textAlign:"left",cursor:"pointer"};
+
+        return <Card title={`Cobros${clientPayments.length>0?` · ${clientPayments.length}`:""}`} actions={
+          op.is_collected
+            ?<Btn small variant="secondary" disabled={saving} onClick={async()=>{if(!await confirmDialog("¿Reabrir el cobro? Vuelve a quedar pendiente para registrar más pagos."))return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{is_collected:false}});setOp(p=>({...p,is_collected:false}));flash("Cobro reabierto");setSaving(false);}}>↺ Reabrir cobro</Btn>
+            :(cobradoUsd>0.01||saldoCobro<-0.01)&&<Btn small variant="secondary" disabled={saving} onClick={cerrarCobro}>✓ Cerrar cobro</Btn>
+        }>
         {/* Banner: cliente con saldo a favor */}
         {creditBal>0.01&&!op.is_collected&&budgetTot>0&&<div style={{marginBottom:12,padding:"12px 16px",background:"linear-gradient(90deg, rgba(34,197,94,0.1), rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div>
@@ -3126,14 +3105,13 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           </div>
           <Btn onClick={applySaldo} small>Aplicar a esta op →</Btn>
         </div>}
-        {/* Banner: cliente con deuda anterior (también permanece visible después de aplicar) */}
+        {/* Banner: cliente con deuda anterior */}
         {(debtBal>0.01||debtApplied>0.01)&&!op.is_collected&&budgetTot>0&&<div style={{marginBottom:12,padding:"12px 16px",background:debtApplied>0?"linear-gradient(90deg, rgba(34,197,94,0.10), rgba(34,197,94,0.02))":"linear-gradient(90deg, rgba(251,146,60,0.1), rgba(251,146,60,0.02))",border:debtApplied>0?"1px solid rgba(34,197,94,0.35)":"1px solid rgba(251,146,60,0.35)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div>
             {debtApplied>0?<p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✓ Deuda anterior sumada: USD {debtApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>:<p style={{fontSize:12,fontWeight:700,color:"#fb923c",margin:0}}>⚠ Cliente con deuda anterior: USD {debtBal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
-            {debtApplied>0?<p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0"}}>Total a cobrar: <strong style={{color:"#fff"}}>USD {(budgetTot+debtApplied).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong> · presupuesto USD {budgetTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} + deuda USD {debtApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>:<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si la sumás, el monto a cobrar pasa a USD {(budgetTot+debtBal).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} y la deuda se cancela.</p>}
+            {debtApplied>0?<p style={{fontSize:11,color:"rgba(255,255,255,0.65)",margin:"3px 0 0"}}>Total a cobrar: <strong style={{color:"#fff"}}>USD {(budgetTot+debtApplied).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></p>:<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si la sumás, el monto a cobrar pasa a USD {(budgetTot+debtBal).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} y la deuda se cancela.</p>}
           </div>
           {debtApplied<=0?<Btn onClick={applyDebt} small>Sumar a esta op →</Btn>:<button onClick={async()=>{if(!await confirmDialog(`¿Quitar los USD ${debtApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de deuda aplicada? La deuda vuelve a la CC del cliente.`))return;
-            // Revertir: borrar el movimiento "applied" creado y limpiar debt_applied_usd
             const movs=await dq("client_account_movements",{token,filters:`?operation_id=eq.${op.id}&type=eq.applied&description=ilike.*Deuda%20cancelada*&select=id&order=created_at.desc&limit=1`});
             if(Array.isArray(movs)&&movs[0])await dq("client_account_movements",{method:"DELETE",token,filters:`?id=eq.${movs[0].id}`});
             await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{debt_applied_usd:0}});
@@ -3143,108 +3121,97 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             flash("Deuda revertida");
           }} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:6,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>Revertir</button>}
         </div>}
-        {/* Banner: cargo extra registrado (cobraste más que el presupuesto, NO es saldo a favor) */}
+        {/* Banner: cargo extra registrado */}
         {Number(op.extra_charge_usd||0)>0.01&&op.is_collected&&<div style={{marginBottom:12,padding:"10px 14px",background:"linear-gradient(90deg, rgba(167,139,250,0.10), rgba(167,139,250,0.02))",border:"1px solid rgba(167,139,250,0.3)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <div>
-            <p style={{fontSize:12,fontWeight:700,color:"#a78bfa",margin:0}}>💰 Cargo extra: USD {Number(op.extra_charge_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Presupuesto USD {budgetTot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} + extra USD {Number(op.extra_charge_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} = cobrado USD {(budgetTot+Number(op.extra_charge_usd)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}. Se cuenta como revenue de esta op.</p>
-          </div>
-          <button onClick={async()=>{if(!await confirmDialog("¿Limpiar el cargo extra? Solo borra el flag, no modifica el monto cobrado."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{extra_charge_usd:0}});setOp(p=>({...p,extra_charge_usd:0}));flash("Cargo extra limpiado");}} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:6,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar</button>
+          <p style={{fontSize:12,fontWeight:700,color:"#a78bfa",margin:0}}>💰 Cargo extra: USD {Number(op.extra_charge_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} · se cuenta como revenue de esta op</p>
+          <button onClick={async()=>{if(!await confirmDialog("¿Limpiar el cargo extra? Solo borra el flag, no modifica el monto cobrado."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{extra_charge_usd:0}});setOp(p=>({...p,extra_charge_usd:0}));flash("Cargo extra limpiado");}} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:6,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.10)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar</button>
         </div>}
-        {/* El cobro se arma con los pagos registrados abajo — no hay campos manuales de monto/metodo.
-            Asi se pueden ir anotando varios pagos y el total sale de la suma, como en MyBox. */}
-        {(()=>{
-          const cobradoUsd=cobroEffective;
-          const saldo=Math.round((budgetEffective-cobradoUsd)*100)/100;
-          const cell=(lbl,val,color)=><div><p style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 3px"}}>{lbl}</p><p style={{fontSize:15,fontWeight:700,color:color||"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {Number(val||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>;
-          return <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,padding:"12px 16px",marginBottom:12,background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10}}>
-            {cell("Total a cobrar",budgetEffective,GOLD_LIGHT)}
-            {cell("Cobrado",cobradoUsd,"#22c55e")}
-            {cell(saldo>0.01?"Saldo pendiente":saldo<-0.01?"Sobrante":"Saldo",Math.abs(saldo),saldo>0.01?"#fbbf24":saldo<-0.01?"#60a5fa":"#22c55e")}
-          </div>;
-        })()}
-        {/* Si hay descuento aplicado, mostrar mini banner con opción de limpiarlo */}
-        {Number(op.discount_applied_usd)>0.01&&<div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px 10px 16px",borderRadius:10,marginBottom:10,position:"relative",overflow:"hidden",background:"linear-gradient(90deg,rgba(167,139,250,0.10),rgba(167,139,250,0.02))",border:"1px solid rgba(167,139,250,0.28)",fontSize:12.5}}>
-          <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:"#a78bfa"}}/>
-          <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(167,139,250,0.18)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#a78bfa",fontSize:13}}>🎟</div>
-          <div style={{flex:1}}>
-            <p style={{margin:0,fontWeight:700,color:"#a78bfa"}}>Descuento intencional aplicado: USD {Number(op.discount_applied_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si fue por error, limpiá el descuento y volvé a cobrar correctamente.</p>
-          </div>
-          <button onClick={async()=>{if(!await confirmDialog("¿Limpiar el descuento aplicado? Esto NO modifica el monto cobrado, solo elimina el flag de descuento."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{discount_applied_usd:0}});setOp(p=>({...p,discount_applied_usd:0}));flash("Descuento limpiado");}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.10)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar descuento</button>
+        {/* Banner: descuento aplicado */}
+        {Number(op.discount_applied_usd)>0.01&&<div style={{marginBottom:12,padding:"10px 14px",background:"linear-gradient(90deg,rgba(167,139,250,0.10),rgba(167,139,250,0.02))",border:"1px solid rgba(167,139,250,0.28)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <p style={{fontSize:12,fontWeight:700,color:"#a78bfa",margin:0}}>🎟 Descuento intencional: USD {Number(op.discount_applied_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+          <button onClick={async()=>{if(!await confirmDialog("¿Limpiar el descuento aplicado? No modifica el monto cobrado."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{discount_applied_usd:0}});setOp(p=>({...p,discount_applied_usd:0}));flash("Descuento limpiado");}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.10)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar</button>
         </div>}
 
-        {/* Aviso de diff modernizado — card con icon + título + descripción + acento lateral */}
-        {(cobroRaw>0||creditApplied>0)&&budgetTot>0&&(()=>{
-          const baseStyle={display:"flex",alignItems:"center",gap:12,padding:"12px 14px 12px 16px",borderRadius:10,marginBottom:10,position:"relative",overflow:"hidden",fontSize:12.5,lineHeight:1.45};
-          const accent=(c)=><div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:c}}/>;
-          if(Math.abs(diff)<0.01)return <div style={{...baseStyle,background:"linear-gradient(90deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.25)"}}>
-            {accent("#22c55e")}
-            <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(34,197,94,0.18)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#22c55e",fontSize:14,fontWeight:800}}>✓</div>
-            <div style={{flex:1}}>
-              <p style={{margin:0,fontWeight:700,color:"#22c55e"}}>Monto coincide con el presupuesto</p>
-              {creditApplied>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>USD {cobroUsd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} cash + USD {creditApplied.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de saldo CC</p>}
-            </div>
-          </div>;
-          if(diff>0)return <div style={{...baseStyle,background:"linear-gradient(90deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.25)"}}>
-            {accent("#22c55e")}
-            <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(34,197,94,0.18)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#22c55e",fontSize:14}}>↑</div>
-            <div style={{flex:1}}>
-              <p style={{margin:0,fontWeight:700,color:"#22c55e"}}>Pagó USD {diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de más</p>
-              <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Al marcar cobrada se registra como saldo a favor en CC.</p>
-            </div>
-          </div>;
-          return <div style={{...baseStyle,background:"linear-gradient(90deg,rgba(251,191,36,0.10),rgba(251,191,36,0.02))",border:"1px solid rgba(251,191,36,0.30)"}}>
-            {accent("#fbbf24")}
-            <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(251,191,36,0.18)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#fbbf24",fontSize:14}}>!</div>
-            <div style={{flex:1}}>
-              <p style={{margin:0,fontWeight:700,color:"#fbbf24"}}>Faltan USD {Math.abs(diff).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-              <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:"3px 0 0"}}>Si el monto cargado no es correcto, ajustalo. Si efectivamente cobraste menos, al guardar elegís: descuento intencional o deuda en CC.</p>
-            </div>
-          </div>;
-        })()}
-        {/* Mini-tabla de cobros parciales — solo si hay >=1 pagos parciales registrados */}
-        {clientPayments.length>0&&<div style={{background:"rgba(34,197,94,0.04)",border:"1px solid rgba(34,197,94,0.18)",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
-            <p style={{fontSize:11,fontWeight:700,color:"#22c55e",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>📋 Cobros parciales registrados ({clientPayments.length})</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.6)",margin:0}}>Total: <strong style={{color:"#fff"}}>USD {totalParciales.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>{budgetTot>0?` · Saldo ${saldoParciales>0.01?`USD ${saldoParciales.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:saldoParciales<-0.01?`+USD ${Math.abs(saldoParciales).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (sobrante)`:`$0 ✓`}`:""}</p>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            {clientPayments.map(p=>{const isArs=p.currency==="ARS";return <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",background:"rgba(0,0,0,0.18)",borderRadius:6,fontSize:12}}>
-              <span style={{color:"rgba(255,255,255,0.65)"}}>{formatDate(p.payment_date)} · {p.payment_method||"—"}{p.notes?` · ${p.notes}`:""}</span>
-              <span style={{display:"flex",gap:8,alignItems:"center"}}>
-                <span style={{fontFamily:"monospace",color:"#fff",fontWeight:600}}>USD {Number(p.amount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}{isArs?` (ARS ${Number(p.amount_ars||0).toLocaleString("es-AR")} @ ${p.exchange_rate})`:""}</span>
-                <button onClick={()=>printReceiptPdf({op,payment:p,client:opClient})} title="Generar recibo PDF para enviar al cliente" style={{background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.3)",color:"#60a5fa",cursor:"pointer",fontSize:10,padding:"3px 8px",borderRadius:4,fontWeight:700}}>📄 Recibo</button>
-                <button onClick={async()=>{if(!await confirmDialog("¿Eliminar este cobro parcial?"))return;await dq("operation_client_payments",{method:"DELETE",token,filters:`?id=eq.${p.id}`});const newTot=clientPayments.filter(x=>x.id!==p.id).reduce((s,x)=>s+Number(x.amount_usd||0),0);const upd={collected_amount:newTot,total_anticipos:newTot};if(newTot<budgetTot)upd.is_collected=false;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});setOp(prev=>({...prev,...upd}));await load();flash("Cobro eliminado");}} title="Eliminar este cobro" style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.7)",cursor:"pointer",fontSize:14,padding:"0 4px"}}>×</button>
-              </span>
-            </div>;})}
-          </div>
-        </div>}
-        {payments.length>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.12)",borderRadius:10,padding:"12px 16px",marginBottom:12}}><p style={{fontSize:12,fontWeight:600,color:IC,margin:"0 0 2px"}}>Esta operación tiene gestión de pagos internacionales (servicio aparte)</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>El cobro de esta operación es independiente. Ver la sección Gestión de Pagos más abajo.</p></div>}
-        {/* Cierre del cobro. No hay toggle manual: el cobro se cierra cuando decidis que termino,
-            y ahi el sistema resuelve que hacer con el saldo (a favor / deuda / descuento / extra),
-            igual que MyBox. Si falta plata podes cerrar igual y seguir cobrando despues. */}
-        <div style={{marginTop:6,padding:"12px 16px",background:op.is_collected?"linear-gradient(90deg, rgba(34,197,94,0.12), rgba(34,197,94,0.02))":"rgba(255,255,255,0.028)",border:`1px solid ${op.is_collected?"rgba(34,197,94,0.35)":"rgba(255,255,255,0.08)"}`,borderRadius:12,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-          <div style={{flex:1,minWidth:220}}>
-            <p style={{fontSize:13,fontWeight:700,color:op.is_collected?"#22c55e":"#fff",margin:0}}>{op.is_collected?"✓ Cobro cerrado":"Cobro abierto"}</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"3px 0 0",lineHeight:1.45}}>
-              {op.is_collected
-                ?"Figura en el libro de finanzas. Si aparece un pago mas, reabrí el cobro, registralo y volvé a cerrar."
-                :diff>0.01?`El cliente pagó USD ${diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de más — al cerrar elegís si queda como saldo a favor o como cargo extra.`
-                :diff<-0.01?`Faltan USD ${Math.abs(diff).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} — podés cerrar igual y elegir si es descuento o deuda en su cuenta corriente.`
-                :"El monto coincide con el presupuesto."}
-            </p>
-          </div>
-          {op.is_collected
-            ?<Btn small variant="secondary" disabled={saving} onClick={async()=>{
-                if(!await confirmDialog("¿Reabrir el cobro de esta op? Vuelve a quedar como pendiente para registrar mas pagos."))return;
-                setSaving(true);
-                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{is_collected:false}});
-                setOp(p=>({...p,is_collected:false}));
-                flash("Cobro reabierto");setSaving(false);
-              }}>↺ Reabrir cobro</Btn>
-            :<Btn small disabled={saving} onClick={cerrarCobro}>{saving?"Guardando...":"✓ Cerrar cobro"}</Btn>}
+        {/* Totales en una línea */}
+        <div style={{display:"flex",gap:24,flexWrap:"wrap",padding:"2px 0 14px",borderBottom:"1px solid rgba(255,255,255,0.06)",marginBottom:14}}>
+          <span style={{fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>Total a cobrar <strong style={{color:GOLD_LIGHT,marginLeft:5,fontVariantNumeric:"tabular-nums"}}>USD {budgetEffective.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></span>
+          <span style={{fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>Cobrado <strong style={{color:"#22c55e",marginLeft:5,fontVariantNumeric:"tabular-nums"}}>USD {cobradoUsd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></span>
+          <span style={{fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>{saldoCobro>0.01?"Saldo":saldoCobro<-0.01?"Sobrante":"Saldo"} <strong style={{color:saldoCobro>0.01?"#fbbf24":saldoCobro<-0.01?"#60a5fa":"#22c55e",marginLeft:5,fontVariantNumeric:"tabular-nums"}}>USD {Math.abs(saldoCobro).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></span>
+          {op.is_collected&&<span style={{fontSize:11,fontWeight:800,padding:"2px 8px",borderRadius:5,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)"}}>✓ CERRADO</span>}
         </div>
+
+        {/* Cobros registrados */}
+        {clientPayments.length>0&&<table style={{width:"100%",borderCollapse:"collapse",marginBottom:16}}>
+          <tbody>
+            {clientPayments.map(p=>{const isArs=p.currency==="ARS";const aFin=p.ars_destination==="financiera";return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+              <td style={{padding:"9px 8px",fontSize:12.5,color:"rgba(255,255,255,0.8)",whiteSpace:"nowrap",width:100}}>{formatDate(p.payment_date)}</td>
+              <td style={{padding:"9px 8px",fontSize:12.5,color:"rgba(255,255,255,0.65)"}}>
+                Cobro {op.operation_code}{opClient?.client_code?` · ${opClient.client_code}`:""}{isArs&&p.amount_ars?` (ARS ${Number(p.amount_ars).toLocaleString("es-AR")} @ ${Number(p.exchange_rate).toLocaleString("es-AR")})`:""}
+                {p.notes&&<span style={{color:"rgba(255,255,255,0.4)"}}> · {p.notes}</span>}
+              </td>
+              <td style={{padding:"9px 8px",fontSize:12,color:"rgba(255,255,255,0.5)",textTransform:"capitalize",whiteSpace:"nowrap",width:110}}>{(p.payment_method||"—").replace("_"," ")}</td>
+              <td style={{padding:"9px 8px",whiteSpace:"nowrap",width:120}}>{p.ars_destination&&<span title={aFin?"Entró a la cuenta corriente de SOLFIN":"Entró a cuenta propia"} style={{fontSize:9.5,fontWeight:700,padding:"2px 6px",borderRadius:4,background:aFin?"rgba(96,165,250,0.14)":"rgba(255,255,255,0.07)",color:aFin?"#60a5fa":"rgba(255,255,255,0.5)"}}>{aFin?"→ SOLFIN":"→ propia"}{aFin&&Number(p.commission_pct||0)>0?` · ${Number(p.commission_pct)}%`:""}</span>}</td>
+              <td style={{padding:"9px 8px",whiteSpace:"nowrap",width:120}}>{p.receipt_url&&<a href={p.receipt_url} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.7)",textDecoration:"none"}}>📎 Comprobante</a>}</td>
+              <td style={{padding:"9px 8px",textAlign:"right",fontSize:13,fontWeight:700,color:"#22c55e",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",width:120}}>USD {Number(p.amount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+              <td style={{padding:"9px 4px",textAlign:"right",width:70,whiteSpace:"nowrap"}}>
+                <button onClick={()=>printReceiptPdf({op,payment:p,client:opClient})} title="Generar recibo PDF" style={{background:"transparent",border:"none",color:"rgba(96,165,250,0.8)",cursor:"pointer",fontSize:13,padding:"0 3px"}}>📄</button>
+                <button onClick={()=>borrarCobro(p)} title="Eliminar cobro" style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.7)",cursor:"pointer",fontSize:15,padding:"0 3px"}}>×</button>
+              </td>
+            </tr>;})}
+          </tbody>
+        </table>}
+
+        {payments.length>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.12)",borderRadius:10,padding:"10px 14px",marginBottom:14}}><p style={{fontSize:11.5,color:IC,margin:0}}>Esta op también tiene gestión de pagos internacionales — se cobra aparte, ver esa sección más abajo.</p></div>}
+
+        {/* Registrar cobro — inline, sin modal */}
+        <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.07em"}}>Registrar cobro</p>
+        <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>
+          {fld(`Monto cobrado (${newCobro.metodo==="cripto"?"USDT":monedaCobro})`,<input inputMode="decimal" placeholder="0" value={newCobro.monto} onChange={e=>{const v=e.target.value;if(v===""||/^\d*[.,]?\d*$/.test(v))setNewCobro(p=>({...p,monto:v}));}} style={inpStyle}/>)}
+          {fld("Método de cobro",<select value={newCobro.metodo} onChange={e=>setNewCobro(p=>({...p,metodo:e.target.value,tc:""}))} style={selStyle}>
+            <option value="transferencia" style={{background:"#142038"}}>Transferencia</option>
+            <option value="efectivo" style={{background:"#142038"}}>Efectivo</option>
+            <option value="cripto" style={{background:"#142038"}}>Cripto (USDT)</option>
+          </select>)}
+          {newCobro.metodo==="efectivo"&&fld("Moneda",<select value={newCobro.moneda} onChange={e=>setNewCobro(p=>({...p,moneda:e.target.value,tc:""}))} style={selStyle}>
+            <option value="USD" style={{background:"#142038"}}>USD</option>
+            <option value="ARS" style={{background:"#142038"}}>ARS</option>
+          </select>)}
+          {newCobro.metodo==="transferencia"&&fld("Comisión transferencia %",<input inputMode="decimal" placeholder="2,5" value={newCobro.comision} onChange={e=>{const v=e.target.value;if(v===""||/^\d*[.,]?\d*$/.test(v))setNewCobro(p=>({...p,comision:v}));}} style={inpStyle}/>)}
+          {esArsCobro&&fld("Tipo de cambio (ARS/USD)",<input inputMode="decimal" placeholder="Ej: 1450" value={newCobro.tc} onChange={e=>{const v=e.target.value;if(v===""||/^\d*[.,]?\d*$/.test(v))setNewCobro(p=>({...p,tc:v}));}} style={inpStyle}/>)}
+          {fld("Fecha de cobro",<input type="date" value={newCobro.fecha} onChange={e=>setNewCobro(p=>({...p,fecha:e.target.value}))} style={{...inpStyle,textAlign:"left"}}/>)}
+        </div>
+
+        {esArsCobro&&nMonto>0&&nTc>0&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.5)",margin:"0 0 12px"}}>
+          USD equivalente: <strong style={{color:"#22c55e"}}>USD {cobroUsdPreview.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>
+          {newCobro.metodo==="transferencia"&&nCom>0&&<> · comisión ARS {comArsPreview.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} · neto ARS {(nMonto-comArsPreview).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</>}
+        </p>}
+
+        {/* Destino: en Argencargo no toda transferencia en pesos va a la financiera */}
+        {esTransfArs&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+          {[{v:"financiera",l:"Financiera (SOLFIN)",h:"Genera el movimiento en la CC"},{v:"propia",l:"Cuenta propia",h:"No toca la CC de la financiera"}].map(o=>
+            <button key={o.v} type="button" onClick={()=>setNewCobro(p=>({...p,destino:o.v}))} style={{flex:"1 1 190px",textAlign:"left",padding:"9px 12px",borderRadius:9,cursor:"pointer",border:`1.5px solid ${newCobro.destino===o.v?"#22c55e":"rgba(255,255,255,0.12)"}`,background:newCobro.destino===o.v?"rgba(34,197,94,0.10)":"rgba(255,255,255,0.03)"}}>
+              <p style={{fontSize:12,fontWeight:700,color:newCobro.destino===o.v?"#22c55e":"rgba(255,255,255,0.7)",margin:"0 0 2px"}}>{newCobro.destino===o.v?"● ":"○ "}{o.l}</p>
+              <p style={{fontSize:10,color:"rgba(255,255,255,0.42)",margin:0}}>{o.h}</p>
+            </button>)}
+        </div>}
+
+        {/* Comprobante */}
+        <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Comprobante — pegá con ⌘V / Ctrl+V o subí un archivo</p>
+        {newCobro.receipt_url
+          ?<div style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderRadius:9,background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.25)",marginBottom:14}}>
+            <a href={newCobro.receipt_url} target="_blank" rel="noreferrer" style={{flexShrink:0,width:40,height:40,borderRadius:6,overflow:"hidden",border:"1px solid rgba(255,255,255,0.12)"}}>
+              <img src={newCobro.receipt_url} alt="comprobante" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+            </a>
+            <span style={{flex:1,fontSize:12,color:"#22c55e",fontWeight:600}}>✓ Comprobante cargado</span>
+            <button type="button" onClick={()=>setNewCobro(p=>({...p,receipt_url:""}))} style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>× Quitar</button>
+          </div>
+          :<label style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,padding:"26px 14px",border:"1px dashed rgba(255,255,255,0.16)",borderRadius:10,background:"rgba(255,255,255,0.02)",cursor:uploadingReceipt?"wait":"pointer",marginBottom:14}}>
+            <span style={{fontSize:20}}>{uploadingReceipt?"⏳":"📎"}</span>
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>{uploadingReceipt?"Subiendo…":"Clic para elegir archivo · o pegá una imagen con ⌘V / Ctrl+V"}</span>
+            <input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)uploadCobroReceipt(f);e.target.value="";}} disabled={uploadingReceipt} style={{display:"none"}}/>
+          </label>}
+
+        <Btn onClick={registrarCobro} disabled={savingCobro||uploadingReceipt}>{savingCobro?"Registrando…":uploadingReceipt?"Subiendo comprobante…":"+ Registrar cobro"}</Btn>
       </Card>;})()}
 
       <Card title={op.service_type==="gestion_integral"?"Costos reales (Gestión Integral)":"Costos reales"} actions={<Btn onClick={async()=>{setSaving(true);
@@ -3925,79 +3892,6 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       </div>;
     })()}
 
-    {showAddPayment&&<div onClick={()=>!savingAddPayment&&setShowAddPayment(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(34,197,94,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>+ Registrar cobro adicional</h3>
-          <button onClick={()=>!savingAddPayment&&setShowAddPayment(false)} disabled={savingAddPayment} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
-        </div>
-        <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,marginBottom:14}}>
-          <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.05em",fontWeight:700}}>Operación</p>
-          <p style={{fontSize:13,color:"#fff",margin:0}}><strong style={{color:IC,fontFamily:"monospace"}}>{op.operation_code}</strong> · presupuesto <strong>USD {Number(op.budget_total||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></p>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px",marginBottom:8}}>
-          <Sel label="Moneda" value={addPaymentForm.currency} onChange={v=>setAddPaymentForm(p=>({...p,currency:v}))} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]} small/>
-          <Sel label="Método" value={addPaymentForm.payment_method} onChange={v=>setAddPaymentForm(p=>({...p,payment_method:v}))} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Efectivo"},{value:"cripto",label:"Cripto"}]} small/>
-        </div>
-        {addPaymentForm.currency==="USD"?<div style={{marginBottom:8}}>
-          <Inp label="Monto USD *" type="number" value={addPaymentForm.amount_usd} onChange={v=>setAddPaymentForm(p=>({...p,amount_usd:v}))} step="0.01" placeholder="Ej: 100.00" small/>
-        </div>:<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px",marginBottom:8}}>
-          <Inp label="Monto ARS *" type="number" value={addPaymentForm.amount_ars} onChange={v=>setAddPaymentForm(p=>({...p,amount_ars:v}))} step="0.01" small/>
-          <Inp label="TC ARS/USD *" type="number" value={addPaymentForm.exchange_rate} onChange={v=>setAddPaymentForm(p=>({...p,exchange_rate:v}))} step="0.01" placeholder="Ej: 1410" small/>
-        </div>}
-        <div style={{marginBottom:14}}>
-          <Inp label="Fecha del cobro *" type="date" value={addPaymentForm.payment_date} onChange={v=>setAddPaymentForm(p=>({...p,payment_date:v}))} small/>
-          <Inp label="Notas (opcional)" value={addPaymentForm.notes} onChange={v=>setAddPaymentForm(p=>({...p,notes:v}))} placeholder='Ej: "Anticipo, falta flete local"' small/>
-        </div>
-        {/* Transferencia en ARS: hay que decir a dónde entró la plata. No toda transferencia en
-            pesos va a la financiera — a veces entra a cuenta propia y no debe tocar la CC de SOLFIN. */}
-        {addPaymentForm.currency==="ARS"&&addPaymentForm.payment_method==="transferencia"&&(()=>{
-          const aFin=addPaymentForm.ars_destination==="financiera";
-          const arsN=Number(String(addPaymentForm.amount_ars||"").replace(",","."))||0;
-          const pct=Number(String(addPaymentForm.commission_pct||"").replace(",","."))||0;
-          const com=Math.round(arsN*(pct/100)*100)/100;
-          const opt=(val,label,hint)=><button type="button" key={val} onClick={()=>setAddPaymentForm(p=>({...p,ars_destination:val}))} style={{flex:"1 1 160px",textAlign:"left",padding:"10px 12px",borderRadius:9,cursor:"pointer",border:`1.5px solid ${addPaymentForm.ars_destination===val?"#22c55e":"rgba(255,255,255,0.12)"}`,background:addPaymentForm.ars_destination===val?"rgba(34,197,94,0.10)":"rgba(255,255,255,0.03)"}}>
-            <p style={{fontSize:12.5,fontWeight:700,color:addPaymentForm.ars_destination===val?"#22c55e":"rgba(255,255,255,0.75)",margin:"0 0 2px"}}>{addPaymentForm.ars_destination===val?"● ":"○ "}{label}</p>
-            <p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:0,lineHeight:1.4}}>{hint}</p>
-          </button>;
-          return <div style={{marginBottom:14,padding:"12px 14px",background:"rgba(96,165,250,0.05)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:10}}>
-            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>¿A dónde entró la transferencia?</p>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:aFin?12:0}}>
-              {opt("financiera","Financiera (SOLFIN)","Genera el movimiento en la CC y el comprobante queda visible en el link compartido.")}
-              {opt("propia","Cuenta propia","No toca la CC de la financiera. El comprobante queda solo en la op.")}
-            </div>
-            {aFin&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
-              <Inp label="Comisión financiera %" type="number" value={addPaymentForm.commission_pct} onChange={v=>setAddPaymentForm(p=>({...p,commission_pct:v}))} step="0.01" placeholder="Ej: 3" small/>
-              <div>
-                <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Neto a la CC</label>
-                <div style={{padding:"8px 10px",fontSize:13,borderRadius:8,background:"rgba(34,197,94,0.08)",border:"1.5px solid rgba(34,197,94,0.2)",color:"#22c55e",fontWeight:700}}>ARS {(arsN-com).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-                {pct>0&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"3px 0 0"}}>Comisión ARS {com.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
-              </div>
-            </div>}
-          </div>;
-        })()}
-        {/* Comprobante: se permite en cualquier cobro, pero es el que viaja a la CC de la financiera. */}
-        <div style={{marginBottom:14}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Comprobante (opcional)</p>
-          {addPaymentForm.receipt_url?<div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.25)"}}>
-            <a href={addPaymentForm.receipt_url} target="_blank" rel="noreferrer" style={{flexShrink:0,width:40,height:40,borderRadius:6,overflow:"hidden",border:"1px solid rgba(255,255,255,0.12)",display:"inline-block"}}>
-              <img src={addPaymentForm.receipt_url} alt="comprobante" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
-            </a>
-            <span style={{flex:1,fontSize:12,color:"#22c55e",fontWeight:600}}>✓ Comprobante cargado</span>
-            <button type="button" onClick={()=>setAddPaymentForm(p=>({...p,receipt_url:""}))} style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>× Quitar</button>
-          </div>:<label style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"14px 12px",border:"1px dashed rgba(255,255,255,0.18)",borderRadius:9,background:"rgba(255,255,255,0.03)",cursor:uploadingReceipt?"wait":"pointer"}}>
-            <span style={{fontSize:16}}>{uploadingReceipt?"⏳":"📎"}</span>
-            <span style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>{uploadingReceipt?"Subiendo…":"Adjuntar imagen del comprobante"}</span>
-            <input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)uploadReceipt(f);e.target.value="";}} disabled={uploadingReceipt} style={{display:"none"}}/>
-          </label>}
-        </div>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"0 0 12px",fontStyle:"italic"}}>Este cobro se suma al total cobrado de la op. Si después se ajusta el presupuesto y queda saldo, podés registrar otro cobro adicional.</p>
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-          <button onClick={()=>!savingAddPayment&&setShowAddPayment(false)} disabled={savingAddPayment} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:savingAddPayment?"not-allowed":"pointer"}}>Cancelar</button>
-          <button onClick={submitAddPayment} disabled={savingAddPayment||uploadingReceipt} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.5)",background:savingAddPayment?"rgba(255,255,255,0.05)":"linear-gradient(135deg,#22c55e,#16a34a)",color:savingAddPayment?"rgba(255,255,255,0.4)":"#fff",cursor:savingAddPayment?"wait":"pointer"}}>{savingAddPayment?"Guardando…":uploadingReceipt?"Subiendo comprobante…":"✓ Registrar cobro"}</button>
-        </div>
-      </div>
-    </div>}
 
     {cancelRedemptionTarget&&<div onClick={()=>!cancelingRedemption&&setCancelRedemptionTarget(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(255,80,80,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:460,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
