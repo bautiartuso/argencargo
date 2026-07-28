@@ -8868,6 +8868,256 @@ function OperationalAnalytics({token}){
   </div>;
 }
 
+// AgpPanel — Gestión de pagos como entidad propia (AGP-xxxx), fuera de la operación.
+// Cada gestión tiene dos patas: lo que cobrás al cliente y el giro que hacés al exterior. La
+// ganancia es la diferencia, y es lo único que entra al libro diario — el bruto solo pasa por la
+// cuenta. Las históricas conservan de qué op salieron; las nuevas son independientes.
+function AgpPanel({token,allClients}){
+  const [rows,setRows]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [q,setQ]=useState("");
+  const [filtro,setFiltro]=useState("todas"); // todas | pendientes | cerradas
+  const [editing,setEditing]=useState(null); // objeto o "nuevo"
+  const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+
+  const load=async()=>{
+    setLo(true);
+    const r=await dq("payment_management",{token,filters:"?select=*,clients(client_code,first_name,last_name),operations(operation_code)&order=date.desc,created_at.desc"});
+    setRows(Array.isArray(r)?r:[]);
+    setLo(false);
+  };
+  useEffect(()=>{load();},[token]);
+
+  // Una gestión está cerrada cuando el cliente pagó y el giro salió (si fue con tarjeta, ya debitada).
+  const tarjetaPend=(p)=>p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid;
+  const giroOk=(p)=>p.giro_status==="confirmado"&&!tarjetaPend(p);
+  const cerrada=(p)=>!!p.client_paid&&giroOk(p);
+  const cobradoDe=(p)=>Number(p.client_paid_amount_usd??p.client_amount_usd??0);
+  const salidaDe=(p)=>Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0);
+  const gananciaDe=(p)=>Math.round((cobradoDe(p)-salidaDe(p))*100)/100;
+
+  const matches=(p)=>{
+    if(!q.trim())return true;
+    const c=p.clients;
+    const s=`${p.agp_code||""} ${p.operations?.operation_code||""} ${c?.client_code||""} ${c?.first_name||""} ${c?.last_name||""} ${p.description||""}`.toLowerCase();
+    return s.includes(q.trim().toLowerCase());
+  };
+  const filtered=rows.filter(p=>matches(p)&&(filtro==="todas"||(filtro==="cerradas"?cerrada(p):!cerrada(p))));
+  const totCobrado=filtered.reduce((s,p)=>s+cobradoDe(p),0);
+  const totGirado=filtered.reduce((s,p)=>s+salidaDe(p),0);
+  const totGanancia=filtered.reduce((s,p)=>s+(cerrada(p)?gananciaDe(p):0),0);
+  const pendientes=rows.filter(p=>!cerrada(p));
+
+  const del=async(p)=>{
+    if(!await confirmDialog(`¿Eliminar la gestión ${p.agp_code}?\n\nSe borra también su movimiento del libro diario.`))return;
+    await dq("payment_management",{method:"DELETE",token,filters:`?id=eq.${p.id}`});
+    toast("Gestión eliminada","success");
+    load();
+  };
+
+  const th={padding:"9px 10px",textAlign:"left",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",whiteSpace:"nowrap"};
+  const td={padding:"10px",fontSize:12.5,color:"rgba(255,255,255,0.75)",whiteSpace:"nowrap"};
+  const stat=(lbl,val,color)=><div style={{flex:"1 1 150px",padding:"12px 14px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:11}}>
+    <p style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>{lbl}</p>
+    <p style={{fontSize:17,fontWeight:800,color:color||"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{val}</p>
+  </div>;
+
+  if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
+      <div>
+        <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Gestión de pagos</h2>
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>Giros al exterior por cuenta del cliente. Al panel financiero solo entra la ganancia, no el monto que pasa.</p>
+      </div>
+      <Btn variant="gold" onClick={()=>setEditing("nuevo")}>+ Nueva gestión</Btn>
+    </div>
+
+    <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:16}}>
+      {stat("Cobrado al cliente",usd(totCobrado))}
+      {stat("Girado + comisión",usd(totGirado),"#ff9b9b")}
+      {stat("Ganancia (cerradas)",usd(totGanancia),totGanancia>=0?"#22c55e":"#f87171")}
+      {stat("Pendientes",String(pendientes.length),pendientes.length?"#fbbf24":"rgba(255,255,255,0.4)")}
+    </div>
+
+    <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:8,border:"1px solid rgba(255,255,255,0.08)"}}>
+        {[{k:"todas",l:"Todas"},{k:"pendientes",l:"⏳ Pendientes"},{k:"cerradas",l:"✓ Cerradas"}].map(o=>
+          <button key={o.k} onClick={()=>setFiltro(o.k)} style={{padding:"6px 13px",fontSize:12,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:filtro===o.k?GOLD_GRADIENT:"transparent",color:filtro===o.k?"#0A1628":"rgba(255,255,255,0.55)"}}>{o.l}</button>)}
+      </div>
+      <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por AGP, cliente u op..." style={{flex:1,minWidth:200,padding:"9px 14px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
+    </div>
+
+    {filtered.length===0
+      ?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2.5rem 0"}}>{q||filtro!=="todas"?"Sin resultados con este filtro.":"Todavía no hay gestiones de pago cargadas."}</p>
+      :<div style={{border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,overflow:"hidden",background:"rgba(255,255,255,0.02)"}}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:940}}>
+            <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.025)"}}>
+              <th style={{...th,width:96}}>Código</th>
+              <th style={{...th,width:88}}>Fecha</th>
+              <th style={th}>Cliente</th>
+              <th style={th}>Detalle</th>
+              <th style={{...th,textAlign:"right",width:120}}>Cobrado</th>
+              <th style={{...th,textAlign:"right",width:120}}>Girado</th>
+              <th style={{...th,textAlign:"right",width:110}}>Ganancia</th>
+              <th style={{...th,width:130}}>Estado</th>
+              <th style={{...th,width:70}}></th>
+            </tr></thead>
+            <tbody>
+              {filtered.map(p=>{
+                const cl=p.clients;const cerr=cerrada(p);const gan=gananciaDe(p);
+                return <tr key={p.id} onClick={()=>setEditing(p)} style={{cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.04)"}}
+                  onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.035)";}}
+                  onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+                  <td style={{...td,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,color:GOLD_LIGHT}}>{p.agp_code||"—"}</td>
+                  <td style={{...td,color:"rgba(255,255,255,0.55)"}}>{p.date?formatDate(p.date):"—"}</td>
+                  <td style={{...td,color:"#fff",maxWidth:190,overflow:"hidden",textOverflow:"ellipsis"}}>{cl?`${cl.first_name||""} ${cl.last_name||""}`.trim():"—"}{cl?.client_code&&<span style={{marginLeft:7,fontSize:10.5,color:"rgba(255,255,255,0.35)",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{cl.client_code}</span>}</td>
+                  <td style={{...td,color:"rgba(255,255,255,0.5)",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}}>{p.description||"—"}{p.operations?.operation_code&&<span style={{marginLeft:7,fontSize:10,color:"rgba(255,255,255,0.3)"}}>· de {p.operations.operation_code}</span>}</td>
+                  <td style={{...td,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{usd(cobradoDe(p))}</td>
+                  <td style={{...td,textAlign:"right",color:"#ff9b9b",fontVariantNumeric:"tabular-nums"}}>{usd(salidaDe(p))}</td>
+                  <td style={{...td,textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums",color:cerr?(gan>=0?"#22c55e":"#f87171"):"rgba(255,255,255,0.3)"}}>{cerr?usd(gan):"—"}</td>
+                  <td style={td}>
+                    <span style={{display:"inline-flex",gap:4,flexWrap:"wrap"}}>
+                      <span style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:p.client_paid?"rgba(34,197,94,0.14)":"rgba(251,191,36,0.12)",color:p.client_paid?"#22c55e":"#fbbf24"}}>{p.client_paid?"✓ cobrado":"sin cobrar"}</span>
+                      <span style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:giroOk(p)?"rgba(34,197,94,0.14)":"rgba(251,191,36,0.12)",color:giroOk(p)?"#22c55e":"#fbbf24"}}>{giroOk(p)?"✓ girado":tarjetaPend(p)?"TC sin debitar":"sin girar"}</span>
+                    </span>
+                  </td>
+                  <td style={{...td,textAlign:"right"}} onClick={e=>e.stopPropagation()}>
+                    <button onClick={()=>del(p)} title="Eliminar gestión" style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.65)",cursor:"pointer",fontSize:15,padding:"0 4px"}}>×</button>
+                  </td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>}
+
+    {editing&&<AgpForm token={token} allClients={allClients} editing={editing==="nuevo"?null:editing} onClose={()=>setEditing(null)} onSaved={()=>{setEditing(null);load();}}/>}
+  </div>;
+}
+
+// Alta / edición de una gestión de pagos. Las dos patas (cobro al cliente y giro) se cargan por
+// separado porque no pasan al mismo tiempo: primero cobrás, después girás.
+function AgpForm({token,allClients,editing,onClose,onSaved}){
+  const e0=editing||{};
+  const [f,setF]=useState({
+    client_id:e0.client_id||"",
+    date:e0.date||new Date().toISOString().slice(0,10),
+    description:e0.description||"",
+    client_amount_usd:e0.client_amount_usd??"",
+    client_paid:!!e0.client_paid,
+    client_paid_amount_usd:e0.client_paid_amount_usd??"",
+    client_paid_date:e0.client_paid_date||"",
+    client_payment_method:e0.client_payment_method||"transferencia",
+    giro_amount_usd:e0.giro_amount_usd??"",
+    cost_comision_giro:e0.cost_comision_giro??"",
+    giro_status:e0.giro_status||"pendiente",
+    giro_date:e0.giro_date||"",
+    giro_payment_method:e0.giro_payment_method||"transferencia",
+    giro_tarjeta_paid:!!e0.giro_tarjeta_paid,
+    notes:e0.notes||"",
+  });
+  const [saving,setSaving]=useState(false);
+  const ch=(k)=>(v)=>setF(p=>({...p,[k]:v}));
+  const n=(v)=>Number(String(v??"").replace(",","."))||0;
+  const cobrado=f.client_paid?(n(f.client_paid_amount_usd)||n(f.client_amount_usd)):n(f.client_amount_usd);
+  const salida=n(f.giro_amount_usd)+n(f.cost_comision_giro);
+  const ganancia=Math.round((cobrado-salida)*100)/100;
+
+  const save=async()=>{
+    if(!f.client_id){alertDialog("Elegí el cliente");return;}
+    if(n(f.client_amount_usd)<=0){alertDialog("Cargá el monto que le cobrás al cliente");return;}
+    setSaving(true);
+    try{
+      const body={
+        client_id:f.client_id,date:f.date||null,description:f.description||null,
+        client_amount_usd:n(f.client_amount_usd),
+        client_paid:!!f.client_paid,
+        client_paid_amount_usd:f.client_paid&&n(f.client_paid_amount_usd)>0?n(f.client_paid_amount_usd):null,
+        client_paid_date:f.client_paid?(f.client_paid_date||f.date||null):null,
+        client_payment_method:f.client_payment_method||null,
+        giro_amount_usd:n(f.giro_amount_usd)||null,
+        cost_comision_giro:n(f.cost_comision_giro)||null,
+        giro_status:f.giro_status||"pendiente",
+        giro_date:f.giro_date||null,
+        giro_payment_method:f.giro_payment_method||null,
+        giro_tarjeta_paid:f.giro_payment_method==="tarjeta_credito"?!!f.giro_tarjeta_paid:null,
+        notes:f.notes||null,
+      };
+      if(editing){
+        await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
+      }else{
+        const code=await dq("rpc/next_agp_code",{method:"POST",token,body:{}});
+        body.agp_code=typeof code==="string"?code:null;
+        await dq("payment_management",{method:"POST",token,body});
+      }
+      toast(editing?"Gestión actualizada":`Gestión ${body.agp_code||""} creada`,"success");
+      onSaved();
+    }catch(err){alertDialog("Error: "+err.message);}
+    setSaving(false);
+  };
+
+  const sub=(t)=><p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"18px 0 10px",textTransform:"uppercase",letterSpacing:"0.07em"}}>{t}</p>;
+  return <div onClick={()=>!saving&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:20,overflowY:"auto"}}>
+    <div onClick={ev=>ev.stopPropagation()} style={{background:"linear-gradient(160deg,#142038,#0e1a2c)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:16,padding:"22px 24px",width:"min(680px,100%)",margin:"auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+        <h3 style={{fontSize:17,fontWeight:700,color:"#fff",margin:0}}>{editing?`Gestión ${editing.agp_code||""}`:"Nueva gestión de pagos"}</h3>
+        <button onClick={()=>!saving&&onClose()} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+      </div>
+      {editing?.operations?.operation_code&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Vino de la operación {editing.operations.operation_code}</p>}
+
+      {sub("Datos")}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:"0 12px"}}>
+        <Sel label="Cliente" value={f.client_id} onChange={ch("client_id")} options={[{value:"",label:"Elegir cliente…"},...allClients.map(c=>({value:c.id,label:`${c.client_code||""} — ${c.first_name||""} ${c.last_name||""}`.trim()}))]} small/>
+        <Inp label="Fecha" type="date" value={f.date} onChange={ch("date")} small/>
+        <Inp label="Detalle" value={f.description} onChange={ch("description")} placeholder="Ej: pago a proveedor Shenzhen" small/>
+      </div>
+
+      {sub("Lo que le cobrás al cliente")}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"0 12px"}}>
+        <Inp label="Monto acordado USD *" type="number" value={f.client_amount_usd} onChange={ch("client_amount_usd")} step="0.01" small/>
+        <Sel label="Forma de cobro" value={f.client_payment_method} onChange={ch("client_payment_method")} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Efectivo"},{value:"cripto",label:"Cripto"}]} small/>
+        {f.client_paid&&<Inp label="Cobrado realmente USD" type="number" value={f.client_paid_amount_usd} onChange={ch("client_paid_amount_usd")} step="0.01" placeholder="igual al acordado" small/>}
+        {f.client_paid&&<Inp label="Fecha del cobro" type="date" value={f.client_paid_date} onChange={ch("client_paid_date")} small/>}
+      </div>
+      <label style={{display:"flex",alignItems:"center",gap:9,cursor:"pointer",marginTop:6}}>
+        <input type="checkbox" checked={f.client_paid} onChange={ev=>ch("client_paid")(ev.target.checked)} style={{width:16,height:16,cursor:"pointer"}}/>
+        <span style={{fontSize:12.5,color:"rgba(255,255,255,0.75)"}}>El cliente ya pagó</span>
+      </label>
+
+      {sub("El giro al exterior")}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:"0 12px"}}>
+        <Inp label="Monto girado USD" type="number" value={f.giro_amount_usd} onChange={ch("giro_amount_usd")} step="0.01" small/>
+        <Inp label="Comisión del giro USD" type="number" value={f.cost_comision_giro} onChange={ch("cost_comision_giro")} step="0.01" small/>
+        <Sel label="Estado" value={f.giro_status} onChange={ch("giro_status")} options={[{value:"pendiente",label:"Pendiente"},{value:"confirmado",label:"Confirmado"}]} small/>
+        <Sel label="Forma de pago" value={f.giro_payment_method} onChange={ch("giro_payment_method")} options={[{value:"transferencia",label:"Transferencia"},{value:"efectivo",label:"Efectivo"},{value:"tarjeta_credito",label:"Tarjeta de crédito"}]} small/>
+        <Inp label="Fecha del giro" type="date" value={f.giro_date} onChange={ch("giro_date")} small/>
+      </div>
+      {f.giro_payment_method==="tarjeta_credito"&&<label style={{display:"flex",alignItems:"center",gap:9,cursor:"pointer",marginTop:6}}>
+        <input type="checkbox" checked={f.giro_tarjeta_paid} onChange={ev=>ch("giro_tarjeta_paid")(ev.target.checked)} style={{width:16,height:16,cursor:"pointer"}}/>
+        <span style={{fontSize:12.5,color:"rgba(255,255,255,0.75)"}}>La tarjeta ya se debitó <span style={{color:"rgba(255,255,255,0.45)"}}>(hasta que no se debite, la ganancia no cuenta)</span></span>
+      </label>}
+
+      <div style={{marginTop:16,padding:"13px 16px",borderRadius:11,background:ganancia>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)",border:`1px solid ${ganancia>=0?"rgba(34,197,94,0.22)":"rgba(255,80,80,0.22)"}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <div>
+          <p style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:0}}>Ganancia de la gestión</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>USD {cobrado.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} cobrado − USD {salida.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} girado + comisión</p>
+        </div>
+        <p style={{fontSize:20,fontWeight:800,color:ganancia>=0?"#22c55e":"#f87171",margin:0,fontVariantNumeric:"tabular-nums"}}>{ganancia<0?"−":""}USD {Math.abs(ganancia).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+      </div>
+      <p style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",margin:"8px 0 0",fontStyle:"italic"}}>Al libro diario entra solo esta ganancia, y recién cuando el cliente pagó y el giro salió. El monto que pasa por la cuenta no se cuenta como ingreso.</p>
+
+      <div style={{marginTop:14}}>
+        <Inp label="Notas (opcional)" value={f.notes} onChange={ch("notes")} small/>
+      </div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:16}}>
+        <Btn variant="secondary" small onClick={()=>!saving&&onClose()}>Cancelar</Btn>
+        <Btn small onClick={save} disabled={saving}>{saving?"Guardando…":editing?"Guardar cambios":"✓ Crear gestión"}</Btn>
+      </div>
+    </div>
+  </div>;
+}
 function FinanceDashboard({token}){
   const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [clientPmts,setClientPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});const [selDay,setSelDay]=useState(()=>new Date().toISOString().slice(0,10));const [selWeekMon,setSelWeekMon]=useState(()=>{const n=new Date();const dow=(n.getDay()+6)%7;const m=new Date(n);m.setDate(n.getDate()-dow);return m.toISOString().slice(0,10);});
   useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:"?select=*"}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status,giro_payment_method,giro_tarjeta_paid"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
@@ -11217,6 +11467,7 @@ function AdminDashboard({session,onLogout}){
       {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
       {key:"tasks",label:"Tareas",p:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"]},
       {key:"quotes",label:"Cotizaciones",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},
+      {key:"agp",label:"Gestión de pagos",p:["M12 2v20","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]},
       {key:"calc",label:"Calculadora",p:["M9 2h6","M3 6h18","M9 12h.01","M15 12h.01","M9 16h.01","M15 16h.01","M9 20h.01","M15 20h.01","M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6"]},
     ]},
     {section:"Finanzas",items:[
@@ -11319,6 +11570,7 @@ function AdminDashboard({session,onLogout}){
       {page==="entregas"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="maritime"&&<MaritimePanel token={token} allClients={allClients}/>}
+      {page==="agp"&&<AgpPanel token={token} allClients={allClients}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
