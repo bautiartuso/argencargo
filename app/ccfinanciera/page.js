@@ -8,6 +8,33 @@ import { ToastStack, toast } from "../../lib/ui";
 // Muestra saldos ARS/USD, listado de movimientos con saldo running, y permite
 // agregar ingresos (con comisión opcional para ARS) y egresos.
 // La versión read-only para SOLFIN vive en /ccfinanciera/share/[token].
+
+// Parsea importes tolerando el formato argentino, para poder pegar un monto tal cual sale del
+// homebanking ("2.356.944,04") sin tener que limpiarlo a mano. Reglas:
+//   · si hay "." y "," → los puntos son separadores de miles y la coma es el decimal
+//   · si hay solo "," → la coma es el decimal
+//   · si hay solo "." → varios puntos son miles; uno solo con 3 digitos detras tambien
+//     (convencion ARS: "2.356" = 2356), y con 1, 2 o 4+ digitos es decimal ("2.5", "1450.50")
+export function parseMontoAr(v) {
+  const t = String(v ?? "").trim().replace(/\s/g, "");
+  if (!t) return 0;
+  const tieneComa = t.includes(",");
+  const puntos = (t.match(/\./g) || []).length;
+  let norm;
+  if (tieneComa) {
+    norm = t.replace(/\./g, "").replace(",", ".");
+  } else if (puntos > 1) {
+    norm = t.replace(/\./g, "");
+  } else if (puntos === 1) {
+    const dec = t.split(".")[1] || "";
+    norm = dec.length === 3 ? t.replace(".", "") : t;
+  } else {
+    norm = t;
+  }
+  const n = Number(norm);
+  return Number.isFinite(n) ? n : 0;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 
 const T = {
@@ -162,10 +189,12 @@ function Dashboard({ token, onLogout }) {
   const isMobile = useIsMobile();
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
       <ToastStack />
-      <Header onLogout={onLogout} onAdd={setShowAdd} onShare={() => setShowShare(true)} onDollarize={() => setShowDollarize(true)} />
-      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 22px 40px" }}>
+      <div style={{ flexShrink: 0 }}>
+        <Header onLogout={onLogout} onAdd={setShowAdd} onShare={() => setShowShare(true)} onDollarize={() => setShowDollarize(true)} />
+      </div>
+      <main style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", maxWidth: 1200, width: "100%", margin: "0 auto", padding: "20px 22px 0", boxSizing: "border-box" }}>
         {/* Saldos */}
         <section style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 10 : 16, marginBottom: 16 }}>
           <BalanceCard label="Saldo ARS" currency="ARS" amount={enriched.totals.ars} />
@@ -182,7 +211,8 @@ function Dashboard({ token, onLogout }) {
           <p style={{ fontSize: 11, color: T.textDim, margin: 0 }}>{filtered.length} movimiento{filtered.length !== 1 ? "s" : ""} {filterCurrency !== "all" ? `(${filterCurrency})` : "totales"}</p>
         </div>
 
-        {/* Listado */}
+        {/* Listado — lo unico que scrollea */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 30, marginRight: -22, paddingRight: 22 }}>
         {loading ? (
           <p style={{ textAlign: "center", padding: "3rem 0", color: T.textMuted, fontSize: 13 }}>Cargando…</p>
         ) : filtered.length === 0 ? (
@@ -192,6 +222,7 @@ function Dashboard({ token, onLogout }) {
         ) : (
           <MovementList rows={filtered} onEdit={setEditing} onReload={load} token={token} />
         )}
+        </div>
       </main>
 
       {showAdd && <MovementModal type={showAdd} token={token} editing={null} onClose={() => setShowAdd(null)} onSaved={() => { setShowAdd(null); load(); }} />}
@@ -408,8 +439,8 @@ function MovementModal({ type, token, editing, onClose, onSaved }) {
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
   }, [showComprobante, uploadFile]);
-  const amt = Number(String(amount).replace(",", ".")) || 0;
-  const pct = showCommission ? (Number(String(commissionPct).replace(",", ".")) || 0) : 0;
+  const amt = parseMontoAr(amount);
+  const pct = showCommission ? parseMontoAr(commissionPct) : 0;
   const commissionAmt = showCommission ? Math.round(amt * (pct / 100) * 100) / 100 : 0;
   const net = showCommission ? amt - commissionAmt : amt;
 
@@ -453,7 +484,7 @@ function MovementModal({ type, token, editing, onClose, onSaved }) {
         </Field>
       </div>
       <Field label={`Importe (${currency})`}>
-        <input type="text" inputMode="decimal" value={amount} onChange={(e) => { const v = e.target.value; if (v === "" || /^\d*[.,]?\d*$/.test(v)) setAmount(v); }} placeholder="0,00" style={{ ...inputStyle, fontSize: 18, fontWeight: 700 }} autoFocus />
+        <input type="text" inputMode="decimal" value={amount} onChange={(e) => { const v = e.target.value; if (v === "" || /^[\d.,]*$/.test(v)) setAmount(v); }} placeholder="0,00" style={{ ...inputStyle, fontSize: 18, fontWeight: 700 }} autoFocus />
       </Field>
       {showCommission && (
         <Field label="Comisión SOLFIN (%)">
@@ -578,8 +609,8 @@ function DollarizeModal({ token, arsBalance, onClose, onSaved }) {
   const [rate, setRate] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const ars = Number(String(amountArs).replace(",", ".")) || 0;
-  const tc = Number(String(rate).replace(",", ".")) || 0;
+  const ars = parseMontoAr(amountArs);
+  const tc = parseMontoAr(rate);
   const usd = tc > 0 ? Math.round((ars / tc) * 100) / 100 : 0;
   const exceeds = ars > arsBalance + 0.01;
 
@@ -617,7 +648,7 @@ function DollarizeModal({ token, arsBalance, onClose, onSaved }) {
         </Field>
       </div>
       <Field label={`Importe ARS a dolarizar (disponible: ${fmtMoney(arsBalance, "ARS")})`}>
-        <input type="text" inputMode="decimal" value={amountArs} onChange={(e) => { const v = e.target.value; if (v === "" || /^\d*[.,]?\d*$/.test(v)) setAmountArs(v); }} placeholder="0,00" style={{ ...inputStyle, fontSize: 17, fontWeight: 700, ...(exceeds ? { border: `1px solid ${T.red}88` } : {}) }} />
+        <input type="text" inputMode="decimal" value={amountArs} onChange={(e) => { const v = e.target.value; if (v === "" || /^[\d.,]*$/.test(v)) setAmountArs(v); }} placeholder="0,00" style={{ ...inputStyle, fontSize: 17, fontWeight: 700, ...(exceeds ? { border: `1px solid ${T.red}88` } : {}) }} />
         {exceeds && <p style={{ fontSize: 11, color: T.red, margin: "6px 0 0" }}>Supera el saldo ARS disponible</p>}
       </Field>
       {ars > 0 && tc > 0 && (
