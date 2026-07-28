@@ -4140,22 +4140,36 @@ const usdCollected=(o)=>{
   return raw;
 };
 
+// Grupos de entrega, igual que en MyBox: retiro por oficina / flete propio / transportista.
+// Antes flete propio y transportista estaban fundidos en "domicilio", pero se operan distinto
+// (uno es hoja de ruta, el otro son etiquetas de despacho) así que van separados.
+const DELIVERY_GROUPS=[
+  {k:"oficina",l:"📦 Retiro por oficina",match:o=>o.delivery_choice!=="propio"&&o.delivery_choice!=="carrier"},
+  {k:"propio",l:"🚚 Envío a domicilio · Flete privado",match:o=>o.delivery_choice==="propio"},
+  {k:"carrier",l:"📮 Envío por transportista",match:o=>o.delivery_choice==="carrier"},
+];
+
 function EntregasPanel({token,onOpenOp}){
   const [rows,setRows]=useState([]);
   const [bultosByOp,setBultosByOp]=useState({});
   const [lo,setLo]=useState(true);
   const [q,setQ]=useState("");
+  const [tab,setTab]=useState("pendientes"); // pendientes | entregadas
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
-  // Universo: toda op lista para entregar y todavía no entregada físicamente. Dos formas de
-  // calificar (OR): (a) status=entregada — sigue sentada esperando que la retiren/envíen, esté o
-  // no en el flujo nuevo del link; (b) delivery_ready_at seteado — ya entró al flujo nuevo (se le
-  // mandó el WhatsApp con el link) en algún momento, aunque después haya cambiado de status (ej.
-  // se cerró la op porque ya se cobró — cerrarla NO implica que se entregó).
+  // Universo: dos tramos.
+  //  (a) Pendientes de entregar: delivery_completed_at null Y (status=entregada O delivery_ready_at
+  //      seteado). Cubre tanto ops viejas (siguen en status entregada) como las del flujo del link.
+  //  (b) Entregadas pendientes de cobro: ya se entregaron pero el cliente todavía debe — no se
+  //      pierden de vista al marcarlas entregadas, como pasaba antes.
   const load=async()=>{
     setLo(true);
-    const r=await dq("operations",{token,filters:"?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_public_token,client_id,clients(first_name,last_name,client_code,whatsapp)&order=eta.desc"});
-    const list=Array.isArray(r)?r:[];
+    const sel="id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,client_id,created_at,clients(first_name,last_name,client_code,whatsapp,email,street,floor_apt,city,province,postal_code)";
+    const [pend,entr]=await Promise.all([
+      dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${sel}&order=eta.desc`}),
+      dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.false&select=${sel}&order=delivery_completed_at.desc&limit=200`}).catch(()=>[]),
+    ]);
+    const list=[...(Array.isArray(pend)?pend:[]),...(Array.isArray(entr)?entr:[])];
     setRows(list);
     if(list.length>0){
       const pk=await dq("operation_packages",{token,filters:`?operation_id=in.(${list.map(o=>o.id).join(",")})&select=operation_id,quantity`});
@@ -4167,12 +4181,17 @@ function EntregasPanel({token,onOpenOp}){
   useEffect(()=>{load();},[token]);
 
   const markDelivered=async(o)=>{
-    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_completed_at:new Date().toISOString()}});
-    setRows(p=>p.filter(r=>r.id!==o.id));
+    const now=new Date().toISOString();
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_completed_at:now}});
+    // Si quedó saldo, pasa a "entregadas pendientes de cobro" en vez de desaparecer.
+    setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_completed_at:now}:r).filter(r=>r.id!==o.id||!r.is_collected));
+  };
+  const undoDelivered=async(o)=>{
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_completed_at:null}});
+    setRows(p=>p.map(r=>r.id===o.id?{...r,delivery_completed_at:null}:r));
   };
   // "Coordinado" = ya hablaste con el cliente para acordar el retiro/envío — distinto de "pagado"
-  // (automático) y de "entregado" (saca la op de la lista). Sirve para no perder de vista, entre
-  // las confirmadas, cuáles ya arreglaste y cuáles todavía tenés que contactar.
+  // (automático) y de "entregado" (lo saca de pendientes).
   const toggleCoordinated=async(o)=>{
     const val=o.delivery_coordinated_at?null:new Date().toISOString();
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_coordinated_at:val}});
@@ -4181,7 +4200,7 @@ function EntregasPanel({token,onOpenOp}){
 
   // budget_total ya incluye el costo de envío a domicilio (se suma al confirmar en /retiro/[token]) —
   // no volver a sumarlo acá.
-  const totalFor=(o)=>{
+  const saldoFor=(o)=>{
     const bt=Number(o.budget_total||0);
     const debtApp=Number(o.debt_applied_usd||0);
     const creditApp=Number(o.credit_applied_usd||0);
@@ -4189,10 +4208,9 @@ function EntregasPanel({token,onOpenOp}){
     const collected=usdCollected(o);
     return Math.round(Math.max(0,bt+debtApp-totAnt-collected-creditApp)*100)/100;
   };
-  const isDomicilio=(o)=>o.delivery_choice==="propio"||o.delivery_choice==="carrier";
-  const DELIVERY_TYPES=[{k:"oficina",l:"📦 Retiro por oficina",filter:o=>!isDomicilio(o)},{k:"domicilio",l:"🚚 Envío a domicilio",filter:isDomicilio}];
-  const entregaLabel=(o)=>o.delivery_choice==="oficina"?"Retiro por oficina":o.delivery_choice==="propio"?`Envío a domicilio · ${o.delivery_zone||""}`:"Envío por transportista";
+  const entregaLabel=(o)=>o.delivery_choice==="propio"?(o.delivery_address||`Envío a domicilio${o.delivery_zone?` · ${o.delivery_zone}`:""}`):o.delivery_choice==="carrier"?(o.delivery_address||"Envío por transportista"):"Retiro por oficina";
   const copyLink=(o)=>{const link=`https://argencargo.com.ar/retiro/${o.delivery_public_token}`;navigator.clipboard?.writeText(link);toast("Link copiado","success");};
+  const diasDe=(o,entregada)=>{const ref=entregada?o.delivery_completed_at:(o.delivery_ready_at||o.created_at);if(!ref)return 0;return Math.max(0,Math.floor((Date.now()-new Date(ref).getTime())/86400000));};
 
   const matchesQ=(o)=>{
     if(!q.trim())return true;
@@ -4200,115 +4218,204 @@ function EntregasPanel({token,onOpenOp}){
     return s.includes(q.trim().toLowerCase());
   };
   const filtered=rows.filter(matchesQ);
-  const sinConfirmar=filtered.filter(o=>!o.delivery_confirmed_at);
-  const confirmadas=filtered.filter(o=>o.delivery_confirmed_at);
+  const pendientes=filtered.filter(o=>!o.delivery_completed_at);
+  const entregadasSinCobrar=filtered.filter(o=>o.delivery_completed_at&&!o.is_collected);
+  const sinConfirmar=pendientes.filter(o=>!o.delivery_confirmed_at);
+  const confirmadas=pendientes.filter(o=>o.delivery_confirmed_at);
 
-  // Si el mismo cliente tiene 2+ ops en la misma lista, las agrupamos visualmente (mismo marco,
-  // sin fundirlas en una sola card) — si viene a buscar mercadería se lleva todo junto, conviene
-  // que salte a la vista que son del mismo cliente sin perder que son operaciones distintas.
+  // Etiquetas de despacho (transportista) / hoja de ruta (flete propio). Una hoja imprimible con
+  // los datos que hacen falta en la calle: quién, dónde, cuántos bultos y si hay que cobrar.
+  const imprimirEtiquetas=(grupo,ops)=>{
+    const esCarrier=grupo==="carrier";
+    const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const etiquetas=ops.map(o=>{
+      const c=o.clients||{};
+      const nombre=`${c.first_name||""} ${c.last_name||""}`.trim()||"—";
+      const dir=o.delivery_address||[c.street,c.floor_apt,c.city,c.province,c.postal_code].filter(Boolean).join(", ")||"Dirección a confirmar";
+      const bultos=bultosByOp[o.id]||0;
+      const saldo=saldoFor(o);
+      const enEfectivo=(o.payment_method_chosen||"efectivo")==="efectivo";
+      return `<div class="et">
+        <div class="et-head"><span class="et-code">${esc(o.operation_code)}</span><span class="et-bultos">${bultos} ${bultos===1?"bulto":"bultos"}</span></div>
+        <div class="et-nombre">${esc(nombre)}${c.client_code?` <span class="et-cod">${esc(c.client_code)}</span>`:""}</div>
+        <div class="et-dir">${esc(dir)}</div>
+        <div class="et-datos">${c.whatsapp?`<span>Tel ${esc(c.whatsapp)}</span>`:""}${esCarrier&&c.email?`<span>${esc(c.email)}</span>`:""}</div>
+        ${enEfectivo?(saldo>0.005?`<div class="et-cobrar">💵 Paga al recibir · cobrar USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>`:`<div class="et-cobrar pagado">✓ Ya está pagado — no cobrar nada</div>`):(saldo>0.005?`<div class="et-cobrar pagado">Saldo USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} — no se cobra en la entrega</div>`:`<div class="et-cobrar pagado">✓ Pagado</div>`)}
+      </div>`;
+    }).join("");
+    const titulo=esCarrier?"Etiquetas de despacho · Transportista":"Hoja de ruta · Flete privado";
+    const hoy=new Date().toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"});
+    const html=`<!doctype html><html><head><meta charset="utf-8"><title>${titulo}</title><style>
+      @page{size:A4;margin:0}
+      *{box-sizing:border-box}
+      body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#111;margin:0;padding:14mm 12mm}
+      .hoja-head{text-align:center;margin-bottom:16px}
+      .hoja-head h1{font-size:16px;margin:0}
+      .hoja-head span{font-size:11.5px;color:#666}
+      .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+      .et{border:1.5px dashed #999;border-radius:8px;padding:10px 12px;page-break-inside:avoid}
+      .et-head{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px}
+      .et-code{font-weight:700}
+      .et-bultos{color:#444}
+      .et-nombre{font-size:15px;font-weight:700}
+      .et-cod{font-size:11px;font-weight:600;color:#666;letter-spacing:0.04em}
+      .et-dir{font-size:13px;margin:2px 0 4px}
+      .et-datos{display:flex;gap:14px;font-size:12px;color:#333}
+      .et-cobrar{font-size:12.5px;font-weight:700;margin-top:6px;border-top:1px solid #ddd;padding-top:5px}
+      .et-cobrar.pagado{font-weight:600;color:#555}
+    </style></head><body>
+      <div class="hoja-head"><h1>${titulo}</h1><span>Argencargo · ${hoy} · ${ops.length} ${ops.length===1?"envío":"envíos"}</span></div>
+      <div class="grid">${etiquetas}</div>
+      <script>window.onload=function(){window.print();};</script>
+    </body></html>`;
+    const w=window.open("","_blank");
+    if(!w){toast("El navegador bloqueó la ventana de impresión — permití popups","error");return;}
+    w.document.write(html);w.document.close();
+  };
+
+  const coordPill=(o)=><span onClick={e=>{e.stopPropagation();toggleCoordinated(o);}} title={o.delivery_coordinated_at?"Ya le pasaste el importe — tocar para deshacer":"Tocar cuando le mandes al cliente el importe a abonar"} style={{cursor:"pointer",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:5,userSelect:"none",whiteSpace:"nowrap",background:o.delivery_coordinated_at?"linear-gradient(135deg,#3b82f6,#2563eb)":"rgba(255,255,255,0.06)",color:o.delivery_coordinated_at?"#fff":"rgba(255,255,255,0.5)",border:`1px solid ${o.delivery_coordinated_at?"#3b82f6":"rgba(255,255,255,0.15)"}`}}>{o.delivery_coordinated_at?"☎":"☎"}</span>;
+
+  const th={padding:"8px 10px",textAlign:"left",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",whiteSpace:"nowrap"};
+  const td={padding:"7px 10px",fontSize:12.5,color:"rgba(255,255,255,0.75)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"};
+
+  const Cabecera=({entrega="Entrega",pago="Pago"})=><thead>
+    <tr style={{borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
+      <th style={{...th,width:92}}>Código</th>
+      <th style={{...th}}>Cliente</th>
+      <th style={{...th}}>{entrega}</th>
+      <th style={{...th,width:60,textAlign:"right"}}>Bultos</th>
+      <th style={{...th,width:120,textAlign:"right"}}>{pago}</th>
+      <th style={{...th,width:96}}>Antigüedad</th>
+      <th style={{...th,width:190,textAlign:"right"}}></th>
+    </tr>
+  </thead>;
+
+  // Fila de op. Ops del mismo cliente quedan visualmente unidas con un borde lateral dorado y un
+  // rótulo arriba del bloque — pero cada una sigue siendo su propia fila/operación, no se funden.
+  const FilaOp=({o,modo,primeraDelGrupo,enGrupo})=>{
+    const bultos=bultosByOp[o.id]||0;
+    const saldo=saldoFor(o);
+    const pagada=saldo<=0.005;
+    const dias=diasDe(o,modo==="entregada");
+    const viejo=modo!=="entregada"&&dias>7;
+    return <tr onClick={()=>onOpenOp(o)} style={{cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.04)",borderLeft:enGrupo?`2px solid ${GOLD}`:"2px solid transparent",background:enGrupo?"rgba(184,149,106,0.03)":"transparent"}}
+      onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}}
+      onMouseLeave={e=>{e.currentTarget.style.background=enGrupo?"rgba(184,149,106,0.03)":"transparent";}}>
+      <td style={{...td,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,color:modo==="sinConfirmar"?"#fbbf24":GOLD_LIGHT}}>{o.operation_code}</td>
+      <td style={{...td,color:"#fff"}}>{o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}{o.clients?.client_code&&<span style={{marginLeft:7,fontSize:10.5,color:"rgba(255,255,255,0.35)",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{o.clients.client_code}</span>}</td>
+      <td style={{...td,color:"rgba(255,255,255,0.5)",maxWidth:260}} title={modo==="sinConfirmar"?"":entregaLabel(o)}>
+        {modo==="sinConfirmar"
+          ?(o.delivery_ready_at?"aviso enviado, no completó el link":"todavía sin aviso")
+          :entregaLabel(o)}
+        <span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.3)"}}>{CHANNEL_NAME_MAP[o.channel]||o.channel}</span>
+      </td>
+      <td style={{...td,textAlign:"right"}}>{bultos||"—"}</td>
+      <td style={{...td,textAlign:"right"}}>
+        {modo==="sinConfirmar"?<span style={{color:"rgba(255,255,255,0.3)"}}>—</span>
+          :modo==="entregada"?<span style={{fontWeight:700,color:"#f87171"}}>Debe {usd(saldo)}</span>
+          :<span style={{display:"inline-flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
+              <span style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:5,background:pagada?"rgba(34,197,94,0.12)":"rgba(251,191,36,0.1)",color:pagada?"#22c55e":"#fbbf24",border:`1px solid ${pagada?"rgba(34,197,94,0.3)":"rgba(251,191,36,0.3)"}`}}>{pagada?"Pagado":usd(saldo)}</span>
+              {coordPill(o)}
+            </span>}
+      </td>
+      <td style={{...td,fontSize:11.5,color:viejo?"#fbbf24":"rgba(255,255,255,0.4)"}}>{modo==="entregada"?`entreg. hace ${dias} d`:`hace ${dias} d`}</td>
+      <td style={{...td,textAlign:"right"}} onClick={e=>e.stopPropagation()}>
+        <span style={{display:"inline-flex",gap:5,justifyContent:"flex-end"}}>
+          {modo==="sinConfirmar"&&<Btn small variant="secondary" onClick={()=>copyLink(o)}>📋 Link</Btn>}
+          {modo==="entregada"
+            ?<Btn small variant="secondary" onClick={()=>undoDelivered(o)}>↺ Deshacer</Btn>
+            :<Btn small onClick={()=>markDelivered(o)}>✓ Entregado</Btn>}
+        </span>
+      </td>
+    </tr>;
+  };
+
+  // Agrupa por cliente conservando el orden, para poder unir visualmente sus filas.
   const groupByClient=(list)=>{
     const order=[],map={};
     list.forEach(o=>{const k=o.client_id||o.id;if(!map[k]){map[k]=[];order.push(k);}map[k].push(o);});
     return order.map(k=>map[k]);
   };
-  const renderGrouped=(list,renderCard,totalFn)=>groupByClient(list).map(grp=>{
-    if(grp.length===1)return renderCard(grp[0]);
-    const clientName=grp[0].clients?`${grp[0].clients.first_name||""} ${grp[0].clients.last_name||""}`.trim():"—";
-    const grpTotal=totalFn?grp.reduce((s,o)=>s+totalFn(o),0):null;
-    return <div key={`grp-${grp[0].client_id}`} style={{border:"1px solid rgba(184,149,106,0.35)",borderRadius:10,padding:"8px 8px 6px",background:"rgba(184,149,106,0.04)"}}>
-      <p style={{fontSize:10,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:GOLD_LIGHT,margin:"0 0 6px 4px"}}>🔗 {clientName} · {grp.length} operaciones juntas{grpTotal!=null&&` · Total ${usd(grpTotal)}`}</p>
-      <div style={{display:"flex",flexDirection:"column",gap:6}}>{grp.map(renderCard)}</div>
-    </div>;
+  const filasDe=(list,modo)=>groupByClient(list).map(grp=>{
+    const enGrupo=grp.length>1;
+    const nombre=grp[0].clients?`${grp[0].clients.first_name||""} ${grp[0].clients.last_name||""}`.trim():"—";
+    const totalGrp=grp.reduce((s,o)=>s+saldoFor(o),0);
+    return <Fragment key={`g-${grp[0].client_id||grp[0].id}`}>
+      {enGrupo&&<tr style={{background:"rgba(184,149,106,0.07)"}}><td colSpan={7} style={{padding:"5px 10px",fontSize:10,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:GOLD_LIGHT,borderLeft:`2px solid ${GOLD}`}}>🔗 {nombre} · {grp.length} operaciones juntas{modo!=="sinConfirmar"&&` · saldo total ${usd(totalGrp)}`}</td></tr>}
+      {grp.map(o=><FilaOp key={o.id} o={o} modo={modo} enGrupo={enGrupo}/>)}
+    </Fragment>;
   });
 
-  // Pill de "coordinado" clickeable en el header — no es un botón más en la columna de acciones
-  // (eso engordaba la card), es un distintivo de estado que también se puede tocar para togglear.
-  // Se marca cuando ya le mandaste al cliente el importe/dirección para pagar.
-  const coordPill=(o)=><span onClick={()=>toggleCoordinated(o)} title={o.delivery_coordinated_at?"Ya le pasaste el importe — tocar para deshacer":"Tocar cuando le mandes al cliente el importe a abonar"} style={{cursor:"pointer",fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:6,userSelect:"none",background:o.delivery_coordinated_at?"linear-gradient(135deg,#3b82f6,#2563eb)":"rgba(255,255,255,0.06)",color:o.delivery_coordinated_at?"#fff":"rgba(255,255,255,0.5)",border:`1px solid ${o.delivery_coordinated_at?"#3b82f6":"rgba(255,255,255,0.15)"}`,boxShadow:o.delivery_coordinated_at?"0 0 10px rgba(59,130,246,0.4)":"none"}}>{o.delivery_coordinated_at?"☎ Coordinado":"☎ Sin coordinar"}</span>;
-
-  const cardHeader=(o,paidBadge)=><div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
-    <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:12.5,fontWeight:700,color:GOLD_LIGHT}}>{o.operation_code}</span>
-    <span style={{fontSize:12.5,fontWeight:600,color:"#fff"}}>{o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
-    {o.clients?.client_code&&<span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{o.clients.client_code}</span>}
-    <span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>· {CHANNEL_NAME_MAP[o.channel]||o.channel}</span>
-    {paidBadge}
+  const Bloque=({titulo,children,accion})=><div style={{marginBottom:22,border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,overflow:"hidden",background:"rgba(255,255,255,0.02)"}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderBottom:"1px solid rgba(255,255,255,0.07)",background:"rgba(255,255,255,0.025)"}}>
+      <span style={{fontSize:13,fontWeight:800,color:"#fff"}}>{titulo}</span>
+      <span style={{flex:1}}/>
+      {accion}
+    </div>
+    <div style={{overflowX:"auto"}}>{children}</div>
   </div>;
 
-  // Columna de acciones a la derecha, apiladas una arriba de otra — separadas del contenido por
-  // un borde vertical para que no queden "sueltas" flotando junto al header.
-  const actionsCol=(actions)=><div style={{display:"flex",flexDirection:"column",gap:6,flexShrink:0,width:150,paddingLeft:14,borderLeft:"1px solid rgba(255,255,255,0.08)"}}>{actions}</div>;
-
-  const pendingCard=(o)=>{
-    const bultos=bultosByOp[o.id]||0;
-    return <div key={o.id} style={{display:"flex",gap:14,padding:"9px 12px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:9}}>
-      <div style={{flex:1,minWidth:0}}>
-        {cardHeader(o)}
-        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:0}}>{bultos} bulto{bultos===1?"":"s"} · El cliente todavía no completó el link de carga lista (entrega + forma de pago).</p>
-      </div>
-      {actionsCol(<>
-        <Btn small variant="secondary" fullWidth onClick={()=>copyLink(o)}>📋 Copiar link</Btn>
-        <Btn small variant="secondary" fullWidth onClick={()=>markDelivered(o)}>✓ Marcar entregado</Btn>
-        <Btn small fullWidth onClick={()=>onOpenOp(o)}>Ver operación →</Btn>
-      </>)}
-    </div>;
-  };
-
-  const card=(o)=>{
-    const paid=!!o.is_collected;
-    const bultos=bultosByOp[o.id]||0;
-    return <div key={o.id} style={{display:"flex",gap:14,padding:"9px 12px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:9}}>
-      <div style={{flex:1,minWidth:0}}>
-        {cardHeader(o,<>
-          <span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:6,background:paid?"rgba(34,197,94,0.12)":"rgba(251,191,36,0.1)",color:paid?"#22c55e":"#fbbf24",border:`1px solid ${paid?"rgba(34,197,94,0.3)":"rgba(251,191,36,0.3)"}`}}>{paid?"Pagado":"Sin pagar"}</span>
-          {coordPill(o)}
-        </>)}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
-          <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Entrega</p><p style={{fontSize:12,color:"#fff",margin:0}}>{entregaLabel(o)}</p>{o.delivery_choice==="propio"&&o.delivery_address&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.5)",margin:"1px 0 0"}}>{o.delivery_address}</p>}</div>
-          <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Bultos</p><p style={{fontSize:12,color:"#fff",margin:0}}>{bultos||"—"}</p></div>
-          <div><p style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 2px"}}>Total</p><p style={{fontSize:12,fontWeight:700,color:GOLD_LIGHT,margin:0}}>{usd(totalFor(o))}</p></div>
-        </div>
-      </div>
-      {actionsCol(<>
-        <Btn small fullWidth onClick={()=>markDelivered(o)}>✓ Marcar entregado</Btn>
-        <Btn small variant="secondary" fullWidth onClick={()=>onOpenOp(o)}>Ver operación →</Btn>
-      </>)}
-    </div>;
-  };
+  // Dentro de cada grupo de entrega, las filas se separan por forma de pago con un sub-encabezado,
+  // para leer de un vistazo quién paga con qué.
+  const filasPorMetodo=(list,modo)=>PAY_GROUPS.map(pg=>{
+    const inGroup=list.filter(o=>(o.payment_method_chosen||"efectivo")===pg.k);
+    if(inGroup.length===0)return null;
+    return <Fragment key={pg.k}>
+      <tr style={{background:"rgba(255,255,255,0.035)"}}><td colSpan={7} style={{padding:"5px 10px",fontSize:10.5,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>{pg.l} <span style={{color:"rgba(255,255,255,0.3)"}}>· {inGroup.length}</span></td></tr>
+      {filasDe(inGroup,modo)}
+    </Fragment>;
+  });
 
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
 
+  const tabBtn=(k,l,n)=><button onClick={()=>setTab(k)} style={{padding:"6px 14px",fontSize:12,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${tab===k?GOLD:"rgba(255,255,255,0.12)"}`,background:tab===k?"rgba(184,149,106,0.14)":"transparent",color:tab===k?GOLD_LIGHT:"rgba(255,255,255,0.55)"}}>{l}{n>0&&<span style={{marginLeft:6,color:"rgba(255,255,255,0.4)",fontWeight:600}}>{n}</span>}</button>;
+
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
-      <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Entregas</h2>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Entregas</h2>
+        <div style={{display:"flex",gap:6}}>
+          {tabBtn("pendientes","Pendientes",pendientes.length)}
+          {tabBtn("entregadas","Entregadas a cobrar",entregadasSinCobrar.length)}
+        </div>
+      </div>
       <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por código o cliente..." style={{padding:"9px 14px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",minWidth:220}}/>
     </div>
-    {filtered.length===0&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Sin entregas pendientes.</p>}
 
-    {confirmadas.length>0&&<div style={{marginBottom:sinConfirmar.length>0?28:0}}>
-      {/* Primero separa por tipo de entrega (retiro/domicilio), después por forma de pago dentro de cada una */}
-      <div style={{display:"flex",flexDirection:"column",gap:28}}>
-        {DELIVERY_TYPES.map(dt=>{
-          const inType=confirmadas.filter(dt.filter);
-          if(inType.length===0)return null;
-          return <div key={dt.k} style={{marginBottom:20}}>
-            <h4 style={{fontSize:13,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.005em"}}>{dt.l} <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>({inType.length})</span></h4>
-            {PAY_GROUPS.map(pg=>{
-              const inGroup=inType.filter(o=>(o.payment_method_chosen||"efectivo")===pg.k);
-              if(inGroup.length===0)return null;
-              return <div key={pg.k} style={{marginBottom:18}}>
-                <p style={{fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>{pg.l} ({inGroup.length})</p>
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>{renderGrouped(inGroup,card,totalFor)}</div>
-              </div>;
-            })}
-          </div>;
-        })}
-      </div>
-    </div>}
+    {tab==="pendientes"&&<>
+      {DELIVERY_GROUPS.map(g=>{
+        const inGroup=confirmadas.filter(g.match);
+        if(inGroup.length===0)return null;
+        const ordenadas=[...inGroup].sort((a,b)=>new Date(a.delivery_confirmed_at||a.created_at)-new Date(b.delivery_confirmed_at||b.created_at));
+        return <Bloque key={g.k} titulo={<>{g.l} <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {inGroup.length}</span></>}
+          accion={(g.k==="propio"||g.k==="carrier")&&<Btn small variant="secondary" onClick={()=>imprimirEtiquetas(g.k,ordenadas)}>🖨 {g.k==="carrier"?"Etiquetas de despacho":"Hoja de ruta"}</Btn>}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
+            <Cabecera/>
+            <tbody>{filasPorMetodo(ordenadas,"confirmada")}</tbody>
+          </table>
+        </Bloque>;
+      })}
 
-    {sinConfirmar.length>0&&<div>
-      <h3 style={{fontSize:14,fontWeight:800,color:"#fff",margin:"0 0 12px",letterSpacing:"-0.005em"}}>⏳ Pendientes de coordinar por el cliente <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>({sinConfirmar.length})</span></h3>
-      <div style={{display:"flex",flexDirection:"column",gap:10}}>{renderGrouped(sinConfirmar,pendingCard)}</div>
-    </div>}
+      <Bloque titulo={<>⏳ Pendientes de coordinar por el cliente <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {sinConfirmar.length}</span></>}>
+        {sinConfirmar.length===0
+          ?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"20px 0",fontSize:13,margin:0}}>{q?"Sin resultados.":"No hay clientes con el aviso enviado sin responder."}</p>
+          :<table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
+            <Cabecera entrega="Aviso" pago=""/>
+            <tbody>{filasDe([...sinConfirmar].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)),"sinConfirmar")}</tbody>
+          </table>}
+      </Bloque>
+
+      {confirmadas.length===0&&sinConfirmar.length===0&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem 0"}}>Sin entregas pendientes.</p>}
+    </>}
+
+    {tab==="entregadas"&&<Bloque titulo={<>💵 Entregadas pendientes de cobro <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {entregadasSinCobrar.length}</span></>}>
+      {entregadasSinCobrar.length===0
+        ?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"20px 0",fontSize:13,margin:0}}>{q?"Sin resultados.":"Todo lo entregado está cobrado."}</p>
+        :<table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
+          <Cabecera pago="Saldo"/>
+          <tbody>{filasPorMetodo([...entregadasSinCobrar].sort((a,b)=>new Date(a.delivery_completed_at)-new Date(b.delivery_completed_at)),"entregada")}</tbody>
+        </table>}
+    </Bloque>}
   </div>;
 }
 
