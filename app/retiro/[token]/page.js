@@ -24,6 +24,10 @@ export default function EntregaPublica({ params }) {
   const [payment, setPayment] = useState("efectivo");
   // Quien recibe, solo para envio por transportista (Andreani): el despacho exige el DNI. Se
   // precarga con los datos del cliente, pero es editable porque a veces recibe otra persona.
+  // El link avanza de a bloques, como el de MyBox: se ve un paso por vez y el siguiente aparece
+  // recién cuando el anterior está resuelto. Mostrar los tres juntos hacía que el cliente saltara
+  // datos y llegara al final con cosas sin completar.
+  const [paso, setPaso] = useState(1);
   const [carrierMode, setCarrierMode] = useState(""); // sucursal | domicilio (solo con transportista)
   const [contacto, setContacto] = useState({ nombre: "", apellido: "", dni: "", email: "", telefono: "", direccion: "", piso: "" });
   const [confirming, setConfirming] = useState(false);
@@ -87,15 +91,23 @@ export default function EntregaPublica({ params }) {
 
   const efectivoBlocked = delivery === "carrier";
 
+  // Devuelve el motivo por el que no se puede avanzar, o null si está todo bien.
+  const validarEntrega = () => {
+    if (delivery === "carrier") {
+      if (!carrierMode) return "Elegí si lo recibís en sucursal o en tu domicilio.";
+      if (!contacto.nombre.trim() || !contacto.apellido.trim()) return "Completá nombre y apellido de quien recibe.";
+      if (contacto.dni.replace(/\D/g, "").length < 7) return "Completá el DNI de quien recibe — el transportista lo necesita para el despacho.";
+      if (contacto.telefono.replace(/\D/g, "").length < 8) return "Completá el teléfono de quien recibe — el transportista llama antes de entregar.";
+      if (carrierMode === "domicilio" && !contacto.direccion.trim()) return "Completá la dirección de entrega.";
+    }
+    if (delivery === "propio" && !address.trim()) return "Completá la dirección de entrega.";
+    return null;
+  };
+
   const confirm = async () => {
     // Andreani no despacha sin DNI del destinatario, asi que se pide antes de confirmar.
-    if (delivery === "carrier") {
-      if (!carrierMode) { alert("Elegí si lo recibís en sucursal o en tu domicilio."); return; }
-      if (!contacto.nombre.trim() || !contacto.apellido.trim()) { alert("Completá nombre y apellido de quien recibe."); return; }
-      if (contacto.dni.replace(/\D/g, "").length < 7) { alert("Completá el DNI de quien recibe — el transportista lo necesita para el despacho."); return; }
-      if (contacto.telefono.replace(/\D/g, "").length < 8) { alert("Completá el teléfono de quien recibe — el transportista llama antes de entregar."); return; }
-      if (carrierMode === "domicilio" && !contacto.direccion.trim()) { alert("Completá la dirección de entrega."); return; }
-    }
+    const errEntrega = validarEntrega();
+    if (errEntrega) { alert(errEntrega); return; }
     setConfirming(true);
     // La zona/precio los recalcula el server a partir de la localidad registrada — no se manda acá.
     const r = await fetch(`/api/entrega/${token}`, {
@@ -152,8 +164,10 @@ export default function EntregaPublica({ params }) {
               {cargo.tracking.map((t, i) => <div key={i}>– {t}</div>)}
             </div>
           </>}
+          {paso===1&&<button onClick={()=>setPaso(2)} style={nextBtnStyle()}>Continuar →</button>}
         </div>
 
+        {paso>=2&&<>
         {/* 02 — entrega */}
         <div style={stepStyle()}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>02</span><span style={stepTitleStyle()}>¿Cómo la recibís?</span></div>
@@ -203,8 +217,11 @@ export default function EntregaPublica({ params }) {
               )}
             </div>
           )}
+          {paso===2&&<button onClick={()=>{const e=validarEntrega();if(e){alert(e);return;}setPaso(3);}} style={nextBtnStyle()}>Continuar →</button>}
         </div>
+        </>}
 
+        {paso>=3&&<>
         {/* 03 — total y pago */}
         <div style={stepStyle()}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>03</span><span style={stepTitleStyle()}>Total y forma de pago</span></div>
@@ -228,6 +245,7 @@ export default function EntregaPublica({ params }) {
 
         <button onClick={confirm} disabled={confirming} style={ctaStyle(confirming)}>{confirming ? "Confirmando…" : "Confirmar y avisar a Argencargo"}</button>
         <p style={{ textAlign: "center", fontSize: 10.5, color: MUTED, margin: "-8px 0 0" }}>Al confirmar, un asesor coordina el retiro o el envío por WhatsApp.</p>
+        </>}
       </div>
 
       <div style={{ background: NAVY, color: "#fff", padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
@@ -286,6 +304,7 @@ function ConfirmedView({ data, delivery, clientName }) {
 function pageStyle() { return { minHeight: "100vh", background: NAVY, padding: "32px 18px 60px", display: "flex", justifyContent: "center", fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", color: "#fff" }; }
 function cardStyle() { return { maxWidth: 640, width: "100%", background: CREAM, borderRadius: 14, overflow: "hidden", boxShadow: "0 28px 80px rgba(0,0,0,0.5)" }; }
 function lblStyle() { return { fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", color: "rgba(232,208,152,0.65)", textTransform: "uppercase", marginBottom: 3 }; }
+function nextBtnStyle() { return { width: "100%", marginTop: 14, padding: "12px 16px", fontSize: 14, fontWeight: 700, borderRadius: 11, border: "none", background: "#0A1628", color: "#fff", cursor: "pointer" }; }
 function stepStyle() { return { background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: "16px 18px" }; }
 function stepNStyle() { return { fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 11, fontWeight: 700, color: GOLD_A, letterSpacing: "0.06em" }; }
 function stepTitleStyle() { return { fontSize: 13.5, fontWeight: 800, color: INK, letterSpacing: "-0.005em" }; }
