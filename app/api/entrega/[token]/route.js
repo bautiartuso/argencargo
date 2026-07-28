@@ -65,7 +65,7 @@ function fullAddress(c) {
 }
 
 async function loadOpData(token) {
-  const opRes = await sbFetch(`/operations?delivery_public_token=eq.${encodeURIComponent(token)}&select=*,clients(first_name,last_name,client_code,street,floor_apt,postal_code,city,province,tax_condition)&limit=1`);
+  const opRes = await sbFetch(`/operations?delivery_public_token=eq.${encodeURIComponent(token)}&select=*,clients(first_name,last_name,client_code,street,floor_apt,postal_code,city,province,tax_condition,dni,email)&limit=1`);
   if (opRes.status >= 400 || !Array.isArray(opRes.body) || opRes.body.length === 0) return null;
   return opRes.body[0];
 }
@@ -139,7 +139,7 @@ export async function GET(req, { params }) {
       payment_method_chosen: op.payment_method_chosen,
       delivery_confirmed_at: op.delivery_confirmed_at,
     },
-    client: { first_name: client.first_name, last_name: client.last_name },
+    client: { first_name: client.first_name, last_name: client.last_name, dni: client.dni || "", email: client.email || "" },
     cargo: { bultos, tracking, peso_facturable: Math.round(pesoFacturable * 100) / 100 },
     delivery: {
       inferred_zone: match ? match.name : null,
@@ -164,7 +164,7 @@ export async function POST(req, { params }) {
   if (!body || !body.delivery_choice || !body.payment_method) {
     return Response.json({ error: "Faltan datos: delivery_choice y payment_method" }, { status: 400 });
   }
-  const { delivery_choice, delivery_address, payment_method } = body;
+  const { delivery_choice, delivery_address, payment_method, delivery_contact } = body;
   if (!["oficina", "propio", "carrier"].includes(delivery_choice)) return Response.json({ error: "Entrega inválida" }, { status: 400 });
   if (!["efectivo", "transferencia", "crypto"].includes(payment_method)) return Response.json({ error: "Método de pago inválido" }, { status: 400 });
   if (payment_method === "efectivo" && delivery_choice === "carrier") {
@@ -211,6 +211,8 @@ export async function POST(req, { params }) {
       delivery_cost_usd: deliveryCost,
       budget_total: newBudgetTotal,
       payment_method_chosen: payment_method,
+      // Solo para transportista: quien recibe, con el DNI que exige el despacho.
+      delivery_contact: delivery_choice === "carrier" ? (delivery_contact || null) : null,
       delivery_confirmed_at: new Date().toISOString(),
     }),
   });

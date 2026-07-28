@@ -22,6 +22,9 @@ export default function EntregaPublica({ params }) {
   const [address, setAddress] = useState("");
   const [addressChanged, setAddressChanged] = useState(false);
   const [payment, setPayment] = useState("efectivo");
+  // Quien recibe, solo para envio por transportista (Andreani): el despacho exige el DNI. Se
+  // precarga con los datos del cliente, pero es editable porque a veces recibe otra persona.
+  const [contacto, setContacto] = useState({ nombre: "", apellido: "", dni: "", email: "" });
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
 
@@ -38,6 +41,12 @@ export default function EntregaPublica({ params }) {
         setDelivery(hasPropio || !d.delivery.inferred_zone ? "oficina" : "carrier");
         setAddress(d.delivery.default_address || "");
         if (payment === "efectivo" && !hasPropio && !d.delivery.inferred_zone) setPayment("transferencia");
+        setContacto((c) => ({
+          nombre: c.nombre || d.client?.first_name || "",
+          apellido: c.apellido || d.client?.last_name || "",
+          dni: c.dni || d.client?.dni || "",
+          email: c.email || d.client?.email || "",
+        }));
         setLoading(false);
       } catch (e) {
         setErr("Error de red"); setLoading(false);
@@ -75,12 +84,17 @@ export default function EntregaPublica({ params }) {
   const efectivoBlocked = delivery === "carrier";
 
   const confirm = async () => {
+    // Andreani no despacha sin DNI del destinatario, asi que se pide antes de confirmar.
+    if (delivery === "carrier") {
+      if (!contacto.nombre.trim() || !contacto.apellido.trim()) { alert("Completá nombre y apellido de quien recibe."); return; }
+      if (contacto.dni.replace(/\D/g, "").length < 7) { alert("Completá el DNI de quien recibe — el transportista lo necesita para el despacho."); return; }
+    }
     setConfirming(true);
     // La zona/precio los recalcula el server a partir de la localidad registrada — no se manda acá.
     const r = await fetch(`/api/entrega/${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delivery_choice: delivery, delivery_address: delivery === "propio" ? address : null, payment_method: payment }),
+      body: JSON.stringify({ delivery_choice: delivery, delivery_address: delivery === "propio" ? address : null, payment_method: payment, delivery_contact: delivery === "carrier" ? contacto : null }),
     });
     const d = await r.json();
     setConfirming(false);
@@ -147,6 +161,21 @@ export default function EntregaPublica({ params }) {
           {!hasPropio && <OptRow selected={delivery === "carrier"} onClick={() => setDelivery("carrier")} label="Envío por Via Cargo / Andreani" meta="Tu zona está fuera del reparto propio de Argencargo" price="A coordinar" />}
           {!hasPropio && delivery === "carrier" && <div style={noteBoxStyle()}>El costo lo fija el transportista (Via Cargo o Andreani) según tu localidad, no Argencargo. Coordinamos el despacho y el pago del flete por WhatsApp.</div>}
         </div>
+
+          {/* Datos de quien recibe: Andreani no despacha sin DNI del destinatario. Se precargan con
+              los del cliente pero son editables, porque a veces recibe otra persona. */}
+          {!hasPropio && delivery === "carrier" && (
+            <div style={{ marginTop: 12, padding: "13px 15px", borderRadius: 12, background: "rgba(10,22,40,0.04)", border: "1px solid rgba(10,22,40,0.10)" }}>
+              <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(10,22,40,0.55)", margin: "0 0 3px" }}>Datos de quien recibe</p>
+              <p style={{ fontSize: 11.5, color: "rgba(10,22,40,0.55)", margin: "0 0 10px", lineHeight: 1.45 }}>El transportista pide el DNI del destinatario para poder despachar.</p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <input value={contacto.nombre} onChange={(e) => setContacto((c) => ({ ...c, nombre: e.target.value }))} placeholder="Nombre" style={contactInputStyle()} />
+                <input value={contacto.apellido} onChange={(e) => setContacto((c) => ({ ...c, apellido: e.target.value }))} placeholder="Apellido" style={contactInputStyle()} />
+                <input value={contacto.dni} onChange={(e) => setContacto((c) => ({ ...c, dni: e.target.value }))} placeholder="DNI" inputMode="numeric" style={contactInputStyle()} />
+                <input value={contacto.email} onChange={(e) => setContacto((c) => ({ ...c, email: e.target.value }))} placeholder="Email (opcional)" style={contactInputStyle()} />
+              </div>
+            </div>
+          )}
 
         {/* 03 — total y pago */}
         <div style={stepStyle()}>
@@ -238,6 +267,7 @@ function rowStyle() { return { display: "flex", justifyContent: "space-between",
 function rowValStyle() { return { fontWeight: 700, color: INK }; }
 function fieldLblStyle() { return { fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: MUTED, display: "block", marginBottom: 5 }; }
 function inputStyle() { return { width: "100%", padding: "9px 11px", fontSize: 12.5, border: `1px solid ${LINE}`, borderRadius: 8, background: "#fff", color: INK, fontFamily: "inherit", boxSizing: "border-box" }; }
+function contactInputStyle() { return { width: "100%", boxSizing: "border-box", padding: "9px 11px", fontSize: 13, borderRadius: 9, border: "1px solid rgba(10,22,40,0.16)", background: "#fff", color: "#0A1628", outline: "none" }; }
 function noteBoxStyle() { return { marginTop: 10, padding: "10px 12px", borderRadius: 8, fontSize: 11, lineHeight: 1.55, background: "#f4efe3", border: `1px solid ${LINE}`, color: "#4a4536" }; }
 function adjustCardStyle(credit) { return { display: "flex", alignItems: "center", gap: 9, padding: "10px 13px", borderRadius: 9, fontSize: 12, lineHeight: 1.4, marginTop: 10, background: credit ? "#eaf6ef" : "#fdf1ea", border: `1px solid ${credit ? "rgba(30,125,79,.25)" : "rgba(180,90,40,.25)"}`, color: credit ? "#1e5c3d" : "#7a4a28" }; }
 function payDetailStyle() { return { marginTop: 11, padding: "12px 14px", borderRadius: 9, background: "#f4efe3", border: `1px solid ${LINE}`, fontSize: 11.5, color: "#4a4536", lineHeight: 1.6 }; }
