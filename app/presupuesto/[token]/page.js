@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, use } from "react";
+import { useState, useEffect } from "react";
 
 // Cotización del admin vista por el cliente, sin login. A diferencia del PDF de antes, acá compara
 // las alternativas que se le ofrecen (aéreo, marítimo LCL/FCL, marítimo integral) con sus tiempos y
@@ -12,7 +12,7 @@ const fmt = (n) => `USD ${Number(n || 0).toLocaleString("es-AR", { minimumFracti
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" }) : "";
 
 export default function PresupuestoPage({ params }) {
-  const { token } = use(params);
+  const token = params?.token;
   const [state, setState] = useState({ loading: true, error: null, data: null });
   const [elegido, setElegido] = useState("");
   const [enviando, setEnviando] = useState(false);

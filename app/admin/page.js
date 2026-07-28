@@ -10045,13 +10045,13 @@ function QuotesList({token}){
   // Canales disponibles según origen.
   const channelsForOrigin=(origin)=>{
     if(origin==="USA")return[
-      {key:"maritimo_b",name:"Marítimo Integral AC",info:"45-55 días",type:"maritimo_b"},
+      {key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días",type:"maritimo_b"},
     ];
     // China (default)
     return[
       {key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles",type:"aereo_a"},
-      {key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"45-55 días",type:"maritimo_a"},
-      {key:"maritimo_b",name:"Marítimo Integral AC",info:"45-55 días",type:"maritimo_b"},
+      {key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"60-70 días",type:"maritimo_a"},
+      {key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días",type:"maritimo_b"},
     ];
   };
   // Calcula shipping si aplica
@@ -10398,6 +10398,8 @@ function AdminCalculator({token}){
   })();},[token]);
   const [clientId,setClientId]=useState(""); // id del cliente del sistema (o "" si free-text)
   const [linkGenerado,setLinkGenerado]=useState(null);const [generandoLink,setGenerandoLink]=useState(false);
+  // Que canales van al link publico. Arranca con los que ya son mostrables al cliente.
+  const [canalesLink,setCanalesLink]=useState([]);
   const [clientName,setClientName]=useState(""); // texto en el input; coincide con cliente del sistema o se carga a mano
   const [showClientList,setShowClientList]=useState(false);
   const [clientOverrides,setClientOverrides]=useState([]); // tarifas custom del cliente del sistema seleccionado
@@ -10468,8 +10470,8 @@ function AdminCalculator({token}){
   };
   const CHANNEL_MAP={aereo_a_china:"aereo_blanco",maritimo_a_china:"maritimo_blanco",maritimo_b:"maritimo_negro"};
   const channelsForOrigin=(o)=>o==="USA"
-    ?[{key:"maritimo_b",name:"Marítimo Integral AC",info:"45-55 días"}]
-    :[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles"},{key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"45-55 días"},{key:"maritimo_b",name:"Marítimo Integral AC",info:"45-55 días"}];
+    ?[{key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días"}]
+    :[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles"},{key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"60-70 días"},{key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días"}];
   const totalFob=products.reduce((s,p)=>s+toN(p.unit_price)*Number(p.quantity||1),0);
   const totCBM=pkgs.reduce((s,p)=>{const q=Number(p.qty||1),l=toN(p.length),w=toN(p.width),h=toN(p.height);return s+(l&&w&&h?((l*w*h)/1000000)*q:0);},0);
   const overweight=pkgs.some(p=>toN(p.weight)>45);
@@ -10509,6 +10511,7 @@ function AdminCalculator({token}){
     });
     setResults({channels:all,totalFob,totCBM,taxCond,origin,clientName,hasBrand,hasBattery});
     setLinkGenerado(null); // el link anterior quedó viejo: los números cambiaron
+    setCanalesLink(all.filter(c=>!c.notVisibleToClient).map(c=>c.key));
   };
   const fmt=(n)=>Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
   const printPdf=(ch,eff)=>{
@@ -10732,6 +10735,10 @@ function AdminCalculator({token}){
         const rowStyle={display:"flex",justifyContent:"space-between",alignItems:"baseline",fontSize:11.5,color:"rgba(255,255,255,0.65)"};
         const valStyle={color:"#fff",fontWeight:600,fontVariantNumeric:"tabular-nums"};
         return <div key={ch.key} style={{padding:"14px 16px",background:"rgba(255,255,255,0.028)",border:`1px solid ${ch.notVisibleToClient?"rgba(251,191,36,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:10,display:"flex",flexDirection:"column"}}>
+          {(()=>{const on=canalesLink.includes(ch.key);return <button onClick={()=>setCanalesLink(p=>on?p.filter(k=>k!==ch.key):[...p,ch.key])} style={{display:"flex",alignItems:"center",gap:7,width:"100%",marginBottom:9,padding:"6px 8px",borderRadius:7,cursor:"pointer",border:`1px solid ${on?"rgba(96,165,250,0.4)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(96,165,250,0.1)":"transparent",textAlign:"left"}}>
+            <span style={{width:15,height:15,flexShrink:0,borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:900,border:`1.5px solid ${on?"#60a5fa":"rgba(255,255,255,0.25)"}`,background:on?"#60a5fa":"transparent",color:"#0b1220"}}>{on?"✓":""}</span>
+            <span style={{fontSize:10,fontWeight:700,color:on?"#60a5fa":"rgba(255,255,255,0.4)"}}>{on?"Se muestra en el link":"Oculto en el link"}</span>
+          </button>;})()}
           <p style={{fontSize:12,fontWeight:700,color:IC,margin:"0 0 4px"}}>{ch.name}</p>
           <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"0 0 12px"}}>{ch.info}</p>
           {ch.notVisibleToClient&&<div title={ch.notVisibleToClient} style={{padding:"6px 10px",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:6,marginBottom:10}}>
@@ -10796,9 +10803,22 @@ function AdminCalculator({token}){
         y la elección vuelve como aviso. */}
     {results&&results.channels.length>0&&(()=>{
       const generarLink=async()=>{
+        if(canalesLink.length===0){toast("Elegí al menos una opción para mostrarle al cliente","error");return;}
         setGenerandoLink(true);
         try{
-          const alts=results.channels.map(c=>({key:c.key,name:c.name,info:c.info,type:c.type,flete:Number(c.flete||0),seguro:Number(c.seguro||0),shipCost:Number(c.shipCost||0),totalTax:Number(c.totalTax||0),totalAbonar:Number(c.totalAbonar||0)}));
+          const alts=results.channels.filter(c=>canalesLink.includes(c.key)).map(c=>{
+            const bd=c.bd||{};
+            const ovStr=desembolsoOverride[c.key];
+            const desEff=(ovStr!=null&&String(ovStr).trim()!=="")?toN(ovStr):(bd.desembolsoAuto||0);
+            const rateOvStr=c.key==="aereo_a_china"?rateOverride[c.key]:null;
+            const hasRateOv=rateOvStr!=null&&String(rateOvStr).trim()!=="";
+            const fleteEff=hasRateOv?(Number(c.fleteAmt||0)*toN(rateOvStr)+Number(c.battExtra||0)):Number(c.flete||0);
+            let taxEff=0;
+            if(bd.isBlanco&&bd.isAereo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+desEff+desEff*0.21;
+            else if(bd.isBlanco&&bd.isMaritimo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
+            const totEff=bd.isBlanco?(fleteEff+Number(c.seguro||0)+taxEff):(fleteEff+Number(c.surcharge||0));
+            return {key:c.key,name:c.name,info:c.info,type:c.type,flete:fleteEff,seguro:Number(c.seguro||0),shipCost:Number(c.shipCost||0),totalTax:taxEff,totalAbonar:totEff};
+          });
           const cli=clientId?allClients.find(c=>c.id===clientId):null;
           const tok=`${Date.now().toString(36)}${Math.random().toString(36).slice(2,12)}`;
           const body={
@@ -10811,7 +10831,7 @@ function AdminCalculator({token}){
             total_fob:results.totalFob,total_cbm:results.totCBM,
             total_cost:alts[0].totalAbonar,
             channel_alternatives:alts,
-            visible_channels:alts.map(a=>a.key),
+            visible_channels:canalesLink,
             status:"pending",
             public_token:tok,
             sent_at:new Date().toISOString(),
