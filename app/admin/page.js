@@ -724,6 +724,22 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     }catch(e){alertDialog("Error: "+e.message);}
     setUploadingReceipt(false);
   };
+  // Pegar el comprobante desde el portapapeles (⌘V / Ctrl+V), como en MyBox. Solo mientras se esta
+  // en la solapa de cobros y el metodo es transferencia — es el unico caso que lleva comprobante.
+  useEffect(()=>{
+    if(tab!=="finance"||newCobro.metodo!=="transferencia")return;
+    const onPaste=(e)=>{
+      const items=e.clipboardData?.items||[];
+      for(const it of items){
+        if(it.type?.startsWith("image/")){
+          const f=it.getAsFile();
+          if(f){uploadCobroReceipt(f);e.preventDefault();break;}
+        }
+      }
+    };
+    window.addEventListener("paste",onPaste);
+    return ()=>window.removeEventListener("paste",onPaste);
+  },[tab,newCobro.metodo,op.id,token]);
   // Sistema de puntos/recompensas DESACTIVADO (11/06/2026): no se cargan canjes pendientes,
   // así el bloque de "Canje de puntos pendiente" nunca aparece. Reactivar restaurando el query.
   const loadRedemptions=async()=>{setPendingRedemptions([]);};
@@ -3132,14 +3148,6 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           <button onClick={async()=>{if(!await confirmDialog("¿Limpiar el descuento aplicado? No modifica el monto cobrado."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{discount_applied_usd:0}});setOp(p=>({...p,discount_applied_usd:0}));flash("Descuento limpiado");}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.10)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar</button>
         </div>}
 
-        {/* Totales en una línea */}
-        <div style={{display:"flex",gap:24,flexWrap:"wrap",padding:"2px 0 14px",borderBottom:"1px solid rgba(255,255,255,0.06)",marginBottom:14}}>
-          <span style={{fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>Total a cobrar <strong style={{color:GOLD_LIGHT,marginLeft:5,fontVariantNumeric:"tabular-nums"}}>USD {budgetEffective.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></span>
-          <span style={{fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>Cobrado <strong style={{color:"#22c55e",marginLeft:5,fontVariantNumeric:"tabular-nums"}}>USD {cobradoUsd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></span>
-          <span style={{fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>{saldoCobro>0.01?"Saldo":saldoCobro<-0.01?"Sobrante":"Saldo"} <strong style={{color:saldoCobro>0.01?"#fbbf24":saldoCobro<-0.01?"#60a5fa":"#22c55e",marginLeft:5,fontVariantNumeric:"tabular-nums"}}>USD {Math.abs(saldoCobro).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></span>
-          {op.is_collected&&<span style={{fontSize:11,fontWeight:800,padding:"2px 8px",borderRadius:5,background:"rgba(34,197,94,0.12)",color:"#22c55e",border:"1px solid rgba(34,197,94,0.3)"}}>✓ CERRADO</span>}
-        </div>
-
         {/* Cobros registrados */}
         {clientPayments.length>0&&<table style={{width:"100%",borderCollapse:"collapse",marginBottom:16}}>
           <tbody>
@@ -3167,7 +3175,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.07em"}}>Registrar cobro</p>
         <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>
           {fld(`Monto cobrado (${newCobro.metodo==="cripto"?"USDT":monedaCobro})`,<input inputMode="decimal" placeholder="0" value={newCobro.monto} onChange={e=>{const v=e.target.value;if(v===""||/^\d*[.,]?\d*$/.test(v))setNewCobro(p=>({...p,monto:v}));}} style={inpStyle}/>)}
-          {fld("Método de cobro",<select value={newCobro.metodo} onChange={e=>setNewCobro(p=>({...p,metodo:e.target.value,tc:""}))} style={selStyle}>
+          {fld("Método de cobro",<select value={newCobro.metodo} onChange={e=>{const v=e.target.value;setNewCobro(p=>({...p,metodo:v,tc:"",receipt_url:v==="transferencia"?p.receipt_url:""}));}} style={selStyle}>
             <option value="transferencia" style={{background:"#142038"}}>Transferencia</option>
             <option value="efectivo" style={{background:"#142038"}}>Efectivo</option>
             <option value="cripto" style={{background:"#142038"}}>Cripto (USDT)</option>
@@ -3195,7 +3203,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             </button>)}
         </div>}
 
-        {/* Comprobante */}
+        {/* Comprobante: solo transferencia. En efectivo y USDT no hay nada que adjuntar. */}
+        {newCobro.metodo==="transferencia"&&<>
         <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Comprobante — pegá con ⌘V / Ctrl+V o subí un archivo</p>
         {newCobro.receipt_url
           ?<div style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderRadius:9,background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.25)",marginBottom:14}}>
@@ -3210,6 +3219,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>{uploadingReceipt?"Subiendo…":"Clic para elegir archivo · o pegá una imagen con ⌘V / Ctrl+V"}</span>
             <input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)uploadCobroReceipt(f);e.target.value="";}} disabled={uploadingReceipt} style={{display:"none"}}/>
           </label>}
+
+        </>}
 
         <Btn onClick={registrarCobro} disabled={savingCobro||uploadingReceipt}>{savingCobro?"Registrando…":uploadingReceipt?"Subiendo comprobante…":"+ Registrar cobro"}</Btn>
       </Card>;})()}
