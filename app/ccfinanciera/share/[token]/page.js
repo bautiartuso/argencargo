@@ -43,6 +43,10 @@ function useIsMobile(breakpoint = 720) {
 export default function SharePage({ params }) {
   const [state, setState] = useState({ loading: true, error: null, movements: [], share: null });
   const [filterCurrency, setFilterCurrency] = useState("all");
+  const [filterType, setFilterType] = useState("all"); // all | ingreso | egreso
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [tab, setTab] = useState("movs"); // movs | stats
 
   useEffect(() => {
     fetch(`/api/ccfinanciera/share/${encodeURIComponent(params.token)}`)
@@ -67,7 +71,32 @@ export default function SharePage({ params }) {
     return { withRunning: withRunning.reverse(), totals: { ars: arsBal, usd: usdBal } };
   }, [state.movements]);
 
-  const filtered = useMemo(() => filterCurrency === "all" ? enriched.withRunning : enriched.withRunning.filter((m) => m.currency === filterCurrency), [enriched, filterCurrency]);
+  const filtered = useMemo(() => enriched.withRunning.filter((m) => {
+    if (filterCurrency !== "all" && m.currency !== filterCurrency) return false;
+    if (filterType !== "all" && m.type !== filterType) return false;
+    const d = String(m.date || "").slice(0, 10);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  }), [enriched, filterCurrency, filterType, from, to]);
+
+  // Estadisticas de lo que quedo filtrado, separadas por moneda: cuanto entro, cuanto salio,
+  // cuanto se llevo la comision y el resultado neto.
+  const stats = useMemo(() => {
+    const base = () => ({ movs: 0, ingresos: 0, egresos: 0, comision: 0, ingresosBrutos: 0 });
+    const acc = { ARS: base(), USD: base() };
+    for (const m of filtered) {
+      const a = acc[m.currency] || (acc[m.currency] = base());
+      a.movs++;
+      const net = Number(m.net_amount || 0);
+      if (m.type === "ingreso") {
+        a.ingresos += net;
+        a.ingresosBrutos += Number(m.amount || 0);
+        a.comision += Number(m.commission_amount || 0);
+      } else a.egresos += Number(m.amount || 0);
+    }
+    return acc;
+  }, [filtered]);
   const isMobile = useIsMobile();
 
   if (state.loading) return <CenterMsg color={T.textMuted}>Cargando…</CenterMsg>;
@@ -106,16 +135,41 @@ export default function SharePage({ params }) {
           <BalanceCard label="Saldo ARS" currency="ARS" amount={enriched.totals.ars} />
           <BalanceCard label="Saldo USD" currency="USD" amount={enriched.totals.usd} />
         </section>
+        {/* Pestanas */}
+        <div style={{ display: "flex", gap: 4, padding: 3, background: T.bgSurface, borderRadius: 8, border: `1px solid ${T.border}`, marginBottom: 12, width: "fit-content" }}>
+          {[{ k: "movs", l: "Movimientos" }, { k: "stats", l: "Estadísticas" }].map((o) => (
+            <button key={o.k} onClick={() => setTab(o.k)} style={{ padding: "6px 16px", fontSize: 12, fontWeight: 700, borderRadius: 6, border: "none", cursor: "pointer", background: tab === o.k ? T.gold : "transparent", color: tab === o.k ? "#0A1628" : T.textMuted }}>{o.l}</button>
+          ))}
+        </div>
+
+        {/* Filtros: aplican a las dos pestanas */}
         <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
           <div style={{ display: "flex", gap: 4, padding: 3, background: T.bgSurface, borderRadius: 8, border: `1px solid ${T.border}` }}>
             {[{ k: "all", l: "Todo" }, { k: "ARS", l: "ARS" }, { k: "USD", l: "USD" }].map((o) => (
-              <button key={o.k} onClick={() => setFilterCurrency(o.k)} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 700, borderRadius: 6, border: "none", background: filterCurrency === o.k ? "linear-gradient(135deg, #B8956A, #E8D098, #B8956A)" : "transparent", color: filterCurrency === o.k ? T.bg : T.textMuted, cursor: "pointer" }}>{o.l}</button>
+              <button key={o.k} onClick={() => setFilterCurrency(o.k)} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 700, borderRadius: 6, border: "none", cursor: "pointer", background: filterCurrency === o.k ? T.gold : "transparent", color: filterCurrency === o.k ? "#0A1628" : T.textMuted }}>{o.l}</button>
             ))}
           </div>
+          <div style={{ display: "flex", gap: 4, padding: 3, background: T.bgSurface, borderRadius: 8, border: `1px solid ${T.border}` }}>
+            {[{ k: "all", l: "Ambos" }, { k: "ingreso", l: "▲ Ingresos" }, { k: "egreso", l: "▼ Egresos" }].map((o) => (
+              <button key={o.k} onClick={() => setFilterType(o.k)} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 700, borderRadius: 6, border: "none", cursor: "pointer", background: filterType === o.k ? (o.k === "egreso" ? T.red : o.k === "ingreso" ? T.green : T.gold) : "transparent", color: filterType === o.k ? "#0A1628" : T.textMuted }}>{o.l}</button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} title="Desde" style={{ padding: "7px 9px", fontSize: 12, borderRadius: 7, border: `1px solid ${T.border}`, background: T.bgSurface, color: T.text, outline: "none", colorScheme: "dark" }} />
+            <span style={{ color: T.textDim, fontSize: 12 }}>→</span>
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} title="Hasta" style={{ padding: "7px 9px", fontSize: 12, borderRadius: 7, border: `1px solid ${T.border}`, background: T.bgSurface, color: T.text, outline: "none", colorScheme: "dark" }} />
+            {(from || to || filterType !== "all" || filterCurrency !== "all") && (
+              <button onClick={() => { setFrom(""); setTo(""); setFilterType("all"); setFilterCurrency("all"); }} style={{ padding: "6px 11px", fontSize: 11, fontWeight: 700, borderRadius: 7, border: `1px solid ${T.border}`, background: "transparent", color: T.textMuted, cursor: "pointer" }}>✕ Limpiar</button>
+            )}
+          </div>
           <div style={{ flex: 1 }} />
-          <p style={{ fontSize: 11, color: T.textDim, margin: 0 }}>{filtered.length} movimiento{filtered.length !== 1 ? "s" : ""} {filterCurrency !== "all" ? `(${filterCurrency})` : "totales"}</p>
+          <p style={{ fontSize: 11, color: T.textDim, margin: 0 }}>{filtered.length} movimiento{filtered.length !== 1 ? "s" : ""}{state.movements.length !== filtered.length ? ` de ${state.movements.length}` : " totales"}</p>
         </div>
-        {filtered.length === 0 ? (
+
+        {tab === "stats" ? (
+          <ShareStats stats={stats} />
+        ) : (
+        filtered.length === 0 ? (
           <div style={{ padding: "60px 20px", textAlign: "center", background: T.bgSurface, border: `1px dashed ${T.border}`, borderRadius: 12 }}>
             <p style={{ fontSize: 14, color: T.textMuted, margin: 0 }}>Sin movimientos en este período</p>
           </div>
@@ -154,8 +208,57 @@ export default function SharePage({ params }) {
               );
             })}
           </div>
+        )
         )}
+
       </main>
+    </div>
+  );
+}
+
+// Estadisticas del rango filtrado, separadas por moneda. Los ingresos se muestran netos (lo que
+// realmente entro a la cuenta) y aparte cuanto se llevo la comision, que es la duda tipica.
+function ShareStats({ stats }) {
+  const fmt = (n, cur) => `${cur} ${Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const monedas = ["ARS", "USD"].filter((c) => stats[c] && stats[c].movs > 0);
+  if (monedas.length === 0) {
+    return (
+      <div style={{ padding: "60px 20px", textAlign: "center", background: T.bgSurface, border: `1px dashed ${T.border}`, borderRadius: 12 }}>
+        <p style={{ fontSize: 14, color: T.textMuted, margin: 0 }}>Sin movimientos para estadísticas en este filtro</p>
+      </div>
+    );
+  }
+  const fila = (lbl, val, color, sub) => (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "9px 0", borderBottom: `1px solid ${T.border}`, gap: 12 }}>
+      <span style={{ fontSize: 12.5, color: T.textMuted }}>{lbl}</span>
+      <span style={{ textAlign: "right" }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{val}</span>
+        {sub && <span style={{ display: "block", fontSize: 10.5, color: T.textDim, marginTop: 2 }}>{sub}</span>}
+      </span>
+    </div>
+  );
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: monedas.length > 1 ? "repeat(auto-fit,minmax(300px,1fr))" : "1fr", gap: 16 }}>
+      {monedas.map((cur) => {
+        const a = stats[cur];
+        const neto = a.ingresos - a.egresos;
+        return (
+          <div key={cur} style={{ background: T.bgSurface, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
+            <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.09em", textTransform: "uppercase", color: T.gold, margin: "0 0 12px" }}>
+              {cur} · {a.movs} movimiento{a.movs !== 1 ? "s" : ""}
+            </p>
+            {fila("Ingresos (netos)", fmt(a.ingresos, cur), T.green, a.comision > 0 ? `Bruto ${fmt(a.ingresosBrutos, cur)}` : null)}
+            {a.comision > 0 && fila("Comisión SOLFIN", `− ${fmt(a.comision, cur)}`, T.amber, a.ingresosBrutos > 0 ? `${((a.comision / a.ingresosBrutos) * 100).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% promedio` : null)}
+            {fila("Egresos", `− ${fmt(a.egresos, cur)}`, T.red)}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", paddingTop: 12, gap: 12 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Resultado del período</span>
+              <span style={{ fontSize: 17, fontWeight: 800, color: neto >= 0 ? T.green : T.red, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                {neto < 0 ? "− " : ""}{fmt(Math.abs(neto), cur)}
+              </span>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
