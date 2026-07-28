@@ -10820,16 +10820,19 @@ function AdminCalculator({token}){
             return {key:c.key,name:c.name,info:c.info,type:c.type,flete:fleteEff,seguro:Number(c.seguro||0),shipCost:Number(c.shipCost||0),totalTax:taxEff,totalAbonar:totEff};
           });
           const cli=clientId?allClients.find(c=>c.id===clientId):null;
+          const barata=alts.reduce((mn,a)=>Number(a.totalAbonar||0)<Number(mn.totalAbonar||0)?a:mn,alts[0]);
           const tok=`${Date.now().toString(36)}${Math.random().toString(36).slice(2,12)}`;
           const body={
             client_id:clientId||null,
             client_name:results.clientName||cli?`${cli?.first_name||""} ${cli?.last_name||""}`.trim()||results.clientName:results.clientName||null,
             client_code:cli?.client_code||null,
             origin:results.origin||null,
-            channel_key:alts[0].key,channel_name:alts[0].name,
+            channel_key:barata.key,
+            channel_name:alts.length>1?`${alts.length} opciones (link)`:alts[0].name,
             products,packages:pkgs,
             total_fob:results.totalFob,total_cbm:results.totCBM,
-            total_cost:alts[0].totalAbonar,
+            total_weight:pkgs.reduce((sm,pk)=>sm+toN(pk.weight)*Number(pk.qty||1),0)||null,
+            total_cost:barata.totalAbonar,
             channel_alternatives:alts,
             visible_channels:canalesLink,
             status:"pending",
