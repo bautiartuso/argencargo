@@ -159,8 +159,7 @@ export default function EntregaPublica({ params }) {
             {addressChanged && <p style={{ fontSize: 10, color: "#8b6f4a", marginTop: 4, lineHeight: 1.5 }}>🖊️ Vas a pedir entrega en una dirección distinta a la registrada — se lo avisamos a Argencargo junto con tu confirmación.</p>}
           </div>}
           {!hasPropio && <OptRow selected={delivery === "carrier"} onClick={() => setDelivery("carrier")} label="Envío por Via Cargo / Andreani" meta="Tu zona está fuera del reparto propio de Argencargo" price="A coordinar" />}
-          {!hasPropio && delivery === "carrier" && <div style={noteBoxStyle()}>El costo lo fija el transportista (Via Cargo o Andreani) según tu localidad, no Argencargo. Coordinamos el despacho y el pago del flete por WhatsApp.</div>}
-        </div>
+                  </div>
 
           {/* Datos de quien recibe: Andreani no despacha sin DNI del destinatario. Se precargan con
               los del cliente pero son editables, porque a veces recibe otra persona. */}

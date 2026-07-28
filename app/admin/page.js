@@ -2911,58 +2911,56 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         const diff=cobroEffective-budgetEffective; // + = pagó de más, - = pagó de menos
         // Cierra el cobro decidiendo que pasa con el saldo. Antes esto se disparaba desde el toggle
         // "Marcar como cobrada" (que exigia cargar el monto a mano); ahora el monto sale de los pagos.
+        // Cierre del cobro. Autocontenido a propósito: calcula el saldo con los valores del momento
+        // del click (no con los capturados en el render), PREGUNTA primero y recién después escribe.
+        // Antes marcaba la op como cobrada y después preguntaba, así que si el cartel no aparecía o
+        // se cancelaba, la op quedaba cerrada con el saldo sin resolver.
         const cerrarCobro=async()=>{
           if(budgetTot<=0){alertDialog("Cargá el presupuesto antes de cerrar el cobro.");return;}
-          if(cobroEffective<=0.01){alertDialog("Registrá al menos un cobro antes de cerrar.");return;}
+          const cobradoAhora=cobroEffective;
+          if(cobradoAhora<=0.01){alertDialog("Registrá al menos un cobro antes de cerrar.");return;}
+          const totalACobrar=budgetEffective;
+          const dif=Math.round((cobradoAhora-totalACobrar)*100)/100; // + pagó de más, − de menos
           const lastPmt=clientPayments.length>0?clientPayments[clientPayments.length-1]:null;
-          const patch={is_collected:true,collection_date:op.collection_date||lastPmt?.payment_date||new Date().toISOString().slice(0,10)};
-          if(lastPmt){patch.collection_method=lastPmt.payment_method||op.collection_method||"transferencia";}
-          setOp(p=>({...p,...patch}));
-          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:patch});
-          await saveCobro({closing:true});
-        };
-        const saveCobro=async(opts)=>{
-          const closing=!!opts?.closing;
-          if(!closing&&op.is_collected&&isArsCol&&!colRate){alertDialog("El cobro es en ARS: cargá el tipo de cambio primero");return;}
-          if((closing||op.is_collected)&&budgetTot>0){
-            if(diff>0.01){
-              const choice=await askCobroDecision("overpay",diff);
-              if(choice===null)return;
-              if(choice==="s"){
-                // Capear collected_amount al budget efectivo (incluye deuda aplicada): el excedente queda en CC, no infla la ganancia.
-                // En ARS: budgetEffective está en USD, así que multiplicamos por TC para guardar el ARS coherente.
-                const cappedRaw=isArsCol&&colRate?budgetEffective*colRate:budgetEffective;
-                setOp(p=>({...p,collected_amount:cappedRaw}));
-                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{collected_amount:cappedRaw,extra_charge_usd:0,is_collected:true,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",collection_fee_pct:Number(op.collection_fee_pct||0),...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
-                await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:diff,description:`Excedente de ${op.operation_code}`});
-                flash(`Cobrada · saldo a favor +USD ${diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
-                return;
-              } else if(choice==="e"){
-                // Cargo extra: collected_amount se mantiene tal como lo cargó el admin (lo raw del form),
-                // se setea extra_charge_usd para trazabilidad. El revenue de la op crece naturalmente.
-                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{collected_amount:cobroRaw,is_collected:true,extra_charge_usd:diff,collection_date:op.collection_date||new Date().toISOString().slice(0,10),collection_currency:op.collection_currency||"USD",collection_method:op.collection_method||"transferencia",collection_fee_pct:Number(op.collection_fee_pct||0),...(op.collection_currency==="ARS"&&colRate?{collection_exchange_rate:colRate}:{})}});
-                setOp(p=>({...p,extra_charge_usd:diff,collected_amount:cobroRaw}));
-                flash(`Cobrada · cargo extra +USD ${diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (revenue)`);
-                return;
-              } else return;
-            } else if(diff<-0.01){
-              const choice=await askCobroDecision("underpay",Math.abs(diff));
-              if(choice===null)return;
-              if(choice==="d"){
-                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{discount_applied_usd:Math.abs(diff)}});
-                setOp(p=>({...p,discount_applied_usd:Math.abs(diff)}));
-                await saveOp();
-                flash(`Cobrada con descuento de USD ${Math.abs(diff).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
-                return;
-              } else if(choice==="c"){
-                await saveOp();
-                await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"debt",amount_usd:diff,description:`Deuda pendiente de ${op.operation_code}`});
-                flash(`Cobrada · deuda registrada -USD ${Math.abs(diff).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`);
-                return;
-              } else return;
-            }
+          const base={is_collected:true,collection_date:op.collection_date||lastPmt?.payment_date||new Date().toISOString().slice(0,10)};
+          if(lastPmt)base.collection_method=lastPmt.payment_method||op.collection_method||"transferencia";
+
+          let extra={};
+          if(dif>0.01){
+            const choice=await askCobroDecision("overpay",dif);
+            if(choice==null)return; // canceló: no se toca nada
+            if(choice==="s"){
+              // Saldo a favor: el excedente es plata del cliente, no ingreso de esta op.
+              extra={collected_amount:totalACobrar,extra_charge_usd:0};
+              await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"overpayment",amount_usd:dif,description:`Excedente de ${op.operation_code}`});
+            } else if(choice==="e"){
+              extra={extra_charge_usd:dif};
+            } else return;
+          } else if(dif<-0.01){
+            const falta=Math.abs(dif);
+            const choice=await askCobroDecision("underpay",falta);
+            if(choice==null)return;
+            if(choice==="d"){
+              extra={discount_applied_usd:falta};
+            } else if(choice==="c"){
+              await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"debt",amount_usd:-falta,description:`Deuda pendiente de ${op.operation_code}`});
+            } else return;
           }
-          await saveOp();
+
+          setSaving(true);
+          try{
+            const body={...base,...extra};
+            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
+            setOp(p=>({...p,...body}));
+            if(op.client_id){
+              const fresh=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=account_balance_usd`});
+              if(Array.isArray(fresh)&&fresh[0])setOpClient(p=>p?{...p,account_balance_usd:fresh[0].account_balance_usd}:p);
+            }
+            flash(dif>0.01?`Cobro cerrado · sobrante USD ${dif.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} resuelto`
+                 :dif<-0.01?`Cobro cerrado · faltante USD ${Math.abs(dif).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} resuelto`
+                 :"✓ Cobro cerrado");
+          }catch(e){alertDialog("Error cerrando el cobro: "+e.message);}
+          setSaving(false);
         };
         const applySaldo=async()=>{
           if(creditBal<=0)return;
