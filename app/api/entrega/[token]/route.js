@@ -115,6 +115,30 @@ export async function GET(req, { params }) {
   const match = matchLocality(client.city, client.province, localities);
   const price = match ? computeDeliveryCostUsd(match, cfg) : null;
 
+  // Tarifa preferencial: la op la tiene cuando el flete que se le cobra no sale de la tarifa de
+  // lista — sea por descuento manual, por tarifa custom del cliente, por volumen o por lo que sea.
+  // Se compara el USD/kg efectivo contra el de lista vigente (effective_to null = version actual).
+  // Si no se puede determinar la tarifa de lista, NO se marca: mejor no decir nada que afirmar de
+  // mas en algo que ve el cliente.
+  let preferential = null;
+  try {
+    const bFlete = Number(op.budget_flete || 0);
+    if (bFlete > 0 && pesoFacturable > 0 && String(op.channel || "").includes("aereo")) {
+      const svc = `aereo_a_${String(op.origin || "China").toLowerCase()}`;
+      const tarRes = await sbFetch(`/tariffs?service_key=eq.${svc}&type=eq.rate&effective_to=is.null&select=min_qty,max_qty,rate`);
+      const tar = Array.isArray(tarRes.body) ? tarRes.body : [];
+      const bracket = tar.find((t) => pesoFacturable >= Number(t.min_qty || 0) && (t.max_qty == null || pesoFacturable < Number(t.max_qty)));
+      if (bracket) {
+        const listaKg = Number(bracket.rate || 0);
+        const efectivoKg = bFlete / pesoFacturable;
+        // Margen del 1% para no marcar como preferencial una diferencia de redondeo.
+        if (listaKg > 0 && efectivoKg < listaKg * 0.99) {
+          preferential = { usd_por_kg: Math.round(efectivoKg * 100) / 100, lista_usd_por_kg: listaKg };
+        }
+      }
+    }
+  } catch (e) { console.error("[GET entrega] preferential", e.message); }
+
   return Response.json({
     op: {
       operation_code: op.operation_code,
@@ -141,6 +165,7 @@ export async function GET(req, { params }) {
     },
     client: { first_name: client.first_name, last_name: client.last_name, dni: client.dni || "", email: client.email || "" },
     cargo: { bultos, tracking, peso_facturable: Math.round(pesoFacturable * 100) / 100 },
+    preferential,
     delivery: {
       inferred_zone: match ? match.name : null,
       price: price,
