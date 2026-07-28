@@ -439,7 +439,7 @@ function OperationsList({token,onSelect,onNew}){
       </select>
       <div style={{display:"inline-flex",alignItems:"center",gap:6}}>
         <span style={{fontSize:11,color:"rgba(255,255,255,0.45)",fontWeight:600}}>ETA</span>
-        <input type="date" value={fEta} onChange={e=>setFEta(e.target.value)} title="Filtrar por fecha de ETA" style={{padding:"9px 12px",fontSize:12,border:`1px solid ${fEta?"rgba(184,149,106,0.45)":"rgba(255,255,255,0.08)"}`,borderRadius:8,background:fEta?"rgba(184,149,106,0.10)":"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",fontFamily:"inherit"}}/>
+        <DatePicker value={fEta} onChange={v=>setFEta(v||"")} placeholder="ETA" small/>
         {fEta&&<button onClick={()=>setFEta("")} title="Limpiar ETA" style={{padding:"6px 9px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>✕</button>}
       </div>
       {sortCol!=="smart"&&<button onClick={()=>{setSortCol("smart");setSortDir("asc");}} style={{padding:"10px 14px",fontSize:11,fontWeight:600,border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:8,background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>↻ Restaurar orden</button>}
@@ -5837,9 +5837,9 @@ function FinancePanel({token}){
         {/* Barra de filtros */}
         <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:14,padding:"12px 14px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10}}>
           <input value={ledSearch} onChange={e=>setLedSearch(e.target.value)} placeholder="🔍 Buscar por descripción..." style={{flex:1,minWidth:200,padding:"8px 12px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
-          <input type="date" value={ledFrom} onChange={e=>setLedFrom(e.target.value)} title="Desde" style={{padding:"8px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+          <DatePicker value={ledFrom} onChange={v=>setLedFrom(v||"")} placeholder="Desde" small/>
           <span style={{color:"rgba(255,255,255,0.35)",fontSize:12}}>→</span>
-          <input type="date" value={ledTo} onChange={e=>setLedTo(e.target.value)} title="Hasta" style={{padding:"8px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
+          <DatePicker value={ledTo} onChange={v=>setLedTo(v||"")} placeholder="Hasta" small/>
           <select value={ledType} onChange={e=>setLedType(e.target.value)} style={{padding:"8px 10px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",cursor:"pointer"}}>
             <option value="" style={{background:"#142038"}}>Todos los tipos</option>
             <option value="ingreso" style={{background:"#142038"}}>Solo ingresos</option>
@@ -8857,7 +8857,7 @@ function FinanceDashboard({token}){
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>{[{k:"day",l:"Día"},{k:"week",l:"Semana"},{k:"month",l:"Mes"},{k:"year",l:"Año"},{k:"all",l:"Total"}].map(p=><button key={p.k} onClick={()=>{setPeriod(p.k);if(p.k==="month")setSelMonth(`${thisYear}-${String(thisMonth+1).padStart(2,"0")}`);if(p.k==="day")setSelDay(new Date().toISOString().slice(0,10));if(p.k==="week")setSelWeekMon(mondayOfToday());}} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:period===p.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:period===p.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:period===p.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{p.l}</button>)}
         {period==="day"&&<div style={{display:"flex",alignItems:"center",gap:6,marginLeft:8}}>
           <button onClick={()=>setSelDay(d=>addDaysStr(d,-1))} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.028)",color:"#fff",cursor:"pointer"}}>←</button>
-          <input type="date" value={selDay} max={today} onChange={e=>e.target.value&&setSelDay(e.target.value)} style={{padding:"4px 8px",fontSize:12.5,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.028)",color:"#fff",cursor:"pointer",colorScheme:"dark"}}/>
+          <DatePicker value={selDay} onChange={v=>{if(v&&v<=today)setSelDay(v);}} small/>
           <button onClick={()=>setSelDay(d=>d<today?addDaysStr(d,1):d)} style={{padding:"4px 10px",fontSize:14,fontWeight:700,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.028)",color:"#fff",cursor:"pointer"}}>→</button>
         </div>}
         {period==="week"&&<div style={{display:"flex",alignItems:"center",gap:6,marginLeft:8}}>
@@ -9631,7 +9631,7 @@ function AdminTasks({token}){
         <select value={typeof newDueDate==="string"&&newDueDate.match(/^\d{4}-\d{2}-\d{2}$/)?"custom":newDueDate} onChange={e=>{const v=e.target.value;if(v==="custom")setNewDueDate(todayStr);else setNewDueDate(v);}} style={{flex:"0 0 auto",minWidth:120,padding:"10px 12px",fontSize:13,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,color:"#fff",outline:"none",cursor:"pointer"}}>
           <option value="today">Hoy</option><option value="tomorrow">Mañana</option><option value="week">En 1 semana</option><option value="custom">Fecha custom</option><option value="none">Sin fecha</option>
         </select>
-        {(typeof newDueDate==="string"&&newDueDate.match(/^\d{4}-\d{2}-\d{2}$/))&&<input type="date" value={newDueDate} onChange={e=>setNewDueDate(e.target.value)} style={{flex:"0 0 auto",padding:"10px 12px",fontSize:13,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,color:"#fff",outline:"none"}}/>}
+        {(typeof newDueDate==="string"&&newDueDate.match(/^\d{4}-\d{2}-\d{2}$/))&&<DatePicker value={newDueDate} onChange={v=>setNewDueDate(v||"")} small/>}
         <button onClick={addTask} disabled={!newTitle.trim()} style={{padding:"10px 18px",fontSize:13,fontWeight:700,background:newTitle.trim()?GOLD_GRADIENT:"rgba(255,255,255,0.05)",color:newTitle.trim()?"#0A1628":"rgba(255,255,255,0.3)",border:newTitle.trim()?`1px solid ${GOLD_DEEP}`:"1px solid rgba(255,255,255,0.06)",borderRadius:8,cursor:newTitle.trim()?"pointer":"not-allowed"}}>+ Agregar</button>
       </div>
 
@@ -11924,7 +11924,7 @@ function MaritimeCostModal({data,token,onClose,onSaved}){
             <div><label style={lblS}>Costo {r.cur==="ARS"?"(ARS)":"(USD)"}</label><input type="number" step="any" value={r.amount} onChange={e=>upd(i,"amount",e.target.value)} placeholder="0" style={inpS}/></div>
             <div><label style={lblS}>Moneda</label><select value={r.cur} onChange={e=>upd(i,"cur",e.target.value)} style={{...inpS,cursor:"pointer"}}><option value="USD" style={{background:"#0F1F3A"}}>USD</option><option value="ARS" style={{background:"#0F1F3A"}}>ARS</option></select></div>
             {r.cur==="ARS"&&<div><label style={lblS}>T. cambio</label><input type="number" step="any" value={r.tc} onChange={e=>upd(i,"tc",e.target.value)} placeholder="Ej: 1510" style={inpS}/></div>}
-            <div><label style={lblS}>Fecha pago</label><input type="date" value={r.fecha} onChange={e=>upd(i,"fecha",e.target.value)} style={inpS}/></div>
+            <div><label style={lblS}>Fecha pago</label><DatePicker value={r.fecha} onChange={v=>upd(i,"fecha",v||"")} small/></div>
           </div>
           {r.cur==="ARS"&&u>0&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"6px 0 0"}}>= USD {u.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
         </div>;})}

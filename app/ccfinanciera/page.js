@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { dq, loadSession, clearSession, ac, SB_URL, SB_KEY } from "../../lib/sb-client";
 import { ToastStack, toast } from "../../lib/ui";
+import DatePicker from "../components/DatePicker";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // CC FINANCIERA SOLFIN — versión admin (auth requerido).
@@ -482,7 +483,7 @@ function MovementModal({ type, token, editing, onClose, onSaved }) {
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Fecha"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} /></Field>
+        <Field label="Fecha"><DatePicker value={date} onChange={(v) => setDate(v || new Date().toISOString().slice(0, 10))} /></Field>
         <Field label="Moneda">
           <div style={{ display: "flex", gap: 4, padding: 3, background: T.bgSurface, borderRadius: 8, border: `1px solid ${T.border}` }}>
             {["ARS", "USD"].map((c) => (
@@ -650,7 +651,7 @@ function DollarizeModal({ token, arsBalance, onClose, onSaved }) {
         Convierte saldo ARS a USD al tipo de cambio que pactes con SOLFIN. Quedan dos movimientos en el libro: un egreso en pesos y un ingreso en dólares.
       </p>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <Field label="Fecha"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} /></Field>
+        <Field label="Fecha"><DatePicker value={date} onChange={(v) => setDate(v || new Date().toISOString().slice(0, 10))} /></Field>
         <Field label="TC ARS/USD">
           <input type="text" inputMode="decimal" value={rate} onChange={(e) => { const v = e.target.value; if (v === "" || /^\d*[.,]?\d*$/.test(v)) setRate(v); }} placeholder="Ej: 1190" style={inputStyle} autoFocus />
         </Field>

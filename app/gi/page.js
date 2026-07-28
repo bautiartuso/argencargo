@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { calcOpBudget, applyAntidumpingFloor } from "../../lib/calc";
 import { printGiQuotePdf } from "../../lib/pdf-templates";
+import DatePicker from "../components/DatePicker";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -2395,9 +2396,9 @@ function PaneLedger({token,profileId,isAdmin}){
 
     <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:14}}>
       <input value={fSearch} onChange={e=>setFSearch(e.target.value)} placeholder="Buscar por op, cliente o concepto..." style={{...inpStyle(),background:"rgba(255,255,255,0.04)",minWidth:240,flex:1,padding:"9px 12px",fontSize:12}}/>
-      <input type="date" value={fFrom} onChange={e=>setFFrom(e.target.value)} style={{...inpStyle(),background:"rgba(255,255,255,0.04)",padding:"9px 12px",fontSize:12,minWidth:140,width:"auto"}}/>
+      <DatePicker value={fFrom} onChange={v=>setFFrom(v||"")} placeholder="Desde" small/>
       <span style={{color:"rgba(255,255,255,0.4)",fontSize:12}}>→</span>
-      <input type="date" value={fTo} onChange={e=>setFTo(e.target.value)} style={{...inpStyle(),background:"rgba(255,255,255,0.04)",padding:"9px 12px",fontSize:12,minWidth:140,width:"auto"}}/>
+      <DatePicker value={fTo} onChange={v=>setFTo(v||"")} placeholder="Hasta" small/>
       <select value={fType} onChange={e=>setFType(e.target.value)} style={{...inpStyle(),background:"rgba(255,255,255,0.04)",padding:"9px 12px",fontSize:12,width:"auto",minWidth:160}}>
         <option value="">Todos los tipos</option>
         <option value="devengado">Devengadas</option>
