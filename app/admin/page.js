@@ -4627,6 +4627,7 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
         <Inp label="WhatsApp" value={cl.whatsapp} onChange={chCl("whatsapp")}/>
         <Sel label="Condición IVA" value={cl.tax_condition} onChange={chCl("tax_condition")} options={[{value:"responsable_inscripto",label:"Resp. Inscripto"},{value:"monotributista",label:"Monotributista"},{value:"ninguna",label:"Consumidor Final"}]}/>
         <Inp label="Calle" value={cl.street} onChange={chCl("street")}/>
+        <Inp label="DNI" value={cl.dni} onChange={chCl("dni")} placeholder="Para envíos al interior"/>
         <Inp label="Piso/Depto" value={cl.floor_apt} onChange={chCl("floor_apt")}/>
         <Inp label="CP" value={cl.postal_code} onChange={chCl("postal_code")}/>
         <Inp label="Ciudad" value={cl.city} onChange={chCl("city")}/>
