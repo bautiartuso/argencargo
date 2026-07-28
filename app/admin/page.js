@@ -202,7 +202,7 @@ const OPS_FILTERS_KEY="ac_ops_filters";
 const loadOpsFilters=()=>{try{if(typeof window==="undefined")return{};return JSON.parse(localStorage.getItem(OPS_FILTERS_KEY)||"{}")||{};}catch{return{};}};
 
 function OperationsList({token,onSelect,onNew}){
-  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [ncmMissingByOp,setNcmMissingByOp]=useState({});const [opsWithFlight,setOpsWithFlight]=useState(()=>new Set());const [lo,setLo]=useState(true);
+  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [cliComByOp,setCliComByOp]=useState({});const [ncmMissingByOp,setNcmMissingByOp]=useState({});const [opsWithFlight,setOpsWithFlight]=useState(()=>new Set());const [lo,setLo]=useState(true);
   const [search,setSearch]=useState(()=>loadOpsFilters().search||"");
   const [fStatuses,setFStatuses]=useState(()=>{const v=loadOpsFilters().fStatuses;return Array.isArray(v)?v:[];});
   const [fChannels,setFChannels]=useState(()=>{const v=loadOpsFilters().fChannels;return Array.isArray(v)?v:[];});
@@ -257,7 +257,7 @@ function OperationsList({token,onSelect,onNew}){
   };
   // Peso por estado: mayor valor = más cerca de entrega (aparece arriba)
   const STATUS_WEIGHT={entregada:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
-  useEffect(()=>{(async()=>{const [o,pm,cp,it,fo]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,giro_status,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd"}),dq("operation_items",{token,filters:"?select=operation_id,ncm_code,description"}),dq("flight_operations",{token,filters:"?select=operation_id"}).catch(()=>[])]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);const nmap={};(Array.isArray(it)?it:[]).forEach(r=>{const desc=(r.description||"").trim();if(desc&&!isValidNcmCode(r.ncm_code))nmap[r.operation_id]=true;});setNcmMissingByOp(nmap);setOpsWithFlight(new Set((Array.isArray(fo)?fo:[]).map(r=>r.operation_id).filter(Boolean)));setLo(false);})();},[token]);
+  useEffect(()=>{(async()=>{const [o,pm,cp,it,fo]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,giro_status,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd,amount_ars,exchange_rate,currency,commission_pct"}),dq("operation_items",{token,filters:"?select=operation_id,ncm_code,description"}),dq("flight_operations",{token,filters:"?select=operation_id"}).catch(()=>[])]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};const comMap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);const pct=Number(p.commission_pct||0);if(pct>0){const rt=Number(p.exchange_rate||0);const cu=p.currency==="ARS"&&rt>0?(Number(p.amount_ars||0)*(pct/100))/rt:Number(p.amount_usd||0)*(pct/100);comMap[p.operation_id]=(comMap[p.operation_id]||0)+cu;}});setCliPmtsByOp(cmap);setCliComByOp(comMap);const nmap={};(Array.isArray(it)?it:[]).forEach(r=>{const desc=(r.description||"").trim();if(desc&&!isValidNcmCode(r.ncm_code))nmap[r.operation_id]=true;});setNcmMissingByOp(nmap);setOpsWithFlight(new Set((Array.isArray(fo)?fo:[]).map(r=>r.operation_id).filter(Boolean)));setLo(false);})();},[token]);
   // Saldo pendiente del cliente. Considera:
   // - pagos ya recibidos (collected_amount si la op está cobrada, o operation_client_payments si es GI)
   // - crédito aplicado de CC (credit_applied_usd)
@@ -319,7 +319,21 @@ function OperationsList({token,onSelect,onNew}){
       const costo=giroOk?(Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0)):0;
       return s+cli-costo;
     },0);
-    return ing-cost+pmtGan;
+    // Comisión de la financiera: es un costo real que Rentabilidad ya descuenta del cobro neto.
+    // Acá no se restaba, así que esta columna mostraba una ganancia mayor que la de la op.
+    // Sale de cada cobro (cada transferencia tiene su %); para las ops viejas cargadas con el
+    // formulario anterior se cae a collection_fee_pct, que es donde vive el % en ese caso.
+    let comision=Number(cliComByOp[o.id]||0);
+    if(comision<=0&&o.collection_method==="transferencia"){
+      const pct=Number(o.collection_fee_pct||0);
+      if(pct>0){
+        const raw=Number(o.collected_amount||0);
+        const rate=Number(o.collection_exchange_rate||0);
+        const cashUsd=o.collection_currency==="ARS"&&rate>0?raw/rate:raw;
+        comision=cashUsd*(pct/100);
+      }
+    }
+    return ing-cost-comision+pmtGan;
   };
   const sorted=[...filtered].sort((a,b)=>{
     if(sortCol==="smart"){
@@ -3160,6 +3174,32 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           <button onClick={async()=>{if(!await confirmDialog("¿Limpiar el descuento aplicado? No modifica el monto cobrado."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{discount_applied_usd:0}});setOp(p=>({...p,discount_applied_usd:0}));flash("Descuento limpiado");}} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.10)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar</button>
         </div>}
 
+        {/* Cobro cargado con el formulario anterior. Las ops historicas no tienen filas en
+            operation_client_payments — su cobro vive en los campos collection_* de la operacion.
+            Sin esta fila la card aparecia vacia y parecia que el cobro se habia borrado. */}
+        {clientPayments.length===0&&cobroUsd>0.01&&(()=>{
+          const isArsLeg=op.collection_currency==="ARS";
+          const rateLeg=Number(op.collection_exchange_rate||0);
+          const pctLeg=Number(op.collection_fee_pct||0);
+          return <div style={{marginBottom:16}}>
+            <table style={{width:"100%",borderCollapse:"collapse"}}>
+              <tbody>
+                <tr style={{borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                  <td style={{padding:"9px 8px",fontSize:12.5,color:"rgba(255,255,255,0.8)",whiteSpace:"nowrap",width:100}}>{op.collection_date?formatDate(op.collection_date):"—"}</td>
+                  <td style={{padding:"9px 8px",fontSize:12.5,color:"rgba(255,255,255,0.65)"}}>
+                    Cobro {op.operation_code}{opClient?.client_code?` · ${opClient.client_code}`:""}
+                    {isArsLeg&&rateLeg>0?` (ARS ${Number(op.collected_amount||0).toLocaleString("es-AR")} @ ${rateLeg.toLocaleString("es-AR")})`:""}
+                    <span style={{marginLeft:8,fontSize:9.5,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(255,255,255,0.07)",color:"rgba(255,255,255,0.45)"}}>REGISTRO ANTERIOR</span>
+                  </td>
+                  <td style={{padding:"9px 8px",fontSize:12,color:"rgba(255,255,255,0.5)",textTransform:"capitalize",whiteSpace:"nowrap",width:110}}>{(op.collection_method||"—").replace("_"," ")}</td>
+                  <td style={{padding:"9px 8px",whiteSpace:"nowrap",width:120}}>{pctLeg>0&&<span style={{fontSize:9.5,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.14)",color:"#60a5fa"}}>comisión {pctLeg}%</span>}</td>
+                  <td style={{padding:"9px 8px",textAlign:"right",fontSize:13,fontWeight:700,color:"#22c55e",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>USD {cobroUsd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",margin:"7px 0 0",fontStyle:"italic"}}>Este cobro se cargó con el formulario anterior, así que no aparece como fila editable. Sigue contando en la rentabilidad y en el libro diario. Si registrás un cobro nuevo acá, se convierte en el primer cobro de la lista automáticamente.</p>
+          </div>;
+        })()}
         {/* Cobros registrados */}
         {clientPayments.length>0&&<table style={{width:"100%",borderCollapse:"collapse",marginBottom:16}}>
           <tbody>
