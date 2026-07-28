@@ -64,7 +64,7 @@ function fullAddress(c) {
 }
 
 async function loadOpData(token) {
-  const opRes = await sbFetch(`/operations?delivery_public_token=eq.${encodeURIComponent(token)}&select=*,clients(first_name,last_name,client_code,street,floor_apt,postal_code,city,province)&limit=1`);
+  const opRes = await sbFetch(`/operations?delivery_public_token=eq.${encodeURIComponent(token)}&select=*,clients(first_name,last_name,client_code,street,floor_apt,postal_code,city,province,tax_condition)&limit=1`);
   if (opRes.status >= 400 || !Array.isArray(opRes.body) || opRes.body.length === 0) return null;
   return opRes.body[0];
 }
@@ -125,6 +125,9 @@ export async function GET(req, { params }) {
       budget_flete: Number(op.budget_flete || 0),
       budget_seguro: Number(op.budget_seguro || 0),
       budget_taxes: Number(op.budget_taxes || 0),
+      // RI que abona los impuestos directo al despachante: no se le cobran a Argencargo,
+      // asi que el desglose del retiro no debe listarlos (sino no cierra con budget_total).
+      taxes_billed_by_argencargo: !(op.clients?.tax_condition === "responsable_inscripto") || !!op.ri_argencargo_collects_taxes,
       credit_applied_usd: Number(op.credit_applied_usd || 0),
       debt_applied_usd: Number(op.debt_applied_usd || 0),
       total_anticipos: Number(op.total_anticipos || 0),

@@ -1636,7 +1636,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         // Sumamos solo los componentes que aplican al canal — igual que calcOpBudget en auto:
         //   Canal A (blanco) → taxes + flete + seguro
         //   Canal B (negro)  → flete + surcharge
-        const components=isBlanco?["budget_taxes","budget_flete","budget_seguro"]:["budget_flete","budget_surcharge"];
+        // RI que paga los impuestos directo al despachante: budget_taxes queda como dato
+        // informativo pero NO entra en el total a abonar a Argencargo (igual que en auto).
+        const components=isBlanco
+          ?(taxesBilledByArgencargo?["budget_taxes","budget_flete","budget_seguro"]:["budget_flete","budget_seguro"])
+          :["budget_flete","budget_surcharge"];
         const shipCost=op.shipping_to_door?toNum(op.shipping_cost):0;
         const sum=components.reduce((s,f)=>s+(f===field?toNum(val):toNum(op[f])),0)+shipCost;
         chOp("budget_total")(Math.round(sum*100)/100);
@@ -1673,7 +1677,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <b>Modo manual:</b> editás los valores directamente. El sistema no recalcula automáticamente al modificar bultos/items. Volvé a "AUTO" para recalcular.
           </div>
           {isBlanco?<>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Total Impuestos (USD)</span><input type="text" inputMode="decimal" value={op.budget_taxes??""} placeholder="0,00" onChange={e=>handleManualChange("budget_taxes",e.target.value)} style={manualInputStyle}/></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{taxesBilledByArgencargo?"Total Impuestos (USD)":<>Impuestos (USD) <span style={{color:"rgba(96,165,250,0.85)",fontSize:11,fontStyle:"italic"}}>— informativo, el RI paga directo</span></>}</span><input type="text" inputMode="decimal" value={op.budget_taxes??""} placeholder="0,00" onChange={e=>handleManualChange("budget_taxes",e.target.value)} style={manualInputStyle}/></div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Flete internacional (USD)</span><input type="text" inputMode="decimal" value={op.budget_flete??""} placeholder="0,00" onChange={e=>handleManualChange("budget_flete",e.target.value)} style={manualInputStyle}/></div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Seguro de carga (USD)</span><input type="text" inputMode="decimal" value={op.budget_seguro??""} placeholder="0,00" onChange={e=>handleManualChange("budget_seguro",e.target.value)} style={manualInputStyle}/></div>
           </>:<>
@@ -3664,8 +3668,13 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           // ni seguro ni gasto doc cobrados al cliente — esos quedan en 0 para no inflar el
           // presupuesto base ni mostrar líneas falsas.
           const isBlancoOp=op.channel?.includes("blanco");
+          // RI que abona los impuestos directo al despachante: Argencargo no los cobra ni los paga,
+          // así que quedan FUERA de la rentabilidad (presupuesto, base de prorrateo y filas).
+          // Si quedaran dentro, inflan presuTotal, achican el factor y la op figura a pérdida.
+          // Vale también con presupuesto manual: depende del cliente, no de budget_mode.
+          const riPagaImpuestos=opClient?.tax_condition==="responsable_inscripto"&&!op.ri_argencargo_collects_taxes;
           const bFlete=Number(op.budget_flete||0);
-          const bTax=isBlancoOp?Number(op.budget_taxes||0):0;
+          const bTax=isBlancoOp&&!riPagaImpuestos?Number(op.budget_taxes||0):0;
           const bSeg=isBlancoOp?Number(op.budget_seguro||0):0;
           const bSurch=isBlancoOp?0:Number(op.budget_surcharge||0);
           // Flete local: solo se le cobra al cliente cuando shipping_to_door=true (envío a domicilio).
@@ -3716,7 +3725,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
                 en modo manual respeta lo que cargó el admin, aunque sea 0).
                 Costo real = costImp + costDoc — los dos pagos al despacho/aduana sumados.
                 Visible cuando hay budget o costo real (canal B no aplica → ambos en 0, no muestra). */}
-            {(bTax>0||costImp>0||costDoc>0)&&block("Impuestos",bTax,costImp+costDoc)}
+            {riPagaImpuestos
+              ? (Number(op.budget_taxes||0)>0&&<div style={{padding:"10px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+                  <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.04em"}}>Impuestos · fuera de la rentabilidad</p>
+                  <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:0,fontStyle:"italic"}}>El RI abonó USD {Number(op.budget_taxes||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de impuestos directo al despachante. No se presupuestó ni se cobró, así que no entra en el cálculo.</p>
+                </div>)
+              : (bTax>0||costImp>0||costDoc>0)&&block("Impuestos",bTax,costImp+costDoc)}
             {(bSeg>0||costSeg>0)&&block("Seguro",bSeg,costSeg)}
             {bSurch>0&&block("Recargo por valor",bSurch,0)}
             {(bLocal>0||costLocal>0)&&block("Flete local",bLocal,costLocal)}

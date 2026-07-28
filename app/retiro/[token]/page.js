@@ -122,7 +122,7 @@ export default function EntregaPublica({ params }) {
           </div>
           {isBlanco && <div style={{ marginTop: 12, paddingTop: 4, borderTop: `1px solid ${LINE}` }}>
             {op.budget_flete > 0 && <div style={rowStyle()}><span>Flete Internacional</span><span style={rowValStyle()}>{fmt(op.budget_flete)}</span></div>}
-            {op.budget_taxes > 0 && <div style={rowStyle()}><span>Impuestos &amp; Aduana</span><span style={rowValStyle()}>{fmt(op.budget_taxes)}</span></div>}
+            {op.budget_taxes > 0 && op.taxes_billed_by_argencargo !== false && <div style={rowStyle()}><span>Impuestos &amp; Aduana</span><span style={rowValStyle()}>{fmt(op.budget_taxes)}</span></div>}
             {op.budget_seguro > 0 && <div style={{ ...rowStyle(), borderBottom: "none" }}><span>Seguro de Carga</span><span style={rowValStyle()}>{fmt(op.budget_seguro)}</span></div>}
           </div>}
           {cargo.tracking.length > 0 && <>

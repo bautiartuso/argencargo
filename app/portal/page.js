@@ -790,7 +790,7 @@ function OperationDetail({op,token,client,onBack}){
         </>}
       </div>}
     </div>}
-    {!loading&&(()=>{const bt=Number(op.budget_total||0);const bTax=Number(op.budget_taxes||0);const bFlete=Number(op.budget_flete||0);const bSeg=Number(op.budget_seguro||0);const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;const isB=op.channel?.includes("negro");
+    {!loading&&(()=>{const bt=Number(op.budget_total||0);const bTax=Number(op.budget_taxes||0);const riPagaImpuestosDirecto=client?.tax_condition==="responsable_inscripto"&&!op.ri_argencargo_collects_taxes;const bFlete=Number(op.budget_flete||0);const bSeg=Number(op.budget_seguro||0);const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;const isB=op.channel?.includes("negro");
       // Gestión de pagos: total acordado vs lo ya cobrado
       const pmtTotal=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
       const pmtAnticipado=Number(op.total_anticipos||0);
@@ -824,7 +824,7 @@ function OperationDetail({op,token,client,onBack}){
             </div>;})}
           </div>
         </>}
-        {!isGI&&!isB&&bTax>0&&bRow("Total Impuestos",bTax)}
+        {!isGI&&!isB&&bTax>0&&(riPagaImpuestosDirecto?bRow("Impuestos (los abonás directo al despachante)",bTax,false,false,"rgba(255,255,255,0.45)"):bRow("Total Impuestos",bTax))}
         {!isGI&&(isB?(bt-shipCost):bFlete)>0&&bRow(isB?"Servicio Integral de importación":"Flete internacional",isB?(bt-shipCost):bFlete)}
         {!isGI&&!isB&&bSeg>0&&bRow("Seguro de carga",bSeg)}
         {!isGI&&shipCost>0&&bRow("Envío a Domicilio",shipCost)}
