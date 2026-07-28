@@ -2241,7 +2241,15 @@ function AccountPage({token,client,onRestartTutorial}){
     </div>}
   </div>;
 }
-function InternationalPaymentsPage({client}){
+function InternationalPaymentsPage({client,token}){
+  // Gestiones de pago del cliente (AGP). La calculadora sigue siendo lo primero, pero abajo ve el
+  // historial de los giros que le gestionamos, con lo que pago y el estado de cada uno.
+  const [misAgp,setMisAgp]=useState([]);
+  useEffect(()=>{(async()=>{
+    if(!token||!client?.id)return;
+    const r=await dq("payment_management",{token,filters:`?client_id=eq.${client.id}&select=agp_code,date,description,client_amount_usd,client_paid,client_paid_amount_usd,client_paid_date,giro_status,operations(operation_code)&order=date.desc,created_at.desc`}).catch(()=>[]);
+    setMisAgp(Array.isArray(r)?r:[]);
+  })();},[token,client?.id]);
   const {t}=useT();
   // WhatsApp de Argencargo para derivar pagos internacionales
   const WA_PHONE="5491125088580";
@@ -2376,6 +2384,36 @@ function InternationalPaymentsPage({client}){
       <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap"}}>
         <a href={`https://wa.me/${WA_PHONE}?text=${buildWAMessage()}`} target="_blank" rel="noopener noreferrer" style={{padding:"13px 24px",fontSize:14,fontWeight:700,borderRadius:10,cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:10,boxShadow:"0 4px 14px rgba(37,211,102,0.25)",letterSpacing:"0.02em"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>{t("pay.sendWA")}</a>
         <button onClick={resetAll} style={{padding:"13px 20px",fontSize:13,fontWeight:600,borderRadius:10,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.02em"}}>{t("pay.startOver")}</button>
+      </div>
+    </div>}
+
+    {/* Historial de gestiones de pago del cliente. La calculadora de arriba es para estimar; esto es
+        lo que ya se le gestionó, con su código AGP. */}
+    {misAgp.length>0&&<div style={{marginTop:32}}>
+      <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Tus gestiones de pago</h3>
+      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.45)",margin:"0 0 14px"}}>Giros que gestionamos por tu cuenta. Cada uno tiene su código.</p>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {misAgp.map((g,i)=>{
+          const monto=Number(g.client_paid_amount_usd??g.client_amount_usd??0);
+          const pagado=!!g.client_paid;
+          const enviado=g.giro_status==="confirmado";
+          return <div key={g.agp_code||i} style={{padding:"12px 15px",background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:11,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:180}}>
+              <p style={{fontSize:12.5,fontWeight:700,color:"#fff",margin:0}}>
+                <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",color:IC}}>{g.agp_code||"—"}</span>
+                {g.description?<span style={{fontWeight:400,color:"rgba(255,255,255,0.65)"}}> · {g.description}</span>:null}
+              </p>
+              <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"3px 0 0"}}>
+                {g.date?formatDate(g.date):""}{g.operations?.operation_code?` · operación ${g.operations.operation_code}`:""}
+              </p>
+            </div>
+            <span style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              <span style={{fontSize:9.5,fontWeight:800,padding:"3px 8px",borderRadius:5,background:pagado?"rgba(34,197,94,0.14)":"rgba(251,191,36,0.12)",color:pagado?"#22c55e":"#fbbf24"}}>{pagado?"✓ Pagado":"Pendiente de pago"}</span>
+              <span style={{fontSize:9.5,fontWeight:800,padding:"3px 8px",borderRadius:5,background:enviado?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.06)",color:enviado?"#22c55e":"rgba(255,255,255,0.45)"}}>{enviado?"✓ Girado":"Giro en curso"}</span>
+            </span>
+            <span style={{fontSize:15,fontWeight:700,color:"#fff",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>USD {monto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          </div>;
+        })}
       </div>
     </div>}
   </div>;
@@ -2650,7 +2688,7 @@ function Dashboard({profile,client,user,token,onLogout,onRestartTutorial}){
     {page==="services"&&<ServicesPage client={client}/>}
     {page==="quotes"&&<QuotesPage token={token} client={client}/>}
     {/* Puntos y Referidos desactivados (11/06/2026) — rutas removidas, componentes quedan como código muerto para reactivar. */}
-    {page==="payments"&&<InternationalPaymentsPage client={client}/>}
+    {page==="payments"&&<InternationalPaymentsPage client={client} token={token}/>}
     {page==="account"&&<AccountPage token={token} client={client} onRestartTutorial={onRestartTutorial}/>}
     {page==="support"&&<SupportPage token={token} client={client}/>}
     {!["imports","profile","rates","calculator","services","quotes","points","payments","account","support","referrals"].includes(page)&&<div style={{textAlign:"center",padding:"4rem 0"}}><h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 8px",textTransform:"uppercase"}}>{page.replace("_"," ")}</h2><p style={{fontSize:14,color:"rgba(255,255,255,0.4)"}}>Sección en desarrollo</p></div>}
