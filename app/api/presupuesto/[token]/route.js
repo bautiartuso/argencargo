@@ -104,7 +104,7 @@ export async function POST(req, { params }) {
     const ids = (Array.isArray(admins.body) ? admins.body : []).map((a) => a.id).filter(Boolean);
     const quien = `${quote.client_name || ""}${quote.client_code ? ` · ${quote.client_code}` : ""}`.trim() || "Un cliente";
     const title = "✅ Cotización aceptada";
-    const msg = `${quien} eligió ${elegida.name || channel_key} · USD ${Number(elegida.total || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const msg = `${quien} eligió ${elegida.name || channel_key} · USD ${Number(elegida.totalAbonar || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     for (const id of ids) {
       await sbFetch(`/notifications`, {
         method: "POST",
