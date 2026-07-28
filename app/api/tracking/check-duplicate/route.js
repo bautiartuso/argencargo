@@ -70,23 +70,7 @@ export async function GET(req) {
     });
   }
 
-  // 3. Purchase_notification_trackings (avisos pendientes)
-  const notifTrk = await sb(`/rest/v1/purchase_notification_trackings?select=id,tracking_code,received_at,notification_id,purchase_notifications!inner(id,status,client_id,clients(client_code,first_name,last_name))&tracking_code=ilike.${encodeURIComponent("%" + code + "%")}&received_at=is.null&limit=10`);
-  for (const t of (Array.isArray(notifTrk) ? notifTrk : [])) {
-    const notif = t.purchase_notifications;
-    if (!notif || notif.status === "cancelled") continue;
-    conflicts.push({
-      type: "notification",
-      where: "Aviso de compra pendiente",
-      operation_code: null,
-      operation_id: null,
-      notification_id: notif.id,
-      status: notif.status,
-      client: notif.clients ? `${notif.clients.client_code} - ${notif.clients.first_name || ""}` : null,
-    });
-  }
-
-  // 4. Unassigned_packages (huérfanos sin cliente asignado)
+  // 3. Unassigned_packages (huérfanos sin cliente asignado)
   const orphans = await sb(`/rest/v1/unassigned_packages?select=id,national_tracking,assigned_to_op_id&national_tracking=ilike.${encodeURIComponent("%" + code + "%")}&assigned_to_op_id=is.null&limit=10`);
   for (const o of (Array.isArray(orphans) ? orphans : [])) {
     conflicts.push({

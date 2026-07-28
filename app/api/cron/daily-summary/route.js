@@ -128,16 +128,14 @@ export async function GET(req) {
   const montoCobradoYesterday = (payments || []).reduce((s, p) => s + Number(p.amount_usd || 0), 0);
   const packagesYesterday = (packages || []).length;
 
-  // Pendientes hoy: cobranzas vencidas, vuelos listos, avisos sin confirmar, etc.
+  // Pendientes hoy: cobranzas vencidas, vuelos listos, etc.
   const opsArr = Array.isArray(opsToday) ? opsToday : [];
   const cobrarVencidas = opsArr.filter(o => !o.is_collected && ["entregada", "operacion_cerrada"].includes(o.status) && o.delivered_at && o.delivered_at < d3agoISO).length;
   const flightsReady = await sb(`/rest/v1/flights?select=id&status=eq.preparando&invoice_presented_at=not.is.null`);
-  const avisos = await sb(`/rest/v1/purchase_notifications?select=id&status=eq.pending&created_at=lt.${new Date(Date.now() - 86400000).toISOString()}`);
 
   const todayPending = [
     cobrarVencidas > 0 ? { icon: "💰", title: "Cobranzas vencidas (>3d)", count: cobrarVencidas } : null,
     Array.isArray(flightsReady) && flightsReady.length > 0 ? { icon: "✈️", title: "Vuelos listos para despachar", count: flightsReady.length } : null,
-    Array.isArray(avisos) && avisos.length > 0 ? { icon: "📦", title: "Avisos compra +24h sin confirmar", count: avisos.length } : null,
   ].filter(Boolean);
 
   // Recordatorios vencidos del admin

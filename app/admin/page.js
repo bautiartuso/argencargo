@@ -4990,98 +4990,6 @@ function HolidaysCard({token}){
   </Card>;
 }
 
-function MarketingCampaignCard({token}){
-  const [stats,setStats]=useState(null);
-  const [testEmail,setTestEmail]=useState("");
-  const [batchLimit,setBatchLimit]=useState("100");
-  const [busy,setBusy]=useState(false);
-  const [msg,setMsg]=useState(null); // {type:'ok'|'err', text}
-  const [confirmSend,setConfirmSend]=useState(false);
-  const loadStats=async()=>{
-    try{
-      const r=await fetch("/api/marketing/announce-purchase-notifs?stats=1",{headers:{Authorization:`Bearer ${token}`}});
-      const j=await r.json();
-      if(j.ok)setStats(j);
-    }catch(e){}
-  };
-  useEffect(()=>{loadStats();},[token]);
-  const sendTest=async()=>{
-    if(!testEmail){setMsg({type:"err",text:"Ingresá un email"});return;}
-    setBusy(true);setMsg(null);
-    try{
-      const r=await fetch("/api/marketing/announce-purchase-notifs",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({mode:"test",email:testEmail.trim()})});
-      const j=await r.json();
-      if(j.ok)setMsg({type:"ok",text:`✓ Test enviado a ${testEmail}`});
-      else setMsg({type:"err",text:j.error||"Error"});
-    }catch(e){setMsg({type:"err",text:e.message});}
-    setBusy(false);
-  };
-  const sendBatch=async()=>{
-    setBusy(true);setMsg(null);setConfirmSend(false);
-    try{
-      const limit=Math.min(100,Math.max(1,Number(batchLimit)||100));
-      const r=await fetch("/api/marketing/announce-purchase-notifs",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({mode:"send",limit})});
-      const j=await r.json();
-      if(j.ok){
-        setMsg({type:"ok",text:`✓ Batch enviado: ${j.sent} OK, ${j.failed} fallaron${j.errors?.length?` — ej: ${j.errors[0]?.error?.slice(0,80)}`:""}`});
-        loadStats();
-      }else{setMsg({type:"err",text:j.error||"Error"});}
-    }catch(e){setMsg({type:"err",text:e.message});}
-    setBusy(false);
-  };
-  return <Card title="📣 Campaña: Anuncio Compras en Camino">
-    <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Email marketing a clientes con email registrado, anunciando la nueva sección <strong style={{color:"#fff"}}>Compras en Camino</strong>. Resend free tier permite <strong style={{color:"#fff"}}>100 mails/día</strong> y 3.000/mes.</p>
-    {stats&&<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
-      <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8}}>
-        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase"}}>Con email</p>
-        <p style={{fontSize:18,fontWeight:700,color:"#fff",margin:"3px 0 0"}}>{stats.total_with_email}</p>
-      </div>
-      <div style={{padding:"10px 12px",background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:8}}>
-        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase"}}>Pendientes</p>
-        <p style={{fontSize:18,fontWeight:700,color:"#fbbf24",margin:"3px 0 0"}}>{stats.pending}</p>
-      </div>
-      <div style={{padding:"10px 12px",background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:8}}>
-        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase"}}>Enviados</p>
-        <p style={{fontSize:18,fontWeight:700,color:"#22c55e",margin:"3px 0 0"}}>{stats.sent}</p>
-      </div>
-      <div style={{padding:"10px 12px",background:"rgba(255,80,80,0.05)",border:"1px solid rgba(255,80,80,0.18)",borderRadius:8}}>
-        <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase"}}>Opt-out</p>
-        <p style={{fontSize:18,fontWeight:700,color:"#ff6b6b",margin:"3px 0 0"}}>{stats.opted_out}</p>
-      </div>
-    </div>}
-    <div style={{display:"flex",gap:8,alignItems:"end",flexWrap:"wrap",marginBottom:14}}>
-      <a href="/api/marketing/announce-purchase-notifs?preview=1" target="_blank" rel="noopener" style={{padding:"8px 14px",fontSize:12,fontWeight:600,borderRadius:7,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",textDecoration:"none"}}>👁 Ver preview en navegador</a>
-    </div>
-    <div style={{padding:"12px 14px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,marginBottom:12}}>
-      <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>1. Probá primero con tu email</p>
-      <div style={{display:"flex",gap:8,alignItems:"end",flexWrap:"wrap"}}>
-        <div style={{flex:1,minWidth:220}}><Inp label="Tu email" value={testEmail} onChange={setTestEmail} placeholder="bautista@argencargo.com.ar" small/></div>
-        <Btn small variant="secondary" onClick={sendTest} disabled={busy||!testEmail}>{busy?"Enviando…":"Enviar test"}</Btn>
-      </div>
-    </div>
-    <div style={{padding:"12px 14px",background:"rgba(184,149,106,0.05)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10}}>
-      <p style={{fontSize:11,fontWeight:700,color:IC,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>2. Enviar batch a clientes pendientes</p>
-      <div style={{display:"flex",gap:8,alignItems:"end",flexWrap:"wrap"}}>
-        <div style={{width:130}}><Inp label="Batch size (max 100)" type="number" value={batchLimit} onChange={setBatchLimit} small/></div>
-        <Btn small onClick={()=>setConfirmSend(true)} disabled={busy||!stats||stats.pending===0}>{busy?"Enviando…":`Enviar a ${Math.min(Number(batchLimit)||100,stats?.pending||0)} clientes`}</Btn>
-      </div>
-      <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"8px 0 0",fontStyle:"italic"}}>Si tenés más de 100 pendientes, ejecutá el batch hoy y otro mañana (free tier de Resend = 100/día).</p>
-    </div>
-    {msg&&<p style={{fontSize:12,color:msg.type==="ok"?"#22c55e":"#ff6b6b",margin:"12px 0 0",padding:"8px 12px",background:msg.type==="ok"?"rgba(34,197,94,0.08)":"rgba(255,80,80,0.08)",borderRadius:6}}>{msg.text}</p>}
-
-    {confirmSend&&<div onClick={()=>!busy&&setConfirmSend(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(184,149,106,0.4)",borderRadius:14,padding:"22px 24px",maxWidth:440,width:"100%"}}>
-        <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 12px"}}>¿Confirmar envío?</h3>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:"0 0 16px",lineHeight:1.5}}>Vas a enviar el email a <strong style={{color:IC}}>{Math.min(Number(batchLimit)||100,stats?.pending||0)} clientes</strong>. Esta acción no se puede deshacer.</p>
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-          <button onClick={()=>setConfirmSend(false)} disabled={busy} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Cancelar</button>
-          <button onClick={sendBatch} disabled={busy} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>{busy?"Enviando…":"Sí, enviar"}</button>
-        </div>
-      </div>
-    </div>}
-  </Card>;
-}
-
 function AdminSettings({token,session}){
   const [curPw,setCurPw]=useState("");const [newPw,setNewPw]=useState("");const [confPw,setConfPw]=useState("");const [msg,setMsg]=useState("");const [err,setErr]=useState("");const [lo,setLo]=useState(false);
   // Retención de fotos
@@ -5122,7 +5030,6 @@ function AdminSettings({token,session}){
     </Card>
     <HolidaysCard token={token}/>
     <CreditCardsCard token={token}/>
-    <MarketingCampaignCard token={token}/>
     <AuditLogCard token={token}/>
     <Card title="Retención de fotos de bultos">
       <p style={{fontSize:12,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Las fotos cargadas por los agentes ocupan espacio en Storage. Se borran automáticamente <strong style={{color:"#fff"}}>N días después</strong> de cerrarse la operación. La limpieza corre todos los días a las 3am.</p>
@@ -7648,495 +7555,6 @@ function AgentsPanel({token}){
   </div>;
 }
 
-// PurchaseNotificationsAdmin — admin gestiona avisos de compra: confirma → crea op, o rechaza
-function PurchaseNotificationsAdmin({token,allClients,onCreateOp,mode="client"}){
-  // mode = "client": avisos creados por el cliente desde el portal (UI sin botón crear)
-  // mode = "admin":  avisos creados manualmente desde admin (típicamente Aéreo B China)
-  const isAdminMode=mode==="admin";
-  const [items,setItems]=useState([]);
-  const [lo,setLo]=useState(true);
-  const [filter,setFilter]=useState("open"); // open(pending+partial) | pending | partial | received | cancelled | all
-  const [filterChannel,setFilterChannel]=useState("all"); // all | aereo | maritimo
-  const [filterOrigin,setFilterOrigin]=useState("all"); // all | china | usa
-  const [search,setSearch]=useState("");
-  const [confirmAction,setConfirmAction]=useState(null); // {type, notif}
-  const [confirmChannel,setConfirmChannel]=useState(null); // canal elegido por admin para crear la op
-  const [confirmDestOp,setConfirmDestOp]=useState(null); // null=op nueva | id de op existente (consolidar)
-  const [confirmCandidates,setConfirmCandidates]=useState([]); // ops abiertas del cliente para consolidar
-  const [mergeAction,setMergeAction]=useState(null); // {clientId, notifs}
-  const [working,setWorking]=useState(false);
-  // Creación manual desde admin (típicamente para Aéreo B China)
-  const [showCreateModal,setShowCreateModal]=useState(false);
-  const [newAviso,setNewAviso]=useState({client_id:"",client_search:"",origin:"china",shipping_method:"aereo",description:"",trackings:[""]});
-  const [showCreateClientList,setShowCreateClientList]=useState(false);
-  const [savingNew,setSavingNew]=useState(false);
-  const [editingNotifId,setEditingNotifId]=useState(null); // id del aviso siendo editado (null = creando uno nuevo)
-  // Buffer de fechas por tracking (para pickear antes de marcar como recibido, o editar la fecha ya guardada)
-  const [trkDateBuf,setTrkDateBuf]=useState({});
-  const todayStr=()=>new Date().toISOString().slice(0,10);
-  const getTrkDate=(t)=>trkDateBuf[t.id]??(t.received_at?String(t.received_at).slice(0,10):"");
-  // Cada item de trackings: {code, weight, id?} — id presente solo cuando se está editando un tracking existente.
-  const openCreateModal=()=>{setEditingNotifId(null);setNewAviso({client_id:"",client_search:"",origin:"china",shipping_method:"aereo",description:"",trackings:[{code:"",weight:"",id:null}]});setShowCreateClientList(false);setShowCreateModal(true);};
-  const openEditModal=(notif)=>{
-    setEditingNotifId(notif.id);
-    const cl=notif.clients;
-    const trkRows=Array.isArray(notif.trackings)?notif.trackings.map(t=>({code:t.tracking_code||"",weight:t.informed_weight_kg!=null?String(t.informed_weight_kg):"",id:t.id})):[];
-    setNewAviso({client_id:notif.client_id,client_search:cl?`${cl.client_code} — ${cl.first_name} ${cl.last_name}`:"",origin:notif.origin||"china",shipping_method:notif.shipping_method||"aereo",description:notif.description||"",trackings:trkRows.length?trkRows:[{code:"",weight:"",id:null}]});
-    setShowCreateClientList(false);setShowCreateModal(true);
-  };
-  // En modo admin (Aéreo B China) ocultamos el selector de origen+modalidad: siempre es china+aereo.
-  const saveNewAviso=async()=>{
-    if(!newAviso.client_id){alertDialog("Elegí un cliente");return;}
-    const rows=newAviso.trackings.map(t=>({code:String(t.code||"").trim(),weight:t.weight!==""&&t.weight!=null?Number(t.weight):null,id:t.id||null})).filter(r=>r.code);
-    if(rows.length===0){alertDialog("Agregá al menos un tracking");return;}
-    setSavingNew(true);
-    try{
-      if(editingNotifId){
-        // EDIT: patch del aviso + sincronizar trackings
-        const body={client_id:newAviso.client_id,origin:newAviso.origin,shipping_method:newAviso.shipping_method,tracking_code:rows[0].code,description:newAviso.description.trim()||null};
-        await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${editingNotifId}`,body});
-        const existing=await dq("purchase_notification_trackings",{token,filters:`?notification_id=eq.${editingNotifId}&select=id,tracking_code`});
-        const exList=Array.isArray(existing)?existing:[];
-        const newIds=new Set(rows.map(r=>r.id).filter(Boolean));
-        // Para cada fila: si tiene id → patch; si no → insert
-        for(const r of rows){
-          if(r.id){
-            await dq("purchase_notification_trackings",{method:"PATCH",token,filters:`?id=eq.${r.id}`,body:{tracking_code:r.code,informed_weight_kg:r.weight}}).catch(e=>console.error("trk patch",e));
-          } else {
-            await dq("purchase_notification_trackings",{method:"POST",token,body:{notification_id:editingNotifId,tracking_code:r.code,informed_weight_kg:r.weight}}).catch(e=>console.error("trk add",e));
-          }
-        }
-        // Eliminar los que estaban pero no están en rows (perdiendo su received_at — la advertencia está en el header del modal)
-        for(const t of exList){
-          if(!newIds.has(t.id))await dq("purchase_notification_trackings",{method:"DELETE",token,filters:`?id=eq.${t.id}`}).catch(e=>console.error("trk del",e));
-        }
-        setShowCreateModal(false);setEditingNotifId(null);setSavingNew(false);load();
-      } else {
-        // NEW: insert. tracking_code en purchase_notifications es NOT NULL (legacy) → primer tracking.
-        const body={client_id:newAviso.client_id,origin:newAviso.origin,shipping_method:newAviso.shipping_method,tracking_code:rows[0].code,description:newAviso.description.trim()||null,status:"pending",is_admin_created:true};
-        const created=await dq("purchase_notifications",{method:"POST",token,body});
-        const notif=Array.isArray(created)?created[0]:created;
-        if(!notif?.id){alertDialog("Error creando aviso");setSavingNew(false);return;}
-        for(const r of rows){
-          await dq("purchase_notification_trackings",{method:"POST",token,body:{notification_id:notif.id,tracking_code:r.code,informed_weight_kg:r.weight}}).catch(e=>console.error("trk",e));
-        }
-        setShowCreateModal(false);setSavingNew(false);load();
-      }
-    }catch(e){alertDialog("Error: "+e.message);setSavingNew(false);}
-  };
-  // Marcar un tracking individual como recibido + recomputar status del aviso
-  const markTrackingReceived=async(notif,trackingId,customDateStr)=>{
-    const now=customDateStr?new Date(customDateStr+"T12:00:00").toISOString():new Date().toISOString();
-    await dq("purchase_notification_trackings",{method:"PATCH",token,filters:`?id=eq.${trackingId}`,body:{received_at:now}});
-    const updatedTrks=await dq("purchase_notification_trackings",{token,filters:`?notification_id=eq.${notif.id}&select=id,received_at`});
-    const list=Array.isArray(updatedTrks)?updatedTrks:[];
-    const remaining=list.filter(t=>!t.received_at).length;
-    const newStatus=remaining===0?"received":"partial";
-    const patchBody={status:newStatus};if(newStatus==="received"&&!notif.confirmed_at)patchBody.confirmed_at=now;
-    await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${notif.id}`,body:patchBody});
-    load();
-  };
-  // Solo updatear la fecha de recepción (cuando ya está marcado como recibido)
-  const updateReceivedDate=async(notif,trackingId,dateStr)=>{
-    if(!dateStr)return;
-    const iso=new Date(dateStr+"T12:00:00").toISOString();
-    await dq("purchase_notification_trackings",{method:"PATCH",token,filters:`?id=eq.${trackingId}`,body:{received_at:iso}});
-    load();
-  };
-  const unmarkTrackingReceived=async(notif,trackingId)=>{
-    await dq("purchase_notification_trackings",{method:"PATCH",token,filters:`?id=eq.${trackingId}`,body:{received_at:null}});
-    const updatedTrks=await dq("purchase_notification_trackings",{token,filters:`?notification_id=eq.${notif.id}&select=id,received_at`});
-    const list=Array.isArray(updatedTrks)?updatedTrks:[];
-    const anyReceived=list.some(t=>t.received_at);
-    const newStatus=anyReceived?"partial":"pending";
-    await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${notif.id}`,body:{status:newStatus,confirmed_at:null}});
-    load();
-  };
-  // Al abrir el modal de confirmar: buscar ops abiertas del MISMO cliente (depósito/preparación/pendiente,
-  // que no estén en un vuelo activo) para ofrecer consolidar en vez de crear siempre una op nueva.
-  useEffect(()=>{
-    if(!confirmAction||confirmAction.type!=="confirm"){setConfirmCandidates([]);setConfirmDestOp(null);return;}
-    const n=confirmAction.notif;let cancelled=false;
-    (async()=>{
-      const ops=await dq("operations",{token,filters:`?client_id=eq.${n.client_id}&status=in.(pendiente,en_deposito_origen,en_preparacion)&select=id,operation_code,status,channel,service_type,created_at&order=created_at.desc`});
-      let list=Array.isArray(ops)?ops:[];
-      if(list.length){
-        const ids=list.map(o=>o.id);
-        const fos=await dq("flight_operations",{token,filters:`?operation_id=in.(${ids.join(",")})&select=operation_id,flights(status)`});
-        const inFlight=new Set((Array.isArray(fos)?fos:[]).filter(f=>f.flights&&["preparando","despachado","recibido"].includes(f.flights.status)).map(f=>f.operation_id));
-        list=list.filter(o=>!inFlight.has(o.id));
-      }
-      if(cancelled)return;
-      setConfirmCandidates(list);
-      // Default: consolidar en la op abierta más reciente si existe; si no, op nueva.
-      setConfirmDestOp(list.length?list[0].id:null);
-    })();
-    return ()=>{cancelled=true;};
-  },[confirmAction,token]);
-  const load=async()=>{setLo(true);const adminFilter=isAdminMode?"&is_admin_created=eq.true":"&is_admin_created=eq.false";const r=await dq("purchase_notifications",{token,filters:`?select=*,trackings:purchase_notification_trackings(id,tracking_code,received_at,informed_weight_kg),clients(client_code,first_name,last_name,whatsapp,auth_user_id),operations(operation_code)${adminFilter}&order=created_at.desc`});setItems(Array.isArray(r)?r:[]);setLo(false);};
-  useEffect(()=>{load();},[token]);
-
-  // Filtros combinados
-  // En admin mode "open" = no rechazado y sin op creada todavía (puede estar pending, partial o incluso received esperando que el admin confirme y cree la op).
-  // En client mode "open" sigue siendo pending+partial (comportamiento original).
-  const filteredByStatus=filter==="open"
-    ?(isAdminMode?items.filter(i=>i.status!=="cancelled"&&!i.operation_id):items.filter(i=>["pending","partial"].includes(i.status)))
-    :filter==="all"?items:items.filter(i=>i.status===filter);
-  const filteredByChannel=filterChannel==="all"?filteredByStatus:filteredByStatus.filter(i=>i.shipping_method===filterChannel);
-  const filteredByOrigin=filterOrigin==="all"?filteredByChannel:filteredByChannel.filter(i=>i.origin===filterOrigin);
-  const filtered=search?filteredByOrigin.filter(n=>{const q=search.toLowerCase();const trks=Array.isArray(n.trackings)?n.trackings.map(t=>t.tracking_code).join(" "):"";return trks.toLowerCase().includes(q)||n.tracking_code?.toLowerCase().includes(q)||n.clients?.client_code?.toLowerCase().includes(q)||`${n.clients?.first_name||""} ${n.clients?.last_name||""}`.toLowerCase().includes(q)||n.description?.toLowerCase().includes(q);}):filteredByOrigin;
-
-  const counts={pending:items.filter(i=>i.status==="pending").length,partial:items.filter(i=>i.status==="partial").length,received:items.filter(i=>i.status==="received").length,cancelled:items.filter(i=>i.status==="cancelled").length,all:items.length};
-  counts.open=counts.pending+counts.partial;
-
-  // Detectar duplicados sospechosos: mismo cliente + mismo origen + misma modalidad, en estado abierto, < 30 días
-  const dupGroups=(()=>{
-    const open=items.filter(i=>["pending","partial"].includes(i.status));
-    const groups={};
-    for(const n of open){
-      const d=new Date(n.created_at);
-      if((Date.now()-d.getTime())>30*24*60*60*1000)continue;
-      const key=`${n.client_id}|${n.origin}|${n.shipping_method}`;
-      if(!groups[key])groups[key]=[];
-      groups[key].push(n);
-    }
-    return Object.values(groups).filter(g=>g.length>=2);
-  })();
-  const dupNotifIds=new Set(dupGroups.flat().map(n=>n.id));
-
-  const confirmReceipt=async(n)=>{
-    setWorking(true);
-    try{
-      const trks=Array.isArray(n.trackings)?n.trackings:[];
-      const trkCodes=trks.length>0?trks.map(t=>t.tracking_code):(n.tracking_code?[n.tracking_code]:[]);
-      const now=new Date().toISOString();
-      let opObj=null,newCode=null,consolidated=false;
-      // ── Destino: consolidar en una op existente del cliente, o crear una nueva ──
-      if(confirmDestOp){
-        const ex=await dq("operations",{token,filters:`?id=eq.${confirmDestOp}&select=id,operation_code,status`});
-        opObj=Array.isArray(ex)&&ex[0]?ex[0]:null;
-        if(opObj){
-          consolidated=true;newCode=opObj.operation_code;
-          // GI/op en 'pendiente' recibe su primer paquete físico → avanza a en_deposito_origen
-          if(opObj.status==="pendiente")await dq("operations",{method:"PATCH",token,filters:`?id=eq.${opObj.id}`,body:{status:"en_deposito_origen"}}).catch(()=>{});
-        }
-      }
-      if(!opObj){
-        // Crear op nueva con datos del aviso pre-cargados
-        const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
-        newCode=typeof rpc==="string"?rpc:null;
-        if(!newCode){alertDialog("Error generando código de op");setWorking(false);return;}
-        // Canal: admin puede haber elegido en el modal. Default = negro (Integral AC) si no eligió
-        const channel=confirmChannel||(n.shipping_method==="maritimo"?"maritimo_negro":"aereo_blanco");
-        const origin=n.origin==="usa"?"USA":"China";
-        // OJO: los trackings del aviso son national_trackings (tracking del proveedor en origen), no
-        // el international_tracking del courier (DHL/FedEx). Ese se completa al despacho del vuelo.
-        const opBody={operation_code:newCode,client_id:n.client_id,channel,origin,service_type:"courier",status:"en_deposito_origen",description:n.description||null};
-        const created=await dq("operations",{method:"POST",token,body:opBody});
-        opObj=Array.isArray(created)?created[0]:created;
-        if(!opObj?.id){alertDialog("Error creando op");setWorking(false);return;}
-      }
-      // package_number arranca después del último existente (clave al consolidar en una op con bultos)
-      const exPkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${opObj.id}&select=package_number&order=package_number.desc&limit=1`});
-      let pkgNum=Array.isArray(exPkgs)&&exPkgs[0]?Number(exPkgs[0].package_number)||0:0;
-      // Crear un operation_package por cada tracking del aviso (preserva codes + bultos físicos del cliente).
-      for(const t of trks){
-        pkgNum++;
-        await dq("operation_packages",{method:"POST",token,body:{operation_id:opObj.id,package_number:pkgNum,quantity:1,national_tracking:t.tracking_code||null}}).catch(e=>console.error("pkg create",e));
-        if(!t.received_at){await dq("purchase_notification_trackings",{method:"PATCH",token,filters:`?id=eq.${t.id}`,body:{received_at:now}}).catch(()=>{});}
-      }
-      // Si el aviso no tenía trackings hijos pero sí un tracking_code legacy en el aviso mismo
-      if(trks.length===0&&n.tracking_code){
-        pkgNum++;
-        await dq("operation_packages",{method:"POST",token,body:{operation_id:opObj.id,package_number:pkgNum,quantity:1,national_tracking:n.tracking_code}}).catch(e=>console.error("pkg create legacy",e));
-      }
-      await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{status:"received",operation_id:opObj.id,confirmed_at:now}});
-      // Notif al cliente
-      try{
-        if(n.clients?.auth_user_id){
-          const verbo=consolidated?`agregado${trkCodes.length>1?"s":""} a la operación ${newCode}`:`→ operación ${newCode} creada`;
-          dq("notifications",{method:"POST",token,body:{user_id:n.clients.auth_user_id,portal:"cliente",title:`✓ Tu carga llegó al depósito`,body:`${trkCodes.length} tracking${trkCodes.length>1?"s":""} ${verbo}`,link:`?op=${newCode}`}}).catch(()=>{});
-          fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:n.clients.auth_user_id,title:`✓ Tu carga llegó al depósito`,body:`${trkCodes.length} tracking${trkCodes.length>1?"s":""} → ${newCode}`,url:`/portal?op=${newCode}`})}).catch(()=>{});
-        }
-      }catch(e){}
-      setConfirmAction(null);setConfirmChannel(null);setConfirmDestOp(null);load();
-      if(onCreateOp)onCreateOp(opObj);
-    }catch(e){alertDialog("Error: "+e.message);}
-    setWorking(false);
-  };
-  const cancelNotif=async(n)=>{
-    setWorking(true);
-    await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{status:"cancelled",cancelled_at:new Date().toISOString()}});
-    setConfirmAction(null);load();
-    setWorking(false);
-  };
-
-  // Mergear avisos sospechosos en uno solo (mueve trackings del 2do/3ro al 1ro y cancela los demás)
-  const mergeNotifs=async(notifs)=>{
-    if(notifs.length<2)return;
-    setWorking(true);
-    try{
-      const target=notifs[0]; // el más antiguo (orden desc en load → invertimos)
-      const sorted=[...notifs].sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
-      const main=sorted[0];
-      const rest=sorted.slice(1);
-      // Reasignar trackings de los demás avisos al principal
-      for(const n of rest){
-        const trks=Array.isArray(n.trackings)?n.trackings:[];
-        for(const t of trks){
-          await dq("purchase_notification_trackings",{method:"PATCH",token,filters:`?id=eq.${t.id}`,body:{notification_id:main.id}}).catch(()=>{});
-        }
-        // Cancelar el aviso vacío
-        await dq("purchase_notifications",{method:"PATCH",token,filters:`?id=eq.${n.id}`,body:{status:"cancelled",cancelled_at:new Date().toISOString(),notes:`Mergeado en aviso ${main.id}`}}).catch(()=>{});
-      }
-      setMergeAction(null);load();
-    }catch(e){alertDialog("Error mergeando: "+e.message);}
-    setWorking(false);
-  };
-  return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:12,flexWrap:"wrap"}}>
-      <div>
-        <h2 style={{fontSize:22,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{isAdminMode?"✈️ Aéreo B China · Trackings entrantes":"📦 Avisos de compra"}</h2>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>{isAdminMode?"Avisos cargados manualmente por vos. Anotá los trackings que enviaste al depósito y marcá cada uno como recibido cuando llegue. Al recibir todos, podés crear la op consolidada.":"Pre-avisos cargados por los clientes desde el portal. Confirmá cuando la carga llegue al depósito y se crea la operación oficial."}</p>
-      </div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-        {dupGroups.length>0&&<span style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:8,background:"rgba(251,146,60,0.15)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.4)"}}>⚠️ {dupGroups.length} grupo{dupGroups.length>1?"s":""} duplicado{dupGroups.length>1?"s":""}</span>}
-        {counts.open>0&&<span style={{padding:"6px 14px",fontSize:12,fontWeight:700,borderRadius:8,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.3)"}}>⏳ {counts.open} abiertos</span>}
-        {isAdminMode&&<button onClick={openCreateModal} style={{padding:"8px 16px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer",letterSpacing:"0.02em"}}>+ Nuevo aviso</button>}
-      </div>
-    </div>
-
-    {/* Banner de duplicados sospechosos */}
-    {dupGroups.length>0&&<div style={{padding:"12px 14px",background:"rgba(251,146,60,0.06)",border:"1.5px solid rgba(251,146,60,0.3)",borderRadius:10,marginBottom:14}}>
-      <p style={{fontSize:12,fontWeight:700,color:"#fb923c",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>⚠️ Posibles duplicados detectados</p>
-      <p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 10px"}}>Hay clientes con múltiples avisos abiertos del mismo origen y modalidad. Revisalos y mergealos en uno solo si corresponde.</p>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-        {dupGroups.map((g,i)=>{const cl=g[0].clients;return <button key={i} onClick={()=>setMergeAction({clientId:g[0].client_id,notifs:g})} style={{padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>{cl?.client_code} — {g.length} avisos {g[0].origin==="china"?"🇨🇳":"🇺🇸"} {g[0].shipping_method==="aereo"?"✈️":"🚢"} · revisar →</button>;})}
-      </div>
-    </div>}
-
-    {!isAdminMode&&<div style={{display:"flex",gap:10,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
-      {[{k:"open",l:"Abiertos",c:counts.open},{k:"pending",l:"Pendientes",c:counts.pending},{k:"partial",l:"Parciales",c:counts.partial},{k:"received",l:"Recibidas",c:counts.received},{k:"cancelled",l:"Canceladas",c:counts.cancelled},{k:"all",l:"Todas",c:counts.all}].map(t=><button key={t.k} onClick={()=>setFilter(t.k)} style={{padding:"6px 12px",fontSize:12,fontWeight:600,borderRadius:7,border:`1px solid ${filter===t.k?IC:"rgba(255,255,255,0.1)"}`,background:filter===t.k?"rgba(184,149,106,0.1)":"transparent",color:filter===t.k?IC:"rgba(255,255,255,0.55)",cursor:"pointer"}}>{t.l} ({t.c})</button>)}
-    </div>}
-    <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-      {!isAdminMode&&<>
-        <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Modalidad:</span>
-        {[{k:"all",l:"Todas"},{k:"aereo",l:"✈️ Aéreo"},{k:"maritimo",l:"🚢 Marítimo"}].map(t=><button key={t.k} onClick={()=>setFilterChannel(t.k)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:5,border:`1px solid ${filterChannel===t.k?"#60a5fa":"rgba(255,255,255,0.08)"}`,background:filterChannel===t.k?"rgba(96,165,250,0.1)":"transparent",color:filterChannel===t.k?"#60a5fa":"rgba(255,255,255,0.5)",cursor:"pointer"}}>{t.l}</button>)}
-        <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em",marginLeft:8}}>Origen:</span>
-        {[{k:"all",l:"Todos"},{k:"china",l:"🇨🇳 China"},{k:"usa",l:"🇺🇸 USA"}].map(t=><button key={t.k} onClick={()=>setFilterOrigin(t.k)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,borderRadius:5,border:`1px solid ${filterOrigin===t.k?"#60a5fa":"rgba(255,255,255,0.08)"}`,background:filterOrigin===t.k?"rgba(96,165,250,0.1)":"transparent",color:filterOrigin===t.k?"#60a5fa":"rgba(255,255,255,0.5)",cursor:"pointer"}}>{t.l}</button>)}
-      </>}
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por tracking, cliente o descripción…" style={{flex:1,minWidth:200,padding:"7px 12px",fontSize:12,border:"1px solid rgba(255,255,255,0.1)",borderRadius:7,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
-    </div>
-    {lo?<p style={{textAlign:"center",padding:"3rem 0",color:"rgba(255,255,255,0.4)"}}>Cargando…</p>:filtered.length===0?<div style={{padding:"3rem 1rem",textAlign:"center",background:"rgba(255,255,255,0.02)",border:"1px dashed rgba(255,255,255,0.08)",borderRadius:14}}>
-      <p style={{fontSize:14,color:"rgba(255,255,255,0.55)",margin:0}}>Sin avisos {filter!=="all"?filter:""}</p>
-    </div>:<div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {filtered.map(n=>{
-        const cl=n.clients;
-        const trks=Array.isArray(n.trackings)&&n.trackings.length>0?n.trackings:(n.tracking_code?[{tracking_code:n.tracking_code,received_at:n.confirmed_at}]:[]);
-        const totalTrks=trks.length;
-        const recvTrks=trks.filter(t=>t.received_at).length;
-        const isDup=dupNotifIds.has(n.id);
-        const statusColor=n.status==="pending"?"#fbbf24":n.status==="partial"?"#60a5fa":n.status==="received"?"#22c55e":"#ff6b6b";
-        const statusBg=n.status==="pending"?"rgba(251,191,36,0.05)":n.status==="partial"?"rgba(96,165,250,0.05)":n.status==="received"?"rgba(34,197,94,0.04)":"rgba(255,255,255,0.02)";
-        const statusBorder=isDup?"rgba(251,146,60,0.5)":n.status==="pending"?"rgba(251,191,36,0.25)":n.status==="partial"?"rgba(96,165,250,0.3)":n.status==="received"?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.06)";
-        const statusLabel=n.status==="pending"?"⏳ PENDIENTE":n.status==="partial"?`⏳ PARCIAL (${recvTrks}/${totalTrks})`:n.status==="received"?"✓ RECIBIDA":"✕ CANCELADA";
-        // En admin: el aviso está "abierto" mientras no esté cancelado y no se le haya creado op.
-        // Eso garantiza que aunque todos los trackings estén recibidos, sigan apareciendo los
-        // botones de Editar / Confirmar y crear op / Rechazar y el DatePicker de cada tracking.
-        const isOpen=isAdminMode?(n.status!=="cancelled"&&!n.operation_id):["pending","partial"].includes(n.status);
-        return <div key={n.id} style={{padding:isAdminMode?"10px 14px":"14px 16px",background:statusBg,border:`1.5px solid ${statusBorder}`,borderRadius:12}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",gap:12,flexWrap:"wrap"}}>
-          <div style={{flex:1,minWidth:240}}>
-            {(!isAdminMode||isDup)&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
-              {isDup&&<span style={{fontSize:9,fontWeight:800,padding:"3px 7px",borderRadius:4,background:"rgba(251,146,60,0.18)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.5)"}}>⚠️ DUPLICADO</span>}
-              {!isAdminMode&&<>
-                <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:n.origin==="china"?"rgba(239,68,68,0.15)":"rgba(59,130,246,0.15)",color:n.origin==="china"?"#fca5a5":"#93c5fd",border:`1px solid ${n.origin==="china"?"rgba(239,68,68,0.3)":"rgba(59,130,246,0.3)"}`}}>{n.origin==="china"?"🇨🇳 CHINA":"🇺🇸 USA"}</span>
-                <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.6)"}}>{n.shipping_method==="aereo"?"✈️ Aéreo":"🚢 Marítimo"}</span>
-                <span style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,background:`${statusColor}25`,color:statusColor}}>{statusLabel}</span>
-                <span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.5)"}}>📦 {totalTrks} tracking{totalTrks!==1?"s":""}</span>
-              </>}
-            </div>}
-            {!isAdminMode&&<p style={{fontSize:13,color:"#fff",margin:"0 0 6px"}}><strong style={{color:IC,fontFamily:"monospace"}}>{cl?.client_code||"?"}</strong> — {cl?.first_name} {cl?.last_name}</p>}
-            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:6}}>
-              {trks.map((t,i)=>{const dateVal=getTrkDate(t);const origDate=t.received_at?String(t.received_at).slice(0,10):null;const dateChanged=origDate&&dateVal!==origDate;const rotulo=cl?.client_code?`FCWBOX132 ARGENCARGO ${cl.client_code}`:null;return <div key={i} style={{padding:"8px 10px",background:t.received_at?"rgba(34,197,94,0.05)":"rgba(255,255,255,0.025)",border:`1px solid ${t.received_at?"rgba(34,197,94,0.22)":"rgba(255,255,255,0.06)"}`,borderRadius:8}}>
-                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                  <div style={{flex:"1 1 220px",minWidth:200}}>
-                    {isAdminMode?<>
-                      <p style={{margin:0,fontSize:12.5,color:"#fff"}}>
-                        <strong style={{fontWeight:700}}>Seguimiento:</strong> <span style={{fontFamily:"monospace",fontWeight:600}}>{t.tracking_code}</span>
-                        {t.informed_weight_kg!=null&&<span style={{color:"#fbbf24",marginLeft:10,fontWeight:600}}>· {Number(t.informed_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:2})} kg informados</span>}
-                        {t.received_at&&<span style={{color:"rgba(34,197,94,0.95)",marginLeft:10,fontWeight:700}}>· ✓ recibido {formatDate(t.received_at)}</span>}
-                      </p>
-                      {rotulo&&<p style={{margin:"3px 0 0",fontSize:12,fontWeight:800,fontFamily:"monospace",color:t.received_at?"rgba(34,197,94,0.95)":IC,letterSpacing:"0.02em"}}>🏷 {rotulo}</p>}
-                    </>:<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.7)"}}>
-                      <span style={{fontFamily:"monospace"}}>📦 {t.tracking_code}</span>
-                      {t.informed_weight_kg!=null&&<span style={{color:"#fbbf24",marginLeft:10,fontWeight:600}}>· {Number(t.informed_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:2})} kg informados</span>}
-                      {t.received_at&&<span style={{color:"rgba(34,197,94,0.85)",marginLeft:10,fontWeight:700}}>· ✓ recibido</span>}
-                    </p>}
-                  </div>
-                  {isOpen&&t.id&&<div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,minWidth:170}} title={t.received_at?"Cambiá la fecha o vaciála para deshacer la recepción":"Elegí la fecha en que llegó al depósito"}>
-                    <DatePicker value={dateVal} onChange={v=>{const clean=v||"";setTrkDateBuf(p=>({...p,[t.id]:clean}));if(!clean){if(t.received_at)unmarkTrackingReceived(n,t.id);}else if(!t.received_at){markTrackingReceived(n,t.id,clean);}else if(clean!==(String(t.received_at).slice(0,10))){updateReceivedDate(n,t.id,clean);}}} small/>
-                  </div>}
-                </div>
-              </div>;})}
-            </div>
-            {n.description&&(isAdminMode
-              ?<p style={{fontSize:12.5,color:"#fff",margin:"6px 0 4px"}}><strong style={{fontWeight:700}}>Mercadería:</strong> {n.description}</p>
-              :<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 4px"}}>{n.description}</p>)}
-            {!isAdminMode&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>Avisado {formatDate(n.created_at)}{n.estimated_packages?` · ${n.estimated_packages} bultos`:""}{n.estimated_dispatch_date?` · sale ${formatDate(n.estimated_dispatch_date)}`:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?` · op `:""}{(n.status==="received"||n.status==="partial")&&n.operations?.operation_code?<strong style={{color:IC,fontFamily:"monospace"}}>{n.operations.operation_code}</strong>:""}</p>}
-          </div>
-          {isOpen&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            {isAdminMode&&<button onClick={()=>openEditModal(n)} style={{padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>✎ Editar</button>}
-            <button onClick={()=>setConfirmAction({type:"confirm",notif:n})} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:7,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>✓ Confirmar y crear op</button>
-            <button onClick={()=>setConfirmAction({type:"cancel",notif:n})} style={{padding:"7px 12px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>Rechazar</button>
-          </div>}
-        </div>
-      </div>;})}
-    </div>}
-
-    {confirmAction&&(()=>{const {type,notif}=confirmAction;const cl=notif.clients;const trks=Array.isArray(notif.trackings)&&notif.trackings.length>0?notif.trackings:(notif.tracking_code?[{tracking_code:notif.tracking_code}]:[]);
-      const isAereo=notif.shipping_method!=="maritimo";
-      // Opciones de canal según modalidad. Aéreo ya no tiene canal B (migrado a MyBox) → siempre Courier Comercial.
-      const channelOpts=isAereo
-        ?[{k:"aereo_blanco",l:"Aéreo Courier Comercial",sub:"Con factura · canal A",icon:"🏢"}]
-        :[{k:"maritimo_negro",l:"Marítimo Integral AC",sub:"Sin factura · canal B",icon:"📦"},{k:"maritimo_blanco",l:"Marítimo LCL/FCL",sub:"Con factura · canal A",icon:"🏢"}];
-      const selChannel=confirmChannel||channelOpts[0].k;
-      return <div onClick={()=>!working&&(setConfirmAction(null),setConfirmChannel(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${type==="confirm"?"rgba(34,197,94,0.4)":"rgba(255,80,80,0.4)"}`,borderRadius:14,padding:"22px 24px",maxWidth:560,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
-          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>{type==="confirm"?(confirmDestOp?"✓ Confirmar y consolidar":"✓ Confirmar recepción y crear op"):"Rechazar aviso"}</h3>
-          <button onClick={()=>!working&&(setConfirmAction(null),setConfirmChannel(null))} disabled={working} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:working?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
-        </div>
-        <div style={{padding:"10px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,marginBottom:14}}>
-          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"0 0 6px"}}>Cliente: <strong style={{color:"#fff"}}>{cl?.client_code} — {cl?.first_name} {cl?.last_name}</strong></p>
-          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:"0 0 4px"}}>Trackings ({trks.length}):</p>
-          <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>
-            {trks.map((t,i)=><span key={i} style={{fontSize:11,fontFamily:"monospace",padding:"2px 7px",borderRadius:3,background:"rgba(255,255,255,0.06)",color:"#fff"}}>{t.tracking_code}{t.received_at?" ✓":""}</span>)}
-          </div>
-          <p style={{fontSize:12,color:"rgba(255,255,255,0.55)",margin:0}}>{notif.origin==="china"?"🇨🇳 China":"🇺🇸 USA"} · {isAereo?"✈️ Aéreo":"🚢 Marítimo"}{notif.description?` · ${notif.description}`:""}</p>
-        </div>
-        {type==="confirm"?<>
-          {/* Destino: consolidar en una op abierta del cliente, o crear una nueva */}
-          <div style={{marginBottom:14}}>
-            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Destino de los trackings</p>
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {confirmCandidates.map(o=>{const sel=confirmDestOp===o.id;const chLabel=o.channel?.includes("maritimo")?"🚢":"✈️";const giTag=o.service_type==="gestion_integral"?" · GI":"";return <div key={o.id} onClick={()=>setConfirmDestOp(o.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"10px 12px",border:`1.5px solid ${sel?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.08)"}`,borderRadius:10,cursor:"pointer",background:sel?"rgba(34,197,94,0.1)":"rgba(0,0,0,0.2)"}}>
-                <span style={{fontSize:12.5,color:"#fff"}}>📦 Agregar a <strong style={{fontFamily:"monospace"}}>{o.operation_code}</strong> <span style={{color:"rgba(255,255,255,0.5)"}}>{chLabel} {SM[o.status]?.l||o.status}{giTag}</span></span>
-                {sel&&<span style={{color:"#22c55e",fontWeight:700}}>✓</span>}
-              </div>;})}
-              {(()=>{const sel=!confirmDestOp;return <div onClick={()=>setConfirmDestOp(null)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"10px 12px",border:`1.5px solid ${sel?GOLD_DEEP:"rgba(255,255,255,0.08)"}`,borderRadius:10,cursor:"pointer",background:sel?"rgba(184,149,106,0.10)":"rgba(0,0,0,0.2)"}}>
-                <span style={{fontSize:12.5,color:"#fff"}}>✂️ Crear op nueva{confirmCandidates.length===0?<span style={{color:"rgba(255,255,255,0.45)"}}> (el cliente no tiene ops abiertas)</span>:""}</span>
-                {sel&&<span style={{color:GOLD_LIGHT,fontWeight:700}}>✓</span>}
-              </div>;})()}
-            </div>
-          </div>
-          {/* Selector de canal — solo aplica al crear op nueva. Solo China tiene 2 opciones; USA solo negro */}
-          {!confirmDestOp&&(notif.origin==="china"?<div style={{marginBottom:14}}>
-            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Canal de la operación nueva</p>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              {channelOpts.map(o=>{const sel=selChannel===o.k;return <div key={o.k} onClick={()=>setConfirmChannel(o.k)} style={{padding:"11px 12px",border:`1.5px solid ${sel?GOLD_DEEP:"rgba(255,255,255,0.08)"}`,borderRadius:10,cursor:"pointer",background:sel?"rgba(184,149,106,0.10)":"rgba(0,0,0,0.2)",transition:"all 150ms",boxShadow:sel?"0 0 12px rgba(184,149,106,0.18)":"none"}}>
-                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
-                  <span style={{fontSize:16}}>{o.icon}</span>
-                  <span style={{fontSize:12.5,fontWeight:700,color:sel?GOLD_LIGHT:"#fff"}}>{o.l}</span>
-                </div>
-                <p style={{fontSize:10.5,color:"rgba(255,255,255,0.5)",margin:0}}>{o.sub}</p>
-              </div>;})}
-            </div>
-          </div>:<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px",lineHeight:1.5}}>Se va a crear una nueva operación (canal <strong>{isAereo?"Aéreo Integral AC":"Marítimo Integral AC"}</strong>) con <strong>los {trks.length} tracking{trks.length>1?"s":""}</strong>.</p>)}
-        </>:<p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px"}}>El aviso queda marcado como cancelado. El cliente puede dar otro aviso si vuelve a intentarlo.</p>}
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-          <button onClick={()=>!working&&(setConfirmAction(null),setConfirmChannel(null))} disabled={working} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:working?"not-allowed":"pointer"}}>Volver</button>
-          <button onClick={async()=>{if(type==="confirm"){await confirmReceipt(notif);setConfirmChannel(null);}else{await cancelNotif(notif);}}} disabled={working} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${type==="confirm"?"rgba(34,197,94,0.5)":"rgba(255,80,80,0.5)"}`,background:working?"rgba(255,255,255,0.05)":(type==="confirm"?"linear-gradient(135deg,#22c55e,#16a34a)":"linear-gradient(135deg,#ff6b6b,#ef4444)"),color:working?"rgba(255,255,255,0.4)":"#fff",cursor:working?"wait":"pointer"}}>{working?"Procesando…":(type==="confirm"?(confirmDestOp?"✓ Sí, agregar a la op":"✓ Sí, crear op"):"Sí, rechazar")}</button>
-        </div>
-      </div>
-    </div>;})()}
-
-    {/* Modal: crear aviso manualmente desde admin (típicamente para Aéreo B China) */}
-    {showCreateModal&&(()=>{const filtCl=(allClients||[]).filter(c=>{const q=newAviso.client_search.trim().toLowerCase();if(!q)return true;return c.client_code?.toLowerCase().includes(q)||`${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(q);}).slice(0,10);const selCl=newAviso.client_id?(allClients||[]).find(c=>c.id===newAviso.client_id):null;return <div onClick={()=>!savingNew&&setShowCreateModal(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1.5px solid ${IC}`,borderRadius:14,padding:"22px 24px",maxWidth:560,width:"100%",maxHeight:"88vh",overflow:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:14}}>
-          <div>
-            <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>{editingNotifId?"✎ Editar aviso":"📦 Nuevo aviso de compra"}</h3>
-            <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"4px 0 0",lineHeight:1.5}}>{editingNotifId?"Cambiá los datos del aviso. Si sacás un tracking ya recibido, se pierde la fecha de recepción.":"Cargá los trackings que estás enviando al depósito de origen. Después marcá cada uno como recibido cuando llegue."}</p>
-          </div>
-          <button onClick={()=>!savingNew&&setShowCreateModal(false)} disabled={savingNew} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:savingNew?"not-allowed":"pointer",padding:0,lineHeight:1}}>×</button>
-        </div>
-        {/* Cliente */}
-        <div style={{position:"relative",marginBottom:12}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Cliente</p>
-          {selCl?<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:8}}>
-            <span style={{fontSize:13,color:"#fff"}}><strong style={{fontFamily:"monospace",color:IC}}>{selCl.client_code}</strong> — {selCl.first_name} {selCl.last_name}</span>
-            <button onClick={()=>setNewAviso(p=>({...p,client_id:"",client_search:""}))} style={{fontSize:10,padding:"3px 8px",borderRadius:5,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer"}}>Cambiar</button>
-          </div>:<>
-            <input autoFocus value={newAviso.client_search} onChange={e=>{setNewAviso(p=>({...p,client_search:e.target.value}));setShowCreateClientList(true);}} onFocus={()=>setShowCreateClientList(true)} placeholder="Buscar por código o nombre…" style={{width:"100%",padding:"9px 12px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
-            {showCreateClientList&&filtCl.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,boxShadow:"0 8px 28px rgba(0,0,0,0.5)",zIndex:5,maxHeight:220,overflowY:"auto"}}>
-              {filtCl.map(c=><div key={c.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{setNewAviso(p=>({...p,client_id:c.id,client_search:`${c.client_code} — ${c.first_name} ${c.last_name}`}));setShowCreateClientList(false);}} style={{padding:"8px 12px",fontSize:12,color:"#fff",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
-                <strong style={{fontFamily:"monospace",color:IC}}>{c.client_code||"—"}</strong> {c.first_name} {c.last_name}
-              </div>)}
-            </div>}
-          </>}
-        </div>
-        {/* Origen + modalidad fijos para Aéreo B China */}
-        <div style={{padding:"10px 12px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:8,marginBottom:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Canal:</span>
-          <span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(239,68,68,0.12)",color:"#fca5a5",border:"1px solid rgba(239,68,68,0.25)"}}>🇨🇳 China</span>
-          <span style={{fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:4,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.08)"}}>✈️ Aéreo</span>
-          <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Al confirmar, la op se crea como Aéreo Integral AC (canal B).</span>
-        </div>
-        {/* Trackings */}
-        <div style={{marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>Trackings <span style={{color:"rgba(255,255,255,0.4)",fontWeight:500,letterSpacing:0}}>({newAviso.trackings.filter(t=>String(t.code||"").trim()).length})</span></p>
-            <button onClick={()=>setNewAviso(p=>({...p,trackings:[...p.trackings,{code:"",weight:"",id:null}]}))} style={{fontSize:10.5,fontWeight:700,padding:"4px 10px",borderRadius:5,border:"1px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Otro tracking</button>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {newAviso.trackings.map((t,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"1fr 90px auto",gap:6,alignItems:"center"}}>
-              <input value={t.code} onChange={e=>setNewAviso(p=>({...p,trackings:p.trackings.map((x,j)=>j===i?{...x,code:e.target.value}:x)}))} placeholder={`Tracking ${i+1} (ej: SF1234567890123)`} style={{padding:"8px 10px",fontSize:12.5,fontFamily:"monospace",boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
-              <input value={t.weight} onChange={e=>{const v=e.target.value;if(v===""||/^\d*[.,]?\d*$/.test(v))setNewAviso(p=>({...p,trackings:p.trackings.map((x,j)=>j===i?{...x,weight:v.replace(",",".")}:x)}));}} placeholder="kg" title="Peso informado por el proveedor (opcional)" style={{padding:"8px 8px",fontSize:12,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"}}/>
-              {newAviso.trackings.length>1?<button onClick={()=>setNewAviso(p=>({...p,trackings:p.trackings.filter((_,j)=>j!==i)}))} style={{padding:"6px 9px",fontSize:11,borderRadius:5,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>×</button>:<span style={{width:30}}/>}
-            </div>)}
-          </div>
-          <p style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",margin:"6px 0 0",fontStyle:"italic"}}>El peso es opcional (lo que te informó el proveedor). Se ajusta después con el peso real del depósito.</p>
-        </div>
-        {/* Descripción */}
-        <div style={{marginBottom:16}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Descripción (opcional)</p>
-          <input value={newAviso.description} onChange={e=>setNewAviso(p=>({...p,description:e.target.value}))} placeholder="Ej: Ropa deportiva — orden Alibaba" style={{width:"100%",padding:"9px 12px",fontSize:12.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none"}}/>
-        </div>
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-          <button onClick={()=>!savingNew&&setShowCreateModal(false)} disabled={savingNew} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:savingNew?"not-allowed":"pointer"}}>Cancelar</button>
-          <button onClick={saveNewAviso} disabled={savingNew||!newAviso.client_id||newAviso.trackings.every(t=>!String(t.code||"").trim())} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${IC}`,background:savingNew?"rgba(255,255,255,0.05)":GOLD_GRADIENT,color:savingNew?"rgba(255,255,255,0.4)":"#0A1628",cursor:savingNew?"wait":"pointer"}}>{savingNew?"Guardando…":(editingNotifId?"💾 Guardar cambios":"✓ Crear aviso")}</button>
-        </div>
-      </div>
-    </div>;})()}
-
-    {/* Modal de merge de duplicados */}
-    {mergeAction&&(()=>{const sorted=[...mergeAction.notifs].sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));const main=sorted[0];const cl=main.clients;return <div onClick={()=>!working&&setMergeAction(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1.5px solid rgba(251,146,60,0.5)",borderRadius:14,padding:"22px 24px",maxWidth:560,width:"100%",maxHeight:"85vh",overflow:"auto"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:12}}>
-          <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>⚠️ Mergear avisos del cliente {cl?.client_code}</h3>
-          <button onClick={()=>!working&&setMergeAction(null)} disabled={working} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:22,cursor:"pointer"}}>×</button>
-        </div>
-        <p style={{fontSize:12,color:"rgba(255,255,255,0.7)",margin:"0 0 14px",lineHeight:1.5}}>Detectamos {sorted.length} avisos de <strong style={{color:"#fff"}}>{cl?.first_name} {cl?.last_name}</strong> con misma modalidad ({main.shipping_method==="aereo"?"✈️ Aéreo":"🚢 Marítimo"}) y mismo origen ({main.origin==="china"?"🇨🇳 China":"🇺🇸 USA"}). Si son de la misma compra, mergealos en uno solo.</p>
-        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
-          {sorted.map((n,i)=>{const trks=Array.isArray(n.trackings)?n.trackings:[];return <div key={n.id} style={{padding:"10px 12px",background:i===0?"rgba(34,197,94,0.06)":"rgba(255,255,255,0.03)",border:`1px solid ${i===0?"rgba(34,197,94,0.3)":"rgba(255,255,255,0.08)"}`,borderRadius:8}}>
-            <p style={{fontSize:11,fontWeight:700,color:i===0?"#22c55e":"rgba(255,255,255,0.5)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.05em"}}>{i===0?"✓ Aviso principal (más antiguo)":"Se cancela y sus trackings van al principal"}</p>
-            <p style={{fontSize:12,color:"#fff",margin:"0 0 4px"}}>{n.description||"(sin descripción)"} · {formatDate(n.created_at)}</p>
-            <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-              {trks.map((t,j)=><span key={j} style={{fontSize:10,fontFamily:"monospace",padding:"2px 6px",borderRadius:3,background:"rgba(255,255,255,0.06)",color:"#fff"}}>{t.tracking_code}</span>)}
-            </div>
-          </div>;})}
-        </div>
-        <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",fontStyle:"italic"}}>Resultado: 1 aviso con {sorted.reduce((s,n)=>s+(Array.isArray(n.trackings)?n.trackings.length:0),0)} trackings totales.</p>
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-          <button onClick={()=>!working&&setMergeAction(null)} disabled={working} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Cancelar</button>
-          <button onClick={()=>mergeNotifs(sorted)} disabled={working} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(251,146,60,0.5)",background:working?"rgba(255,255,255,0.05)":"linear-gradient(135deg,#fb923c,#f97316)",color:"#fff",cursor:working?"wait":"pointer"}}>{working?"Mergeando…":"✓ Sí, mergear todos en uno"}</button>
-        </div>
-      </div>
-    </div>;})()}
-  </div>;
-}
-
 function ShipmentsTracking({token,onSelectOp}){
   const [ops,setOps]=useState([]);const [pkgs,setPkgs]=useState([]);const [items,setItems]=useState([]);const [lo,setLo]=useState(true);const [fChannel,setFChannel]=useState("");const [search,setSearch]=useState("");const [sortCol,setSortCol]=useState("op");const [sortDir,setSortDir]=useState("desc");
   const toggleSort=(col)=>{if(sortCol===col){setSortDir(d=>d==="asc"?"desc":"asc");}else{setSortCol(col);setSortDir("asc");}};
@@ -8396,9 +7814,8 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
     const d7agoISO=new Date(Date.now()-7*24*60*60*1000).toISOString();
     const monthStartISO=new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString();
     const lastMonthStartISO=new Date(new Date().getFullYear(),new Date().getMonth()-1,1).toISOString();
-    const [opsAll,purchaseNotifs,repackReqs,ticketsOpen,recentEvents,recentPmts,alibabaPending,alipayPending]=await Promise.all([
+    const [opsAll,repackReqs,ticketsOpen,recentEvents,recentPmts,alibabaPending,alipayPending]=await Promise.all([
       dq("operations",{token,filters:`?select=id,operation_code,status,client_id,description,created_at,eta,channel,budget_total,clients(client_code,first_name,last_name,whatsapp)&order=created_at.desc&limit=500`}),
-      dq("purchase_notifications",{token,filters:`?select=id,client_id,description,origin,shipping_method,created_at,clients(client_code,first_name)&status=eq.pending&created_at=lt.${d1agoISO}&order=created_at.asc`}),
       dq("repack_requests",{token,filters:`?select=id,operation_id,requested_at,operations(operation_code,clients(client_code,first_name))&status=eq.pending&order=requested_at.asc`}),
       dq("support_tickets",{token,filters:`?select=id,subject,status,priority,created_at,updated_at,clients(client_code,first_name)&status=in.(open,waiting_client)&order=updated_at.asc&limit=50`}).catch(()=>[]),
       // Eventos recientes para activity feed (últimos 30, internos + carriers)
@@ -8475,7 +7892,6 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
     ].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).slice(0,8);
 
     setData({
-      avisosPendientes:Array.isArray(purchaseNotifs)?purchaseNotifs:[],
       docsPendientes,
       cotizacionesPerdidas,
       reempaques:Array.isArray(repackReqs)?repackReqs:[],
@@ -8493,7 +7909,7 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
   useEffect(()=>{load();},[token]);
   if(lo||!data)return <p style={{padding:"3rem",textAlign:"center",color:"rgba(255,255,255,0.4)"}}>Cargando tareas pendientes…</p>;
 
-  const totalTareas=data.avisosPendientes.length+data.docsPendientes.length+data.cotizacionesPerdidas.length+data.reempaques.length+data.ticketsOpen.length+data.stuckAduana.length;
+  const totalTareas=data.docsPendientes.length+data.cotizacionesPerdidas.length+data.reempaques.length+data.ticketsOpen.length+data.stuckAduana.length;
 
   const Card=({title,emoji,count,color,items,renderItem,onClickAll,emptyMsg,span=4})=>{
     return <div className="ac-hover-card ac-bento-cell" data-span={span} style={{background:"rgba(255,255,255,0.028)",border:`1px solid ${count>0?color+"55":"rgba(255,255,255,0.06)"}`,borderRadius:14,padding:"18px 20px",display:"flex",flexDirection:"column",gap:12,gridColumn:`span ${span}`,position:"relative",overflow:"hidden"}}>
@@ -8635,8 +8051,6 @@ function TodayDashboard({token,onNav,onSelectOp,onSelectFlight}){
       <Hero/>
 
       {/* Right cluster — números en blanco, accent solo en sub/trend */}
-      <StatCard span={4} label="📦 Avisos +24h" value={data.avisosPendientes.length} color="#fff"
-        sub={data.avisosPendientes.length>0?data.avisosPendientes.slice(0,4).map(a=>a.clients?.client_code).filter(Boolean).join(" · "):"Todos atendidos"}/>
       <StatCard span={3} label="🎫 Tickets abiertos" value={data.ticketsOpen.length} color="#fff"
         sub={data.ticketsOpen.length===0?"Sin tickets":data.ticketsOpen.filter(t=>t.priority==="urgent"||t.priority==="high").length>0?`${data.ticketsOpen.filter(t=>t.priority==="urgent"||t.priority==="high").length} prioridad alta`:"Sin urgencias"}/>
 
@@ -11320,7 +10734,6 @@ function AdminDashboard({session,onLogout}){
       {key:"agents",label:"Agentes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},
       {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
       {key:"tasks",label:"Tareas",p:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"]},
-      {key:"purchase_notifs",label:"Avisos de compra",p:["M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v1","M21 12H8m0 0 4-4m-4 4 4 4"]},
       {key:"quotes",label:"Cotizaciones",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},
       {key:"calc",label:"Calculadora",p:["M9 2h6","M3 6h18","M9 12h.01","M15 12h.01","M9 16h.01","M15 16h.01","M9 20h.01","M15 20h.01","M5 6v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6"]},
     ]},
@@ -11424,7 +10837,6 @@ function AdminDashboard({session,onLogout}){
       {page==="entregas"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="maritime"&&<MaritimePanel token={token} allClients={allClients}/>}
-      {page==="purchase_notifs"&&<PurchaseNotificationsAdmin token={token} allClients={allClients} onCreateOp={op=>{setPage("operations");setSelOp(op);}} mode="client"/>}
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
