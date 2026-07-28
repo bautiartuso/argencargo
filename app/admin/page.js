@@ -10318,6 +10318,49 @@ function QuotesList({token}){
           const waConsulta=encodeURIComponent(`Hola ${q.client_name}! Vi que cotizaste una importación de *${prodDesc}* por *${q.channel_name}* desde *${q.origin}* el ${formatDate(q.created_at)}.\n\n¿Pudiste avanzar con la operación? ¿Necesitás más información?\n\nQuedo a disposición!`);
           const waUpdate=encodeURIComponent(`Hola ${q.client_name}! Revisamos y ajustamos tu cotización de *${prodDesc}* por *${q.channel_name}* con la clasificación arancelaria precisa.\n\n📄 *Costo total actualizado: USD ${Number(q.total_cost||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}*\n\nEntrá a tu portal para ver el detalle por producto (NCM + derechos + tasa estadística + IVA), o si preferís te paso el PDF.\n\nQuedo a disposición para avanzar!`);
           return <div style={{marginTop:20,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+            {/* Link para el cliente. Reemplaza al PDF cuando hay mas de una alternativa: en vez de
+                mandarle un precio cerrado, compara tiempos y costos y elige. Se puede decidir cuales
+                mostrarle — no siempre conviene ofrecer las tres. */}
+            {(()=>{
+              const alts=Array.isArray(q.channel_alternatives)?q.channel_alternatives:[];
+              if(alts.length===0)return <p style={{fontSize:11.5,color:"rgba(255,255,255,0.4)",margin:"0 0 14px",fontStyle:"italic"}}>Guardá la cotización para poder generar el link con las alternativas.</p>;
+              const visibles=Array.isArray(q.visible_channels)&&q.visible_channels.length>0?q.visible_channels:alts.map(a=>a.key);
+              const toggle=async(k)=>{
+                const next=visibles.includes(k)?visibles.filter(x=>x!==k):[...visibles,k];
+                if(next.length===0){toast("Tiene que quedar al menos una opción visible","error");return;}
+                await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${q.id}`,body:{visible_channels:next}});
+                setSelQuote(p=>({...p,visible_channels:next}));setQuotes(ps=>ps.map(x=>x.id===q.id?{...x,visible_channels:next}:x));
+              };
+              const generar=async()=>{
+                const tok=`${Date.now().toString(36)}${Math.random().toString(36).slice(2,12)}`;
+                const exp=new Date(Date.now()+10*24*60*60*1000).toISOString();
+                const body={public_token:tok,sent_at:new Date().toISOString(),expires_at:exp,visible_channels:visibles};
+                await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${q.id}`,body});
+                setSelQuote(p=>({...p,...body}));setQuotes(ps=>ps.map(x=>x.id===q.id?{...x,...body}:x));
+                toast("Link generado · válido 10 días","success");
+              };
+              const link=q.public_token?`https://argencargo.com.ar/presupuesto/${q.public_token}`:null;
+              const vencido=q.expires_at&&new Date(q.expires_at).getTime()<Date.now();
+              return <div style={{marginBottom:16,padding:"13px 15px",borderRadius:11,background:"rgba(96,165,250,0.05)",border:"1px solid rgba(96,165,250,0.18)"}}>
+                <p style={{fontSize:10.5,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)",margin:"0 0 8px"}}>Link para el cliente</p>
+                <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 9px"}}>Qué opciones le mostramos:</p>
+                <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:11}}>
+                  {alts.map(a=>{const on=visibles.includes(a.key);return <button key={a.key} onClick={()=>toggle(a.key)} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${on?"#22c55e":"rgba(255,255,255,0.15)"}`,background:on?"rgba(34,197,94,0.12)":"transparent",color:on?"#22c55e":"rgba(255,255,255,0.45)"}}>{on?"✓ ":""}{a.name} · USD {Number(a.totalAbonar||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</button>;})}
+                </div>
+                {q.accepted_at
+                  ?<p style={{fontSize:12.5,color:"#22c55e",margin:0,fontWeight:600}}>✓ El cliente eligió {alts.find(a=>a.key===q.client_selected_channel)?.name||q.client_selected_channel} · {formatDate(q.accepted_at)}</p>
+                  :<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                    {!link&&<Btn small onClick={generar}>🔗 Generar link</Btn>}
+                    {link&&<>
+                      <button onClick={()=>{navigator.clipboard?.writeText(link);toast("Link copiado","success");}} style={{padding:"7px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#60a5fa",cursor:"pointer"}}>📋 Copiar link</button>
+                      <a href={link} target="_blank" rel="noopener noreferrer" style={{padding:"7px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.6)",textDecoration:"none"}}>👁 Ver</a>
+                      {wa&&<a href={`https://wa.me/${wa.replace(/[^0-9]/g,"")}?text=${encodeURIComponent(`Hola ${q.client_name||""}! Te paso la cotización para que veas las opciones y elijas la que te sirva:\n\n${link}\n\nPrecios válidos por 10 días.`)}`} target="_blank" rel="noopener noreferrer" style={{padding:"7px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#22c55e",textDecoration:"none"}}>💬 Enviar por WhatsApp</a>}
+                      <Btn small variant="secondary" onClick={generar}>↻ Regenerar</Btn>
+                      <span style={{fontSize:11,color:vencido?"#f87171":"rgba(255,255,255,0.4)"}}>{vencido?"Venció":`Vence ${formatDate(q.expires_at)}`}</span>
+                    </>}
+                  </div>}
+              </div>;
+            })()}
             {savedAt&&!dirty&&<p style={{fontSize:11,color:"#22c55e",margin:"0 0 10px",fontWeight:600}}>✓ Guardado. Ahora podés avisar al cliente.</p>}
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
               <button onClick={saveQuoteEdit} disabled={saving} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.02em",boxShadow:GOLD_GLOW}}>{saving?"Guardando…":"💾 Guardar cotización"}</button>
