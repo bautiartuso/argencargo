@@ -1224,7 +1224,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   const cancelRepack=async()=>{if(!repackReq||!await confirmDialog("¿Cancelar el pedido de reempaque?"))return;await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${repackReq.id}`,body:{status:"cancelled"}});setRepackReq(p=>({...p,status:"cancelled"}));flash("Pedido cancelado");};
   const executeSave=async()=>{
     let desc=op.description;
-    if(!desc){const autoDesc=items.map(it=>it.description).filter(Boolean).join(", ");if(autoDesc){desc=autoDesc;setOp(p=>({...p,description:desc}));}}
+    // Descripción derivada de los items (mismo criterio que el trigger sync_operation_description
+    // en la base): 2+ productos → "Consolidado", 1 producto → su descripción.
+    if(!desc){const autoDesc=items.length>1?"Consolidado":(items[0]?.description||"").trim();if(autoDesc){desc=autoDesc;setOp(p=>({...p,description:desc}));}}
     setSaving(true);
     const prevStatus=initOp.status;
     const{id,clients,...rest}=({...op,description:desc});
