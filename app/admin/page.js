@@ -723,7 +723,7 @@ function OperationNotesPanel({opId,token}){
 }
 
 function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
-  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState(initialTab||"general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:""});const [cobroEditor,setCobroEditor]=useState(null);const [giroEditor,setGiroEditor]=useState(null);const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
+  const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState(initialTab||"general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [cobroEditor,setCobroEditor]=useState(null);const [giroEditor,setGiroEditor]=useState(null);const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const [declaredItems,setDeclaredItems]=useState([]); // flight_invoice_items de esta op (valor declarado a Aduana, para RI)
   // flightInfo: solo GI, alimenta la fila virtual de flete en Costos. opFlight: cualquier canal,
@@ -2361,51 +2361,6 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const totalAnticipado=payments.filter(p=>p.client_paid).reduce((s,p)=>s+Number(p.client_paid_amount_usd??p.client_amount_usd??0),0);
       const totalGirado=payments.filter(p=>p.giro_status==="confirmado").reduce((s,p)=>s+Number(p.giro_amount_usd||0),0);
       const totalGanPagos=payments.reduce((s,p)=>{const cli=p.client_paid?Number(p.client_paid_amount_usd??p.client_amount_usd??0):Number(p.client_amount_usd||0);return s+cli-Number(p.giro_amount_usd||0)-Number(p.cost_comision_giro||0);},0);
-      const savePmt=async()=>{if(!newPmt.client_amount_usd)return;setSaving(true);
-        const body={
-          operation_id:op.id,client_id:op.client_id,
-          description:newPmt.description||null,
-          // Solo montos al crear. Los detalles (método, moneda, TC, etc.) se completan
-          // después con los modales de Cobro y Giro al lado de cada card.
-          client_amount_usd:Number(newPmt.client_amount_usd||0),
-          client_currency:"USD",
-          client_payment_method:"transferencia",
-          giro_amount_usd:Number(newPmt.giro_amount_usd||0),
-          giro_currency:"USD",
-          giro_payment_method:"efectivo",
-          giro_status:"pendiente",
-          cost_comision_giro:Number(newPmt.cost_comision_giro||0),
-        };
-        await dq("payment_management",{method:"POST",token,body});
-        const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
-        setShowNewPmt(false);setNewPmt({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:""});flash("Pago creado");setSaving(false);};
-      const updatePmt=async(pmtId,field,value)=>{
-        await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pmtId}`,body:{[field]:value}});
-        // Auto finance entries
-        if(field==="client_paid"&&value===true){
-          const pmt=payments.find(p=>p.id===pmtId);
-          if(pmt?.client_paid)return;
-          await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pmtId}`,body:{client_paid:true,client_paid_date:new Date().toISOString().slice(0,10)}});
-          const newTotal=payments.filter(p=>p.client_paid||(p.id===pmtId)).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
-          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{total_anticipos:newTotal}});
-          setOp(p=>({...p,total_anticipos:newTotal}));
-        }
-        if(field==="giro_status"&&value==="confirmado"){
-          const pmt=payments.find(p=>p.id===pmtId);
-          if(pmt?.giro_status==="confirmado")return;
-          await dq("payment_management",{method:"PATCH",token,filters:`?id=eq.${pmtId}`,body:{giro_status:"confirmado",giro_date:new Date().toISOString().slice(0,10)}});
-        }
-        const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);flash("Actualizado");
-      };
-      const delPmt=async(pmtId)=>{
-        await dq("payment_management",{method:"DELETE",token,filters:`?id=eq.${pmtId}`});
-        // Recalculate total_anticipos
-        const remaining=payments.filter(x=>x.id!==pmtId&&x.client_paid);
-        const newTotal=remaining.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
-        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{total_anticipos:newTotal}});
-        setOp(p=>({...p,total_anticipos:newTotal}));
-        setPayments(p=>p.filter(x=>x.id!==pmtId));flash("Eliminado");
-      };
       const usdF=v=>`USD ${Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
       const GST={pendiente:{l:"Pendiente",c:"#fbbf24"},enviado:{l:"Enviado",c:"#60a5fa"},confirmado:{l:"Confirmado",c:"#22c55e"}};
       return <>
