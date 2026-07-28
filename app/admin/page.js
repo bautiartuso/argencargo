@@ -12186,8 +12186,40 @@ function WarehouseForm({token,editing,onSave,onCancel}){
   </div>;
 }
 
+// Web Push del admin. El panel no tenia service worker registrado — habia uno para /agente y otro
+// para /cinabrio, pero ninguno para /admin — asi que por mas que el servidor enviara push, no habia
+// nada que los reciba. sw-admin.js es solo push (el admin no necesita andar offline).
+// Pide permiso una sola vez y se re-suscribe solo si el permiso ya estaba dado pero se perdio la
+// suscripcion (reinstalacion de la PWA, datos borrados, etc).
+function useAdminPush(token){
+  useEffect(()=>{
+    if(!token)return;
+    if(typeof window==="undefined")return;
+    if(!("serviceWorker"in navigator)||!("PushManager"in window)||!("Notification"in window))return;
+    const VAPID_PUB=typeof process!=="undefined"?(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY||""):"";
+    if(!VAPID_PUB)return;
+    const b64ToUint8=(b64)=>{const pad="=".repeat((4-b64.length%4)%4);const st=(b64+pad).replace(/-/g,"+").replace(/_/g,"/");const raw=atob(st);const out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out;};
+    (async()=>{
+      try{
+        const reg=await navigator.serviceWorker.register("/sw-admin.js",{scope:"/admin"});
+        await navigator.serviceWorker.ready;
+        if(Notification.permission==="denied")return;
+        if(Notification.permission==="default"){
+          const res=await Notification.requestPermission();
+          if(res!=="granted")return;
+        }
+        const existing=await reg.pushManager.getSubscription();
+        if(existing)return;
+        const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToUint8(VAPID_PUB)});
+        await fetch("/api/push/subscribe",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({subscription:sub.toJSON(),portal:"admin"})});
+      }catch(e){console.error("admin push",e);}
+    })();
+  },[token]);
+}
+
 export default function AdminPage(){
   const [session,setSession]=useState(null);const [restoring,setRestoring]=useState(true);
+  useAdminPush(session?.token);
   useEffect(()=>{const s=loadSession();if(s?.token&&s?.profile?.role==="admin"){setSession(s);}setRestoring(false);},[]);
   const logout=()=>{clearSession();setSession(null);};
   if(restoring)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG}}><p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p></div>;

@@ -65,6 +65,19 @@ const ensureFreshToken=async(token)=>{
   }
   return token;
 };
+// Avisa al admin de un evento del cliente: deja la notificacion in-app (la campanita del panel)
+// y dispara el push. Antes ninguno de estos eventos notificaba nada, asi que el admin se enteraba
+// solo si entraba a mirar. Es best-effort: si falla el aviso, la accion del cliente ya se guardo.
+const avisarAdmin=async(token,{title,body,url="/admin"})=>{
+  try{
+    const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id"});
+    const ids=(Array.isArray(adm)?adm:[]).map(a=>a.id).filter(Boolean);
+    await Promise.all(ids.flatMap(id=>[
+      dq("notifications",{method:"POST",token,body:{user_id:id,portal:"admin",title,body,link:url}}).catch(()=>{}),
+      fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:id,title,body,url})}).catch(()=>{}),
+    ]));
+  }catch(e){console.error("avisar admin",e);}
+};
 const dq=async(t,{method="GET",body,token,filters=""})=>{
   const fresh=await ensureFreshToken(token);
   const doReq=async(tk)=>{
@@ -261,7 +274,7 @@ function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByO
     </div>
     {op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&!op.consolidation_confirmed&&<div style={{marginTop:14,background:"rgba(251,191,36,0.07)",border:"1px solid rgba(251,191,36,0.22)",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <span style={{fontSize:12.5,fontWeight:500,color:"#fbbf24"}}>{t("home.consolidation.q")}</span>
-      <button onClick={async(e)=>{e.stopPropagation();const btn=e.currentTarget;btn.disabled=true;btn.textContent=t("home.confirming");try{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}});onReload&&await onReload();}catch(err){btn.disabled=false;btn.textContent=t("home.consolidation.btn");}}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.02em"}}>{t("home.consolidation.btn")}</button>
+      <button onClick={async(e)=>{e.stopPropagation();const btn=e.currentTarget;btn.disabled=true;btn.textContent=t("home.confirming");try{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}}).then(()=>avisarAdmin(token,{title:`📦 Carga completa · ${op.operation_code}`,body:`${client?.client_code?client.client_code+" · ":""}El cliente confirmo que llegaron todos los bultos`}));onReload&&await onReload();}catch(err){btn.disabled=false;btn.textContent=t("home.consolidation.btn");}}} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.02em"}}>{t("home.consolidation.btn")}</button>
     </div>}
     {op.service_type!=="gestion_integral"&&op.channel==="aereo_blanco"&&(op.status==="en_preparacion"||(op.status==="en_deposito_origen"&&op.consolidation_confirmed))&&(itemsByOp[op.id]||0)===0&&<div style={{marginTop:14,background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.22)",borderRadius:10,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <span style={{fontSize:12.5,fontWeight:500,color:GOLD_LIGHT}}>{t("home.docMissing")}</span>
@@ -663,14 +676,14 @@ function OperationDetail({op,token,client,onBack}){
       <h3 style={{fontSize:15,fontWeight:700,color:"#60a5fa",margin:"0 0 6px"}}>⏳ Esperando los demás bultos</h3>
       <p style={{fontSize:13,color:"rgba(255,255,255,0.65)",margin:"0 0 14px",lineHeight:1.5}}>Listo. Vamos a sumar los bultos que vayan llegando al depósito. Cuando estén todos, tocá el botón de abajo para avanzar y cargar la factura.</p>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-        <button onClick={()=>{setLocalConfirmed(true);setWaitingMore(false);setShowDocPanel(true);setDocInputMode(null);setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}}).then(()=>loadAll());}} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW}}>✅ Ya llegaron todos los bultos</button>
+        <button onClick={()=>{setLocalConfirmed(true);setWaitingMore(false);setShowDocPanel(true);setDocInputMode(null);setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}}).then(()=>avisarAdmin(token,{title:`📦 Carga completa · ${op.operation_code}`,body:`${client?.client_code?client.client_code+" · ":""}El cliente confirmo que llegaron todos los bultos`})).then(()=>loadAll());}} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW}}>✅ Ya llegaron todos los bultos</button>
         <button onClick={()=>setWaitingMore(false)} style={{padding:"12px 18px",fontSize:12,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer"}}>← Volver</button>
       </div>
     </div>:<div style={{background:"linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04))",border:"1.5px solid rgba(251,191,36,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <h3 style={{fontSize:15,fontWeight:700,color:"#fbbf24",margin:"0 0 6px"}}>📦 {t("imports.atWarehouse")}</h3>
       <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>{t("imports.atWarehouseDesc")}</p>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-        <button onClick={()=>{setLocalConfirmed(true);setShowDocPanel(true);setDocInputMode(null);setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}}).then(()=>loadAll());}} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW}}>✅ {t("imports.onlyOne")}</button>
+        <button onClick={()=>{setLocalConfirmed(true);setShowDocPanel(true);setDocInputMode(null);setDocItems([{description:"",quantity:"1",unit_price_usd:""}]);dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString(),status:"en_preparacion"}}).then(()=>avisarAdmin(token,{title:`📦 Carga completa · ${op.operation_code}`,body:`${client?.client_code?client.client_code+" · ":""}El cliente confirmo que llegaron todos los bultos`})).then(()=>loadAll());}} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW}}>✅ {t("imports.onlyOne")}</button>
         <button onClick={()=>setWaitingMore(true)} style={{flex:1,minWidth:200,padding:"12px 18px",fontSize:13,fontWeight:600,borderRadius:10,border:"1.5px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.06)",color:"#60a5fa",cursor:"pointer"}}>⏳ {t("imports.morePackages")}</button>
       </div>
     </div>)}

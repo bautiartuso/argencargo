@@ -3,6 +3,7 @@
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB = process.env.SUPABASE_SERVICE_ROLE;
+const BASE_URL = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
 
 const sbFetch = async (path, init = {}) => {
   const r = await fetch(`${SB_URL}/rest/v1${path}`, {
@@ -227,6 +228,28 @@ export async function POST(req, { params }) {
       }),
     });
   } catch (e) { console.error("[POST entrega] log failed", e.message); }
+
+  // Avisar al admin: el cliente completo la info de retiro. Antes esto no notificaba nada, asi que
+  // el admin se enteraba solo si entraba a mirar el panel de Entregas. Best-effort: si el aviso
+  // falla, la confirmacion del cliente ya quedo guardada arriba.
+  try {
+    const admins = await sbFetch(`/profiles?role=eq.admin&select=id`);
+    const ids = (Array.isArray(admins.body) ? admins.body : []).map((a) => a.id).filter(Boolean);
+    const cliCode = client.client_code ? `${client.client_code} · ` : "";
+    const title = `🚚 Retiro coordinado · ${op.operation_code}`;
+    const body = `${cliCode}${deliveryLabel} · ${payLabel}`;
+    for (const id of ids) {
+      await sbFetch(`/notifications`, {
+        method: "POST",
+        body: JSON.stringify({ user_id: id, portal: "admin", title, body, link: "/admin" }),
+      }).catch(() => {});
+      fetch(`${BASE_URL}/api/push/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: id, title, body, url: "/admin" }),
+      }).catch(() => {});
+    }
+  } catch (e) { console.error("[POST entrega] aviso admin failed", e.message); }
 
   const settingsRes = await sbFetch(`/gi_settings?select=payment_crypto_wallet&limit=1`);
   const wallet = Array.isArray(settingsRes.body) && settingsRes.body[0] ? settingsRes.body[0].payment_crypto_wallet : "";
