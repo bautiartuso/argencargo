@@ -12295,7 +12295,7 @@ function ContainerForm({token,editing,warehouse,onSave,onCancel}){
     const body={code:code.trim(),status,shipping_line:shippingLine.trim()||null,departed_at:departedAt||null,eta:eta||null,notes:notes.trim()||null,transbordo_dias:transbordo?(Number(tbDias)||0):0,transbordo_lugar:transbordo?(tbLugar.trim()||"Brasil"):null};
     try{
       if(editing?.id)await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
-      else await dq("maritime_containers",{method:"POST",token,body:{...body,warehouse}});
+      else await dq("maritime_containers",{method:"POST",token,body:{...body,warehouse,warehouse_id:warehouses.find(w=>w.name===warehouse)?.id||null}});
       onSave();
     }catch(e){alertDialog("Error: "+e.message);setSaving(false);}
   };
@@ -12387,6 +12387,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       received_at:receivedAt||null,
       product_description:productDescription.trim(),
       origin:selectedWh.origin||"china",
+      warehouse_id:selectedWh.id,
       warehouse:selectedWh.name,
       client_id:clientId||null,
       client_name_snapshot:clientName.trim()||null,
@@ -12497,16 +12498,9 @@ function WarehouseForm({token,editing,onSave,onCancel}){
     const newName=name.trim();
     const body={name:newName,rotulo:rotulo.trim()||null,origin};
     if(editing?.id){
-      const oldName=editing.name;
       await dq("maritime_warehouses",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
-      // Cascada: el vínculo con el depósito es por NOMBRE, así que al renombrarlo hay que arrastrar
-      // TODAS las tablas que lo referencian. Faltaba maritime_containers: los contenedores quedaban
-      // apuntando a un nombre inexistente y desaparecían de la pantalla como si se hubieran borrado.
-      if(oldName&&oldName!==newName){
-        const filtroViejo=`?warehouse=eq.${encodeURIComponent(oldName)}`;
-        await dq("maritime_shipments",{method:"PATCH",token,filters:filtroViejo,body:{warehouse:newName},headers:{Prefer:"return=minimal"}});
-        await dq("maritime_containers",{method:"PATCH",token,filters:filtroViejo,body:{warehouse:newName},headers:{Prefer:"return=minimal"}});
-      }
+      // Renombrar no requiere cascada manual: cargas y contenedores cuelgan del depósito por
+      // warehouse_id, y el trigger sync_warehouse_name_on_rename actualiza el nombre espejado.
     } else {
       await dq("maritime_warehouses",{method:"POST",token,body});
     }
