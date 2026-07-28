@@ -144,14 +144,23 @@ export async function POST(req) {
     const { user_id, title, body, url, tag, portal } = await req.json();
     if (!user_id || !title) return Response.json({ ok: false, error: "missing fields" }, { status: 400 });
 
-    // Filtrar por portal: un mismo usuario puede estar suscripto desde varias PWAs (admin, agente,
-    // cinabrio). Sin este filtro, un aviso del admin lo terminaba mostrando el service worker de
-    // cinabrio — con su icono y su identidad — y al estar suscripto en las tres llegaba triplicado.
-    const portalFilter = portal ? `&portal=eq.${encodeURIComponent(portal)}` : "";
-    const subsR = await fetch(`${SB_URL}/rest/v1/push_subscriptions?user_id=eq.${user_id}${portalFilter}&select=*`, {
+    // El portal es una PREFERENCIA, no un filtro duro. Un mismo usuario puede estar suscripto desde
+    // varias PWAs (admin, agente, cinabrio): si mandamos a todas, el aviso del admin lo muestra el
+    // service worker de cinabrio con su icono, y llega duplicado. Pero si filtraramos estricto y el
+    // usuario todavia no instalo esa PWA, el aviso no llegaria a ningun lado — peor que llegar con
+    // el icono equivocado. Asi que: si hay suscripciones del portal pedido, van solo a esas; si no
+    // hay ninguna, se cae a todas las del usuario para no perder el aviso.
+    const allSubsR = await fetch(`${SB_URL}/rest/v1/push_subscriptions?user_id=eq.${user_id}&select=*`, {
       headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` },
     });
-    const subs = await subsR.json();
+    const allSubs = await allSubsR.json();
+    let subs = allSubs;
+    let fallbackPortal = false;
+    if (portal && Array.isArray(allSubs)) {
+      const delPortal = allSubs.filter((x) => x.portal === portal);
+      if (delPortal.length > 0) subs = delPortal;
+      else fallbackPortal = true;
+    }
     if (!Array.isArray(subs) || subs.length === 0) {
       return Response.json({ ok: true, skipped: "no_subscriptions" });
     }
@@ -172,7 +181,7 @@ export async function POST(req) {
         results.push({ status: "error", error: e.message, endpoint: s.endpoint });
       }
     }
-    return Response.json({ ok: true, sent: results.filter(r => r.status >= 200 && r.status < 300).length, results });
+    return Response.json({ ok: true, sent: results.filter(r => r.status >= 200 && r.status < 300).length, portal: portal || null, fallbackPortal, results });
   } catch (e) {
     return Response.json({ ok: false, error: e.message }, { status: 500 });
   }
