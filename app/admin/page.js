@@ -860,6 +860,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     if(Array.isArray(fresh)&&fresh[0]){setOp(p=>({...p,...fresh[0]}));const f=fresh[0];setDespacho({die:f.despacho_die_usd??"",est:f.despacho_estadistica_usd??"",des:f.despacho_desaduanaje_usd??"",iva:f.despacho_iva_usd??""});}
     const [it,pk,ev,tf,cc,fii]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),dq("calc_config",{token,filters:"?select=*"}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=sort_order.asc`})]);setItems(Array.isArray(it)?it:[]);setPkgs(Array.isArray(pk)?pk:[]);setEvents(Array.isArray(ev)?ev:[]);setTariffs(Array.isArray(tf)?tf:[]);setDeclaredItems(Array.isArray(fii)?fii:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);
     if(op.client_id){const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*`});setOpClient(Array.isArray(cl)?cl[0]:null);const ov=await dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`});setClientOverrides(Array.isArray(ov)?ov:[]);}
+    // Saldo de cuenta corriente: se aplica SOLO en la primera op abierta del cliente, sin que el
+    // admin tenga que apretar nada. Antes era manual y quedaba saldo sin imputar. "Primera op
+    // abierta" = la mas antigua no cerrada / no cancelada / no cobrada. Si esta op no es esa, no
+    // se toca: aplicarlo en varias duplicaria el saldo.
+    if(op.client_id)await autoAplicarSaldoCC();
     const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
     const sp=await dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setSupplierPayments(Array.isArray(sp)?sp:[]);
     // Vuelo de la op (para mostrar el flete como fila virtual en Costos GI: fecha + código de vuelo).
@@ -1219,6 +1224,41 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   };
   // Helper idempotente: si ya existe un movement (op + type) lo actualiza, sino lo crea.
   // Evita duplicados por doble click o lógica re-ejecutada (unique index también lo previene a nivel DB).
+  // Aplica automaticamente el saldo de cuenta corriente del cliente (deuda o saldo a favor) a la
+  // primera op abierta que tenga. Se llama al abrir la op; si esta op no es la primera abierta, o ya
+  // tiene saldo aplicado, no hace nada. La deuda sube el monto a cobrar (debt_applied_usd) y el
+  // saldo a favor lo baja (credit_applied_usd), igual que hacian los botones manuales.
+  const autoAplicarSaldoCC=async()=>{
+    try{
+      if(!op.client_id)return;
+      if(["operacion_cerrada","cancelada"].includes(op.status)||op.is_collected)return;
+      if(Number(op.debt_applied_usd||0)>0.01||Number(op.credit_applied_usd||0)>0.01)return;
+      const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=account_balance_usd&limit=1`});
+      const bal=Number((Array.isArray(cl)?cl[0]:null)?.account_balance_usd||0);
+      if(Math.abs(bal)<0.01)return;
+      const abiertas=await dq("operations",{token,filters:`?client_id=eq.${op.client_id}&status=not.in.(operacion_cerrada,cancelada)&is_collected=is.false&select=id&order=created_at.asc&limit=1`});
+      const primera=Array.isArray(abiertas)&&abiertas[0]?abiertas[0].id:null;
+      if(primera!==op.id)return;
+      if(bal<0){
+        const deuda=Math.round(Math.abs(bal)*100)/100;
+        await upsertClientMov({client_id:op.client_id,operation_id:op.id,type:"applied",amount_usd:deuda,description:`Deuda cancelada en ${op.operation_code}`});
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{debt_applied_usd:deuda}});
+        setOp(p=>({...p,debt_applied_usd:deuda}));
+        flash(`Deuda anterior de USD ${deuda.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} aplicada automáticamente`);
+      } else {
+        const totalOp=Number(op.budget_total||0);
+        if(totalOp<=0)return;
+        const aplicar=Math.round(Math.min(bal,totalOp)*100)/100;
+        if(aplicar<=0.01)return;
+        await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"applied",amount_usd:-aplicar,description:`Aplicado a ${op.operation_code}`}});
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{credit_applied_usd:aplicar}});
+        setOp(p=>({...p,credit_applied_usd:aplicar}));
+        flash(`Saldo a favor de USD ${aplicar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} aplicado automáticamente`);
+      }
+      const fresh=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=account_balance_usd`});
+      if(Array.isArray(fresh)&&fresh[0])setOpClient(p=>p?{...p,account_balance_usd:fresh[0].account_balance_usd}:p);
+    }catch(e){console.error("auto aplicar saldo cc",e);}
+  };
   const upsertClientMov=async({client_id,operation_id,type,amount_usd,description})=>{
     const existing=await dq("client_account_movements",{token,filters:`?client_id=eq.${client_id}&operation_id=eq.${operation_id}&type=eq.${type}&select=id&limit=1`});
     if(Array.isArray(existing)&&existing[0]){
@@ -8909,10 +8949,18 @@ function FinanceDashboard({token}){
         const colCash=o.is_collected?Number(o.collected_amount||0):0;
         const totalPagado=Math.max(pmtsPaid,colCash);
         const falta=Math.max(0,bt-totalPagado);
-        return {code:o.operation_code,client:o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—",bt,pagado:totalPagado,falta};
+        return {code:o.operation_code,clientId:o.client_id,client:o.clients?`${o.clients.first_name} ${o.clients.last_name}`:"—",bt,pagado:totalPagado,falta};
       }).filter(x=>x.falta>0);
       const pendienteListas=opsListasParaEntregar.reduce((s,x)=>s+x.falta,0);
-      const porCobrar=pendienteListas+girosColgados;
+      // Deuda de cuenta corriente de ops ya cerradas. Solo cuenta si el cliente NO tiene una op
+      // lista para retirar: si la tiene, su saldo ya se le aplico a esa op y sumarlo aparte lo
+      // duplicaria. Sin esto, el saldo deudor de ops cerradas no aparecia en ningun lado.
+      const clientesConOpLista=new Set(opsListasParaEntregar.map(x=>x.clientId).filter(Boolean));
+      const deudores=(clients||[]).filter(c=>Number(c.account_balance_usd||0)<-0.01&&!clientesConOpLista.has(c.id))
+        .map(c=>({id:c.id,name:`${c.first_name||""} ${c.last_name||""}`.trim()||c.client_code||"—",code:c.client_code||"",debe:Math.abs(Number(c.account_balance_usd||0))}))
+        .sort((a,b)=>b.debe-a.debe);
+      const deudaCC=deudores.reduce((s,d)=>s+d.debe,0);
+      const porCobrar=pendienteListas+girosColgados+deudaCC;
       const porPagar=girosPendientes;
       const pendienteNeto=porCobrar-porPagar;
       return <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14,marginBottom:24}}>
@@ -8936,6 +8984,10 @@ function FinanceDashboard({token}){
             {girosColgados>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}} title={girosColgadosDetail.map(d=>`${d.code}: ${usd(d.real)}`).join("\n")}>
               <span style={{color:"#fb923c"}}>⚠ Por cobrar (giros sin cobrar)</span>
               <span style={{color:"#fb923c",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>+{usd(girosColgados)}</span>
+            </div>}
+            {deudaCC>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}} title={deudores.map(d=>`${d.code?d.code+" · ":""}${d.name}: ${usd(d.debe)}`).join("\n")}>
+              <span style={{color:"#f87171"}}>🧾 Deuda en cuenta corriente ({deudores.length} cliente{deudores.length!==1?"s":""})</span>
+              <span style={{color:"#f87171",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>+{usd(deudaCC)}</span>
             </div>}
             {girosPendientes>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}}>
               <span style={{color:"#60a5fa"}}>⏳ Giro pendiente de enviar</span>

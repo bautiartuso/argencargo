@@ -286,9 +286,9 @@ function MovementList({ rows, onEdit, onReload, token }) {
     );
   }
   return (
-    <div style={{ background: T.bgSurface, borderRadius: 12, border: `1px solid ${T.border}`, overflow: "hidden" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "90px 90px 60px 1fr 170px 110px 170px 70px", gap: 10, padding: "10px 14px", background: "rgba(0,0,0,0.2)", fontSize: 9.5, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.08em", borderBottom: `1px solid ${T.border}` }}>
-        <div>Fecha</div><div>Tipo</div><div>Mon.</div><div>Descripción</div><div style={{ textAlign: "right" }}>Importe</div><div style={{ textAlign: "right" }}>Comisión</div><div style={{ textAlign: "right" }}>Saldo</div><div></div>
+    <div style={{ background: T.bgSurface, borderRadius: 12, border: `1px solid ${T.border}` }}>
+      <div style={{ display: "grid", gridTemplateColumns: "90px 88px 56px 1fr 160px 104px 148px 148px 62px", gap: 10, padding: "10px 14px", background: "#101d33", position: "sticky", top: 0, zIndex: 5, borderTopLeftRadius: 12, borderTopRightRadius: 12, fontSize: 9.5, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.08em", borderBottom: `1px solid ${T.border}` }}>
+        <div>Fecha</div><div>Tipo</div><div>Mon.</div><div>Descripción</div><div style={{ textAlign: "right" }}>Importe</div><div style={{ textAlign: "right" }}>Comisión</div><div style={{ textAlign: "right" }}>Saldo ARS</div><div style={{ textAlign: "right" }}>Saldo USD</div><div></div>
       </div>
       {rows.map((m) => <MovementRow key={m.id} m={m} onEdit={onEdit} onReload={onReload} token={token} />)}
     </div>
@@ -306,7 +306,7 @@ function MovementRow({ m, onEdit, onReload, token }) {
     onReload();
   };
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "90px 90px 60px 1fr 170px 110px 170px 70px", gap: 10, padding: "12px 14px", fontSize: 13, alignItems: "center", borderBottom: `1px solid ${T.border}` }}>
+    <div style={{ display: "grid", gridTemplateColumns: "90px 88px 56px 1fr 160px 104px 148px 148px 62px", gap: 10, padding: "12px 14px", fontSize: 13, alignItems: "center", borderBottom: `1px solid ${T.border}` }}>
       <div style={{ fontFamily: "ui-monospace, monospace", color: T.text, fontWeight: 600 }}>{fmtDate(m.date)}</div>
       <div><span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: `${color}22`, color, letterSpacing: "0.05em", textTransform: "uppercase" }}>{isIn ? "▲ Ingreso" : "▼ Egreso"}</span></div>
       <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted }}>{m.currency}</div>
@@ -327,7 +327,15 @@ function MovementRow({ m, onEdit, onReload, token }) {
       <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: T.textMuted, fontSize: 11.5 }}>
         {m.commission_pct ? <>{Number(m.commission_pct).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%<br /><span style={{ fontSize: 10, color: T.amber }}>−{fmtMoney(m.commission_amount, m.currency)}</span></> : <span style={{ color: T.textDim }}>—</span>}
       </div>
-      <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: running >= 0 ? T.green : T.red, fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>{fmtMoney(running, m.currency)}</div>
+      {["ARS","USD"].map((cur) => {
+        const bal = cur === "ARS" ? m._arsBal : m._usdBal;
+        const propia = m.currency === cur;
+        return (
+          <div key={cur} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontSize: propia ? 13 : 11.5, fontWeight: propia ? 700 : 500, color: propia ? (bal >= 0 ? T.green : T.red) : T.textDim }}>
+            {fmtMoney(bal, cur)}
+          </div>
+        );
+      })}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
         <button onClick={() => onEdit(m)} title="Editar" style={iconBtn}>✎</button>
         <button onClick={handleDelete} title="Eliminar" style={{ ...iconBtn, color: T.red }}>×</button>
