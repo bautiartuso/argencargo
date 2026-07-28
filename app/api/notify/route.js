@@ -210,7 +210,7 @@ export async function POST(req) {
       return Response.json({ error: "trigger inválido" }, { status: 400 });
 
     // Fetch op + client
-    const opArr = await sb(`/rest/v1/operations?id=eq.${op_id}&select=*,clients(id,first_name,last_name,email)`);
+    const opArr = await sb(`/rest/v1/operations?id=eq.${op_id}&select=*,clients(id,first_name,last_name,email,skip_review_request)`);
     const op = Array.isArray(opArr) ? opArr[0] : null;
     if (!op) return Response.json({ error: "op no encontrada" }, { status: 404 });
     const client = op.clients;
@@ -222,7 +222,7 @@ export async function POST(req) {
       return Response.json({ skipped: "already_sent", at: op.sent_notifications[sentKey] });
     }
     // Respetar skip_review_request para el trigger 'cerrada' (admin marca ops que no deben pedir reseña)
-    if (trigger === "cerrada" && op.skip_review_request) {
+    if (trigger === "cerrada" && (op.skip_review_request || client.skip_review_request)) {
       return Response.json({ skipped: "skip_review_request" });
     }
 
