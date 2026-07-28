@@ -696,7 +696,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   // Formulario inline de cobro (no modal). La moneda se deriva del metodo: transferencia -> ARS,
   // cripto -> USD, efectivo -> la elige el admin. destino solo aplica a transferencias en ARS:
   // "financiera" entra a la CC de SOLFIN (genera movimiento), "propia" va a cuenta propia.
-  const [newCobro,setNewCobro]=useState({monto:"",metodo:"transferencia",moneda:"USD",comision:"2,5",tc:"",fecha:new Date().toISOString().slice(0,10),receipt_url:"",destino:"financiera"});
+  const [newCobro,setNewCobro]=useState({monto:"",metodo:"transferencia",moneda:"USD",comision:"2,5",tc:"",fecha:new Date().toISOString().slice(0,10),receipt_url:"",receipt_name:"",receipt_kb:0,destino:"financiera"});
   const [savingCobro,setSavingCobro]=useState(false);
   const [uploadingReceipt,setUploadingReceipt]=useState(false);
   // Badge de destino ARS + miniatura del comprobante, para las tablas de cobros de la op.
@@ -720,7 +720,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const filename=`${op.operation_code}_${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
       const r=await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/${filename}`,{method:"POST",headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY,"Content-Type":file.type,"x-upsert":"false"},body:file});
       if(!r.ok)throw new Error((await r.text().catch(()=>""))||"Error subiendo el comprobante");
-      setNewCobro(p=>({...p,receipt_url:`${SB_URL}/storage/v1/object/public/solfin-comprobantes/${filename}`}));
+      setNewCobro(p=>({...p,receipt_url:`${SB_URL}/storage/v1/object/public/solfin-comprobantes/${filename}`,receipt_name:file.name||"comprobante",receipt_kb:Math.max(1,Math.round(file.size/1024))}));
     }catch(e){alertDialog("Error: "+e.message);}
     setUploadingReceipt(false);
   };
@@ -3081,7 +3081,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             if(budgetEffective>0&&newTotal>=budgetEffective-0.01)upd.is_collected=true;
             await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});
             setOp(p=>({...p,...upd}));
-            setNewCobro({monto:"",metodo:newCobro.metodo,moneda:newCobro.moneda,comision:newCobro.comision,tc:newCobro.tc,fecha:new Date().toISOString().slice(0,10),receipt_url:"",destino:newCobro.destino});
+            setNewCobro({monto:"",metodo:newCobro.metodo,moneda:newCobro.moneda,comision:newCobro.comision,tc:newCobro.tc,fecha:new Date().toISOString().slice(0,10),receipt_url:"",receipt_name:"",receipt_kb:0,destino:newCobro.destino});
             await load();
             const restante=Math.round((budgetEffective-newTotal)*100)/100;
             flash(restante>0.01?`✓ Cobro registrado · saldo USD ${restante.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"✓ Cobro registrado · op cobrada");
@@ -3175,7 +3175,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.07em"}}>Registrar cobro</p>
         <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>
           {fld(`Monto cobrado (${newCobro.metodo==="cripto"?"USDT":monedaCobro})`,<input inputMode="decimal" placeholder="0" value={newCobro.monto} onChange={e=>{const v=e.target.value;if(v===""||/^\d*[.,]?\d*$/.test(v))setNewCobro(p=>({...p,monto:v}));}} style={inpStyle}/>)}
-          {fld("Método de cobro",<select value={newCobro.metodo} onChange={e=>{const v=e.target.value;setNewCobro(p=>({...p,metodo:v,tc:"",receipt_url:v==="transferencia"?p.receipt_url:""}));}} style={selStyle}>
+          {fld("Método de cobro",<select value={newCobro.metodo} onChange={e=>{const v=e.target.value;setNewCobro(p=>({...p,metodo:v,tc:"",receipt_url:v==="transferencia"?p.receipt_url:"",receipt_name:v==="transferencia"?p.receipt_name:"",receipt_kb:v==="transferencia"?p.receipt_kb:0}));}} style={selStyle}>
             <option value="transferencia" style={{background:"#142038"}}>Transferencia</option>
             <option value="efectivo" style={{background:"#142038"}}>Efectivo</option>
             <option value="cripto" style={{background:"#142038"}}>Cripto (USDT)</option>
@@ -3186,7 +3186,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           </select>)}
           {newCobro.metodo==="transferencia"&&fld("Comisión transferencia %",<input inputMode="decimal" placeholder="2,5" value={newCobro.comision} onChange={e=>{const v=e.target.value;if(v===""||/^\d*[.,]?\d*$/.test(v))setNewCobro(p=>({...p,comision:v}));}} style={inpStyle}/>)}
           {esArsCobro&&fld("Tipo de cambio (ARS/USD)",<input inputMode="decimal" placeholder="Ej: 1450" value={newCobro.tc} onChange={e=>{const v=e.target.value;if(v===""||/^\d*[.,]?\d*$/.test(v))setNewCobro(p=>({...p,tc:v}));}} style={inpStyle}/>)}
-          {fld("Fecha de cobro",<input type="date" value={newCobro.fecha} onChange={e=>setNewCobro(p=>({...p,fecha:e.target.value}))} style={{...inpStyle,textAlign:"left"}}/>)}
+          {fld("Fecha de cobro",<DatePicker value={newCobro.fecha} onChange={v=>setNewCobro(p=>({...p,fecha:v||new Date().toISOString().slice(0,10)}))}/>)}
         </div>
 
         {esArsCobro&&nMonto>0&&nTc>0&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.5)",margin:"0 0 12px"}}>
@@ -3207,12 +3207,14 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         {newCobro.metodo==="transferencia"&&<>
         <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Comprobante — pegá con ⌘V / Ctrl+V o subí un archivo</p>
         {newCobro.receipt_url
-          ?<div style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderRadius:9,background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.25)",marginBottom:14}}>
-            <a href={newCobro.receipt_url} target="_blank" rel="noreferrer" style={{flexShrink:0,width:40,height:40,borderRadius:6,overflow:"hidden",border:"1px solid rgba(255,255,255,0.12)"}}>
-              <img src={newCobro.receipt_url} alt="comprobante" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+          ?<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:9,padding:"16px 14px",borderRadius:10,background:"rgba(34,197,94,0.04)",border:"1px solid rgba(34,197,94,0.35)",marginBottom:14}}>
+            <a href={newCobro.receipt_url} target="_blank" rel="noreferrer" title="Abrir en tamaño completo">
+              <img src={newCobro.receipt_url} alt="comprobante" style={{display:"block",maxHeight:300,maxWidth:"100%",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",objectFit:"contain"}}/>
             </a>
-            <span style={{flex:1,fontSize:12,color:"#22c55e",fontWeight:600}}>✓ Comprobante cargado</span>
-            <button type="button" onClick={()=>setNewCobro(p=>({...p,receipt_url:""}))} style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>× Quitar</button>
+            <span style={{fontSize:12.5,color:"rgba(255,255,255,0.6)"}}>
+              {newCobro.receipt_name||"comprobante"}{newCobro.receipt_kb?` · ${newCobro.receipt_kb} KB`:""}
+              <span onClick={()=>setNewCobro(p=>({...p,receipt_url:"",receipt_name:"",receipt_kb:0}))} title="Quitar comprobante" style={{marginLeft:10,color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>× Quitar</span>
+            </span>
           </div>
           :<label style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,padding:"26px 14px",border:"1px dashed rgba(255,255,255,0.16)",borderRadius:10,background:"rgba(255,255,255,0.02)",cursor:uploadingReceipt?"wait":"pointer",marginBottom:14}}>
             <span style={{fontSize:20}}>{uploadingReceipt?"⏳":"📎"}</span>
