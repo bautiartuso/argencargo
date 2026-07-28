@@ -1815,38 +1815,30 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               </div>
             :<span style={{fontSize:20,fontWeight:700,color:IC}}>USD {totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
         </div>
-        {/* Controles de Envío a domicilio — siempre visibles, auto-save cuando cambian */}
-        <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-          {(()=>{
-            // Auto-save: actualiza shipping_to_door + shipping_cost + recalc budget_total
-            const saveShipping=async(newToDoor,newCost)=>{
-              const costToUse=Number(newCost??op.shipping_cost??0);
-              const toDoorToUse=newToDoor??op.shipping_to_door??false;
-              const shipAdd=toDoorToUse?costToUse:0;
-              // Recalc budget_total: mantenemos taxes+flete+seguro del estado actual y recalculamos el shipping
-              const bt=Number(op.budget_taxes||0)+Number(op.budget_flete||0)+Number(op.budget_seguro||0)+shipAdd;
-              await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{shipping_to_door:toDoorToUse,shipping_cost:costToUse,budget_total:bt}});
-              setOp(p=>({...p,shipping_to_door:toDoorToUse,shipping_cost:costToUse,budget_total:bt}));
-              flash(`Envío a domicilio ${toDoorToUse?"activado":"desactivado"}`);
-            };
-            return <>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,padding:"12px 16px",background:op.shipping_to_door?"rgba(34,197,94,0.06)":"rgba(255,255,255,0.03)",border:`1px solid ${op.shipping_to_door?"rgba(34,197,94,0.25)":"rgba(255,255,255,0.06)"}`,borderRadius:10,flexWrap:"wrap"}}>
-                <div onClick={()=>saveShipping(!op.shipping_to_door,op.shipping_cost)} style={{display:"flex",alignItems:"center",gap:14,cursor:"pointer",userSelect:"none",flex:1,minWidth:220}}>
-                  <div style={{width:44,height:24,background:op.shipping_to_door?"linear-gradient(135deg,#22c55e,#10b981)":"rgba(255,255,255,0.1)",borderRadius:999,position:"relative",transition:"all 200ms",boxShadow:op.shipping_to_door?"0 0 10px rgba(34,197,94,0.35)":"",flexShrink:0}}>
-                    <div style={{position:"absolute",top:2,left:op.shipping_to_door?22:2,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left 220ms cubic-bezier(0.34,1.56,0.64,1)"}}/>
-                  </div>
-                  <div>
-                    <p style={{fontSize:13,fontWeight:op.shipping_to_door?700:600,color:op.shipping_to_door?"#22c55e":"rgba(255,255,255,0.6)",margin:0,letterSpacing:"0.02em"}}>Envío a domicilio</p>
-                    <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{op.shipping_to_door?`Suma USD ${Number(op.shipping_cost||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} al total`:"Retiro por oficina"}</p>
-                  </div>
-                </div>
-                {op.shipping_to_door&&<div style={{minWidth:160}}>
-                  <Inp label="Costo envío (USD)" type="number" value={op.shipping_cost} onChange={v=>{chOp("shipping_cost")(v);setTimeout(()=>saveShipping(true,v),400);}} step="0.01"/>
-                </div>}
+        {/* Envío a domicilio: lo elige el cliente en el link de retiro y el costo se suma solo al
+            presupuesto (delivery_cost_usd entra en calcOpBudget). Antes habia un toggle manual acá
+            que permitia activarlo/desactivarlo a mano y se desincronizaba de lo que el cliente
+            eligio; ahora es solo lectura. */}
+        {(()=>{
+          const eligioDomicilio=op.delivery_choice==="propio"||op.delivery_choice==="carrier";
+          const costoEnvio=Number(op.delivery_cost_usd||0)||(op.shipping_to_door?Number(op.shipping_cost||0):0);
+          return <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",background:eligioDomicilio?"rgba(34,197,94,0.05)":"rgba(255,255,255,0.028)",border:`1px solid ${eligioDomicilio?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.06)"}`,borderRadius:10,flexWrap:"wrap"}}>
+              <span style={{fontSize:16,flexShrink:0}}>{eligioDomicilio?"🚚":"📦"}</span>
+              <div style={{flex:1,minWidth:220}}>
+                <p style={{fontSize:12.5,fontWeight:700,color:eligioDomicilio?"#22c55e":"rgba(255,255,255,0.7)",margin:0}}>
+                  {op.delivery_choice==="propio"?"Envío a domicilio · flete privado":op.delivery_choice==="carrier"?"Envío por transportista":op.delivery_confirmed_at?"Retiro por oficina":"Entrega sin definir"}
+                </p>
+                <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0",lineHeight:1.45}}>
+                  {eligioDomicilio
+                    ?<>Lo eligió el cliente en el link de retiro{costoEnvio>0?<> · suma <strong style={{color:"#fff"}}>USD {costoEnvio.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong> al total</>:null}{op.delivery_address?` · ${op.delivery_address}`:""}</>
+                    :op.delivery_confirmed_at?"El cliente eligió retirar por la oficina — sin costo de envío."
+                    :"Cuando el cliente complete el link de retiro, si elige envío a domicilio el costo se suma solo al presupuesto."}
+                </p>
               </div>
-            </>;
-          })()}
-        </div>
+            </div>
+          </div>;
+        })()}
         {hasStoredBudget&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)",gap:12,flexWrap:"wrap"}}>
           <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic",flex:1}}>Presupuesto cargado manualmente. Si querés recalcular con productos/bultos, limpialo primero.</p>
           <Btn variant="danger" small onClick={async()=>{if(!await confirmDialog("¿Limpiar presupuesto guardado? Se borrarán los valores actuales y podrás recargar productos/bultos para recalcular."))return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0}});setOp(p=>({...p,budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0}));flash("Presupuesto limpiado");setSaving(false);}} disabled={saving}>Limpiar presupuesto</Btn>
@@ -3030,9 +3022,22 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         const cobroEffective=cobroUsd+creditApplied;
         const budgetEffective=budgetTot+debtAppliedHere;
         const diff=cobroEffective-budgetEffective; // + = pagó de más, - = pagó de menos
-        const saveCobro=async()=>{
-          if(op.is_collected&&isArsCol&&!colRate){alertDialog("El cobro es en ARS: cargá el tipo de cambio primero");return;}
-          if(op.is_collected&&budgetTot>0){
+        // Cierra el cobro decidiendo que pasa con el saldo. Antes esto se disparaba desde el toggle
+        // "Marcar como cobrada" (que exigia cargar el monto a mano); ahora el monto sale de los pagos.
+        const cerrarCobro=async()=>{
+          if(budgetTot<=0){alertDialog("Cargá el presupuesto antes de cerrar el cobro.");return;}
+          if(cobroEffective<=0.01){alertDialog("Registrá al menos un cobro antes de cerrar.");return;}
+          const lastPmt=clientPayments.length>0?clientPayments[clientPayments.length-1]:null;
+          const patch={is_collected:true,collection_date:op.collection_date||lastPmt?.payment_date||new Date().toISOString().slice(0,10)};
+          if(lastPmt){patch.collection_method=lastPmt.payment_method||op.collection_method||"transferencia";}
+          setOp(p=>({...p,...patch}));
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:patch});
+          await saveCobro({closing:true});
+        };
+        const saveCobro=async(opts)=>{
+          const closing=!!opts?.closing;
+          if(!closing&&op.is_collected&&isArsCol&&!colRate){alertDialog("El cobro es en ARS: cargá el tipo de cambio primero");return;}
+          if((closing||op.is_collected)&&budgetTot>0){
             if(diff>0.01){
               const choice=await askCobroDecision("overpay",diff);
               if(choice===null)return;
@@ -3112,7 +3117,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         const totalParciales=clientPayments.reduce((s,p)=>s+Number(p.amount_usd||0),0);
         const saldoParciales=budgetTot-totalParciales;
         const hasPartials=clientPayments.length>0;
-        return <Card title="Cobro" actions={<div style={{display:"flex",gap:6}}><Btn small variant="secondary" onClick={()=>{setAddPaymentForm({amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",payment_date:new Date().toISOString().slice(0,10),notes:""});setShowAddPayment(true);}}>+ Cobro adicional</Btn>{!hasPartials&&<Btn onClick={saveCobro} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn>}</div>}>
+        return <Card title="Cobro" actions={<div style={{display:"flex",gap:6}}><Btn small onClick={()=>{setAddPaymentForm({amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",payment_date:new Date().toISOString().slice(0,10),notes:"",ars_destination:"financiera",commission_pct:"",receipt_url:""});setShowAddPayment(true);}}>+ Registrar cobro</Btn></div>}>
         {/* Banner: cliente con saldo a favor */}
         {creditBal>0.01&&!op.is_collected&&budgetTot>0&&<div style={{marginBottom:12,padding:"12px 16px",background:"linear-gradient(90deg, rgba(34,197,94,0.1), rgba(34,197,94,0.02))",border:"1px solid rgba(34,197,94,0.3)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <div>
@@ -3146,18 +3151,18 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           </div>
           <button onClick={async()=>{if(!await confirmDialog("¿Limpiar el cargo extra? Solo borra el flag, no modifica el monto cobrado."))return;await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{extra_charge_usd:0}});setOp(p=>({...p,extra_charge_usd:0}));flash("Cargo extra limpiado");}} style={{padding:"5px 10px",fontSize:10,fontWeight:700,borderRadius:6,border:"1px solid rgba(167,139,250,0.4)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>Limpiar</button>
         </div>}
-        {hasPartials?<div style={{padding:"10px 14px",background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:8,marginBottom:8,fontSize:11,color:"rgba(255,255,255,0.55)"}}>Esta op usa cobros parciales. El monto total y el método se sincronizan automáticamente desde los pagos registrados — para modificarlos, agregá/eliminá pagos parciales abajo.</div>:<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
-          {/* Fix bug: NO usar fallback a budget_total en value — confunde porque parece cargado pero el state está en 0.
-             Mostrarlo como placeholder para que el admin sepa el monto sugerido sin inducir error. */}
-          <Inp label={`Monto cobrado (${op.collection_currency||"USD"})`} type="number" value={op.collected_amount} onChange={chOp("collected_amount")} step="0.01" placeholder={Number(op.budget_total)?`${Number(op.budget_total).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} (presupuesto)`:"0.00"}/>
-          <Sel label="Método de cobro" value={op.collection_method||"transferencia"} onChange={chOp("collection_method")} options={[{value:"efectivo",label:"Efectivo"},{value:"transferencia",label:"Transferencia"},{value:"cripto",label:"Cripto"}]}/>
-          <Sel label="Moneda" value={op.collection_currency||"USD"} onChange={chOp("collection_currency")} options={[{value:"USD",label:"USD"},{value:"ARS",label:"ARS"}]}/>
-        </div>}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 16px"}}>
-          {(op.collection_method==="transferencia")&&<Inp label="Comisión transferencia %" type="number" value={op.collection_fee_pct||""} onChange={chOp("collection_fee_pct")} step="0.1" placeholder="0"/>}
-          {op.collection_currency==="ARS"&&<Inp label="Tipo de cambio (ARS/USD)" type="number" value={op.collection_exchange_rate} onChange={chOp("collection_exchange_rate")} step="0.01" placeholder="Ej: 1200"/>}
-          <Inp label="Fecha de cobro" type="date" value={op.collection_date||""} onChange={chOp("collection_date")}/>
-        </div>
+        {/* El cobro se arma con los pagos registrados abajo — no hay campos manuales de monto/metodo.
+            Asi se pueden ir anotando varios pagos y el total sale de la suma, como en MyBox. */}
+        {(()=>{
+          const cobradoUsd=cobroEffective;
+          const saldo=Math.round((budgetEffective-cobradoUsd)*100)/100;
+          const cell=(lbl,val,color)=><div><p style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 3px"}}>{lbl}</p><p style={{fontSize:15,fontWeight:700,color:color||"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {Number(val||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>;
+          return <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,padding:"12px 16px",marginBottom:12,background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10}}>
+            {cell("Total a cobrar",budgetEffective,GOLD_LIGHT)}
+            {cell("Cobrado",cobradoUsd,"#22c55e")}
+            {cell(saldo>0.01?"Saldo pendiente":saldo<-0.01?"Sobrante":"Saldo",Math.abs(saldo),saldo>0.01?"#fbbf24":saldo<-0.01?"#60a5fa":"#22c55e")}
+          </div>;
+        })()}
         {/* Si hay descuento aplicado, mostrar mini banner con opción de limpiarlo */}
         {Number(op.discount_applied_usd)>0.01&&<div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px 10px 16px",borderRadius:10,marginBottom:10,position:"relative",overflow:"hidden",background:"linear-gradient(90deg,rgba(167,139,250,0.10),rgba(167,139,250,0.02))",border:"1px solid rgba(167,139,250,0.28)",fontSize:12.5}}>
           <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:"#a78bfa"}}/>
@@ -3216,18 +3221,29 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           </div>
         </div>}
         {payments.length>0&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.12)",borderRadius:10,padding:"12px 16px",marginBottom:12}}><p style={{fontSize:12,fontWeight:600,color:IC,margin:"0 0 2px"}}>Esta operación tiene gestión de pagos internacionales (servicio aparte)</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>El cobro de esta operación es independiente. Ver la sección Gestión de Pagos más abajo.</p></div>}
-        {/* Toggle switch "cobrada" — estilo moderno */}
-        <div style={{marginTop:6,marginBottom:2,padding:"12px 16px",background:op.is_collected?"linear-gradient(90deg, rgba(34,197,94,0.12), rgba(34,197,94,0.02))":"rgba(255,255,255,0.028)",border:`1px solid ${op.is_collected?"rgba(34,197,94,0.35)":"rgba(255,255,255,0.08)"}`,borderRadius:12,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,transition:"all 180ms"}}>
-          <div>
-            <p style={{fontSize:13,fontWeight:700,color:op.is_collected?"#22c55e":"#fff",margin:0,letterSpacing:"0.01em"}}>{op.is_collected?"Operación cobrada":"Marcar como cobrada"}</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>{op.is_collected?"La operación está cerrada y figura en el libro de finanzas.":"Activá cuando recibas el pago del cliente."}</p>
+        {/* Cierre del cobro. No hay toggle manual: el cobro se cierra cuando decidis que termino,
+            y ahi el sistema resuelve que hacer con el saldo (a favor / deuda / descuento / extra),
+            igual que MyBox. Si falta plata podes cerrar igual y seguir cobrando despues. */}
+        <div style={{marginTop:6,padding:"12px 16px",background:op.is_collected?"linear-gradient(90deg, rgba(34,197,94,0.12), rgba(34,197,94,0.02))":"rgba(255,255,255,0.028)",border:`1px solid ${op.is_collected?"rgba(34,197,94,0.35)":"rgba(255,255,255,0.08)"}`,borderRadius:12,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:220}}>
+            <p style={{fontSize:13,fontWeight:700,color:op.is_collected?"#22c55e":"#fff",margin:0}}>{op.is_collected?"✓ Cobro cerrado":"Cobro abierto"}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"3px 0 0",lineHeight:1.45}}>
+              {op.is_collected
+                ?"Figura en el libro de finanzas. Si aparece un pago mas, reabrí el cobro, registralo y volvé a cerrar."
+                :diff>0.01?`El cliente pagó USD ${diff.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de más — al cerrar elegís si queda como saldo a favor o como cargo extra.`
+                :diff<-0.01?`Faltan USD ${Math.abs(diff).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} — podés cerrar igual y elegir si es descuento o deuda en su cuenta corriente.`
+                :"El monto coincide con el presupuesto."}
+            </p>
           </div>
-          {/* Toggle switch — al activar, auto-fill collected_amount con budget_total si estaba vacío */}
-          <div onClick={()=>{const next=!op.is_collected;setOp(p=>{const upd={...p,is_collected:next};if(next&&(!Number(p.collected_amount)||Number(p.collected_amount)===0)&&Number(p.budget_total)>0){upd.collected_amount=Number(p.budget_total);}if(next&&!p.collection_date){upd.collection_date=new Date().toISOString().slice(0,10);}return upd;});}} style={{flexShrink:0,width:52,height:28,background:op.is_collected?"linear-gradient(135deg, #22c55e, #10b981)":"rgba(255,255,255,0.1)",borderRadius:999,position:"relative",cursor:"pointer",transition:"all 200ms",boxShadow:op.is_collected?"0 0 12px rgba(34,197,94,0.35), inset 0 1px 0 rgba(255,255,255,0.2)":"inset 0 1px 3px rgba(0,0,0,0.3)"}}>
-            <div style={{position:"absolute",top:2,left:op.is_collected?26:2,width:24,height:24,borderRadius:"50%",background:"#fff",boxShadow:"0 2px 6px rgba(0,0,0,0.25)",transition:"left 220ms cubic-bezier(0.34, 1.56, 0.64, 1)",display:"flex",alignItems:"center",justifyContent:"center"}}>
-              {op.is_collected&&<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
-            </div>
-          </div>
+          {op.is_collected
+            ?<Btn small variant="secondary" disabled={saving} onClick={async()=>{
+                if(!await confirmDialog("¿Reabrir el cobro de esta op? Vuelve a quedar como pendiente para registrar mas pagos."))return;
+                setSaving(true);
+                await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{is_collected:false}});
+                setOp(p=>({...p,is_collected:false}));
+                flash("Cobro reabierto");setSaving(false);
+              }}>↺ Reabrir cobro</Btn>
+            :<Btn small disabled={saving} onClick={cerrarCobro}>{saving?"Guardando...":"✓ Cerrar cobro"}</Btn>}
         </div>
       </Card>;})()}
 

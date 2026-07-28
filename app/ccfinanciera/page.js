@@ -437,6 +437,11 @@ function MovementModal({ type, token, editing, onClose, onSaved }) {
 
   return (
     <Modal title={`${editing?.id ? "Editar" : "Nuevo"} ${isIngreso ? "ingreso" : "egreso"}`} onClose={onClose}>
+      {isIngreso && !editing?.id && (
+        <div style={{ padding: "10px 12px", marginBottom: 14, background: "rgba(96,165,250,0.07)", border: "1px solid rgba(96,165,250,0.22)", borderRadius: 9, fontSize: 11.5, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>
+          <strong style={{ color: "#60a5fa" }}>Ojo con duplicar:</strong> los cobros por transferencia en pesos que registrás en una operación (eligiendo destino <em>Financiera</em>) ya generan su movimiento acá solos, marcados como <strong>AUTO</strong>. Cargá a mano únicamente lo que no venga de un cobro de operación.
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <Field label="Fecha"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} /></Field>
         <Field label="Moneda">
