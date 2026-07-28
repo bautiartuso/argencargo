@@ -29,7 +29,7 @@ export default function EntregaPublica({ params }) {
   // datos y llegara al final con cosas sin completar.
   const [paso, setPaso] = useState(1);
   const [carrierMode, setCarrierMode] = useState(""); // sucursal | domicilio (solo con transportista)
-  const [contacto, setContacto] = useState({ nombre: "", apellido: "", dni: "", email: "", telefono: "", direccion: "", piso: "" });
+  const [contacto, setContacto] = useState({ nombre: "", apellido: "", dni: "", email: "", telefono: "", direccion: "", piso: "", cp: "", sucursal: "" });
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
 
@@ -54,6 +54,7 @@ export default function EntregaPublica({ params }) {
           email: c.email || d.client?.email || "",
           telefono: c.telefono || d.client?.whatsapp || "",
           direccion: c.direccion || d.delivery?.default_address || "",
+          cp: c.cp || d.client?.postal_code || "",
         }));
         setLoading(false);
       } catch (e) {
@@ -98,6 +99,8 @@ export default function EntregaPublica({ params }) {
       if (!contacto.nombre.trim() || !contacto.apellido.trim()) return "Completá nombre y apellido de quien recibe.";
       if (contacto.dni.replace(/\D/g, "").length < 7) return "Completá el DNI de quien recibe — el transportista lo necesita para el despacho.";
       if (contacto.telefono.replace(/\D/g, "").length < 8) return "Completá el teléfono de quien recibe — el transportista llama antes de entregar.";
+      if (!contacto.cp.trim()) return "Completá el código postal — el transportista lo necesita para cotizar el despacho.";
+      if (carrierMode === "sucursal" && !contacto.sucursal.trim()) return "Indicá en qué sucursal lo vas a retirar.";
       if (carrierMode === "domicilio" && !contacto.direccion.trim()) return "Completá la dirección de entrega.";
     }
     if (delivery === "propio" && !address.trim()) return "Completá la dirección de entrega.";
@@ -139,6 +142,7 @@ export default function EntregaPublica({ params }) {
       </div>
 
       <div style={{ padding: "22px 24px 26px", display: "flex", flexDirection: "column", gap: 16, background: CREAM, color: INK }}>
+        {paso===1&&<>
         {/* 01 — carga */}
         <div style={stepStyle()}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>01</span><span style={stepTitleStyle()}>Tu carga</span></div>
@@ -167,7 +171,9 @@ export default function EntregaPublica({ params }) {
           {paso===1&&<button onClick={()=>setPaso(2)} style={nextBtnStyle()}>Continuar →</button>}
         </div>
 
-        {paso>=2&&<>
+        </>}
+
+        {paso===2&&<>
         {/* 02 — entrega */}
         <div style={stepStyle()}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>02</span><span style={stepTitleStyle()}>¿Cómo la recibís?</span></div>
@@ -208,20 +214,28 @@ export default function EntregaPublica({ params }) {
                     <input value={contacto.dni} onChange={(e) => setContacto((c) => ({ ...c, dni: e.target.value }))} placeholder="DNI" inputMode="numeric" style={contactInputStyle()} />
                     <input value={contacto.telefono} onChange={(e) => setContacto((c) => ({ ...c, telefono: e.target.value }))} placeholder="Teléfono" inputMode="tel" style={contactInputStyle()} />
                     <input value={contacto.email} onChange={(e) => setContacto((c) => ({ ...c, email: e.target.value }))} placeholder="Email" style={{ ...contactInputStyle(), gridColumn: "1 / -1" }} />
+                    {carrierMode === "sucursal" && <>
+                      <input value={contacto.sucursal} onChange={(e) => setContacto((c) => ({ ...c, sucursal: e.target.value }))} placeholder="Sucursal donde lo retirás" style={contactInputStyle()} />
+                      <input value={contacto.cp} onChange={(e) => setContacto((c) => ({ ...c, cp: e.target.value }))} placeholder="Código postal" inputMode="numeric" style={contactInputStyle()} />
+                    </>}
                     {carrierMode === "domicilio" && <>
                       <input value={contacto.direccion} onChange={(e) => setContacto((c) => ({ ...c, direccion: e.target.value }))} placeholder="Dirección (calle y número)" style={{ ...contactInputStyle(), gridColumn: "1 / -1" }} />
-                      <input value={contacto.piso} onChange={(e) => setContacto((c) => ({ ...c, piso: e.target.value }))} placeholder="Piso / depto (si lleva)" style={{ ...contactInputStyle(), gridColumn: "1 / -1" }} />
+                      <input value={contacto.piso} onChange={(e) => setContacto((c) => ({ ...c, piso: e.target.value }))} placeholder="Piso / depto (si lleva)" style={contactInputStyle()} />
+                      <input value={contacto.cp} onChange={(e) => setContacto((c) => ({ ...c, cp: e.target.value }))} placeholder="Código postal" inputMode="numeric" style={contactInputStyle()} />
                     </>}
                   </div>
                 </div>
               )}
             </div>
           )}
-          {paso===2&&<button onClick={()=>{const e=validarEntrega();if(e){alert(e);return;}setPaso(3);}} style={nextBtnStyle()}>Continuar →</button>}
+          {paso===2&&<div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <button onClick={()=>setPaso(1)} style={backBtnStyle()}>← Volver</button>
+            <button onClick={()=>{const e=validarEntrega();if(e){alert(e);return;}setPaso(3);}} style={{...nextBtnStyle(), marginTop: 0, flex: 1}}>Continuar →</button>
+          </div>}
         </div>
         </>}
 
-        {paso>=3&&<>
+        {paso===3&&<>
         {/* 03 — total y pago */}
         <div style={stepStyle()}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>03</span><span style={stepTitleStyle()}>Total y forma de pago</span></div>
@@ -243,6 +257,7 @@ export default function EntregaPublica({ params }) {
           </div>
         </div>
 
+        <button onClick={()=>setPaso(2)} style={{...backBtnStyle(), width: "100%", marginBottom: -4}}>← Volver a la forma de entrega</button>
         <button onClick={confirm} disabled={confirming} style={ctaStyle(confirming)}>{confirming ? "Confirmando…" : "Confirmar y avisar a Argencargo"}</button>
         <p style={{ textAlign: "center", fontSize: 10.5, color: MUTED, margin: "-8px 0 0" }}>Al confirmar, un asesor coordina el retiro o el envío por WhatsApp.</p>
         </>}
@@ -304,6 +319,7 @@ function ConfirmedView({ data, delivery, clientName }) {
 function pageStyle() { return { minHeight: "100vh", background: NAVY, padding: "32px 18px 60px", display: "flex", justifyContent: "center", fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", color: "#fff" }; }
 function cardStyle() { return { maxWidth: 640, width: "100%", background: CREAM, borderRadius: 14, overflow: "hidden", boxShadow: "0 28px 80px rgba(0,0,0,0.5)" }; }
 function lblStyle() { return { fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", color: "rgba(232,208,152,0.65)", textTransform: "uppercase", marginBottom: 3 }; }
+function backBtnStyle() { return { padding: "12px 16px", fontSize: 13.5, fontWeight: 700, borderRadius: 11, border: `1px solid ${LINE}`, background: "#fff", color: MUTED, cursor: "pointer" }; }
 function nextBtnStyle() { return { width: "100%", marginTop: 14, padding: "12px 16px", fontSize: 14, fontWeight: 700, borderRadius: 11, border: "none", background: "#0A1628", color: "#fff", cursor: "pointer" }; }
 function stepStyle() { return { background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: "16px 18px" }; }
 function stepNStyle() { return { fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 11, fontWeight: 700, color: GOLD_A, letterSpacing: "0.06em" }; }

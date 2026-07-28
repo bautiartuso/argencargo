@@ -163,7 +163,7 @@ export async function GET(req, { params }) {
       payment_method_chosen: op.payment_method_chosen,
       delivery_confirmed_at: op.delivery_confirmed_at,
     },
-    client: { first_name: client.first_name, last_name: client.last_name, dni: client.dni || "", email: client.email || "", whatsapp: client.whatsapp || "" },
+    client: { first_name: client.first_name, last_name: client.last_name, dni: client.dni || "", email: client.email || "", whatsapp: client.whatsapp || "", postal_code: client.postal_code || "" },
     cargo: { bultos, tracking, peso_facturable: Math.round(pesoFacturable * 100) / 100 },
     preferential,
     delivery: {

@@ -3048,7 +3048,10 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               }catch(e){console.error("cc solfin mov",e);alertDialog("⚠ El cobro se guardó, pero no se pudo crear el movimiento en la CC de la financiera: "+e.message);}
             }
             const newTotal=prevTotal+cobroUsdPreview;
-            const upd={collected_amount:newTotal,total_anticipos:newTotal,collection_method:newCobro.metodo,collection_currency:"USD",collection_date:newCobro.fecha};
+            // Ojo: NO escribir total_anticipos acá. Ese campo son los anticipos de gestión de pagos, y el
+            // saldo resta anticipos Y cobrado por separado — guardar el mismo monto en los dos lo
+            // descontaba dos veces y la op figuraba saldada cuando todavía debía.
+            const upd={collected_amount:newTotal,collection_method:newCobro.metodo,collection_currency:"USD",collection_date:newCobro.fecha};
             // Registrar un cobro NO cierra la op: el cierre es explícito, con "Cerrar cobro", que es
             // donde se pregunta qué hacer con un sobrante o un faltante. Si se cerrara sola al llegar
             // al presupuesto, un excedente quedaría sin resolver (le pasó a AC-0315 con USD 14,15).
@@ -3070,7 +3073,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           if(!await confirmDialog("¿Eliminar este cobro? Si generó movimiento en la CC de la financiera, también se elimina."))return;
           await dq("operation_client_payments",{method:"DELETE",token,filters:`?id=eq.${pmt.id}`});
           const newTot=clientPayments.filter(x=>x.id!==pmt.id).reduce((s,x)=>s+Number(x.amount_usd||0),0);
-          const upd={collected_amount:newTot,total_anticipos:newTot};
+          const upd={collected_amount:newTot};
           if(newTot<budgetEffective-0.01)upd.is_collected=false;
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});
           setOp(p=>({...p,...upd}));
