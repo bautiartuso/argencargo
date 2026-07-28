@@ -6160,12 +6160,17 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const totalFactKg=flightOps.reduce((s,fo)=>s+opFact(fo.operation_id),0);
   // Ops del vuelo: buscar en depositOps/allOps, y si no están (porque cambiaron de status), cargar directo
   const [flightOpsData,setFlightOpsData]=useState([]);
+  const [flightCliPmts,setFlightCliPmts]=useState([]);
   const [impArs,setImpArs]=useState(null);const [impTc,setImpTc]=useState(null);const [prorrateando,setProrrateando]=useState(false);
   useEffect(()=>{(async()=>{
     const opIds=flightOps.map(fo=>fo.operation_id).filter(Boolean);
     if(opIds.length===0){setFlightOpsData([]);return;}
-    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name,tax_condition,company_name,cuit,street,floor_apt,city,province,postal_code),budget_total,budget_taxes,cost_impuestos_reales,ri_argencargo_collects_taxes`});
+    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name,tax_condition,company_name,cuit,street,floor_apt,city,province,postal_code),budget_total,budget_taxes,budget_flete,budget_seguro,cost_flete,cost_seguro,cost_impuestos_reales,cost_gasto_documental,cost_flete_local,cost_otros,collected_amount,collection_currency,collection_exchange_rate,collection_fee_pct,collection_method,credit_applied_usd,debt_applied_usd,is_collected,ri_argencargo_collects_taxes`});
     setFlightOpsData(Array.isArray(r)?r:[]);
+    // Cobros de las ops del vuelo: hacen falta para descontar la comision real de cada transferencia
+    // al calcular lo cobrado NETO en el detalle financiero.
+    const cps=await dq("operation_client_payments",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=operation_id,amount_usd,amount_ars,exchange_rate,currency,commission_pct`}).catch(()=>[]);
+    setFlightCliPmts(Array.isArray(cps)?cps:[]);
   })();},[flightOps.length,token]);
   const opsUnique=flightOpsData.length>0?flightOpsData:Array.from(new Map([...depositOps,...allOps].filter(o=>flightOps.some(fo=>fo.operation_id===o.id)).map(o=>[o.id,o])).values());
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
@@ -6857,6 +6862,101 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           <Btn small onClick={prorratear} disabled={!puedeProrratear||prorrateando}>{prorrateando?"Prorrateando…":yaProrrateado?"↻ Volver a prorratear":"✓ Prorratear entre las ops"}</Btn>
           {yaProrrateado&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>Último prorrateo: {formatDate(flight.impuestos_prorated_at)}</span>}
           {!puedeProrratear&&<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>{participan.length===0?"Todas las ops del vuelo son de RI — no hay nada que repartir":"Cargá el monto en pesos y el tipo de cambio"}</span>}
+        </div>
+      </Card>;
+    })()}
+    {/* Detalle financiero del vuelo. SOLO informativo: suma lo que ya aportan las ops, asi que no
+        debe entrar en ningun panel financiero (dashboard, libro diario, analytics) porque duplicaria
+        los numeros. Usa el mismo criterio que la Rentabilidad de cada op para que no haya dos
+        verdades: lo cobrado es NETO (descontando la comision real de cada transferencia) y se
+        prorratea entre los conceptos facturados. Si una op no se cobro, su ingreso es 0 y el
+        concepto queda negativo por su costo. */}
+    {(flight.status==="despachado"||flight.status==="recibido")&&opsUnique.length>0&&(()=>{
+      const usdOf=(o)=>{const raw=Number(o.collected_amount||0);const r=Number(o.collection_exchange_rate||0);return o.collection_currency==="ARS"&&r>0?raw/r:raw;};
+      let ingBruto=0,comisionTot=0;
+      const acc={flete:{fact:0,cob:0,costo:0},seguro:{fact:0,cob:0,costo:0},impuestos:{fact:0,cob:0,costo:0}};
+      let otrosCosto=0;
+      opsUnique.forEach(o=>{
+        const esRI=o.clients?.tax_condition==="responsable_inscripto";
+        const impFacturado=(!esRI||o.ri_argencargo_collects_taxes)?Number(o.budget_taxes||0):0;
+        const bFlete=Number(o.budget_flete||0),bSeg=Number(o.budget_seguro||0);
+        const facturado=bFlete+bSeg+impFacturado;
+        // Comision real de los cobros de esta op (cada transferencia puede tener su %).
+        const comOp=flightCliPmts.filter(p=>p.operation_id===o.id).reduce((s,p)=>{
+          const pct=Number(p.commission_pct||0);if(pct<=0)return s;
+          const rt=Number(p.exchange_rate||0);
+          return s+(p.currency==="ARS"&&rt>0?(Number(p.amount_ars||0)*(pct/100))/rt:Number(p.amount_usd||0)*(pct/100));
+        },0);
+        // Si no se cobro, el ingreso es 0 (no se asume el presupuesto).
+        const cobrado=o.is_collected?(usdOf(o)+Number(o.credit_applied_usd||0)):0;
+        const cobradoNeto=Math.max(0,cobrado-comOp);
+        ingBruto+=cobrado;comisionTot+=comOp;
+        // Se prorratea lo cobrado entre los conceptos facturados de esa op.
+        // Factor de prorrateo: que porcion de lo facturado se cobro realmente. Se capea en 1 porque
+        // si pago de mas, el excedente es saldo a favor / cargo extra de la op, no ingreso del vuelo.
+        const f=facturado>0?Math.min(cobradoNeto/facturado,1):0;
+        acc.flete.fact+=bFlete;acc.flete.cob+=bFlete*f;acc.flete.costo+=Number(o.cost_flete||0);
+        acc.seguro.fact+=bSeg;acc.seguro.cob+=bSeg*f;acc.seguro.costo+=Number(o.cost_seguro||0);
+        acc.impuestos.fact+=impFacturado;acc.impuestos.cob+=impFacturado*f;acc.impuestos.costo+=Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0);
+        otrosCosto+=Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
+      });
+      const sinCobrar=opsUnique.filter(o=>!o.is_collected);
+      const costoTot=acc.flete.costo+acc.seguro.costo+acc.impuestos.costo+otrosCosto;
+      const cobradoTot=acc.flete.cob+acc.seguro.cob+acc.impuestos.cob;
+      const resultado=cobradoTot-costoTot;
+      const money=(v)=>`USD ${Math.abs(Number(v||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      const signed=(v)=>`${Number(v)<-0.005?"−":""}${money(v)}`;
+      const bloque=(titulo,d)=>{
+        const res=d.cob-d.costo;
+        if(d.fact<=0.005&&d.costo<=0.005)return null;
+        return <tr key={titulo} style={{borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+          <td style={{padding:"9px 8px",fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.65)",textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap"}}>{titulo}</td>
+          <td style={{padding:"9px 8px",fontSize:12.5,color:"rgba(255,255,255,0.5)",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{money(d.fact)}</td>
+          <td style={{padding:"9px 8px",fontSize:12.5,color:"#22c55e",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{money(d.cob)}</td>
+          <td style={{padding:"9px 8px",fontSize:12.5,color:"#ff9b9b",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{money(d.costo)}</td>
+          <td style={{padding:"9px 8px",fontSize:13,fontWeight:700,color:res>=0?"#22c55e":"#f87171",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{res>=0?"+":"−"}{money(res)}</td>
+        </tr>;
+      };
+      const th={padding:"8px",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",textAlign:"right",whiteSpace:"nowrap"};
+      return <Card title="Detalle financiero del vuelo">
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>
+          Suma de las {opsUnique.length} operacion{opsUnique.length!==1?"es":""} del vuelo. Lo cobrado es <strong style={{color:"rgba(255,255,255,0.75)"}}>neto</strong>, ya descontada la comisión de cada transferencia. Es solo informativo — estos números ya los aporta cada op, así que no se suman en Finanzas.
+        </p>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:520}}>
+            <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
+              <th style={{...th,textAlign:"left"}}>Concepto</th>
+              <th style={th}>Facturado</th>
+              <th style={th}>Cobrado neto</th>
+              <th style={th}>Costo real</th>
+              <th style={th}>Resultado</th>
+            </tr></thead>
+            <tbody>
+              {bloque("Flete",acc.flete)}
+              {bloque("Seguro",acc.seguro)}
+              {bloque("Impuestos",acc.impuestos)}
+              {otrosCosto>0.005&&<tr style={{borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                <td style={{padding:"9px 8px",fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.65)",textTransform:"uppercase",letterSpacing:"0.04em"}}>Otros</td>
+                <td style={{padding:"9px 8px",fontSize:12.5,color:"rgba(255,255,255,0.3)",textAlign:"right"}}>—</td>
+                <td style={{padding:"9px 8px",fontSize:12.5,color:"rgba(255,255,255,0.3)",textAlign:"right"}}>—</td>
+                <td style={{padding:"9px 8px",fontSize:12.5,color:"#ff9b9b",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{money(otrosCosto)}</td>
+                <td style={{padding:"9px 8px",fontSize:13,fontWeight:700,color:"#f87171",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>−{money(otrosCosto)}</td>
+              </tr>}
+            </tbody>
+          </table>
+        </div>
+        {comisionTot>0.005&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"10px 0 0"}}>
+          Comisión de la financiera ya descontada: <strong style={{color:"#fbbf24"}}>{money(comisionTot)}</strong> sobre {money(ingBruto)} cobrados en bruto.
+        </p>}
+        {sinCobrar.length>0&&<p style={{fontSize:11.5,color:"#fbbf24",margin:"9px 0 0",lineHeight:1.5}}>
+          ⚠ {sinCobrar.length} op{sinCobrar.length!==1?"s":""} todavía sin cobrar ({sinCobrar.map(o=>o.operation_code).join(", ")}) — su ingreso cuenta 0, así que el resultado del vuelo está en negativo por esos costos hasta que se cobren.
+        </p>}
+        <div style={{marginTop:14,padding:"14px 18px",borderRadius:12,background:resultado>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)",border:`1px solid ${resultado>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <div>
+            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textTransform:"uppercase",letterSpacing:"0.07em"}}>Resultado del vuelo</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{money(cobradoTot)} cobrado neto − {money(costoTot)} de costos</p>
+          </div>
+          <p style={{fontSize:22,fontWeight:800,color:resultado>=0?"#22c55e":"#f87171",margin:0,fontVariantNumeric:"tabular-nums"}}>{signed(resultado)}</p>
         </div>
       </Card>;
     })()}
