@@ -11683,6 +11683,10 @@ function MaritimePanel({token,allClients=[]}){
   useEffect(()=>{if(warehouseFilter!=="all"&&!warehouses.includes(warehouseFilter))setWarehouseFilter("all");},[originFilter,warehouseFilter,warehouses]);
   const byWarehouse={};
   filtered.forEach(s=>{const k=s.warehouse||"Sin depósito";if(!byWarehouse[k])byWarehouse[k]=[];byWarehouse[k].push(s);});
+  // Los depósitos registrados que quedaron sin pedidos también se muestran, vacíos. Antes la lista
+  // salía solo de los pedidos, así que un depósito sin cargas no se dibujaba y su botón de eliminar
+  // era inalcanzable: con pedidos no dejaba borrarlo, y sin pedidos desaparecía. Callejón sin salida.
+  if(warehouseFilter==="all"&&!clientFilter)warehouses.forEach(w=>{if(!byWarehouse[w])byWarehouse[w]=[];});
   // Orden por fecha de recepción ascendente (los primeros en llegar arriba).
   // Los que aún no llegaron (received_at null) van al fondo, ordenados por fecha de creación.
   const codeNum=c=>{const m=String(c||"").match(/\d+/);return m?Number(m[0]):9999;};
@@ -12540,10 +12544,13 @@ function WarehouseForm({token,editing,onSave,onCancel}){
     if(editing?.id){
       const oldName=editing.name;
       await dq("maritime_warehouses",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
-      // Cascada: renombrar maritime_shipments que apuntaban al nombre viejo. Sin esto los
-      // shipments quedan huérfanos (apuntando a un nombre que ya no existe en warehouses).
+      // Cascada: el vínculo con el depósito es por NOMBRE, así que al renombrarlo hay que arrastrar
+      // TODAS las tablas que lo referencian. Faltaba maritime_containers: los contenedores quedaban
+      // apuntando a un nombre inexistente y desaparecían de la pantalla como si se hubieran borrado.
       if(oldName&&oldName!==newName){
-        await dq("maritime_shipments",{method:"PATCH",token,filters:`?warehouse=eq.${encodeURIComponent(oldName)}`,body:{warehouse:newName},headers:{Prefer:"return=minimal"}});
+        const filtroViejo=`?warehouse=eq.${encodeURIComponent(oldName)}`;
+        await dq("maritime_shipments",{method:"PATCH",token,filters:filtroViejo,body:{warehouse:newName},headers:{Prefer:"return=minimal"}});
+        await dq("maritime_containers",{method:"PATCH",token,filters:filtroViejo,body:{warehouse:newName},headers:{Prefer:"return=minimal"}});
       }
     } else {
       await dq("maritime_warehouses",{method:"POST",token,body});
