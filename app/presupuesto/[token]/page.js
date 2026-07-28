@@ -44,15 +44,17 @@ const CSS = `
 .pz-sec{padding:20px 26px;border-bottom:1px solid #eae4d6}
 .pz-sec:last-child{border-bottom:none}
 .pz-lbl{font-size:9.5px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:rgba(26,26,26,.45);margin:0 0 12px}
-.pz-sub{font-size:12px;font-weight:800;margin:0 0 8px;letter-spacing:-.01em}
+.pz-sub{font-size:13px;font-weight:800;margin:0 0 9px;letter-spacing:-.01em}
 .pz-hint{font-size:13px;color:rgba(26,26,26,.6);margin:-6px 0 14px;line-height:1.55}
 
 /* Filas de datos: grilla en escritorio, bloque apilado en el celular. */
-.pz-row{display:grid;gap:8px;align-items:baseline;padding:8px 0;border-top:1px solid #eae4d6;font-size:12.5px;font-variant-numeric:tabular-nums}
-.pz-row.head{border-top:none;padding-bottom:6px;font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(26,26,26,.45)}
+.pz-row{display:grid;gap:8px;align-items:baseline;padding:10px 0;border-top:1px solid #eae4d6;font-size:13.5px;font-variant-numeric:tabular-nums;color:#1a1a1a}
+.pz-row>span:first-child{font-weight:600}
+.pz-row.head{border-top:none;padding:0 0 7px;font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(26,26,26,.5)}
+.pz-row.head>span{font-weight:800!important}
 .pz-row.tot{border-top:1.5px solid rgba(26,26,26,.18);font-weight:800}
 .pz-prod{grid-template-columns:1fr 44px 96px 104px}
-.pz-bul{grid-template-columns:44px 44px 1fr 96px 84px}
+.pz-bul{grid-template-columns:66px 44px 1fr 96px 84px}
 .pz-row>span:not(:first-child){text-align:right}
 .pz-row .k{display:none}
 @media(max-width:620px){
@@ -68,6 +70,8 @@ const CSS = `
 /* Opciones */
 .pz-opt{display:block;width:100%;text-align:left;padding:0;border-radius:12px;overflow:hidden;font:inherit;color:inherit;background:#fff;border:1.5px solid #eae4d6;cursor:pointer;margin-bottom:10px;transition:border-color .16s,box-shadow .16s}
 .pz-opt:last-child{margin-bottom:0}
+.pz-opt:focus{outline:none}
+.pz-opt:focus-visible{outline:2px solid #B8956A;outline-offset:2px}
 .pz-opt.on{border-color:#B8956A;box-shadow:0 8px 24px rgba(184,149,106,.22)}
 .pz-opt.off{cursor:default;opacity:.55}
 .pz-opt-h{display:flex;align-items:center;gap:11px;padding:12px 14px;border-bottom:1px solid #eae4d6}
@@ -138,7 +142,6 @@ export default function PresupuestoPage({ params }) {
   const vencida = state.data.vencida;
   const yaAceptada = state.data.aceptada || !!listo;
   const elegidaFinal = listo || alts.find((a) => a.key === q.selected);
-  const idxElegida = alts.findIndex((a) => a.key === (elegidaFinal?.key || elegido));
   const dias = diasRestantes(q.expires_at);
 
   const productos = Array.isArray(q.products) ? q.products : [];
@@ -150,19 +153,18 @@ export default function PresupuestoPage({ params }) {
 
   // El mensaje lo manda el cliente desde su WhatsApp: así nos llega la conversación abierta,
   // no solo un aviso interno del sistema.
-  const waLink = (a, i) => {
-    const msg = `Hola Argencargo! Vi la cotización y elijo la *Cotización ${i + 1} — ${a.name}* (${usd(a.totalAbonar)}).\n\nQuedo a la espera para coordinar los siguientes pasos.`;
+  const waLink = (a) => {
+    const msg = `Hola Argencargo! Vi la cotización y quiero avanzar con *${a.name}* (${usd(a.totalAbonar)}).\n\nQuedo a la espera para coordinar los siguientes pasos.`;
     return `https://wa.me/${WA}?text=${encodeURIComponent(msg)}`;
   };
 
   const aceptar = async () => {
     const a = alts.find((x) => x.key === elegido);
-    const i = alts.findIndex((x) => x.key === elegido);
     if (!a) return;
     setEnviando(true);
     // Abrimos la pestaña ANTES del await: si la abrimos después, Safari en iPhone la bloquea
     // por no venir de un gesto directo del usuario.
-    const w = window.open(waLink(a, i), "_blank");
+    const w = window.open(waLink(a), "_blank");
     try {
       const r = await fetch(`/api/presupuesto/${encodeURIComponent(token)}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -174,11 +176,10 @@ export default function PresupuestoPage({ params }) {
     } catch { setListo(a); }
     setEnviando(false);
     setConfirmando(false);
-    if (!w) window.location.href = waLink(a, i);
+    if (!w) window.location.href = waLink(a);
   };
 
   const seleccionada = alts.find((a) => a.key === elegido);
-  const iSel = alts.findIndex((a) => a.key === elegido);
   const barata = alts.length > 1 ? Math.min(...alts.map((x) => Number(x.totalAbonar || 0))) : null;
 
   return (
@@ -205,13 +206,13 @@ export default function PresupuestoPage({ params }) {
           {yaAceptada && elegidaFinal && (
             <div className="pz-sec" style={{ textAlign: "center" }}>
               <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#15803d", margin: 0 }}>
-                ✓ Cotización {idxElegida >= 0 ? idxElegida + 1 : ""} confirmada
+                ✓ Confirmaste esta opción
               </p>
               <p style={{ fontSize: 18, fontWeight: 800, margin: "6px 0 0", letterSpacing: "-0.02em" }}>{elegidaFinal.name}</p>
               <p style={{ fontSize: 13, color: "rgba(26,26,26,0.6)", margin: "9px 0 14px", lineHeight: 1.6 }}>
                 Ya casi. Mandanos el mensaje por WhatsApp y arrancamos. Si no se te abrió solo, tocá el botón.
               </p>
-              <a className="pz-wa" href={waLink(elegidaFinal, idxElegida >= 0 ? idxElegida : 0)} target="_blank" rel="noopener noreferrer">Escribirnos por WhatsApp</a>
+              <a className="pz-wa" href={waLink(elegidaFinal)} target="_blank" rel="noopener noreferrer">Escribirnos por WhatsApp</a>
             </div>
           )}
 
@@ -335,7 +336,7 @@ export default function PresupuestoPage({ params }) {
           {!yaAceptada && !vencida && (
             <div className="pz-sec">
               <button className="pz-cta" onClick={() => elegido && setConfirmando(true)} disabled={!elegido}>
-                {elegido ? `Confirmar la Cotización ${iSel + 1}` : "Elegí una opción para continuar"}
+                {seleccionada ? `Avanzar con ${seleccionada.name}` : "Elegí una opción para continuar"}
               </button>
 
               {/* La vigencia va acá abajo y en rojo: es el dato que lo apura a decidir. */}
@@ -359,7 +360,7 @@ export default function PresupuestoPage({ params }) {
             <div style={{ width: 46, height: 46, borderRadius: 999, background: "rgba(220,38,38,0.09)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto", fontSize: 22 }}>⚠️</div>
             <p style={{ fontSize: 17.5, fontWeight: 800, margin: "13px 0 0", letterSpacing: "-0.02em" }}>Antes de confirmar</p>
             <p style={{ fontSize: 13.5, color: "rgba(26,26,26,0.6)", margin: "10px 0 0", lineHeight: 1.65 }}>
-              Estás por elegir la <b style={{ color: "#1a1a1a" }}>Cotización {iSel + 1} — {seleccionada.name}</b> por <b style={{ color: "#1a1a1a" }}>{usd(seleccionada.totalAbonar)}</b>.
+              Vas a avanzar con <b style={{ color: "#1a1a1a" }}>{seleccionada.name}</b> por <b style={{ color: "#1a1a1a" }}>{usd(seleccionada.totalAbonar)}</b>.
             </p>
             <div style={{ marginTop: 14, padding: "12px 14px", borderRadius: 11, background: "rgba(26,26,26,0.04)", textAlign: "left" }}>
               <p style={{ fontSize: 12.5, color: "rgba(26,26,26,0.6)", margin: 0, lineHeight: 1.6 }}>
@@ -367,7 +368,7 @@ export default function PresupuestoPage({ params }) {
               </p>
             </div>
             <button onClick={aceptar} disabled={enviando} className="pz-cta" style={{ marginTop: 17 }}>
-              {enviando ? "Confirmando…" : "Sí, confirmo y mando el WhatsApp"}
+              {enviando ? "Confirmando…" : "Sí, avanzar y mandar el WhatsApp"}
             </button>
             <button onClick={() => setConfirmando(false)} disabled={enviando}
               style={{ width: "100%", marginTop: 9, padding: "12px", fontSize: 13.5, fontWeight: 700, borderRadius: 12, border: "1px solid #eae4d6", background: "transparent", color: "rgba(26,26,26,0.55)", cursor: "pointer" }}>
