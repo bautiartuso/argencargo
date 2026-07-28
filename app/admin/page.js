@@ -5622,26 +5622,32 @@ function FinancePanel({token}){
       if(comUsd>0.005)ledger.push({date:p.payment_date,ts:tsOf(p.payment_date,p.created_at),type:"gasto",origen:"client_pmt",code,desc:`Comisión financiera ${pctCom}% ${code} — ${cc}`,amount:Math.round(comUsd*100)/100,detail:p.currency==="ARS"&&p.amount_ars?`ARS ${Math.round(Number(p.amount_ars)*(pctCom/100)).toLocaleString("es-AR")} @ ${p.exchange_rate}`:""});
     }
   });
+  // Gestión de pagos: al libro diario entra SOLO el resultado neto de cada gestión, no el bruto.
+  // Antes se empujaba el pago del cliente completo como ingreso y el giro completo como gasto, y eso
+  // inflaba el dashboard con plata que solo pasa por la cuenta: mostraba ~USD 7.962 de ingresos y
+  // ~7.659 de egresos cuando la contribución real de toda la gestión de pagos es USD 302,91.
+  // El neto se cuenta cuando las dos patas son reales: el cliente pagó y el giro está confirmado
+  // (y si fue con tarjeta, ya se debitó). Mientras alguna esté pendiente, no se computa.
   allPmts.forEach(p=>{
-    const code=p.operations?.operation_code||"";
+    const code=p.agp_code||p.operations?.operation_code||"";
     const op=allOps.find(o=>o.id===p.operation_id);
     const cc=op?.clients?.client_code||"";
-    if(p.client_paid){const d=p.client_paid_date||"—";ledger.push({date:d,ts:tsOf(d,p.client_paid_date),type:"ingreso",origen:"pmt",code,desc:`Pago ${code} — ${cc}`,amount:Number(p.client_paid_amount_usd??p.client_amount_usd??0),detail:p.description||""});}
     const tarjetaPendiente=p.giro_payment_method==="tarjeta_credito"&&!p.giro_tarjeta_paid;
-    // Comisión de giro: SIEMPRE se cuenta como gasto de contado (no depende del método del giro).
-    // Representa el costo financiero que se paga al recibir la transferencia del cliente.
-    if(p.giro_status==="confirmado"&&Number(p.cost_comision_giro||0)>0){const d=p.giro_date||p.client_paid_date||"—";ledger.push({date:d,ts:tsOf(d,p.giro_date),type:"gasto",origen:"pmt",code,desc:`Comisión financiera ${code} — ${cc}`,amount:Number(p.cost_comision_giro),detail:"Costo por recibir la transferencia"});}
-    // Giro al exterior: aparece cuando se pagó (efectivo/transferencia) o se debitó la TC.
-    // En libro diario usamos la fecha en que SALIÓ el cash (cash flow real):
-    //  - efectivo / transferencia → giro_date (cuando se hizo el giro)
-    //  - TC ya debitada → giro_tarjeta_paid_at (cuando salió la plata del bolsillo)
-    // La fecha del giro original queda en el detail para trackear devengado.
-    if(p.giro_status==="confirmado"&&!tarjetaPendiente&&Number(p.giro_amount_usd||0)>0){
-      const isGiroTC=p.giro_payment_method==="tarjeta_credito";
-      const cashDate=isGiroTC&&p.giro_tarjeta_paid_at?p.giro_tarjeta_paid_at.slice(0,10):(p.giro_date||p.client_paid_date||"—");
-      const tcSuffix=isGiroTC&&p.giro_tarjeta_paid_at&&p.giro_date&&p.giro_date!==cashDate?` · 💳 giro generado el ${formatDate(p.giro_date)}`:"";
-      ledger.push({date:cashDate,ts:tsOf(cashDate,isGiroTC?p.giro_tarjeta_paid_at:p.giro_date),type:"gasto",origen:"pmt",code,desc:`Giro exterior ${code} — ${cc}`,amount:Number(p.giro_amount_usd),detail:(p.description||"")+tcSuffix});
-    }
+    const cobrado=p.client_paid?Number(p.client_paid_amount_usd??p.client_amount_usd??0):0;
+    const giroOk=p.giro_status==="confirmado"&&!tarjetaPendiente;
+    const salida=giroOk?Number(p.giro_amount_usd||0)+Number(p.cost_comision_giro||0):0;
+    if(!p.client_paid||!giroOk)return; // gestión a medio camino: todavía no hay resultado
+    const neto=Math.round((cobrado-salida)*100)/100;
+    if(Math.abs(neto)<0.005)return;
+    const isGiroTC=p.giro_payment_method==="tarjeta_credito";
+    const d=(isGiroTC&&p.giro_tarjeta_paid_at?p.giro_tarjeta_paid_at.slice(0,10):(p.giro_date||p.client_paid_date))||"—";
+    ledger.push({
+      date:d,ts:tsOf(d,isGiroTC?p.giro_tarjeta_paid_at:p.giro_date),
+      type:neto>=0?"ingreso":"gasto",origen:"pmt",code,
+      desc:`Gestión de pagos ${code}${cc?` — ${cc}`:""}`,
+      amount:Math.abs(neto),
+      detail:`Cobrado ${usd(cobrado)} · girado ${usd(salida)}${op?.operation_code?` · de ${op.operation_code}`:""}`,
+    });
   });
   entries.forEach(e=>{
     // Gastos con tarjeta: solo aparecen cuando is_paid=true
