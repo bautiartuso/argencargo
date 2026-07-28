@@ -695,7 +695,36 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   // Modal genérico para pedir un monto (reemplaza window.prompt). Devuelve Promise<number|null>.
   const [amountModal,setAmountModal]=useState(null); // {title, subtitle, defaultValue, max, resolve}
   const askAmount=(cfg)=>new Promise(resolve=>setAmountModal({...cfg,resolve}));
-  const [addPaymentForm,setAddPaymentForm]=useState({amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",payment_date:new Date().toISOString().slice(0,10),notes:""});
+  // ars_destination: solo aplica a transferencias en ARS. "financiera" = la plata entra a la CC
+  // de SOLFIN (genera movimiento automatico + comprobante visible en el link compartido);
+  // "propia" = entra a cuenta propia y no toca la CC de la financiera.
+  const [addPaymentForm,setAddPaymentForm]=useState({amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",payment_date:new Date().toISOString().slice(0,10),notes:"",ars_destination:"financiera",commission_pct:"",receipt_url:""});
+  const [uploadingReceipt,setUploadingReceipt]=useState(false);
+  // Badge de destino ARS + miniatura del comprobante, para las tablas de cobros de la op.
+  const pmtExtras=(p)=>{
+    if(!p.ars_destination&&!p.receipt_url)return null;
+    const aFin=p.ars_destination==="financiera";
+    return <span style={{display:"inline-flex",alignItems:"center",gap:6,marginLeft:p.notes?6:0,verticalAlign:"middle"}}>
+      {p.ars_destination&&<span title={aFin?"Entró a la cuenta corriente de SOLFIN":"Entró a cuenta propia — no toca la CC de la financiera"} style={{fontSize:9.5,fontWeight:700,padding:"2px 6px",borderRadius:4,whiteSpace:"nowrap",background:aFin?"rgba(96,165,250,0.14)":"rgba(255,255,255,0.07)",color:aFin?"#60a5fa":"rgba(255,255,255,0.5)"}}>{aFin?"→ SOLFIN":"→ propia"}{aFin&&Number(p.commission_pct||0)>0?` · ${Number(p.commission_pct)}%`:""}</span>}
+      {p.receipt_url&&<a href={p.receipt_url} target="_blank" rel="noreferrer" title="Ver comprobante" style={{flexShrink:0,width:22,height:22,borderRadius:4,overflow:"hidden",border:"1px solid rgba(255,255,255,0.15)",display:"inline-block"}}>
+        <img src={p.receipt_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+      </a>}
+    </span>;
+  };
+  const uploadReceipt=async(file)=>{
+    if(!file)return;
+    if(!file.type?.startsWith("image/")){alertDialog("El comprobante tiene que ser una imagen");return;}
+    if(file.size>8*1024*1024){alertDialog("El comprobante no puede pesar mas de 8 MB");return;}
+    setUploadingReceipt(true);
+    try{
+      const ext=(file.name?.split(".").pop()||file.type.split("/")[1]||"png").toLowerCase().replace(/[^a-z0-9]/g,"");
+      const filename=`${op.operation_code}_${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+      const r=await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/${filename}`,{method:"POST",headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY,"Content-Type":file.type,"x-upsert":"false"},body:file});
+      if(!r.ok)throw new Error((await r.text().catch(()=>""))||"Error subiendo el comprobante");
+      setAddPaymentForm(p=>({...p,receipt_url:`${SB_URL}/storage/v1/object/public/solfin-comprobantes/${filename}`}));
+    }catch(e){alertDialog("Error: "+e.message);}
+    setUploadingReceipt(false);
+  };
   const submitAddPayment=async()=>{
     const amtUsd=Number(addPaymentForm.amount_usd);
     const amtArs=Number(addPaymentForm.amount_ars);
@@ -743,11 +772,42 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         }
         prevTotal=legacyCollected;
       }
-      const body={operation_id:op.id,payment_date:addPaymentForm.payment_date,amount_usd:finalAmtUsd,currency:addPaymentForm.currency,payment_method:addPaymentForm.payment_method,notes:addPaymentForm.notes||null};
+      const isArsTransfer=addPaymentForm.currency==="ARS"&&addPaymentForm.payment_method==="transferencia";
+      const aFinanciera=isArsTransfer&&addPaymentForm.ars_destination==="financiera";
+      const comPct=Number(String(addPaymentForm.commission_pct||"").replace(",","."))||0;
+      const body={operation_id:op.id,payment_date:addPaymentForm.payment_date,amount_usd:finalAmtUsd,currency:addPaymentForm.currency,payment_method:addPaymentForm.payment_method,notes:addPaymentForm.notes||null,receipt_url:addPaymentForm.receipt_url||null};
       if(addPaymentForm.currency==="ARS"){body.amount_ars=amtArs;body.exchange_rate=rate;}
+      if(isArsTransfer){body.ars_destination=addPaymentForm.ars_destination;body.commission_pct=aFinanciera?comPct:null;}
       const ins1=await dq("operation_client_payments",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
       const inserted1=Array.isArray(ins1)?ins1[0]:ins1;
       if(!inserted1||!inserted1.id){const msg=inserted1?.message||inserted1?.error||"El pago no se pudo guardar.";alertDialog("❌ "+msg);setSavingAddPayment(false);return;}
+      // Transferencia ARS que entra a la financiera → movimiento automático en la CC de SOLFIN.
+      // Va con client_payment_id (ON DELETE CASCADE) para que si se borra el cobro no quede
+      // colgado un movimiento fantasma inflando el saldo de la CC.
+      if(aFinanciera){
+        const comAmount=Math.round(amtArs*(comPct/100)*100)/100;
+        const cliCode=opClient?.client_code?` · ${opClient.client_code}`:"";
+        try{
+          await dq("cc_solfin_movements",{method:"POST",token,body:{
+            date:addPaymentForm.payment_date,
+            type:"ingreso",
+            currency:"ARS",
+            amount:amtArs,
+            commission_pct:comPct||null,
+            commission_amount:comPct>0?comAmount:null,
+            net_amount:amtArs-comAmount,
+            provisional_rate:rate,
+            description:`Cobro ${op.operation_code}${cliCode}`,
+            image_url:addPaymentForm.receipt_url||null,
+            operation_id:op.id,
+            client_payment_id:inserted1.id,
+            auto_generated:true,
+          }});
+        }catch(e){
+          console.error("cc solfin mov",e);
+          alertDialog("⚠ El cobro se guardó, pero no se pudo crear el movimiento en la CC de la financiera: "+e.message);
+        }
+      }
       const newTotal=prevTotal+finalAmtUsd;
       const opUpdate={collected_amount:newTotal};
       if(budgetTot>0&&newTotal>=budgetTot-0.01){
@@ -2727,7 +2787,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
                     <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}</td>
                     <td style={{padding:"10px 14px",textAlign:"right",color:"#22c55e",fontWeight:700,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>USD {Number(p.amount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}{p.currency==="ARS"&&p.amount_ars?<span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.4)",fontWeight:400}}>ARS {Number(p.amount_ars).toLocaleString("es-AR")} @ {p.exchange_rate}</span>:null}</td>
                     <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.6)",textTransform:"capitalize"}}>{(p.payment_method||"—").replace("_"," ")}</td>
-                    <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.55)",fontSize:11}}>{p.notes||"—"}</td>
+                    <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.55)",fontSize:11}}>{p.notes||(p.ars_destination||p.receipt_url?"":"—")}{pmtExtras(p)}</td>
                     <td style={{padding:"10px 14px",textAlign:"right"}}><button onClick={()=>delGiCliPayment(p.id)} style={{padding:"4px 9px",fontSize:11,background:"transparent",border:"1px solid rgba(255,80,80,0.25)",borderRadius:4,color:"rgba(255,100,100,0.7)",cursor:"pointer"}}>✕</button></td>
                   </tr>)}
                 </tbody>
@@ -2931,7 +2991,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
                   <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums"}}>{new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}</td>
                   <td style={{padding:"8px 12px",textAlign:"right",color:"#22c55e",fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {Number(p.amount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}{p.currency==="ARS"&&<span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.4)",fontWeight:400}}>ARS {Number(p.amount_ars).toLocaleString("es-AR")} @ {p.exchange_rate}</span>}</td>
                   <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.6)",textTransform:"capitalize"}}>{p.payment_method}</td>
-                  <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)",fontSize:11}}>{p.notes||""}</td>
+                  <td style={{padding:"8px 12px",color:"rgba(255,255,255,0.5)",fontSize:11}}>{p.notes||""}{pmtExtras(p)}</td>
                   <td style={{padding:"8px 12px",textAlign:"right"}}><button onClick={()=>deleteCliPayment(p.id)} style={{padding:"4px 8px",fontSize:11,background:"transparent",border:"1px solid rgba(255,80,80,0.25)",borderRadius:4,color:"rgba(255,100,100,0.7)",cursor:"pointer"}}>✕</button></td>
                 </tr>)}
               </tbody>
@@ -3873,10 +3933,52 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           <Inp label="Fecha del cobro *" type="date" value={addPaymentForm.payment_date} onChange={v=>setAddPaymentForm(p=>({...p,payment_date:v}))} small/>
           <Inp label="Notas (opcional)" value={addPaymentForm.notes} onChange={v=>setAddPaymentForm(p=>({...p,notes:v}))} placeholder='Ej: "Anticipo, falta flete local"' small/>
         </div>
+        {/* Transferencia en ARS: hay que decir a dónde entró la plata. No toda transferencia en
+            pesos va a la financiera — a veces entra a cuenta propia y no debe tocar la CC de SOLFIN. */}
+        {addPaymentForm.currency==="ARS"&&addPaymentForm.payment_method==="transferencia"&&(()=>{
+          const aFin=addPaymentForm.ars_destination==="financiera";
+          const arsN=Number(String(addPaymentForm.amount_ars||"").replace(",","."))||0;
+          const pct=Number(String(addPaymentForm.commission_pct||"").replace(",","."))||0;
+          const com=Math.round(arsN*(pct/100)*100)/100;
+          const opt=(val,label,hint)=><button type="button" key={val} onClick={()=>setAddPaymentForm(p=>({...p,ars_destination:val}))} style={{flex:"1 1 160px",textAlign:"left",padding:"10px 12px",borderRadius:9,cursor:"pointer",border:`1.5px solid ${addPaymentForm.ars_destination===val?"#22c55e":"rgba(255,255,255,0.12)"}`,background:addPaymentForm.ars_destination===val?"rgba(34,197,94,0.10)":"rgba(255,255,255,0.03)"}}>
+            <p style={{fontSize:12.5,fontWeight:700,color:addPaymentForm.ars_destination===val?"#22c55e":"rgba(255,255,255,0.75)",margin:"0 0 2px"}}>{addPaymentForm.ars_destination===val?"● ":"○ "}{label}</p>
+            <p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:0,lineHeight:1.4}}>{hint}</p>
+          </button>;
+          return <div style={{marginBottom:14,padding:"12px 14px",background:"rgba(96,165,250,0.05)",border:"1px solid rgba(96,165,250,0.18)",borderRadius:10}}>
+            <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>¿A dónde entró la transferencia?</p>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:aFin?12:0}}>
+              {opt("financiera","Financiera (SOLFIN)","Genera el movimiento en la CC y el comprobante queda visible en el link compartido.")}
+              {opt("propia","Cuenta propia","No toca la CC de la financiera. El comprobante queda solo en la op.")}
+            </div>
+            {aFin&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+              <Inp label="Comisión financiera %" type="number" value={addPaymentForm.commission_pct} onChange={v=>setAddPaymentForm(p=>({...p,commission_pct:v}))} step="0.01" placeholder="Ej: 3" small/>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Neto a la CC</label>
+                <div style={{padding:"8px 10px",fontSize:13,borderRadius:8,background:"rgba(34,197,94,0.08)",border:"1.5px solid rgba(34,197,94,0.2)",color:"#22c55e",fontWeight:700}}>ARS {(arsN-com).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+                {pct>0&&<p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"3px 0 0"}}>Comisión ARS {com.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+              </div>
+            </div>}
+          </div>;
+        })()}
+        {/* Comprobante: se permite en cualquier cobro, pero es el que viaja a la CC de la financiera. */}
+        <div style={{marginBottom:14}}>
+          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Comprobante (opcional)</p>
+          {addPaymentForm.receipt_url?<div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.25)"}}>
+            <a href={addPaymentForm.receipt_url} target="_blank" rel="noreferrer" style={{flexShrink:0,width:40,height:40,borderRadius:6,overflow:"hidden",border:"1px solid rgba(255,255,255,0.12)",display:"inline-block"}}>
+              <img src={addPaymentForm.receipt_url} alt="comprobante" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+            </a>
+            <span style={{flex:1,fontSize:12,color:"#22c55e",fontWeight:600}}>✓ Comprobante cargado</span>
+            <button type="button" onClick={()=>setAddPaymentForm(p=>({...p,receipt_url:""}))} style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer",fontWeight:600}}>× Quitar</button>
+          </div>:<label style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"14px 12px",border:"1px dashed rgba(255,255,255,0.18)",borderRadius:9,background:"rgba(255,255,255,0.03)",cursor:uploadingReceipt?"wait":"pointer"}}>
+            <span style={{fontSize:16}}>{uploadingReceipt?"⏳":"📎"}</span>
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>{uploadingReceipt?"Subiendo…":"Adjuntar imagen del comprobante"}</span>
+            <input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0];if(f)uploadReceipt(f);e.target.value="";}} disabled={uploadingReceipt} style={{display:"none"}}/>
+          </label>}
+        </div>
         <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"0 0 12px",fontStyle:"italic"}}>Este cobro se suma al total cobrado de la op. Si después se ajusta el presupuesto y queda saldo, podés registrar otro cobro adicional.</p>
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button onClick={()=>!savingAddPayment&&setShowAddPayment(false)} disabled={savingAddPayment} style={{padding:"9px 16px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.65)",cursor:savingAddPayment?"not-allowed":"pointer"}}>Cancelar</button>
-          <button onClick={submitAddPayment} disabled={savingAddPayment} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.5)",background:savingAddPayment?"rgba(255,255,255,0.05)":"linear-gradient(135deg,#22c55e,#16a34a)",color:savingAddPayment?"rgba(255,255,255,0.4)":"#fff",cursor:savingAddPayment?"wait":"pointer"}}>{savingAddPayment?"Guardando…":"✓ Registrar cobro"}</button>
+          <button onClick={submitAddPayment} disabled={savingAddPayment||uploadingReceipt} style={{padding:"9px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.5)",background:savingAddPayment?"rgba(255,255,255,0.05)":"linear-gradient(135deg,#22c55e,#16a34a)",color:savingAddPayment?"rgba(255,255,255,0.4)":"#fff",cursor:savingAddPayment?"wait":"pointer"}}>{savingAddPayment?"Guardando…":uploadingReceipt?"Subiendo comprobante…":"✓ Registrar cobro"}</button>
         </div>
       </div>
     </div>}

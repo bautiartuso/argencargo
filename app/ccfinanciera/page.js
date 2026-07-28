@@ -285,6 +285,9 @@ function MovementRow({ m, onEdit, onReload, token }) {
             <img src={m.image_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
           </a>
         )}
+        {m.auto_generated && (
+          <span title="Generado automáticamente al registrar un cobro por transferencia — no se cargó a mano" style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "rgba(96,165,250,0.14)", color: "#60a5fa", letterSpacing: "0.04em" }}>AUTO</span>
+        )}
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.description || <span style={{ color: T.textDim, fontStyle: "italic" }}>(sin descripción)</span>}</span>
       </div>
       <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color, fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>
@@ -318,6 +321,9 @@ function MovementCardMobile({ m, onEdit, onReload, token }) {
         <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: `${color}22`, color, letterSpacing: "0.05em", textTransform: "uppercase" }}>{isIn ? "▲ Ingreso" : "▼ Egreso"}</span>
         <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: "rgba(255,255,255,0.06)", color: T.textMuted, letterSpacing: "0.05em" }}>{m.currency}</span>
         <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: T.textMuted }}>{fmtDate(m.date)}</span>
+        {m.auto_generated && (
+          <span title="Generado automáticamente al registrar un cobro por transferencia" style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "rgba(96,165,250,0.14)", color: "#60a5fa", letterSpacing: "0.04em" }}>AUTO</span>
+        )}
         <span style={{ flex: 1 }} />
         <button onClick={() => onEdit(m)} title="Editar" style={iconBtn}>✎</button>
         <button onClick={handleDelete} title="Eliminar" style={{ ...iconBtn, color: T.red }}>×</button>
