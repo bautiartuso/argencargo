@@ -202,7 +202,7 @@ const OPS_FILTERS_KEY="ac_ops_filters";
 const loadOpsFilters=()=>{try{if(typeof window==="undefined")return{};return JSON.parse(localStorage.getItem(OPS_FILTERS_KEY)||"{}")||{};}catch{return{};}};
 
 function OperationsList({token,onSelect,onNew}){
-  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [ncmMissingByOp,setNcmMissingByOp]=useState({});const [lo,setLo]=useState(true);
+  const [ops,setOps]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [cliPmtsByOp,setCliPmtsByOp]=useState({});const [ncmMissingByOp,setNcmMissingByOp]=useState({});const [opsWithFlight,setOpsWithFlight]=useState(()=>new Set());const [lo,setLo]=useState(true);
   const [search,setSearch]=useState(()=>loadOpsFilters().search||"");
   const [fStatuses,setFStatuses]=useState(()=>{const v=loadOpsFilters().fStatuses;return Array.isArray(v)?v:[];});
   const [fChannels,setFChannels]=useState(()=>{const v=loadOpsFilters().fChannels;return Array.isArray(v)?v:[];});
@@ -257,7 +257,7 @@ function OperationsList({token,onSelect,onNew}){
   };
   // Peso por estado: mayor valor = más cerca de entrega (aparece arriba)
   const STATUS_WEIGHT={entregada:8,en_aduana:7,arribo_argentina:6,en_transito:5,en_preparacion:4,en_deposito_origen:3,pendiente:2,operacion_cerrada:0,cancelada:0};
-  useEffect(()=>{(async()=>{const [o,pm,cp,it]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,giro_status,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd"}),dq("operation_items",{token,filters:"?select=operation_id,ncm_code,description"})]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);const nmap={};(Array.isArray(it)?it:[]).forEach(r=>{const desc=(r.description||"").trim();if(desc&&!isValidNcmCode(r.ncm_code))nmap[r.operation_id]=true;});setNcmMissingByOp(nmap);setLo(false);})();},[token]);
+  useEffect(()=>{(async()=>{const [o,pm,cp,it,fo]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,giro_status,cost_comision_giro"}),dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd"}),dq("operation_items",{token,filters:"?select=operation_id,ncm_code,description"}),dq("flight_operations",{token,filters:"?select=operation_id"}).catch(()=>[])]);setOps(Array.isArray(o)?o:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);const cmap={};(Array.isArray(cp)?cp:[]).forEach(p=>{cmap[p.operation_id]=(cmap[p.operation_id]||0)+Number(p.amount_usd||0);});setCliPmtsByOp(cmap);const nmap={};(Array.isArray(it)?it:[]).forEach(r=>{const desc=(r.description||"").trim();if(desc&&!isValidNcmCode(r.ncm_code))nmap[r.operation_id]=true;});setNcmMissingByOp(nmap);setOpsWithFlight(new Set((Array.isArray(fo)?fo:[]).map(r=>r.operation_id).filter(Boolean)));setLo(false);})();},[token]);
   // Saldo pendiente del cliente. Considera:
   // - pagos ya recibidos (collected_amount si la op está cobrada, o operation_client_payments si es GI)
   // - crédito aplicado de CC (credit_applied_usd)
@@ -343,7 +343,10 @@ function OperationsList({token,onSelect,onNew}){
   const noBudgetOps=ops.filter(o=>!["operacion_cerrada","cancelada","pendiente"].includes(o.status)&&Number(o.budget_total||0)<=0);
   const noEtaOps=ops.filter(o=>["en_transito","arribo_argentina"].includes(o.status)&&!o.eta);
   // Sin NCM: solo canales en blanco (aéreo/marítimo), no-GI, con algún producto que falta clasificar.
-  const noNcmOps=ops.filter(o=>(o.channel==="aereo_blanco"||o.channel==="maritimo_blanco")&&o.service_type!=="gestion_integral"&&!["operacion_cerrada","cancelada"].includes(o.status)&&ncmMissingByOp[o.id]);
+  // Aéreo: recién cuenta como "sin NCM" cuando la op YA tiene vuelo asignado. Antes de eso
+  // todavía no hay nada que declarar, así que no tiene sentido reclamar la clasificación.
+  // Marítimo no pasa por vuelo, así que se sigue evaluando siempre.
+  const noNcmOps=ops.filter(o=>(o.channel==="aereo_blanco"||o.channel==="maritimo_blanco")&&o.service_type!=="gestion_integral"&&!["operacion_cerrada","cancelada"].includes(o.status)&&ncmMissingByOp[o.id]&&(o.channel!=="aereo_blanco"||opsWithFlight.has(o.id)));
   const attentionTotal=staleOps.length+noBudgetOps.length+noEtaOps.length+noNcmOps.length;
   // Filtro por tarjeta de atención: al tocar una card, la lista se filtra a esa categoría.
   const attArrays={stale:staleOps,noBudget:noBudgetOps,noEta:noEtaOps,noNcm:noNcmOps};
@@ -372,6 +375,25 @@ function OperationsList({token,onSelect,onNew}){
       </select>
       <button onClick={()=>setBulkAction({action:"markCollected"})} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:"pointer"}}>💰 Marcar cobradas</button>
       <button onClick={()=>setBulkAction({action:"delete"})} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1px solid rgba(255,80,80,0.4)",background:"rgba(255,80,80,0.1)",color:"#ff6b6b",cursor:"pointer"}}>🗑 Eliminar</button>
+    </div>}
+    {/* NCM faltante: cartel imposible de ignorar. Sin la clasificación no se puede
+        presentar factura ni despachar, así que se muestra arriba de todo y bien grande. */}
+    {noNcmOps.length>0&&<div style={{marginBottom:18,padding:"18px 22px",borderRadius:14,background:"linear-gradient(135deg,rgba(239,68,68,0.20),rgba(239,68,68,0.06))",border:"2px solid #ef4444",boxShadow:"0 0 0 1px rgba(239,68,68,0.4), 0 8px 30px rgba(239,68,68,0.22)"}}>
+      <style>{"@keyframes ncmPulse{0%,100%{opacity:1}50%{opacity:.45}}"}</style>
+      <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+        <span style={{fontSize:34,lineHeight:1,animation:"ncmPulse 1.4s ease-in-out infinite"}}>⚠️</span>
+        <div style={{flex:1,minWidth:260}}>
+          <p style={{fontSize:19,fontWeight:800,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>
+            {noNcmOps.length===1?"Hay 1 operación sin NCM":`Hay ${noNcmOps.length} operaciones sin NCM`}
+          </p>
+          <p style={{fontSize:13,color:"rgba(255,255,255,0.8)",margin:0,lineHeight:1.5}}>
+            Ya tienen vuelo asignado y les falta clasificar productos. <strong style={{color:"#fca5a5"}}>No se puede presentar factura ni despachar sin NCM.</strong>
+          </p>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
+            {noNcmOps.map(o=><button key={o.id} onClick={()=>onSelect(o)} style={{padding:"5px 11px",fontSize:12,fontWeight:800,fontFamily:"'JetBrains Mono','SF Mono',monospace",borderRadius:7,border:"1px solid rgba(239,68,68,0.55)",background:"rgba(239,68,68,0.16)",color:"#fecaca",cursor:"pointer"}}>{o.operation_code} →</button>)}
+          </div>
+        </div>
+      </div>
     </div>}
     {attentionTotal>0&&<div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
       <AttCard n={staleOps.length} label="Estancadas" color="#f87171" active={attFilter==="stale"} onClick={()=>{if(staleOps.length)toggleAtt("stale");}}/>
@@ -656,7 +678,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   const [op,setOp]=useState(initOp);const [items,setItems]=useState([]);const [pkgs,setPkgs]=useState([]);const [events,setEvents]=useState([]);const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [opClient,setOpClient]=useState(null);const [clientOverrides,setClientOverrides]=useState([]);const [lo,setLo]=useState(true);const [saving,setSaving]=useState(false);const [msg,setMsg]=useState("");const [tab,setTab]=useState(initialTab||"general");const [ccBalance,setCcBalance]=useState(0);const [payments,setPayments]=useState([]);const [showNewPmt,setShowNewPmt]=useState(false);const [newPmt,setNewPmt]=useState({client_amount_usd:"",giro_amount_usd:"",cost_comision_giro:"",description:""});const [cobroEditor,setCobroEditor]=useState(null);const [giroEditor,setGiroEditor]=useState(null);const [supplierPayments,setSupplierPayments]=useState([]);const [newSupPmt,setNewSupPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",payment_method:"transferencia",is_paid:true,notes:"",reference:"",currency:"USD",card_closing_date:"",type:"payment"});
   const [clientPayments,setClientPayments]=useState([]);const [newCliPmt,setNewCliPmt]=useState({payment_date:new Date().toISOString().slice(0,10),amount_usd:"",amount_ars:"",exchange_rate:"",currency:"USD",payment_method:"transferencia",notes:""});
   const [declaredItems,setDeclaredItems]=useState([]); // flight_invoice_items de esta op (valor declarado a Aduana, para RI)
-  const [flightInfo,setFlightInfo]=useState(null); // {cost_share_usd, flights:{flight_code,departed_at,...}} — para fila virtual de flete en Costos GI
+  // flightInfo: solo GI, alimenta la fila virtual de flete en Costos. opFlight: cualquier canal,
+  // se usa para saber si la op ya tiene vuelo asignado (criterio del cartel de NCM faltante).
+  const [flightInfo,setFlightInfo]=useState(null);const [opFlight,setOpFlight]=useState(null);
   // Despacho REAL (RI): valores copiados de la factura del despachante/DHL. Si están cargados,
   // los impuestos del presupuesto los toman de acá (no de la fórmula).
   const [despacho,setDespacho]=useState({die:initOp.despacho_die_usd??"",est:initOp.despacho_estadistica_usd??"",des:initOp.despacho_desaduanaje_usd??"",iva:initOp.despacho_iva_usd??""});
@@ -842,7 +866,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
     const sp=await dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setSupplierPayments(Array.isArray(sp)?sp:[]);
     // Vuelo de la op (para mostrar el flete como fila virtual en Costos GI: fecha + código de vuelo).
-    if(op.service_type==="gestion_integral"){const fo=await dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=cost_share_usd,flights(flight_code,dispatched_at,created_at,payment_method)`});setFlightInfo(Array.isArray(fo)&&fo[0]?fo[0]:null);}else setFlightInfo(null);
+    const fo=await dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=cost_share_usd,flights(flight_code,dispatched_at,created_at,payment_method)`}).catch(()=>[]);const foRow=Array.isArray(fo)&&fo[0]?fo[0]:null;setOpFlight(foRow);setFlightInfo(op.service_type==="gestion_integral"?foRow:null);
     const cp=await dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setClientPayments(Array.isArray(cp)?cp:[]);
     await loadCCBalance();setLo(false);
     // Auto-sincronizar el presupuesto después de cargar la op (en caso de que esté desactualizado).
@@ -1343,6 +1367,32 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     </div>;})()}
     {/* Banner global: cliente con saldo a favor / deuda — visible en todos los tabs EXCEPTO Finanzas
         (en Finanzas ya hay un banner adentro de la card Cobro con el botón "Aplicar a esta op"). */}
+    {/* NCM faltante: cartel bloqueante. Solo cuando la op aérea YA tiene vuelo asignado —
+        antes de eso no hay nada que declarar todavía. Queda visible en todas las pestañas
+        hasta que se complete la clasificación. */}
+    {!lo&&!isGI&&isAereo&&isBlanco&&opFlight&&!["entregada","operacion_cerrada","cancelada"].includes(op.status)&&items.some(it=>(it.description||"").trim()&&needsClassification(it))&&(()=>{
+      const faltan=items.filter(it=>(it.description||"").trim()&&needsClassification(it));
+      return <div style={{marginBottom:16,padding:"20px 24px",borderRadius:14,background:"linear-gradient(135deg,rgba(239,68,68,0.22),rgba(239,68,68,0.06))",border:"2px solid #ef4444",boxShadow:"0 0 0 1px rgba(239,68,68,0.45), 0 10px 34px rgba(239,68,68,0.25)"}}>
+        <style>{"@keyframes ncmPulse{0%,100%{opacity:1}50%{opacity:.4}}"}</style>
+        <div style={{display:"flex",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+          <span style={{fontSize:40,lineHeight:1,animation:"ncmPulse 1.3s ease-in-out infinite"}}>⚠️</span>
+          <div style={{flex:1,minWidth:280}}>
+            <p style={{fontSize:21,fontWeight:800,color:"#fff",margin:"0 0 6px",letterSpacing:"-0.01em"}}>Falta el NCM de {faltan.length===1?"1 producto":`${faltan.length} productos`}</p>
+            <p style={{fontSize:13.5,color:"rgba(255,255,255,0.82)",margin:"0 0 12px",lineHeight:1.55}}>
+              Esta op ya está asignada al vuelo <strong style={{color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace"}}>{opFlight.flights?.flight_code||"—"}</strong>. Sin la clasificación arancelaria completa no se puede presentar factura ni calcular impuestos.
+            </p>
+            <div style={{marginBottom:14}}>
+              {faltan.slice(0,6).map(it=><p key={it.id} style={{fontSize:12.5,color:"#fecaca",margin:"0 0 3px"}}>• {it.description}</p>)}
+              {faltan.length>6&&<p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"3px 0 0",fontStyle:"italic"}}>+{faltan.length-6} más</p>}
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {tab!=="items"&&<button onClick={()=>setTab("items")} style={{padding:"10px 18px",fontSize:13,fontWeight:800,borderRadius:9,border:"1px solid rgba(239,68,68,0.6)",background:"rgba(239,68,68,0.2)",color:"#fff",cursor:"pointer"}}>→ Ir a Productos</button>}
+              <button onClick={autoClassifyAll} disabled={classifyingAll} style={{padding:"10px 18px",fontSize:13,fontWeight:800,borderRadius:9,border:"1px solid rgba(167,139,250,0.55)",background:"rgba(167,139,250,0.18)",color:"#c4b5fd",cursor:classifyingAll?"wait":"pointer",opacity:classifyingAll?0.6:1}}>{classifyingAll?"⏳ Clasificando…":"✨ Clasificar todos ahora (IA)"}</button>
+            </div>
+          </div>
+        </div>
+      </div>;
+    })()}
     {tab!=="finance"&&(()=>{const bal=Number(opClient?.account_balance_usd||0);if(Math.abs(bal)<0.01)return null;const isCredit=bal>0;return <div style={{marginBottom:16,padding:"10px 16px",background:isCredit?"linear-gradient(90deg,rgba(34,197,94,0.10),rgba(34,197,94,0.02))":"linear-gradient(90deg,rgba(239,68,68,0.10),rgba(239,68,68,0.02))",border:`1.5px solid ${isCredit?"rgba(34,197,94,0.35)":"rgba(239,68,68,0.35)"}`,borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
       <div>
         <p style={{fontSize:12.5,fontWeight:700,color:isCredit?"#22c55e":"#ef4444",margin:0}}>{isCredit?"★":"⚠"} {opClient?.first_name||"Cliente"} {isCredit?"tiene saldo a favor":"tiene deuda anterior"}: USD {Math.abs(bal).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
