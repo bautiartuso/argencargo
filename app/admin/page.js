@@ -5494,6 +5494,17 @@ function FinancePanel({token}){
     const cc=op?.clients?.client_code||"";
     const arsDetail=p.currency==="ARS"&&p.amount_ars?`ARS ${Number(p.amount_ars).toLocaleString("es-AR")} @ ${p.exchange_rate}`:"";
     ledger.push({date:p.payment_date,ts:tsOf(p.payment_date,p.created_at),type:"ingreso",origen:"client_pmt",code,desc:`Anticipo ${code} — ${cc}`,amount:Number(p.amount_usd||0),detail:p.notes?`${p.notes}${arsDetail?` · ${arsDetail}`:""}`:arsDetail});
+    // Comisión de la financiera como gasto. El ingreso de arriba es el BRUTO recibido, así que sin
+    // esta línea el libro diario sobreestimaba la ganancia. No se duplica con Rentabilidad: ahí la
+    // comisión se descuenta del cobro neto (ingreso − comisión), acá se suma como gasto contra el
+    // ingreso bruto. Son dos cálculos independientes y dan la misma ganancia; el error sería
+    // descontarla del ingreso Y sumarla como gasto dentro del MISMO cálculo.
+    const pctCom=Number(p.commission_pct||0);
+    if(pctCom>0){
+      const rateCom=Number(p.exchange_rate||0);
+      const comUsd=p.currency==="ARS"&&rateCom>0?(Number(p.amount_ars||0)*(pctCom/100))/rateCom:Number(p.amount_usd||0)*(pctCom/100);
+      if(comUsd>0.005)ledger.push({date:p.payment_date,ts:tsOf(p.payment_date,p.created_at),type:"gasto",origen:"client_pmt",code,desc:`Comisión financiera ${pctCom}% ${code} — ${cc}`,amount:Math.round(comUsd*100)/100,detail:p.currency==="ARS"&&p.amount_ars?`ARS ${Math.round(Number(p.amount_ars)*(pctCom/100)).toLocaleString("es-AR")} @ ${p.exchange_rate}`:""});
+    }
   });
   allPmts.forEach(p=>{
     const code=p.operations?.operation_code||"";
