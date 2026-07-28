@@ -284,6 +284,10 @@ function OperationsList({token,onSelect,onNew}){
   const toggleChannel=(c)=>setFChannels(p=>p.includes(c)?p.filter(x=>x!==c):[...p,c]);
   const getOrigin=(op)=>op.origin||"China";
   const filtered=ops.filter(o=>{if(fStatuses.length>0&&!fStatuses.includes(o.status))return false;if(fChannels.length>0&&!fChannels.includes(o.channel))return false;if(fOrigin&&String(o.origin||"").toLowerCase()!==fOrigin.toLowerCase())return false;if(fEta&&String(o.eta||"").slice(0,10)!==fEta)return false;if(search){const s=search.toLowerCase();const cn=o.clients?`${o.clients.first_name} ${o.clients.last_name}`.toLowerCase():"";return o.operation_code.toLowerCase().includes(s)||cn.includes(s)||o.description?.toLowerCase().includes(s);}return true;});
+  // true = la ganancia se calculo asumiendo que se cobro el presupuesto completo, porque la op
+  // esta marcada cobrada pero no tiene monto ni cobros registrados. Se marca en la UI para no
+  // presentar un supuesto como plata verificada.
+  const ganAsumida=(o)=>!o.lost_in_customs_at&&o.is_collected&&Number(o.collected_amount||0)<=0&&Number(o.credit_applied_usd||0)<=0&&!(cliPmtsByOp[o.id]>0);
   const calcGan=(o)=>{
     // Op perdida en aduana: ingreso 0 (no se cobra), la "ganancia" es la pérdida operativa (-costos).
     let ing;
@@ -302,7 +306,8 @@ function OperationsList({token,onSelect,onNew}){
       const extraCharge=Number(o.extra_charge_usd||0);
       const cashForOp=extraCharge>0.01?cash:(bt>0?Math.min(cash,bt):cash);
       ing=cashForOp+Number(o.credit_applied_usd||0);
-      // Fallback: si la op está cobrada pero no tiene collected_amount cargado, usar presupuesto
+      // Fallback: la op esta marcada cobrada pero nunca se registro por cuanto. Asumimos el
+      // presupuesto para no mostrar ganancia 0 — ganAsumida() lo marca en la UI.
       if(ing<=0)ing=Number(o.budget_total||0);
     } else {
       ing=Number(o.budget_total||0);
@@ -471,7 +476,11 @@ function OperationsList({token,onSelect,onNew}){
             const hasData=realIng>0||Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)>0;
             if(!hasData)return "—";
             const sign=gan<0?"-":"";
-            return `${sign}USD ${Math.abs(gan).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+            const txt=`${sign}USD ${Math.abs(gan).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+            // Ganancia estimada sobre el presupuesto: la op figura cobrada pero nunca se registro
+            // por cuanto. Se marca con ≈ para no presentar un supuesto como plata verificada.
+            if(ganAsumida(op))return <span title="Estimada: la op está marcada cobrada pero no tiene monto ni cobros registrados, así que se asume que se cobró el presupuesto completo." style={{color:"#fbbf24"}}>≈ {txt}</span>;
+            return txt;
           })()}</td>}
         </tr>})}</tbody>
       </table>
