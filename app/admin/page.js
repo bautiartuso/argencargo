@@ -6160,10 +6160,11 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const totalFactKg=flightOps.reduce((s,fo)=>s+opFact(fo.operation_id),0);
   // Ops del vuelo: buscar en depositOps/allOps, y si no están (porque cambiaron de status), cargar directo
   const [flightOpsData,setFlightOpsData]=useState([]);
+  const [impArs,setImpArs]=useState(null);const [impTc,setImpTc]=useState(null);const [prorrateando,setProrrateando]=useState(false);
   useEffect(()=>{(async()=>{
     const opIds=flightOps.map(fo=>fo.operation_id).filter(Boolean);
     if(opIds.length===0){setFlightOpsData([]);return;}
-    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name,tax_condition,company_name,cuit,street,floor_apt,city,province,postal_code),budget_total`});
+    const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name,tax_condition,company_name,cuit,street,floor_apt,city,province,postal_code),budget_total,budget_taxes,cost_impuestos_reales,ri_argencargo_collects_taxes`});
     setFlightOpsData(Array.isArray(r)?r:[]);
   })();},[flightOps.length,token]);
   const opsUnique=flightOpsData.length>0?flightOpsData:Array.from(new Map([...depositOps,...allOps].filter(o=>flightOps.some(fo=>fo.operation_id===o.id)).map(o=>[o.id,o])).values());
@@ -6780,6 +6781,85 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn small onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!flight.dest_address){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}await saveAllItems();await syncHsToOps();await updateFlight({invoice_presented_at:new Date().toISOString()});for(const fo of flightOps){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}});}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",url:"/agente?tab=active_flights"})}).catch(()=>{});onFlash("Factura presentada · agente notificado");}}>✓ Guardar y presentar factura</Btn>}
       </div>}
     </Card>
+    {/* Impuestos del vuelo. Se paga un monto unico en pesos al despachante y hay que repartirlo
+        entre las ops. El criterio es proporcional al impuesto CALCULADO de cada op (budget_taxes),
+        que ya contempla el valor declarado y los % de derechos de cada NCM — por eso una op de 20 kg
+        de mercaderia cara se lleva mas que una de 100 kg barata, y los kg no entran en el reparto.
+        Que el calculo absoluto sea mayor que lo realmente pagado no importa: se usa la proporcion.
+        Las ops de clientes RI quedan SIEMPRE afuera: ellos abonan los impuestos directo al
+        despachante. Si en un caso puntual los paga Argencargo, se anota en la op. */}
+    {(flight.status==="despachado"||flight.status==="recibido")&&(()=>{
+      const arsPagado=Number(String(impArs??flight.cost_impuestos_ars??"").toString().replace(",","."))||0;
+      const tcUsado=Number(String(impTc??flight.cost_impuestos_exchange_rate??"").toString().replace(",","."))||0;
+      const usdTotal=tcUsado>0?arsPagado/tcUsado:0;
+      const esRI=(o)=>o.clients?.tax_condition==="responsable_inscripto";
+      const participan=opsUnique.filter(o=>!esRI(o));
+      const excluidas=opsUnique.filter(esRI);
+      const baseTotal=participan.reduce((s,o)=>s+Number(o.budget_taxes||0),0);
+      const reparto=participan.map(o=>{
+        const base=Number(o.budget_taxes||0);
+        const pct=baseTotal>0?base/baseTotal:(participan.length?1/participan.length:0);
+        return {op:o,base,pct,usd:Math.round(usdTotal*pct*100)/100};
+      });
+      const puedeProrratear=usdTotal>0&&participan.length>0;
+      const prorratear=async()=>{
+        if(!puedeProrratear)return;
+        if(baseTotal<=0&&!await confirmDialog("Ninguna op del vuelo tiene impuesto calculado, así que el reparto va a ser en partes iguales.\n\n¿Continuar?"))return;
+        const detalle=reparto.map(r=>`${r.op.operation_code}: USD ${r.usd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`).join("\n");
+        if(!await confirmDialog(`Se va a escribir el impuesto real de ${reparto.length} operación${reparto.length!==1?"es":""}:\n\n${detalle}\n\nEsto reemplaza el costo de impuestos que tengan cargado.`))return;
+        setProrrateando(true);
+        try{
+          await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{cost_impuestos_ars:arsPagado,cost_impuestos_exchange_rate:tcUsado,cost_impuestos_usd:Math.round(usdTotal*100)/100,impuestos_prorated_at:new Date().toISOString()}});
+          for(const r of reparto){
+            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${r.op.id}`,body:{cost_impuestos_reales:r.usd,cost_impuestos_currency:"USD",cost_impuestos_ars:Math.round(arsPagado*r.pct*100)/100,cost_impuestos_exchange_rate:tcUsado}});
+          }
+          onFlash(`✓ Impuestos prorrateados entre ${reparto.length} op${reparto.length!==1?"s":""}`);
+          onReload();
+        }catch(e){alertDialog("Error prorrateando: "+e.message);}
+        setProrrateando(false);
+      };
+      const yaProrrateado=!!flight.impuestos_prorated_at;
+      return <Card title="Impuestos del vuelo">
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>
+          Cargá lo que pagaste al despachante y se reparte entre las ops del vuelo, proporcional al impuesto calculado de cada una — no por kilos.
+        </p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:14}}>
+          <Inp label="Pagado (ARS)" value={impArs??(flight.cost_impuestos_ars??"")} onChange={v=>setImpArs(v)} placeholder="1.000.000"/>
+          <Inp label="TC ARS/USD" value={impTc??(flight.cost_impuestos_exchange_rate??"")} onChange={v=>setImpTc(v)} placeholder="1500"/>
+          <div>
+            <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Equivale a</label>
+            <div style={{padding:"9px 11px",fontSize:14,borderRadius:8,background:"rgba(184,149,106,0.08)",border:"1.5px solid rgba(184,149,106,0.22)",color:GOLD_LIGHT,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>
+              USD {usdTotal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}
+            </div>
+          </div>
+        </div>
+        {usdTotal>0&&<div style={{marginBottom:14}}>
+          <p style={{fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Reparto estimado</p>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <tbody>
+              {reparto.map(r=><tr key={r.op.id} style={{borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                <td style={{padding:"7px 8px",fontSize:12.5,fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:700,color:GOLD_LIGHT,whiteSpace:"nowrap"}}>{r.op.operation_code}</td>
+                <td style={{padding:"7px 8px",fontSize:12,color:"rgba(255,255,255,0.6)"}}>{r.op.clients?.client_code||"—"}</td>
+                <td style={{padding:"7px 8px",fontSize:11,color:"rgba(255,255,255,0.4)",textAlign:"right",whiteSpace:"nowrap"}}>calc. USD {r.base.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                <td style={{padding:"7px 8px",fontSize:11.5,color:"rgba(255,255,255,0.5)",textAlign:"right",whiteSpace:"nowrap"}}>{(r.pct*100).toLocaleString("es-AR",{minimumFractionDigits:1,maximumFractionDigits:1})}%</td>
+                <td style={{padding:"7px 8px",fontSize:13,fontWeight:700,color:"#22c55e",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>USD {r.usd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+              </tr>)}
+            </tbody>
+          </table>
+          {excluidas.length>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"9px 0 0",fontStyle:"italic",lineHeight:1.5}}>
+            Fuera del reparto por ser Responsable Inscripto ({excluidas.map(o=>o.operation_code).join(", ")}): abonan los impuestos directo al despachante. Si en alguna los pagaste vos, cargalo en esa op.
+          </p>}
+          {baseTotal<=0&&<p style={{fontSize:11,color:"#fbbf24",margin:"9px 0 0",fontStyle:"italic"}}>
+            Ninguna op tiene impuesto calculado todavía (faltan NCM o presupuesto), así que el reparto sale en partes iguales. Clasificá los productos para que sea proporcional.
+          </p>}
+        </div>}
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <Btn small onClick={prorratear} disabled={!puedeProrratear||prorrateando}>{prorrateando?"Prorrateando…":yaProrrateado?"↻ Volver a prorratear":"✓ Prorratear entre las ops"}</Btn>
+          {yaProrrateado&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>Último prorrateo: {formatDate(flight.impuestos_prorated_at)}</span>}
+          {!puedeProrratear&&<span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>{participan.length===0?"Todas las ops del vuelo son de RI — no hay nada que repartir":"Cargá el monto en pesos y el tipo de cambio"}</span>}
+        </div>
+      </Card>;
+    })()}
     {(flight.status==="despachado"||flight.status==="recibido")&&<Card title="Datos del despacho (cargados por agente)" actions={!editCost?<Btn small variant="secondary" onClick={openEditCost}>✎ Editar</Btn>:null}>
       {!editCost?<>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,fontSize:12}}>
