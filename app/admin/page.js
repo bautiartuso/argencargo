@@ -5919,20 +5919,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     if(opIds.length===0){setFlightOpsData([]);return;}
     const r=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,client_id,clients(client_code,first_name,last_name,tax_condition,company_name,cuit,street,floor_apt,city,province,postal_code),budget_total`});
     setFlightOpsData(Array.isArray(r)?r:[]);
-    // Auto-recalcular budgets si alguna op del vuelo está en 0 y los items ya tienen HS clasificado
-    const opsNeedingRecalc=(Array.isArray(r)?r:[]).filter(o=>Number(o.budget_total||0)<=0);
-    if(opsNeedingRecalc.length>0){
-      const opIdsNeeding=opsNeedingRecalc.map(o=>o.id);
-      const itemsCheck=await dq("operation_items",{token,filters:`?operation_id=in.(${opIdsNeeding.join(",")})&select=operation_id,ncm_code,import_duty_rate`});
-      const opsWithClassifiedItems=new Set((Array.isArray(itemsCheck)?itemsCheck:[]).filter(i=>i.ncm_code&&i.import_duty_rate!=null).map(i=>i.operation_id));
-      if(opsWithClassifiedItems.size>0){
-        // Hay ops con HS+tasas pero sin budget → recalcular silenciosamente
-        setTimeout(()=>{if(recalcAllBudgetsRef.current)recalcAllBudgetsRef.current();},800);
-      }
-    }
   })();},[flightOps.length,token]);
-  // Ref para que el effect anterior pueda llamar a recalcAllBudgets (que se define más abajo)
-  const recalcAllBudgetsRef=useRef(null);
   const opsUnique=flightOpsData.length>0?flightOpsData:Array.from(new Map([...depositOps,...allOps].filter(o=>flightOps.some(fo=>fo.operation_id===o.id)).map(o=>[o.id,o])).values());
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
   // updateFlight: versión completa (con reload). Usar sólo cuando cambia algo estructural (status, ops, etc.)
@@ -5998,52 +5985,17 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   };
   const saveAllItems=async()=>{for(const it of items){await saveItem(it);}};
   // Recalcular el presupuesto de TODAS las ops del vuelo usando los HS y tasas ya cargadas.
-  const [recalcing,setRecalcing]=useState(false);
-  const recalcAllBudgets=useCallback(async()=>{
-    setRecalcing(true);
-    let ok=0,err=0;
-    try{
-      // Sincronizar primero todos los HS de flight_invoice_items → operation_items
-      for(const it of items){
-        if(it.source_item_id&&it.hs_code)await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.source_item_id}`,body:{ncm_code:it.hs_code}});
-      }
-      // Pre-fetch tariffs + config (compartidos)
-      const [tarFresh,cfgFresh]=await Promise.all([
-        dq("tariffs",{token,filters:"?select=*"}),
-        dq("calc_config",{token,filters:"?select=*"})
-      ]);
-      const configMap={};(Array.isArray(cfgFresh)?cfgFresh:[]).forEach(r=>{configMap[r.key]=Number(r.value);});
-      // Recalcular cada op
-      for(const op of opsUnique){
-        try{
-          const [its,pks,fcl,fop,overr,fii]=await Promise.all([
-            dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),
-            dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*`}),
-            op.client_id?dq("clients",{token,filters:`?id=eq.${op.client_id}&select=*&limit=1`}):Promise.resolve([]),
-            dq("operations",{token,filters:`?id=eq.${op.id}&select=*&limit=1`}),
-            op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([]),
-            dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=quantity,unit_price_declared_usd`})
-          ]);
-          const client=Array.isArray(fcl)?fcl[0]:null;
-          const opFresh=Array.isArray(fop)?fop[0]:null;
-          const opForCalc={...op,...(opFresh||{})};
-          const itsArr=Array.isArray(its)?its:[];
-          const pksArr=Array.isArray(pks)?pks:[];
-          const isBlanco=opForCalc.channel?.includes("blanco");
-          if((isBlanco&&itsArr.length===0)||(!isBlanco&&pksArr.length===0)){err++;continue;}
-          // RI: impuestos sobre el valor declarado (fetch fresco de flight_invoice_items).
-          const declForOp=Array.isArray(fii)?fii:[];
-          const {totalTax,flete,seguro,totalAbonar,surcharge}=calcOpBudget(opForCalc,itsArr,pksArr,tarFresh||[],configMap,overr||[],client,declForOp);
-          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}});
-          ok++;
-        }catch(e){console.error("recalc op",op.id,e);err++;}
-      }
-      onFlash(`Presupuestos recalculados: ${ok} OK${err>0?` · ${err} con error/faltantes`:""}`);
-      onReload();
-    }finally{setRecalcing(false);}
-  },[items,opsUnique,token,onReload,onFlash]);
+  // El presupuesto se calcula sobre lo que declara el CLIENTE en su op, no sobre lo que se
+  // declara en la exportación — así que acá no se recalculan presupuestos (era lo que hacía
+  // que cada guardado tardara ~1 min). Lo único que baja del vuelo a la op es el HS code,
+  // que es objetivo: mismo producto, misma clasificación.
+  const syncHsToOps=async()=>{
+    for(const it of items){
+      if(it.source_item_id&&isValidNcmCode(it.hs_code))
+        await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.source_item_id}`,body:{ncm_code:it.hs_code}}).catch(()=>{});
+    }
+  };
   // Conectar la ref para que el effect de auto-recalc pueda llamarla
-  useEffect(()=>{recalcAllBudgetsRef.current=recalcAllBudgets;},[recalcAllBudgets]);
   const addItem=async()=>{const opId=opsUnique[0]?.id;if(!opId)return;const r=await dq("flight_invoice_items",{method:"POST",token,body:{flight_id:flight.id,operation_id:opId,description:"",quantity:1,unit_price_declared_usd:0,hs_code:"",sort_order:items.length+1}});const created=Array.isArray(r)?r[0]:r;if(created?.id)setItems(p=>[...p,created]);onReload();};
   const delItem=async(id)=>{await dq("flight_invoice_items",{method:"DELETE",token,filters:`?id=eq.${id}`});setItems(p=>p.filter(x=>x.id!==id));onReload();};
   // Auto-clasificar HS Code con IA (sólo rellena hs_code, NO toca derechos/IVA/estadística)
@@ -6138,8 +6090,6 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         setCompressState(null);
         onFlash(`✓ Vuelo comprimido ${proposed.original_count} → ${proposed.compressed_count} items · ops del cliente intactas — clasificá los productos en cada op`);
         onReload();
-        // Sincronización automática: tras comprimir, recalcular presupuestos (RI → impuestos sobre declarado).
-        try{await recalcAllBudgets();}catch(e){console.error("auto recalc post-compress",e);}
       }catch(e){
         console.error("compress flight apply error",e);
         setCompressState(s=>({...s,applying:false,error:e.message}));
@@ -6188,8 +6138,6 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       setCompressState(null);
       onFlash(`✓ ${proposed.original_count} → ${proposed.compressed_count} items · cliente ve precios originales · backup guardado`);
       onReload();
-      // Sincronización automática: tras comprimir, recalcular presupuestos (RI → impuestos sobre declarado).
-      try{await recalcAllBudgets();}catch(e){console.error("auto recalc post-compress",e);}
     }catch(e){
       console.error("compress apply error",e);
       setCompressState(s=>({...s,applying:false,error:e.message}));
@@ -6225,8 +6173,8 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     }
     setClassifyingHs(false);
     setInterventionWarnings(detectedInterventions);
-    // Recalcular presupuestos automáticamente con los nuevos HS
-    if(ok>0)try{await recalcAllBudgets();}catch(e){console.error("recalc after classify",e);}
+    // Bajar los HS recién clasificados a los items de cada op (no recalcula presupuestos).
+    if(ok>0)try{await syncHsToOps();}catch(e){console.error("sync hs after classify",e);}
     if(detectedInterventions.length>0){
       onFlash(`✨ ${ok}/${pending.length} HS codes · ⚠ ${detectedInterventions.length} con intervención (ver banner abajo)`);
     } else {
@@ -6579,12 +6527,11 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           {needsCompression&&!flight.invoice_presented_at&&opsCompressible.map(({opId,opCode,count,target})=><button key={opId} onClick={()=>openCompressFor(opId,target)} title={`Comprimir los ${count} items de ${opCode} a ${target} (otras ops aportan ${totalInvoiceItems-count} al total). Límite RG 5608: ${MAX_INVOICE_ITEMS} por factura.`} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(251,146,60,0.4)",background:"rgba(251,146,60,0.1)",color:"#fb923c",cursor:"pointer"}}>🗜 Comprimir {opCode} ({count} → ≤{target})</button>)}
           {needsCompression&&!flight.invoice_presented_at&&<button onClick={()=>openCompressForFlight(MAX_INVOICE_ITEMS)} title={`Comprimir TODOS los items del vuelo (cross-ops). Útil cuando varias ops del mismo cliente repiten mercadería y la compresión por op no agrupa entre sí. Sólo reescribe la declaración del vuelo — los productos en las ops del cliente quedan intactos y los clasificás después manualmente.`} style={{padding:"8px 18px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(167,139,250,0.5)",background:"rgba(167,139,250,0.14)",color:"#a78bfa",cursor:"pointer"}}>🗜 Comprimir VUELO completo ({totalInvoiceItems} → ≤{MAX_INVOICE_ITEMS}) · no toca ops</button>}
           {items.some(it=>it.hs_code&&it.hs_code.trim())&&<button onClick={recheckInterventions} disabled={checkingInterventions} title="Revisa intervención contra el HS code actual de cada item (útil si reclasificaste alguno a mano)" style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(251,191,36,0.35)",background:"rgba(251,191,36,0.08)",color:"#fbbf24",cursor:checkingInterventions?"wait":"pointer",opacity:checkingInterventions?0.6:1}}>{checkingInterventions?"Revisando…":"🔄 Revisar intervenciones (HS actual)"}</button>}
-          {!flight.invoice_presented_at&&items.length>0&&<button onClick={async()=>{await saveAllItems();onFlash("Guardando y recalculando presupuestos…");await recalcAllBudgets();await recheckInterventions();}} disabled={recalcing} style={{padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(34,197,94,0.3)",background:"rgba(34,197,94,0.1)",color:"#22c55e",cursor:recalcing?"wait":"pointer",opacity:recalcing?0.6:1}}>{recalcing?"Recalculando…":"💾 Guardar y recalcular presupuestos"}</button>}
         </div>
       </div>}
       {flight.status==="preparando"&&<div style={{marginTop:16,padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
         {flight.invoice_presented_at?<div><p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✓ Factura presentada {formatDate(flight.invoice_presented_at)}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>El agente ya puede despacharla</p></div>:<div><p style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",margin:0}}>⏳ La factura todavía no está presentada</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>El agente no puede despachar hasta que la presentes</p></div>}
-        {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn small onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!flight.dest_address){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}await saveAllItems();await updateFlight({invoice_presented_at:new Date().toISOString()});for(const fo of flightOps){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}});}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",url:"/agente?tab=active_flights"})}).catch(()=>{});onFlash("Factura presentada · agente notificado");}}>✓ Guardar y presentar factura</Btn>}
+        {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn small onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!flight.dest_address){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}await saveAllItems();await syncHsToOps();await updateFlight({invoice_presented_at:new Date().toISOString()});for(const fo of flightOps){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}});}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",url:"/agente?tab=active_flights"})}).catch(()=>{});onFlash("Factura presentada · agente notificado");}}>✓ Guardar y presentar factura</Btn>}
       </div>}
     </Card>
     {(flight.status==="despachado"||flight.status==="recibido")&&<Card title="Datos del despacho (cargados por agente)" actions={!editCost?<Btn small variant="secondary" onClick={openEditCost}>✎ Editar</Btn>:null}>
