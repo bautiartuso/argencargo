@@ -74,7 +74,7 @@ const avisarAdmin=async(token,{title,body,url="/admin"})=>{
     const ids=(Array.isArray(adm)?adm:[]).map(a=>a.id).filter(Boolean);
     await Promise.all(ids.flatMap(id=>[
       dq("notifications",{method:"POST",token,body:{user_id:id,portal:"admin",title,body,link:url}}).catch(()=>{}),
-      fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:id,title,body,url})}).catch(()=>{}),
+      fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:id,portal:"admin",title,body,url})}).catch(()=>{}),
     ]));
   }catch(e){console.error("avisar admin",e);}
 };

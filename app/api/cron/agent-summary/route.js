@@ -21,7 +21,7 @@ async function sendPush(userId, title, body, url) {
     await fetch(`${baseUrl}/api/push/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_id: userId, title, body, url }),
+      body: JSON.stringify({ user_id: userId, portal: "agente", title, body, url }),
     });
   } catch (e) {
     console.error("push send error", e);

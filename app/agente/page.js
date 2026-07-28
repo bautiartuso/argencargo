@@ -1475,7 +1475,7 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
       try{
         const adm=await dq("profiles",{token,filters:"?role=eq.admin&select=id&limit=1"});
         const adminId=Array.isArray(adm)&&adm[0]?adm[0].id:null;
-        if(adminId){fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:adminId,title:`✅ Reempaque ${opCode}`,body:`${before.toFixed(1)} kg → ${after.toFixed(1)} kg${delta>0?` (−${delta.toFixed(1)} kg)`:""} · ${newBultos.length} bultos`,url:"/admin"})}).catch(()=>{});}
+        if(adminId){fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:adminId,portal:"admin",title:`✅ Reempaque ${opCode}`,body:`${before.toFixed(1)} kg → ${after.toFixed(1)} kg${delta>0?` (−${delta.toFixed(1)} kg)`:""} · ${newBultos.length} bultos`,url:"/admin"})}).catch(()=>{});}
       }catch(e){}
       onDone();
     }catch(e){alert("Error: "+e.message);setSaving(false);}

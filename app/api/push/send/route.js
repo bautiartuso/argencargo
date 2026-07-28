@@ -141,10 +141,14 @@ export async function POST(req) {
     if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
       return Response.json({ ok: false, error: "VAPID keys not configured" }, { status: 500 });
     }
-    const { user_id, title, body, url, tag } = await req.json();
+    const { user_id, title, body, url, tag, portal } = await req.json();
     if (!user_id || !title) return Response.json({ ok: false, error: "missing fields" }, { status: 400 });
 
-    const subsR = await fetch(`${SB_URL}/rest/v1/push_subscriptions?user_id=eq.${user_id}&select=*`, {
+    // Filtrar por portal: un mismo usuario puede estar suscripto desde varias PWAs (admin, agente,
+    // cinabrio). Sin este filtro, un aviso del admin lo terminaba mostrando el service worker de
+    // cinabrio — con su icono y su identidad — y al estar suscripto en las tres llegaba triplicado.
+    const portalFilter = portal ? `&portal=eq.${encodeURIComponent(portal)}` : "";
+    const subsR = await fetch(`${SB_URL}/rest/v1/push_subscriptions?user_id=eq.${user_id}${portalFilter}&select=*`, {
       headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` },
     });
     const subs = await subsR.json();

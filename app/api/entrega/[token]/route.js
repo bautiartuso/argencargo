@@ -246,7 +246,7 @@ export async function POST(req, { params }) {
       fetch(`${BASE_URL}/api/push/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: id, title, body, url: "/admin" }),
+        body: JSON.stringify({ user_id: id, portal: "admin", title, body, url: "/admin" }),
       }).catch(() => {});
     }
   } catch (e) { console.error("[POST entrega] aviso admin failed", e.message); }

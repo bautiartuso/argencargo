@@ -1279,7 +1279,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     // Auto-log en comms
     try{await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"note",content:`🔄 Pedido de reempaque al agente.\nPeso facturable actual: ${billable.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg (${pkgs.length} bultos)${reason?`\nMotivo: ${reason}`:""}`}});}catch(e){}
     // Push al agente
-    if(op.created_by_agent_id){try{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:op.created_by_agent_id,title:`🔄 Pedido de reempaque ${op.operation_code}`,body:reason||`Reempaquetar para bajar volumétrico (${billable.toFixed(1)} kg)`,url:`/agente?tab=deposit`})});}catch(e){}}
+    if(op.created_by_agent_id){try{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:op.created_by_agent_id,portal:"agente",title:`🔄 Pedido de reempaque ${op.operation_code}`,body:reason||`Reempaquetar para bajar volumétrico (${billable.toFixed(1)} kg)`,url:`/agente?tab=deposit`})});}catch(e){}}
     flash("✅ Pedido de reempaque enviado al agente");
   };
   const cancelRepack=async()=>{if(!repackReq||!await confirmDialog("¿Cancelar el pedido de reempaque?"))return;await dq("repack_requests",{method:"PATCH",token,filters:`?id=eq.${repackReq.id}`,body:{status:"cancelled"}});setRepackReq(p=>({...p,status:"cancelled"}));flash("Pedido cancelado");};
@@ -6569,7 +6569,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     // Acá solo marcamos el vuelo como recibido — no tocamos las ops.
     // Notification #3a: notify agent about flight received
     try{await dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Vuelo ${flight.flight_code} recibido en Buenos Aires`,body:null,link:"?tab=history"}});}catch(e){console.error("notif error",e);}
-    try{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,title:`Vuelo ${flight.flight_code} recibido en Buenos Aires`,url:"/agente?tab=history"})});}catch(e){}
+    try{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,portal:"agente",title:`Vuelo ${flight.flight_code} recibido en Buenos Aires`,url:"/agente?tab=history"})});}catch(e){}
     // Notification #3b: notify each client whose operation is in this flight
     try{
       const opIds=flightOps.map(fo=>fo.operation_id);
@@ -7349,7 +7349,7 @@ function AgentsPanel({token}){
       const origSnapshot=pkgs.map(p=>({package_number:p.package_number,quantity:Number(p.quantity||1),gross_weight_kg:p.gross_weight_kg?Number(p.gross_weight_kg):null,length_cm:p.length_cm?Number(p.length_cm):null,width_cm:p.width_cm?Number(p.width_cm):null,height_cm:p.height_cm?Number(p.height_cm):null,national_tracking:p.national_tracking||null}));
       await dq("repack_requests",{method:"POST",token,body:{operation_id:op.id,status:"pending",reason:reason.trim()||null,original_billable_kg:Math.round((billable)*100)/100,original_pkg_count:pkgs.length,original_packages_snapshot:origSnapshot}});
       try{await dq("op_communications",{method:"POST",token,body:{operation_id:op.id,type:"note",content:`🔄 Pedido de reempaque al agente.\nPeso facturable actual: ${billable.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg (${pkgs.length} bultos)${reason.trim()?`\nMotivo: ${reason.trim()}`:""}`}});}catch(e){}
-      fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:op.created_by_agent_id,title:`🔄 Pedido de reempaque ${op.operation_code}`,body:reason.trim()||`Reempaquetar para bajar volumétrico (${billable.toFixed(1)} kg)`,url:"/agente?tab=deposit"})}).catch(()=>{});
+      fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:op.created_by_agent_id,portal:"agente",title:`🔄 Pedido de reempaque ${op.operation_code}`,body:reason.trim()||`Reempaquetar para bajar volumétrico (${billable.toFixed(1)} kg)`,url:"/agente?tab=deposit"})}).catch(()=>{});
       setRepackModal(null);
       flash(`✅ Pedido de reempaque enviado al agente para ${op.operation_code}`);
       load();
@@ -7543,7 +7543,7 @@ function AgentsPanel({token}){
     }
     // Notification #1: notify agent about new flight
     try{await dq("notifications",{method:"POST",token,body:{user_id:agentId,portal:"agente",title:`Nuevo vuelo ${newCode} creado`,body:`${ops.length} operaciones asignadas`,link:"?tab=active_flights"}});}catch(e){console.error("notif error",e);}
-    try{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:agentId,title:`Nuevo vuelo ${newCode} creado`,body:`${ops.length} operaciones asignadas`,url:"/agente?tab=active_flights"})});}catch(e){}
+    try{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:agentId,portal:"agente",title:`Nuevo vuelo ${newCode} creado`,body:`${ops.length} operaciones asignadas`,url:"/agente?tab=active_flights"})});}catch(e){}
     // Notification #2: notify each client whose op is in this flight (in-app + push)
     try{
       const opIds=ops.map(o=>o.id);
