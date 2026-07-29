@@ -7,6 +7,10 @@ import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, pr
 import IntelligencePanel from "./components/IntelligencePanel";
 import TicketsPanel from "./components/TicketsPanel";
 
+// Cuenta para transferencias en pesos. Un solo lugar: antes estaba escrita a mano adentro del
+// mensaje de WhatsApp y quedo con los datos viejos sin que nadie lo viera.
+const CUENTA_ARS=["Titular: VANTUM SA","CBU: 0000151500030961716179","CUIT: 30719430488"].join("\n");
+
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
 const LOGO=`${SB_URL}/storage/v1/object/public/assets/logo_argencargo.png`;
@@ -4431,7 +4435,7 @@ function EntregaTab({op,opClient,token,onMarkDelivered}){
   const isTransferencia=op.payment_method_chosen==="transferencia";
   const isCrypto=op.payment_method_chosen==="crypto";
   const waMsg=isTransferencia
-    ?`${opHeader}\n\n$ ${ars>0?ars.toLocaleString("es-AR"):"—"}\n\nTitular: DAPA SRL\nAlias: rojo.pagos`
+    ?`${opHeader}\n\n$ ${ars>0?ars.toLocaleString("es-AR"):"—"}\n\n${CUENTA_ARS}`
     :`${opHeader}\n\n${usd(total)}\n\n${wallet||"(cargando billetera...)"}`;
   const waMsgReady=isTransferencia?ars>0:!!wallet;
   const openWa=()=>{
