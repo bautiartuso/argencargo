@@ -92,10 +92,12 @@ async function templateKeyCierre(op, client) {
     const ids = (Array.isArray(cerradas) ? cerradas : []).map((o) => o.id).filter(Boolean);
     if (ids.length === 0) return base;
     const fbR = await fetch(
-      `${SB_URL}/rest/v1/op_feedback?operation_id=in.(${ids.join(",")})&select=id&limit=1`,
+      `${SB_URL}/rest/v1/op_feedback?operation_id=in.(${ids.join(",")})&clicked_google_review=is.true&select=id&limit=1`,
       { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } }
     );
     const fb = await fbR.json();
+    // Solo cuenta la resena en Google. Que nos hayan puntuado en el formulario interno no
+    // ayuda a la reputacion publica, asi que a esos les sigue tocando el mail que la pide.
     const yaReseno = Array.isArray(fb) && fb.length > 0;
     if (yaReseno) return "email_cerrada_ya_reseno";
     // La op que se esta cerrando ahora cuenta, asi que el umbral se mide sobre lo ya cerrado.

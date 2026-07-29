@@ -9544,7 +9544,7 @@ function FinanceDashboard({token}){
 function ComunicacionesPanel({token}){
   const [loading,setLoading]=useState(true);
   const [ops,setOps]=useState([]);
-  const [feedbacks,setFeedbacks]=useState([]);
+  const [feedbacks,setFeedbacks]=useState([]);const [verTodoFb,setVerTodoFb]=useState(false);const [soloGoogle,setSoloGoogle]=useState(false);
   const [templates,setTemplates]=useState([]);
   const [editingTpl,setEditingTpl]=useState(null);
   const [tplDraft,setTplDraft]=useState({});
@@ -9557,7 +9557,7 @@ function ComunicacionesPanel({token}){
     const inList=statuses.map(s=>`"${s}"`).join(",");
     const [o,fb,tpl]=await Promise.all([
       dq("operations",{token,filters:`?select=*,clients(first_name,last_name,whatsapp,email,client_code)&status=in.(${inList})&order=updated_at.desc&limit=100`}),
-      dq("op_feedback",{token,filters:"?select=*,operations(operation_code,description,clients(first_name,last_name,client_code))&order=submitted_at.desc&limit=50"}),
+      dq("op_feedback",{token,filters:"?select=*,operations(operation_code,description,clients(first_name,last_name,client_code))&order=submitted_at.desc&limit=1000"}),
       dq("message_templates",{token,filters:"?select=*&order=channel.asc,key.asc"})
     ]);
     setOps(Array.isArray(o)?o:[]);
@@ -9776,9 +9776,20 @@ function ComunicacionesPanel({token}){
 
     {/* Feedback del cliente */}
     <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem"}}>
-      <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:"0 0 14px"}}>⭐ Feedback de clientes ({feedbacks.length})</h3>
-      {feedbacks.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem"}}>Sin feedback todavía</p>:<div>
-        {feedbacks.map(f=>{
+      {(()=>{const n=feedbacks.length;const g=feedbacks.filter(f=>f.clicked_google_review).length;const c=feedbacks.filter(f=>(f.comment||"").trim()).length;
+        const prom=n?feedbacks.reduce((a,f)=>a+Number(f.rating||0),0)/n:0;
+        return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",margin:"0 0 14px"}}>
+          <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>⭐ Feedback de clientes ({n})</h3>
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            {n>0&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Promedio <b style={{color:"#fbbf24"}}>{prom.toFixed(1)}</b> · {c} con comentario</span>}
+            <button onClick={()=>{setSoloGoogle(v=>!v);setVerTodoFb(false);}} style={{fontSize:10.5,fontWeight:700,padding:"4px 10px",borderRadius:999,cursor:"pointer",border:`1px solid ${soloGoogle?"rgba(34,197,94,0.45)":"rgba(255,255,255,0.1)"}`,background:soloGoogle?"rgba(34,197,94,0.14)":"transparent",color:soloGoogle?"#22c55e":"rgba(255,255,255,0.5)"}}>📍 Google ({g})</button>
+          </div>
+        </div>;})()}
+      {feedbacks.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem"}}>Sin feedback todavía</p>:(()=>{
+        const lista=soloGoogle?feedbacks.filter(f=>f.clicked_google_review):feedbacks;
+        const visibles=verTodoFb?lista:lista.slice(0,10);
+        return <div>
+        {visibles.map(f=>{
           const ratingColor=f.rating>=4?"#22c55e":f.rating>=3?"#fbbf24":"#ff6b6b";
           return <div key={f.id} style={{padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:8}}>
@@ -9792,10 +9803,20 @@ function ComunicacionesPanel({token}){
                 <span style={{fontSize:11,color:"rgba(255,255,255,0.35)",marginLeft:6}}>{new Date(f.submitted_at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</span>
               </div>
             </div>
-            {f.comment&&<p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:"4px 0 0 0",paddingLeft:8,borderLeft:`2px solid ${ratingColor}`,fontStyle:"italic"}}>"{f.comment}"</p>}
+            {(f.comment||"").trim()
+              ?<p style={{fontSize:13,color:"rgba(255,255,255,0.82)",margin:"8px 0 0",padding:"9px 12px",background:"rgba(255,255,255,0.03)",borderRadius:8,borderLeft:`3px solid ${ratingColor}`,lineHeight:1.55,whiteSpace:"pre-wrap"}}>“{f.comment.trim()}”</p>
+              :<p style={{fontSize:11,color:"rgba(255,255,255,0.25)",margin:"4px 0 0",fontStyle:"italic"}}>Sin comentario</p>}
           </div>;
         })}
-      </div>}
+        {lista.length>visibles.length&&
+          <button onClick={()=>setVerTodoFb(true)} style={{display:"block",margin:"14px auto 0",padding:"8px 18px",fontSize:11.5,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>
+            Ver las {lista.length-visibles.length} restantes
+          </button>}
+        {verTodoFb&&lista.length>10&&
+          <button onClick={()=>setVerTodoFb(false)} style={{display:"block",margin:"14px auto 0",padding:"8px 18px",fontSize:11.5,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.45)",cursor:"pointer"}}>
+            Ver menos
+          </button>}
+      </div>;})()}
     </div>
   </div>;
 }
