@@ -89,7 +89,9 @@ export async function POST(req, { params }) {
   const elegida = visibles.find((a) => a.key === channel_key);
   if (!elegida) return Response.json({ error: "Esa opción no está disponible en esta cotización" }, { status: 400 });
 
-  await sbFetch(`/quotes?id=eq.${quote.id}`, {
+  // Chequeamos el resultado: sin esto un rechazo de la base (paso con el check de status) se
+  // traga la aceptacion entera y el cliente igual ve la pantalla de confirmado.
+  const upd = await sbFetch(`/quotes?id=eq.${quote.id}`, {
     method: "PATCH",
     body: JSON.stringify({
       client_selected_channel: channel_key,
@@ -97,6 +99,10 @@ export async function POST(req, { params }) {
       status: "accepted",
     }),
   });
+  if (upd.status >= 400) {
+    console.error("[POST presupuesto] no se pudo guardar la aceptacion", upd.status, upd.body);
+    return Response.json({ error: "No pudimos registrar tu elección. Escribinos por WhatsApp y lo resolvemos." }, { status: 500 });
+  }
 
   // Avisar al admin: sin esto la aceptacion queda esperando a que alguien entre a mirar.
   try {

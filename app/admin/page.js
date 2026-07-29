@@ -10203,7 +10203,7 @@ function QuotesList({token}){
       <script>setTimeout(()=>window.print(),300)</script>
     </body></html>`);w.document.close();
   };
-  const ST={pending:{l:"Pendiente",c:"#fbbf24"},contacted:{l:"Contactado",c:"#60a5fa"},converted:{l:"Convertida",c:"#22c55e"},rejected:{l:"Rechazada",c:"#f87171"}};
+  const ST={pending:{l:"Pendiente",c:"#fbbf24"},contacted:{l:"Contactado",c:"#60a5fa"},accepted:{l:"Aceptada",c:"#a78bfa"},converted:{l:"Convertida",c:"#22c55e"},rejected:{l:"Rechazada",c:"#f87171"}};
   const fmtN=(n)=>Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
   const formatDate=(d)=>new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
   // Fecha compacta para la tabla: la larga ocupaba dos renglones en cada fila.
@@ -10238,7 +10238,7 @@ function QuotesList({token}){
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         <input value={busq} onChange={e=>{setBusq(e.target.value);setVerTodas(false);}} placeholder="Buscar cliente, producto, canal…"
           style={{padding:"7px 12px",fontSize:12,width:230,border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none"}}/>
-        {[{k:"",l:"Todas"},{k:"pending",l:"Pendientes"},{k:"contacted",l:"Contactados"},{k:"converted",l:"Convertidas"}].map(s=>
+        {[{k:"",l:"Todas"},{k:"pending",l:"Pendientes"},{k:"accepted",l:"Aceptadas"},{k:"contacted",l:"Contactados"},{k:"converted",l:"Convertidas"}].map(s=>
           <button key={s.k} onClick={()=>{setFStatus(s.k);setVerTodas(false);}} style={{padding:"7px 14px",fontSize:12,fontWeight:600,borderRadius:8,cursor:"pointer",border:`1px solid ${fStatus===s.k?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.08)"}`,background:fStatus===s.k?"rgba(184,149,106,0.12)":"transparent",color:fStatus===s.k?IC:"rgba(255,255,255,0.5)"}}>{s.l}</button>)}
       </div>
     </div>

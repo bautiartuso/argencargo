@@ -162,12 +162,13 @@ export default function PresupuestoPage({ params }) {
     const a = alts.find((x) => x.key === elegido);
     if (!a) return;
     setEnviando(true);
-    // Abrimos la pestaña ANTES del await: si la abrimos después, Safari en iPhone la bloquea
-    // por no venir de un gesto directo del usuario.
-    const w = window.open(waLink(a), "_blank");
+    // Registrar la eleccion ANTES de saltar a WhatsApp. Al reves no funciona: abrir el link de
+    // wa.me lanza la app y el navegador congela la pagina, con lo que la peticion queda a medias
+    // y la aceptacion nunca llega (paso en produccion: el WhatsApp entro, el sistema no se entero).
+    // keepalive ademas la deja completarse aunque la pestana se cierre en el medio.
     try {
       const r = await fetch(`/api/presupuesto/${encodeURIComponent(token)}`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel_key: elegido }),
       });
       const d = await r.json();
@@ -176,6 +177,9 @@ export default function PresupuestoPage({ params }) {
     } catch { setListo(a); }
     setEnviando(false);
     setConfirmando(false);
+    // Y recien ahora WhatsApp. Si el bloqueador de pop-ups corta la pestana nueva, vamos en la
+    // misma; y si tampoco, queda la pantalla de confirmado con su boton de WhatsApp.
+    const w = window.open(waLink(a), "_blank");
     if (!w) window.location.href = waLink(a);
   };
 
