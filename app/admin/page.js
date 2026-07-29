@@ -10802,6 +10802,27 @@ function AdminCalculator({token}){
         canal, pero el PDF muestra una sola opción: con el link el cliente compara las tres y elige,
         y la elección vuelve como aviso. */}
     {results&&results.channels.length>0&&(()=>{
+      // Lo que se copia es el mensaje entero listo para pegar, no la URL sola: el link pelado
+      // obliga a escribir el contexto a mano cada vez.
+      const armarMensaje=(url)=>{
+        const cli=clientId?allClients.find(c=>c.id===clientId):null;
+        const nombre=(cli?.first_name||results.clientName||"").trim().split(" ")[0];
+        const n=canalesLink.length;
+        const vence=new Date(Date.now()+10*24*60*60*1000).toLocaleDateString("es-AR",{day:"2-digit",month:"long",year:"numeric"});
+        return [
+          nombre?`Hola ${nombre}! Tu cotización ya está lista.`:"Hola! Tu cotización ya está lista.",
+          "",
+          n>1
+            ?`Te preparamos ${n} opciones para traer tu carga desde ${results.origin||"origen"}, con los tiempos y el costo final de cada una. Entrá, compará y elegí la que mejor te sirva:`
+            :`Te preparamos la cotización para traer tu carga desde ${results.origin||"origen"}, con el tiempo de tránsito y el costo final:`,
+          "",
+          url,
+          "",
+          `Válida hasta el ${vence}.`,
+          "",
+          "Cualquier duda escribime por acá.",
+        ].join("\n");
+      };
       const generarLink=async()=>{
         if(canalesLink.length===0){toast("Elegí al menos una opción para mostrarle al cliente","error");return;}
         setGenerandoLink(true);
@@ -10845,8 +10866,8 @@ function AdminCalculator({token}){
           if(!creada?.id)throw new Error(creada?.message||"No se pudo guardar la cotización");
           const url=`https://argencargo.com.ar/presupuesto/${tok}`;
           setLinkGenerado(url);
-          navigator.clipboard?.writeText(url);
-          toast("Cotización guardada · link copiado","success");
+          navigator.clipboard?.writeText(armarMensaje(url));
+          toast("Cotización guardada · mensaje copiado","success");
         }catch(e){alertDialog("Error: "+e.message);}
         setGenerandoLink(false);
       };
@@ -10856,7 +10877,7 @@ function AdminCalculator({token}){
         {linkGenerado
           ?<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <code style={{flex:1,minWidth:220,fontSize:11.5,color:"#93c5fd",background:"rgba(0,0,0,0.25)",padding:"8px 10px",borderRadius:8,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{linkGenerado}</code>
-            <button onClick={()=>{navigator.clipboard?.writeText(linkGenerado);toast("Link copiado","success");}} style={{padding:"8px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.12)",color:"#60a5fa",cursor:"pointer"}}>📋 Copiar</button>
+            <button onClick={()=>{navigator.clipboard?.writeText(armarMensaje(linkGenerado));toast("Mensaje copiado, pegalo en WhatsApp","success");}} style={{padding:"8px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.12)",color:"#60a5fa",cursor:"pointer"}}>📋 Copiar</button>
             <a href={linkGenerado} target="_blank" rel="noopener noreferrer" style={{padding:"8px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.6)",textDecoration:"none"}}>👁 Ver</a>
           </div>
           :<Btn small onClick={generarLink} disabled={generandoLink}>{generandoLink?"Guardando…":"🔗 Guardar y generar link"}</Btn>}
