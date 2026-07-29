@@ -49,7 +49,6 @@ export async function GET(_req, { params }) {
       const net = Number(m.net_amount || 0);
       const signed = m.type === "ingreso" ? net : -net;
       if (m.currency === "ARS") arsBal += signed; else usdBal += signed;
-      const running = m.currency === "ARS" ? arsBal : usdBal;
       return {
         Fecha: fmtDate(m.date),
         Tipo: m.type === "ingreso" ? "Ingreso" : "Egreso",
@@ -58,13 +57,15 @@ export async function GET(_req, { params }) {
         Importe: m.type === "ingreso" ? Number(m.amount || 0) : -Number(m.amount || 0),
         "Comisión %": m.commission_pct != null ? Number(m.commission_pct) : "",
         "Comisión monto": m.commission_amount != null ? Number(m.commission_amount) : "",
-        Saldo: running,
+        Acreditado: m.type === "ingreso" ? net : "",
+        "Saldo ARS": arsBal,
+        "Saldo USD": usdBal,
       };
     });
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);
-    ws["!cols"] = [{ wch: 10 }, { wch: 9 }, { wch: 7 }, { wch: 40 }, { wch: 14 }, { wch: 11 }, { wch: 14 }, { wch: 14 }];
+    ws["!cols"] = [{ wch: 10 }, { wch: 9 }, { wch: 7 }, { wch: 40 }, { wch: 14 }, { wch: 11 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }];
     XLSX.utils.book_append_sheet(wb, ws, "Movimientos");
     const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 

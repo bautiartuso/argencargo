@@ -3,6 +3,10 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { dq, loadSession, clearSession, ac, SB_URL, SB_KEY } from "../../lib/sb-client";
 import { ToastStack, toast } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
+import {
+  T, fmtMoney, fmtDate, useIsMobile, enrichMovements, aplicarFiltros, calcStats,
+  BalanceCard, Filtros, MovimientosTabla, MovimientoTarjeta, Estadisticas,
+} from "../../lib/cc-ui";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // CC FINANCIERA SOLFIN — versión admin (auth requerido).
@@ -38,45 +42,9 @@ export function parseMontoAr(v) {
 
 // ──────────────────────────────────────────────────────────────────────────────
 
-const T = {
-  bg: "#0A1628",
-  bgSurface: "#142038",
-  bgSurfaceHi: "#1A2A48",
-  border: "rgba(255,255,255,0.08)",
-  borderHi: "rgba(255,255,255,0.15)",
-  text: "#fff",
-  textMuted: "rgba(255,255,255,0.55)",
-  textDim: "rgba(255,255,255,0.4)",
-  gold: "#E8D098",
-  goldDeep: "#B8956A",
-  goldGrad: "linear-gradient(135deg, #B8956A, #E8D098, #B8956A)",
-  green: "#22C55E",
-  red: "#EF4444",
-  amber: "#F59E0B",
-};
 
-const fmtMoney = (n, currency = "ARS") => {
-  const v = Number(n || 0);
-  return `${currency} ${v.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-};
-const fmtDate = (d) => {
-  if (!d) return "";
-  const s = String(d).slice(0, 10);
-  const [y, m, day] = s.split("-");
-  return `${day}/${m}/${y.slice(2)}`;
-};
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
-function useIsMobile(breakpoint = 720) {
-  const [m, setM] = useState(false);
-  useEffect(() => {
-    const check = () => setM(typeof window !== "undefined" && window.innerWidth < breakpoint);
-    check();
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  }, [breakpoint]);
-  return m;
-}
 
 export default function CcFinancieraPage() {
   const [session, setSession] = useState(null);
@@ -154,8 +122,12 @@ function Login({ onLogin }) {
 function Dashboard({ token, onLogout }) {
   const [movements, setMovements] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filterCurrency, setFilterCurrency] = useState("all"); // all | ARS | USD
-  const [showAdd, setShowAdd] = useState(null); // 'ingreso' | 'egreso' | null
+  const [filterCurrency, setFilterCurrency] = useState("all");
+  const [filterType, setFilterType] = useState("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [tab, setTab] = useState("movs");
+  const [showAdd, setShowAdd] = useState(null);
   const [showShare, setShowShare] = useState(false);
   const [showDollarize, setShowDollarize] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -169,25 +141,16 @@ function Dashboard({ token, onLogout }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Saldo running por moneda (de más viejo a más nuevo, agregando net_amount con signo).
-  const enriched = useMemo(() => {
-    // Sort ascendente para acumular
-    const asc = [...movements].sort((a, b) => (a.date.localeCompare(b.date)) || ((a.created_at || "").localeCompare(b.created_at || "")));
-    let arsBal = 0, usdBal = 0;
-    const withRunning = asc.map((m) => {
-      const net = Number(m.net_amount || 0);
-      const signed = m.type === "ingreso" ? net : -net;
-      if (m.currency === "ARS") arsBal += signed; else usdBal += signed;
-      return { ...m, _signed: signed, _arsBal: arsBal, _usdBal: usdBal };
-    });
-    // Devuelvo descendente para la UI
-    return { withRunning: withRunning.reverse(), totals: { ars: arsBal, usd: usdBal } };
-  }, [movements]);
-
-  // Listado completo filtrado solo por moneda (acumulado, sin recorte por mes)
-  const filtered = useMemo(() => filterCurrency === "all" ? enriched.withRunning : enriched.withRunning.filter((m) => m.currency === filterCurrency), [enriched, filterCurrency]);
-
+  const enriched = useMemo(() => enrichMovements(movements), [movements]);
+  const filtered = useMemo(
+    () => aplicarFiltros(enriched.withRunning, { currency: filterCurrency, type: filterType, from, to }),
+    [enriched, filterCurrency, filterType, from, to]
+  );
+  const stats = useMemo(() => calcStats(filtered), [filtered]);
   const isMobile = useIsMobile();
+
+  // Botones de editar/borrar que la vista de lectura no tiene.
+  const acciones = (m) => <AccionesFila m={m} onEdit={setEditing} onReload={load} token={token} />;
 
   return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }}>
@@ -195,34 +158,41 @@ function Dashboard({ token, onLogout }) {
       <div style={{ flexShrink: 0 }}>
         <Header onLogout={onLogout} onAdd={setShowAdd} onShare={() => setShowShare(true)} onDollarize={() => setShowDollarize(true)} />
       </div>
-      <main style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", maxWidth: 1200, width: "100%", margin: "0 auto", padding: "20px 22px 0", boxSizing: "border-box" }}>
-        {/* Saldos */}
+      <main style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", maxWidth: 1320, width: "100%", margin: "0 auto", padding: "20px 22px 0", boxSizing: "border-box" }}>
         <section style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 10 : 16, marginBottom: 16 }}>
           <BalanceCard label="Saldo ARS" currency="ARS" amount={enriched.totals.ars} />
           <BalanceCard label="Saldo USD" currency="USD" amount={enriched.totals.usd} />
         </section>
-        {/* Filtros */}
-        <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
-          <div style={{ display: "flex", gap: 4, padding: 3, background: T.bgSurface, borderRadius: 8, border: `1px solid ${T.border}` }}>
-            {[{ k: "all", l: "Todo" }, { k: "ARS", l: "ARS" }, { k: "USD", l: "USD" }].map((o) => (
-              <button key={o.k} onClick={() => setFilterCurrency(o.k)} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 700, borderRadius: 6, border: "none", background: filterCurrency === o.k ? T.goldGrad : "transparent", color: filterCurrency === o.k ? T.bg : T.textMuted, cursor: "pointer" }}>{o.l}</button>
-            ))}
-          </div>
-          <div style={{ flex: 1 }} />
-          <p style={{ fontSize: 11, color: T.textDim, margin: 0 }}>{filtered.length} movimiento{filtered.length !== 1 ? "s" : ""} {filterCurrency !== "all" ? `(${filterCurrency})` : "totales"}</p>
+
+        <div style={{ display: "flex", gap: 4, padding: 3, background: T.bgSurface, borderRadius: 8, border: `1px solid ${T.border}`, marginBottom: 12, width: "fit-content" }}>
+          {[{ k: "movs", l: "Movimientos" }, { k: "stats", l: "Estadísticas" }].map((o) => (
+            <button key={o.k} onClick={() => setTab(o.k)} style={{ padding: "6px 16px", fontSize: 12, fontWeight: 700, borderRadius: 6, border: "none", cursor: "pointer", background: tab === o.k ? T.gold : "transparent", color: tab === o.k ? "#0A1628" : T.textMuted }}>{o.l}</button>
+          ))}
         </div>
 
-        {/* Listado — lo unico que scrollea */}
+        <Filtros
+          currency={filterCurrency} setCurrency={setFilterCurrency}
+          type={filterType} setType={setFilterType}
+          from={from} setFrom={setFrom} to={to} setTo={setTo}
+          cuenta={<p style={{ fontSize: 11, color: T.textDim, margin: 0 }}>{filtered.length} movimiento{filtered.length !== 1 ? "s" : ""}{movements.length !== filtered.length ? ` de ${movements.length}` : " totales"}</p>}
+        />
+
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 30, marginRight: -22, paddingRight: 22 }}>
-        {loading ? (
-          <p style={{ textAlign: "center", padding: "3rem 0", color: T.textMuted, fontSize: 13 }}>Cargando…</p>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: "60px 20px", textAlign: "center", background: T.bgSurface, border: `1px dashed ${T.border}`, borderRadius: 12 }}>
-            <p style={{ fontSize: 14, color: T.textMuted, margin: 0 }}>Sin movimientos en este período</p>
-          </div>
-        ) : (
-          <MovementList rows={filtered} onEdit={setEditing} onReload={load} token={token} />
-        )}
+          {loading ? (
+            <p style={{ textAlign: "center", padding: "3rem 0", color: T.textMuted, fontSize: 13 }}>Cargando…</p>
+          ) : tab === "stats" ? (
+            <Estadisticas stats={stats} />
+          ) : filtered.length === 0 ? (
+            <div style={{ padding: "60px 20px", textAlign: "center", background: T.bgSurface, border: `1px dashed ${T.border}`, borderRadius: 12 }}>
+              <p style={{ fontSize: 14, color: T.textMuted, margin: 0 }}>Sin movimientos con estos filtros</p>
+            </div>
+          ) : isMobile ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {filtered.map((m) => <MovimientoTarjeta key={m.id} m={m} acciones={acciones} />)}
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}><MovimientosTabla rows={filtered} onEdit={setEditing} acciones={acciones} /></div>
+          )}
         </div>
       </main>
 
@@ -233,6 +203,26 @@ function Dashboard({ token, onLogout }) {
     </div>
   );
 }
+
+// Editar / borrar un movimiento. Es lo unico que la vista de lectura no ofrece.
+function AccionesFila({ m, onEdit, onReload, token }) {
+  const [busy, setBusy] = useState(false);
+  const iconBtn = { width: 24, height: 24, borderRadius: 5, border: `1px solid ${T.border}`, background: "transparent", color: T.textMuted, cursor: "pointer", fontSize: 12, lineHeight: 1, padding: 0 };
+  const borrar = async () => {
+    if (!confirm(`¿Eliminar este ${m.type}? No se puede deshacer.`)) return;
+    setBusy(true);
+    await dq("cc_solfin_movements", { method: "DELETE", token, filters: `?id=eq.${m.id}` });
+    toast("Movimiento eliminado", "success");
+    onReload();
+  };
+  return (
+    <div style={{ display: "flex", gap: 4 }}>
+      <button onClick={() => onEdit(m)} disabled={busy} title="Editar" style={iconBtn}>✎</button>
+      <button onClick={borrar} disabled={busy} title="Eliminar" style={{ ...iconBtn, color: T.red }}>×</button>
+    </div>
+  );
+}
+
 
 function Header({ onLogout, onAdd, onShare, onDollarize }) {
   return (
@@ -263,138 +253,9 @@ function Header({ onLogout, onAdd, onShare, onDollarize }) {
   );
 }
 
-function BalanceCard({ label, currency, amount }) {
-  const positive = amount >= 0;
-  // Color por moneda: ARS dorado, USD verde
-  const color = currency === "USD" ? T.green : T.gold;
-  const isMobile = useIsMobile();
-  return (
-    <div style={{ padding: "16px 18px", background: `linear-gradient(135deg, ${color}1A, ${color}06)`, border: `1px solid ${color}55`, borderRadius: 14, boxShadow: `0 0 30px ${color}10`, minWidth: 0, overflow: "hidden" }}>
-      <p style={{ fontSize: 10, fontWeight: 700, color, letterSpacing: "0.16em", textTransform: "uppercase", margin: "0 0 6px" }}>{label}</p>
-      <p style={{ fontSize: isMobile ? 22 : 26, fontWeight: 800, color: T.text, margin: 0, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{positive ? "" : "− "}{fmtMoney(Math.abs(amount), currency)}</p>
-      <p style={{ fontSize: 11, color: T.textMuted, margin: "4px 0 0" }}>{positive ? "a favor para Bautista" : "a favor para SOLFIN"}</p>
-    </div>
-  );
-}
 
-function MovementList({ rows, onEdit, onReload, token }) {
-  const isMobile = useIsMobile();
-  if (isMobile) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {rows.map((m) => <MovementCardMobile key={m.id} m={m} onEdit={onEdit} onReload={onReload} token={token} />)}
-      </div>
-    );
-  }
-  return (
-    <div style={{ background: T.bgSurface, borderRadius: 12, border: `1px solid ${T.border}` }}>
-      <div style={{ display: "grid", gridTemplateColumns: "90px 88px 56px 1fr 160px 104px 148px 148px 62px", gap: 10, padding: "10px 14px", background: "#101d33", position: "sticky", top: 0, zIndex: 5, borderTopLeftRadius: 12, borderTopRightRadius: 12, fontSize: 9.5, fontWeight: 700, color: T.textDim, textTransform: "uppercase", letterSpacing: "0.08em", borderBottom: `1px solid ${T.border}` }}>
-        <div>Fecha</div><div>Tipo</div><div>Mon.</div><div>Descripción</div><div style={{ textAlign: "right" }}>Importe</div><div style={{ textAlign: "right" }}>Comisión</div><div style={{ textAlign: "right" }}>Saldo ARS</div><div style={{ textAlign: "right" }}>Saldo USD</div><div></div>
-      </div>
-      {rows.map((m) => <MovementRow key={m.id} m={m} onEdit={onEdit} onReload={onReload} token={token} />)}
-    </div>
-  );
-}
 
-function MovementRow({ m, onEdit, onReload, token }) {
-  const isIn = m.type === "ingreso";
-  const color = isIn ? T.green : T.red;
-  const running = m.currency === "ARS" ? m._arsBal : m._usdBal;
-  const handleDelete = async () => {
-    if (!confirm(`¿Eliminar este ${m.type}?`)) return;
-    await dq("cc_solfin_movements", { method: "DELETE", token, filters: `?id=eq.${m.id}` });
-    toast.success("Eliminado");
-    onReload();
-  };
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "90px 88px 56px 1fr 160px 104px 148px 148px 62px", gap: 10, padding: "12px 14px", fontSize: 13, alignItems: "center", borderBottom: `1px solid ${T.border}` }}>
-      <div style={{ fontFamily: "ui-monospace, monospace", color: T.text, fontWeight: 600 }}>{fmtDate(m.date)}</div>
-      <div><span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: `${color}22`, color, letterSpacing: "0.05em", textTransform: "uppercase" }}>{isIn ? "▲ Ingreso" : "▼ Egreso"}</span></div>
-      <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted }}>{m.currency}</div>
-      <div style={{ color: T.text, fontSize: 13, overflow: "hidden", display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-        {m.image_url && (
-          <a href={m.image_url} target="_blank" rel="noreferrer" title="Ver comprobante" style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 5, overflow: "hidden", border: `1px solid ${T.border}`, background: T.bgSurfaceHi, display: "inline-block" }}>
-            <img src={m.image_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-          </a>
-        )}
-        {m.auto_generated && (
-          <span title="Generado automáticamente al registrar un cobro por transferencia — no se cargó a mano" style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "rgba(96,165,250,0.14)", color: "#60a5fa", letterSpacing: "0.04em" }}>AUTO</span>
-        )}
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.description || <span style={{ color: T.textDim, fontStyle: "italic" }}>(sin descripción)</span>}</span>
-      </div>
-      <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color, fontWeight: 700, fontSize: 13, whiteSpace: "nowrap" }}>
-        {isIn ? "+ " : "− "}{fmtMoney(m.amount, m.currency)}
-      </div>
-      <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: T.textMuted, fontSize: 11.5 }}>
-        {m.commission_pct ? <>{Number(m.commission_pct).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%<br /><span style={{ fontSize: 10, color: T.amber }}>−{fmtMoney(m.commission_amount, m.currency)}</span></> : <span style={{ color: T.textDim }}>—</span>}
-      </div>
-      {["ARS","USD"].map((cur) => {
-        const bal = cur === "ARS" ? m._arsBal : m._usdBal;
-        const propia = m.currency === cur;
-        return (
-          <div key={cur} style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", fontSize: propia ? 13 : 11.5, fontWeight: propia ? 700 : 500, color: propia ? (bal >= 0 ? T.green : T.red) : T.textDim }}>
-            {fmtMoney(bal, cur)}
-          </div>
-        );
-      })}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 4 }}>
-        <button onClick={() => onEdit(m)} title="Editar" style={iconBtn}>✎</button>
-        <button onClick={handleDelete} title="Eliminar" style={{ ...iconBtn, color: T.red }}>×</button>
-      </div>
-    </div>
-  );
-}
 
-function MovementCardMobile({ m, onEdit, onReload, token }) {
-  const isIn = m.type === "ingreso";
-  const color = isIn ? T.green : T.red;
-  const running = m.currency === "ARS" ? m._arsBal : m._usdBal;
-  const handleDelete = async () => {
-    if (!confirm(`¿Eliminar este ${m.type}?`)) return;
-    await dq("cc_solfin_movements", { method: "DELETE", token, filters: `?id=eq.${m.id}` });
-    toast.success("Eliminado");
-    onReload();
-  };
-  return (
-    <div style={{ padding: "12px 14px", background: T.bgSurface, border: `1px solid ${T.border}`, borderRadius: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: `${color}22`, color, letterSpacing: "0.05em", textTransform: "uppercase" }}>{isIn ? "▲ Ingreso" : "▼ Egreso"}</span>
-        <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: "rgba(255,255,255,0.06)", color: T.textMuted, letterSpacing: "0.05em" }}>{m.currency}</span>
-        <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: T.textMuted }}>{fmtDate(m.date)}</span>
-        {m.auto_generated && (
-          <span title="Generado automáticamente al registrar un cobro por transferencia" style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 4, background: "rgba(96,165,250,0.14)", color: "#60a5fa", letterSpacing: "0.04em" }}>AUTO</span>
-        )}
-        <span style={{ flex: 1 }} />
-        <button onClick={() => onEdit(m)} title="Editar" style={iconBtn}>✎</button>
-        <button onClick={handleDelete} title="Eliminar" style={{ ...iconBtn, color: T.red }}>×</button>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, minWidth: 0 }}>
-        {m.image_url && (
-          <a href={m.image_url} target="_blank" rel="noreferrer" title="Ver comprobante" style={{ flexShrink: 0, width: 36, height: 36, borderRadius: 5, overflow: "hidden", border: `1px solid ${T.border}`, background: T.bgSurfaceHi, display: "inline-block" }}>
-            <img src={m.image_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-          </a>
-        )}
-        <span style={{ flex: 1, fontSize: 13, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.description || <span style={{ color: T.textDim, fontStyle: "italic" }}>(sin descripción)</span>}</span>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
-        <div>
-          <p style={{ fontSize: 9, fontWeight: 700, color: T.textDim, letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 2px" }}>Importe</p>
-          <p style={{ fontSize: 14, fontWeight: 700, color, margin: 0, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{isIn ? "+ " : "− "}{fmtMoney(m.amount, m.currency)}</p>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <p style={{ fontSize: 9, fontWeight: 700, color: T.textDim, letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 2px" }}>Saldo</p>
-          <p style={{ fontSize: 14, fontWeight: 700, color: running >= 0 ? T.green : T.red, margin: 0, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fmtMoney(running, m.currency)}</p>
-        </div>
-        {m.commission_pct ? (
-          <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "space-between", fontSize: 10.5, color: T.amber, marginTop: 2 }}>
-            <span>Comisión {Number(m.commission_pct).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</span>
-            <span>− {fmtMoney(m.commission_amount, m.currency)}</span>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
 
 function MovementModal({ type, token, editing, onClose, onSaved }) {
   const isIngreso = type === "ingreso";
