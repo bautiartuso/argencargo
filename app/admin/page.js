@@ -540,7 +540,7 @@ function NewOperation({token,clients,onBack,onCreated}){
   const [form,setForm]=useState({client_id:"",channel:"aereo_blanco",origin:"China",service_type:"courier"});const [lo,setLo]=useState(false);const [err,setErr]=useState("");
   const ch=f=>v=>setForm(p=>({...p,[f]:v}));
   const create=async()=>{if(!form.client_id){setErr("Seleccioná un cliente");return;}setLo(true);setErr("");
-    const existing=await dq("operations",{token,filters:"?select=operation_code&order=operation_code.asc"});const used=new Set((Array.isArray(existing)?existing:[]).map(e=>parseInt(e.operation_code.replace("AC-",""))));let num=1;while(used.has(num))num++;const code=`AC-${String(num).padStart(4,"0")}`;
+    const code=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
     const r=await dq("operations",{method:"POST",token,body:{operation_code:code,client_id:form.client_id,channel:form.channel,origin:form.origin,service_type:form.service_type,status:"pendiente",created_by:null}});
     if(r?.error||r?.message){setErr(r.error||r.message);setLo(false);return;}setLo(false);onCreated(Array.isArray(r)?r[0]:r);};
   return <div>
@@ -11785,10 +11785,8 @@ function MaritimePanel({token,allClients=[]}){
     if(!await confirmDialog(confirmMsg))return;
     setCreatingOp(true);
     try{
-      // Próximo operation_code AC-XXXX
-      const last=await dq("operations",{token,filters:"?select=operation_code&order=created_at.desc&limit=1"});
-      const lastNum=Array.isArray(last)&&last[0]?.operation_code?parseInt(String(last[0].operation_code).replace(/\D/g,""),10)||0:0;
-      const newCode=`AC-${String(lastNum+1).padStart(4,"0")}`;
+      // Próximo operation_code AC-XXXX (primer numero libre, lo resuelve el servidor)
+      const newCode=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
       const opBody={
         operation_code:newCode,
         client_id:clientId,
@@ -12036,14 +12034,12 @@ function MaritimePanel({token,allClients=[]}){
     conShips.forEach(s=>{if(s.client_id)(byClient[s.client_id]=byClient[s.client_id]||[]).push(s);});
     const clientIds=Object.keys(byClient);
     if(clientIds.length===0)return "";
-    const [tariffsR,cfgR,lastR]=await Promise.all([
+    const [tariffsR,cfgR]=await Promise.all([
       dq("tariffs",{token,filters:"?select=*"}),
-      dq("calc_config",{token,filters:"?select=*"}),
-      dq("operations",{token,filters:"?select=operation_code&order=created_at.desc&limit=1"})
+      dq("calc_config",{token,filters:"?select=*"})
     ]);
     const tariffs=Array.isArray(tariffsR)?tariffsR:[];
     const config={};(Array.isArray(cfgR)?cfgR:[]).forEach(r=>{config[r.key]=Number(r.value);});
-    let nextNum=Array.isArray(lastR)&&lastR[0]?.operation_code?(parseInt(String(lastR[0].operation_code).replace(/\D/g,""),10)||0):0;
     const deliveryEta=deliveryEtaStr(effEta(c));
     let created=0;const createdOps=[];
     for(const cid of clientIds){
@@ -12062,7 +12058,7 @@ function MaritimePanel({token,allClients=[]}){
       const opLike={channel:"maritimo_negro",origin,shipping_to_door:false,shipping_cost:0,has_battery:false,has_phones:false};
       let bud={flete:0,seguro:0,surcharge:0,totalTax:0,totalAbonar:0};
       try{bud=calcOpBudget(opLike,calcItems,calcPkgs,tariffs,config,overrides,{tax_condition:client.tax_condition||"consumidor_final"});}catch(e){console.error("budget calc op cont",e);}
-      nextNum++;const newCode=`AC-${String(nextNum).padStart(4,"0")}`;
+      const newCode=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
       const opBody={operation_code:newCode,client_id:cid,channel:"maritimo_negro",status:"entregada",closed_at:new Date().toISOString(),origin,description:desc||null,eta:deliveryEta||null,budget_mode:"auto",budget_total:Number(bud.totalAbonar||0),budget_flete:Number(bud.flete||0),budget_surcharge:Number(bud.surcharge||0),budget_seguro:Number(bud.seguro||0),budget_taxes:Number(bud.totalTax||0)};
       const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
       const op=Array.isArray(r)?r[0]:r;
