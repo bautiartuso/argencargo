@@ -6816,7 +6816,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       const arsPagado=Number(String(impArs??flight.cost_impuestos_ars??"").toString().replace(",","."))||0;
       const tcUsado=Number(String(impTc??flight.cost_impuestos_exchange_rate??"").toString().replace(",","."))||0;
       const usdTotal=tcUsado>0?arsPagado/tcUsado:0;
-      const esRI=(o)=>o.clients?.tax_condition==="responsable_inscripto";
+      const esRI=(o)=>o.clients?.tax_condition==="responsable_inscripto"&&!o.ri_argencargo_collects_taxes;
       const participan=opsUnique.filter(o=>!esRI(o));
       const excluidas=opsUnique.filter(esRI);
       const baseTotal=participan.reduce((s,o)=>s+Number(o.budget_taxes||0),0);
