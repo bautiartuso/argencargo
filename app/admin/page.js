@@ -4181,12 +4181,25 @@ function EntregasPanel({token,onOpenOp}){
       const bultos=bultosByOp[o.id]||0;
       const saldo=saldoFor(o);
       const enEfectivo=(o.payment_method_chosen||"efectivo")==="efectivo";
+      // La plata solo va en las etiquetas del flete propio: al transportista (Andreani / Via Cargo)
+      // no le corresponde cobrar nada, asi que ponerselo es ruido y encima confunde.
+      const bloqueCobro=esCarrier?"":(enEfectivo
+        ?(saldo>0.005
+          ?`<div class="et-cobrar">💵 Paga al recibir · cobrar USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>`
+          :`<div class="et-cobrar pagado">✓ Ya está pagado — no cobrar nada</div>`)
+        :(saldo>0.005
+          ?`<div class="et-cobrar pagado">Saldo USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} — no se cobra en la entrega</div>`
+          :`<div class="et-cobrar pagado">✓ Pagado</div>`));
+      const tel=esCarrier?dc.telefono:c.whatsapp;
+      const mail=esCarrier?(dc.email||c.email):null;
       return `<div class="et">
-        <div class="et-head"><span class="et-code">${esc(o.operation_code)}</span><span class="et-bultos">${bultos} ${bultos===1?"bulto":"bultos"}</span></div>
-        <div class="et-nombre">${esc(nombre)}${c.client_code?` <span class="et-cod">${esc(c.client_code)}</span>`:""}</div>
-        <div class="et-dir">${esc(dir)}</div>
-        <div class="et-datos">${(esCarrier?dc.telefono:c.whatsapp)?`<span>Tel ${esc(esCarrier?dc.telefono:c.whatsapp)}</span>`:""}${esCarrier&&dc.dni?`<span>DNI ${esc(dc.dni)}</span>`:""}${esCarrier&&(dc.email||c.email)?`<span>${esc(dc.email||c.email)}</span>`:""}</div>
-        ${enEfectivo?(saldo>0.005?`<div class="et-cobrar">💵 Paga al recibir · cobrar USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>`:`<div class="et-cobrar pagado">✓ Ya está pagado — no cobrar nada</div>`):(saldo>0.005?`<div class="et-cobrar pagado">Saldo USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} — no se cobra en la entrega</div>`:`<div class="et-cobrar pagado">✓ Pagado</div>`)}
+        <div class="et-body">
+          <div class="et-head"><span class="et-code">${esc(o.operation_code)}</span><span class="et-bultos">${bultos} ${bultos===1?"BULTO":"BULTOS"}</span></div>
+          <div class="et-nombre">${esc(nombre)}${c.client_code?` <span class="et-cod">${esc(c.client_code)}</span>`:""}</div>
+          <div class="et-dir">${esc(dir)}</div>
+          <div class="et-datos">${tel?`<span class="d">Tel ${esc(tel)}</span>`:""}${esCarrier&&dc.dni?`<span class="d">DNI ${esc(dc.dni)}</span>`:""}${mail?`<span class="d mail">${esc(mail)}</span>`:""}</div>
+        </div>
+        ${bloqueCobro}
       </div>`;
     }).join("");
     const titulo=esCarrier?`Etiquetas de despacho · Transportista · ${aDomicilio?"a domicilio":"a sucursal"}`:"Hoja de ruta · Flete privado";
@@ -4198,16 +4211,23 @@ function EntregasPanel({token,onOpenOp}){
       .hoja-head{text-align:center;margin-bottom:16px}
       .hoja-head h1{font-size:16px;margin:0}
       .hoja-head span{font-size:11.5px;color:#666}
-      .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-      .et{border:1.5px dashed #999;border-radius:8px;padding:10px 12px;page-break-inside:avoid}
-      .et-head{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px}
-      .et-code{font-weight:700}
-      .et-bultos{color:#444}
-      .et-nombre{font-size:15px;font-weight:700}
+      .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:stretch}
+      /* min-height fija: todas las etiquetas salen del mismo tamano aunque una tenga menos datos. */
+      .et{border:1.5px dashed #999;border-radius:8px;padding:11px 13px;page-break-inside:avoid;
+          min-height:42mm;display:flex;flex-direction:column;justify-content:space-between}
+      .et-head{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;margin-bottom:6px}
+      .et-code{font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+      .et-bultos{font-size:14px;font-weight:800;letter-spacing:0.06em;background:#111;color:#fff;
+                 padding:3px 11px;border-radius:999px;white-space:nowrap}
+      .et-nombre{font-size:16px;font-weight:700;line-height:1.25}
       .et-cod{font-size:11px;font-weight:600;color:#666;letter-spacing:0.04em}
-      .et-dir{font-size:13px;margin:2px 0 4px}
-      .et-datos{display:flex;gap:14px;font-size:12px;color:#333}
-      .et-cobrar{font-size:12.5px;font-weight:700;margin-top:6px;border-top:1px solid #ddd;padding-top:5px}
+      .et-dir{font-size:13px;margin:3px 0 6px;line-height:1.35}
+      /* Los datos nunca se parten al medio: cada uno entero o baja completo al renglon de abajo.
+         Solo el mail puede cortarse, y recien cuando el solo no entra en una linea. */
+      .et-datos{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:#333;line-height:1.45}
+      .et-datos .d{white-space:nowrap;flex:0 0 auto}
+      .et-datos .mail{overflow-wrap:anywhere;white-space:normal;min-width:0}
+      .et-cobrar{font-size:12.5px;font-weight:700;margin-top:8px;border-top:1px solid #ddd;padding-top:6px}
       .et-cobrar.pagado{font-weight:600;color:#555}
     </style></head><body>
       <div class="hoja-head"><h1>${titulo}</h1><span>Argencargo · ${hoy} · ${ops.length} ${ops.length===1?"envío":"envíos"}</span></div>
