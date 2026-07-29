@@ -25,7 +25,7 @@ export default async function Image() {
           background: '#0A1628',
         }}
       >
-        <img src={LOGO} alt="Argencargo" width="760" height="206" />
+        <img src={LOGO} alt="Argencargo" width="620" height="405" />
       </div>
     ),
     { ...size }
