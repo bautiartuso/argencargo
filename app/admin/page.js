@@ -3803,7 +3803,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           // Cuando retira en oficina (shipping_to_door=false), el flete local es 100% costo interno
           // → presupuesto del cliente = 0 → el saldo refleja la pérdida total.
           const bLocal=op.shipping_to_door?Number(op.shipping_cost||0):0;
-          const bOtros=costOtros;
+          // "Otros" no tiene linea de presupuesto: es un costo interno que el cliente no paga.
+          // Antes esto era `bOtros=costOtros`, o sea el presupuesto se igualaba al costo real, con
+          // dos efectos malos: el saldo daba siempre +0,00 escondiendo que esa plata sale de la
+          // ganancia, y ademas inflaba presuTotal, que es el denominador del prorrateo, con lo que
+          // todos los demas conceptos quedaban sub-ajustados cuando habia cobro real.
+          const bOtros=0;
           // Gasto documental presupuestado: recalculamos desde items+pkgs con la tabla CIF (igual que el form Productos).
           // Solo aplica para canal aéreo blanco (igual que en el cotizador). Para canal B
           // el gasto documental no se cobra al cliente — lo dejamos en 0.
