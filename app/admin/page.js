@@ -1908,9 +1908,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <Inp label="TE %" type="number" value={it.statistics_rate??0} onChange={v=>chItem(i,"statistics_rate",v)} step="0.01" small/>
             <Inp label="IVA %" type="number" value={it.iva_rate??21} onChange={v=>chItem(i,"iva_rate",v)} step="0.01" small/>
             {isAereo&&(()=>{const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);const totalFob=items.reduce((s,x)=>s+Number(x.unit_price_usd||0)*Number(x.quantity||1),0);const pct=totalFob>0?itemFob/totalFob:1;let pf=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);pf+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});const certFl=pf*(config.cert_flete_aereo_ficticio||3.5);const cif=(totalFob+certFl)*1.01;const desemb=((c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;})(cif);const propDesemb=desemb*pct;const ivaD=propDesemb*0.21;return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>GASTO DOC. (auto)</label><div style={{padding:"8px 10px",fontSize:13,borderRadius:8,background:"rgba(184,149,106,0.08)",border:"1.5px solid rgba(184,149,106,0.2)",color:IC,fontWeight:600}}>USD {(propDesemb+ivaD).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>;})()}
-            {isMaritimo&&<><Inp label="IVA Adic. %" type="number" value={it.iva_additional_rate} onChange={v=>chItem(i,"iva_additional_rate",v)} step="0.01" small/>
-            <Inp label="IIGG %" type="number" value={it.iigg_rate} onChange={v=>chItem(i,"iigg_rate",v)} step="0.01" small/>
-            <Inp label="IIBB %" type="number" value={it.iibb_rate} onChange={v=>chItem(i,"iibb_rate",v)} step="0.01" small/></>}
+            {isMaritimo&&<><Inp label="IVA Adic. %" type="number" value={it.iva_additional_rate} onChange={v=>chItem(i,"iva_additional_rate",v)} step="0.01" placeholder="20 (por defecto)" small/>
+            <Inp label="IIGG %" type="number" value={it.iigg_rate} onChange={v=>chItem(i,"iigg_rate",v)} step="0.01" placeholder="6 (por defecto)" small/>
+            <Inp label="IIBB %" type="number" value={it.iibb_rate} onChange={v=>chItem(i,"iibb_rate",v)} step="0.01" placeholder="5 (por defecto)" small/></>}
           </div>
         </div>}
       </div>;})}
