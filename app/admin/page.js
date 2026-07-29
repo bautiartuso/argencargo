@@ -6144,7 +6144,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const applyAddr=(a)=>{const body={dest_name:a.name||"",dest_tax_id:a.tax_id||"",dest_address:a.address||"",dest_postal_code:a.postal_code||"",dest_phone:a.phone||"",dest_email:a.email||"",destination_address:[a.name,a.address,a.postal_code].filter(Boolean).join(", ")};setDest({dest_name:body.dest_name,dest_tax_id:body.dest_tax_id,dest_address:body.dest_address,dest_postal_code:body.dest_postal_code,dest_phone:body.dest_phone,dest_email:body.dest_email});updateFlight(body);};
   const saveNewAddr=async()=>{if(!newAddr.label||!newAddr.address){onFlash("Falta etiqueta o dirección");return;}await dq("shipping_addresses",{method:"POST",token,body:newAddr});setNewAddr({label:"",name:"",tax_id:"",address:"",postal_code:"",phone:"",email:""});setShowNewAddr(false);loadAddrs();onFlash("Dirección guardada");};
   const delAddr=async(id)=>{if(!await confirmDialog("¿Eliminar dirección?"))return;await dq("shipping_addresses",{method:"DELETE",token,filters:`?id=eq.${id}`});loadAddrs();};
-  const [items,setItems]=useState(invoiceItems);
+  const [items,setItems]=useState(invoiceItems);const [presentando,setPresentando]=useState(false);
   useEffect(()=>{setItems(invoiceItems);},[invoiceItems]);
   const chItem=(i,f,v)=>setItems(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
   const saveItem=async(it)=>{
@@ -6152,17 +6152,17 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     // Propagar HS al operation_item original (si existe) para que el cálculo de budget lo use.
     if(it.source_item_id&&it.hs_code)await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.source_item_id}`,body:{ncm_code:it.hs_code}});
   };
-  const saveAllItems=async()=>{for(const it of items){await saveItem(it);}};
+  // En paralelo: son escrituras independientes entre si, no hay razon para encadenarlas.
+  const saveAllItems=async()=>{await Promise.all(items.map(it=>saveItem(it)));};
   // Recalcular el presupuesto de TODAS las ops del vuelo usando los HS y tasas ya cargadas.
   // El presupuesto se calcula sobre lo que declara el CLIENTE en su op, no sobre lo que se
   // declara en la exportación — así que acá no se recalculan presupuestos (era lo que hacía
   // que cada guardado tardara ~1 min). Lo único que baja del vuelo a la op es el HS code,
   // que es objetivo: mismo producto, misma clasificación.
   const syncHsToOps=async()=>{
-    for(const it of items){
-      if(it.source_item_id&&isValidNcmCode(it.hs_code))
-        await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.source_item_id}`,body:{ncm_code:it.hs_code}}).catch(()=>{});
-    }
+    await Promise.all(items
+      .filter(it=>it.source_item_id&&isValidNcmCode(it.hs_code))
+      .map(it=>dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.source_item_id}`,body:{ncm_code:it.hs_code}}).catch(()=>{})));
   };
   // Conectar la ref para que el effect de auto-recalc pueda llamarla
   const addItem=async()=>{const opId=opsUnique[0]?.id;if(!opId)return;const r=await dq("flight_invoice_items",{method:"POST",token,body:{flight_id:flight.id,operation_id:opId,description:"",quantity:1,unit_price_declared_usd:0,hs_code:"",sort_order:items.length+1}});const created=Array.isArray(r)?r[0]:r;if(created?.id)setItems(p=>[...p,created]);onReload();};
@@ -6700,7 +6700,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       </div>}
       {flight.status==="preparando"&&<div style={{marginTop:16,padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.08)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
         {flight.invoice_presented_at?<div><p style={{fontSize:12,fontWeight:700,color:"#22c55e",margin:0}}>✓ Factura presentada {formatDate(flight.invoice_presented_at)}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>El agente ya puede despacharla</p></div>:<div><p style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",margin:0}}>⏳ La factura todavía no está presentada</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>El agente no puede despachar hasta que la presentes</p></div>}
-        {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn small onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!flight.dest_address){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}await saveAllItems();await syncHsToOps();await updateFlight({invoice_presented_at:new Date().toISOString()});for(const fo of flightOps){await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}});}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",url:"/agente?tab=active_flights"})}).catch(()=>{});onFlash("Factura presentada · agente notificado");}}>✓ Guardar y presentar factura</Btn>}
+        {flight.invoice_presented_at?<Btn small variant="secondary" onClick={()=>updateFlight({invoice_presented_at:null})}>Reabrir factura</Btn>:<Btn small disabled={presentando} onClick={async()=>{if(items.length===0){onFlash("Agregá items primero");return;}if(!flight.dest_address){onFlash("Completá la dirección");return;}if(items.some(it=>!it.hs_code||!it.description||!Number(it.unit_price_declared_usd))){onFlash("Completá HS code, descripción y valor en todos los items");return;}setPresentando(true);try{await saveAllItems();await updateFlight({invoice_presented_at:new Date().toISOString()});await Promise.all(flightOps.map(fo=>dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}&status=eq.en_deposito_origen`,body:{status:"en_preparacion"}})));}finally{setPresentando(false);}dq("notifications",{method:"POST",token,body:{user_id:flight.agent_id,portal:"agente",title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",link:"?tab=active_flights"}}).catch(e=>console.error("notif error",e));fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:flight.agent_id,title:`Factura lista para vuelo ${flight.flight_code}`,body:"Ya podés despachar",url:"/agente?tab=active_flights"})}).catch(()=>{});onFlash("Factura presentada · agente notificado");}}>{presentando?"Presentando…":"✓ Guardar y presentar factura"}</Btn>}
       </div>}
     </Card>
     {/* Impuestos del vuelo. Se paga un monto unico en pesos al despachante y hay que repartirlo
