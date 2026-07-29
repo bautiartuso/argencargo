@@ -10016,7 +10016,7 @@ function AdminTasks({token}){
 
 function QuotesList({token}){
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");const [selQuote,setSelQuote]=useState(null);const [clientsMap,setClientsMap]=useState({});
-  const [busq,setBusq]=useState("");const [verTodas,setVerTodas]=useState(false);
+  const [busq,setBusq]=useState("");const [verTodas,setVerTodas]=useState(false);const [sel,setSel]=useState([]);const [borrando,setBorrando]=useState(false);
   const [editProds,setEditProds]=useState([]);const [editPkgs,setEditPkgs]=useState([]);const [editTotalCost,setEditTotalCost]=useState("");const [dirty,setDirty]=useState(false);const [saving,setSaving]=useState(false);const [savedAt,setSavedAt]=useState(null);
   const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [quoteOverrides,setQuoteOverrides]=useState([]);
   useEffect(()=>{(async()=>{const [q,cl,tf,cc]=await Promise.all([
@@ -10121,6 +10121,20 @@ function QuotesList({token}){
     await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${selQuote.id}`,body});setQuotes(p=>p.map(q=>q.id===selQuote.id?{...q,...body}:q));setSelQuote(p=>({...p,...body}));setDirty(false);setSavedAt(new Date().toISOString());setSaving(false);
   };
   const updateStatus=async(id,status)=>{await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{status}});setQuotes(p=>p.map(q=>q.id===id?{...q,status}:q));};
+  const borrarQuotes=async(ids,texto)=>{
+    if(!ids.length)return;
+    if(!await confirmDialog(texto))return;
+    setBorrando(true);
+    try{
+      // in.() en una sola llamada: de a una serian N viajes al servidor.
+      await dq("quotes",{method:"DELETE",token,filters:`?id=in.(${ids.join(",")})`});
+      setQuotes(p=>p.filter(q=>!ids.includes(q.id)));
+      setSel(p=>p.filter(id=>!ids.includes(id)));
+      if(ids.includes(selQuote?.id))setSelQuote(null);
+      toast(ids.length===1?"Cotización eliminada":`${ids.length} cotizaciones eliminadas`,"success");
+    }catch(e){alertDialog("No se pudo eliminar: "+e.message);}
+    setBorrando(false);
+  };
   const downloadPdf=(q)=>{
     const prods=editProds.length?editProds:(typeof q.products==="string"?JSON.parse(q.products):q.products||[]);
     const w=window.open("","_blank");if(!w)return;
@@ -10208,9 +10222,23 @@ function QuotesList({token}){
       </div>
     </div>
     {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:filtered.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"2rem 0"}}>No hay cotizaciones{busq?" que coincidan con la búsqueda":""}.</p>:<>
+    {sel.length>0&&<div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",marginBottom:10,borderRadius:10,background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.28)"}}>
+      <span style={{fontSize:12.5,fontWeight:600,color:"#fca5a5"}}>{sel.length} seleccionada{sel.length>1?"s":""}</span>
+      <button onClick={()=>setSel([])} style={{fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer"}}>Deseleccionar</button>
+      <div style={{flex:1}}/>
+      <button disabled={borrando} onClick={()=>borrarQuotes(sel,`¿Eliminar ${sel.length} cotizacion${sel.length>1?"es":""}? No se puede deshacer.`)}
+        style={{fontSize:11.5,fontWeight:700,padding:"6px 14px",borderRadius:7,border:"1px solid rgba(248,113,113,0.4)",background:"rgba(248,113,113,0.15)",color:"#fca5a5",cursor:borrando?"wait":"pointer"}}>
+        {borrando?"Eliminando…":`Eliminar ${sel.length}`}
+      </button>
+    </div>}
     <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
+          <th style={{...thStyle,width:34,paddingRight:0}}>
+            <input type="checkbox" title="Seleccionar todo lo visible" style={{cursor:"pointer"}}
+              checked={filtered.length>0&&filtered.every(q=>sel.includes(q.id))}
+              onChange={e=>{const ids=filtered.map(q=>q.id);setSel(e.target.checked?[...new Set([...sel,...ids])]:sel.filter(id=>!ids.includes(id)));}}/>
+          </th>
           {["Fecha","Cliente","Qué cotizó","FOB","Cotizado","Link","Estado"].map(h=><th key={h} style={{...thStyle,textAlign:h==="FOB"||h==="Cotizado"?"right":"left"}}>{h}</th>)}
         </tr></thead>
         <tbody>{filtered.map(q=>{
@@ -10221,6 +10249,10 @@ function QuotesList({token}){
           const li=linkInfo(q);
           const d=desc(q);
           return <tr key={q.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>setSelQuote(q)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+            <td style={{...tdStyle,paddingRight:0}} onClick={e=>e.stopPropagation()}>
+              <input type="checkbox" checked={sel.includes(q.id)} style={{cursor:"pointer"}}
+                onChange={e=>setSel(p=>e.target.checked?[...p,q.id]:p.filter(x=>x!==q.id))}/>
+            </td>
             <td style={{...tdStyle,color:"rgba(255,255,255,0.5)",fontSize:12,whiteSpace:"nowrap"}}>
               {fechaCorta(q.created_at)}
               {abandonada&&<><br/><span style={{fontSize:10,color:"#fbbf24",fontWeight:600}}>sin respuesta</span></>}
@@ -10248,6 +10280,9 @@ function QuotesList({token}){
                 <select value={q.status} onChange={e=>updateStatus(q.id,e.target.value)} style={{padding:"4px 8px",fontSize:11,fontWeight:600,border:`1px solid ${(ST[q.status]||{}).c||"rgba(255,255,255,0.1)"}55`,borderRadius:6,background:`${(ST[q.status]||{}).c||"#fff"}14`,color:(ST[q.status]||{}).c||"#fff",outline:"none",cursor:"pointer"}}>
                   {Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038",color:"#fff"}}>{v.l}</option>)}
                 </select>
+                <button title="Eliminar cotización" disabled={borrando}
+                  onClick={()=>borrarQuotes([q.id],`¿Eliminar la cotización de ${q.client_name||"sin cliente"}? No se puede deshacer.`)}
+                  style={{padding:"4px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(248,113,113,0.25)",background:"rgba(248,113,113,0.08)",color:"#f87171",cursor:borrando?"wait":"pointer"}}>✕</button>
               </div>
             </td>
           </tr>;})}</tbody>
