@@ -4184,8 +4184,13 @@ function EntregasPanel({token,onOpenOp}){
       const nombre=esCarrier&&(dc.nombre||dc.apellido)
         ?`${dc.nombre||""} ${dc.apellido||""}`.trim()
         :(`${c.first_name||""} ${c.last_name||""}`.trim()||"—");
+      const cp=dc.cp||c.postal_code||"";
+      const localidad=[c.city,c.province].filter(Boolean).join(", ");
+      const zona=[localidad,cp?`CP ${cp}`:""].filter(Boolean).join(" · ");
       const dir=esCarrier
-        ?(aDomicilio?[dc.direccion,dc.piso].filter(Boolean).join(", ")||"Dirección a confirmar":"Retira en sucursal")
+        ?(aDomicilio
+          ?[dc.direccion,dc.piso].filter(Boolean).join(", ")||"Dirección a confirmar"
+          :(dc.sucursal||"⚠ Sucursal sin especificar"))
         :(o.delivery_address||[c.street,c.floor_apt,c.city,c.province,c.postal_code].filter(Boolean).join(", ")||"Dirección a confirmar");
       const bultos=bultosByOp[o.id]||0;
       const saldo=saldoFor(o);
@@ -4205,7 +4210,8 @@ function EntregasPanel({token,onOpenOp}){
         <div class="et-body">
           <div class="et-head"><span class="et-code">${esc(o.operation_code)}</span><span class="et-bultos">${bultos} ${bultos===1?"BULTO":"BULTOS"}</span></div>
           <div class="et-nombre">${esc(nombre)}${c.client_code?` <span class="et-cod">${esc(c.client_code)}</span>`:""}</div>
-          <div class="et-dir">${esc(dir)}</div>
+          <div class="et-dir">${esCarrier&&!aDomicilio?`<span class="et-suc">SUCURSAL</span> `:""}${esc(dir)}</div>
+          ${zona?`<div class="et-zona">${esc(zona)}</div>`:""}
           <div class="et-datos">${tel?`<span class="d">Tel ${esc(tel)}</span>`:""}${esCarrier&&dc.dni?`<span class="d">DNI ${esc(dc.dni)}</span>`:""}${mail?`<span class="d mail">${esc(mail)}</span>`:""}</div>
         </div>
         ${bloqueCobro}
@@ -4230,7 +4236,9 @@ function EntregasPanel({token,onOpenOp}){
                  padding:3px 11px;border-radius:999px;white-space:nowrap}
       .et-nombre{font-size:16px;font-weight:700;line-height:1.25}
       .et-cod{font-size:11px;font-weight:600;color:#666;letter-spacing:0.04em}
-      .et-dir{font-size:13px;margin:3px 0 6px;line-height:1.35}
+      .et-dir{font-size:13.5px;font-weight:600;margin:3px 0 2px;line-height:1.35}
+      .et-suc{font-size:9px;font-weight:800;letter-spacing:0.08em;background:#eee;color:#444;padding:1px 6px;border-radius:3px;vertical-align:2px}
+      .et-zona{font-size:13px;font-weight:700;margin:0 0 6px;line-height:1.3}
       /* Los datos nunca se parten al medio: cada uno entero o baja completo al renglon de abajo.
          Solo el mail puede cortarse, y recien cuando el solo no entra en una linea. */
       .et-datos{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:#333;line-height:1.45}
