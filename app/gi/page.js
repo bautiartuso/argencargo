@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { calcOpBudget, applyAntidumpingFloor } from "../../lib/calc";
+import { calcOpBudget, applyAntidumpingFloor, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB } from "../../lib/calc";
 import { printGiQuotePdf } from "../../lib/pdf-templates";
 import DatePicker from "../components/DatePicker";
 
@@ -1278,9 +1278,9 @@ function WizStep1({token,products,onUpdate,onAdd,onRemove,onClassify,onNext,tota
       const die=iCif*dr;const tasa=iCif*te;const bi=iCif+die+tasa;const iva=bi*ivaR;
       let total=die+tasa+iva;let desemb=0,ivaAdic=0,iigg=0,iibb=0;
       if(isMaritimo){
-        const ivaAdR=p.iva_additional_rate===""||p.iva_additional_rate==null?0.20:Number(p.iva_additional_rate)/100;
-        const iiggR=p.iigg_rate===""||p.iigg_rate==null?0.06:Number(p.iigg_rate)/100;
-        const iibbR=p.iibb_rate===""||p.iibb_rate==null?0.05:Number(p.iibb_rate)/100;
+        const ivaAdR=tasaODefault(p.iva_additional_rate,TASA_IVA_ADICIONAL);
+        const iiggR=tasaODefault(p.iigg_rate,TASA_IIGG);
+        const iibbR=tasaODefault(p.iibb_rate,TASA_IIBB);
         ivaAdic=bi*ivaAdR;iigg=bi*iiggR;iibb=bi*iibbR;total+=ivaAdic+iigg+iibb;
       } else {
         const tbl=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];

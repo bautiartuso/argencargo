@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
-import { calcOpBudget, applyAntidumpingFloor } from "../../lib/calc";
+import { calcOpBudget, applyAntidumpingFloor, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB } from "../../lib/calc";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
@@ -1667,9 +1667,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         const die=iCif*dr;const tasa=iCif*te;const bi=iCif+die+tasa;const iva=bi*ivaR;
         let t=die+tasa+iva;
         if(isMaritimo){
-          const ivaAdicR=(it.iva_additional_rate==null||it.iva_additional_rate==="")?0.20:Number(it.iva_additional_rate)/100;
-          const iiggR=(it.iigg_rate==null||it.iigg_rate==="")?0.06:Number(it.iigg_rate)/100;
-          const iibbR=(it.iibb_rate==null||it.iibb_rate==="")?0.05:Number(it.iibb_rate)/100;
+          const ivaAdicR=tasaODefault(it.iva_additional_rate,TASA_IVA_ADICIONAL);
+          const iiggR=tasaODefault(it.iigg_rate,TASA_IIGG);
+          const iibbR=tasaODefault(it.iibb_rate,TASA_IIBB);
           t+=bi*ivaAdicR+bi*iiggR+bi*iibbR;
         }
         else{const desemb=getDesembolso(taxCifLocal)*pct;t+=desemb+desemb*0.21;}
@@ -10610,9 +10610,9 @@ function AdminCalculator({token}){
         const bi=iCif+die+tasa;
         derechos+=die;tasaE+=tasa;iva+=bi*ivaR;
         if(isMaritimo){
-          const ivaAdicR=(it.iva_additional_rate==null||it.iva_additional_rate==="")?0.20:Number(it.iva_additional_rate)/100;
-          const iiggR=(it.iigg_rate==null||it.iigg_rate==="")?0.06:Number(it.iigg_rate)/100;
-          const iibbR=(it.iibb_rate==null||it.iibb_rate==="")?0.05:Number(it.iibb_rate)/100;
+          const ivaAdicR=tasaODefault(it.iva_additional_rate,TASA_IVA_ADICIONAL);
+          const iiggR=tasaODefault(it.iigg_rate,TASA_IIGG);
+          const iibbR=tasaODefault(it.iibb_rate,TASA_IIBB);
           ivaAdic+=bi*ivaAdicR;iigg+=bi*iiggR;iibb+=bi*iibbR;
         }
       });
