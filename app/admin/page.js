@@ -742,6 +742,40 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   const [cancelingRedemption,setCancelingRedemption]=useState(false);
   const [cobroDecision,setCobroDecision]=useState(null); // {kind:"overpay"|"underpay", diff, resolve}
   const askCobroDecision=(kind,diff)=>new Promise(resolve=>setCobroDecision({kind,diff,resolve}));
+  // Resolucion del saldo al cerrar la OPERACION. La misma pregunta existia solo en el boton
+  // "Cerrar cobro" de la solapa Finanzas, asi que cerrando la op desde Estado nunca aparecia y la
+  // op quedaba cerrada con la diferencia sin resolver (paso con AC-0317 y AC-0319).
+  // Devuelve el body a mergear, o null si el usuario cancelo (ahi no se cierra nada).
+  const resolverSaldoAlCerrar=async(opActual,pagos)=>{
+    const bt=Number(opActual.budget_total||0);
+    if(bt<=0)return {};
+    const cobrado=(Array.isArray(pagos)?pagos:[]).reduce((a,x)=>a+Number(x.amount_usd||0),0)+Number(opActual.credit_applied_usd||0);
+    if(cobrado<=0.01)return {}; // sin un solo cobro registrado no hay saldo que resolver
+    const aCobrar=bt+Number(opActual.debt_applied_usd||0)-Number(opActual.total_anticipos||0);
+    const dif=Math.round((cobrado-aCobrar)*100)/100;
+    if(dif>0.01){
+      const choice=await askCobroDecision("overpay",dif);
+      if(choice==null)return null;
+      if(choice==="s"){
+        await upsertClientMov({client_id:opActual.client_id,operation_id:opActual.id,type:"overpayment",amount_usd:dif,description:`Excedente de ${opActual.operation_code}`});
+        return {is_collected:true,collected_amount:aCobrar,extra_charge_usd:0};
+      }
+      if(choice==="e")return {is_collected:true,extra_charge_usd:dif};
+      return null;
+    }
+    if(dif<-0.01){
+      const falta=Math.abs(dif);
+      const choice=await askCobroDecision("underpay",falta);
+      if(choice==null)return null;
+      if(choice==="d")return {is_collected:true,discount_applied_usd:falta};
+      if(choice==="c"){
+        await upsertClientMov({client_id:opActual.client_id,operation_id:opActual.id,type:"debt",amount_usd:-falta,description:`Deuda pendiente de ${opActual.operation_code}`});
+        return {is_collected:true};
+      }
+      return null;
+    }
+    return {is_collected:true};
+  };
   // Modal genérico para pedir un monto (reemplaza window.prompt). Devuelve Promise<number|null>.
   const [amountModal,setAmountModal]=useState(null); // {title, subtitle, defaultValue, max, resolve}
   const askAmount=(cfg)=>new Promise(resolve=>setAmountModal({...cfg,resolve}));
@@ -943,6 +977,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     // y se confirma automáticamente cuando se dolaricen los pagos pendientes (trigger DB).
     // El bloqueo a "Marcar pagada" la comisión existe del lado admin → Comisiones a pagar.
     if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();
+    // Al cerrar la op preguntamos que hacer con la diferencia entre lo cobrado y el presupuesto.
+    if(rest.status==="operacion_cerrada"&&initOp.status!=="operacion_cerrada"&&!op.is_collected){
+      const resuelto=await resolverSaldoAlCerrar({...op,...rest},clientPayments);
+      if(resuelto==null){setSaving(false);return;} // canceló: la op NO se cierra
+      Object.assign(rest,resuelto);
+    }
     if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
     // Tier voucher DESACTIVADO (11/06/2026): las categorías quedan como etiqueta visual pero
@@ -1322,6 +1362,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     const{id,clients,...rest}=({...op,description:desc});
     delete rest.created_at;delete rest.updated_at;
     if((rest.status==="operacion_cerrada"||rest.status==="entregada")&&!rest.closed_at)rest.closed_at=new Date().toISOString();
+    // Al cerrar la op preguntamos que hacer con la diferencia entre lo cobrado y el presupuesto.
+    if(rest.status==="operacion_cerrada"&&initOp.status!=="operacion_cerrada"&&!op.is_collected){
+      const resuelto=await resolverSaldoAlCerrar({...op,...rest},clientPayments);
+      if(resuelto==null){setSaving(false);return;} // canceló: la op NO se cierra
+      Object.assign(rest,resuelto);
+    }
     if(rest.status!=="operacion_cerrada"&&rest.status!=="entregada"&&rest.status!=="cancelada")rest.closed_at=null;
     await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:rest});
     if(rest.status!==prevStatus){
