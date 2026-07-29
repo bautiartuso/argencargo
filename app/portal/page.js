@@ -731,7 +731,7 @@ function OperationDetail({op,token,client,onBack}){
     </details>}
     {/* Declaración a Aduana — SOLO clientes RI, ops abiertas. El RI ve el valor declarado por ítem
         (la factura del despacho), distinto de lo que cargó originalmente. 11/06/2026. */}
-    {client?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&!isGI&&declaredItems.length>0&&(()=>{
+    {client?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&!isGI&&!op.hide_customs_declaration&&declaredItems.length>0&&(()=>{
       const declTotal=declaredItems.reduce((s,d)=>s+Number(d.quantity||0)*Number(d.unit_price_declared_usd||0),0);
       const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
       return <div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(184,149,106,0.2)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
@@ -837,7 +837,7 @@ function OperationDetail({op,token,client,onBack}){
             </div>;})}
           </div>
         </>}
-        {!isGI&&!isB&&bTax>0&&(riPagaImpuestosDirecto?bRow("Impuestos (los abonás directo al despachante)",bTax,false,false,"rgba(255,255,255,0.45)"):bRow("Total Impuestos",bTax))}
+        {!isGI&&!isB&&bTax>0&&(riPagaImpuestosDirecto?bRow("Impuestos (los abonás directo a la aerolínea)",bTax,false,false,"rgba(255,255,255,0.45)"):bRow("Total Impuestos",bTax))}
         {!isGI&&(isB?(bt-shipCost):bFlete)>0&&bRow(isB?"Servicio Integral de importación":"Flete internacional",isB?(bt-shipCost):bFlete)}
         {!isGI&&!isB&&bSeg>0&&bRow("Seguro de carga",bSeg)}
         {!isGI&&shipCost>0&&bRow("Envío a Domicilio",shipCost)}

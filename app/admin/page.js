@@ -1922,6 +1922,16 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const diff=realTotal-declTotal;
       const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
       return <Card title="📋 Declaración a Aduana (cliente RI)">
+        {/* Hay ops donde se le cobra al cliente sobre el valor que el declaro, no sobre el del
+            despacho: ahi mostrarle los dos numeros distintos solo confunde. */}
+        <label style={{display:"flex",alignItems:"flex-start",gap:9,padding:"10px 12px",marginBottom:12,borderRadius:9,cursor:"pointer",background:op.hide_customs_declaration?"rgba(251,191,36,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${op.hide_customs_declaration?"rgba(251,191,36,0.3)":"rgba(255,255,255,0.07)"}`}}>
+          <input type="checkbox" checked={!!op.hide_customs_declaration} disabled={saving} style={{marginTop:2,cursor:"pointer"}}
+            onChange={async e=>{const v=e.target.checked;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{hide_customs_declaration:v}});setSaving(false);onReload();}}/>
+          <span>
+            <span style={{fontSize:12.5,fontWeight:600,color:op.hide_customs_declaration?"#fbbf24":"rgba(255,255,255,0.8)"}}>No mostrarle esta declaración al cliente</span>
+            <span style={{display:"block",fontSize:11,color:"rgba(255,255,255,0.45)",marginTop:3,lineHeight:1.45}}>Usalo cuando le cobrás sobre el valor que declaró él y no sobre el del despacho. Vos la seguís viendo acá.</span>
+          </span>
+        </label>
         <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 12px",lineHeight:1.5}}>Valores tal como se declararon en el despacho (factura del vuelo). Es lo que el cliente RI ve en su factura de importación — distinto de lo que cargó en sus productos.</p>
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
@@ -6769,7 +6779,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             </tbody>
           </table>
           {excluidas.length>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"9px 0 0",fontStyle:"italic",lineHeight:1.5}}>
-            Fuera del reparto por ser Responsable Inscripto ({excluidas.map(o=>o.operation_code).join(", ")}): abonan los impuestos directo al despachante. Si en alguna los pagaste vos, cargalo en esa op.
+            Fuera del reparto por ser Responsable Inscripto ({excluidas.map(o=>o.operation_code).join(", ")}): abonan los impuestos directo a la aerolínea. Si en alguna los pagaste vos, cargalo en esa op.
           </p>}
           {baseTotal<=0&&<p style={{fontSize:11,color:"#fbbf24",margin:"9px 0 0",fontStyle:"italic"}}>
             Ninguna op tiene impuesto calculado todavía (faltan NCM o presupuesto), así que el reparto sale en partes iguales. Clasificá los productos para que sea proporcional.
