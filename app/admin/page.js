@@ -299,7 +299,10 @@ function OperationsList({token,onSelect,onNew}){
     if(bt<=0)return null;
     if(o.is_collected)return 0; // ya está cobrada, no hay saldo pendiente
     // Cash cobrado — para GI usa operation_client_payments, para ops regulares usa collected_amount
-    const cliPaid=o.service_type==="gestion_integral"?Number(cliPmtsByOp[o.id]||0):(()=>{const raw=Number(o.collected_amount||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);return isArs&&rate>0?raw/rate:raw;})();
+    // Los cobros registrados son la fuente de verdad para cualquier op, no solo GI: si hay filas
+    // en operation_client_payments valen esas. collected_amount queda como respaldo para las ops
+    // viejas que nunca pasaron por la tabla de cobros, y ahi si depende de la marca is_collected.
+    const cliPaid=Number(cliPmtsByOp[o.id]||0)>0?Number(cliPmtsByOp[o.id]):(()=>{if(!o.is_collected)return 0;const raw=Number(o.collected_amount||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);return isArs&&rate>0?raw/rate:raw;})();
     const creditApplied=Number(o.credit_applied_usd||0);
     const discountApplied=Number(o.discount_applied_usd||0);
     const debtApplied=Number(o.debt_applied_usd||0); // deuda anterior sumada a esta op → aumenta el saldo
@@ -4146,7 +4149,7 @@ const DELIVERY_GROUPS=[
 
 function EntregasPanel({token,onOpenOp}){
   const [rows,setRows]=useState([]);
-  const [bultosByOp,setBultosByOp]=useState({});
+  const [bultosByOp,setBultosByOp]=useState({});const [cobrosByOp,setCobrosByOp]=useState({});
   const [lo,setLo]=useState(true);
   const [q,setQ]=useState("");
   const [tab,setTab]=useState("pendientes"); // pendientes | entregadas
@@ -4167,6 +4170,10 @@ function EntregasPanel({token,onOpenOp}){
     const list=[...(Array.isArray(pend)?pend:[]),...(Array.isArray(entr)?entr:[])];
     setRows(list);
     if(list.length>0){
+      // Sin esto el panel ignoraba los cobros parciales y mostraba el presupuesto entero como deuda.
+      const cp=await dq("operation_client_payments",{token,filters:`?operation_id=in.(${list.map(o=>o.id).join(",")})&select=operation_id,amount_usd`}).catch(()=>[]);
+      const cm={};(Array.isArray(cp)?cp:[]).forEach(x=>{cm[x.operation_id]=(cm[x.operation_id]||0)+Number(x.amount_usd||0);});
+      setCobrosByOp(cm);
       const pk=await dq("operation_packages",{token,filters:`?operation_id=in.(${list.map(o=>o.id).join(",")})&select=operation_id,quantity`});
       const m={};(Array.isArray(pk)?pk:[]).forEach(p=>{m[p.operation_id]=(m[p.operation_id]||0)+Number(p.quantity||1);});
       setBultosByOp(m);
@@ -4200,8 +4207,10 @@ function EntregasPanel({token,onOpenOp}){
     const debtApp=Number(o.debt_applied_usd||0);
     const creditApp=Number(o.credit_applied_usd||0);
     const totAnt=Number(o.total_anticipos||0);
-    const collected=usdCollected(o);
-    return Math.round(Math.max(0,bt+debtApp-totAnt-collected-creditApp)*100)/100;
+    const desdePagos=Number(cobrosByOp[o.id]||0);
+    const collected=desdePagos>0?desdePagos:usdCollected(o);
+    const desc=Number(o.discount_applied_usd||0);
+    return Math.round(Math.max(0,bt+debtApp-totAnt-collected-creditApp-desc)*100)/100;
   };
   const entregaLabel=(o)=>o.delivery_choice==="propio"?(o.delivery_address||`Envío a domicilio${o.delivery_zone?` · ${o.delivery_zone}`:""}`):o.delivery_choice==="carrier"?(o.delivery_address||"Envío por transportista"):"Retiro por oficina";
   const copyLink=(o)=>{const link=`https://argencargo.com.ar/retiro/${o.delivery_public_token}`;navigator.clipboard?.writeText(link);toast("Link copiado","success");};
