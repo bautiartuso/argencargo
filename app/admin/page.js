@@ -10016,6 +10016,7 @@ function AdminTasks({token}){
 
 function QuotesList({token}){
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");const [selQuote,setSelQuote]=useState(null);const [clientsMap,setClientsMap]=useState({});
+  const [busq,setBusq]=useState("");const [verTodas,setVerTodas]=useState(false);
   const [editProds,setEditProds]=useState([]);const [editPkgs,setEditPkgs]=useState([]);const [editTotalCost,setEditTotalCost]=useState("");const [dirty,setDirty]=useState(false);const [saving,setSaving]=useState(false);const [savedAt,setSavedAt]=useState(null);
   const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [quoteOverrides,setQuoteOverrides]=useState([]);
   useEffect(()=>{(async()=>{const [q,cl,tf,cc]=await Promise.all([
@@ -10168,39 +10169,95 @@ function QuotesList({token}){
     </body></html>`);w.document.close();
   };
   const ST={pending:{l:"Pendiente",c:"#fbbf24"},contacted:{l:"Contactado",c:"#60a5fa"},converted:{l:"Convertida",c:"#22c55e"},rejected:{l:"Rechazada",c:"#f87171"}};
-  const filtered=fStatus?quotes.filter(q=>q.status===fStatus):quotes;
+  const fmtN=(n)=>Number(n||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
   const formatDate=(d)=>new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+  // Fecha compacta para la tabla: la larga ocupaba dos renglones en cada fila.
+  const fechaCorta=(d)=>{const x=new Date(d);return `${x.toLocaleDateString("es-AR",{day:"2-digit",month:"short"})} · ${x.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}`;};
+  const desc=(q)=>{const p=typeof q.products==="string"?JSON.parse(q.products):q.products;return Array.isArray(p)?p.map(x=>x.description||x.type).filter(Boolean).join(", "):"";};
+  // Estado del link publico: es lo que mas importa ahora y no se veia en ningun lado.
+  const linkInfo=(q)=>{
+    if(!q.public_token)return null;
+    if(q.accepted_at){
+      const alts=Array.isArray(q.channel_alternatives)?q.channel_alternatives:[];
+      const el=alts.find(a=>a.key===q.client_selected_channel);
+      return {t:el?`Eligió ${el.name}`:"Cliente eligió",c:"#22c55e",fuerte:true};
+    }
+    const ms=q.expires_at?new Date(q.expires_at)-Date.now():null;
+    if(ms!=null&&ms<=0)return {t:"Link vencido",c:"#f87171"};
+    if(ms!=null)return {t:`Enviado · ${Math.ceil(ms/86400000)}d`,c:"#60a5fa"};
+    return {t:"Link enviado",c:"#60a5fa"};
+  };
+  const norm=(x)=>String(x||"").toLowerCase();
+  const conFiltro=quotes.filter(q=>{
+    if(fStatus&&q.status!==fStatus)return false;
+    const t=busq.trim().toLowerCase();
+    if(!t)return true;
+    return [q.client_name,q.client_code,q.channel_name,q.origin,desc(q)].some(v=>norm(v).includes(t));
+  });
+  const filtered=verTodas?conFiltro:conFiltro.slice(0,60);
+  const thStyle={padding:"11px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"};
+  const tdStyle={padding:"11px 14px",verticalAlign:"middle"};
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Cotizaciones ({quotes.length})</h2>
-      <div style={{display:"flex",gap:8}}>{[{k:"",l:"Todas"},{k:"pending",l:"Pendientes"},{k:"contacted",l:"Contactados"},{k:"converted",l:"Convertidas"}].map(s=><button key={s.k} onClick={()=>setFStatus(s.k)} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:8,border:fStatus===s.k?`1.5px solid ${IC}`:"1.5px solid rgba(255,255,255,0.08)",background:fStatus===s.k?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.028)",color:fStatus===s.k?IC:"rgba(255,255,255,0.4)",cursor:"pointer"}}>{s.l}</button>)}</div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap",marginBottom:16}}>
+      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Cotizaciones <span style={{fontSize:16,fontWeight:600,color:"rgba(255,255,255,0.35)"}}>({conFiltro.length})</span></h2>
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <input value={busq} onChange={e=>{setBusq(e.target.value);setVerTodas(false);}} placeholder="Buscar cliente, producto, canal…"
+          style={{padding:"7px 12px",fontSize:12,width:230,border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none"}}/>
+        {[{k:"",l:"Todas"},{k:"pending",l:"Pendientes"},{k:"contacted",l:"Contactados"},{k:"converted",l:"Convertidas"}].map(s=>
+          <button key={s.k} onClick={()=>{setFStatus(s.k);setVerTodas(false);}} style={{padding:"7px 14px",fontSize:12,fontWeight:600,borderRadius:8,cursor:"pointer",border:`1px solid ${fStatus===s.k?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.08)"}`,background:fStatus===s.k?"rgba(184,149,106,0.12)":"transparent",color:fStatus===s.k?IC:"rgba(255,255,255,0.5)"}}>{s.l}</button>)}
+      </div>
     </div>
-    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:filtered.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"2rem 0"}}>No hay cotizaciones</p>:
+    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:filtered.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"2rem 0"}}>No hay cotizaciones{busq?" que coincidan con la búsqueda":""}.</p>:<>
     <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-          {["Fecha","Cliente","Origen","Canal","FOB","Costo","Estado","Acción"].map(h=><th key={h} style={{padding:"12px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+          {["Fecha","Cliente","Qué cotizó","FOB","Cotizado","Link","Estado"].map(h=><th key={h} style={{...thStyle,textAlign:h==="FOB"||h==="Cotizado"?"right":"left"}}>{h}</th>)}
         </tr></thead>
-        <tbody>{filtered.map(q=>{const st=ST[q.status]||{l:q.status,c:"#999"};const prods=typeof q.products==="string"?JSON.parse(q.products):q.products;const prodDesc=Array.isArray(prods)?prods.map(p=>p.description||p.type).join(", "):"";
-        return <tr key={q.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>setSelQuote(q)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",fontSize:12}}>{formatDate(q.created_at)}</td>
-          <td style={{padding:"12px 14px"}}><span style={{fontFamily:"monospace",fontWeight:700,color:IC,fontSize:12}}>{q.client_code}</span><br/><span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{q.client_name}</span></td>
-          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>{q.origin}</td>
-          <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.6)"}}>{q.channel_name}<br/><span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{prodDesc?.substring(0,40)}</span></td>
-          <td style={{padding:"12px 14px",color:"#fff",fontWeight:600}}>USD {Number(q.total_fob||0).toLocaleString("es-AR")}</td>
-          <td style={{padding:"12px 14px",color:IC,fontWeight:700}}>USD {Number(q.total_cost||0).toLocaleString("es-AR")}</td>
-          <td style={{padding:"12px 14px"}}>
-            {(()=>{const ageH=(Date.now()-new Date(q.created_at))/3600000;const abandoned=q.status==="pending"&&ageH>=48;return <><span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>{st.l}</span>{abandoned&&<span title={`Pendiente hace ${Math.floor(ageH/24)}d ${Math.floor(ageH%24)}h`} style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:4,color:"#f97316",background:"rgba(249,115,22,0.1)",border:"1px solid rgba(249,115,22,0.3)",marginLeft:6}}>⚠ Abandonada</span>}</>;})()}
-          </td>
-          <td style={{padding:"12px 14px"}} onClick={e=>e.stopPropagation()}>
-            {(()=>{const cl=q.client_id?clientsMap[q.client_id]:null;const wa=cl?.whatsapp?.replace(/[^0-9]/g,"");const ageH=(Date.now()-new Date(q.created_at))/3600000;const abandoned=q.status==="pending"&&ageH>=48;const prodSummary=Array.isArray(prods)?prods.map(p=>p.description||p.type).join(", "):"";const msg=encodeURIComponent(`Hola ${q.client_name}! Hace unos días cotizaste *${prodSummary}* por *${q.channel_name}* (USD ${Number(q.total_cost||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}).\n\n¿Pudiste revisarla? Si querés avanzar esta semana te agilizo el proceso. Cualquier duda me escribís.`);
-            return <div style={{display:"flex",gap:6,alignItems:"center"}}>
-              {abandoned&&wa&&<a href={`https://wa.me/${wa}?text=${msg}`} target="_blank" rel="noopener noreferrer" style={{padding:"4px 8px",fontSize:10,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",whiteSpace:"nowrap"}}>📱 Recordar</a>}
-              <select value={q.status} onChange={e=>updateStatus(q.id,e.target.value)} style={{padding:"4px 8px",fontSize:11,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>{Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038"}}>{v.l}</option>)}</select>
-            </div>;})()}
-          </td>
-        </tr>;})}</tbody>
+        <tbody>{filtered.map(q=>{
+          const cl=q.client_id?clientsMap[q.client_id]:null;
+          const wa=cl?.whatsapp?.replace(/[^0-9]/g,"");
+          const ageH=(Date.now()-new Date(q.created_at))/3600000;
+          const abandonada=q.status==="pending"&&ageH>=48;
+          const li=linkInfo(q);
+          const d=desc(q);
+          return <tr key={q.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>setSelQuote(q)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+            <td style={{...tdStyle,color:"rgba(255,255,255,0.5)",fontSize:12,whiteSpace:"nowrap"}}>
+              {fechaCorta(q.created_at)}
+              {abandonada&&<><br/><span style={{fontSize:10,color:"#fbbf24",fontWeight:600}}>sin respuesta</span></>}
+            </td>
+            <td style={tdStyle}>
+              {q.client_code||q.client_name
+                ?<><span style={{fontFamily:"monospace",fontWeight:700,color:IC,fontSize:12}}>{q.client_code||"—"}</span><br/><span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>{q.client_name||""}</span></>
+                :<span style={{fontSize:12,color:"rgba(255,255,255,0.3)",fontStyle:"italic"}}>Sin cliente</span>}
+            </td>
+            <td style={{...tdStyle,maxWidth:280}}>
+              <span style={{color:"rgba(255,255,255,0.85)"}}>{d?(d.length>44?d.slice(0,44)+"…":d):"—"}</span><br/>
+              <span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{q.channel_name||"—"}{q.origin?` · ${q.origin}`:""}</span>
+            </td>
+            <td style={{...tdStyle,color:"rgba(255,255,255,0.8)",fontWeight:600,textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fmtN(q.total_fob)}</td>
+            <td style={{...tdStyle,color:IC,fontWeight:700,textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fmtN(q.total_cost)}</td>
+            <td style={tdStyle}>
+              {li
+                ?<span style={{fontSize:10.5,fontWeight:700,padding:"3px 9px",borderRadius:999,whiteSpace:"nowrap",color:li.c,background:`${li.c}1a`,border:`1px solid ${li.c}44`}}>{li.t}</span>
+                :<span style={{fontSize:11,color:"rgba(255,255,255,0.25)"}}>—</span>}
+            </td>
+            <td style={tdStyle} onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                {abandonada&&wa&&(()=>{const msg=encodeURIComponent(`Hola ${q.client_name}! Hace unos días cotizaste *${d}* por *${q.channel_name}* (USD ${fmtN(q.total_cost)}).\n\n¿Pudiste revisarla? Si querés avanzar esta semana te agilizo el proceso. Cualquier duda me escribís.`);
+                  return <a href={`https://wa.me/${wa}?text=${msg}`} target="_blank" rel="noopener noreferrer" title="Recordar por WhatsApp" style={{padding:"4px 8px",fontSize:10,fontWeight:700,borderRadius:6,cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",whiteSpace:"nowrap"}}>📱</a>;})()}
+                <select value={q.status} onChange={e=>updateStatus(q.id,e.target.value)} style={{padding:"4px 8px",fontSize:11,fontWeight:600,border:`1px solid ${(ST[q.status]||{}).c||"rgba(255,255,255,0.1)"}55`,borderRadius:6,background:`${(ST[q.status]||{}).c||"#fff"}14`,color:(ST[q.status]||{}).c||"#fff",outline:"none",cursor:"pointer"}}>
+                  {Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038",color:"#fff"}}>{v.l}</option>)}
+                </select>
+              </div>
+            </td>
+          </tr>;})}</tbody>
       </table>
-    </div>}
+    </div>
+    {!verTodas&&conFiltro.length>filtered.length&&
+      <button onClick={()=>setVerTodas(true)} style={{display:"block",margin:"14px auto 0",padding:"9px 20px",fontSize:12,fontWeight:600,borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>
+        Ver las {conFiltro.length-filtered.length} restantes
+      </button>}
+    </>}
     {/* Quote detail modal */}
     {selQuote&&(()=>{const q=selQuote;const prods=typeof q.products==="string"?JSON.parse(q.products):q.products||[];const pkgs=typeof q.packages==="string"?JSON.parse(q.packages):q.packages||[];const st=ST[q.status]||{l:q.status,c:"#999"};
     return <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setSelQuote(null)}>
