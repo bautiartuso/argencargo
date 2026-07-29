@@ -604,6 +604,9 @@ function EditableItemRow({item,editable,token,onChange}){
 function OperationDetail({op,token,client,onBack}){
   const {t}=useT();
   const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [repackInfo,setRepackInfo]=useState(null);const [showRepackDetail,setShowRepackDetail]=useState(false);const [declaredItems,setDeclaredItems]=useState([]);
+  // Al cliente RI le mostramos la declaración del despacho, salvo que en esta op se le cobre
+  // sobre el valor que declaró él: ahí ve su propia mercadería y no dos totales distintos.
+  const muestraAduana=client?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&!isGI&&!op.hide_customs_declaration&&declaredItems.length>0;
   // Cliente tocó "Esperando más bultos": ack visual, sigue en depósito hasta confirmar consolidación.
   const [waitingMore,setWaitingMore]=useState(false);
   const [docInputMode,setDocInputMode]=useState(null); // 'pdf' | 'manual'
@@ -625,6 +628,7 @@ function OperationDetail({op,token,client,onBack}){
   const downloadClosingPdf=()=>printClosingPdf({op,items,pkgs,cliPmts,events});
   const loadAll=async()=>{const [it,ev,pk,pm,cp,rk,fl,fii]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&status=eq.done&order=completed_at.desc&limit=1`}),dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=flight_id&limit=1`}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=description,hs_code,quantity,unit_price_declared_usd,sort_order&order=sort_order.asc`})]);
   setDeclaredItems(Array.isArray(fii)?fii:[]);
+
   setInFlight(Array.isArray(fl)&&fl.length>0);
   setRepackInfo(Array.isArray(rk)&&rk[0]?rk[0]:null);setItems(Array.isArray(it)?it:[]);setEvents((Array.isArray(ev)?ev:[]).filter(e=>{
   // Filtrar eventos internos auto-generados por cambio de status (ya están en la barra de progreso)
@@ -731,7 +735,7 @@ function OperationDetail({op,token,client,onBack}){
     </details>}
     {/* Declaración a Aduana — SOLO clientes RI, ops abiertas. El RI ve el valor declarado por ítem
         (la factura del despacho), distinto de lo que cargó originalmente. 11/06/2026. */}
-    {client?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&!isGI&&!op.hide_customs_declaration&&declaredItems.length>0&&(()=>{
+    {muestraAduana&&(()=>{
       const declTotal=declaredItems.reduce((s,d)=>s+Number(d.quantity||0)*Number(d.unit_price_declared_usd||0),0);
       const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
       return <div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(184,149,106,0.2)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
@@ -751,6 +755,33 @@ function OperationDetail({op,token,client,onBack}){
           <div style={{display:"grid",gridTemplateColumns:"3fr 0.9fr 0.7fr 1fr 1fr",gap:8,padding:"9px 12px",borderTop:"1px solid rgba(184,149,106,0.3)"}}>
             <span style={{gridColumn:"1 / 5",fontSize:11.5,fontWeight:700,color:"#fff"}}>TOTAL DECLARADO</span>
             <span style={{textAlign:"right",fontSize:12.5,fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>{fmt(declTotal)}</span>
+          </div>
+        </div>
+      </div>;
+    })()}
+    {/* Los productos tal como los cargó el cliente, con SUS valores. Va cuando no le mostramos la
+        declaración del despacho: si no, se queda sin ver ningún detalle de su mercadería. */}
+    {!muestraAduana&&!isGI&&items.length>0&&(()=>{
+      const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      const tot=items.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_usd||0),0);
+      const gr="3fr 0.9fr 0.7fr 1fr 1fr";
+      return <div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(184,149,106,0.2)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+        <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>📦 Tu mercadería</h3>
+        <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"0 0 14px"}}>Los productos y valores que declaraste para esta importación.</p>
+        <div style={{background:"rgba(0,0,0,0.15)",borderRadius:8,overflow:"hidden"}}>
+          <div style={{display:"grid",gridTemplateColumns:gr,gap:8,padding:"7px 12px",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>
+            <span>Descripción</span><span>HS Code</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Unit.</span><span style={{textAlign:"right"}}>Subtotal</span>
+          </div>
+          {items.map((it,i)=>{const sub=Number(it.quantity||0)*Number(it.unit_price_usd||0);return <div key={it.id||i} style={{display:"grid",gridTemplateColumns:gr,gap:8,padding:"7px 12px",borderBottom:i<items.length-1?"1px solid rgba(255,255,255,0.04)":"none",fontSize:12,color:"rgba(255,255,255,0.85)"}}>
+            <span>{it.description||"—"}</span>
+            <span style={{fontFamily:"monospace",fontSize:10,color:it.ncm_code?"#22c55e":"rgba(255,255,255,0.3)"}}>{it.ncm_code||"—"}</span>
+            <span style={{textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{Number(it.quantity||0)}</span>
+            <span style={{textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{fmt(it.unit_price_usd)}</span>
+            <span style={{textAlign:"right",fontWeight:600,fontVariantNumeric:"tabular-nums"}}>{fmt(sub)}</span>
+          </div>;})}
+          <div style={{display:"grid",gridTemplateColumns:gr,gap:8,padding:"9px 12px",borderTop:"1px solid rgba(184,149,106,0.3)"}}>
+            <span style={{gridColumn:"1 / 5",fontSize:11.5,fontWeight:700,color:"#fff"}}>TOTAL</span>
+            <span style={{textAlign:"right",fontSize:12.5,fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums"}}>{fmt(tot)}</span>
           </div>
         </div>
       </div>;
