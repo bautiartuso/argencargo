@@ -4673,13 +4673,26 @@ function CommsLog({opId,token}){
 }
 
 function ClientsList({token,onSelect}){
-  const [clients,setClients]=useState([]);const [lo,setLo]=useState(true);const [search,setSearch]=useState("");
-  useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=*&order=created_at.desc"});setClients(Array.isArray(c)?c:[]);setLo(false);})();},[token]);
-  const filtered=clients.filter(c=>{if(!search)return true;const s=search.toLowerCase();return `${c.first_name} ${c.last_name}`.toLowerCase().includes(s)||c.client_code?.toLowerCase().includes(s)||c.email?.toLowerCase().includes(s);});
+  const [clients,setClients]=useState([]);const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fCond,setFCond]=useState("");
+  // limit explicito: PostgREST corta en 1000 por defecto y el listado se comia clientes en silencio.
+  useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=*&order=created_at.desc&limit=10000"});setClients(Array.isArray(c)?c:[]);setLo(false);})();},[token]);
+  const filtered=clients.filter(c=>{
+    if(fCond&&c.tax_condition!==fCond)return false;
+    if(!search)return true;
+    const s=search.toLowerCase();
+    return `${c.first_name} ${c.last_name}`.toLowerCase().includes(s)||c.client_code?.toLowerCase().includes(s)||c.email?.toLowerCase().includes(s);
+  });
+  const nRI=clients.filter(c=>c.tax_condition==="responsable_inscripto").length;
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:24,gap:12,flexWrap:"wrap"}}>
       <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Clientes</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"4px 0 0"}}>{filtered.length} {filtered.length===1?"cliente":"clientes"}</p></div>
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:9,border:"1px solid rgba(255,255,255,0.07)"}}>
+          {[{k:"",l:"Todos"},{k:"responsable_inscripto",l:`RI (${nRI})`},{k:"monotributista",l:"Monotributo"}].map(o=>
+            <button key={o.k} onClick={()=>setFCond(o.k)} style={{padding:"6px 13px",fontSize:11.5,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:fCond===o.k?GOLD_GRADIENT:"transparent",color:fCond===o.k?"#0A1628":"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
+        </div>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nombre, código o email..." style={{width:360,maxWidth:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",transition:"all 180ms"}} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.08)";e.target.style.boxShadow="none";}}/>
+      </div>
     </div>
     {lo?<SkeletonTable rows={8} cols={5}/>:
     <div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
@@ -4689,7 +4702,7 @@ function ClientsList({token,onSelect}){
         </tr></thead>
         <tbody>{filtered.map(c=><tr key={c.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onClick={()=>onSelect(c)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
           <td style={{padding:"14px 16px",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:GOLD_LIGHT,fontSize:12.5,letterSpacing:"0.04em"}}>{c.client_code}</td>
-          <td style={{padding:"14px 16px",color:"#fff",fontWeight:500,fontSize:13}}>{c.first_name} {c.last_name}{c.tier&&c.tier!=="standard"&&(()=>{const ti=getTierInfo(c.tier);return <span title={`${ti.label} · ${c.lifetime_points_earned||0} pts ganados`} style={{marginLeft:10,fontSize:9,fontWeight:800,padding:"3px 9px",borderRadius:999,background:ti.gradient,color:"#0A1628",letterSpacing:"0.1em",border:`1px solid ${ti.color}`,display:"inline-flex",alignItems:"center",gap:4,textTransform:"uppercase"}}>{ti.icon} {ti.label}</span>;})()}</td>
+          <td style={{padding:"14px 16px",color:"#fff",fontWeight:500,fontSize:13}}>{c.first_name} {c.last_name}{c.tax_condition==="responsable_inscripto"&&<span title="Responsable Inscripto — factura A, paga sus impuestos aparte" style={{marginLeft:9,fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.14)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.35)",letterSpacing:"0.08em"}}>RI</span>}{c.tier&&c.tier!=="standard"&&(()=>{const ti=getTierInfo(c.tier);return <span title={`${ti.label} · ${c.lifetime_points_earned||0} pts ganados`} style={{marginLeft:10,fontSize:9,fontWeight:800,padding:"3px 9px",borderRadius:999,background:ti.gradient,color:"#0A1628",letterSpacing:"0.1em",border:`1px solid ${ti.color}`,display:"inline-flex",alignItems:"center",gap:4,textTransform:"uppercase"}}>{ti.icon} {ti.label}</span>;})()}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.6)",fontSize:12.5}}>{c.email}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.6)",fontSize:12.5}}>{c.whatsapp||<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",fontSize:12.5}}>{c.city}, {c.province}</td>
