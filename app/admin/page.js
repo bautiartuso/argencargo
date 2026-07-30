@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { calcOpBudget, applyAntidumpingFloor, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB } from "../../lib/calc";
+import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente } from "../../lib/delivery";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
@@ -4510,8 +4511,36 @@ function EntregaTab({op,opClient,token,onMarkDelivered,onReload}){
 
   // Cambiar la forma de entrega toca el presupuesto: el costo del envío a domicilio se sumó a
   // budget_total cuando el cliente confirmó, así que hay que sacarlo o volver a ponerlo.
+  // Mismo calculo que hace el link publico: zona segun la localidad del cliente y costo segun la
+  // tabla de fletes. Sin esto, pasar una op a "envio a domicilio" desde el admin la dejaba sin
+  // direccion y con costo 0.
+  const calcularEnvioDelCliente=async()=>{
+    const [cfgR,locR]=await Promise.all([
+      dq("calc_config",{token,filters:`?key=in.(${DELIVERY_CFG_KEYS})&select=key,value`}),
+      dq("delivery_localities",{token,filters:"?active=eq.true&select=name,keywords,km_from_origin&order=sort_order.asc"}),
+    ]);
+    const cfg={};(Array.isArray(cfgR)?cfgR:[]).forEach(r=>{cfg[r.key]=Number(r.value);});
+    const match=matchLocality(opClient?.city,opClient?.province,Array.isArray(locR)?locR:[]);
+    return {match,costo:match?computeDeliveryCostUsd(match,cfg):0,direccion:direccionDeCliente(opClient)};
+  };
+
   const cambiarEntrega=async(nueva)=>{
     if(nueva===op.delivery_choice)return;
+    if(nueva==="propio"){
+      const {match,costo,direccion}=await calcularEnvioDelCliente();
+      if(!match){
+        if(!await confirmDialog(`${opClient?.city||"La localidad del cliente"} no está en la tabla de zonas de flete propio. Se puede igual, pero vas a tener que poner el costo a mano. ¿Seguir?`))return;
+        await guardar({delivery_choice:"propio",delivery_address:direccion||null,delivery_zone:null,delivery_cost_usd:0,delivery_contact:null,carrier_mode:null});
+        toast("Cambiado a envío a domicilio · cargá el costo a mano","success");
+        return;
+      }
+      const delta=Math.round((costo-deliveryCost)*100)/100;
+      if(!await confirmDialog(`Zona ${match.name} · envío USD ${costo}. Se le suma al presupuesto${delta!==costo?` (ya tenía ${usd(deliveryCost)} cargado, la diferencia es ${usd(delta)})`:""}. ¿Seguir?`))return;
+      await guardar({delivery_choice:"propio",delivery_address:direccion||null,delivery_zone:match.name,
+        delivery_cost_usd:costo,budget_total:Math.round((bt+delta)*100)/100,delivery_contact:null,carrier_mode:null});
+      toast(`Envío a ${match.name} · +${usd(delta)} al presupuesto`,"success");
+      return;
+    }
     if(op.delivery_choice==="propio"&&deliveryCost>0){
       if(!await confirmDialog(`Se le había cobrado ${usd(deliveryCost)} de envío. Al cambiar a otra modalidad se le descuenta del presupuesto. ¿Seguir?`))return;
       await guardar({delivery_choice:nueva,delivery_cost_usd:0,delivery_zone:null,delivery_address:null,

@@ -1,6 +1,8 @@
 // GET  /api/entrega/[token] → datos de la operación para la pantalla pública de "carga lista"
 // POST /api/entrega/[token] → cliente confirma envío/retiro + método de pago
 
+import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd } from "../../../../lib/delivery";
+
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB = process.env.SUPABASE_SERVICE_ROLE;
 const BASE_URL = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
@@ -14,38 +16,6 @@ const sbFetch = async (path, init = {}) => {
   let parsed = null; try { parsed = JSON.parse(txt); } catch {}
   return { status: r.status, body: parsed };
 };
-
-function isCabaText(txt) {
-  return /\bcaba\b|capital federal|ciudad aut[oó]noma/.test(txt);
-}
-
-// Matchea la localidad del cliente contra la tabla delivery_localities (editable desde el admin,
-// sin necesidad de deploy). Solo busca match de GBA si el texto menciona Buenos Aires/GBA/provincia
-// — evita falsos positivos con localidades homónimas de otras provincias (ej. "Pilar, Córdoba").
-function matchLocality(city, province, localities) {
-  const txt = `${city || ""} ${province || ""}`.toLowerCase();
-  if (!txt.trim()) return null;
-  if (isCabaText(txt)) return { name: "CABA", km_from_origin: 0, isCaba: true };
-  if (!/buenos aires|gba|provincia/.test(txt)) return null;
-  for (const loc of localities) {
-    const kws = String(loc.keywords || "").split(",").map(k => k.trim()).filter(Boolean);
-    if (kws.some(k => txt.includes(k))) return { ...loc, isCaba: false };
-  }
-  return null;
-}
-
-// Costo real acordado con el fletero: CABA fijo, GBA fijo + variable por km desde Callao 1137.
-// Se dolariza con un TC fijo (cargado a mano en Configuración, no una API en vivo) + un margen
-// fijo en USD para no perder con las fluctuaciones — la idea es no ganar con el envío, solo cubrir.
-function computeDeliveryCostUsd(match, cfg) {
-  if (!match) return 0;
-  const rate = Number(cfg.delivery_usd_ars_rate || 1515);
-  const margin = Number(cfg.delivery_margin_usd || 3);
-  const ars = match.isCaba
-    ? Number(cfg.delivery_caba_flat_ars || 15000)
-    : Number(cfg.delivery_gba_flat_ars || 25000) + Number(cfg.delivery_gba_per_km_ars || 1200) * Number(match.km_from_origin || 0);
-  return Math.round(ars / rate + margin);
-}
 
 // collected_amount puede estar cargado en ARS (collection_currency) — convertir a USD antes de
 // restar, si no el saldo (y el total) da mal para cualquier cobro que no esté en USD.
@@ -70,7 +40,6 @@ async function loadOpData(token) {
   return opRes.body[0];
 }
 
-const DELIVERY_CFG_KEYS = "delivery_caba_flat_ars,delivery_gba_flat_ars,delivery_gba_per_km_ars,delivery_usd_ars_rate,delivery_margin_usd";
 
 async function loadDeliveryPricing() {
   const [configRes, locRes] = await Promise.all([
