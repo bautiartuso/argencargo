@@ -2028,7 +2028,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const opCostFlete=Number(op.cost_flete||0);
       const opCostsExtra=isAereoBlancoGI?(opCostFlete+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)):0;
       const totalCosto=supplierUsd+opCostsExtra;
-      const totalCostoArs=supplierPayments.reduce((s,p)=>s+sign(p)*Number(p.amount_ars||0),0);
+      const totalCostoArs=supplierPayments.filter(p=>Number(p.amount_usd||0)<=0).reduce((s,p)=>s+sign(p)*Number(p.amount_ars||0),0);
       const totalPagadoCosto=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+sign(p)*Number(p.amount_usd||0),0)+opCostsExtra;
       const totalPendCosto=totalCosto-totalPagadoCosto;
       const totalReembolsos=supplierPayments.filter(p=>p.type==="refund").reduce((s,p)=>s+Number(p.amount_usd||0),0);
