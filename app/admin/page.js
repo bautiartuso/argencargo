@@ -744,6 +744,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   const [cancelRedemptionTarget,setCancelRedemptionTarget]=useState(null);
   const [cancelingRedemption,setCancelingRedemption]=useState(false);
   const [cobroDecision,setCobroDecision]=useState(null); // {kind:"overpay"|"underpay", diff, resolve}
+  // Releer la op desde la base. Lo usa la solapa Entrega despues de editar algo.
+  const reloadOp=async()=>{
+    const fresh=await dq("operations",{token,filters:`?id=eq.${op.id}&select=*,clients(first_name,last_name,client_code)`});
+    if(Array.isArray(fresh)&&fresh[0])setOp(fresh[0]);
+  };
   const askCobroDecision=(kind,diff)=>new Promise(resolve=>setCobroDecision({kind,diff,resolve}));
   // Resolucion del saldo al cerrar la OPERACION. La misma pregunta existia solo en el boton
   // "Cerrar cobro" de la solapa Finanzas, asi que cerrando la op desde Estado nunca aparecia y la
@@ -3936,7 +3941,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
 
     </>}
 
-    {tab==="entrega"&&<EntregaTab op={op} opClient={opClient} token={token} onMarkDelivered={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_completed_at:new Date().toISOString()}});setOp(p=>({...p,delivery_completed_at:new Date().toISOString()}));flash("Marcado como entregado");}}/>}
+    {tab==="entrega"&&<EntregaTab op={op} opClient={opClient} token={token} onReload={reloadOp} onMarkDelivered={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_completed_at:new Date().toISOString()}});setOp(p=>({...p,delivery_completed_at:new Date().toISOString()}));flash("Marcado como entregado");}}/>}
     {tab==="comms"&&<CommsLog opId={op.id} token={token}/>}
     {showCloseChecklist&&<CloseChecklistModal op={op} items={items} payments={payments} clientPayments={clientPayments} supplierPayments={supplierPayments} onCancel={()=>{setShowCloseChecklist(false);setOp(p=>({...p,status:initOp.status}));}} onConfirm={async()=>{setShowCloseChecklist(false);await executeSave();}}/>}
     {facturaModal&&(()=>{
@@ -4457,88 +4462,143 @@ function EntregasPanel({token,onOpenOp}){
   </div>;
 }
 
-function EntregaTab({op,opClient,token,onMarkDelivered}){
+function EntregaTab({op,opClient,token,onMarkDelivered,onReload}){
   const [tc,setTc]=useState("");
   const [wallet,setWallet]=useState("");
+  const [guardando,setGuardando]=useState(false);
+  const [costoEnvio,setCostoEnvio]=useState("");
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const retiroLink=op.delivery_public_token?`https://argencargo.com.ar/retiro/${op.delivery_public_token}`:null;
-  const copyLink=()=>{if(!retiroLink)return;navigator.clipboard?.writeText(retiroLink);};
   useEffect(()=>{
     if(op.payment_method_chosen!=="crypto")return;
     (async()=>{const r=await dq("gi_settings",{token,filters:"?select=payment_crypto_wallet&limit=1"});setWallet(Array.isArray(r)&&r[0]?r[0].payment_crypto_wallet||"":"");})();
   },[op.payment_method_chosen,token]);
+
   if(!op.delivery_confirmed_at){
     return <Card title="Entrega">
-      <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Todavía no tenemos la confirmación del cliente (envío/retiro + forma de pago). El link se manda automáticamente con el WhatsApp de "carga lista" — también podés copiarlo desde acá.</p>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Todavía no tenemos la confirmación del cliente. El link se manda solo con el WhatsApp de “carga lista”; también podés copiarlo de acá.</p>
       {retiroLink&&<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         <code style={{flex:1,minWidth:220,padding:"9px 12px",fontSize:12,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,color:GOLD_LIGHT,overflowWrap:"anywhere"}}>{retiroLink}</code>
-        <Btn small variant="secondary" onClick={copyLink}>📋 Copiar</Btn>
+        <Btn small variant="secondary" onClick={()=>{navigator.clipboard?.writeText(retiroLink);toast("Link copiado","success");}}>📋 Copiar</Btn>
       </div>}
     </Card>;
   }
 
   const bt=Number(op.budget_total||0);
-  const debtApp=Number(op.debt_applied_usd||0);
-  const creditApp=Number(op.credit_applied_usd||0);
-  const totAnt=Number(op.total_anticipos||0);
-  const collected=usdCollected(op);
-  // budget_total ya incluye el costo de envío a domicilio (se suma al confirmar en /retiro/[token]) —
-  // no volver a sumarlo acá, solo lo mostramos como referencia informativa abajo.
-  const total=Math.round(Math.max(0,bt+debtApp-totAnt-collected-creditApp)*100)/100;
+  const total=Math.round(Math.max(0,bt+Number(op.debt_applied_usd||0)-Number(op.total_anticipos||0)-usdCollected(op)-Number(op.credit_applied_usd||0))*100)/100;
   const deliveryCost=Number(op.delivery_cost_usd||0);
-
-  const entregaLabel=op.delivery_choice==="oficina"?"Retiro por oficina":op.delivery_choice==="propio"?`Envío a domicilio · ${op.delivery_zone||""}`:"Envío por transportista";
-  const payLabel=op.payment_method_chosen==="efectivo"?"Efectivo":op.payment_method_chosen==="transferencia"?"Transferencia en pesos":"Cripto (USDT)";
-  const registeredAddr=`${opClient?.street||""}${opClient?.floor_apt?" "+opClient.floor_apt:""}${opClient?.city?", "+opClient.city:""}`.trim();
-  const addrChanged=op.delivery_choice==="propio"&&op.delivery_address&&registeredAddr&&op.delivery_address.trim()!==registeredAddr;
-
-  const opHeader=`${op.operation_code}${opClient?.client_code?` · ${opClient.client_code}`:""}`;
-  const tcNum=Number(String(tc).replace(",","."))||0;
-  const ars=Math.round(total*tcNum);
   const isTransferencia=op.payment_method_chosen==="transferencia";
   const isCrypto=op.payment_method_chosen==="crypto";
+  const tcNum=Number(String(tc).replace(",","."))||0;
+  const ars=Math.round(total*tcNum);
+  const opHeader=`${op.operation_code}${opClient?.client_code?` · ${opClient.client_code}`:""}`;
   const waMsg=isTransferencia
     ?`${opHeader}\n\n$ ${ars>0?ars.toLocaleString("es-AR"):"—"}\n\n${CUENTA_ARS}`
     :`${opHeader}\n\n${usd(total)}\n\n${wallet||"(cargando billetera...)"}`;
-  const waMsgReady=isTransferencia?ars>0:!!wallet;
   const openWa=()=>{
     const wa=String(opClient?.whatsapp||"").replace(/[^0-9]/g,"");
-    if(!wa){alert("El cliente no tiene WhatsApp cargado.");return;}
+    if(!wa){alertDialog("El cliente no tiene WhatsApp cargado.");return;}
     window.open(`https://api.whatsapp.com/send?phone=${wa}&text=${encodeURIComponent(waMsg)}`,"_blank");
   };
 
+  const guardar=async(body)=>{
+    setGuardando(true);
+    await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
+    setGuardando(false);
+    onReload?.();
+  };
+
+  // Cambiar la forma de entrega toca el presupuesto: el costo del envío a domicilio se sumó a
+  // budget_total cuando el cliente confirmó, así que hay que sacarlo o volver a ponerlo.
+  const cambiarEntrega=async(nueva)=>{
+    if(nueva===op.delivery_choice)return;
+    if(op.delivery_choice==="propio"&&deliveryCost>0){
+      if(!await confirmDialog(`Se le había cobrado ${usd(deliveryCost)} de envío. Al cambiar a otra modalidad se le descuenta del presupuesto. ¿Seguir?`))return;
+      await guardar({delivery_choice:nueva,delivery_cost_usd:0,delivery_zone:null,delivery_address:null,
+        budget_total:Math.round((bt-deliveryCost)*100)/100,
+        delivery_contact:nueva==="carrier"?op.delivery_contact:null,carrier_mode:nueva==="carrier"?op.carrier_mode:null});
+      toast(`Cambiado · se descontaron ${usd(deliveryCost)} del presupuesto`,"success");
+      return;
+    }
+    await guardar({delivery_choice:nueva,
+      delivery_contact:nueva==="carrier"?op.delivery_contact:null,carrier_mode:nueva==="carrier"?op.carrier_mode:null});
+    toast("Forma de entrega actualizada","success");
+  };
+  const aplicarCostoEnvio=async()=>{
+    const c=Math.round((Number(String(costoEnvio).replace(",","."))||0)*100)/100;
+    if(c<0)return;
+    const delta=Math.round((c-deliveryCost)*100)/100;
+    await guardar({delivery_cost_usd:c,budget_total:Math.round((bt+delta)*100)/100});
+    setCostoEnvio("");
+    toast(delta===0?"Sin cambios":`Presupuesto ${delta>0?"+":""}${usd(delta)}`,"success");
+  };
+
+  const OPCIONES_ENTREGA=[{k:"oficina",l:"Retira por oficina"},{k:"propio",l:"Envío a domicilio"},{k:"carrier",l:"Transportista"}];
+  const OPCIONES_PAGO=[{k:"efectivo",l:"Efectivo"},{k:"transferencia",l:"Transferencia"},{k:"crypto",l:"Cripto (USDT)"}];
+  const chip=(activo)=>({padding:"8px 14px",fontSize:12,fontWeight:700,borderRadius:8,cursor:guardando?"wait":"pointer",
+    border:`1px solid ${activo?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.1)"}`,
+    background:activo?"rgba(184,149,106,0.14)":"transparent",color:activo?GOLD_LIGHT:"rgba(255,255,255,0.55)"});
+  const rotulo={fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 8px"};
+  const dc=op.delivery_contact||{};
+
   return <Card title="Entrega">
-    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,flexWrap:"wrap"}}>
       <span style={{width:8,height:8,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 0 3px rgba(34,197,94,0.2)"}}/>
       <span style={{fontSize:13,fontWeight:800,color:"#22c55e"}}>El cliente confirmó su carga lista</span>
       <span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:6,background:op.is_collected?"rgba(34,197,94,0.12)":"rgba(251,191,36,0.1)",color:op.is_collected?"#22c55e":"#fbbf24",border:`1px solid ${op.is_collected?"rgba(34,197,94,0.3)":"rgba(251,191,36,0.3)"}`}}>{op.is_collected?"Pagado":"Sin pagar"}</span>
       <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:"auto"}}>{formatDate(op.delivery_confirmed_at)}</span>
     </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
-      <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"10px 12px"}}>
-        <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Entrega</p>
-        <p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>{entregaLabel}</p>
-        {op.delivery_choice==="propio"&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>{op.delivery_address}</p>}
-        {addrChanged&&<p style={{fontSize:10.5,fontWeight:700,color:"#fbbf24",margin:"6px 0 0",background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.3)",borderRadius:6,padding:"3px 8px",display:"inline-block"}}>⚠ Dirección distinta a la registrada</p>}
-      </div>
-      <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"10px 12px"}}>
-        <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Forma de pago</p>
-        <p style={{fontSize:13,fontWeight:700,color:"#fff",margin:0}}>{payLabel}</p>
-        {(isTransferencia||isCrypto)&&!op.is_collected&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Falta pasarle {isTransferencia?"el monto":"la billetera"} por WhatsApp</p>}
-      </div>
-      <div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"10px 12px"}}>
-        <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Total confirmado</p>
-        <p style={{fontSize:15,fontWeight:800,color:GOLD_LIGHT,margin:0}}>{usd(total)}</p>
-        {deliveryCost>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"2px 0 0"}}>Incluye envío (+{usd(deliveryCost)})</p>}
-      </div>
+
+    {/* Total, que es lo que más se mira */}
+    <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:12,flexWrap:"wrap",padding:"12px 15px",marginBottom:16,borderRadius:10,background:"rgba(184,149,106,0.07)",border:"1px solid rgba(184,149,106,0.22)"}}>
+      <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>Total a cobrar</span>
+      <span style={{fontSize:22,fontWeight:800,color:GOLD_LIGHT,letterSpacing:"-0.02em"}}>{usd(total)}</span>
+      {deliveryCost>0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",width:"100%"}}>Incluye {usd(deliveryCost)} de envío</span>}
     </div>
 
-    {(isTransferencia||isCrypto)&&!op.is_collected&&<div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"14px 16px",marginBottom:14}}>
-      <p style={{fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 10px"}}>{isTransferencia?"Calcular monto en pesos":"Datos para transferir"}</p>
+    {/* Cómo se entrega — editable */}
+    <p style={rotulo}>Cómo se entrega</p>
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+      {OPCIONES_ENTREGA.map(o=><button key={o.k} disabled={guardando} onClick={()=>cambiarEntrega(o.k)} style={chip(op.delivery_choice===o.k)}>{o.l}</button>)}
+    </div>
+    {op.delivery_choice==="propio"&&<div style={{marginBottom:16,padding:"11px 13px",borderRadius:9,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
+      <p style={{fontSize:12.5,color:"#fff",margin:0}}>{op.delivery_address||"Sin dirección cargada"}</p>
+      {op.delivery_zone&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>Zona {op.delivery_zone}</p>}
+      <div style={{display:"flex",gap:8,alignItems:"center",marginTop:9}}>
+        <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Costo del envío USD</span>
+        <input value={costoEnvio} onChange={e=>setCostoEnvio(e.target.value)} placeholder={String(deliveryCost||0)}
+          style={{width:90,padding:"6px 9px",fontSize:12.5,fontWeight:700,textAlign:"right",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
+        <Btn small variant="secondary" disabled={guardando||costoEnvio===""} onClick={aplicarCostoEnvio}>Aplicar al presupuesto</Btn>
+      </div>
+    </div>}
+    {op.delivery_choice==="carrier"&&<div style={{marginBottom:16,padding:"11px 13px",borderRadius:9,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)"}}>
+      <p style={{fontSize:12.5,color:"#fff",margin:0,fontWeight:600}}>
+        {op.carrier_mode==="domicilio"?"A domicilio":"Retira en sucursal"}
+        {op.carrier_mode!=="domicilio"&&dc.sucursal?` · ${dc.sucursal}`:""}
+      </p>
+      <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"4px 0 0"}}>
+        {[dc.nombre&&`${dc.nombre} ${dc.apellido||""}`.trim(),dc.dni&&`DNI ${dc.dni}`,dc.telefono,dc.cp&&`CP ${dc.cp}`].filter(Boolean).join(" · ")||"Sin datos de contacto"}
+      </p>
+      {op.carrier_mode==="domicilio"&&dc.direccion&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"3px 0 0"}}>{dc.direccion}{dc.piso?`, ${dc.piso}`:""}</p>}
+    </div>}
+    {op.delivery_choice==="oficina"&&<div style={{marginBottom:16}}/>}
+
+    {/* Cómo paga — editable */}
+    <p style={rotulo}>Cómo paga</p>
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:6}}>
+      {OPCIONES_PAGO.map(o=><button key={o.k} disabled={guardando}
+        onClick={async()=>{if(o.k===op.payment_method_chosen)return;await guardar({payment_method_chosen:o.k});toast("Forma de pago actualizada","success");}}
+        style={chip(op.payment_method_chosen===o.k)}>{o.l}</button>)}
+    </div>
+    {op.payment_method_chosen==="efectivo"&&op.delivery_choice==="carrier"&&
+      <p style={{fontSize:11.5,color:"#fbbf24",margin:"0 0 14px"}}>⚠ Con transportista no se puede cobrar en efectivo — el transportista no cobra.</p>}
+
+    {(isTransferencia||isCrypto)&&!op.is_collected&&<div style={{background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,padding:"14px 16px",margin:"14px 0"}}>
+      <p style={{...rotulo,margin:"0 0 10px"}}>{isTransferencia?"Pasarle el monto en pesos":"Pasarle la billetera"}</p>
       {isTransferencia&&<div style={{display:"flex",gap:24,alignItems:"flex-end",marginBottom:12}}>
         <div>
           <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Tipo de cambio</p>
-          <input value={tc} onChange={e=>setTc(e.target.value)} placeholder="1050" style={{width:100,padding:"7px 9px",fontSize:14,fontWeight:700,border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
+          <input value={tc} onChange={e=>setTc(e.target.value)} placeholder="1580" style={{width:100,padding:"7px 9px",fontSize:14,fontWeight:700,border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
         </div>
         <div>
           <p style={{fontSize:9,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>Monto en pesos</p>
@@ -4547,7 +4607,7 @@ function EntregaTab({op,opClient,token,onMarkDelivered}){
       </div>}
       <pre style={{margin:0,padding:"11px 13px",borderRadius:8,background:"rgba(34,197,94,0.06)",border:"1px dashed rgba(34,197,94,0.3)",fontFamily:"'SF Mono','JetBrains Mono',monospace",fontSize:12.5,color:"#d7f5e3",whiteSpace:"pre-wrap",lineHeight:1.7}}>{waMsg}</pre>
       <div style={{display:"flex",gap:8,marginTop:12}}>
-        <Btn small onClick={openWa} disabled={!waMsgReady}>💬 Enviar por WhatsApp</Btn>
+        <Btn small onClick={openWa} disabled={isTransferencia?ars<=0:!wallet}>💬 Enviar por WhatsApp</Btn>
       </div>
     </div>}
 
