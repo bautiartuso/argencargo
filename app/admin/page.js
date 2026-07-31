@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from "react";
 import { calcOpBudget, applyAntidumpingFloor, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB } from "../../lib/calc";
 import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd, direccionDeCliente } from "../../lib/delivery";
-import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog } from "../../lib/ui";
+import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, DialogHost, confirmDialog, alertDialog, promptDialog } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
 import IntelligencePanel from "./components/IntelligencePanel";
@@ -9813,7 +9813,128 @@ function FinanceDashboard({token}){
 // Centro de comunicaciones: muestra ops con estados que requieren WA al cliente
 // y no se han enviado todavía. 1 click por cliente = WA abierto con mensaje prellenado.
 // También muestra feedback recibido (ratings 1-5 de ops cerradas).
+const SEG_POR_PAGINA=40;
+// Seguimiento comercial: a quien hay que escribirle. Dos grupos, con su propio mensaje.
+// La consulta la resuelve clientes_seguimiento() en la base y se pide de a paginas: son
+// ~950 clientes y traerlos todos al navegador para filtrarlos aca no escala.
+function SeguimientoPanel({token,templates,flash}){
+  const [seg,setSeg]=useState("inactivo");
+  const [dias,setDias]=useState(90);
+  const [filas,setFilas]=useState([]);const [total,setTotal]=useState(0);
+  const [conteos,setConteos]=useState({inactivo:0,sin_ops:0});
+  const [lo,setLo]=useState(true);const [err,setErr]=useState("");
+  const [search,setSearch]=useState("");const [busq,setBusq]=useState("");const [pag,setPag]=useState(0);
+
+  useEffect(()=>{const t=setTimeout(()=>{setBusq(search.trim());setPag(0);},300);return()=>clearTimeout(t);},[search]);
+  useEffect(()=>{setPag(0);},[seg,dias]);
+
+  const filtroBusq=useMemo(()=>{
+    const palabras=busq.replace(/[(),*:"'\\]/g," ").split(/\s+/).filter(Boolean).slice(0,4);
+    if(!palabras.length)return "";
+    const cond=w=>{const e=encodeURIComponent(w);return `or(first_name.ilike.*${e}*,last_name.ilike.*${e}*,client_code.ilike.*${e}*,email.ilike.*${e}*)`;};
+    return `&and=(${palabras.map(cond).join(",")})`;
+  },[busq]);
+
+  const base=`?p_dias=${dias}&order=last_followup_at.asc.nullsfirst,facturado_usd.desc`;
+  const cargar=async()=>{
+    setLo(true);setErr("");
+    const desde=pag*SEG_POR_PAGINA;
+    const [pagina,cIna,cSin]=await Promise.all([
+      dqPage("rpc/clientes_seguimiento",{token,filters:`${base}&segmento=eq.${seg}${filtroBusq}`,desde,hasta:desde+SEG_POR_PAGINA-1}),
+      dqPage("rpc/clientes_seguimiento",{token,filters:`?p_dias=${dias}&segmento=eq.inactivo`,desde:0,hasta:0}),
+      dqPage("rpc/clientes_seguimiento",{token,filters:`?p_dias=${dias}&segmento=eq.sin_ops`,desde:0,hasta:0}),
+    ]);
+    if(pagina.error)setErr("No pudimos cargar el seguimiento. Probá de nuevo.");
+    setFilas(pagina.rows);setTotal(pagina.total);
+    setConteos({inactivo:cIna.total,sin_ops:cSin.total});
+    setLo(false);
+  };
+  useEffect(()=>{cargar();},[token,seg,dias,pag,filtroBusq]);
+
+  const mensajeDe=(c)=>{
+    const tpl=templates.find(t=>t.key===(c.segmento==="sin_ops"?"wa_seguimiento_sin_ops":"wa_seguimiento_inactivo"));
+    const data={firstName:c.first_name||"",clientCode:c.client_code||"",opCode:c.ultima_op_code||""};
+    const cuerpo=tpl?.body||"Hola {{firstName}}!";
+    return String(cuerpo).replace(/\{\{(\w+)\}\}/g,(_,k)=>data[k]!=null?String(data[k]):"");
+  };
+  const marcarContactado=async(c,cuando)=>{
+    await dq("clients",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body:{last_followup_at:cuando}});
+    setFilas(p=>p.map(x=>x.id===c.id?{...x,last_followup_at:cuando}:x));
+  };
+  const abrirWA=async(c)=>{
+    const num=(c.whatsapp||"").replace(/[^0-9]/g,"");
+    if(!num){alertDialog("Este cliente no tiene WhatsApp cargado.");return;}
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(mensajeDe(c))}`,"_blank");
+    await marcarContactado(c,new Date().toISOString());
+    flash(`WhatsApp abierto · ${c.client_code}`);
+  };
+
+  const paginas=Math.max(1,Math.ceil(total/SEG_POR_PAGINA));
+  const fmtUsd=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const hace=(iso)=>{if(!iso)return null;const d=Math.floor((Date.now()-new Date(iso).getTime())/86400000);return d<=0?"hoy":d===1?"ayer":`hace ${d} días`;};
+  const SEGS=[{k:"inactivo",l:"Inactivos",ico:"🕒",d:"Ya importaron con nosotros pero hace rato que no vuelven."},
+              {k:"sin_ops",l:"Sin operaciones",ico:"🌱",d:"Se registraron pero nunca llegaron a hacer la primera importación."}];
+  const actual=SEGS.find(x=>x.k===seg);
+
+  return <div>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
+      {SEGS.map(o=><button key={o.k} onClick={()=>setSeg(o.k)} style={{flex:"1 1 240px",textAlign:"left",padding:"13px 16px",borderRadius:12,cursor:"pointer",border:`1.5px solid ${seg===o.k?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.07)"}`,background:seg===o.k?"rgba(184,149,106,0.09)":"rgba(255,255,255,0.025)"}}>
+        <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+          <span style={{fontSize:14}}>{o.ico}</span>
+          <span style={{fontSize:13.5,fontWeight:700,color:seg===o.k?"#fff":"rgba(255,255,255,0.7)"}}>{o.l}</span>
+          <span style={{fontSize:18,fontWeight:800,color:seg===o.k?IC:"rgba(255,255,255,0.4)",marginLeft:"auto",fontVariantNumeric:"tabular-nums"}}>{conteos[o.k]}</span>
+        </div>
+        <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"5px 0 0",lineHeight:1.45}}>{o.d}</p>
+      </button>)}
+    </div>
+
+    <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
+      {seg==="inactivo"&&<div style={{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:9,border:"1px solid rgba(255,255,255,0.07)"}}>
+        <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",padding:"6px 8px"}}>Sin operar hace</span>
+        {[60,90,180].map(d=><button key={d} onClick={()=>setDias(d)} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:dias===d?GOLD_GRADIENT:"transparent",color:dias===d?"#0A1628":"rgba(255,255,255,0.5)"}}>{d} días</button>)}
+      </div>}
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nombre, código o email..." style={{flex:"1 1 240px",padding:"9px 13px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
+    </div>
+
+    <p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:"0 0 12px"}}>
+      El mensaje sale de la plantilla <b style={{color:"rgba(255,255,255,0.6)"}}>{seg==="sin_ops"?"WhatsApp — Seguimiento a cliente que nunca operó":"WhatsApp — Seguimiento a cliente inactivo"}</b>, editable en la solapa Operativa. Al abrir WhatsApp se marca el contacto solo.
+    </p>
+    {err&&<div style={{padding:"12px 16px",marginBottom:14,borderRadius:10,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",color:"#f87171",fontSize:13}}>{err}</div>}
+
+    {lo?<SkeletonTable rows={8} cols={4}/>:filas.length===0
+      ?<EmptyState icon="users" title={busq?"Sin resultados":"Nada para seguir"} description={busq?`Nada coincide con "${busq}"`:`No hay clientes ${actual?.l.toLowerCase()} por ahora.`}/>
+      :<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
+        {filas.map(c=><div key={c.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,0.04)",flexWrap:"wrap"}}>
+          <div style={{flex:"1 1 260px",minWidth:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:9,flexWrap:"wrap"}}>
+              <span style={{fontFamily:"'JetBrains Mono','SF Mono',monospace",fontSize:11.5,fontWeight:700,color:IC,padding:"2px 7px",background:"rgba(184,149,106,0.1)",borderRadius:4}}>{c.client_code}</span>
+              <span style={{fontSize:13.5,color:"#fff",fontWeight:500}}>{c.first_name} {c.last_name}</span>
+              {c.last_followup_at&&<span title={`Último seguimiento: ${new Date(c.last_followup_at).toLocaleString("es-AR")}`} style={{fontSize:9.5,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"rgba(96,165,250,0.13)",color:"#60a5fa"}}>✓ contactado {hace(c.last_followup_at)}</span>}
+            </div>
+            <p style={{fontSize:11.5,color:"rgba(255,255,255,0.42)",margin:"4px 0 0"}}>
+              {c.segmento==="sin_ops"
+                ?<>Registrado hace {c.dias_inactivo} días · {c.email||"sin email"}</>
+                :<>{c.ops_total} {c.ops_total===1?"operación":"operaciones"} · última {c.ultima_op_code} hace {c.dias_inactivo} días · facturó USD {fmtUsd(c.facturado_usd)}</>}
+            </p>
+          </div>
+          <div style={{display:"flex",gap:7,alignItems:"center"}}>
+            <button onClick={()=>alertDialog(mensajeDe(c),{title:`Mensaje para ${c.first_name}`})} style={{padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer"}}>Ver mensaje</button>
+            {c.last_followup_at&&<button onClick={()=>marcarContactado(c,null)} title="Sacar la marca de contactado" style={{padding:"7px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.35)",cursor:"pointer"}}>↺</button>}
+            <button onClick={()=>abrirWA(c)} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff"}}>WhatsApp</button>
+          </div>
+        </div>)}
+      </div>}
+
+    {paginas>1&&<div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:12,marginTop:18}}>
+      <button onClick={()=>setPag(p=>Math.max(0,p-1))} disabled={pag===0} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.09)",background:"rgba(255,255,255,0.04)",color:pag>0?"rgba(255,255,255,0.75)":"rgba(255,255,255,0.25)",cursor:pag>0?"pointer":"default"}}>← Anterior</button>
+      <span style={{fontSize:12,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums"}}>Página {pag+1} de {paginas}</span>
+      <button onClick={()=>setPag(p=>Math.min(paginas-1,p+1))} disabled={pag>=paginas-1} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.09)",background:"rgba(255,255,255,0.04)",color:pag<paginas-1?"rgba(255,255,255,0.75)":"rgba(255,255,255,0.25)",cursor:pag<paginas-1?"pointer":"default"}}>Siguiente →</button>
+    </div>}
+  </div>;
+}
+
 function ComunicacionesPanel({token}){
+  const [tab,setTab]=useState("seguimiento");
   const [loading,setLoading]=useState(true);
   const [ops,setOps]=useState([]);
   const [feedbacks,setFeedbacks]=useState([]);const [verTodoFb,setVerTodoFb]=useState(false);const [soloGoogle,setSoloGoogle]=useState(false);
@@ -9841,16 +9962,25 @@ function ComunicacionesPanel({token}){
 
   const inpStyle={width:"100%",padding:"8px 10px",fontSize:13,border:"1px solid rgba(255,255,255,0.06)",borderRadius:6,background:"rgba(0,0,0,0.2)",color:"#fff",outline:"none",boxSizing:"border-box"};
   const openTpl=(t)=>{setEditingTpl(t.id);setTplDraft({subject:t.subject||"",greeting:t.greeting||"",body:t.body||"",cta_text:t.cta_text||""});};
+  // Google no avisa si el cliente escribio la reseña: la marca la pone el admin a mano
+  // despues de verla en el perfil. Antes se usaba clicked_google_review, que solo dice
+  // que abrio el link, y por eso hubo clientes tratados como si ya hubieran reseñado.
+  const toggleGoogleConfirmada=async(f)=>{
+    const nuevo=!f.google_review_confirmed;
+    await dq("op_feedback",{method:"PATCH",token,filters:`?id=eq.${f.id}`,body:{google_review_confirmed:nuevo,google_review_confirmed_at:nuevo?new Date().toISOString():null}});
+    setFeedbacks(p=>p.map(x=>x.id===f.id?{...x,google_review_confirmed:nuevo}:x));
+    flash(nuevo?"Reseña de Google confirmada":"Reseña de Google desmarcada");
+  };
   const sendPreview=async(tpl)=>{
-    const to=prompt("¿A qué email mandamos el preview?","bautiartuso21@gmail.com");
+    const to=await promptDialog(`¿A qué email mandamos el preview de "${tpl.label}"?`,{defaultValue:"bautiartuso21@gmail.com",placeholder:"nombre@dominio.com"});
     if(!to)return;
-    const trigger=tpl.key.replace("email_","");
     try{
-      const r=await fetch("/api/notify/preview",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({to,trigger})});
+      // Se manda la key de la plantilla: antes se mandaba un "trigger" y solo andaban 3 de las 9.
+      const r=await fetch("/api/notify/preview",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({to,key:tpl.key})});
       const resp=await r.json();
       if(resp?.ok)flash(`✉️ Preview de "${tpl.label}" enviado a ${to}`);
-      else alertDialog(`Error: ${resp?.error||"desconocido"}\n${JSON.stringify(resp?.detail||{},null,2)}`);
-    }catch(e){alertDialog("Error: "+e.message);}
+      else alertDialog(resp?.error||"No pudimos enviar el preview.",{title:"No se envió"});
+    }catch(e){alertDialog(e.message,{title:"No se envió"});}
   };
   const cancelTpl=()=>{setEditingTpl(null);setTplDraft({});};
   const saveTpl=async()=>{
@@ -9961,8 +10091,14 @@ function ComunicacionesPanel({token}){
       <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Comunicaciones</h2>
       <button onClick={testEmail} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>📧 Probar email</button>
     </div>
-    <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"0 0 20px"}}>Notificaciones manuales (WhatsApp) + historial de feedback de clientes.</p>
+    <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"0 0 16px"}}>{tab==="seguimiento"?"A quién le conviene escribirle hoy para que vuelva a operar.":"Notificaciones manuales (WhatsApp), plantillas y feedback de clientes."}</p>
+    <div style={{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:10,border:"1px solid rgba(255,255,255,0.07)",marginBottom:20,width:"fit-content",maxWidth:"100%",flexWrap:"wrap"}}>
+      {[{k:"seguimiento",l:"Seguimiento de clientes"},{k:"operativa",l:"Operativa y plantillas"}].map(o=>
+        <button key={o.k} onClick={()=>setTab(o.k)} style={{padding:"7px 15px",fontSize:12.5,fontWeight:700,borderRadius:7,border:"none",cursor:"pointer",background:tab===o.k?GOLD_GRADIENT:"transparent",color:tab===o.k?"#0A1628":"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
+    </div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12}}>{msg}</p>}
+
+    {tab==="seguimiento"?<SeguimientoPanel token={token} templates={templates} flash={flash}/>:<>
 
     {/* WAs pendientes */}
     <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem",marginBottom:20}}>
@@ -10048,17 +10184,18 @@ function ComunicacionesPanel({token}){
 
     {/* Feedback del cliente */}
     <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.25rem 1.5rem"}}>
-      {(()=>{const n=feedbacks.length;const g=feedbacks.filter(f=>f.clicked_google_review).length;const c=feedbacks.filter(f=>(f.comment||"").trim()).length;
+      {(()=>{const n=feedbacks.length;const g=feedbacks.filter(f=>f.google_review_confirmed).length;const cl=feedbacks.filter(f=>f.clicked_google_review&&!f.google_review_confirmed).length;const c=feedbacks.filter(f=>(f.comment||"").trim()).length;
         const prom=n?feedbacks.reduce((a,f)=>a+Number(f.rating||0),0)/n:0;
         return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",margin:"0 0 14px"}}>
           <h3 style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>⭐ Feedback de clientes ({n})</h3>
           <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
             {n>0&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Promedio <b style={{color:"#fbbf24"}}>{prom.toFixed(1)}</b> · {c} con comentario</span>}
-            <button onClick={()=>{setSoloGoogle(v=>!v);setVerTodoFb(false);}} style={{fontSize:10.5,fontWeight:700,padding:"4px 10px",borderRadius:999,cursor:"pointer",border:`1px solid ${soloGoogle?"rgba(34,197,94,0.45)":"rgba(255,255,255,0.1)"}`,background:soloGoogle?"rgba(34,197,94,0.14)":"transparent",color:soloGoogle?"#22c55e":"rgba(255,255,255,0.5)"}}>📍 Google ({g})</button>
+            <button title="Reseñas verificadas a mano en el perfil de Google" onClick={()=>{setSoloGoogle(v=>!v);setVerTodoFb(false);}} style={{fontSize:10.5,fontWeight:700,padding:"4px 10px",borderRadius:999,cursor:"pointer",border:`1px solid ${soloGoogle?"rgba(34,197,94,0.45)":"rgba(255,255,255,0.1)"}`,background:soloGoogle?"rgba(34,197,94,0.14)":"transparent",color:soloGoogle?"#22c55e":"rgba(255,255,255,0.5)"}}>📍 Google ✓ ({g})</button>
+            {cl>0&&<span title="Abrieron el link a Google pero la reseña todavía no está verificada" style={{fontSize:10.5,fontWeight:700,padding:"4px 10px",borderRadius:999,border:"1px solid rgba(251,191,36,0.3)",color:"#fbbf24"}}>{cl} sin verificar</span>}
           </div>
         </div>;})()}
       {feedbacks.length===0?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem"}}>Sin feedback todavía</p>:(()=>{
-        const lista=soloGoogle?feedbacks.filter(f=>f.clicked_google_review):feedbacks;
+        const lista=soloGoogle?feedbacks.filter(f=>f.google_review_confirmed):feedbacks;
         const visibles=verTodoFb?lista:lista.slice(0,10);
         return <div>
         {visibles.map(f=>{
@@ -10068,7 +10205,10 @@ function ComunicacionesPanel({token}){
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{fontFamily:"monospace",fontSize:11,fontWeight:700,color:IC,padding:"2px 8px",background:"rgba(184,149,106,0.1)",borderRadius:4}}>{f.operations?.operation_code||"—"}</span>
                 <span style={{fontSize:13,color:"#fff"}}>{f.operations?.clients?`${f.operations.clients.first_name} ${f.operations.clients.last_name}`:"—"}</span>
-                {f.clicked_google_review&&<span title="Dejó reseña en Google" style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>📍 Google ✓</span>}
+                {f.google_review_confirmed
+                  ?<span title="Reseña verificada en el perfil de Google" style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e"}}>📍 Google ✓</span>
+                  :f.clicked_google_review&&<span title="Abrió el link a Google. No sabemos si llegó a escribir la reseña — Google no nos avisa." style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.13)",color:"#fbbf24"}}>📍 Abrió Google</span>}
+                <button onClick={()=>toggleGoogleConfirmada(f)} title={f.google_review_confirmed?"Marcar que la reseña no está":"Confirmar que la reseña está publicada en Google"} style={{fontSize:9.5,fontWeight:700,padding:"2px 7px",borderRadius:4,cursor:"pointer",border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.45)"}}>{f.google_review_confirmed?"quitar":"confirmar"}</button>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 {[1,2,3,4,5].map(n=><span key={n} style={{fontSize:16,color:n<=f.rating?ratingColor:"rgba(255,255,255,0.12)"}}>★</span>)}
@@ -10090,6 +10230,7 @@ function ComunicacionesPanel({token}){
           </button>}
       </div>;})()}
     </div>
+    </>}
   </div>;
 }
 

@@ -1,5 +1,5 @@
 // POST /api/notify/preview
-// Body: { to, trigger }
+// Body: { to, key }   (o { to, trigger } — forma vieja, se mantiene)
 // Renderiza la plantilla de email correspondiente con datos de EJEMPLO
 // y la envía al destinatario indicado. Solo admin. No toca ninguna op real.
 
@@ -93,31 +93,45 @@ export async function POST(req) {
   try {
     if (!await verifyAdmin(req)) return Response.json({ error: "unauthorized" }, { status: 401 });
     if (!RESEND_KEY) return Response.json({ error: "RESEND_API_KEY no configurada" }, { status: 500 });
-    const { to, trigger } = await req.json();
-    if (!to || !trigger) return Response.json({ error: "to y trigger requeridos" }, { status: 400 });
-    if (!["deposito", "arribo", "cerrada"].includes(trigger))
-      return Response.json({ error: "trigger inválido (deposito/arribo/cerrada)" }, { status: 400 });
+    const body = await req.json();
+    const to = body.to;
+    // Antes esto aceptaba solo tres triggers fijos, asi que el boton Preview fallaba en 6 de las
+    // 9 plantillas de email. Ahora sirve cualquier plantilla que exista, buscada por su key.
+    const key = body.key || (body.trigger ? `email_${body.trigger}` : null);
+    if (!to || !key) return Response.json({ error: "faltan el email y la plantilla" }, { status: 400 });
 
-    const tpl = await fetchTemplate(`email_${trigger}`);
-    if (!tpl) return Response.json({ error: "plantilla no encontrada" }, { status: 404 });
+    const tpl = await fetchTemplate(key);
+    if (!tpl) return Response.json({ error: `no existe la plantilla "${key}"` }, { status: 404 });
+    if (tpl.channel && tpl.channel !== "email")
+      return Response.json({ error: "el preview por mail es solo para plantillas de email" }, { status: 400 });
 
     // Datos de EJEMPLO (cliente/op ficticios)
     const opCode = "AC-XXXX";
+    // Todas las variables que usan las plantillas hoy. Si falta alguna, interpolate la deja
+    // vacia y el preview sale con un hueco, que es peor que verla con un valor de ejemplo.
     const data = {
       firstName: "Juan",
+      clientCode: "JUAPER",
       opCode,
       desc: "Auriculares Bluetooth",
       portalLink: `${BASE_URL}/portal?op=${opCode}`,
       feedbackLink: `${BASE_URL}/feedback?op=${opCode}`,
+      retiroLink: `${BASE_URL}/retiro/ejemplo`,
+      importTotal: "USD 1.250,00",
+      envioCost: "USD 13,00",
+      totalAbonar: "USD 1.263,00",
+      ajustesTxt: "Descuento por demora: -USD 20,00",
     };
 
     const subject = "[PREVIEW] " + interpolate(tpl.subject, data);
     const greeting = interpolate(tpl.greeting, data);
     const bodyRendered = mdToHtml(interpolate(tpl.body, data));
 
-    // Para 'cerrada': 5 estrellas; para los otros: botón CTA.
+    // Las de cierre que piden reseña llevan las estrellas; el resto, el botón CTA si lo tiene.
+    // (email_cerrada_ya_reseno no pide reseña y sí tiene CTA, por eso manda el cta_text.)
     const NAVY = "#152D54", AC = "#3B7DD8";
-    const extraHtml = trigger === "cerrada"
+    const pideResena = !tpl.cta_text && key.startsWith("email_cerrada");
+    const extraHtml = pideResena
       ? `<div style="text-align:center;margin:24px 0;padding:20px;background:#f5f7fa;border-radius:12px"><p style="font-size:13px;color:#666;margin:0 0 12px;font-weight:600">Tocá las estrellas según tu experiencia:</p><div>${[1,2,3,4,5].map(n=>`<a href="${BASE_URL}/feedback?op=${opCode}&r=${n}" style="text-decoration:none;font-size:40px;color:#fbbf24;margin:0 4px;display:inline-block">★</a>`).join("")}</div><p style="font-size:11px;color:#999;margin:12px 0 0">1 = muy mala · 5 = excelente</p></div>`
       : (tpl.cta_text ? `<div style="text-align:center;margin:24px 0"><a href="${data.portalLink}" style="display:inline-block;padding:14px 32px;background:${AC};color:#fff;text-decoration:none;font-weight:700;border-radius:8px;font-size:15px">${tpl.cta_text}</a></div>` : "");
 
@@ -130,7 +144,7 @@ export async function POST(req) {
     });
     const resp = await r.json();
     if (!r.ok) return Response.json({ error: "resend_failed", detail: resp }, { status: 500 });
-    return Response.json({ ok: true, resend_id: resp.id, trigger });
+    return Response.json({ ok: true, resend_id: resp.id, key });
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 });
   }
