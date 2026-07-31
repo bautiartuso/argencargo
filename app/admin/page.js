@@ -12680,7 +12680,7 @@ function MaritimePanel({token,allClients=[]}){
     })()}
 
     {/* Modal contenedor (crear / editar) */}
-    {editingContainer&&<ContainerForm token={token} editing={editingContainer.id?editingContainer:null} warehouse={editingContainer.warehouse} onSave={()=>{setEditingContainer(null);load();}} onCancel={()=>setEditingContainer(null)}/>}
+    {editingContainer&&<ContainerForm token={token} editing={editingContainer.id?editingContainer:null} warehouse={editingContainer.warehouse} warehouses={whs} onSave={()=>{setEditingContainer(null);load();}} onCancel={()=>setEditingContainer(null)}/>}
     {costModal&&<MaritimeCostModal data={costModal} token={token} onClose={()=>setCostModal(null)} onSaved={()=>{setCostModal(null);load();flash("✅ Costos guardados");}}/>}
   </div>;
 }
@@ -12740,7 +12740,7 @@ function MaritimeCostModal({data,token,onClose,onSaved}){
     </div>
   </div>;
 }
-function ContainerForm({token,editing,warehouse,onSave,onCancel}){
+function ContainerForm({token,editing,warehouse,warehouses=[],onSave,onCancel}){
   const [code,setCode]=useState(editing?.code||"");
   // Sin estado "armándose": el contenedor se crea cuando YA salió → nace en tránsito.
   const [status,setStatus]=useState(editing?.status||"en_transito");
