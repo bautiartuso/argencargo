@@ -12200,10 +12200,14 @@ function MaritimePanel({token,allClients=[]}){
     try{
       // Próximo operation_code AC-XXXX (primer numero libre, lo resuelve el servidor)
       const newCode=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
+      // Costo = suma del costo de las cargas (CBM x tarifa del deposito), igual que al crearlas
+      // desde el contenedor.
+      const costoOp=Math.round(selObjs.reduce((a,x)=>a+Number(x.cost_estimado||0),0)*100)/100;
       const opBody={
         operation_code:newCode,
         client_id:clientId,
         channel:"maritimo_negro",
+        ...(costoOp>0?{cost_flete:costoOp,cost_flete_currency:"USD"}:{}),
         // La carga marítima ya llegó y está consolidada → la op nace LISTA PARA RETIRAR.
         status:"entregada",
         closed_at:new Date().toISOString(), // 'entregada' marca cierre como cualquier op entregada
@@ -12384,12 +12388,17 @@ function MaritimePanel({token,allClients=[]}){
     });
     return any?{importe,costo,ganancia:importe-costo}:null;
   };
-  // Guarda el costo estimado de una carga (null = sin costo).
+  // Guarda el costo de una carga. Vacio = volver al calculo automatico (CBM x tarifa del
+  // deposito, que lo resuelve un trigger en la base). Con un numero, manda el numero.
   const saveShipCost=async(sh,val)=>{
     const v=String(val).trim();const r=v===""?null:Number(v.replace(",","."));
     if(r!=null&&!isFinite(r))return;
-    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{cost_estimado:r}});
-    setShipments(prev=>prev.map(s=>s.id===sh.id?{...s,cost_estimado:r}:s));
+    const body=r==null?{cost_estimado:null,cost_manual:false}:{cost_estimado:r,cost_manual:true};
+    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body});
+    // El automatico lo calcula la base, asi que se relee en vez de adivinarlo aca.
+    const fresh=await dq("maritime_shipments",{token,filters:`?id=eq.${sh.id}&select=cost_estimado,cost_per_cbm,cost_manual`});
+    const f=Array.isArray(fresh)?fresh[0]:null;
+    setShipments(prev=>prev.map(x=>x.id===sh.id?{...x,...(f||body)}:x));
   };
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
@@ -12475,7 +12484,12 @@ function MaritimePanel({token,allClients=[]}){
       let bud={flete:0,seguro:0,surcharge:0,totalTax:0,totalAbonar:0};
       try{bud=calcOpBudget(opLike,calcItems,calcPkgs,tariffs,config,overrides,{tax_condition:client.tax_condition||"consumidor_final"});}catch(e){console.error("budget calc op cont",e);}
       const newCode=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
-      const opBody={operation_code:newCode,client_id:cid,channel:"maritimo_negro",status:enTransito?"en_transito":"entregada",closed_at:enTransito?null:new Date().toISOString(),origin,description:desc||null,eta:deliveryEta||null,budget_mode:"auto",budget_total:Number(bud.totalAbonar||0),budget_flete:Number(bud.flete||0),budget_surcharge:Number(bud.surcharge||0),budget_seguro:Number(bud.seguro||0),budget_taxes:Number(bud.totalTax||0)};
+      // Costo de la op = suma del costo de sus cargas (CBM x tarifa del deposito de cada una).
+      // Se suma carga por carga porque un mismo cliente puede tener mercaderia de dos depositos
+      // en el mismo contenedor, y cada deposito cobra distinto.
+      const costoOp=Math.round(ships.reduce((a,x)=>a+Number(x.cost_estimado||0),0)*100)/100;
+      const opBody={operation_code:newCode,client_id:cid,channel:"maritimo_negro",status:enTransito?"en_transito":"entregada",closed_at:enTransito?null:new Date().toISOString(),origin,description:desc||null,eta:deliveryEta||null,budget_mode:"auto",budget_total:Number(bud.totalAbonar||0),budget_flete:Number(bud.flete||0),budget_surcharge:Number(bud.surcharge||0),budget_seguro:Number(bud.seguro||0),budget_taxes:Number(bud.totalTax||0),
+        ...(costoOp>0?{cost_flete:costoOp,cost_flete_currency:"USD"}:{})};
       const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
       const op=Array.isArray(r)?r[0]:r;
       if(!op?.id)continue;
@@ -12486,7 +12500,7 @@ function MaritimePanel({token,allClients=[]}){
       for(const it of mItems)await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:it.description||null,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_usd||0),notes:it.notes||null}});
       // El mail de retiro sale recién cuando el contenedor arriba, no cuando sale de origen.
       if(!enTransito){try{await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"retiro"})});}catch(e){console.error("notify retiro auto",e);}}
-      createdOps.push({id:op.id,code:newCode,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(bud.totalAbonar||0)});
+      createdOps.push({id:op.id,code:newCode,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(bud.totalAbonar||0),cost_flete:costoOp>0?costoOp:null});
       created++;
     }
     return {msg:created>0?(enTransito
@@ -12499,7 +12513,7 @@ function MaritimePanel({token,allClients=[]}){
   const entregarOpsDeContenedor=async(c)=>{
     const opIds=[...new Set(shipments.filter(x=>x.container_id===c.id&&x.operation_id).map(x=>x.operation_id))];
     if(opIds.length===0)return {msg:"",ops:[]};
-    const abiertas=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&status=not.in.(entregada,operacion_cerrada,cancelada)&select=id,operation_code,budget_total,client_id`});
+    const abiertas=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&status=not.in.(entregada,operacion_cerrada,cancelada)&select=id,operation_code,budget_total,client_id,cost_flete`});
     const lista=Array.isArray(abiertas)?abiertas:[];
     if(lista.length===0)return {msg:"",ops:[]};
     const ahora=new Date().toISOString();
@@ -12507,7 +12521,7 @@ function MaritimePanel({token,allClients=[]}){
     for(const o of lista){
       try{await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:o.id,trigger:"retiro"})});}catch(e){console.error("notify retiro arribo",e);}
     }
-    const ops=lista.map(o=>{const cl=allClients.find(x=>x.id===o.client_id)||{};return {id:o.id,code:o.operation_code,clientName:`${cl.first_name||""} ${cl.last_name||""}`.trim(),budget:Number(o.budget_total||0)};});
+    const ops=lista.map(o=>{const cl=allClients.find(x=>x.id===o.client_id)||{};return {id:o.id,code:o.operation_code,clientName:`${cl.first_name||""} ${cl.last_name||""}`.trim(),budget:Number(o.budget_total||0),cost_flete:o.cost_flete??null};});
     return {msg:` · ✅ ${lista.length} operación${lista.length>1?"es":""} LISTA${lista.length>1?"S":""} PARA RETIRAR · mail enviado`,ops};
   };
 
@@ -12779,7 +12793,10 @@ function MaritimePanel({token,allClients=[]}){
                 <div style={{marginTop:12,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"9px 12px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8}} onClick={e=>e.stopPropagation()}>
                   <span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Costo est. de esta operación</span>
                   <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,color:"rgba(255,255,255,0.6)"}}>USD
-                    <input type="number" step="any" defaultValue={sh.cost_estimado??""} placeholder="0" onBlur={e=>{if(String(e.target.value).trim()!==String(sh.cost_estimado??""))saveShipCost(sh,e.target.value);}} style={{width:96,padding:"5px 8px",fontSize:12.5,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",fontFeatureSettings:'"tnum"'}}/>
+                    <input key={`${sh.id}-${sh.cost_estimado??""}`} type="number" step="any" defaultValue={sh.cost_estimado??""} placeholder="0" title={sh.cost_manual?"Costo cargado a mano. Borrá el campo para volver al cálculo automático.":`Automático: CBM × USD ${Number(sh.cost_per_cbm||0)} del depósito`} onBlur={e=>{if(String(e.target.value).trim()!==String(sh.cost_estimado??""))saveShipCost(sh,e.target.value);}} style={{width:96,padding:"5px 8px",fontSize:12.5,borderRadius:6,border:`1px solid ${sh.cost_manual?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.15)"}`,background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",fontFeatureSettings:'"tnum"'}}/>
+                    {sh.cost_manual
+                      ?<span title="Borrá el campo para volver al automático" style={{fontSize:9,fontWeight:700,color:"#fbbf24",marginLeft:5}}>a mano</span>
+                      :Number(sh.cost_per_cbm||0)>0&&<span title={`CBM × USD ${Number(sh.cost_per_cbm)}`} style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.35)",marginLeft:5}}>auto</span>}
                   </span>
                   {(()=>{const imp=importeOfShip(sh,list);const cost=costOfShip(sh);const gan=imp-cost;return <>
                     <span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>A cobrar est. <strong style={{color:"#4ade80",fontFeatureSettings:'"tnum"'}}>{usd(imp)}</strong></span>
@@ -13120,7 +13137,9 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       client_id:clientId||null,
       client_name_snapshot:clientName.trim()||null,
       container_id:newCont,
+      // Vacio = automatico (lo calcula el trigger con la tarifa del deposito).
       cost_estimado:costEst.trim()===""?null:Number(costEst.replace(",",".")),
+      cost_manual:costEst.trim()!=="",
       updated_at:new Date().toISOString(),
     };
     // Sincronizar estado con la asignación de contenedor (igual que el selector de la barra):
