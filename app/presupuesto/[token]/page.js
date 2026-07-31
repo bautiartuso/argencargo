@@ -54,7 +54,7 @@ const CSS = `
 .pz-row.head>span{font-weight:800!important}
 .pz-row.tot{border-top:1.5px solid rgba(26,26,26,.18);font-weight:800}
 .pz-prod{grid-template-columns:1fr 44px 96px 104px}
-.pz-bul{grid-template-columns:62px 40px 1fr 88px 74px 88px 74px}
+.pz-bul{grid-template-columns:58px 38px 1fr 76px 72px 78px 76px 86px}
 .pz-bul .u{color:rgba(26,26,26,.5)}
 .pz-row>span:not(:first-child){text-align:right}
 .pz-row .k{display:none}
@@ -150,6 +150,11 @@ export default function PresupuestoPage({ params }) {
   const totBultos = bultos.reduce((s, p) => s + (num(p.qty) || 1), 0);
   const totCbm = bultos.reduce((s, p) => s + (num(p.length) * num(p.width) * num(p.height) / 1e6) * (num(p.qty) || 1), 0);
   const totKg = bultos.reduce((s, p) => s + num(p.weight) * (num(p.qty) || 1), 0);
+  // Peso volumétrico: cm3 / 5.000. El aéreo se cobra por el peso facturable, que es el mayor
+  // entre el real y el volumétrico tomado bulto por bulto — mismo criterio que lib/calc.js.
+  const kgVolDe = (p) => num(p.length) * num(p.width) * num(p.height) / 5000;
+  const totKgVol = bultos.reduce((s, p) => s + kgVolDe(p) * (num(p.qty) || 1), 0);
+  const totKgFact = bultos.reduce((s, p) => s + Math.max(num(p.weight), kgVolDe(p)) * (num(p.qty) || 1), 0);
   const totFob = productos.reduce((s, p) => s + num(p.unit_price) * (num(p.quantity) || 1), 0) || num(q.total_fob);
 
   // El mensaje lo manda el cliente desde su WhatsApp: así nos llega la conversación abierta,
@@ -259,27 +264,37 @@ export default function PresupuestoPage({ params }) {
                 <p className="pz-sub">Bultos</p>
                 <div className="pz-row pz-bul head">
                   <span>Bulto</span><span>Cant.</span><span>Medidas</span>
-                  <span>Vol. c/u</span><span>Peso c/u</span><span>Volumen</span><span>Peso</span>
+                  <span>Vol. c/u</span><span>Peso real c/u</span><span>Peso vol. c/u</span>
+                  <span>Volumen</span><span>Peso facturable</span>
                 </div>
                 {bultos.map((p, i) => {
                   const c = num(p.qty) || 1;
                   const cbmU = num(p.length) * num(p.width) * num(p.height) / 1e6;
                   const kgU = num(p.weight);
+                  const kgVolU = kgVolDe(p);
                   return <div className="pz-row pz-bul" key={i}>
                     <span>Bulto #{i + 1}</span>
                     <span><i className="k">Cantidad</i>{c}</span>
                     <span><i className="k">Medidas</i>{dim(p.length)}×{dim(p.width)}×{dim(p.height)} cm</span>
                     <span className="u"><i className="k">Volumen c/u</i>{fmtCbm(cbmU)}</span>
-                    <span className="u"><i className="k">Peso c/u</i>{fmtKg(kgU)}</span>
+                    <span className="u"><i className="k">Peso real c/u</i>{fmtKg(kgU)}</span>
+                    <span className="u"><i className="k">Peso volumétrico c/u</i>{fmtKg(kgVolU)}</span>
                     <span><i className="k">Volumen del bulto</i>{fmtCbm(cbmU * c)}</span>
-                    <span><i className="k">Peso del bulto</i>{fmtKg(kgU * c)}</span>
+                    <span><i className="k">Peso facturable</i>{fmtKg(Math.max(kgU, kgVolU) * c)}</span>
                   </div>;
                 })}
                 <div className="pz-row pz-bul tot">
-                  <span>{totBultos} {totBultos === 1 ? "bulto" : "bultos"}</span><span /><span /><span /><span />
+                  <span>{totBultos} {totBultos === 1 ? "bulto" : "bultos"}</span><span /><span /><span />
+                  <span className="u"><i className="k">Peso real total</i>{fmtKg(totKg)}</span>
+                  <span className="u"><i className="k">Peso volumétrico total</i>{fmtKg(totKgVol)}</span>
                   <span><i className="k">Volumen total</i>{fmtCbm(totCbm)}</span>
-                  <span><i className="k">Peso total</i>{fmtKg(totKg)}</span>
+                  <span><i className="k">Peso facturable</i>{fmtKg(totKgFact)}</span>
                 </div>
+                <p className="pz-hint" style={{ margin: "12px 0 0" }}>
+                  El peso volumétrico sale de las medidas (largo × ancho × alto ÷ 5.000). De cada bulto
+                  se toma el mayor entre el peso real y el volumétrico: eso es el peso facturable, y es
+                  el que se usa para calcular el aéreo.
+                </p>
               </div>
             )}
 
