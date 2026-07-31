@@ -4720,8 +4720,9 @@ function CommsLog({opId,token}){
 
 function ClientsList({token,onSelect}){
   const [clients,setClients]=useState([]);const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fCond,setFCond]=useState("");
-  // limit explicito: PostgREST corta en 1000 por defecto y el listado se comia clientes en silencio.
-  useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=*&order=created_at.desc&limit=10000"});setClients(Array.isArray(c)?c:[]);setLo(false);})();},[token]);
+  // dqAll pagina: el tope de 1000 filas por request es del servidor y el `limit` del query no lo
+  // sube. Con 1009 clientes, el listado mostraba 1000 y se comia los 9 mas viejos en silencio.
+  useEffect(()=>{(async()=>{const c=await dqAll("clients",{token,filters:"?select=*&order=created_at.desc"});setClients(c);setLo(false);})();},[token]);
   const filtered=clients.filter(c=>{
     if(fCond&&c.tax_condition!==fCond)return false;
     if(!search)return true;
