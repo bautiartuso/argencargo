@@ -28,7 +28,16 @@ async function sendPush(userId, title, body, url) {
   }
 }
 
-export async function GET() {
+
+// Solo el cron de Vercel (Bearer CRON_SECRET) puede disparar esto. Sin el chequeo, cualquiera
+// que conociera la URL podia ejecutarlo a voluntad.
+function autorizado(req) {
+  const auth = req.headers.get("authorization") || "";
+  return !!process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`;
+}
+
+export async function GET(req) {
+  if (!autorizado(req)) return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
   try {
     const agents = await sb(`/rest/v1/agent_signups?status=eq.approved&select=auth_user_id,first_name`);
     if (!Array.isArray(agents)) return Response.json({ ok: false, error: "no agents" });

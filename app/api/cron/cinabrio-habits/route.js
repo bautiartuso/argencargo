@@ -91,7 +91,16 @@ function nowInAR(offsetMin = 0) {
 // Cuántos minutos antes del horario del hábito se manda la notificación.
 const LEAD_MINUTES = 10;
 
-export async function GET() {
+
+// Solo el cron de Vercel (Bearer CRON_SECRET) puede disparar esto. Sin el chequeo, cualquiera
+// que conociera la URL podia ejecutarlo a voluntad.
+function autorizado(req) {
+  const auth = req.headers.get("authorization") || "";
+  return !!process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`;
+}
+
+export async function GET(req) {
+  if (!autorizado(req)) return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
   try {
     if (!SB_SERVICE) return Response.json({ ok: false, error: "no service role" }, { status: 500 });
 

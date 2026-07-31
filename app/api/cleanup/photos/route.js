@@ -62,7 +62,16 @@ async function limpiarColumna(tabla, ids) {
   });
 }
 
-export async function GET() {
+
+// Solo el cron de Vercel (Bearer CRON_SECRET) puede disparar esto. Sin el chequeo, cualquiera
+// que conociera la URL podia ejecutarlo a voluntad.
+function autorizado(req) {
+  const auth = req.headers.get("authorization") || "";
+  return !!process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`;
+}
+
+export async function GET(req) {
+  if (!autorizado(req)) return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ ok: false, error: "Server no configurado" }, { status: 500 });
   try {
     const cfg = await j(`/rest/v1/calc_config?key=in.(photo_retention_days,photo_retention_after_close_days)&select=key,value`);
@@ -113,6 +122,11 @@ export async function GET() {
       aBorrar.push(a.name);
       huerfanos++;
     }
+
+    // ── D) Notificaciones viejas: es la tabla mas grande de la base (30k filas) y nadie
+    // relee una notificacion de hace meses. Leidas: 60 dias. Sin leer: 180.
+    await sb(`/rest/v1/notifications?read=is.true&created_at=lt.${corte(60)}`, { method: "DELETE" });
+    await sb(`/rest/v1/notifications?read=is.false&created_at=lt.${corte(180)}`, { method: "DELETE" });
 
     const borrados = await borrarDelStorage(aBorrar);
     await limpiarColumna("operation_packages", [...new Set(porTabla.operation_packages)]);
