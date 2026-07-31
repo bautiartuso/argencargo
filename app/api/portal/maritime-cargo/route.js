@@ -7,6 +7,9 @@
 // ETA puerto Buenos Aires y entrega estimada (ETA + 2 semanas).
 // NUNCA expone: número/código de contenedor, naviera, tracking, costos,
 // ni datos de otros clientes (se resuelve el cliente desde el JWT, no del request).
+//
+// Las consultas van agrupadas en tandas: antes eran 9 esperas encadenadas contra Supabase
+// y la sección tardaba varios segundos en aparecer en el portal.
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -39,11 +42,13 @@ export async function GET(req) {
   }).then(r => (r.ok ? r.json() : null)).catch(() => null);
   if (!user?.id) return Response.json({ cargo: [] }, { status: 401 });
 
-  // Cliente propio (login real de cliente).
-  const cl = await svc(`/rest/v1/clients?auth_user_id=eq.${user.id}&select=id&limit=1`);
+  // Cliente propio (login real de cliente) y, en paralelo, si el que pregunta es admin
+  // (modo preview del portal, donde el token es de admin).
+  const [cl, prof] = await Promise.all([
+    svc(`/rest/v1/clients?auth_user_id=eq.${user.id}&select=id&limit=1`),
+    svc(`/rest/v1/profiles?id=eq.${user.id}&select=role&limit=1`),
+  ]);
   const ownClientId = Array.isArray(cl) && cl[0]?.id;
-  // ¿El que pregunta es admin? (para el modo preview del portal, donde el token es de admin).
-  const prof = await svc(`/rest/v1/profiles?id=eq.${user.id}&select=role&limit=1`);
   const isAdmin = Array.isArray(prof) && prof[0]?.role === "admin";
 
   // Cliente efectivo: el propio (cliente real), o el pedido por un admin en preview.
@@ -52,33 +57,37 @@ export async function GET(req) {
   if (reqClientId && (isAdmin || reqClientId === ownClientId)) clientId = reqClientId;
   if (!clientId) return Response.json({ cargo: [] });
 
-  // Cargas del cliente que están en un contenedor y todavía no son operación.
-  const ships = await svc(`/rest/v1/maritime_shipments?client_id=eq.${clientId}&operation_id=is.null&container_id=not.is.null&select=id,product_description,status,container_id&order=created_at.desc`);
+  // Cargas del cliente que están en un contenedor y todavía no son operación. Las tarifas y
+  // los overrides no dependen de esto, así que van en la misma tanda.
+  const [ships, tariffs, ovs] = await Promise.all([
+    svc(`/rest/v1/maritime_shipments?client_id=eq.${clientId}&operation_id=is.null&container_id=not.is.null&select=id,product_description,status,container_id&order=created_at.desc`),
+    svc(`/rest/v1/tariffs?service_key=eq.maritimo_b&select=id,type,min_qty,max_qty,rate`),
+    svc(`/rest/v1/client_tariff_overrides?client_id=eq.${clientId}&select=tariff_id,custom_rate`),
+  ]);
   const list = Array.isArray(ships) ? ships : [];
   if (list.length === 0) return Response.json({ cargo: [] });
 
-  // Contenedores (solo eta + status — NUNCA code ni shipping_line).
+  // Contenedores (solo eta + status — NUNCA code ni shipping_line), bultos e items: los tres
+  // dependen solo de las cargas ya traídas, así que salen juntos.
   const contIds = [...new Set(list.map(s => s.container_id).filter(Boolean))];
-  const conts = contIds.length ? await svc(`/rest/v1/maritime_containers?id=in.(${contIds.join(",")})&select=id,eta,status,transbordo_dias,transbordo_lugar`) : [];
+  const shipIds = list.map(s => s.id);
+  const [conts, pkgs, its] = await Promise.all([
+    contIds.length ? svc(`/rest/v1/maritime_containers?id=in.(${contIds.join(",")})&select=id,eta,status,transbordo_dias,transbordo_lugar`) : Promise.resolve([]),
+    svc(`/rest/v1/maritime_packages?shipment_id=in.(${shipIds.join(",")})&select=shipment_id,quantity,cbm`),
+    svc(`/rest/v1/maritime_items?shipment_id=in.(${shipIds.join(",")})&select=shipment_id,unit_price_usd,quantity`),
+  ]);
   const contMap = {};
   (Array.isArray(conts) ? conts : []).forEach(c => { contMap[c.id] = c; });
 
-  // Bultos + CBM por carga.
-  const shipIds = list.map(s => s.id);
-  const pkgs = await svc(`/rest/v1/maritime_packages?shipment_id=in.(${shipIds.join(",")})&select=shipment_id,quantity,cbm`);
   const bultos = {}, cbmByShip = {};
   (Array.isArray(pkgs) ? pkgs : []).forEach(p => {
     bultos[p.shipment_id] = (bultos[p.shipment_id] || 0) + Number(p.quantity || 1);
     cbmByShip[p.shipment_id] = (cbmByShip[p.shipment_id] || 0) + Number(p.cbm || 0);
   });
 
-  // FOB por carga (para el recargo por valor) + tarifas marítimas + overrides del cliente,
-  // para estimar el total a abonar (mismo criterio que el panel admin).
-  const its = await svc(`/rest/v1/maritime_items?shipment_id=in.(${shipIds.join(",")})&select=shipment_id,unit_price_usd,quantity`);
+  // FOB por carga, para el recargo por valor (mismo criterio que el panel admin).
   const fobByShip = {};
   (Array.isArray(its) ? its : []).forEach(it => { fobByShip[it.shipment_id] = (fobByShip[it.shipment_id] || 0) + Number(it.unit_price_usd || 0) * Number(it.quantity || 1); });
-  const tariffs = await svc(`/rest/v1/tariffs?service_key=eq.maritimo_b&select=id,type,min_qty,max_qty,rate`);
-  const ovs = await svc(`/rest/v1/client_tariff_overrides?client_id=eq.${clientId}&select=tariff_id,custom_rate`);
   const tList = Array.isArray(tariffs) ? tariffs : [];
   const mbRates = tList.filter(t => t.type === "rate").map(t => ({ id: t.id, min: Number(t.min_qty || 0), max: t.max_qty != null ? Number(t.max_qty) : Infinity, rate: Number(t.rate || 0) })).sort((a, b) => a.min - b.min);
   const mbSurch = tList.filter(t => t.type === "surcharge").map(t => ({ min: Number(t.min_qty || 0), rate: Number(t.rate || 0) })).sort((a, b) => b.min - a.min);
