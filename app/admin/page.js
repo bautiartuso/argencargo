@@ -9828,14 +9828,14 @@ const SEG_POR_PAGINA=40;
 // ~950 clientes y traerlos todos al navegador para filtrarlos aca no escala.
 function SeguimientoPanel({token,templates,flash}){
   const [seg,setSeg]=useState("inactivo");
-  const [dias,setDias]=useState(90);
+  const dias=90; // "inactivo" = mas de 90 dias sin operar
   const [filas,setFilas]=useState([]);const [total,setTotal]=useState(0);
   const [conteos,setConteos]=useState({inactivo:0,sin_ops:0});
   const [lo,setLo]=useState(true);const [err,setErr]=useState("");
   const [search,setSearch]=useState("");const [busq,setBusq]=useState("");const [pag,setPag]=useState(0);
 
   useEffect(()=>{const t=setTimeout(()=>{setBusq(search.trim());setPag(0);},300);return()=>clearTimeout(t);},[search]);
-  useEffect(()=>{setPag(0);},[seg,dias]);
+  useEffect(()=>{setPag(0);},[seg]);
 
   const filtroBusq=useMemo(()=>{
     const palabras=busq.replace(/[(),*:"'\\]/g," ").split(/\s+/).filter(Boolean).slice(0,4);
@@ -9844,21 +9844,26 @@ function SeguimientoPanel({token,templates,flash}){
     return `&and=(${palabras.map(cond).join(",")})`;
   },[busq]);
 
-  const base=`?p_dias=${dias}&order=last_followup_at.asc.nullsfirst,facturado_usd.desc`;
+  // Al contactar a alguien desaparece de la lista por 15 dias; pasado ese plazo vuelve, al
+  // final (los nunca contactados van primero, despues los contactados mas viejos).
+  const corte15=new Date(Date.now()-15*86400000).toISOString();
+  const sinContactoReciente=`&or=(last_followup_at.is.null,last_followup_at.lt.${encodeURIComponent(corte15)})`;
+  // Inactivos: los que mas facturaron primero. Sin ops: los que mas tiempo llevan registrados sin operar.
+  const orden=seg==="sin_ops"?"last_followup_at.asc.nullsfirst,dias_inactivo.desc":"last_followup_at.asc.nullsfirst,facturado_usd.desc";
   const cargar=async()=>{
     setLo(true);setErr("");
     const desde=pag*SEG_POR_PAGINA;
     const [pagina,cIna,cSin]=await Promise.all([
-      dqPage("rpc/clientes_seguimiento",{token,filters:`${base}&segmento=eq.${seg}${filtroBusq}`,desde,hasta:desde+SEG_POR_PAGINA-1}),
-      dqPage("rpc/clientes_seguimiento",{token,filters:`?p_dias=${dias}&segmento=eq.inactivo`,desde:0,hasta:0}),
-      dqPage("rpc/clientes_seguimiento",{token,filters:`?p_dias=${dias}&segmento=eq.sin_ops`,desde:0,hasta:0}),
+      dqPage("rpc/clientes_seguimiento",{token,filters:`?p_dias=${dias}&order=${orden}&segmento=eq.${seg}${sinContactoReciente}${filtroBusq}`,desde,hasta:desde+SEG_POR_PAGINA-1}),
+      dqPage("rpc/clientes_seguimiento",{token,filters:`?p_dias=${dias}&segmento=eq.inactivo${sinContactoReciente}`,desde:0,hasta:0}),
+      dqPage("rpc/clientes_seguimiento",{token,filters:`?p_dias=${dias}&segmento=eq.sin_ops${sinContactoReciente}`,desde:0,hasta:0}),
     ]);
     if(pagina.error)setErr("No pudimos cargar el seguimiento. Probá de nuevo.");
     setFilas(pagina.rows);setTotal(pagina.total);
     setConteos({inactivo:cIna.total,sin_ops:cSin.total});
     setLo(false);
   };
-  useEffect(()=>{cargar();},[token,seg,dias,pag,filtroBusq]);
+  useEffect(()=>{cargar();},[token,seg,pag,filtroBusq]);
 
   const mensajeDe=(c)=>{
     const tpl=templates.find(t=>t.key===(c.segmento==="sin_ops"?"wa_seguimiento_sin_ops":"wa_seguimiento_inactivo"));
@@ -9875,7 +9880,10 @@ function SeguimientoPanel({token,templates,flash}){
     if(!num){alertDialog("Este cliente no tiene WhatsApp cargado.");return;}
     window.open(`https://wa.me/${num}?text=${encodeURIComponent(mensajeDe(c))}`,"_blank");
     await marcarContactado(c,new Date().toISOString());
-    flash(`WhatsApp abierto · ${c.client_code}`);
+    // Contactado -> sale de la lista. Vuelve solo en 15 dias, al final.
+    setFilas(p=>p.filter(x=>x.id!==c.id));
+    setConteos(p=>({...p,[c.segmento==="sin_ops"?"sin_ops":"inactivo"]:Math.max(0,p[c.segmento==="sin_ops"?"sin_ops":"inactivo"]-1)}));
+    flash(`WhatsApp abierto · ${c.client_code} (vuelve a la lista en 15 días)`);
   };
 
   const paginas=Math.max(1,Math.ceil(total/SEG_POR_PAGINA));
@@ -9898,10 +9906,6 @@ function SeguimientoPanel({token,templates,flash}){
     </div>
 
     <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
-      {seg==="inactivo"&&<div style={{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:9,border:"1px solid rgba(255,255,255,0.07)"}}>
-        <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",padding:"6px 8px"}}>Sin operar hace</span>
-        {[60,90,180].map(d=><button key={d} onClick={()=>setDias(d)} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:dias===d?GOLD_GRADIENT:"transparent",color:dias===d?"#0A1628":"rgba(255,255,255,0.5)"}}>{d} días</button>)}
-      </div>}
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nombre, código o email..." style={{flex:"1 1 240px",padding:"9px 13px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
     </div>
 
