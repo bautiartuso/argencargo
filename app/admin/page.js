@@ -9828,7 +9828,7 @@ const SEG_POR_PAGINA=40;
 // ~950 clientes y traerlos todos al navegador para filtrarlos aca no escala.
 function SeguimientoPanel({token,templates,flash}){
   const [seg,setSeg]=useState("inactivo");
-  const dias=90; // "inactivo" = mas de 90 dias sin operar
+  const dias=30; // "inactivo" = mas de 30 dias sin operar (pedido 31/07: antes era 90)
   const [filas,setFilas]=useState([]);const [total,setTotal]=useState(0);
   const [conteos,setConteos]=useState({inactivo:0,sin_ops:0});
   const [lo,setLo]=useState(true);const [err,setErr]=useState("");
