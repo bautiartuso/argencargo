@@ -750,6 +750,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     const fresh=await dq("operations",{token,filters:`?id=eq.${op.id}&select=*,clients(first_name,last_name,client_code)`});
     if(Array.isArray(fresh)&&fresh[0])setOp(fresh[0]);
   };
+  // El presupuesto se abre y se cierra: se edita a demanda y se guarda, no queda siempre editable.
+  const [editandoPresu,setEditandoPresu]=useState(false);
   const askCobroDecision=(kind,diff)=>new Promise(resolve=>setCobroDecision({kind,diff,resolve}));
   // Resolucion del saldo al cerrar la OPERACION. La misma pregunta existia solo en el boton
   // "Cerrar cobro" de la solapa Finanzas, asi que cerrando la op desde Estado nunca aparecia y la
@@ -1756,17 +1758,21 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         if(mode==="manual"){
           // Snapshot del cálculo actual en budget_* — ceros explícitos en los campos que no aplican al canal
           // (Canal A: sin surcharge / Canal B: sin taxes ni seguro). Evita residuales sumando al total en manual.
+          // Redondeamos a centavos: son plata, no floats. Si no, se arrastra el 5.346800000000001
+          // del calculo automatico y el total deja de cuadrar con la suma de los componentes.
+          const r2=(v)=>Math.round(Number(v||0)*100)/100;
           const snap={
             budget_mode:"manual",
-            budget_taxes:isBlanco?totalTax:0,
-            budget_flete:flete,
-            budget_seguro:isBlanco?seguro:0,
-            budget_surcharge:isBlanco?0:(surcharge||0),
-            budget_total:totalAbonar,
+            budget_taxes:isBlanco?r2(totalTax):0,
+            budget_flete:r2(flete),
+            budget_seguro:isBlanco?r2(seguro):0,
+            budget_surcharge:isBlanco?0:r2(surcharge||0),
+            budget_total:0,
           };
+          snap.budget_total=r2((isBlanco?(taxesBilledByArgencargo?snap.budget_taxes:0)+snap.budget_seguro:snap.budget_surcharge)+snap.budget_flete+(op.shipping_to_door?Number(op.shipping_cost||0):0));
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:snap});
           setOp(p=>({...p,...snap}));
-          flash("Modo manual activado — editá los valores y guardá");
+          
         } else {
           await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_mode:"auto"}});
           setOp(p=>({...p,budget_mode:"auto"}));
@@ -1782,13 +1788,14 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         const num=(s)=>{if(s===""||s==null)return 0;const n=Number(String(s).replace(",","."));return isNaN(n)?0:n;};
         // Por canal: ceros explícitos en los campos que no aplican, así el total queda limpio
         // (evita residuales del modo auto: en canal B no debe contar seguro/taxes; en canal A no surcharge).
+        const r2=(v)=>Math.round(Number(v||0)*100)/100;
         const body={
           budget_mode:"manual",
-          budget_taxes:isBlanco?num(op.budget_taxes):0,
-          budget_flete:num(op.budget_flete),
-          budget_seguro:isBlanco?num(op.budget_seguro):0,
-          budget_surcharge:isBlanco?0:num(op.budget_surcharge),
-          budget_total:num(op.budget_total),
+          budget_taxes:isBlanco?r2(num(op.budget_taxes)):0,
+          budget_flete:r2(num(op.budget_flete)),
+          budget_seguro:isBlanco?r2(num(op.budget_seguro)):0,
+          budget_surcharge:isBlanco?0:r2(num(op.budget_surcharge)),
+          budget_total:r2(num(op.budget_total)),
         };
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
         setOp(p=>({...p,...body}));
@@ -1821,10 +1828,19 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       // Si manual: usamos los valores guardados como los visualizados
       if(isManual){totalTax=Number(op.budget_taxes||0);flete=Number(op.budget_flete||0);seguro=Number(op.budget_seguro||0);surcharge=Number(op.budget_surcharge||0);totalAbonar=Number(op.budget_total||0);}
       return <Card title={`Presupuesto${opClient?` — ${opClient.first_name} ${opClient.last_name} (${isRI?"Resp. Inscripto":"No RI"})`:""}`} actions={
-        <div style={{display:"flex",gap:0,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:2}}>
-          <button onClick={()=>setBudgetMode("auto")} disabled={saving} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",background:!isManual?`linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`:"transparent",color:!isManual?"#0A1628":"rgba(255,255,255,0.6)",cursor:saving?"wait":"pointer",letterSpacing:"0.04em"}}>⚙ AUTO</button>
-          <button onClick={()=>setBudgetMode("manual")} disabled={saving} style={{padding:"6px 14px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",background:isManual?"linear-gradient(135deg,#fb923c,#f97316)":"transparent",color:isManual?"#0A1628":"rgba(255,255,255,0.6)",cursor:saving?"wait":"pointer",letterSpacing:"0.04em"}}>✎ MANUAL</button>
-        </div>
+        (()=>{const b=(bg,col,brd)=>({padding:"6px 13px",fontSize:11,fontWeight:700,borderRadius:7,cursor:saving?"wait":"pointer",letterSpacing:"0.03em",background:bg,color:col,border:brd||"none"});
+        return <div style={{display:"flex",gap:7,alignItems:"center"}}>
+          {isManual&&!editandoPresu&&<span title="Los valores están cargados a mano, no se recalculan solos" style={{fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:999,background:"rgba(251,146,60,0.14)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.35)",letterSpacing:"0.07em"}}>MANUAL</span>}
+          {editandoPresu
+            ?<>
+              <button disabled={saving} onClick={async()=>{await reloadOp();setEditandoPresu(false);}} style={b("transparent","rgba(255,255,255,0.55)","1px solid rgba(255,255,255,0.12)")}>Cancelar</button>
+              <button disabled={saving} onClick={async()=>{await saveManualBudget();setEditandoPresu(false);}} style={b(`linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`,"#0A1628")}>💾 Guardar</button>
+            </>
+            :<>
+              {isManual&&<button disabled={saving} title="Vuelve a calcular el presupuesto con la lógica del sistema" onClick={async()=>{if(!await confirmDialog("Se van a recalcular todos los valores con la lógica del sistema y se pierde lo que cargaste a mano. ¿Seguir?"))return;await setBudgetMode("auto");}} style={b("transparent","rgba(255,255,255,0.6)","1px solid rgba(255,255,255,0.12)")}>↻ Recalcular automático</button>}
+              <button disabled={saving} onClick={async()=>{if(!isManual)await setBudgetMode("manual");setEditandoPresu(true);}} style={b("rgba(255,255,255,0.07)","#fff","1px solid rgba(255,255,255,0.14)")}>✎ Editar presupuesto</button>
+            </>}
+        </div>;})()
       }>
         {isRI&&isBlanco&&<div style={{marginBottom:14,padding:"10px 14px",background:taxesBilledByArgencargo?"rgba(34,197,94,0.06)":"rgba(96,165,250,0.05)",border:`1px solid ${taxesBilledByArgencargo?"rgba(34,197,94,0.25)":"rgba(96,165,250,0.15)"}`,borderRadius:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <label style={{display:"flex",alignItems:"center",gap:8,cursor:saving?"wait":"pointer",flex:1}}>
@@ -1843,9 +1859,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             {(()=>{const amtForVpu=op.channel?.includes("aereo")?pf:totCBM;const merchVal=Number(op.merchandise_value_usd||0)||totalFob;if(merchVal<=0||amtForVpu<=0)return "Cargá valor mercadería + bultos para ver recargo.";const vpu=merchVal/amtForVpu;const u=op.channel?.includes("aereo")?"kg":"CBM";return <>USD/{u}: <b style={{color:"#fff",fontStyle:"normal"}}>{vpu.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b> · {surchargePct>0?<span style={{color:GOLD_LIGHT,fontWeight:700,fontStyle:"normal"}}>Recargo {surchargePct}%</span>:<span style={{color:"rgba(255,255,255,0.4)",fontStyle:"normal"}}>sin recargo</span>}</>;})()}
           </span>
         </div>}
-        {isManual?<>
+        {editandoPresu?<>
           <div style={{padding:"8px 12px",marginBottom:10,background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:8,fontSize:11.5,color:"#fb923c",lineHeight:1.5}}>
-            <b>Modo manual:</b> editás los valores directamente. El sistema no recalcula automáticamente al modificar bultos/items. Volvé a "AUTO" para recalcular.
+            <b>Editando:</b> el total se recalcula solo al cambiar cualquier valor. Una vez guardado, el sistema deja de recalcularlo al tocar bultos o ítems — para eso está "Recalcular automático".
           </div>
           {isBlanco?<>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{taxesBilledByArgencargo?"Total Impuestos (USD)":<>Impuestos (USD) <span style={{color:"rgba(96,165,250,0.85)",fontSize:11,fontStyle:"italic"}}>— informativo, el RI paga directo</span></>}</span><input type="text" inputMode="decimal" value={op.budget_taxes??""} placeholder="0,00" onChange={e=>handleManualChange("budget_taxes",e.target.value)} style={manualInputStyle}/></div>
@@ -1865,14 +1881,13 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             {surcharge>0&&rw(`Recargo por valor (${surchargePct}%)`,surcharge)}
           </>}
         </>}
-        {isBlanco&&!isManual&&!taxesBilledByArgencargo&&totalTax>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"2px 0 8px",fontStyle:"italic"}}>El RI abona estos impuestos directo al despachante/transportista — no están incluidos en el total a abonar a Argencargo.</p>}
+        {isBlanco&&!editandoPresu&&!taxesBilledByArgencargo&&totalTax>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"2px 0 8px",fontStyle:"italic"}}>El RI abona estos impuestos directo al despachante/transportista — no están incluidos en el total a abonar a Argencargo.</p>}
         {shipCost>0&&rw("Envío a domicilio",shipCost)}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}>
           <span style={{fontSize:16,fontWeight:700,color:"#fff"}}>TOTAL A ABONAR</span>
-          {isManual
+          {editandoPresu
             ?<div style={{display:"flex",alignItems:"center",gap:12}}>
                 <span style={{fontSize:20,fontWeight:700,color:IC,fontVariantNumeric:"tabular-nums",minWidth:160,textAlign:"right"}}>USD {toNum(op.budget_total).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-                <Btn onClick={saveManualBudget} disabled={saving} small>{saving?"...":"💾 Guardar"}</Btn>
               </div>
             :<span style={{fontSize:20,fontWeight:700,color:IC}}>USD {totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
         </div>
