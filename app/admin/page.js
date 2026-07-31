@@ -90,6 +90,23 @@ const dq=async(t,{method="GET",body,token,filters="",headers:h={}})=>{
   if(r.status===401){const nt=await refreshToken();if(nt){r=await doReq(nt);}}
   return r.body;
 };
+// Pide UNA pagina de filas y devuelve ademas cuantas hay en total (lo lee del header
+// Content-Range, que PostgREST manda cuando se pide Prefer: count=exact).
+// Existe porque PostgREST no devuelve mas de 1000 filas por request y ese tope es del
+// servidor: no se puede subir con `limit`. Cualquier lista que crezca tiene que pedir de
+// a pedazos en vez de traerse entera y filtrarse en el navegador.
+const dqPage=async(t,{token,filters="",desde=0,hasta=59})=>{
+  const pedir=async(tk)=>fetch(`${SB_URL}/rest/v1/${t}${filters}`,{headers:{apikey:SB_KEY,"Content-Type":"application/json",Authorization:`Bearer ${tk}`,"Range-Unit":"items",Range:`${desde}-${hasta}`,Prefer:"count=exact"}});
+  try{
+    const fresh=await ensureFreshToken(token);
+    let r=await pedir(fresh);
+    if(r.status===401){const nt=await refreshToken();if(nt)r=await pedir(nt);}
+    let cuerpo=null;try{cuerpo=await r.json();}catch{}
+    if(r.status>=400){console.error(`[dqPage] ${t} ${r.status}`,cuerpo);return{rows:[],total:0,error:true};}
+    const total=Number(String(r.headers.get("content-range")||"").split("/")[1]);
+    return{rows:Array.isArray(cuerpo)?cuerpo:[],total:Number.isFinite(total)?total:0};
+  }catch(e){console.error(`[dqPage] ${t}`,e);return{rows:[],total:0,error:true};}
+};
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},entregada:{l:"LISTA PARA RETIRAR",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
 // calcOpBudget se importa desde lib/calc.js (extraído para testing)
 const CM={aereo_blanco:"Aéreo A",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B"};
@@ -4718,21 +4735,48 @@ function CommsLog({opId,token}){
   </Card>;
 }
 
+const CLIENTES_POR_PAGINA=60;
 function ClientsList({token,onSelect}){
-  const [clients,setClients]=useState([]);const [lo,setLo]=useState(true);const [search,setSearch]=useState("");const [fCond,setFCond]=useState("");
-  // dqAll pagina: el tope de 1000 filas por request es del servidor y el `limit` del query no lo
-  // sube. Con 1009 clientes, el listado mostraba 1000 y se comia los 9 mas viejos en silencio.
-  useEffect(()=>{(async()=>{const c=await dqAll("clients",{token,filters:"?select=*&order=created_at.desc"});setClients(c);setLo(false);})();},[token]);
-  const filtered=clients.filter(c=>{
-    if(fCond&&c.tax_condition!==fCond)return false;
-    if(!search)return true;
-    const s=search.toLowerCase();
-    return `${c.first_name} ${c.last_name}`.toLowerCase().includes(s)||c.client_code?.toLowerCase().includes(s)||c.email?.toLowerCase().includes(s);
-  });
-  const nRI=clients.filter(c=>c.tax_condition==="responsable_inscripto").length;
+  const [clients,setClients]=useState([]);const [total,setTotal]=useState(0);const [nRI,setNRI]=useState(0);
+  const [lo,setLo]=useState(true);const [err,setErr]=useState("");
+  const [search,setSearch]=useState("");const [busq,setBusq]=useState("");const [fCond,setFCond]=useState("");const [pag,setPag]=useState(0);
+
+  // Cada tecla dispararia una consulta: se espera a que deje de escribir.
+  useEffect(()=>{const t=setTimeout(()=>{setBusq(search.trim());setPag(0);},300);return()=>clearTimeout(t);},[search]);
+  useEffect(()=>{setPag(0);},[fCond]);
+
+  const filtros=useMemo(()=>{
+    let f="?select=*&order=created_at.desc";
+    if(fCond)f+=`&tax_condition=eq.${fCond}`;
+    // Se limpian los caracteres que son sintaxis de PostgREST para que no rompan el filtro.
+    // Cada palabra tiene que aparecer en alguno de los campos: asi "juan perez" encuentra al
+    // cliente aunque el nombre y el apellido esten en columnas distintas.
+    const palabras=busq.replace(/[(),*:"'\\]/g," ").split(/\s+/).filter(Boolean).slice(0,4);
+    if(palabras.length){
+      const cond=w=>{const e=encodeURIComponent(w);return `or(first_name.ilike.*${e}*,last_name.ilike.*${e}*,client_code.ilike.*${e}*,email.ilike.*${e}*)`;};
+      f+=`&and=(${palabras.map(cond).join(",")})`;
+    }
+    return f;
+  },[fCond,busq]);
+
+  // El contador de RI es del total, no de lo que se esta viendo: va aparte y no depende de la busqueda.
+  useEffect(()=>{let vivo=true;(async()=>{const r=await dqPage("clients",{token,filters:"?select=id&tax_condition=eq.responsable_inscripto",desde:0,hasta:0});if(vivo)setNRI(r.total);})();return()=>{vivo=false;};},[token]);
+
+  useEffect(()=>{let vivo=true;(async()=>{
+    setLo(true);setErr("");
+    const desde=pag*CLIENTES_POR_PAGINA;
+    const r=await dqPage("clients",{token,filters:filtros,desde,hasta:desde+CLIENTES_POR_PAGINA-1});
+    if(!vivo)return;
+    if(r.error)setErr("No pudimos cargar los clientes. Revisá la conexión y probá de nuevo.");
+    setClients(r.rows);setTotal(r.total);setLo(false);
+  })();return()=>{vivo=false;};},[token,filtros,pag]);
+
+  const paginas=Math.max(1,Math.ceil(total/CLIENTES_POR_PAGINA));
+  const btnPag=(activo)=>({padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.09)",background:"rgba(255,255,255,0.04)",color:activo?"rgba(255,255,255,0.75)":"rgba(255,255,255,0.25)",cursor:activo?"pointer":"default"});
+
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:24,gap:12,flexWrap:"wrap"}}>
-      <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Clientes</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"4px 0 0"}}>{filtered.length} {filtered.length===1?"cliente":"clientes"}</p></div>
+      <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Clientes</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:"4px 0 0"}}>{total} {total===1?"cliente":"clientes"}{busq||fCond?" encontrados":""}</p></div>
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:9,border:"1px solid rgba(255,255,255,0.07)"}}>
           {[{k:"",l:"Todos"},{k:"responsable_inscripto",l:`RI (${nRI})`},{k:"monotributista",l:"Monotributo"}].map(o=>
@@ -4741,21 +4785,27 @@ function ClientsList({token,onSelect}){
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nombre, código o email..." style={{width:360,maxWidth:"100%",padding:"10px 14px",fontSize:13,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",transition:"all 180ms"}} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.08)";e.target.style.boxShadow="none";}}/>
       </div>
     </div>
+    {err&&<div style={{padding:"12px 16px",marginBottom:14,borderRadius:10,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",color:"#f87171",fontSize:13}}>{err}</div>}
     {lo?<SkeletonTable rows={8} cols={5}/>:
     <div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
           {["Código","Nombre","Email","WhatsApp","Ciudad"].map(h=><th key={h} style={{padding:"14px 16px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em"}}>{h}</th>)}
         </tr></thead>
-        <tbody>{filtered.map(c=><tr key={c.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onClick={()=>onSelect(c)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+        <tbody>{clients.map(c=><tr key={c.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onClick={()=>onSelect(c)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
           <td style={{padding:"14px 16px",fontFamily:"'JetBrains Mono','SF Mono',monospace",fontWeight:600,color:GOLD_LIGHT,fontSize:12.5,letterSpacing:"0.04em"}}>{c.client_code}</td>
           <td style={{padding:"14px 16px",color:"#fff",fontWeight:500,fontSize:13}}>{c.first_name} {c.last_name}{c.tax_condition==="responsable_inscripto"&&<span title="Responsable Inscripto — factura A, paga sus impuestos aparte" style={{marginLeft:9,fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.14)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.35)",letterSpacing:"0.08em"}}>RI</span>}{c.tier&&c.tier!=="standard"&&(()=>{const ti=getTierInfo(c.tier);return <span title={`${ti.label} · ${c.lifetime_points_earned||0} pts ganados`} style={{marginLeft:10,fontSize:9,fontWeight:800,padding:"3px 9px",borderRadius:999,background:ti.gradient,color:"#0A1628",letterSpacing:"0.1em",border:`1px solid ${ti.color}`,display:"inline-flex",alignItems:"center",gap:4,textTransform:"uppercase"}}>{ti.icon} {ti.label}</span>;})()}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.6)",fontSize:12.5}}>{c.email}</td>
           <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.6)",fontSize:12.5}}>{c.whatsapp||<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>}</td>
-          <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",fontSize:12.5}}>{c.city}, {c.province}</td>
+          <td style={{padding:"14px 16px",color:"rgba(255,255,255,0.5)",fontSize:12.5}}>{[c.city,c.province].filter(Boolean).join(", ")||<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>}</td>
         </tr>)}</tbody>
       </table>
-      {filtered.length===0&&<EmptyState icon="users" title={search?"Sin resultados":"No hay clientes"} description={search?`Nada coincide con "${search}"`:"Aún no se registró ningún cliente en el sistema."}/>}
+      {clients.length===0&&<EmptyState icon="users" title={busq?"Sin resultados":"No hay clientes"} description={busq?`Nada coincide con "${busq}"`:"Aún no se registró ningún cliente en el sistema."}/>}
+    </div>}
+    {paginas>1&&<div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:12,marginTop:18}}>
+      <button onClick={()=>setPag(p=>Math.max(0,p-1))} disabled={pag===0} style={btnPag(pag>0)}>← Anterior</button>
+      <span style={{fontSize:12,color:"rgba(255,255,255,0.45)",fontVariantNumeric:"tabular-nums"}}>Página {pag+1} de {paginas}</span>
+      <button onClick={()=>setPag(p=>Math.min(paginas-1,p+1))} disabled={pag>=paginas-1} style={btnPag(pag<paginas-1)}>Siguiente →</button>
     </div>}
   </div>;
 }
