@@ -779,7 +779,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     const bt=Number(opActual.budget_total||0);
     if(bt<=0)return {};
     const cobrado=(Array.isArray(pagos)?pagos:[]).reduce((a,x)=>a+Number(x.amount_usd||0),0)+Number(opActual.credit_applied_usd||0);
-    if(cobrado<=0.01)return {}; // sin un solo cobro registrado no hay saldo que resolver
+    // Antes, si no habia NINGUN cobro registrado, esto salia sin preguntar nada. Justo al reves:
+    // cerrar una op sin haber cobrado un peso es el caso donde mas hay que decidir si es
+    // descuento o queda como deuda. Con AC-0324 la op cerro y los 1.648,19 que el cliente debia
+    // se evaporaron de la cuenta corriente. Las ops sin presupuesto (las gratis) ya salieron
+    // arriba por bt<=0, asi que esto no molesta ahi.
     const aCobrar=bt+Number(opActual.debt_applied_usd||0)-Number(opActual.total_anticipos||0);
     const dif=Math.round((cobrado-aCobrar)*100)/100;
     if(dif>0.01){
@@ -2818,10 +2822,15 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       // Descuento aplicado: lo que el cliente NO pagó por decisión (promo, costos asumidos por el cliente, etc).
       // Es solo informativo — NO se suma al cobro porque no es plata que entró.
       const discountApplied=Number(op.discount_applied_usd||0);
-      // Cobro real = cash recibido + crédito de CC. Si nunca se cargó cobro, fallback al presupuesto para no romper la card.
-      // Si la op esta cobrada, el ingreso es el real (cash + credito CC), sin caer al presupuesto:
-      // marcada cobrada sin monto = no entro plata. El fallback queda como proyeccion en ops abiertas.
-      const cobro=op.is_collected?(cobroUsd+creditApplied):((cobroUsd+creditApplied)||presupuesto);
+      // Cobro real = cash recibido + crédito de CC.
+      // El fallback al presupuesto es una PROYECCION y solo tiene sentido mientras la op sigue
+      // abierta: es lo que esperamos cobrar. Una vez cerrada, el ingreso es lo que entro y nada
+      // mas. Antes el fallback tambien corria en ops cerradas si no estaban marcadas como
+      // cobradas, y ahi la pantalla inventaba plata: AC-0324 cerro sin cobrar un peso y mostraba
+      // un cobro de 707,53 con una ganancia de 152,48 que nunca existio.
+      const opCerrada=op.status==="operacion_cerrada"||op.status==="cancelada";
+      const cobroReal=cobroUsd+creditApplied;
+      const cobro=(op.is_collected||opCerrada)?cobroReal:(cobroReal||presupuesto);
       const feePct=Number(op.collection_fee_pct||0);const isTransf=op.collection_method==="transferencia";
       // La comisión de la financiera se guarda en CADA cobro (cada transferencia puede tener su %),
       // así que se suma cobro por cobro y no desde un único collection_fee_pct de la op — que quedaba
