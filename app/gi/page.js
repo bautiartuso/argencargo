@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { calcOpBudget, applyAntidumpingFloor, tasaODefault, TASA_IVA_ADICIONAL, TASA_IIGG, TASA_IIBB } from "../../lib/calc";
 import { printGiQuotePdf } from "../../lib/pdf-templates";
 import DatePicker from "../components/DatePicker";
+import { comprimirImagen } from "../../lib/img";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -43,6 +44,7 @@ const fmtDate=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);const[y,m,da
 // Upload de fotos de producto al bucket package-photos (es público + multi-uso)
 const uploadProductPhoto=async(file,token)=>{
   if(!file)return null;
+  file=await comprimirImagen(file);
   const ext=(file.name?.split(".").pop()||"jpg").toLowerCase();
   const path=`gi-prod/${Date.now()}_${Math.random().toString(36).slice(2,9)}.${ext}`;
   const fresh=await ensureFresh(token);

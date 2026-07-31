@@ -4,6 +4,7 @@ import { ToastStack, toast, SkeletonTable, EmptyState } from "../../lib/ui";
 import OfflineStatusBar from "../components/OfflineStatusBar";
 import { enqueuePackage, getPendingCount } from "../../lib/offline-queue";
 import TrackingDuplicateWarning from "../components/TrackingDuplicateWarning";
+import { comprimirImagen } from "../../lib/img";
 
 const SB_URL="https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oZnNsdml4aGxiaXlmbWVkbWJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzM5NjEsImV4cCI6MjA5MTQwOTk2MX0.5TDSTpaPBHDGc2ML5u-UT3ct8_a4rwy6SSEQkbJy3cY";
@@ -56,6 +57,9 @@ const loadSession=()=>{try{const d=localStorage.getItem("ac_agent_s");return d?J
 // Upload a photo (File) to the package-photos storage bucket. Returns public URL or null on failure.
 const uploadPackagePhoto=async(file,token)=>{
   if(!file)return null;
+  // Se comprime antes de subir: las fotos salen del celular en 4032px y 2 MB, y para verificar
+  // un bulto alcanza con 1600px. Si la compresion falla se sube el original.
+  file=await comprimirImagen(file);
   const ext=(file.name?.split(".").pop()||"jpg").toLowerCase();
   const path=`${Date.now()}_${Math.random().toString(36).slice(2,9)}.${ext}`;
   const fresh=await ensureFreshToken(token);

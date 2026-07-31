@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { dq, loadSession, clearSession, ac, SB_URL, SB_KEY } from "../../lib/sb-client";
 import { ToastStack, toast } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
+import { comprimirImagen } from "../../lib/img";
 import {
   T, fmtMoney, fmtDate, useIsMobile, enrichMovements, aplicarFiltros, calcStats,
   BalanceCard, Filtros, MovimientosTabla, MovimientoTarjeta, Estadisticas,
@@ -280,6 +281,7 @@ function MovementModal({ type, token, editing, onClose, onSaved }) {
     try {
       const ext = (file.name?.split(".").pop() || file.type.split("/")[1] || "png").toLowerCase().replace(/[^a-z0-9]/g, "");
       const filename = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}.${ext}`;
+      file = await comprimirImagen(file, { maxLado: 2000 });
       const r = await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/${filename}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, apikey: SB_KEY, "Content-Type": file.type, "x-upsert": "false" },

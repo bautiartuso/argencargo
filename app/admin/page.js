@@ -7,6 +7,7 @@ import DatePicker from "../components/DatePicker";
 import { printQuotePdf, printReceiptPdf, printClosingPdf, printPackageLabels, printSimplifiedDeclaration, printMaritimePdf, printFacturaC, printAereoAQuotePdf } from "../../lib/pdf-templates";
 import IntelligencePanel from "./components/IntelligencePanel";
 import TicketsPanel from "./components/TicketsPanel";
+import { comprimirImagen } from "../../lib/img";
 
 // Cuenta para transferencias en pesos. Un solo lugar: antes estaba escrita a mano adentro del
 // mensaje de WhatsApp y quedo con los datos viejos sin que nadie lo viera.
@@ -815,6 +816,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     try{
       const ext=(file.name?.split(".").pop()||file.type.split("/")[1]||"png").toLowerCase().replace(/[^a-z0-9]/g,"");
       const filename=`${op.operation_code}_${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+      file=await comprimirImagen(file,{maxLado:2000});
       const r=await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/${filename}`,{method:"POST",headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY,"Content-Type":file.type,"x-upsert":"false"},body:file});
       if(!r.ok)throw new Error((await r.text().catch(()=>""))||"Error subiendo el comprobante");
       setNewCobro(p=>({...p,receipt_url:`${SB_URL}/storage/v1/object/public/solfin-comprobantes/${filename}`,receipt_name:file.name||"comprobante",receipt_kb:Math.max(1,Math.round(file.size/1024))}));
