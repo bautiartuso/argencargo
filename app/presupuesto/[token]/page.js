@@ -54,7 +54,8 @@ const CSS = `
 .pz-row.head>span{font-weight:800!important}
 .pz-row.tot{border-top:1.5px solid rgba(26,26,26,.18);font-weight:800}
 .pz-prod{grid-template-columns:1fr 44px 96px 104px}
-.pz-bul{grid-template-columns:66px 44px 1fr 96px 84px}
+.pz-bul{grid-template-columns:62px 40px 1fr 88px 74px 88px 74px}
+.pz-bul .u{color:rgba(26,26,26,.5)}
 .pz-row>span:not(:first-child){text-align:right}
 .pz-row .k{display:none}
 @media(max-width:620px){
@@ -256,20 +257,26 @@ export default function PresupuestoPage({ params }) {
             {bultos.length > 0 && (
               <div>
                 <p className="pz-sub">Bultos</p>
-                <div className="pz-row pz-bul head"><span>Bulto</span><span>Cant.</span><span>Medidas</span><span>Volumen</span><span>Peso</span></div>
+                <div className="pz-row pz-bul head">
+                  <span>Bulto</span><span>Cant.</span><span>Medidas</span>
+                  <span>Vol. c/u</span><span>Peso c/u</span><span>Volumen</span><span>Peso</span>
+                </div>
                 {bultos.map((p, i) => {
                   const c = num(p.qty) || 1;
-                  const cbm = (num(p.length) * num(p.width) * num(p.height) / 1e6) * c;
+                  const cbmU = num(p.length) * num(p.width) * num(p.height) / 1e6;
+                  const kgU = num(p.weight);
                   return <div className="pz-row pz-bul" key={i}>
                     <span>Bulto #{i + 1}</span>
                     <span><i className="k">Cantidad</i>{c}</span>
                     <span><i className="k">Medidas</i>{dim(p.length)}×{dim(p.width)}×{dim(p.height)} cm</span>
-                    <span><i className="k">Volumen</i>{fmtCbm(cbm)}</span>
-                    <span><i className="k">Peso</i>{fmtKg(num(p.weight) * c)}</span>
+                    <span className="u"><i className="k">Volumen c/u</i>{fmtCbm(cbmU)}</span>
+                    <span className="u"><i className="k">Peso c/u</i>{fmtKg(kgU)}</span>
+                    <span><i className="k">Volumen del bulto</i>{fmtCbm(cbmU * c)}</span>
+                    <span><i className="k">Peso del bulto</i>{fmtKg(kgU * c)}</span>
                   </div>;
                 })}
                 <div className="pz-row pz-bul tot">
-                  <span>{totBultos} {totBultos === 1 ? "bulto" : "bultos"}</span><span /><span />
+                  <span>{totBultos} {totBultos === 1 ? "bulto" : "bultos"}</span><span /><span /><span /><span />
                   <span><i className="k">Volumen total</i>{fmtCbm(totCbm)}</span>
                   <span><i className="k">Peso total</i>{fmtKg(totKg)}</span>
                 </div>
@@ -320,7 +327,7 @@ export default function PresupuestoPage({ params }) {
                         <div className="pz-desg">
                           {comps.map(([l, v], k) => <div key={k}><span>{l}</span><b>{v}</b></div>)}
                           {comps.length > 1 && <div className="t"><span>Total</span><b>{usd(a.totalAbonar)}</b></div>}
-                          {esIntegral(a) && <p className="pz-nota">Servicio todo incluido: ya tiene adentro impuestos, aduana y recargos. No pagás nada aparte.</p>}
+                          {esIntegral(a) && <p className="pz-nota">Tarifa ALL IN: ese número es todo lo que pagás por la importación. No hay costos adicionales ni sorpresas al llegar.</p>}
                         </div>
                       )}
                     </div>
