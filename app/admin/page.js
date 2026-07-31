@@ -12437,11 +12437,14 @@ function MaritimePanel({token,allClients=[]}){
     await dq("maritime_containers",{method:"DELETE",token,filters:`?id=eq.${c.id}`});
     flash(`Contenedor ${c.code} eliminado`);load();
   };
-  // Al arribar el contenedor: crear automáticamente UNA operación por cliente con las
-  // cargas de ese contenedor que todavía no son operación. Presupuesto auto (flete CBM +
-  // recargo por valor). Nace en 'entregada' (LISTA PARA RETIRAR) y se manda el mail de
-  // retiro al cliente — igual que el flujo manual createOperationFromShipments.
-  const createOpsForContainer=async(c)=>{
+  // Crea UNA operación por cliente con las cargas del contenedor que todavía no son operación.
+  // Presupuesto auto (flete CBM + recargo por valor).
+  //
+  // Corre cuando el contenedor sale (enTransito=true): la op nace EN TRÁNSITO y el cliente la
+  // ve en su portal como una importación mas, con su código AC y su línea de tiempo, en vez de
+  // como una tarjeta suelta sin número. Cuando el contenedor llega no se crea nada nuevo: esas
+  // mismas ops pasan a "lista para retirar" y ahí recién sale el mail.
+  const createOpsForContainer=async(c,{enTransito=false}={})=>{
     const conShips=shipments.filter(s=>s.container_id===c.id&&!s.operation_id);
     const byClient={};
     conShips.forEach(s=>{if(s.client_id)(byClient[s.client_id]=byClient[s.client_id]||[]).push(s);});
@@ -12472,7 +12475,7 @@ function MaritimePanel({token,allClients=[]}){
       let bud={flete:0,seguro:0,surcharge:0,totalTax:0,totalAbonar:0};
       try{bud=calcOpBudget(opLike,calcItems,calcPkgs,tariffs,config,overrides,{tax_condition:client.tax_condition||"consumidor_final"});}catch(e){console.error("budget calc op cont",e);}
       const newCode=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
-      const opBody={operation_code:newCode,client_id:cid,channel:"maritimo_negro",status:"entregada",closed_at:new Date().toISOString(),origin,description:desc||null,eta:deliveryEta||null,budget_mode:"auto",budget_total:Number(bud.totalAbonar||0),budget_flete:Number(bud.flete||0),budget_surcharge:Number(bud.surcharge||0),budget_seguro:Number(bud.seguro||0),budget_taxes:Number(bud.totalTax||0)};
+      const opBody={operation_code:newCode,client_id:cid,channel:"maritimo_negro",status:enTransito?"en_transito":"entregada",closed_at:enTransito?null:new Date().toISOString(),origin,description:desc||null,eta:deliveryEta||null,budget_mode:"auto",budget_total:Number(bud.totalAbonar||0),budget_flete:Number(bud.flete||0),budget_surcharge:Number(bud.surcharge||0),budget_seguro:Number(bud.seguro||0),budget_taxes:Number(bud.totalTax||0)};
       const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
       const op=Array.isArray(r)?r[0]:r;
       if(!op?.id)continue;
@@ -12481,12 +12484,44 @@ function MaritimePanel({token,allClients=[]}){
       let pkgNum=0;
       for(const p of mPkgs){pkgNum++;await dq("operation_packages",{method:"POST",token,body:{operation_id:op.id,package_number:pkgNum,quantity:Number(p.quantity||1),length_cm:p.length_cm||null,width_cm:p.width_cm||null,height_cm:p.height_cm||null,national_tracking:trackByShipment[p.shipment_id]||null}});}
       for(const it of mItems)await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:it.description||null,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_usd||0),notes:it.notes||null}});
-      // Mail "lista para retirar" al cliente (igual que cualquier op que pasa a entregada).
-      try{await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"retiro"})});}catch(e){console.error("notify retiro auto",e);}
+      // El mail de retiro sale recién cuando el contenedor arriba, no cuando sale de origen.
+      if(!enTransito){try{await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"retiro"})});}catch(e){console.error("notify retiro auto",e);}}
       createdOps.push({id:op.id,code:newCode,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(bud.totalAbonar||0)});
       created++;
     }
-    return {msg:created>0?` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} · LISTA${created>1?"S":""} PARA RETIRAR · mail enviado`:"",ops:createdOps};
+    return {msg:created>0?(enTransito
+      ? ` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} EN TRÁNSITO (el cliente ya la${created>1?"s":""} ve en su portal)`
+      : ` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} · LISTA${created>1?"S":""} PARA RETIRAR · mail enviado`):"",ops:createdOps};
+  };
+
+  // Al arribar: las ops del contenedor que ya existen (creadas al salir) pasan a
+  // "lista para retirar" y ahí sale el mail. No se crea nada nuevo.
+  const entregarOpsDeContenedor=async(c)=>{
+    const opIds=[...new Set(shipments.filter(x=>x.container_id===c.id&&x.operation_id).map(x=>x.operation_id))];
+    if(opIds.length===0)return {msg:"",ops:[]};
+    const abiertas=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&status=not.in.(entregada,operacion_cerrada,cancelada)&select=id,operation_code,budget_total,client_id`});
+    const lista=Array.isArray(abiertas)?abiertas:[];
+    if(lista.length===0)return {msg:"",ops:[]};
+    const ahora=new Date().toISOString();
+    await dq("operations",{method:"PATCH",token,filters:`?id=in.(${lista.map(o=>o.id).join(",")})`,body:{status:"entregada",closed_at:ahora}});
+    for(const o of lista){
+      try{await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:o.id,trigger:"retiro"})});}catch(e){console.error("notify retiro arribo",e);}
+    }
+    const ops=lista.map(o=>{const cl=allClients.find(x=>x.id===o.client_id)||{};return {id:o.id,code:o.operation_code,clientName:`${cl.first_name||""} ${cl.last_name||""}`.trim(),budget:Number(o.budget_total||0)};});
+    return {msg:` · ✅ ${lista.length} operación${lista.length>1?"es":""} LISTA${lista.length>1?"S":""} PARA RETIRAR · mail enviado`,ops};
+  };
+
+  // Botón manual, para las cargas que se sumaron después de que el contenedor salió y para
+  // los contenedores que ya estaban navegando cuando esto se puso en marcha.
+  const crearOpsEnTransito=async(c)=>{
+    const pend=shipments.filter(x=>x.container_id===c.id&&!x.operation_id);
+    const clientes=new Set(pend.map(x=>x.client_id).filter(Boolean)).size;
+    if(clientes===0){alertDialog("Todas las cargas de este contenedor ya tienen operación.");return;}
+    if(!await confirmDialog(`¿Crear ${clientes} operación${clientes>1?"es":""} en tránsito con las ${pend.length} carga${pend.length>1?"s":""} de "${c.code}"?\n\nEl cliente las va a ver en su portal con su código AC y la fecha estimada de entrega. El mail de retiro sale recién cuando marques el contenedor como arribado.`))return;
+    setCreatingOp(true);
+    try{const r=await createOpsForContainer(c,{enTransito:true});flash(`Contenedor ${c.code}${r.msg||" · sin cargas pendientes"}`);await load();}
+    catch(e){console.error(e);alertDialog("Error creando las operaciones. Mirá la consola.");}
+    setCreatingOp(false);
   };
   const [costModal,setCostModal]=useState(null); // {code, ops:[{id,code,clientName,budget}]} para cargar costos
   const setContainerStatus=async(c,status)=>{
@@ -12495,7 +12530,24 @@ function MaritimePanel({token,allClients=[]}){
     if(status==="en_transito")body.arrived_at=null; // volver atrás desde arribado
     await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});
     let extra="";let newOps=[];
-    if(status==="arribado"){try{const r=await createOpsForContainer(c);extra=r.msg;newOps=r.ops||[];}catch(e){console.error("auto-ops arribo",e);extra=" · ⚠️ error creando ops (ver consola)";}}
+    if(status==="arribado"){
+      try{
+        // Red de seguridad: si quedo alguna carga sin op (se sumo despues de que salio), se crea
+        // ahora. Despues todas las ops del contenedor pasan a lista para retirar.
+        const cre=await createOpsForContainer(c,{enTransito:true});
+        const ent=await entregarOpsDeContenedor(c);
+        extra=ent.msg||cre.msg;newOps=[...(ent.ops||[]),...(cre.ops||[])];
+      }catch(e){console.error("auto-ops arribo",e);extra=" · ⚠️ error con las ops (ver consola)";}
+    }
+    if(status==="en_transito"){
+      try{
+        // Al salir de origen ya existe la op, para que el cliente la vea en su portal.
+        // Y si se vuelve atras desde arribado, las que se habian entregado se reabren.
+        const opIds=[...new Set(shipments.filter(x=>x.container_id===c.id&&x.operation_id).map(x=>x.operation_id))];
+        if(opIds.length)await dq("operations",{method:"PATCH",token,filters:`?id=in.(${opIds.join(",")})&status=eq.entregada`,body:{status:"en_transito",closed_at:null}});
+        const r=await createOpsForContainer(c,{enTransito:true});extra=r.msg;newOps=r.ops||[];
+      }catch(e){console.error("auto-ops transito",e);extra=" · ⚠️ error con las ops (ver consola)";}
+    }
     flash(`Contenedor ${c.code} → ${status==="en_transito"?"en tránsito":"arribado"}${extra}`);
     await load();
     if(newOps.length>0)setCostModal({code:c.code,ops:newOps});
@@ -12766,6 +12818,7 @@ function MaritimePanel({token,allClients=[]}){
                   {delEta&&dateChip("📦","Entrega est.",fmtD(delEta),"#4ade80")}
                 </div>
                 <div style={{display:"flex",gap:5,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+                  {c.status==="en_transito"&&shipments.some(x=>x.container_id===c.id&&!x.operation_id)&&<button onClick={()=>crearOpsEnTransito(c)} title="Crear ahora las operaciones de las cargas que todavía no la tienen, en estado en tránsito" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer"}}>＋ Crear ops ({new Set(shipments.filter(x=>x.container_id===c.id&&!x.operation_id).map(x=>x.client_id)).size})</button>}
                   {c.status==="en_transito"&&<button onClick={()=>setContainerStatus(c,"arribado")} title="Marcar arribado: el contenedor pasa al historial" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer"}}>⚓ Arribó</button>}
                   <button onClick={()=>setEditingContainer(c)} title="Editar contenedor" style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.06)",color:"#60a5fa",cursor:"pointer"}}>✎</button>
                   <button onClick={()=>delContainer(c)} title="Eliminar contenedor" style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
