@@ -12142,7 +12142,17 @@ function AdminDashboard({session,onLogout}){
   const isEmpleado=session?.profile?.role==="empleado";
   // El empleado solo tiene Maritimos y Entregas: cualquier otra pagina lo devuelve ahi.
   useEffect(()=>{if(isEmpleado&&!["maritime","entregas"].includes(page)&&!selOp)setPage("maritime");},[isEmpleado,page,selOp]);
-  useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
+  // Paginado con Range: PostgREST corta en 1000 filas por request y ya hay mas clientes que eso.
+  useEffect(()=>{(async()=>{
+    const todos=[];
+    for(let desde=0;;desde+=1000){
+      const pag=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc",headers:{"Range-Unit":"items",Range:`${desde}-${desde+999}`}});
+      if(!Array.isArray(pag)||pag.length===0)break;
+      todos.push(...pag);
+      if(pag.length<1000)break;
+    }
+    setAllClients(todos);
+  })();},[token]);
   // Nav agrupado por secciones (estilo Linear/Notion). Cada item: {key, label, p (svg paths)}
   // Estructura definida por el usuario. Inteligencia / Tareas / Tickets quedan como rutas
   // accesibles vía URL pero NO aparecen en sidebar.
@@ -13181,26 +13191,39 @@ function ContainerForm({token,editing,warehouse,warehouses=[],onSave,onCancel}){
 }
 
 function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehouses=[],shipments=[],containers=[],onCreateWarehouse,onSave,onCancel}){
-  const defaultWh=editing?warehouses.find(w=>w.name===editing.warehouse):warehouses[0];
+  // Sin deposito predeterminado: se elige siempre a mano (pedido 02/08). Editando, el suyo.
+  const defaultWh=editing?warehouses.find(w=>w.name===editing.warehouse):null;
   const [warehouseId,setWarehouseId]=useState(defaultWh?.id||"");
   const [trackingNumber,setTrackingNumber]=useState(editing?.tracking_number||"");
   const [receivedAt,setReceivedAt]=useState(editing?.received_at||"");
-  const [productDescription,setProductDescription]=useState(editing?.product_description||"");
   const [clientId,setClientId]=useState(editing?.client_id||"");
   const [clientName,setClientName]=useState(editing?.client_name_snapshot||"");
   const [containerId,setContainerId]=useState(editing?.container_id||"");
   const [costEst,setCostEst]=useState(editing?.cost_estimado!=null?String(editing.cost_estimado):"");
   const [pkgs,setPkgs]=useState(packages.length>0?packages.map(p=>({...p,length_cm:p.length_cm||"",width_cm:p.width_cm||"",height_cm:p.height_cm||"",quantity:p.quantity||1})):[{quantity:1,length_cm:"",width_cm:"",height_cm:""}]);
-  const [its,setIts]=useState(items.length>0?items.map(i=>({...i,quantity:i.quantity||"",unit_price_usd:i.unit_price_usd||""})):[]);
+  // Mercaderia unificada (pedido 02/08): una sola grilla desc/cant/USD c/u. La descripcion
+  // general del pedido se arma sola con las descripciones. Al editar un pedido viejo sin
+  // items, la primera fila arranca con la descripcion que tenia.
+  const [its,setIts]=useState(items.length>0
+    ?items.map(i=>({...i,quantity:i.quantity||"",unit_price_usd:i.unit_price_usd||""}))
+    :[{description:editing?.product_description||"",quantity:1,unit_price_usd:""}]);
   const [saving,setSaving]=useState(false);
+  // Buscador de clientes propio (como MyBox): input de busqueda + lista codigo - nombre.
+  const [cliOpen,setCliOpen]=useState(false);
+  const [cliQ,setCliQ]=useState("");
+  const cliSel=allClients.find(c=>c.id===clientId);
+  const cliFiltrados=(()=>{const q=cliQ.trim().toLowerCase();if(!q)return allClients;return allClients.filter(c=>`${c.client_code||""} ${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(q));})();
 
   const selectedWh=warehouses.find(w=>w.id===warehouseId);
   const cbmLive=(p)=>{const l=Number(p.length_cm),w=Number(p.width_cm),h=Number(p.height_cm),q=Number(p.quantity||1);return l&&w&&h?((l*w*h)/1000000)*q:0;};
   const cbmTotal=pkgs.reduce((s,p)=>s+cbmLive(p),0);
 
   const save=async()=>{
-    if(!selectedWh){alertDialog("Elegí o creá un depósito");return;}
-    if(!productDescription.trim()){alertDialog("Cargá la mercadería");return;}
+    if(!selectedWh){alertDialog("Elegí un depósito");return;}
+    const itsValidos=its.filter(it=>it.description?.trim());
+    if(itsValidos.length===0){alertDialog("Cargá al menos un producto en Mercadería");return;}
+    // La descripcion general del pedido se arma con las descripciones de los items.
+    const productDescription=itsValidos.map(it=>it.description.trim()).join(" · ");
     setSaving(true);
     // Auto-generar shipment_code como #N por depósito
     // - Si es nuevo: siguiente número del depósito
@@ -13219,7 +13242,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       shipment_code:code,
       tracking_number:trackingNumber.trim()||null,
       received_at:receivedAt||null,
-      product_description:productDescription.trim(),
+      product_description:productDescription,
       origin:selectedWh.origin||"china",
       warehouse_id:selectedWh.id,
       warehouse:selectedWh.name,
@@ -13256,30 +13279,53 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
 
   return <div style={{marginBottom:20,padding:18,background:"rgba(96,165,250,0.04)",border:"1.5px solid rgba(96,165,250,0.25)",borderRadius:12}}>
     <h3 style={{fontSize:14,fontWeight:700,color:"#60a5fa",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{editing?"✎ Editar pedido marítimo":"+ Nuevo pedido marítimo"}</h3>
-    <div style={{display:"grid",gridTemplateColumns:"2fr auto",gap:"0 12px",alignItems:"end"}}>
-      <Sel label="Depósito" value={warehouseId} onChange={v=>{setWarehouseId(v);const wh=warehouses.find(w=>w.id===v);const c=containers.find(x=>x.id===containerId);if(containerId&&(!c||c.warehouse!==wh?.name))setContainerId("");}} options={[{value:"",label:"— Elegí un depósito —"},...warehouses.map(w=>({value:w.id,label:`${w.origin==="usa"?"🇺🇸":"🇨🇳"} ${w.name}`}))]}/>
-      <div style={{marginBottom:12}}><Btn small variant="secondary" onClick={onCreateWarehouse}>+ Nuevo depósito</Btn></div>
-    </div>
+    {/* 1. Deposito (sin boton de crear: los depositos se crean desde el panel) */}
+    <Sel label="Depósito" value={warehouseId} onChange={v=>{setWarehouseId(v);const wh=warehouses.find(w=>w.id===v);const c=containers.find(x=>x.id===containerId);if(containerId&&(!c||c.warehouse!==wh?.name))setContainerId("");}} options={[{value:"",label:"— Elegí un depósito —"},...warehouses.map(w=>({value:w.id,label:`${w.origin==="usa"?"🇺🇸":"🇨🇳"} ${w.name}`}))]}/>
     {selectedWh?.rotulo&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"-6px 0 12px",fontStyle:"italic"}}>Rótulo del depósito: <span style={{color:IC,fontWeight:600}}>{selectedWh.rotulo}</span></p>}
+
+    {/* 2. Cliente — buscador interno (codigo + nombre), no el selector nativo */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+      <div style={{marginBottom:12,position:"relative"}}>
+        <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Cliente</label>
+        <button type="button" onClick={()=>{setCliOpen(o=>!o);setCliQ("");}} style={{width:"100%",padding:"9px 12px",fontSize:13,textAlign:"left",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:cliSel?"#fff":"rgba(255,255,255,0.4)",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+          <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cliSel?`${cliSel.client_code||""} - ${cliSel.first_name||""} ${cliSel.last_name||""}`.trim():"Cliente..."}</span>
+          <span style={{color:"rgba(255,255,255,0.4)",flexShrink:0}}>▾</span>
+        </button>
+        {cliOpen&&<div style={{position:"absolute",zIndex:60,top:"100%",left:0,right:0,marginTop:4,background:"#0F1A2D",border:"1.5px solid rgba(96,165,250,0.4)",borderRadius:12,boxShadow:"0 18px 50px rgba(0,0,0,0.6)",overflow:"hidden"}}>
+          <div style={{padding:8}}>
+            <input autoFocus value={cliQ} onChange={e=>setCliQ(e.target.value)} placeholder="Buscar..." style={{width:"100%",padding:"9px 12px",fontSize:13,boxSizing:"border-box",border:"1.5px solid rgba(163,230,53,0.5)",borderRadius:9,background:"rgba(0,0,0,0.3)",color:"#fff",outline:"none"}}/>
+          </div>
+          <div style={{maxHeight:260,overflowY:"auto"}}>
+            <div onClick={()=>{setClientId("");setCliOpen(false);}} style={{padding:"9px 14px",fontSize:13,fontWeight:700,color:"#60a5fa",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>📦 Sin identificar</div>
+            {cliFiltrados.map(c=><div key={c.id} onClick={()=>{setClientId(c.id);setClientName(`${c.first_name||""} ${c.last_name||""}`.trim());setCliOpen(false);}} style={{padding:"9px 14px",fontSize:13,color:"rgba(255,255,255,0.85)",cursor:"pointer",background:c.id===clientId?"rgba(184,149,106,0.12)":"transparent"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background=c.id===clientId?"rgba(184,149,106,0.12)":"transparent";}}><span style={{fontFamily:"monospace",fontWeight:700,color:GOLD_LIGHT}}>{c.client_code||"—"}</span> - {c.first_name} {c.last_name}</div>)}
+            {cliFiltrados.length===0&&<p style={{padding:"12px 14px",fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic",margin:0}}>Sin resultados para "{cliQ}"</p>}
+          </div>
+        </div>}
+      </div>
+      <Inp label="Nombre cliente (override)" value={clientName} onChange={setClientName} placeholder="Si no está cargado el cliente"/>
+    </div>
+
+    {/* 3. Seguimiento + recepcion */}
     <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr",gap:"0 14px"}}>
       <Inp label="Código de seguimiento" value={trackingNumber} onChange={setTrackingNumber} placeholder="SF... / KY..."/>
       <Inp label="Fecha de recepción en depósito" type="date" value={receivedAt} onChange={setReceivedAt}/>
     </div>
-    <Inp label="Mercadería" value={productDescription} onChange={setProductDescription} placeholder="Ej: Simuladores de videojuegos"/>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
-      <Sel label="Cliente" value={clientId} onChange={v=>{setClientId(v);const c=allClients.find(x=>x.id===v);if(c)setClientName(`${c.first_name||""} ${c.last_name||""}`.trim());}} options={[{value:"",label:"— Seleccioná —"},...allClients.map(c=>({value:c.id,label:`${c.client_code||""} - ${c.first_name||""} ${c.last_name||""}`.trim()}))]}/>
-      <Inp label="Nombre cliente (override)" value={clientName} onChange={setClientName} placeholder="Si no está cargado el cliente"/>
-    </div>
-    {selectedWh&&(()=>{
-      const whConts=containers.filter(c=>c.warehouse===selectedWh.name&&c.status!=="arribado");
-      return <div>
-        <Sel label="Contenedor" value={containerId} onChange={setContainerId} options={[{value:"",label:"— Sin contenedor (queda en depósito) —"},...whConts.map(c=>({value:c.id,label:`🚢 ${c.code}${c.shipping_line?` · ${c.shipping_line}`:""}`}))]}/>
-        <p style={{fontSize:10.5,color:containerId?"#60a5fa":"rgba(255,255,255,0.4)",margin:"-6px 0 8px",fontStyle:"italic"}}>{containerId?"Al asignar un contenedor, la carga pasa a 'en tránsito'.":whConts.length===0?"Este depósito no tiene contenedores en tránsito (creá uno desde el panel).":"Sin contenedor: la carga queda en depósito."}</p>
-      </div>;
-    })()}
-    <Inp label="Costo estimado de la operación (USD)" type="number" value={costEst} onChange={setCostEst} placeholder="Costo de flete/gastos — para estimar la ganancia"/>
 
-    {/* Bultos */}
+    {/* 4. Mercaderia unificada: desc + detalle comercial en una sola grilla */}
+    <div style={{marginTop:2,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>🧾 Mercadería</p>
+        <button onClick={()=>setIts(p=>[...p,{description:"",quantity:1,unit_price_usd:""}])} style={{padding:"4px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"transparent",color:IC,cursor:"pointer"}}>+ Item</button>
+      </div>
+      {its.map((it,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"2.5fr 0.8fr 1fr auto",gap:8,marginBottom:6,alignItems:"end"}}>
+        <Inp label={i===0?"Descripción":""} value={it.description} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,description:v}:x))} small/>
+        <Inp label={i===0?"Cant.":""} type="number" value={it.quantity} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x))} small/>
+        <Inp label={i===0?"USD c/u":""} type="number" value={it.unit_price_usd} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,unit_price_usd:v}:x))} small/>
+        <button onClick={()=>setIts(arr=>arr.length>1?arr.filter((_,j)=>j!==i):arr)} style={{padding:"7px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff6b6b",cursor:"pointer",height:36}}>×</button>
+      </div>)}
+    </div>
+
+    {/* 5. Bultos */}
     <div style={{marginTop:12,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>📦 Bultos</p>
@@ -13302,19 +13348,19 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       </div>
     </div>
 
-    {/* Items */}
-    <div style={{marginTop:12,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-        <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>📋 Detalle de mercadería (factura)</p>
-        <button onClick={()=>setIts(p=>[...p,{description:"",quantity:1,unit_price_usd:0}])} style={{padding:"4px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"transparent",color:IC,cursor:"pointer"}}>+ Item</button>
-      </div>
-      {its.length===0?<p style={{fontSize:11,color:"rgba(255,255,255,0.35)",fontStyle:"italic",textAlign:"center",padding:"8px 0"}}>Sin items cargados (opcional)</p>:its.map((it,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"2.5fr 0.8fr 1fr auto",gap:8,marginBottom:6,alignItems:"end"}}>
-        <Inp label={i===0?"Descripción":""} value={it.description} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,description:v}:x))} small/>
-        <Inp label={i===0?"Cant.":""} type="number" value={it.quantity} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x))} small/>
-        <Inp label={i===0?"USD c/u":""} type="number" value={it.unit_price_usd} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,unit_price_usd:v}:x))} small/>
-        <button onClick={()=>setIts(arr=>arr.filter((_,j)=>j!==i))} style={{padding:"7px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff6b6b",cursor:"pointer",height:36}}>×</button>
-      </div>)}
+    {/* 6. Contenedor */}
+    <div style={{marginTop:12}}>
+    {selectedWh&&(()=>{
+      const whConts=containers.filter(c=>c.warehouse===selectedWh.name&&c.status!=="arribado");
+      return <div>
+        <Sel label="Contenedor" value={containerId} onChange={setContainerId} options={[{value:"",label:"— Sin contenedor (queda en depósito) —"},...whConts.map(c=>({value:c.id,label:`🚢 ${c.code}${c.shipping_line?` · ${c.shipping_line}`:""}`}))]}/>
+        <p style={{fontSize:10.5,color:containerId?"#60a5fa":"rgba(255,255,255,0.4)",margin:"-6px 0 8px",fontStyle:"italic"}}>{containerId?"Al asignar un contenedor, la carga pasa a 'en tránsito'.":whConts.length===0?"Este depósito no tiene contenedores en tránsito (creá uno desde el panel).":"Sin contenedor: la carga queda en depósito."}</p>
+      </div>;
+    })()}
     </div>
+
+    {/* 7. Costo (no lo ve el empleado; vacio = automatico CBM x tarifa del deposito) */}
+    {!esEmpleado()&&<Inp label="Costo estimado de la operación (USD)" type="number" value={costEst} onChange={setCostEst} placeholder="Vacío = automático (CBM × tarifa del depósito)"/>}
 
     <div style={{display:"flex",gap:10,marginTop:14,justifyContent:"flex-end"}}>
       <Btn variant="secondary" onClick={onCancel}>Cancelar</Btn>
