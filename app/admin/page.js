@@ -12137,13 +12137,15 @@ function AdminDashboard({session,onLogout}){
     try{localStorage.setItem("ac_admin_nav",JSON.stringify({page,selOp,selClient}));}catch{}
   },[page,selOp,selClient]);
   const token=session.token;
+  // OJO: isEmpleado se declara ANTES del useEffect que lo usa — const no tiene hoisting y
+  // meterlo despues tiro ReferenceError en el render (paso el 02/08, pantalla blanca).
+  const isEmpleado=session?.profile?.role==="empleado";
   // El empleado solo tiene Maritimos y Entregas: cualquier otra pagina lo devuelve ahi.
   useEffect(()=>{if(isEmpleado&&!["maritime","entregas"].includes(page)&&!selOp)setPage("maritime");},[isEmpleado,page,selOp]);
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
   // Nav agrupado por secciones (estilo Linear/Notion). Cada item: {key, label, p (svg paths)}
   // Estructura definida por el usuario. Inteligencia / Tareas / Tickets quedan como rutas
   // accesibles vía URL pero NO aparecen en sidebar.
-  const isEmpleado=session?.profile?.role==="empleado";
   const navSections=isEmpleado?[
     {section:"Operativa",items:[
       {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
