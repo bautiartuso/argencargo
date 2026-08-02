@@ -12313,7 +12313,11 @@ function MaritimePanel({token,allClients=[]}){
   // Excluimos las cargas ya convertidas en operación (operation_id != null): salen del listado del
   // depósito (y del PDF) porque ya no están físicamente ahí. Quedan guardadas en maritime_shipments
   // linkeadas a la op para el futuro tracking por contenedor.
-  const filtered=shipments.filter(s=>!s.operation_id&&(originFilter==="all"||s.origin===originFilter)&&(warehouseFilter==="all"||s.warehouse===warehouseFilter)&&(!clientFilter||s.client_id===clientFilter));
+  // Una carga con operacion sigue siendo visible mientras este en un contenedor: desde que las
+  // ops se crean al zarpar (no al llegar), esconderlas dejaba los contenedores "vacios" en
+  // pantalla aunque la mercaderia siga arriba del barco. La fila se muestra con su chip AC y
+  // sin checkbox. Las convertidas SIN contenedor (flujo manual viejo) siguen ocultas.
+  const filtered=shipments.filter(s=>(!s.operation_id||s.container_id)&&(originFilter==="all"||s.origin===originFilter)&&(warehouseFilter==="all"||s.warehouse===warehouseFilter)&&(!clientFilter||s.client_id===clientFilter));
   // Clientes con cargas activas (sin op) para el dropdown de filtro — solo los que tienen algo en depósito.
   const clientsWithShipments=useMemo(()=>{
     const ids=new Set(shipments.filter(s=>!s.operation_id&&s.client_id).map(s=>s.client_id));
@@ -12395,7 +12399,7 @@ function MaritimePanel({token,allClients=[]}){
     const conts=containers.filter(c=>c.warehouse===warehouse&&c.status==="en_transito");
     let importe=0,costo=0,any=false;
     conts.forEach(c=>{
-      const lst=shipments.filter(s=>!s.operation_id&&s.container_id===c.id);
+      const lst=shipments.filter(s=>s.container_id===c.id);
       const v=importeContainer(lst);
       if(v!=null){importe+=v;costo+=costContainer(lst);any=true;}
     });
@@ -12418,7 +12422,9 @@ function MaritimePanel({token,allClients=[]}){
   const downloadPdf=(warehouse,origin,lang="es",withValues=true)=>{
     // Excluir también cargas de contenedores ARRIBADOS (ya llegaron, viven en el historial).
     const arrivedContIds=new Set(containers.filter(c=>c.status==="arribado").map(c=>c.id));
-    const wsShipments=shipments.filter(s=>!s.operation_id&&s.warehouse===warehouse&&s.origin===origin&&!(s.container_id&&arrivedContIds.has(s.container_id))).map(s=>({
+    // Mismo criterio que la vista: las cargas convertidas a op siguen en el PDF mientras su
+    // contenedor no haya arribado (antes de crear ops al zarpar, estas cargas SI salian aca).
+    const wsShipments=shipments.filter(s=>(!s.operation_id||s.container_id)&&s.warehouse===warehouse&&s.origin===origin&&!(s.container_id&&arrivedContIds.has(s.container_id))).map(s=>({
       ...s,
       packages:packages.filter(p=>p.shipment_id===s.id),
       items:items.filter(it=>it.shipment_id===s.id),
