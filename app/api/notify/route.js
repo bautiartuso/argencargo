@@ -44,7 +44,9 @@ async function verifyAdmin(req) {
   try {
     const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
     const p = await sb(`/rest/v1/profiles?select=role&id=eq.${payload.sub}`);
-    return Array.isArray(p) && p[0]?.role === "admin";
+    // El empleado tambien dispara estos mails: al marcar un contenedor arribado salen los
+    // avisos de retiro, y desde Entregas se reenvian.
+    return Array.isArray(p) && ["admin", "empleado"].includes(p[0]?.role);
   } catch { return false; }
 }
 

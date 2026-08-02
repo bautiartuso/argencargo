@@ -107,6 +107,10 @@ const dqPage=async(t,{token,filters="",desde=0,hasta=59})=>{
     return{rows:Array.isArray(cuerpo)?cuerpo:[],total:Number.isFinite(total)?total:0};
   }catch(e){console.error(`[dqPage] ${t}`,e);return{rows:[],total:0,error:true};}
 };
+// Rol de la sesion actual. Lo setea el login/restore; los paneles lo usan para esconder
+// la plata cuando entra un empleado (las ganancias y costos no son de su vista).
+let ROL_SESION="admin";
+const esEmpleado=()=>ROL_SESION==="empleado";
 const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE ARGENCARGO",c:"#fbbf24"},en_preparacion:{l:"DOCUMENTACIÓN",c:"#a78bfa"},en_transito:{l:"EN TRÁNSITO",c:"#60a5fa"},arribo_argentina:{l:"ARRIBO ARGENTINA",c:"#818cf8"},en_aduana:{l:"GESTIÓN ADUANERA",c:"#fb923c"},entregada:{l:"LISTA PARA RETIRAR",c:"#22c55e"},operacion_cerrada:{l:"OPERACIÓN CERRADA",c:"#10b981"},cancelada:{l:"CANCELADA",c:"#f87171"}};
 // calcOpBudget se importa desde lib/calc.js (extraído para testing)
 const CM={aereo_blanco:"Aéreo A",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B"};
@@ -221,7 +225,7 @@ function NotifBell({token}){
 
 function AdminLogin({onLogin}){
   const [email,setEmail]=useState("");const [pw,setPw]=useState("");const [err,setErr]=useState("");const [lo,setLo]=useState(false);
-  const doLogin=async()=>{setLo(true);setErr("");try{const r=await ac("token?grant_type=password",{email,password:pw});if(r.error){setErr(r.error_description||"Credenciales inválidas");setLo(false);return;}const p=await dq("profiles",{token:r.access_token,filters:`?id=eq.${r.user.id}&select=*`});const prof=Array.isArray(p)?p[0]:null;if(!prof||prof.role!=="admin"){setErr("Acceso denegado. Solo administradores.");setLo(false);return;}const ss={token:r.access_token,refresh_token:r.refresh_token,user:r.user,profile:prof};saveSession(ss);onLogin(ss);}catch{setErr("Error de conexión.");}setLo(false);};
+  const doLogin=async()=>{setLo(true);setErr("");try{const r=await ac("token?grant_type=password",{email,password:pw});if(r.error){setErr(r.error_description||"Credenciales inválidas");setLo(false);return;}const p=await dq("profiles",{token:r.access_token,filters:`?id=eq.${r.user.id}&select=*`});const prof=Array.isArray(p)?p[0]:null;if(!prof||!["admin","empleado"].includes(prof.role)){setErr("Acceso denegado.");setLo(false);return;}ROL_SESION=prof.role;const ss={token:r.access_token,refresh_token:r.refresh_token,user:r.user,profile:prof};saveSession(ss);onLogin(ss);}catch{setErr("Error de conexión.");}setLo(false);};
   return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG,fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",position:"relative",overflow:"hidden"}}>
     {/* Accent glows decorativos */}
     <div style={{position:"absolute",top:"-20%",right:"-10%",width:480,height:480,background:"radial-gradient(circle, rgba(184,149,106,0.12) 0%, transparent 70%)",pointerEvents:"none"}}/>
@@ -1247,7 +1251,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     {k:"entrega",l:"Entrega"},
     // Sin solapa Comunicaciones en ningun canal no-GI (pedido 02/08: ocupaba lugar sin aportar).
     ...(["aereo_blanco","maritimo_negro","maritimo_blanco"].includes(initOp.channel)?[]:[{k:"comms",l:"Comunicaciones"}])
-  ];
+  ].filter(t=>!esEmpleado()||["general","packages","entrega","tracking"].includes(t.k));
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
   // Checklist de cierre — modal cuando se intenta cerrar la op
   const [showCloseChecklist,setShowCloseChecklist]=useState(false);
@@ -4310,12 +4314,14 @@ const DELIVERY_GROUPS=[
 ];
 
 function EntregasPanel({token,onOpenOp}){
+  // Empleado: coordina la entrega pero no ve montos — solo el estado (cobrada o no).
+  const sinMontos=esEmpleado();
   const [rows,setRows]=useState([]);
   const [bultosByOp,setBultosByOp]=useState({});const [cobrosByOp,setCobrosByOp]=useState({});
   const [lo,setLo]=useState(true);
   const [q,setQ]=useState("");
   const [tab,setTab]=useState("pendientes"); // pendientes | entregadas
-  const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const usd=v=>sinMontos?"—":`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   // Universo: dos tramos.
   //  (a) Pendientes de entregar: delivery_completed_at null Y (status=entregada O delivery_ready_at
@@ -12131,11 +12137,19 @@ function AdminDashboard({session,onLogout}){
     try{localStorage.setItem("ac_admin_nav",JSON.stringify({page,selOp,selClient}));}catch{}
   },[page,selOp,selClient]);
   const token=session.token;
+  // El empleado solo tiene Maritimos y Entregas: cualquier otra pagina lo devuelve ahi.
+  useEffect(()=>{if(isEmpleado&&!["maritime","entregas"].includes(page)&&!selOp)setPage("maritime");},[isEmpleado,page,selOp]);
   useEffect(()=>{(async()=>{const c=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"});setAllClients(Array.isArray(c)?c:[]);})();},[token]);
   // Nav agrupado por secciones (estilo Linear/Notion). Cada item: {key, label, p (svg paths)}
   // Estructura definida por el usuario. Inteligencia / Tareas / Tickets quedan como rutas
   // accesibles vía URL pero NO aparecen en sidebar.
-  const navSections=[
+  const isEmpleado=session?.profile?.role==="empleado";
+  const navSections=isEmpleado?[
+    {section:"Operativa",items:[
+      {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
+      {key:"entregas",label:"Entregas",p:["M3 9l9-6 9 6-9 6-9-6z","M3 9v6l9 6 9-6V9"]},
+    ]},
+  ]:[
     {section:"Operativa",items:[
       {key:"operations",label:"Operaciones",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},
       {key:"entregas",label:"Entregas",p:["M3 9l9-6 9 6-9 6-9-6z","M3 9v6l9 6 9-6V9"]},
@@ -12635,7 +12649,7 @@ function MaritimePanel({token,allClients=[]}){
     if(status==="en_transito")body.arrived_at=null; // volver atrás desde arribado
     await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});
     let extra="";let newOps=[];
-    if(status==="arribado"){try{const r=await createOpsForContainer(c);extra=r.msg;newOps=r.ops||[];}catch(e){console.error("auto-ops arribo",e);extra=" · ⚠️ error creando ops (ver consola)";}}
+    if(status==="arribado"){try{const r=await createOpsForContainer(c);extra=r.msg;newOps=esEmpleado()?[]:(r.ops||[]);}catch(e){console.error("auto-ops arribo",e);extra=" · ⚠️ error creando ops (ver consola)";}}
     flash(`Contenedor ${c.code} → ${status==="en_transito"?"en tránsito":"arribado"}${extra}`);
     await load();
     if(newOps.length>0)setCostModal({code:c.code,ops:newOps});
@@ -12766,7 +12780,7 @@ function MaritimePanel({token,allClients=[]}){
             <div style={{flex:1}}>
               <p style={{fontSize:11,fontWeight:800,color:"#60a5fa",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>📦 Depósito {wh}</p>
               <p style={{fontSize:13,color:"rgba(255,255,255,0.75)",margin:0}}>{wsList.length} pedido{wsList.length!==1?"s":""} · {totalBultos} bulto{totalBultos!==1?"s":""} · <strong style={{color:"#fff"}}>CBM {totalCbm.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{pending>0?` (+ ${pending} pendiente${pending!==1?"s":""})`:""}</p>
-              {whTot&&whTot.importe>0&&<p style={{fontSize:12.5,margin:"5px 0 0",display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px",borderRadius:8,background:whTot.ganancia>=0?"rgba(34,197,94,0.12)":"rgba(248,113,113,0.12)",color:whTot.ganancia>=0?"#4ade80":"#f87171",fontWeight:700}} title={`Ganancia estimada en tránsito = a cobrar − costos cargados. A cobrar: USD ${whTot.importe.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} · Costo: USD ${whTot.costo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}>📈 Ganancia est. en tránsito: USD {whTot.ganancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+              {!esEmpleado()&&whTot&&whTot.importe>0&&<p style={{fontSize:12.5,margin:"5px 0 0",display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px",borderRadius:8,background:whTot.ganancia>=0?"rgba(34,197,94,0.12)":"rgba(248,113,113,0.12)",color:whTot.ganancia>=0?"#4ade80":"#f87171",fontWeight:700}} title={`Ganancia estimada en tránsito = a cobrar − costos cargados. A cobrar: USD ${whTot.importe.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} · Costo: USD ${whTot.costo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}>📈 Ganancia est. en tránsito: USD {whTot.ganancia.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
               {whByName[wh]?.rotulo&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"4px 0 0",fontStyle:"italic"}}>Rótulo: <span style={{color:IC,fontWeight:600}}>{whByName[wh].rotulo}</span></p>}
             </div>
           </div>
@@ -12864,7 +12878,7 @@ function MaritimePanel({token,allClients=[]}){
                     {shItems.length===0?<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin detalle cargado</p>:<table style={{width:"100%",fontSize:11.5,borderCollapse:"collapse"}}><tbody>{shItems.map((it,i)=><tr key={it.id} style={{borderBottom:i<shItems.length-1?"1px solid rgba(255,255,255,0.04)":"none"}}><td style={{padding:"3px 0",color:"rgba(255,255,255,0.7)"}}>{it.description}</td><td style={{padding:"3px 0",color:"rgba(255,255,255,0.55)",textAlign:"right",whiteSpace:"nowrap"}}>{it.quantity} u. × {usd(it.unit_price_usd)}</td><td style={{padding:"3px 0",textAlign:"right",color:GOLD_LIGHT,fontFeatureSettings:'"tnum"',fontWeight:600,whiteSpace:"nowrap"}}>{usd(Number(it.quantity||0)*Number(it.unit_price_usd||0))}</td></tr>)}</tbody></table>}
                   </div>
                 </div>
-                <div style={{marginTop:12,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"9px 12px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8}} onClick={e=>e.stopPropagation()}>
+                {!esEmpleado()&&<div style={{marginTop:12,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"9px 12px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8}} onClick={e=>e.stopPropagation()}>
                   <span style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Costo est. de esta operación</span>
                   <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,color:"rgba(255,255,255,0.6)"}}>USD
                     <input key={`${sh.id}-${sh.cost_estimado??""}`} type="number" step="any" defaultValue={sh.cost_estimado??""} placeholder="0" title={sh.cost_manual?"Costo cargado a mano. Borrá el campo para volver al cálculo automático.":`Automático: CBM × USD ${Number(sh.cost_per_cbm||0)} del depósito`} onBlur={e=>{if(String(e.target.value).trim()!==String(sh.cost_estimado??""))saveShipCost(sh,e.target.value);}} style={{width:96,padding:"5px 8px",fontSize:12.5,borderRadius:6,border:`1px solid ${sh.cost_manual?"rgba(251,191,36,0.35)":"rgba(255,255,255,0.15)"}`,background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",fontFeatureSettings:'"tnum"'}}/>
@@ -12876,7 +12890,7 @@ function MaritimePanel({token,allClients=[]}){
                     <span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>A cobrar est. <strong style={{color:"#4ade80",fontFeatureSettings:'"tnum"'}}>{usd(imp)}</strong></span>
                     <span style={{fontSize:13,fontWeight:800,color:gan>=0?"#4ade80":"#f87171",fontFeatureSettings:'"tnum"'}}>📈 Ganancia est. {usd(gan)}</span>
                   </>;})()}
-                </div>
+                </div>}
                 {sh.notes&&<p style={{fontSize:11,color:"#fbbf24",fontStyle:"italic",margin:"10px 0 0",padding:"6px 10px",background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:6}}>■ {sh.notes}</p>}
               </td></tr>}
             </Fragment>;
@@ -12899,7 +12913,7 @@ function MaritimePanel({token,allClients=[]}){
                 <span style={{fontSize:12.5,fontWeight:800,color:IC}}>🚢 {c.code}</span>
                 {c.shipping_line&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#93c5fd",letterSpacing:"0.03em"}}>⚓ {c.shipping_line}</span>}
                 <span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>{list.length} carga{list.length!==1?"s":""} · {bulC} bulto{bulC!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong></span>
-                {gananciaC!=null&&<span style={{fontSize:11,fontWeight:800,padding:"2px 9px",borderRadius:5,background:gananciaC>=0?"rgba(74,222,128,0.16)":"rgba(248,113,113,0.16)",color:gananciaC>=0?"#4ade80":"#f87171",letterSpacing:"0.02em"}} title={`Ganancia estimada = a cobrar − costo. A cobrar: USD ${(importeC||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} · Costo: USD ${costEstC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}>📈 Ganancia est. USD {gananciaC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
+                {!esEmpleado()&&gananciaC!=null&&<span style={{fontSize:11,fontWeight:800,padding:"2px 9px",borderRadius:5,background:gananciaC>=0?"rgba(74,222,128,0.16)":"rgba(248,113,113,0.16)",color:gananciaC>=0?"#4ade80":"#f87171",letterSpacing:"0.02em"}} title={`Ganancia estimada = a cobrar − costo. A cobrar: USD ${(importeC||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} · Costo: USD ${costEstC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}>📈 Ganancia est. USD {gananciaC.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
                 {tb>0&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,146,60,0.15)",color:"#fb923c",letterSpacing:"0.02em"}} title={`Transbordo en ${c.transbordo_lugar||"Brasil"} — la ETA y la entrega se corren ${tb} días. El cliente ve la fecha actualizada en su portal.`}>🔄 Transbordo {c.transbordo_lugar||"Brasil"} · +{tb}d</span>}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
@@ -13397,7 +13411,7 @@ function useAdminPush(token){
 export default function AdminPage(){
   const [session,setSession]=useState(null);const [restoring,setRestoring]=useState(true);
   useAdminPush(session?.token);
-  useEffect(()=>{const s=loadSession();if(s?.token&&s?.profile?.role==="admin"){setSession(s);}setRestoring(false);},[]);
+  useEffect(()=>{const s=loadSession();if(s?.token&&["admin","empleado"].includes(s?.profile?.role)){ROL_SESION=s.profile.role;setSession(s);}setRestoring(false);},[]);
   const logout=()=>{clearSession();setSession(null);};
   if(restoring)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:DARK_BG}}><p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p></div>;
   if(!session)return <><style dangerouslySetInnerHTML={{__html:AC_KEYFRAMES}}/><ToastStack/><DialogHost/><AdminLogin onLogin={s=>{setSession(s);}}/></>;
