@@ -1044,6 +1044,17 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   // Se llama después de cualquier CRUD de items/bultos. Saltea ops canceladas Y ops con budget_mode=manual.
   // En ops cerradas SÍ recalcula — el admin puede modificar bultos/items y después usar "Ajustar saldo"
   // para que el excedente del cliente refleje el nuevo presupuesto.
+  // Maritimo B: los items cargados en el panel Maritimos (desc/cantidad/unitario) son la fuente
+  // del valor de mercaderia. Se leen de las cargas linkeadas a esta op.
+  const [mbItems,setMbItems]=useState([]);
+  useEffect(()=>{if(initOp.channel!=="maritimo_negro")return;let vivo=true;(async()=>{
+    const ships=await dq("maritime_shipments",{token,filters:`?operation_id=eq.${initOp.id}&select=id`});
+    const ids=(Array.isArray(ships)?ships:[]).map(x=>x.id);
+    if(!ids.length){if(vivo)setMbItems([]);return;}
+    const its=await dq("maritime_items",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=description,quantity,unit_price_usd&order=shipment_id.asc,sort_order.asc`});
+    if(vivo)setMbItems(Array.isArray(its)?its:[]);
+  })();return()=>{vivo=false;};},[initOp.id,initOp.channel,token]);
+
   const autoSyncBudget=async(force=false)=>{
     if(op.status==="cancelada")return;
     if(!force && op.budget_mode==="manual")return; // ← Manual: el admin maneja los números a mano, no pisamos
@@ -1233,8 +1244,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     {k:"packages",l:"Bultos"},
     ...(isCanalB?[]:[{k:"tracking",l:"Seguimiento"}]),
     {k:"entrega",l:"Entrega"},
-    // Aereo A sin solapa Comunicaciones (pedido 02/08: ocupaba lugar sin aportar).
-    ...(initOp.channel==="aereo_blanco"?[]:[{k:"comms",l:"Comunicaciones"}])
+    // Aereo A y Maritimo B sin solapa Comunicaciones (pedido 02/08: ocupaba lugar sin aportar).
+    ...(["aereo_blanco","maritimo_negro"].includes(initOp.channel)?[]:[{k:"comms",l:"Comunicaciones"}])
   ];
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
   // Checklist de cierre — modal cuando se intenta cerrar la op
@@ -1599,7 +1610,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
         {/* Aereo A: la ETA se edita en la solapa Seguimiento y las notas se sacaron (pedido 02/08). */}
         {!(op.channel==="aereo_blanco"&&!isGI)&&<Inp label="ETA (fecha estimada de arribo)" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>}
-        {!(op.channel==="aereo_blanco"&&!isGI)&&<Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>}
+        {!((op.channel==="aereo_blanco"||op.channel==="maritimo_negro")&&!isGI)&&<Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>}
         <div onClick={()=>chOp("skip_review_request")(!op.skip_review_request)} style={{padding:"12px 16px",background:op.skip_review_request?"rgba(251,146,60,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${op.skip_review_request?"rgba(251,146,60,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:10,marginTop:8,cursor:"pointer",display:"flex",alignItems:"center",gap:14,userSelect:"none",transition:"all 180ms"}}>
           <div style={{width:44,height:24,background:op.skip_review_request?"linear-gradient(135deg, #fb923c, #f97316)":"rgba(255,255,255,0.1)",borderRadius:999,position:"relative",transition:"all 200ms",boxShadow:op.skip_review_request?"0 0 10px rgba(251,146,60,0.35)":"",flexShrink:0}}>
             <div style={{position:"absolute",top:2,left:op.skip_review_request?22:2,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left 220ms cubic-bezier(0.34,1.56,0.64,1)"}}/>
@@ -1655,6 +1666,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
 
         items.sort((a,b)=>new Date(b.at)-new Date(a.at));
         if(items.length===0)return null;
+        // Maritimo B sin card de Historia (pedido 02/08).
+        if(op.channel==="maritimo_negro")return null;
 
         return <Card title="Historia">
           <div style={{position:"relative",paddingLeft:14}}>
@@ -1878,8 +1891,30 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           <span style={{fontSize:12.5,fontWeight:op.has_battery?700:600,color:op.has_battery?"#fb923c":"rgba(255,255,255,0.6)"}}>⚡ La carga contiene baterías</span>
           <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:"auto"}}>{op.has_battery?"Recargo USD 2/kg facturable aplicado":"Sin recargo"}</span>
         </div>}
-        {/* Canal B: input para valor de mercadería (base del recargo por valor) */}
-        {!isBlanco&&<div style={{marginBottom:14,padding:"10px 14px",background:"rgba(96,165,250,0.05)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10,display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+        {/* Canal B con cargas maritimas linkeadas: el valor de mercaderia sale SOLO de lo que se
+            anoto en el panel Maritimos, con su detalle (desc - cantidad - unitario). */}
+        {!isBlanco&&mbItems.length>0&&(()=>{
+          const totMerc=Math.round(mbItems.reduce((a,it)=>a+Number(it.unit_price_usd||0)*Number(it.quantity||1),0)*100)/100;
+          const fmt2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+          const desync=Math.abs(Number(op.merchandise_value_usd||0)-totMerc)>0.01;
+          return <div style={{marginBottom:14,background:"rgba(96,165,250,0.04)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10,overflow:"hidden"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"9px 14px",borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
+              <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Mercadería (del panel Marítimos)</span>
+              <span style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>Valor: <b style={{color:"#fff"}}>USD {fmt2(totMerc)}</b>{desync&&<button disabled={saving} onClick={async()=>{setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{merchandise_value_usd:totMerc}});setOp(p=>({...p,merchandise_value_usd:totMerc}));await autoSyncBudget(true);flash("Valor de mercadería sincronizado");setSaving(false);}} style={{marginLeft:10,padding:"3px 10px",fontSize:10.5,fontWeight:700,borderRadius:6,border:"1px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.1)",color:"#fbbf24",cursor:"pointer"}}>↻ Aplicar (guardado: USD {fmt2(op.merchandise_value_usd)})</button>}</span>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"3fr 0.7fr 1fr 1fr",gap:8,padding:"7px 14px",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+              <span>Descripción</span><span style={{textAlign:"right"}}>Cant.</span><span style={{textAlign:"right"}}>Unitario</span><span style={{textAlign:"right"}}>Subtotal</span>
+            </div>
+            {mbItems.map((it,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"3fr 0.7fr 1fr 1fr",gap:8,padding:"6px 14px",fontSize:12,color:"rgba(255,255,255,0.8)",borderBottom:i<mbItems.length-1?"1px solid rgba(255,255,255,0.03)":"none",fontVariantNumeric:"tabular-nums"}}>
+              <span>{it.description||"—"}</span>
+              <span style={{textAlign:"right"}}>{Number(it.quantity||1)}</span>
+              <span style={{textAlign:"right"}}>USD {fmt2(it.unit_price_usd)}</span>
+              <span style={{textAlign:"right",fontWeight:600}}>USD {fmt2(Number(it.unit_price_usd||0)*Number(it.quantity||1))}</span>
+            </div>)}
+          </div>;
+        })()}
+        {/* Canal B sin cargas maritimas (op creada a mano): input manual como siempre */}
+        {!isBlanco&&mbItems.length===0&&<div style={{marginBottom:14,padding:"10px 14px",background:"rgba(96,165,250,0.05)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10,display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:"0.06em",whiteSpace:"nowrap"}}>Valor mercadería (USD)</span>
           <div style={{display:"flex",gap:8,alignItems:"center",flex:"0 0 auto"}}>
             <input type="text" inputMode="decimal" value={op.merchandise_value_usd??""} onChange={e=>{const v=e.target.value.replace(",",".");if(v===""||/^\d*\.?\d*$/.test(v))chOp("merchandise_value_usd")(v);}} placeholder={totalFob>0?`Sug. ${totalFob.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"Ej: 15000"} style={{width:140,padding:"7px 10px",fontSize:13,border:"1px solid rgba(255,255,255,0.14)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none"}}/>
