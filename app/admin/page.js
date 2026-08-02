@@ -12977,7 +12977,7 @@ function MaritimePanel({token,allClients=[]}){
             <p style={{fontSize:13,fontWeight:800,color:"#22c55e",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>⚓ Historial de contenedores arribados</p>
             <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{arrived.length} contenedor{arrived.length!==1?"es":""}</span>
           </div>
-          <span style={{fontSize:12.5,fontWeight:800,padding:"3px 11px",borderRadius:8,background:grandTotal>=0?"rgba(74,222,128,0.16)":"rgba(248,113,113,0.16)",color:grandTotal>=0?"#4ade80":"#f87171"}} title="Ganancia total de los contenedores arribados (a cobrar − costos)">📈 Ganancia total: USD {usd2(grandTotal)}</span>
+          {!esEmpleado()&&<span style={{fontSize:12.5,fontWeight:800,padding:"3px 11px",borderRadius:8,background:grandTotal>=0?"rgba(74,222,128,0.16)":"rgba(248,113,113,0.16)",color:grandTotal>=0?"#4ade80":"#f87171"}} title="Ganancia total de los contenedores arribados (a cobrar − costos)">📈 Ganancia total: USD {usd2(grandTotal)}</span>}
         </div>
         {histOpen&&Object.entries(byWh).sort(([a],[b])=>a.localeCompare(b)).map(([wh,conts])=>{
           const whGan=conts.reduce((s,c)=>s+gananciaOf(c),0);
@@ -12986,7 +12986,7 @@ function MaritimePanel({token,allClients=[]}){
           return <div key={wh}>
             <div onClick={toggleDep} title={depClosed?"Abrir":"Cerrar"} style={{padding:"9px 18px",background:"rgba(96,165,250,0.05)",borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",cursor:"pointer"}}>
               <span style={{fontSize:11.5,fontWeight:800,color:"#60a5fa",textTransform:"uppercase",letterSpacing:"0.05em",display:"inline-flex",alignItems:"center",gap:8}}><span style={{fontSize:11,transition:"transform 200ms",transform:depClosed?"rotate(0deg)":"rotate(90deg)",display:"inline-block",userSelect:"none"}}>▶</span>📦 Depósito {wh} <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {conts.length} contenedor{conts.length!==1?"es":""}</span></span>
-              <span style={{fontSize:11.5,fontWeight:700,color:whGan>=0?"#4ade80":"#f87171"}}>📈 Ganancia: USD {usd2(whGan)}</span>
+              {!esEmpleado()&&<span style={{fontSize:11.5,fontWeight:700,color:whGan>=0?"#4ade80":"#f87171"}}>📈 Ganancia: USD {usd2(whGan)}</span>}
             </div>
             {!depClosed&&conts.map(c=>{
               const cShips=shipments.filter(s=>s.container_id===c.id);
@@ -12996,7 +12996,7 @@ function MaritimePanel({token,allClients=[]}){
               return <div key={c.id} style={{borderTop:"1px solid rgba(255,255,255,0.05)"}}>
                 <div style={{padding:"11px 18px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
                   <div style={{flex:1,minWidth:260}}>
-                    <p style={{fontSize:13,fontWeight:800,color:"#fff",margin:"0 0 3px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>🚢 {c.code} {c.shipping_line&&<span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#93c5fd"}}>⚓ {c.shipping_line}</span>}<span style={{fontSize:10.5,fontWeight:800,padding:"2px 8px",borderRadius:5,background:gan>=0?"rgba(74,222,128,0.16)":"rgba(248,113,113,0.16)",color:gan>=0?"#4ade80":"#f87171"}}>📈 Ganancia: USD {usd2(gan)}</span></p>
+                    <p style={{fontSize:13,fontWeight:800,color:"#fff",margin:"0 0 3px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>🚢 {c.code} {c.shipping_line&&<span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"rgba(96,165,250,0.12)",color:"#93c5fd"}}>⚓ {c.shipping_line}</span>}{!esEmpleado()&&<span style={{fontSize:10.5,fontWeight:800,padding:"2px 8px",borderRadius:5,background:gan>=0?"rgba(74,222,128,0.16)":"rgba(248,113,113,0.16)",color:gan>=0?"#4ade80":"#f87171"}}>📈 Ganancia: USD {usd2(gan)}</span>}</p>
                     <p style={{fontSize:11,color:"rgba(255,255,255,0.55)",margin:0}}>🛳️ Salió {fmtD(c.departed_at)} · ⚓ ETA Pto. Buenos Aires {fmtD(c.eta)} · 📦 Entrega est. {fmtD(deliveryEtaStr(c.eta))} · Arribó {fmtD(c.arrived_at)} · {cShips.length} carga{cShips.length!==1?"s":""} · CBM <strong style={{color:"#fff"}}>{cbmC.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4})}</strong>{c.notes?` · ${c.notes}`:""}</p>
                     {opCodes.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:6}}>
                       {opCodes.map(oc=><span key={oc} style={{fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,fontFamily:"monospace"}}>🔗 {oc}</span>)}
