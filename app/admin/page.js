@@ -1958,6 +1958,75 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               </div>
             :<span style={{fontSize:20,fontWeight:700,color:IC}}>USD {totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>}
         </div>
+        {/* Desglose impositivo con CIF (pedido 02/08): la formula abierta, item por item. Es el
+            calculo estimado del sistema; si el presupuesto esta en manual o con despacho real
+            cargado, lo que vale es lo guardado y esto queda como referencia. */}
+        {isBlanco&&items.length>0&&(()=>{
+          const fmt2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+          const isAereoOp=op.channel?.includes("aereo");
+          const certFlRate=isAereoOp?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
+          const certFlAmt=isAereoOp?(isRI?totGW*certFlRate:pf*certFlRate):totCBM*certFlRate;
+          const segLocal=(totalFob+certFlAmt)*0.01;
+          const cifLocal=totalFob+certFlAmt+segLocal;
+          const getDesembolsoD=(c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;};
+          const taxItems=applyAntidumpingFloor(items,config);
+          const taxFobL=taxItems!==items?taxItems.reduce((a,it)=>a+Number(it.unit_price_usd||0)*Number(it.quantity||1),0):totalFob;
+          const taxCifL=taxFobL!==totalFob?taxFobL+certFlAmt+(taxFobL+certFlAmt)*0.01:cifLocal;
+          const rows=taxItems.map(it=>{
+            const itemFob=Number(it.unit_price_usd||0)*Number(it.quantity||1);
+            const pct=taxFobL>0?itemFob/taxFobL:1;
+            const iCif=itemFob+certFlAmt*pct+(itemFob+certFlAmt*pct)*0.01;
+            const dr=(it.import_duty_rate==null||it.import_duty_rate==="")?0:Number(it.import_duty_rate);
+            const te=(it.statistics_rate==null||it.statistics_rate==="")?0:Number(it.statistics_rate);
+            const ivaR=(it.iva_rate==null||it.iva_rate==="")?21:Number(it.iva_rate);
+            const die=iCif*dr/100;const tasa=iCif*te/100;const bi=iCif+die+tasa;const iva=bi*ivaR/100;
+            let extra=0,extraLbl=null;
+            if(isMaritimo){
+              const adic=bi*tasaODefault(it.iva_additional_rate,TASA_IVA_ADICIONAL);
+              const iigg=bi*tasaODefault(it.iigg_rate,TASA_IIGG);
+              const iibb=bi*tasaODefault(it.iibb_rate,TASA_IIBB);
+              extra=adic+iigg+iibb;extraLbl="IVA adic + IIGG + IIBB";
+            }else{
+              const des=getDesembolsoD(taxCifL)*pct;
+              extra=des+des*0.21;extraLbl="Desaduanaje (+IVA 21%)";
+            }
+            return {desc:it.description||"—",itemFob,iCif,dr,die,te,tasa,ivaR,iva,extra,extraLbl,tot:die+tasa+iva+extra};
+          });
+          const totD=rows.reduce((a,r)=>a+r.tot,0);
+          const cell={padding:"5px 10px",fontSize:11.5,textAlign:"right",fontVariantNumeric:"tabular-nums",color:"rgba(255,255,255,0.75)"};
+          return <details style={{marginTop:12,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"10px 14px"}}>
+            <summary style={{cursor:"pointer",fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.6)"}}>🔍 Desglose impositivo (CIF y fórmula, estimado del sistema)</summary>
+            <div style={{display:"flex",gap:22,flexWrap:"wrap",margin:"12px 0",fontSize:11.5,color:"rgba(255,255,255,0.55)"}}>
+              <span>FOB: <b style={{color:"#fff"}}>USD {fmt2(totalFob)}</b></span>
+              <span>Cert. flete ({isAereoOp?`USD ${certFlRate}/kg ${isRI?"real s/bruto":"ficticio s/facturable"}`:`USD ${certFlRate}/m³`}): <b style={{color:"#fff"}}>USD {fmt2(certFlAmt)}</b></span>
+              <span>Seguro (1%): <b style={{color:"#fff"}}>USD {fmt2(segLocal)}</b></span>
+              <span>CIF: <b style={{color:GOLD_LIGHT}}>USD {fmt2(cifLocal)}</b></span>
+              {taxFobL!==totalFob&&<span title="Piso antidumping aplicado a la base imponible">Base imponible ajustada: <b style={{color:"#fbbf24"}}>USD {fmt2(taxCifL)}</b></span>}
+            </div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+                  {["Ítem","FOB","CIF prop.","DIE","Estadística","IVA",rows[0]?.extraLbl||"Otros","Total"].map((h,i)=><th key={i} style={{padding:"5px 10px",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em",textAlign:i===0?"left":"right",whiteSpace:"nowrap"}}>{h}</th>)}
+                </tr></thead>
+                <tbody>{rows.map((r,i)=><tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                  <td style={{...cell,textAlign:"left",color:"#fff",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.desc}>{r.desc}</td>
+                  <td style={cell}>{fmt2(r.itemFob)}</td>
+                  <td style={cell}>{fmt2(r.iCif)}</td>
+                  <td style={cell} title={`${r.dr}%`}>{fmt2(r.die)} <span style={{color:"rgba(255,255,255,0.35)"}}>({r.dr}%)</span></td>
+                  <td style={cell} title={`${r.te}%`}>{fmt2(r.tasa)} <span style={{color:"rgba(255,255,255,0.35)"}}>({r.te}%)</span></td>
+                  <td style={cell} title={`${r.ivaR}%`}>{fmt2(r.iva)} <span style={{color:"rgba(255,255,255,0.35)"}}>({r.ivaR}%)</span></td>
+                  <td style={cell}>{fmt2(r.extra)}</td>
+                  <td style={{...cell,fontWeight:700,color:"#fff"}}>{fmt2(r.tot)}</td>
+                </tr>)}</tbody>
+                <tfoot><tr style={{borderTop:"1px solid rgba(184,149,106,0.3)"}}>
+                  <td style={{...cell,textAlign:"left",fontWeight:800,color:"#fff"}}>TOTAL IMPUESTOS</td>
+                  <td colSpan={6}/>
+                  <td style={{...cell,fontWeight:800,color:GOLD_LIGHT,fontSize:12.5}}>{fmt2(totD)}</td>
+                </tr></tfoot>
+              </table>
+            </div>
+          </details>;
+        })()}
         {/* Envío a domicilio: lo elige el cliente en el link de retiro y el costo se suma solo al
             presupuesto (delivery_cost_usd entra en calcOpBudget). Antes habia un toggle manual acá
             que permitia activarlo/desactivarlo a mano y se desincronizaba de lo que el cliente
