@@ -1242,10 +1242,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     {k:"finance",l:"Presupuesto y Finanzas"},
     ...(isCanalB?[]:[{k:"items",l:"Productos"}]),
     {k:"packages",l:"Bultos"},
-    ...(isCanalB?[]:[{k:"tracking",l:"Seguimiento"}]),
+    // Maritimo (A y B) sin solapa Seguimiento: el tracking vive en el contenedor.
+    ...(initOp.channel?.includes("maritimo")?[]:[{k:"tracking",l:"Seguimiento"}]),
     {k:"entrega",l:"Entrega"},
-    // Aereo A y Maritimo B sin solapa Comunicaciones (pedido 02/08: ocupaba lugar sin aportar).
-    ...(["aereo_blanco","maritimo_negro"].includes(initOp.channel)?[]:[{k:"comms",l:"Comunicaciones"}])
+    // Sin solapa Comunicaciones en ningun canal no-GI (pedido 02/08: ocupaba lugar sin aportar).
+    ...(["aereo_blanco","maritimo_negro","maritimo_blanco"].includes(initOp.channel)?[]:[{k:"comms",l:"Comunicaciones"}])
   ];
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
   // Checklist de cierre — modal cuando se intenta cerrar la op
@@ -1610,7 +1611,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
         {/* Aereo A: la ETA se edita en la solapa Seguimiento y las notas se sacaron (pedido 02/08). */}
         {!(op.channel==="aereo_blanco"&&!isGI)&&<Inp label="ETA (fecha estimada de arribo)" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>}
-        {!((op.channel==="aereo_blanco"||op.channel==="maritimo_negro")&&!isGI)&&<Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>}
+        {!(["aereo_blanco","maritimo_negro","maritimo_blanco"].includes(op.channel)&&!isGI)&&<Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>}
         <div onClick={()=>chOp("skip_review_request")(!op.skip_review_request)} style={{padding:"12px 16px",background:op.skip_review_request?"rgba(251,146,60,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${op.skip_review_request?"rgba(251,146,60,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:10,marginTop:8,cursor:"pointer",display:"flex",alignItems:"center",gap:14,userSelect:"none",transition:"all 180ms"}}>
           <div style={{width:44,height:24,background:op.skip_review_request?"linear-gradient(135deg, #fb923c, #f97316)":"rgba(255,255,255,0.1)",borderRadius:999,position:"relative",transition:"all 200ms",boxShadow:op.skip_review_request?"0 0 10px rgba(251,146,60,0.35)":"",flexShrink:0}}>
             <div style={{position:"absolute",top:2,left:op.skip_review_request?22:2,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left 220ms cubic-bezier(0.34,1.56,0.64,1)"}}/>
@@ -1666,8 +1667,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
 
         items.sort((a,b)=>new Date(b.at)-new Date(a.at));
         if(items.length===0)return null;
-        // Maritimo B sin card de Historia (pedido 02/08).
-        if(op.channel==="maritimo_negro")return null;
+        // Maritimo A y B sin card de Historia (pedido 02/08).
+        if(op.channel?.includes("maritimo"))return null;
 
         return <Card title="Historia">
           <div style={{position:"relative",paddingLeft:14}}>
@@ -1781,7 +1782,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const billedTaxInline=(!isRI||op.ri_argencargo_collects_taxes)?totalTax:0;
       totalAbonar=isBlanco?(billedTaxInline+flete+seguro+shipCost+deliveryCostInline):Math.round(flete+surcharge+shipCost+deliveryCostInline);
       }
-      const taxesBilledByArgencargo=!isRI||!!op.ri_argencargo_collects_taxes;
+      // Solo en aereo A el RI paga los impuestos directo; en maritimo A siempre los cobra Argencargo.
+      const taxesBilledByArgencargo=op.channel!=="aereo_blanco"||!isRI||!!op.ri_argencargo_collects_taxes;
       const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;
       const rw=(l,v)=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{fontSize:13,fontWeight:600,color:"#fff"}}>USD {v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
       const isManual=op.budget_mode==="manual";
@@ -1876,7 +1878,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             </>}
         </div>;})()
       }>
-        {isRI&&isBlanco&&<div style={{marginBottom:14,padding:"10px 14px",background:taxesBilledByArgencargo?"rgba(34,197,94,0.06)":"rgba(96,165,250,0.05)",border:`1px solid ${taxesBilledByArgencargo?"rgba(34,197,94,0.25)":"rgba(96,165,250,0.15)"}`,borderRadius:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        {isRI&&op.channel==="aereo_blanco"&&<div style={{marginBottom:14,padding:"10px 14px",background:taxesBilledByArgencargo?"rgba(34,197,94,0.06)":"rgba(96,165,250,0.05)",border:`1px solid ${taxesBilledByArgencargo?"rgba(34,197,94,0.25)":"rgba(96,165,250,0.15)"}`,borderRadius:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           <label style={{display:"flex",alignItems:"center",gap:8,cursor:saving?"wait":"pointer",flex:1}}>
             <input type="checkbox" checked={!!op.ri_argencargo_collects_taxes} disabled={saving} onChange={async e=>{const v=e.target.checked;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_argencargo_collects_taxes:v}});setOp(p=>({...p,ri_argencargo_collects_taxes:v}));await autoSyncBudget(true);flash(v?"Ahora Argencargo cobra los impuestos de esta op":"El RI vuelve a pagar los impuestos directo al despachante");setSaving(false);}} style={{width:16,height:16,cursor:"pointer"}}/>
             <span style={{fontSize:12.5,color:"rgba(255,255,255,0.75)"}}>Argencargo cobra los impuestos de esta op <span style={{color:"rgba(255,255,255,0.45)"}}>(excepción — por defecto el RI los abona directo al despachante/transportista)</span></span>
@@ -2459,7 +2461,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     {/* Despacho real (RI) — entre el presupuesto y Gestión de Pagos. El admin copia los impuestos
         tal cual de la factura del despachante/DHL; si está cargado, el presupuesto usa estos
         valores reales (no la fórmula). 13/06/2026. */}
-    {tab==="finance"&&!isGI&&opClient?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&op.channel?.includes("blanco")&&(()=>{
+    {tab==="finance"&&!isGI&&opClient?.tax_condition==="responsable_inscripto"&&op.status!=="operacion_cerrada"&&op.channel==="aereo_blanco"&&(()=>{
       // Parser es-AR: acepta coma decimal y puntos de miles ("1.059,71") además de punto ("448.62").
       const num=v=>{if(v==null)return NaN;let s=String(v).trim();if(s==="")return NaN;if(s.includes(","))s=s.replace(/\./g,"").replace(",",".");return Number(s);};
       const n=v=>{const x=num(v);return isNaN(x)?0:x;};

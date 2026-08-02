@@ -849,7 +849,7 @@ function OperationDetail({op,token,client,onBack}){
         </>}
       </div>}
     </div>}
-    {!loading&&(()=>{const bt=Number(op.budget_total||0);const bTax=Number(op.budget_taxes||0);const riPagaImpuestosDirecto=client?.tax_condition==="responsable_inscripto"&&!op.ri_argencargo_collects_taxes;const bFlete=Number(op.budget_flete||0);const bSeg=Number(op.budget_seguro||0);const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;const isB=op.channel?.includes("negro");
+    {!loading&&(()=>{const bt=Number(op.budget_total||0);const bTax=Number(op.budget_taxes||0);const riPagaImpuestosDirecto=op.channel==="aereo_blanco"&&client?.tax_condition==="responsable_inscripto"&&!op.ri_argencargo_collects_taxes;const bFlete=Number(op.budget_flete||0);const bSeg=Number(op.budget_seguro||0);const shipCost=op.shipping_to_door?Number(op.shipping_cost||0):0;const isB=op.channel?.includes("negro");
       // Gestión de pagos: total acordado vs lo ya cobrado
       const pmtTotal=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
       const pmtAnticipado=Number(op.total_anticipos||0);
