@@ -140,6 +140,12 @@ async function applyEventsToOp(op, route, d) {
     const m = String(d.eta).match(/^(\d{4}-\d{2}-\d{2})/);
     if (m) patch.eta = m[1];
   }
+  // Si el carrier ya ENTREGO, la fecha real manda sobre la estimada: los paquetes llegan
+  // antes o despues de la ETA inicial y la op tiene que reflejar lo que paso de verdad.
+  if (d.actualDelivery) {
+    const m = String(d.actualDelivery).match(/^(\d{4}-\d{2}-\d{2})/);
+    if (m) patch.eta = m[1];
+  }
 
   // Las transiciones de status (en_transito → arribo_argentina → en_aduana → entregada)
   // se manejan en DB vía la función SQL auto_update_op_statuses() que corre con pg_cron

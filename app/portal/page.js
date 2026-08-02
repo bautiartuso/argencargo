@@ -184,25 +184,37 @@ function OpProgress({status,isAereo,onActionClick,isGI,channel,hasItems,lostInCu
   const key=lostInCustoms?"aduana":(statusToKey[status]||"proveedor");
   const si=STEPS.findIndex(s=>s.k===key);
   const isDoc=status==="en_preparacion"&&showDoc&&!hasItems;
-  return <div className="op-progress" style={{display:"flex",alignItems:"flex-start",padding:"18px 0 10px",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.06)",margin:"12px 0 14px",position:"relative"}}>
-    {STEPS.map((s,i)=>{
-      const done=i<si;const cur=i===si;
-      const isAlert=cur&&s.k==="documentacion"&&isDoc;
-      const handleClick=isAlert&&onActionClick?(e)=>{e.stopPropagation();onActionClick();}:null;
-      // Estilo del dot
-      const dotBg=done?GOLD:cur?GOLD_GRADIENT:"rgba(255,255,255,0.04)";
-      const dotBorder=done?GOLD:cur?GOLD_LIGHT:"rgba(255,255,255,0.12)";
-      const dotShadow=cur?"0 0 14px rgba(232,208,152,0.45)":"none";
-      const labelColor=cur?GOLD_LIGHT:done?"rgba(255,255,255,0.78)":"rgba(255,255,255,0.32)";
-      return <div key={s.k} onClick={handleClick} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:9,position:"relative",cursor:handleClick?"pointer":"default"}}>
-        {/* Línea conectora */}
-        {i<STEPS.length-1&&<div style={{position:"absolute",left:"50%",right:"-50%",top:6,height:2,background:done?GOLD:"rgba(255,255,255,0.10)",zIndex:0}}/>}
-        {/* Dot minimal (sin "pelota" grande) */}
-        <div style={{width:cur?14:12,height:cur?14:12,borderRadius:"50%",background:done?GOLD:cur?GOLD_LIGHT:"transparent",border:done||cur?"none":"1.5px solid rgba(255,255,255,0.22)",boxShadow:cur?"0 0 0 3px rgba(232,208,152,0.20)":"none",position:"relative",zIndex:1,transition:"all 200ms"}}/>
-        {/* Label */}
-        <span style={{fontSize:11.5,fontWeight:cur?600:500,color:isAlert?"#fbbf24":labelColor,textAlign:"center",lineHeight:1.3,letterSpacing:"0.005em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{isAlert?"Completar":s.l}</span>
-      </div>;
-    })}
+  const n=STEPS.length;
+  const pct=n>1?(si/(n-1))*100:0;
+  const cur=STEPS[si]||STEPS[0];
+  const next=STEPS[si+1]||null;
+  const done=si>=n-1;
+  const curLabel=isDoc?"Completar documentación":cur.l;
+  return <div style={{padding:"16px 0 12px",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.06)",margin:"12px 0 14px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,flexWrap:"wrap",marginBottom:12}}>
+      <span onClick={isDoc&&onActionClick?(e)=>{e.stopPropagation();onActionClick();}:undefined} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"5px 13px",borderRadius:999,background:isDoc?"rgba(251,191,36,0.12)":"rgba(184,149,106,0.10)",border:`1px solid ${isDoc?"rgba(251,191,36,0.4)":"rgba(184,149,106,0.35)"}`,cursor:isDoc&&onActionClick?"pointer":"default"}}>
+        <span className={done?"":"ac-live-dot"} style={{width:7,height:7,borderRadius:"50%",background:isDoc?"#fbbf24":GOLD_LIGHT,display:"inline-block"}}/>
+        <span style={{fontSize:12.5,fontWeight:700,color:isDoc?"#fbbf24":GOLD_LIGHT,letterSpacing:"0.02em"}}>{curLabel}</span>
+      </span>
+      <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>
+        Etapa {si+1} de {n}{next?<span> · después: <b style={{color:"rgba(255,255,255,0.6)",fontWeight:600}}>{next.l}</b></span>:null}
+      </span>
+    </div>
+    <div style={{position:"relative",height:26}}>
+      <div style={{position:"absolute",left:0,right:0,top:11,height:4,borderRadius:999,background:"rgba(255,255,255,0.07)"}}/>
+      <div style={{position:"absolute",left:0,top:11,height:4,borderRadius:999,width:`${pct}%`,background:`linear-gradient(90deg, ${GOLD} 0%, ${GOLD_LIGHT} 100%)`,boxShadow:"0 0 10px rgba(232,208,152,0.35)",transition:"width 400ms ease"}}/>
+      {STEPS.map((st,i2)=>{
+        const x=n>1?(i2/(n-1))*100:0;
+        const d=i2<si,c=i2===si;
+        return <div key={st.k} title={st.l} style={{position:"absolute",left:`${x}%`,top:13,transform:"translate(-50%,-50%)",width:c?13:d?9:8,height:c?13:d?9:8,borderRadius:"50%",background:d?GOLD:c?GOLD_LIGHT:"#0E1B30",border:d?"none":c?"none":"1.5px solid rgba(255,255,255,0.2)",boxShadow:c?"0 0 0 4px rgba(232,208,152,0.18), 0 0 12px rgba(232,208,152,0.4)":"none",zIndex:1,transition:"all 200ms"}}/>;
+      })}
+    </div>
+    <div className="op-progress" style={{display:"flex",marginTop:6}}>
+      {STEPS.map((st,i2)=>{
+        const d=i2<si,c=i2===si;
+        return <span key={st.k} style={{flex:1,fontSize:10.5,fontWeight:c?700:500,color:c?GOLD_LIGHT:d?"rgba(255,255,255,0.6)":"rgba(255,255,255,0.28)",textAlign:i2===0?"left":i2===n-1?"right":"center",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{st.l}</span>;
+      })}
+    </div>
   </div>;
 }
 function OperationsList({ops,onSelect,client,token,onReload,itemsByOp={},pmtsByOp={},cliPmtsByOp={},mCargo=[]}){
@@ -650,7 +662,7 @@ function OperationDetail({op,token,client,onBack}){
         <span style={{width:1,height:16,background:"rgba(255,255,255,0.12)"}}/>
         {isGI&&<span className="ac-gi-pulse" style={{fontSize:11,fontWeight:800,padding:"7px 16px",borderRadius:8,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.15em",textTransform:"uppercase",border:`1.5px solid ${GOLD_DEEP}`,boxShadow:`${GOLD_GLOW}, inset 0 1px 0 rgba(255,255,255,0.4)`}}>{t("acc.gi")}</span>}
         {(()=>{const isActive=!["operacion_cerrada","cancelada"].includes(op.status)&&!op.lost_in_customs_at;const color=op.lost_in_customs_at?"#f87171":st.c;return <span style={{fontSize:11,fontWeight:600,padding:"4px 11px 4px 9px",borderRadius:999,color,border:`1px solid ${color}40`,background:`${color}14`,display:"inline-flex",alignItems:"center",gap:6,letterSpacing:"0.01em"}}><span className={isActive?"ac-live-dot":""} style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:color,boxShadow:isActive?`0 0 8px `:"none"}}/>{op.lost_in_customs_at?"Retenida en aduana":t("opStatus."+op.status)}</span>;})()}
-        {op.eta&&op.status!=="entregada"&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.55)",letterSpacing:"0.02em",marginLeft:"auto"}}>ETA · <span style={{color:"#fff",fontWeight:600}}>{formatDate(op.eta)}</span></span>}
+        {op.eta&&<span style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.55)",letterSpacing:"0.02em",marginLeft:"auto"}}>{["entregada","operacion_cerrada"].includes(op.status)?"Arribó":"ETA"} · <span style={{color:"#fff",fontWeight:600}}>{formatDate(op.eta)}</span></span>}
       </div>
       <h2 style={{fontSize:20,fontWeight:600,color:"#fff",margin:"0 0 12px"}}>{op.description||(op.channel?.includes("maritimo")?"Carga marítima":op.channel?.includes("aereo")?"Carga aérea":"Importación")}</h2>
       <OpProgress status={op.status} isAereo={isA} isGI={isGI} channel={op.channel} hasItems={items.length>0} lostInCustoms={!!op.lost_in_customs_at}/>
@@ -696,6 +708,9 @@ function OperationDetail({op,token,client,onBack}){
       const isEditable=op.channel==="aereo_blanco"&&["en_deposito_origen","en_preparacion"].includes(op.status)&&(op.consolidation_confirmed||localConfirmed)&&items.length>0&&!inFlight;
       // Si la op ya está en un vuelo, los productos quedan congelados y se muestran en el detalle del presupuesto/factura: no repetir la card acá.
       if(inFlight)return null;
+      // Aereo A: declarada la mercaderia, no se muestra mas (pedido 02/08). La card solo vive
+      // mientras el cliente puede editarla.
+      if(op.channel==="aereo_blanco"&&!isEditable)return null;
       return !loading&&!isGI&&items.length>0&&<div style={{background:isEditable?"linear-gradient(135deg,rgba(96,165,250,0.10),rgba(96,165,250,0.03))":"linear-gradient(135deg,rgba(184,149,106,0.12),rgba(184,149,106,0.04))",border:`1.5px solid ${isEditable?"rgba(96,165,250,0.35)":"rgba(184,149,106,0.3)"}`,borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
         <h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>📋 {t("imports.declaredProducts")} {isEditable&&<span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:5,background:"rgba(96,165,250,0.2)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8}}>✏️ {t("imports.editable")}</span>}</h3>
@@ -717,7 +732,7 @@ function OperationDetail({op,token,client,onBack}){
       {!isEditable&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"10px 0 0",fontStyle:"italic"}}>{t("imports.contactAdvisor")}</p>}
     </div>;})()}
     {/* Detalle original (si admin comprimió los items con IA) */}
-    {Array.isArray(op.items_backup_json)&&op.items_backup_json.length>0&&!loading&&!isGI&&<details style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"10px 14px",marginBottom:16}}>
+    {Array.isArray(op.items_backup_json)&&op.items_backup_json.length>0&&!loading&&!isGI&&op.channel!=="aereo_blanco"&&<details style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"10px 14px",marginBottom:16}}>
       <summary style={{cursor:"pointer",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.55)"}}>📦 Ver detalle original ({op.items_backup_json.length} productos antes de agrupar)</summary>
       <p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"8px 0 10px",fontStyle:"italic"}}>Estos son los productos que declaraste originalmente, antes de que tu asesor los agrupara para cumplir con la limitación de la factura de exportación (máximo 8 items).</p>
       <div style={{background:"rgba(0,0,0,0.15)",borderRadius:6,overflow:"hidden"}}>
@@ -761,7 +776,7 @@ function OperationDetail({op,token,client,onBack}){
     })()}
     {/* Los productos tal como los cargó el cliente, con SUS valores. Va cuando no le mostramos la
         declaración del despacho: si no, se queda sin ver ningún detalle de su mercadería. */}
-    {!muestraAduana&&!isGI&&items.length>0&&(()=>{
+    {!muestraAduana&&!isGI&&op.channel!=="aereo_blanco"&&items.length>0&&(()=>{
       const fmt=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
       const tot=items.reduce((s,it)=>s+Number(it.quantity||0)*Number(it.unit_price_usd||0),0);
       const gr="3fr 0.9fr 0.7fr 1fr 1fr";
@@ -787,7 +802,7 @@ function OperationDetail({op,token,client,onBack}){
       </div>;
     })()}
     {/* Galería destacada de fotos del agente — aparece arriba si hay al menos una foto */}
-    {!loading&&pkgs.some(p=>p.photo_url)&&<div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(184,149,106,0.18)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
+    {!loading&&op.channel!=="aereo_blanco"&&pkgs.some(p=>p.photo_url)&&<div style={{background:"linear-gradient(135deg,rgba(184,149,106,0.06),rgba(255,255,255,0.02))",border:"1px solid rgba(184,149,106,0.18)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
       <h3 style={{fontSize:13,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>📷 Fotos de tu mercadería</h3>
       <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"0 0 14px"}}>Imágenes capturadas por nuestro agente en el depósito de origen.</p>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12}}>
@@ -877,6 +892,9 @@ function OperationDetail({op,token,client,onBack}){
           const totalCli=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);
           const saldoReal=Math.max(0,totalAbonar-totalCli);
           const pct=totalAbonar>0?Math.min(100,(totalCli/totalAbonar)*100):0;
+          // Aereo A cerrada: el presupuesto vuelve a ser solo impuestos/flete/seguro + total,
+          // sin el detalle de pagos (pedido 02/08).
+          if(op.channel==="aereo_blanco"&&op.status==="operacion_cerrada")return bRow("A abonar a Argencargo",totalAbonar,true,true);
           if(cliPmts.length===0)return bRow(pmtAnticipado>0?"Saldo a abonar":"A abonar a Argencargo",totalAbonar,true,true);
           return <>
             {bRow("Total a abonar",totalAbonar,false,false,"rgba(255,255,255,0.6)")}

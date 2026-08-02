@@ -1233,7 +1233,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     {k:"packages",l:"Bultos"},
     ...(isCanalB?[]:[{k:"tracking",l:"Seguimiento"}]),
     {k:"entrega",l:"Entrega"},
-    {k:"comms",l:"Comunicaciones"}
+    // Aereo A sin solapa Comunicaciones (pedido 02/08: ocupaba lugar sin aportar).
+    ...(initOp.channel==="aereo_blanco"?[]:[{k:"comms",l:"Comunicaciones"}])
   ];
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
   // Checklist de cierre — modal cuando se intenta cerrar la op
@@ -1596,8 +1597,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
 </>;})()}<Btn onClick={handleSave} disabled={saving} small>{saving?"Guardando...":"Guardar"}</Btn></div>}>
         <Sel label="Estado de la carga" value={op.status} onChange={chOp("status")} options={STATUSES.filter(s=>!(isGI&&s==="en_preparacion")).map(s=>({value:s,label:SM[s].l}))}/>
         <Inp label="Descripción" value={op.description||items.map(it=>it.description).filter(Boolean).join(", ")} onChange={chOp("description")}/>
-        <Inp label="ETA (fecha estimada de arribo)" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>
-        <Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>
+        {/* Aereo A: la ETA se edita en la solapa Seguimiento y las notas se sacaron (pedido 02/08). */}
+        {!(op.channel==="aereo_blanco"&&!isGI)&&<Inp label="ETA (fecha estimada de arribo)" type="date" value={op.eta?String(op.eta).slice(0,10):""} onChange={chOp("eta")}/>}
+        {!(op.channel==="aereo_blanco"&&!isGI)&&<Inp label="Notas admin (interno)" value={op.admin_notes} onChange={chOp("admin_notes")} placeholder="Notas internas..."/>}
         <div onClick={()=>chOp("skip_review_request")(!op.skip_review_request)} style={{padding:"12px 16px",background:op.skip_review_request?"rgba(251,146,60,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${op.skip_review_request?"rgba(251,146,60,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:10,marginTop:8,cursor:"pointer",display:"flex",alignItems:"center",gap:14,userSelect:"none",transition:"all 180ms"}}>
           <div style={{width:44,height:24,background:op.skip_review_request?"linear-gradient(135deg, #fb923c, #f97316)":"rgba(255,255,255,0.1)",borderRadius:999,position:"relative",transition:"all 200ms",boxShadow:op.skip_review_request?"0 0 10px rgba(251,146,60,0.35)":"",flexShrink:0}}>
             <div style={{position:"absolute",top:2,left:op.skip_review_request?22:2,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left 220ms cubic-bezier(0.34,1.56,0.64,1)"}}/>
@@ -1607,10 +1609,6 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             {op.skip_review_request&&<p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0",lineHeight:1.4}}>Usar si la experiencia fue mala y no queremos incentivar una reseña pública.</p>}
           </div>
         </div>
-        {op.channel==="aereo_blanco"&&!isGI&&<div style={{marginBottom:12}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>¿La carga contiene baterías internas?</p>
-          <div style={{display:"flex",gap:10}}>{[{k:true,icon:"⚡",l:"Sí, tiene baterías",sub:"Recargo $2/kg"},{k:false,icon:"✓",l:"No tiene baterías",sub:"Producto estándar"}].map(o=><div key={String(o.k)} onClick={()=>chOp("has_battery")(o.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:12,border:`1.5px solid ${(op.has_battery||false)===o.k?"#fb923c":"rgba(255,255,255,0.08)"}`,background:(op.has_battery||false)===o.k?"rgba(251,146,60,0.1)":"rgba(255,255,255,0.03)",cursor:"pointer",transition:"all 0.15s"}}><p style={{fontSize:22,margin:"0 0 4px"}}>{o.icon}</p><p style={{fontSize:13,fontWeight:700,color:(op.has_battery||false)===o.k?"#fb923c":"rgba(255,255,255,0.55)",margin:"0 0 2px"}}>{o.l}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{o.sub}</p></div>)}</div>
-        </div>}
         {op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&<div style={{padding:"12px 16px",background:op.consolidation_confirmed?"rgba(34,197,94,0.06)":"rgba(251,191,36,0.08)",border:`1px solid ${op.consolidation_confirmed?"rgba(34,197,94,0.2)":"rgba(251,191,36,0.25)"}`,borderRadius:10,marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <div><p style={{fontSize:12,fontWeight:700,color:op.consolidation_confirmed?"#22c55e":"#fbbf24",margin:"0 0 2px"}}>{op.consolidation_confirmed?"✓ Consolidación confirmada":"⏳ Esperando confirmación de consolidación"}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>{op.consolidation_confirmed?"El cliente confirmó que la carga está completa":"El cliente o vos deben confirmar que la carga está lista para enviar"}</p></div>
           {!op.consolidation_confirmed&&<Btn small onClick={async()=>{await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{consolidation_confirmed:true,consolidation_confirmed_at:new Date().toISOString()}});setOp(p=>({...p,consolidation_confirmed:true}));flash("Consolidación confirmada");}}>Marcar lista para enviar</Btn>}
@@ -1870,6 +1868,15 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <input type="checkbox" checked={!!op.ri_argencargo_collects_taxes} disabled={saving} onChange={async e=>{const v=e.target.checked;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_argencargo_collects_taxes:v}});setOp(p=>({...p,ri_argencargo_collects_taxes:v}));await autoSyncBudget(true);flash(v?"Ahora Argencargo cobra los impuestos de esta op":"El RI vuelve a pagar los impuestos directo al despachante");setSaving(false);}} style={{width:16,height:16,cursor:"pointer"}}/>
             <span style={{fontSize:12.5,color:"rgba(255,255,255,0.75)"}}>Argencargo cobra los impuestos de esta op <span style={{color:"rgba(255,255,255,0.45)"}}>(excepción — por defecto el RI los abona directo al despachante/transportista)</span></span>
           </label>
+        </div>}
+        {/* Aereo A: recargo por baterias, como toggle discreto adentro del presupuesto (antes era
+            un selector gigante en General). Cambiarlo recalcula el presupuesto al toque. */}
+        {op.channel==="aereo_blanco"&&<div onClick={async()=>{if(saving)return;const v=!op.has_battery;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{has_battery:v}});setOp(p=>({...p,has_battery:v}));await autoSyncBudget(true);flash(v?"Recargo por baterías activado (USD 2/kg)":"Recargo por baterías quitado");setSaving(false);}} style={{marginBottom:14,padding:"9px 14px",background:op.has_battery?"rgba(251,146,60,0.07)":"rgba(255,255,255,0.025)",border:`1px solid ${op.has_battery?"rgba(251,146,60,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:10,display:"flex",alignItems:"center",gap:11,cursor:saving?"wait":"pointer",userSelect:"none",transition:"all 160ms"}}>
+          <div style={{width:36,height:20,background:op.has_battery?"linear-gradient(135deg,#fb923c,#f97316)":"rgba(255,255,255,0.12)",borderRadius:999,position:"relative",transition:"all 200ms",flexShrink:0}}>
+            <div style={{position:"absolute",top:2,left:op.has_battery?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 200ms cubic-bezier(0.34,1.56,0.64,1)"}}/>
+          </div>
+          <span style={{fontSize:12.5,fontWeight:op.has_battery?700:600,color:op.has_battery?"#fb923c":"rgba(255,255,255,0.6)"}}>⚡ La carga contiene baterías</span>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:"auto"}}>{op.has_battery?"Recargo USD 2/kg facturable aplicado":"Sin recargo"}</span>
         </div>}
         {/* Canal B: input para valor de mercadería (base del recargo por valor) */}
         {!isBlanco&&<div style={{marginBottom:14,padding:"10px 14px",background:"rgba(96,165,250,0.05)",border:"1px solid rgba(96,165,250,0.15)",borderRadius:10,display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
