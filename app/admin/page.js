@@ -12656,15 +12656,25 @@ function MaritimePanel({token,allClients=[]}){
   };
   const [costModal,setCostModal]=useState(null); // {code, ops:[{id,code,clientName,budget}]} para cargar costos
   const setContainerStatus=async(c,status)=>{
-    const body={status};
-    if(status==="arribado")body.arrived_at=new Date().toISOString().slice(0,10);
-    if(status==="en_transito")body.arrived_at=null; // volver atrás desde arribado
-    await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});
-    let extra="";let newOps=[];
-    if(status==="arribado"){try{const r=await createOpsForContainer(c);extra=r.msg;newOps=esEmpleado()?[]:(r.ops||[]);}catch(e){console.error("auto-ops arribo",e);extra=" · ⚠️ error creando ops (ver consola)";}}
-    flash(`Contenedor ${c.code} → ${status==="en_transito"?"en tránsito":"arribado"}${extra}`);
-    await load();
-    if(newOps.length>0)setCostModal({code:c.code,ops:newOps});
+    if(creatingOp)return; // ya hay una creacion en curso: no duplicar
+    // Confirmar el arribo ANTES: crea las ops y manda los mails, no es un cambio de estado mas.
+    if(status==="arribado"){
+      const pend=shipments.filter(x=>x.container_id===c.id&&!x.operation_id&&x.client_id);
+      const nCli=new Set(pend.map(x=>x.client_id)).size;
+      if(!await confirmDialog(`¿Marcar "${c.code}" como ARRIBADO?${nCli>0?`\n\nSe crean ${nCli} operación${nCli>1?"es":""} (una por cliente, con ${pend.length} carga${pend.length>1?"s":""}), nacen LISTAS PARA RETIRAR y se les manda el mail de retiro. Tarda unos segundos — no cierres la pantalla.`:""}`))return;
+    }
+    setCreatingOp(true);
+    try{
+      const body={status};
+      if(status==="arribado")body.arrived_at=new Date().toISOString().slice(0,10);
+      if(status==="en_transito")body.arrived_at=null; // volver atrás desde arribado
+      await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});
+      let extra="";let newOps=[];
+      if(status==="arribado"){try{const r=await createOpsForContainer(c);extra=r.msg;newOps=esEmpleado()?[]:(r.ops||[]);}catch(e){console.error("auto-ops arribo",e);extra=" · ⚠️ error creando ops (ver consola)";}}
+      flash(`Contenedor ${c.code} → ${status==="en_transito"?"en tránsito":"arribado"}${extra}`);
+      await load();
+      if(newOps.length>0)setCostModal({code:c.code,ops:newOps});
+    }finally{setCreatingOp(false);}
   };
   // Abrir el modal de costos para un contenedor ya arribado (carga retroactiva).
   const openCostModalForContainer=async(c)=>{
@@ -12935,7 +12945,7 @@ function MaritimePanel({token,allClients=[]}){
                   {delEta&&dateChip("📦","Entrega est.",fmtD(delEta),"#4ade80")}
                 </div>
                 <div style={{display:"flex",gap:5,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
-                  {c.status==="en_transito"&&<button onClick={()=>setContainerStatus(c,"arribado")} title="Marcar arribado: el contenedor pasa al historial" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer"}}>⚓ Arribó</button>}
+                  {c.status==="en_transito"&&<button disabled={creatingOp} onClick={()=>setContainerStatus(c,"arribado")} title="Marcar arribado: crea las operaciones y manda los mails de retiro" style={{padding:"4px 10px",fontSize:10,fontWeight:700,borderRadius:5,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:creatingOp?"wait":"pointer",opacity:creatingOp?0.5:1}}>{creatingOp?"⏳ Creando ops...":"⚓ Arribó"}</button>}
                   <button onClick={()=>setEditingContainer(c)} title="Editar contenedor" style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.06)",color:"#60a5fa",cursor:"pointer"}}>✎</button>
                   <button onClick={()=>delContainer(c)} title="Eliminar contenedor" style={{padding:"4px 9px",fontSize:10,fontWeight:600,borderRadius:5,border:"1px solid rgba(255,80,80,0.3)",background:"rgba(255,80,80,0.06)",color:"#ff6b6b",cursor:"pointer"}}>🗑</button>
                 </div>
