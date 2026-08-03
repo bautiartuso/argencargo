@@ -1361,7 +1361,6 @@ function CalculatorPage({token,client}){
   // Umbral mínimo FOB para ofrecer Marítimo LCL/FCL: 250 USD por m³ (mínimo 0,5 m³ facturable).
   // Por debajo de esa densidad de valor no conviene marítimo (costos fijos de despacho + tránsito
   // comen el ahorro vs aéreo/courier). Ej: 0,5 m³ → mín. USD 125; 3 m³ → mín. USD 750.
-  const MIN_FOB_PER_CBM_MARITIMO_LCL=250;
   // Peso facturable mínimo para aéreo desde China (canal A Courier y canal B Integral): 5 kg.
   const MIN_KG_AEREO_CHINA=5;
   const isRestricted=products.some(p=>{
@@ -1506,11 +1505,13 @@ function CalculatorPage({token,client}){
     // Restricción ropa/calzado: a partir del 01/05/2026, marítimo LCL/FCL solo si >= 5 CBM.
     // Marítimo Integral AC sigue siempre disponible (excepción del régimen).
     const blockMaritimoLclRestricted=isRestricted&&totCBM>0&&totCBM<MIN_CBM_RESTRICTED;
-    // Regla operativa Argencargo: no ofrecer Marítimo LCL/FCL si el FOB no alcanza USD 250 por m³.
-    const requiredFobMaritimo=MIN_FOB_PER_CBM_MARITIMO_LCL*Math.max(totCBM,0.5);
-    const blockMaritimoLclLowFob=totalFob>0&&totCBM>0&&totalFob<requiredFobMaritimo;
-    // Marítimo LCL/FCL solo a partir de 0,8 m³ — por debajo, únicamente Marítimo Integral AC.
-    const blockMaritimoLclMinCbm=totCBM>0&&totCBM<0.8;
+    // La regla de FOB minimo por m³ (USD 250/m³) se elimino el 03/08/2026 a pedido del usuario:
+    // hacia desaparecer el LCL sin explicacion al agregar un bulto (la cotizacion de mochilas
+    // caia justo en el borde). El LCL se ofrece por volumen, no por densidad de valor.
+    const requiredFobMaritimo=0;
+    const blockMaritimoLclLowFob=false;
+    // Marítimo LCL/FCL solo a partir de 0,75 m³ — por debajo, únicamente Marítimo Integral AC.
+    const blockMaritimoLclMinCbm=totCBM>0&&totCBM<0.75;
 
     // Marítimo Carga LCL/FCL (A) — SIEMPRE ficticio. Omitido si hay marca o si es ropa/calzado <5 CBM.
     // Si totCBM>0 hay dimensiones cargadas (noDims puede haber quedado true del UX previo, lo ignoramos).
@@ -1849,8 +1850,8 @@ function CalculatorPage({token,client}){
         noDims?"Marcaste 'Desconozco las medidas de las cajas' — sin dimensiones no se puede calcular envío marítimo. Volvé al paso anterior para cargarlas.":
         results.totCBM===0?"No cargaste dimensiones de bultos — sin volumen (CBM) no se puede calcular envío marítimo.":
         results.blockMaritimoLclRestricted?"Por nuevas regulaciones aduaneras de mayo 2026, marítimo no aplica para ropa/calzado con menos de 5 CBM.":
-        results.blockMaritimoLclMinCbm?`El marítimo LCL/FCL aplica a partir de 0,8 m³. Tu carga tiene ${results.totCBM.toFixed(2)} m³, así que conviene aéreo/courier.`:
-        results.blockMaritimoLclLowFob?`El marítimo LCL/FCL requiere un FOB mínimo de USD 250 por m³. Para ${results.totCBM.toFixed(2)} m³ necesitás al menos USD ${Number(results.requiredFobMaritimo||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de mercadería (tu FOB es USD ${Number(results.totalFob||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}). Por debajo de esa densidad de valor conviene aéreo/courier.`:
+        results.blockMaritimoLclMinCbm?`El marítimo LCL/FCL aplica a partir de 0,75 m³. Tu carga tiene ${results.totCBM.toFixed(2)} m³, así que conviene aéreo/courier.`:
+
         null
       ):null;
       return <><div>{pairs.map((pair,pi)=><div key={pi} className="grid-2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"stretch",marginBottom:0}}>{pair.map(ch=>ch?renderCard(ch):<div key={"empty"+pi}/>)}</div>)}</div>
