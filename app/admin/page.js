@@ -11390,8 +11390,8 @@ function AdminCalculator({token}){
         const desEff=hasOv?toN(ovStr):bd.desembolsoAuto||0;
         const ivaDesEff=desEff*0.21;
         // Override manual del USD/kg — solo para Courier Comercial (aereo_a_china).
-        // Tarifa editable por cotizacion: USD/kg en aereo, USD/CBM en maritimo LCL/FCL.
-        const rateOvStr=["aereo_a_china","maritimo_a_china"].includes(ch.key)?rateOverride[ch.key]:null;
+        // Tarifa editable por cotizacion: USD/kg en aereo, USD/CBM en los dos maritimos.
+        const rateOvStr=["aereo_a_china","maritimo_a_china","maritimo_b"].includes(ch.key)?rateOverride[ch.key]:null;
         const hasRateOv=rateOvStr!=null&&String(rateOvStr).trim()!=="";
         const fleteRateEff=hasRateOv?toN(rateOvStr):Number(ch.fleteRate||0);
         const fleteEff=hasRateOv?(Number(ch.fleteAmt||0)*fleteRateEff+Number(ch.battExtra||0)):Number(ch.flete||0);
@@ -11416,7 +11416,7 @@ function AdminCalculator({token}){
           </div>}
           <div style={{flex:1,display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>
             {(fleteEff+Number(ch.surcharge||0))>0&&<div style={rowStyle}><span>{ch.key==="maritimo_a_china"?"Servicio marítimo de importación":(Number(ch.surcharge||0)>0?"Servicio Integral de importación":"Flete")}</span><span style={valStyle}>USD {fmt(fleteEff+Number(ch.surcharge||0))}</span></div>}
-            {["aereo_a_china","maritimo_a_china"].includes(ch.key)&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"6px 10px",background:"rgba(184,149,106,0.06)",borderRadius:7,border:"1px dashed rgba(184,149,106,0.25)"}}>
+            {["aereo_a_china","maritimo_a_china","maritimo_b"].includes(ch.key)&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"6px 10px",background:"rgba(184,149,106,0.06)",borderRadius:7,border:"1px dashed rgba(184,149,106,0.25)"}}>
               <span style={{fontSize:11,color:"rgba(255,255,255,0.7)"}}>{ch.key==="aereo_a_china"?"USD/kg":"USD/CBM"} <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>(editable, solo esta cotización)</span></span>
               <div style={{display:"flex",alignItems:"center",gap:4}}>
                 <input value={hasRateOv?rateOvStr:String(Number(ch.fleteRate||0))} onChange={e=>setRateOverride(p=>({...p,[ch.key]:e.target.value}))} style={{width:56,padding:"4px 7px",fontSize:11.5,border:`1px solid ${hasRateOv?IC:"rgba(255,255,255,0.15)"}`,borderRadius:5,background:"rgba(0,0,0,0.3)",color:hasRateOv?IC:"#fff",outline:"none",textAlign:"right",fontWeight:700,fontVariantNumeric:"tabular-nums"}}/>
@@ -11500,7 +11500,7 @@ function AdminCalculator({token}){
             const bd=c.bd||{};
             const ovStr=desembolsoOverride[c.key];
             const desEff=(ovStr!=null&&String(ovStr).trim()!=="")?toN(ovStr):(bd.desembolsoAuto||0);
-            const rateOvStr=["aereo_a_china","maritimo_a_china"].includes(c.key)?rateOverride[c.key]:null;
+            const rateOvStr=["aereo_a_china","maritimo_a_china","maritimo_b"].includes(c.key)?rateOverride[c.key]:null;
             const hasRateOv=rateOvStr!=null&&String(rateOvStr).trim()!=="";
             const fleteEff=hasRateOv?(Number(c.fleteAmt||0)*toN(rateOvStr)+Number(c.battExtra||0)):Number(c.flete||0);
             let taxEff=0;
