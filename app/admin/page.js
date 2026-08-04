@@ -6955,7 +6955,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           // Divisor volumétrico del agente que creó la op (no del agente del vuelo)
           const opAgent=signups.find(s=>s.auth_user_id===o.created_by_agent_id);
           const opDiv=Number(opAgent?.volumetric_divisor)||5000;
-          let totBruto=0,totFact=0;
+          let totBruto=0,totFact=0,totFactAgente=0;
           const pkgRows=pkgs.map(p=>{
             const q=Number(p.quantity||1);
             const gw=Number(p.gross_weight_kg||0);
@@ -6963,13 +6963,17 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             const bruto=gw*q;
             const vol=l&&wd&&h?((l*wd*h)/opDiv)*q:0;
             const fact=Math.max(bruto,vol);
-            totBruto+=bruto;totFact+=fact;
-            return {p,q,bruto,vol,fact};
+            // El agente redondea el facturable de CADA bulto al medio kilo PARA ARRIBA y
+            // cobra eso. Al cliente se le cobra el exacto; esto es para ver cuanto nos
+            // esta metiendo el redondeo en el vuelo.
+            const factAgente=Math.ceil(fact*2)/2;
+            totBruto+=bruto;totFact+=fact;totFactAgente+=factAgente;
+            return {p,q,bruto,vol,fact,factAgente};
           });
           return <div key={o.id} style={{padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:pkgs.length>0?6:0,flexWrap:"wrap",gap:6}}>
               <span style={{fontSize:13,color:"#fff"}}><strong style={{fontFamily:"monospace"}}>{o.operation_code}</strong> — {o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—"}</span>
-              <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{pkgs.length} bultos · bruto <strong style={{color:"rgba(255,255,255,0.75)"}}>{totBruto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong> · facturable <strong style={{color:IC}}>{totFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong>{fo?.cost_share_usd?` · ${usd(fo.cost_share_usd)}`:""}</span>
+              <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>{pkgs.length} bultos · bruto <strong style={{color:"rgba(255,255,255,0.75)"}}>{totBruto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong> · facturable <strong style={{color:IC}}>{totFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong> · <span title="Facturable con el redondeo del agente: cada bulto al medio kilo para arriba. Es lo que el agente nos cobra a nosotros; al cliente se le cobra el exacto.">agente ↑ <strong style={{color:totFactAgente>totFact?"#fb923c":"rgba(255,255,255,0.6)"}}>{totFactAgente.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong>{totFactAgente>totFact?<strong style={{color:"#fb923c"}}> (+{(totFactAgente-totFact).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg)</strong>:null}</span>{fo?.cost_share_usd?` · ${usd(fo.cost_share_usd)}`:""}</span>
             </div>
             {pkgs.length>0&&<div style={{marginLeft:16,fontSize:11,color:"rgba(255,255,255,0.4)"}}>
               {pkgRows.map(({p,bruto,vol,fact})=><div key={p.id} style={{display:"flex",gap:12,padding:"2px 0",flexWrap:"wrap"}}>
@@ -6979,6 +6983,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
                 <span style={{minWidth:90}}>bruto: {bruto>0?`${bruto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
                 <span style={{minWidth:90}}>vol: {vol>0?`${vol.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
                 <span style={{color:fact>0?IC:"rgba(255,255,255,0.3)",fontWeight:600}}>facturable: {fact>0?`${fact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</span>
+                {fact>0&&<span style={{color:factAgente>fact?"#fb923c":"rgba(255,255,255,0.35)"}}>agente ↑: {factAgente.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg{factAgente>fact?` (+${(factAgente-fact).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}</span>}
               </div>)}
             </div>}
           </div>;
