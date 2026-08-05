@@ -5074,8 +5074,13 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
       // Timeline unificado: movements + cobros de ops + anticipos GI + gestión pagos
       const timeline=[
         ...accMovs.map(m=>({id:"m_"+m.id,raw:m,kind:"movement",date:m.created_at,type:m.type,amount:Number(m.amount_usd),op_code:m.operations?.operation_code,description:m.description,deletable:true})),
-        ...ops.filter(o=>o.is_collected&&Number(o.collected_amount||0)>0).map(o=>{const raw=Number(o.collected_amount||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const usd=isArs&&rate>0?raw/rate:raw;return{id:"o_"+o.id,kind:"op_cobro",date:o.collection_date||o.closed_at||o.updated_at,type:"op_cobro",amount:usd,op_code:o.operation_code,description:`Cobro ${isArs?`ARS ${raw.toLocaleString("es-AR")} @ ${rate}`:""}`,deletable:false};}),
-        ...cliPmtsCC.map(p=>({id:"p_"+p.id,kind:"op_anticipo",date:p.payment_date,type:"op_anticipo",amount:Number(p.amount_usd||0),op_code:p.operations?.operation_code,description:p.notes||`Anticipo (${p.payment_method||"pago"})`,deletable:false})),
+        // El campo viejo de la op (collected_amount) solo se muestra si la op NO tiene filas en
+        // la tabla de pagos: cuando las tiene, el mismo pago aparecia DOS veces (una como
+        // "Cobro de op" del campo viejo y otra como "Anticipo de op" de la tabla nueva).
+        ...ops.filter(o=>o.is_collected&&Number(o.collected_amount||0)>0&&!cliPmtsCC.some(p=>p.operation_id===o.id)).map(o=>{const raw=Number(o.collected_amount||0);const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);const usd=isArs&&rate>0?raw/rate:raw;return{id:"o_"+o.id,kind:"op_cobro",date:o.collection_date||o.closed_at||o.updated_at,type:"op_cobro",amount:usd,op_code:o.operation_code,description:`Cobro ${isArs?`ARS ${raw.toLocaleString("es-AR")} @ ${rate}`:""}`,deletable:false};}),
+        // Los pagos de la tabla nueva se muestran como cobros, con el detalle en ARS igual que
+        // los viejos. "Anticipo" solo si el pago fue antes de que la carga estuviera lista.
+        ...cliPmtsCC.map(p=>{const isArs=p.currency==="ARS"&&Number(p.amount_ars||0)>0;const det=isArs?`ARS ${Number(p.amount_ars).toLocaleString("es-AR")} @ ${Number(p.exchange_rate||0)}`:"";return{id:"p_"+p.id,kind:"op_cobro",date:p.payment_date,type:"op_cobro",amount:Number(p.amount_usd||0),op_code:p.operations?.operation_code,description:`${p.notes?p.notes+" · ":""}Cobro${det?` ${det}`:""} (${p.payment_method||"pago"})`,deletable:false};}),
         ...payMgmtCC.map(g=>{const amt=Number(g.client_paid_amount_usd??g.client_amount_usd??0);return{id:"g_"+g.id,kind:"gpi_cobro",date:g.client_paid_at||g.created_at,type:"gpi_cobro",amount:amt,op_code:g.operations?.operation_code,description:`Pago de gestión internacional${g.proveedor_name?` · ${g.proveedor_name}`:""}`,deletable:false};})
       ].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
       return <div>
