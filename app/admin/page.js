@@ -6497,7 +6497,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   // Ops del vuelo: buscar en depositOps/allOps, y si no están (porque cambiaron de status), cargar directo
   const [flightOpsData,setFlightOpsData]=useState([]);
   const [flightCliPmts,setFlightCliPmts]=useState([]);
-  const [impArs,setImpArs]=useState(null);const [impTc,setImpTc]=useState(null);const [prorrateando,setProrrateando]=useState(false);
+  const [impArs,setImpArs]=useState(null);const [impTc,setImpTc]=useState(null);const [impFecha,setImpFecha]=useState(null);const [prorrateando,setProrrateando]=useState(false);
   useEffect(()=>{(async()=>{
     const opIds=flightOps.map(fo=>fo.operation_id).filter(Boolean);
     if(opIds.length===0){setFlightOpsData([]);return;}
@@ -7162,8 +7162,9 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         setProrrateando(true);
         try{
           await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{cost_impuestos_ars:arsPagado,cost_impuestos_exchange_rate:tcUsado,cost_impuestos_usd:Math.round(usdTotal*100)/100,impuestos_prorated_at:new Date().toISOString()}});
+          const fechaPago=impFecha||new Date().toISOString().slice(0,10);
           for(const r of reparto){
-            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${r.op.id}`,body:{cost_impuestos_reales:r.usd,cost_impuestos_currency:"USD",cost_impuestos_ars:Math.round(arsPagado*r.pct*100)/100,cost_impuestos_exchange_rate:tcUsado}});
+            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${r.op.id}`,body:{cost_impuestos_reales:r.usd,cost_impuestos_currency:"USD",cost_impuestos_ars:Math.round(arsPagado*r.pct*100)/100,cost_impuestos_exchange_rate:tcUsado,cost_impuestos_method:"efectivo",cost_impuestos_paid_at:fechaPago,cost_impuestos_credit_card_id:null,cost_impuestos_card_closing:null}});
           }
           onFlash(`✓ Impuestos prorrateados entre ${reparto.length} op${reparto.length!==1?"s":""}`);
           onReload();
@@ -7178,6 +7179,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:14}}>
           <Inp label="Pagado (ARS)" value={impArs??(flight.cost_impuestos_ars??"")} onChange={v=>setImpArs(v)} placeholder="1.000.000"/>
           <Inp label="TC ARS/USD" value={impTc??(flight.cost_impuestos_exchange_rate??"")} onChange={v=>setImpTc(v)} placeholder="1500"/>
+          <Inp label="Fecha de pago" type="date" value={impFecha??new Date().toISOString().slice(0,10)} onChange={v=>setImpFecha(v)}/>
           <div>
             <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Equivale a</label>
             <div style={{padding:"9px 11px",fontSize:14,borderRadius:8,background:"rgba(184,149,106,0.08)",border:"1.5px solid rgba(184,149,106,0.22)",color:GOLD_LIGHT,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>
