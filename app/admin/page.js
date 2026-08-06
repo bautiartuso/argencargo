@@ -4616,14 +4616,24 @@ function EntregasPanel({token,onOpenOp}){
         </Bloque>;
       })}
 
-      <Bloque titulo={<>⏳ Pendientes de coordinar por el cliente <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {sinConfirmar.length}</span></>}>
-        {sinConfirmar.length===0
+      {/* Como MyBox: primero lo que está listo pero SIN aviso (acción nuestra), después lo avisado
+          que espera respuesta del cliente. */}
+      {(()=>{const sinAviso=sinConfirmar.filter(o=>!o.delivery_ready_at);const avisadas=sinConfirmar.filter(o=>o.delivery_ready_at);return <>
+      {sinAviso.length>0&&<Bloque titulo={<>📣 Falta avisarle al cliente <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {sinAviso.length}</span></>}>
+        <table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
+          <Cabecera entrega="Aviso" pago=""/>
+          <tbody>{filasDe([...sinAviso].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)),"sinConfirmar")}</tbody>
+        </table>
+      </Bloque>}
+      <Bloque titulo={<>⏳ Pendientes de coordinar por el cliente <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {avisadas.length}</span></>}>
+        {avisadas.length===0
           ?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"20px 0",fontSize:13,margin:0}}>{q?"Sin resultados.":"No hay clientes con el aviso enviado sin responder."}</p>
           :<table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
             <Cabecera entrega="Aviso" pago=""/>
-            <tbody>{filasDe([...sinConfirmar].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)),"sinConfirmar")}</tbody>
+            <tbody>{filasDe([...avisadas].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)),"sinConfirmar")}</tbody>
           </table>}
       </Bloque>
+      </>;})()}
 
       {confirmadas.length===0&&sinConfirmar.length===0&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"1rem 0"}}>Sin entregas pendientes.</p>}
     </>}
