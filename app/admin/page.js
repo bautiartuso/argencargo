@@ -11169,7 +11169,7 @@ function AdminCalculator({token}){
     const p=products[i];if(!p.description?.trim())return;
     setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:true}:x));
     try{const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:p.description})});const d=await r.json();
-      setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false,ncm:d?.ncm_code?{ncm_code:d.ncm_code,ncm_description:d.ncm_description||p.description,import_duty_rate:d.import_duty_rate??35,statistics_rate:d.statistics_rate??3,iva_rate:d.iva_rate??21}:null}:x));
+      setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false,ncm:d?.ncm_code?{ncm_code:d.ncm_code,ncm_description:d.ncm_description||p.description,import_duty_rate:d.import_duty_rate??35,statistics_rate:d.statistics_rate??3,iva_rate:d.iva_rate??21,intervention:d.intervention||null}:null}:x));
     }catch(e){setProducts(arr=>arr.map((x,j)=>j===i?{...x,classifying:false}:x));}
   };
   const calculate=()=>{
@@ -11380,6 +11380,10 @@ function AdminCalculator({token}){
         <button onClick={()=>classifyOne(i)} disabled={p.classifying||!p.description?.trim()} title="Clasificar NCM con IA" style={{padding:"7px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.1)",color:"#a78bfa",cursor:p.classifying?"wait":"pointer",whiteSpace:"nowrap",opacity:p.description?.trim()?1:0.5}}>{p.classifying?"…":p.ncm?"✓ NCM":"✨ NCM"}</button>
         {products.length>1&&<button onClick={()=>rmProduct(i)} style={{padding:"7px 9px",fontSize:11,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>×</button>}
         {p.ncm&&<div style={{gridColumn:"1 / -1",fontSize:10.5,color:"rgba(255,255,255,0.55)",fontFamily:"monospace",paddingTop:4,borderTop:"1px dashed rgba(255,255,255,0.06)"}}>NCM <strong style={{color:IC}}>{p.ncm.ncm_code}</strong> · DIE {p.ncm.import_duty_rate}% · TE {p.ncm.statistics_rate}% · IVA {p.ncm.iva_rate}%</div>}
+        {p.ncm?.intervention?.required&&<div style={{gridColumn:"1 / -1",padding:"9px 12px",background:"rgba(251,191,36,0.10)",border:"1.5px solid rgba(251,191,36,0.4)",borderRadius:8}}>
+          <p style={{fontSize:11,fontWeight:800,color:"#fbbf24",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>⚠ Posible intervención: {(p.ncm.intervention.types||[]).join(" · ")||"organismo"}</p>
+          {p.ncm.intervention.reason&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.75)",margin:"4px 0 0",lineHeight:1.45}}>{p.ncm.intervention.reason}</p>}
+        </div>}
       </div>)}
     </div>
     {/* Bultos */}
