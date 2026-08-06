@@ -8146,7 +8146,13 @@ function AgentsPanel({token}){
 
     {tab==="flights"&&!selFlight&&(()=>{
       const activeFlights=flights.filter(f=>f.status!=="recibido");
-      const receivedFlights=flights.filter(f=>f.status==="recibido");
+      // Recibidos: ordenados por la fecha en que se marcó recibido en Bs As (más reciente
+      // primero), no por número de vuelo. Los viejos sin received_at van al final.
+      const receivedFlights=flights.filter(f=>f.status==="recibido").slice().sort((a,b)=>{
+        if(!a.received_at&&!b.received_at)return 0;
+        if(!a.received_at)return 1;if(!b.received_at)return -1;
+        return new Date(b.received_at)-new Date(a.received_at);
+      });
       const shownFlights=flightsSubTab==="received"?receivedFlights:activeFlights;
       return <div>
       {/* Banners de pagos pendientes (Alibaba / Alipay) — el agente despachó pero falta cargar cómo se pagó */}
