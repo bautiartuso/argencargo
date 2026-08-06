@@ -1510,8 +1510,8 @@ function CalculatorPage({token,client}){
     // caia justo en el borde). El LCL se ofrece por volumen, no por densidad de valor.
     const requiredFobMaritimo=0;
     const blockMaritimoLclLowFob=false;
-    // Marítimo LCL/FCL solo a partir de 0,75 m³ — por debajo, únicamente Marítimo Integral AC.
-    const blockMaritimoLclMinCbm=totCBM>0&&totCBM<0.75;
+    // Marítimo LCL/FCL solo a partir de 0,90 m³ — por debajo, únicamente Marítimo Integral AC.
+    const blockMaritimoLclMinCbm=totCBM>0&&totCBM<0.90;
 
     // Marítimo Carga LCL/FCL (A) — SIEMPRE ficticio. Omitido si hay marca o si es ropa/calzado <5 CBM.
     // Si totCBM>0 hay dimensiones cargadas (noDims puede haber quedado true del UX previo, lo ignoramos).
@@ -1850,7 +1850,7 @@ function CalculatorPage({token,client}){
         noDims?"Marcaste 'Desconozco las medidas de las cajas' — sin dimensiones no se puede calcular envío marítimo. Volvé al paso anterior para cargarlas.":
         results.totCBM===0?"No cargaste dimensiones de bultos — sin volumen (CBM) no se puede calcular envío marítimo.":
         results.blockMaritimoLclRestricted?"Por nuevas regulaciones aduaneras de mayo 2026, marítimo no aplica para ropa/calzado con menos de 5 CBM.":
-        results.blockMaritimoLclMinCbm?`El marítimo LCL/FCL aplica a partir de 0,75 m³. Tu carga tiene ${results.totCBM.toFixed(2)} m³, así que conviene aéreo/courier.`:
+        results.blockMaritimoLclMinCbm?`El marítimo LCL/FCL aplica a partir de 0,90 m³. Tu carga tiene ${results.totCBM.toFixed(2)} m³, así que conviene aéreo/courier.`:
 
         null
       ):null;

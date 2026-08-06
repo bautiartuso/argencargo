@@ -11196,7 +11196,7 @@ function AdminCalculator({token}){
       }
       if(ch.key==="maritimo_a_china"){
         if(hasBrand)reasons.push("LCL/FCL no acepta mercadería con marca registrada");
-        if(totCBM>0&&totCBM<0.5)reasons.push(`CBM ${totCBM.toFixed(4)} m³ < 0,5 m³ (mínimo facturable)`);
+        if(totCBM>0&&totCBM<0.90)reasons.push(`CBM ${totCBM.toFixed(4)} m³ < 0,90 m³ (mínimo para ofrecer LCL/FCL)`);
       }
       return {...ch,notVisibleToClient:reasons.length>0?reasons.join(" · "):null};
     }).filter(ch=>{
