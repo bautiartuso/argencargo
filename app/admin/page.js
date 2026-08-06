@@ -5004,6 +5004,9 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
       const overridesFresh=Array.isArray(ovRes)?ovRes:[];
       const clientFresh=Array.isArray(clRes)?clRes[0]:null;
       for(const o of activeOps){
+        // Presupuesto en manual: el admin fijó los números a mano (ej. reparto de un canal
+        // rojo) — el re-sync del cliente NO los pisa. Mismo criterio que autoSyncBudget.
+        if(o.budget_mode==="manual")continue;
         try{
           const[it,pk,fii]=await Promise.all([
             dq("operation_items",{token,filters:`?operation_id=eq.${o.id}&select=*`}),
