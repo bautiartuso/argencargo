@@ -12704,7 +12704,8 @@ function MaritimePanel({token,allClients=[]}){
       for(const it of mItems)await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:it.description||null,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_usd||0),notes:it.notes||null}});
       // Mail "lista para retirar" al cliente (igual que cualquier op que pasa a entregada).
       try{await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"retiro"})});}catch(e){console.error("notify retiro auto",e);}
-      createdOps.push({id:op.id,code:newCode,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(bud.totalAbonar||0),cost_flete:costoOp>0?costoOp:null});
+      const cbmOp=mPkgs.reduce((a,p)=>{const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0),q=Number(p.quantity||1);return a+(l&&w&&h?(l*w*h/1000000)*q:0);},0);
+      createdOps.push({id:op.id,code:newCode,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(bud.totalAbonar||0),cost_flete:costoOp>0?costoOp:null,cbm:Math.round(cbmOp*10000)/10000});
       created++;
     }
     return {msg:created>0?` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} · LISTA${created>1?"S":""} PARA RETIRAR · mail enviado`:"",ops:createdOps};
@@ -12733,10 +12734,16 @@ function MaritimePanel({token,allClients=[]}){
   };
   // Abrir el modal de costos para un contenedor ya arribado (carga retroactiva).
   const openCostModalForContainer=async(c)=>{
-    const opIds=[...new Set(shipments.filter(s=>s.container_id===c.id&&s.operation_id).map(s=>s.operation_id))];
+    const conShips=shipments.filter(s=>s.container_id===c.id&&s.operation_id);
+    const opIds=[...new Set(conShips.map(s=>s.operation_id))];
     if(opIds.length===0){alertDialog("Este contenedor no tiene operaciones creadas.");return;}
-    const ops=await dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,budget_total,cost_flete,clients(first_name,last_name)&order=operation_code.asc`});
-    const list=(Array.isArray(ops)?ops:[]).map(o=>({id:o.id,code:o.operation_code,clientName:o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"",budget:Number(o.budget_total||0),cost_flete:Number(o.cost_flete||0)}));
+    const [ops,pks]=await Promise.all([
+      dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,budget_total,cost_flete,clients(first_name,last_name)&order=operation_code.asc`}),
+      dq("maritime_packages",{token,filters:`?shipment_id=in.(${conShips.map(s=>s.id).join(",")})&select=shipment_id,quantity,length_cm,width_cm,height_cm`})
+    ]);
+    const opByShip={};conShips.forEach(s=>{opByShip[s.id]=s.operation_id;});
+    const cbmByOp={};(Array.isArray(pks)?pks:[]).forEach(p=>{const oid=opByShip[p.shipment_id];if(!oid)return;const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0),q=Number(p.quantity||1);cbmByOp[oid]=(cbmByOp[oid]||0)+(l&&w&&h?(l*w*h/1000000)*q:0);});
+    const list=(Array.isArray(ops)?ops:[]).map(o=>({id:o.id,code:o.operation_code,clientName:o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"",budget:Number(o.budget_total||0),cost_flete:Number(o.cost_flete||0),cbm:Math.round((cbmByOp[o.id]||0)*10000)/10000}));
     setCostModal({code:c.code,ops:list});
   };
   // Vincular cargas YA OPERADAS (con operation_id, sin contenedor) a un contenedor del historial.
@@ -13135,8 +13142,24 @@ function MaritimeCostModal({data,token,onClose,onSaved}){
   const today=new Date().toISOString().slice(0,10);
   const [rows,setRows]=useState(()=>(data.ops||[]).map(o=>({...o,amount:o.cost_flete?String(o.cost_flete):"",cur:"USD",tc:"",fecha:today,guia:""})));
   const [saving,setSaving]=useState(false);
+  const [tot,setTot]=useState({amount:"",cur:"USD",tc:""});
   const upd=(i,k,v)=>setRows(p=>p.map((r,j)=>j===i?{...r,[k]:v}:r));
   const num=(v)=>Number(String(v??"").replace(",","."));
+  // Reparte el costo total del contenedor entre las ops, proporcional al CBM de cada una
+  // (si ninguna tiene CBM cargado, en partes iguales). La última fila absorbe el redondeo.
+  const totCbm=(data.ops||[]).reduce((a,o)=>a+Number(o.cbm||0),0);
+  const prorratear=()=>{
+    const a=num(tot.amount);if(!isFinite(a)||a<=0)return;
+    setRows(p=>{
+      const n=p.length;let asignado=0;
+      return p.map((r,i)=>{
+        const share=totCbm>0?Number(r.cbm||0)/totCbm:1/n;
+        let monto=i===n-1?Math.round((a-asignado)*100)/100:Math.round(a*share*100)/100;
+        asignado+=monto;
+        return {...r,amount:String(monto),cur:tot.cur,tc:tot.cur==="ARS"?tot.tc:""};
+      });
+    });
+  };
   const usdOf=(r)=>{const a=num(r.amount);if(!isFinite(a)||a<=0)return 0;if(r.cur==="ARS"){const t=num(r.tc);return t>0?Math.round((a/t)*100)/100:0;}return a;};
   const save=async()=>{
     setSaving(true);
@@ -13161,11 +13184,21 @@ function MaritimeCostModal({data,token,onClose,onSaved}){
         <button onClick={onClose} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
       </div>
       <p style={{fontSize:11.5,color:"rgba(255,255,255,0.45)",margin:"0 0 16px"}}>Cargá el costo de flete de cada operación. Se paga en efectivo. Dejá vacío el costo si todavía no lo sabés.</p>
+      {rows.length>1&&<div style={{padding:"12px 14px",marginBottom:14,background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.25)",borderRadius:10}}>
+        <p style={{fontSize:10.5,fontWeight:800,color:IC,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Costo total del contenedor → prorratear</p>
+        <div style={{display:"grid",gridTemplateColumns:tot.cur==="ARS"?"1fr 0.7fr 0.8fr auto":"1fr 0.7fr auto",gap:"0 10px",alignItems:"end"}}>
+          <div><label style={lblS}>Total {tot.cur==="ARS"?"(ARS)":"(USD)"}</label><input type="number" step="any" value={tot.amount} onChange={e=>setTot(p=>({...p,amount:e.target.value}))} placeholder="0" style={inpS}/></div>
+          <div><label style={lblS}>Moneda</label><select value={tot.cur} onChange={e=>setTot(p=>({...p,cur:e.target.value}))} style={{...inpS,cursor:"pointer"}}><option value="USD" style={{background:"#0F1F3A"}}>USD</option><option value="ARS" style={{background:"#0F1F3A"}}>ARS</option></select></div>
+          {tot.cur==="ARS"&&<div><label style={lblS}>T. cambio</label><input type="number" step="any" value={tot.tc} onChange={e=>setTot(p=>({...p,tc:e.target.value}))} placeholder="Ej: 1510" style={inpS}/></div>}
+          <Btn small variant="secondary" onClick={prorratear} disabled={!(num(tot.amount)>0)}>⚖ Repartir{totCbm>0?" por CBM":" en partes iguales"}</Btn>
+        </div>
+        <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"7px 0 0"}}>{totCbm>0?`Se reparte proporcional al volumen de cada op (CBM total ${totCbm.toLocaleString("es-AR",{maximumFractionDigits:4})} m³). Después podés retocar cualquier fila a mano.`:"Las cargas no tienen medidas cargadas, así que se reparte en partes iguales. Después podés retocar cada fila."}</p>
+      </div>}
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         {rows.map((r,i)=>{const u=usdOf(r);return <div key={r.id} style={{padding:"12px 14px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8,flexWrap:"wrap",gap:6}}>
             <span style={{fontSize:13,fontWeight:800,color:IC,fontFamily:"monospace"}}>{r.code} <span style={{color:"rgba(255,255,255,0.7)",fontFamily:"inherit",fontWeight:600}}>· {r.clientName||"—"}</span></span>
-            <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>A cobrar: <b style={{color:"#4ade80"}}>USD {Number(r.budget||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b></span>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{Number(r.cbm||0)>0&&<>CBM <b style={{color:"#93c5fd"}}>{Number(r.cbm).toLocaleString("es-AR",{maximumFractionDigits:4})} m³</b> · </>}A cobrar: <b style={{color:"#4ade80"}}>USD {Number(r.budget||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</b></span>
           </div>
           <div style={{display:"grid",gridTemplateColumns:r.cur==="ARS"?"1fr 0.8fr 0.9fr 1fr":"1fr 0.8fr 1fr",gap:"0 10px",alignItems:"end"}}>
             <div><label style={lblS}>Costo {r.cur==="ARS"?"(ARS)":"(USD)"}</label><input type="number" step="any" value={r.amount} onChange={e=>upd(i,"amount",e.target.value)} placeholder="0" style={inpS}/></div>
