@@ -1076,17 +1076,23 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         dq("tariffs",{token,filters:"?select=*"}),
         op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([]),
         op.client_id?dq("clients",{token,filters:`?id=eq.${op.client_id}&select=tax_condition`}):Promise.resolve([]),
-        dq("operations",{token,filters:`?id=eq.${op.id}&select=channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status,despacho_die_usd,despacho_estadistica_usd,despacho_desaduanaje_usd,despacho_iva_usd,ri_argencargo_collects_taxes`}),
+        dq("operations",{token,filters:`?id=eq.${op.id}&select=channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status,budget_mode,service_type,despacho_die_usd,despacho_estadistica_usd,despacho_desaduanaje_usd,despacho_iva_usd,ri_argencargo_collects_taxes`}),
         dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=quantity,unit_price_declared_usd`})
       ]);
       // Declarados FRESCOS (no el state declaredItems, que puede estar vacío por closure stale en el sync de montaje).
       const declFresh=Array.isArray(ffii)?ffii:[];
       const its=Array.isArray(fit)?fit:[];const pks=Array.isArray(fpk)?fpk:[];
+      const opFresh=Array.isArray(fop)?fop[0]:null;
+      // Mergeamos la op fresca (campos que afectan cálculo) sobre el op local
+      const opForCalc={...op,...(opFresh||{})};
+      // Re-chequeo de MANUAL con el dato fresco de la base: algunas listas (ej. Entregas) abren
+      // el editor con una op parcial SIN budget_mode, y la guarda de arriba no lo veía — el sync
+      // de montaje pisaba presupuestos manuales (AC-0253/AC-0333, 09/08). El candado real es este.
+      if(!force && opForCalc.budget_mode==="manual")return;
       // Gestión Integral (AUTO): el total que ve el cliente es la suma de productos × cantidad
       // ("puesto en Argentina" acordado), NO el motor genérico de flete+impuestos. Lo manejamos
       // acá para que cualquier CRUD de items recalcule el total correcto.
-      if(op.service_type==="gestion_integral"){
-        if(op.budget_mode==="manual")return; // manual GI: el admin maneja el total, no lo pisamos
+      if(opForCalc.service_type==="gestion_integral"){
         const totalAuto=its.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||0),0);
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_total:totalAuto}});
         setOp(p=>({...p,budget_total:totalAuto}));
@@ -1095,9 +1101,6 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const tariffsFresh=Array.isArray(ft)?ft:[];
       const overridesFresh=Array.isArray(fov)?fov:[];
       const clientFresh=Array.isArray(fcl)?fcl[0]:null;
-      const opFresh=Array.isArray(fop)?fop[0]:null;
-      // Mergeamos la op fresca (campos que afectan cálculo) sobre el op local
-      const opForCalc={...op,...(opFresh||{})};
       const isBlanco=opForCalc.channel?.includes("blanco");
       if(isBlanco&&its.length===0)return;
       if(!isBlanco&&pks.length===0)return;
