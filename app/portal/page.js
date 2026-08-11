@@ -1510,12 +1510,13 @@ function CalculatorPage({token,client}){
     // caia justo en el borde). El LCL se ofrece por volumen, no por densidad de valor.
     const requiredFobMaritimo=0;
     const blockMaritimoLclLowFob=false;
-    // Marítimo LCL/FCL solo a partir de 0,90 m³ — por debajo, únicamente Marítimo Integral AC.
-    const blockMaritimoLclMinCbm=totCBM>0&&totCBM<0.90;
+    // Marítimo LCL/FCL solo a partir de 0,50 m³ (bajó de 0,90 el 10/08/2026) — por debajo,
+    // únicamente Marítimo Integral AC. El LCL factura mínimo 1 m³ (USD 600 a tarifa estándar).
+    const blockMaritimoLclMinCbm=totCBM>0&&totCBM<0.5;
 
     // Marítimo Carga LCL/FCL (A) — SIEMPRE ficticio. Omitido si hay marca o si es ropa/calzado <5 CBM.
     // Si totCBM>0 hay dimensiones cargadas (noDims puede haber quedado true del UX previo, lo ignoramos).
-    if(!hasBrand&&!blockMaritimoLclRestricted&&!blockMaritimoLclLowFob&&!blockMaritimoLclMinCbm&&totCBM>0){const cbmFact=Math.max(totCBM,0.5);const fleteRate=getFleteRate("maritimo_a_china",cbmFact);const flete=cbmFact*fleteRate;
+    if(!hasBrand&&!blockMaritimoLclRestricted&&!blockMaritimoLclLowFob&&!blockMaritimoLclMinCbm&&totCBM>0){const cbmFact=Math.max(totCBM,1);const fleteRate=getFleteRate("maritimo_a_china",cbmFact);const flete=cbmFact*fleteRate;
       const certFlete=totCBM*certMarFict;
       const seguro=(totalFob+certFlete)*0.01;
       const validProdsMar=products.filter(p=>toN(p.unit_price)>0);
@@ -1527,13 +1528,24 @@ function CalculatorPage({token,client}){
 
     // Marítimo Integral AC (B) — siempre disponible (incluso para ropa/calzado <5 CBM).
     // Si totCBM>0 hay dimensiones cargadas. No chequeamos noDims porque puede estar en true por edge UX.
-    if(totCBM>0){const fleteRate=getFleteRate("maritimo_b",totCBM);const flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
-      const negroTotal=flete+sur.amt;
-      // Sin marca + CBM > 0,5: si el Marítimo blanco (LCL/FCL) está disponible y es MÁS BARATO,
-      // no mostrar el Marítimo Integral AC (negro) — así el cliente no se confunde con dos opciones
-      // marítimas. (Con marca no aplica: el blanco no se ofrece, sólo se muestra el negro.)
+    if(totCBM>0){const fleteRate=getFleteRate("maritimo_b",totCBM);let flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
+      // Mínimo de servicio del Integral: USD 100 (10/08/2026). Se ajusta el flete para que
+      // las líneas sumen el total.
+      let negroTotal=flete+sur.amt;
+      if(negroTotal>0&&negroTotal<100){flete+=100-negroTotal;negroTotal=100;}
+      // Reglas de visibilidad (10/08/2026):
+      //  - RI desde China: el Integral solo se ofrece con carga < 0,5 m³. Con 0,5+ va por LCL/FCL.
+      //  - No-RI con 0,5+ m³: se muestra UNA sola opción marítima, la más barata (Integral o
+      //    LCL/FCL con su mínimo de 1 m³). Con menos de 0,5 solo existe el Integral.
+      //  (Con marca o ropa/calzado <5 m³ el LCL no se ofrece y el Integral queda solo.)
       const mBlanco=channels.find(c=>c.key==="maritimo_a_china");
-      const hideNegro=!hasBrand&&totCBM>0.5&&mBlanco&&mBlanco.total<negroTotal;
+      let hideNegro=false;
+      if(isRI){
+        hideNegro=totCBM>=0.5;
+      }else if(totCBM>=0.5&&mBlanco){
+        if(mBlanco.total<negroTotal)hideNegro=true;
+        else channels.splice(channels.indexOf(mBlanco),1); // gana el Integral: fuera el LCL
+      }
       if(!hideNegro)channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",isBlanco:false,
         flete,surcharge:sur.amt,surchargePct:sur.pct,total:negroTotal,cbm:totCBM,unit:`${totCBM.toFixed(4)} CBM`});}
     setResults({channels,totWeight,totCBM,blockMaritimoLclRestricted,blockMaritimoLclLowFob,blockMaritimoLclMinCbm,requiredFobMaritimo,isRestricted,totalFob});setStep(4);
@@ -1850,7 +1862,7 @@ function CalculatorPage({token,client}){
         noDims?"Marcaste 'Desconozco las medidas de las cajas' — sin dimensiones no se puede calcular envío marítimo. Volvé al paso anterior para cargarlas.":
         results.totCBM===0?"No cargaste dimensiones de bultos — sin volumen (CBM) no se puede calcular envío marítimo.":
         results.blockMaritimoLclRestricted?"Por nuevas regulaciones aduaneras de mayo 2026, marítimo no aplica para ropa/calzado con menos de 5 CBM.":
-        results.blockMaritimoLclMinCbm?`El marítimo LCL/FCL aplica a partir de 0,90 m³. Tu carga tiene ${results.totCBM.toFixed(2)} m³, así que conviene aéreo/courier.`:
+        results.blockMaritimoLclMinCbm?`El marítimo LCL/FCL aplica a partir de 0,50 m³. Tu carga tiene ${results.totCBM.toFixed(2)} m³, así que conviene aéreo/courier.`:
 
         null
       ):null;

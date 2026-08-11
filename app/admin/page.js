@@ -11212,7 +11212,10 @@ function AdminCalculator({token}){
       }
       if(ch.key==="maritimo_a_china"){
         if(hasBrand)reasons.push("LCL/FCL no acepta mercadería con marca registrada");
-        if(totCBM>0&&totCBM<0.90)reasons.push(`CBM ${totCBM.toFixed(4)} m³ < 0,90 m³ (mínimo para ofrecer LCL/FCL)`);
+        if(totCBM>0&&totCBM<0.5)reasons.push(`CBM ${totCBM.toFixed(4)} m³ < 0,50 m³ (mínimo para ofrecer LCL/FCL; factura mínimo 1 m³)`);
+      }
+      if(ch.key==="maritimo_b"){
+        if(taxCond==="responsable_inscripto"&&totCBM>=0.5)reasons.push("RI con 0,5+ m³: el portal no ofrece el Integral desde China (va por LCL/FCL)");
       }
       return {...ch,notVisibleToClient:reasons.length>0?reasons.join(" · "):null};
     }).filter(ch=>{
