@@ -1329,7 +1329,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     const retiroLink=op.delivery_public_token?`https://argencargo.com.ar/retiro/${op.delivery_public_token}`:"";
     const data={firstName,opCode,desc,portalLink,saldoTxt,ajustesTxt,trackingList,bultosCount,origen,flag,creditNote,importTotal:fmt(importTotal),envioCost:fmt(envioCost),totalAbonar:fmt(saldo),retiroLink};
     const interp=(s,d)=>!s?"":String(s).replace(/\{\{(\w+)\}\}/g,(_,k)=>d[k]!=null?String(d[k]):"");
-    let msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Av. Callao 1137.${saldoTxt}`;
+    let msg=tpl?interp(tpl.body,data):`Tu carga *${desc}* (${opCode}) está lista para retirar en Virrey Loreto 2428, Belgrano.${saldoTxt}`;
     // Si el template no incluye {{retiroLink}} (ej. wa_envio, o el fallback sin template), lo adjuntamos
     // igual — así el cliente siempre puede confirmar entrega + forma de pago desde el link.
     if(trigger==="retiro"&&retiroLink&&!(tpl&&tpl.body.includes("{{retiroLink}}"))){
@@ -7047,7 +7047,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           <Inp label="Nombre" value={dest.dest_name} onChange={v=>chDest("dest_name",v)} placeholder="Razón social o nombre"/>
           <Inp label="CUIT / Tax ID" value={dest.dest_tax_id} onChange={v=>chDest("dest_tax_id",v)} placeholder="20-12345678-9"/>
         </div>
-        <Inp label="Dirección" value={dest.dest_address} onChange={v=>chDest("dest_address",v)} placeholder="Av. Callao 1137, CABA"/>
+        <Inp label="Dirección" value={dest.dest_address} onChange={v=>chDest("dest_address",v)} placeholder="Virrey Loreto 2428, CABA"/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 2fr",gap:"0 12px"}}>
           <Inp label="Código Postal" value={dest.dest_postal_code} onChange={v=>chDest("dest_postal_code",v)} placeholder="C1024AAQ"/>
           <Inp label="Teléfono" value={dest.dest_phone} onChange={v=>chDest("dest_phone",v)} placeholder="+54 11 ..."/>
@@ -10222,7 +10222,7 @@ function ComunicacionesPanel({token}){
     // Fallback si no se cargaron las plantillas todavía
     return trigger==="deposito"
       ? `Hola ${firstName}! Recibimos *${desc}* (${opCode}) en el depósito.\n\n${portalLink}`
-      : `Tu carga *${desc}* (${opCode}) está lista para retirar en Callao 1137.${saldoTxt}`;
+      : `Tu carga *${desc}* (${opCode}) está lista para retirar en Virrey Loreto 2428, Belgrano.${saldoTxt}`;
   };
 
   const pending=ops.map(op=>{

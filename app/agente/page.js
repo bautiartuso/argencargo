@@ -1158,7 +1158,7 @@ function FlightDetail({token,flight,flightOps,packages,signup,t,onBack,onDispatc
       <div class="grid">
         <div class="box"><h3>Shipper / Exporter</h3>
           <div class="dest-row"><span>Company</span><b>ARGENCARGO</b></div>
-          <div class="dest-row"><span>Address</span><b>Av. Callao 1137, CABA, Argentina</b></div>
+          <div class="dest-row"><span>Address</span><b>Virrey Loreto 2428, Belgrano, CABA, Argentina</b></div>
           <div class="dest-row"><span>Origin</span><b>China</b></div>
           <div class="dest-row"><span>Carrier</span><b>${flight.international_carrier||carrier||"—"}</b></div>
         </div>
@@ -1175,7 +1175,7 @@ function FlightDetail({token,flight,flightOps,packages,signup,t,onBack,onDispatc
       <h3 style="margin:18px 0 0;font-size:13px;color:#1B4F8A;text-transform:uppercase;letter-spacing:0.05em">Items / Goods Description</h3>
       <table><thead><tr><th>Op</th><th>Client</th><th>Description</th><th>HS Code</th><th>Qty</th><th class="r">Unit Value</th><th class="r">Total Value</th></tr></thead><tbody>${rows}</tbody></table>
       <div class="totals"><div><div class="lbl">Total Quantity</div><div class="big">${totalQty}</div></div><div><div class="lbl">Total Weight</div><div class="big">${(autoWeight||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</div></div><div><div class="lbl">Total Commercial Value</div><div class="big">${fmt(totalValue)}</div></div></div>
-      <div class="foot"><img src="${LOGO}" alt="Argencargo"/><div class="info"><b>ARGENCARGO</b><div><span class="lbl">Tel:</span>+54 9 11 2508-8580</div><div><span class="lbl">Email:</span>info@argencargo.com.ar</div><div>Av Callao 1137 — Recoleta, CABA, Argentina</div></div></div>
+      <div class="foot"><img src="${LOGO}" alt="Argencargo"/><div class="info"><b>ARGENCARGO</b><div><span class="lbl">Tel:</span>+54 9 11 2508-8580</div><div><span class="lbl">Email:</span>info@argencargo.com.ar</div><div>Virrey Loreto 2428 — Belgrano, CABA, Argentina</div></div></div>
       <div class="disclaimer">This document is generated for customs and freight forwarding purposes only. Final commercial invoice may differ subject to actual shipment data.</div>
       <script>setTimeout(()=>{try{window.print();}catch(e){}},400)</script>
     </body></html>`;

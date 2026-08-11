@@ -95,8 +95,8 @@ export default function RootLayout({ children }) {
             foundingDate: '2020',
             address: {
               '@type': 'PostalAddress',
-              streetAddress: 'Av. Callao 1137',
-              addressLocality: 'Recoleta',
+              streetAddress: 'Virrey Loreto 2428',
+              addressLocality: 'Belgrano',
               addressRegion: 'CABA',
               addressCountry: 'AR',
             },

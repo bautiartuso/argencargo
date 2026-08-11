@@ -77,7 +77,7 @@ function renderShell({ subject, greeting, body, extraHtml, opCode, isPreview }) 
                 <div style="font-weight:800;color:#fff;letter-spacing:0.02em;margin-bottom:2px">ARGENCARGO</div>
                 <div><span style="color:#8ea3c4">T.</span> +54 9 11 2508-8580</div>
                 <div><span style="color:#8ea3c4">E-mail:</span> <a href="mailto:info@argencargo.com.ar" style="color:#8fb8ff;text-decoration:none">info@argencargo.com.ar</a></div>
-                <div>Av Callao 1137 — Recoleta, CABA</div>
+                <div>Virrey Loreto 2428 — Belgrano, CABA</div>
               </td>
             </tr>
           </table>

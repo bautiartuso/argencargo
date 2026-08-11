@@ -282,7 +282,7 @@ export default function CotizacionPublica({ params }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                 <TimeStep n="1" name="Producción" meta={maxLead > 0 ? `Hasta ${maxLead} días hábiles` : "Según producto"}/>
                 <TimeStep n="2" name="Envío y arribo" meta={selChannel ? channelTransitText(selChannel) : "—"}/>
-                <TimeStep n="3" name="Entrega final" meta={selChannel ? `${totalDaysText(selChannel, maxLead)} · ${selectedDelivery === "oficina" ? `Retiro · ${settings?.office_locality || "Recoleta CABA"}` : `Envío a ${selectedDelivery}`}` : "—"}/>
+                <TimeStep n="3" name="Entrega final" meta={selChannel ? `${totalDaysText(selChannel, maxLead)} · ${selectedDelivery === "oficina" ? `Retiro · ${settings?.office_locality || "Belgrano CABA"}` : `Envío a ${selectedDelivery}`}` : "—"}/>
               </div>
             </div>
 
