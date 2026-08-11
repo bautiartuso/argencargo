@@ -1749,8 +1749,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       } else {
       // Flete (uses client custom rate if available)
       const svcKey=op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b";
-      // Aéreo: peso facturable (pf). Marítimo: CBM.
-      const fleteAmt=op.channel?.includes("aereo")?pf:(op.channel==="maritimo_blanco"?Math.max(totCBM,0.5):totCBM);
+      // Aéreo: peso facturable (pf) con mínimo (China 5 kg / USA 1 kg). Marítimo LCL: mínimo 1 m³.
+      // Espejo de lib/calc.js — esta copia inline se había quedado sin los mínimos y el
+      // "Total a abonar" difería del presupuesto guardado (AC-0328, 11/08).
+      const aereoMinKg=op.origin==="USA"?1:5;
+      const fleteAmt=op.channel?.includes("aereo")?Math.max(pf,aereoMinKg):(op.channel==="maritimo_blanco"?Math.max(totCBM,1):totCBM);
       const tRefMs=op.created_at?Date.parse(op.created_at):Date.now();
       const tActive=t=>(t.effective_from==null||Date.parse(t.effective_from)<=tRefMs)&&(t.effective_to==null||tRefMs<Date.parse(t.effective_to));
       const getRate=(sk,amt)=>{const rates=tariffs.filter(t=>t.service_key===sk&&t.type==="rate"&&tActive(t));for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amt>=min&&amt<max){const ov=clientOverrides.find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):Number(r.rate);}}return rates.length?Number(rates[rates.length-1].rate):0;};
@@ -1760,7 +1763,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       // CIF: RI sees real, others see ficticio. Marítimo always ficticio.
       const isAereoOp=op.channel?.includes("aereo");
       const certFlRate=isAereoOp?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
-      const certFlAmt=isAereoOp?(isRI?totGW*certFlRate:pf*certFlRate):totCBM*certFlRate;
+      const certFlAmt=isAereoOp?(isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate):totCBM*certFlRate;
       seguro=(totalFob+certFlAmt)*0.01;const cif=totalFob+certFlAmt+seguro;
       // Impuestos per-item sobre CIF proporcional
       const getDesembolso=(c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;};
@@ -1799,8 +1802,10 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           for(const s of surchs){if(vpu>=Number(s.min_qty||0)){surchargePct=Number(s.rate||0);surcharge=Math.round(merchVal*(surchargePct/100)*100)/100;break;}}
         }
       }
+      // Marítimo Integral: mínimo de servicio USD 100 (mismo ajuste que lib/calc.js).
+      if(op.channel==="maritimo_negro"){const svcMin=flete+surcharge;if(svcMin>0&&svcMin<100)flete+=100-svcMin;}
       const deliveryCostInline=Number(op.delivery_cost_usd||0);
-      const billedTaxInline=(!isRI||op.ri_argencargo_collects_taxes)?totalTax:0;
+      const billedTaxInline=(op.channel!=="aereo_blanco"||!isRI||!!op.ri_argencargo_collects_taxes)?totalTax:0;
       totalAbonar=isBlanco?(billedTaxInline+flete+seguro+shipCost+deliveryCostInline):Math.round(flete+surcharge+shipCost+deliveryCostInline);
       }
       // Solo en aereo A el RI paga los impuestos directo; en maritimo A siempre los cobra Argencargo.
@@ -1986,7 +1991,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           const fmt2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
           const isAereoOp=op.channel?.includes("aereo");
           const certFlRate=isAereoOp?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
-          const certFlAmt=isAereoOp?(isRI?totGW*certFlRate:pf*certFlRate):totCBM*certFlRate;
+          const certFlAmt=isAereoOp?(isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate):totCBM*certFlRate;
           const segLocal=(totalFob+certFlAmt)*0.01;
           const cifLocal=totalFob+certFlAmt+segLocal;
           const getDesembolsoD=(c)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(c<max)return amt;return 120;};
