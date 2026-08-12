@@ -1088,9 +1088,20 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   </SimpleShell>;
 }
 
-function FlightDetail({token,flight,flightOps,packages,signup,t,onBack,onDispatched}){
+function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onBack,onDispatched}){
   const [invoiceItems,setInvoiceItems]=useState([]);
   const [lightboxPhoto,setLightboxPhoto]=useState(null);
+  // La lista global de bultos del deposito viene con limit=100 (los mas nuevos): las ops viejas
+  // (ej. AC-0081 en FL-0080) quedaban fuera y el vuelo mostraba "OP —" con 0 kg. Aca se traen
+  // SIEMPRE los bultos de las ops de ESTE vuelo, sin limite, y se usan esos.
+  const [flightPkgs,setFlightPkgs]=useState(null);
+  useEffect(()=>{let vivo=true;(async()=>{
+    const ids=[...new Set(flightOps.map(fo=>fo.operation_id).filter(Boolean))];
+    if(ids.length===0){if(vivo)setFlightPkgs([]);return;}
+    const r=await dq("operation_packages",{token,filters:`?operation_id=in.(${ids.join(",")})&select=*,operations(operation_code,client_id,clients(client_code,first_name))&order=package_number.asc`});
+    if(vivo)setFlightPkgs(Array.isArray(r)?r:[]);
+  })();return()=>{vivo=false;};},[flight.id,token]);
+  const packages=flightPkgs!==null?flightPkgs:packagesProp;
   // Peso facturable por paquete (max bruto vs volumétrico) — usado para $/kg y reparto.
   const VOL_DIV=Number(signup?.volumetric_divisor)||5000;
   const pkgFact=(p)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0)*q;const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const vol=l&&w&&h?((l*w*h)/VOL_DIV)*q:0;return Math.max(gw,vol);};
