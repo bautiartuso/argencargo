@@ -886,6 +886,7 @@ function OperationDetail({op,token,client,onBack}){
         {!isGI&&!isB&&bTax>0&&(riPagaImpuestosDirecto?bRow("Impuestos (los abonás directo a la aerolínea)",bTax,false,false,"rgba(255,255,255,0.45)"):bRow("Total Impuestos",bTax))}
         {!isGI&&(isB?(bt-shipCost):bFlete)>0&&bRow(isB?"Servicio Integral de importación":"Flete internacional",isB?(bt-shipCost):bFlete)}
         {!isGI&&!isB&&bSeg>0&&bRow("Seguro de carga",bSeg)}
+        {!isGI&&!isB&&op.channel?.includes("aereo")&&Number(op.budget_surcharge||0)>0&&bRow("Recargo por sobrepeso",Number(op.budget_surcharge))}
         {!isGI&&shipCost>0&&bRow("Envío a Domicilio",shipCost)}
         {!isGI&&pmtTotal>0&&bRow(`Gestión de pagos${pmtAnticipado>0?` (cobrado USD ${pmtAnticipado.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de USD ${pmtTotal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})`:""}`,pmtPendiente,false,false,pmtPendiente>0?"#fb923c":"#22c55e")}
         {(()=>{
@@ -1223,6 +1224,7 @@ function printPortalCalcPdf({ch,products,totalFob,origin,clientName,delivCost=0}
   const rowsServicios=[];
   if((Number(ch.flete||0)+Number(ch.surcharge||0))>0)rowsServicios.push(`<div class="row"><span>${ch.key==="maritimo_a_china"?"Servicio marítimo de importación":(Number(ch.surcharge||0)>0?"Servicio Integral de importación":"Flete")}</span><span>USD ${fmt(Number(ch.flete||0)+Number(ch.surcharge||0))}</span></div>`);
   if(Number(ch.battExtra||0)>0)rowsServicios.push(`<div class="row"><span>Recargo por baterías</span><span>USD ${fmt(ch.battExtra)}</span></div>`);
+  if(Number(ch.overweightSurcharge||0)>0)rowsServicios.push(`<div class="row"><span>Recargo por sobrepeso</span><span>USD ${fmt(ch.overweightSurcharge)}</span></div>`);
   if(Number(ch.seguro||0)>0)rowsServicios.push(`<div class="row"><span>Seguro</span><span>USD ${fmt(ch.seguro)}</span></div>`);
   if(delivCost>0)rowsServicios.push(`<div class="row"><span>Envío CABA</span><span>USD ${fmt(delivCost)}</span></div>`);
   const rowsAduana=[];
@@ -1494,9 +1496,14 @@ function CalculatorPage({token,client}){
       const taxFob=validProds.reduce((s,p,i)=>s+taxUnitPrices[i]*(toN(p.quantity)||1),0);
       const totalCif=taxFob+certFlete+(taxFob+certFlete)*0.01;
       const items=validProds.map((p,i)=>calcItemTaxes(p,certFlete,false,totalCif,taxUnitPrices[i]));
-      const totalImp=items.reduce((s,it)=>s+it.totalImp,0);const totalSvc=flete+seguro+battExtra;
+      const totalImp=items.reduce((s,it)=>s+it.totalImp,0);
+      // Recargo por sobrepeso del courier: USD 35 por pieza si el bulto pesa más de 24 kg o su
+      // girth (largo + 2×ancho + 2×alto) supera 260 cm. Ítem separado, no dentro del flete.
+      const owPieces=pkgs.reduce((n,pk)=>{const q=Number(pk.qty||1);const gw=toN(pk.weight);const l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const girth=l&&w&&h?l+2*(w+h):0;return n+((gw>24||girth>260)?q:0);},0);
+      const overweightSurcharge=owPieces*35;
+      const totalSvc=flete+seguro+battExtra+overweightSurcharge;
       channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles",isBlanco:true,
-        flete,seguro,battExtra,totalImp,totalSvc,total:totalImp+totalSvc,items,
+        flete,seguro,battExtra,overweightSurcharge,owPieces,totalImp,totalSvc,total:totalImp+totalSvc,items,
         pesoBruto:totWeight,pesoVol:volWeightTotal,pesoFact:facturableBill,pkgDetails,unit:`${facturableBill.toFixed(1)} kg`});}
 
     // Aéreo Integral AC (B) China: OCULTO para clientes (pedido 11/06/2026). El canal
@@ -1689,6 +1696,7 @@ function CalculatorPage({token,client}){
           </div>
           {row(mc.key==="maritimo_a_china"?"Servicio marítimo de importación":"Servicio Integral de importación",Number(mc.flete||0)+Number(mc.surcharge||0))}
           {mc.battExtra>0&&row("Recargo por baterías",mc.battExtra)}
+          {Number(mc.overweightSurcharge||0)>0&&row("Recargo por sobrepeso",mc.overweightSurcharge)}
           {delivCost>0&&row("Envío CABA",delivCost)}
           {row("TOTAL",total,true,true)}
         </div>
@@ -1901,6 +1909,7 @@ function CalculatorPage({token,client}){
           <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12}}>
             {row("Costo de envío",modalCh.flete)}
             {modalCh.battExtra>0&&row("Recargo por baterías",modalCh.battExtra)}
+            {Number(modalCh.overweightSurcharge||0)>0&&row("Recargo por sobrepeso",modalCh.overweightSurcharge)}
             {row("Seguro",modalCh.seguro)}
             {delivCost>0&&row("Envío CABA",delivCost)}
             {row("TOTAL",modalCh.total+delivCost,true,true)}

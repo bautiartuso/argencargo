@@ -1804,9 +1804,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       }
       // Marítimo Integral: mínimo de servicio USD 100 (mismo ajuste que lib/calc.js).
       if(op.channel==="maritimo_negro"){const svcMin=flete+surcharge;if(svcMin>0&&svcMin<100)flete+=100-svcMin;}
+      // Recargo por sobrepeso (aéreo): USD 35 por pieza si el bulto pesa >24 kg reales o su
+      // girth (largo + 2×ancho + 2×alto) supera 260 cm. Ítem aparte, espejo de lib/calc.js.
+      if(isAereoOp){const ow=pkgs.reduce((n,pk)=>{const q=Number(pk.quantity||1),gw=Number(pk.gross_weight_kg||0),l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0);const g=l&&w&&h?l+2*(w+h):0;return n+((gw>24||g>260)?q:0);},0);if(ow>0)surcharge=ow*35;}
       const deliveryCostInline=Number(op.delivery_cost_usd||0);
       const billedTaxInline=(op.channel!=="aereo_blanco"||!isRI||!!op.ri_argencargo_collects_taxes)?totalTax:0;
-      totalAbonar=isBlanco?(billedTaxInline+flete+seguro+shipCost+deliveryCostInline):Math.round(flete+surcharge+shipCost+deliveryCostInline);
+      totalAbonar=isBlanco?(billedTaxInline+flete+seguro+surcharge+shipCost+deliveryCostInline):Math.round(flete+surcharge+shipCost+deliveryCostInline);
       }
       // Solo en aereo A el RI paga los impuestos directo; en maritimo A siempre los cobra Argencargo.
       const taxesBilledByArgencargo=op.channel!=="aereo_blanco"||!isRI||!!op.ri_argencargo_collects_taxes;
@@ -1879,7 +1882,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         // RI que paga los impuestos directo al despachante: budget_taxes queda como dato
         // informativo pero NO entra en el total a abonar a Argencargo (igual que en auto).
         const components=isBlanco
-          ?(taxesBilledByArgencargo?["budget_taxes","budget_flete","budget_seguro"]:["budget_flete","budget_seguro"])
+          ?(taxesBilledByArgencargo?["budget_taxes","budget_flete","budget_seguro","budget_surcharge"]:["budget_flete","budget_seguro","budget_surcharge"])
           :["budget_flete","budget_surcharge"];
         const shipCost=op.shipping_to_door?toNum(op.shipping_cost):0;
         const sum=components.reduce((s,f)=>s+(f===field?toNum(val):toNum(op[f])),0)+shipCost;
@@ -1960,6 +1963,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{taxesBilledByArgencargo?"Total Impuestos (USD)":<>Impuestos (USD) <span style={{color:"rgba(96,165,250,0.85)",fontSize:11,fontStyle:"italic"}}>— informativo, el RI paga directo</span></>}</span><input type="text" inputMode="decimal" value={op.budget_taxes??""} placeholder="0,00" onChange={e=>handleManualChange("budget_taxes",e.target.value)} style={manualInputStyle}/></div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Flete internacional (USD)</span><input type="text" inputMode="decimal" value={op.budget_flete??""} placeholder="0,00" onChange={e=>handleManualChange("budget_flete",e.target.value)} style={manualInputStyle}/></div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Seguro de carga (USD)</span><input type="text" inputMode="decimal" value={op.budget_seguro??""} placeholder="0,00" onChange={e=>handleManualChange("budget_seguro",e.target.value)} style={manualInputStyle}/></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Recargo por sobrepeso (USD)</span><input type="text" inputMode="decimal" value={op.budget_surcharge??""} placeholder="0,00" onChange={e=>handleManualChange("budget_surcharge",e.target.value)} style={manualInputStyle}/></div>
           </>:<>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Servicio Integral (USD)</span><input type="text" inputMode="decimal" value={op.budget_flete??""} placeholder="0,00" onChange={e=>handleManualChange("budget_flete",e.target.value)} style={manualInputStyle}/></div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Recargo por valor (USD)</span><input type="text" inputMode="decimal" value={op.budget_surcharge??""} placeholder="0,00" onChange={e=>handleManualChange("budget_surcharge",e.target.value)} style={manualInputStyle}/></div>
@@ -1969,6 +1973,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             {rw(taxesBilledByArgencargo?"Total Impuestos":"Impuestos (informativo, no cobrado — RI paga directo)",totalTax)}
             {rw("Flete internacional",flete)}
             {rw("Seguro de carga",seguro)}
+            {surcharge>0&&rw("Recargo por sobrepeso",surcharge)}
           </>:<>
             {rw("Servicio Integral ARGENCARGO",flete)}
             {surcharge>0&&rw(`Recargo por valor (${surchargePct}%)`,surcharge)}
@@ -5273,8 +5278,10 @@ function Calculator({token,clients}){
         const itemsReal=validProds.map(p=>calcItemTax(p,certFlReal,false,cifReal));
         const impFict=sumItems(itemsFict,"totalImp");const impReal=sumItems(itemsReal,"totalImp");
         const battExtra=hasBattery?factBill*2:0;const gananciaImp=impFict-impReal;
+        // Recargo por sobrepeso: USD 35 por pieza (>24 kg reales o girth L+2A+2H > 260 cm)
+        const owPieces=pkgs.reduce((n,pk)=>{const q=Number(pk.qty||1),gw=Number(pk.weight||0),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0);const g=l&&w&&h?l+2*(w+h):0;return n+((gw>24||g>260)?q:0);},0);const overweightSurcharge=owPieces*35;
         channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días",isBlanco:true,
-          flete,fCost,seguro:segFict,battExtra,totalImp:impFict,totalSvc:flete+segFict+battExtra,total:impFict+flete+segFict+battExtra,
+          flete,fCost,seguro:segFict,battExtra,overweightSurcharge,totalImp:impFict,totalSvc:flete+segFict+battExtra+overweightSurcharge,total:impFict+flete+segFict+battExtra+overweightSurcharge,
           derechos:sumItems(itemsFict,"derechos"),tasa_e:sumItems(itemsFict,"tasa_e"),iva:sumItems(itemsFict,"iva"),gastoDoc:sumItems(itemsFict,"desembolso"),ivaDesemb:sumItems(itemsFict,"ivaDesemb"),
           items:itemsFict,cifReal,cifFict,impReal,impFict,gananciaImp,unit:`${factBill.toFixed(1)} kg`});}
       // Marítimo Carga LCL/FCL (A) — omitido si hay marca
@@ -5349,7 +5356,7 @@ function Calculator({token,clients}){
         <div style={{marginTop:14}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>COTIZACIÓN CLIENTE</p>
           {ch.isBlanco?<>
-            {row(ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete",ch.flete)}{ch.battExtra>0&&row("Recargo por baterías",ch.battExtra)}{row("Seguro",ch.seguro)}
+            {row(ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete",ch.flete)}{ch.battExtra>0&&row("Recargo por baterías",ch.battExtra)}{Number(ch.overweightSurcharge||0)>0&&row("Recargo por sobrepeso",ch.overweightSurcharge)}{row("Seguro",ch.seguro)}
             {row(`Derechos (${ncm?.import_duty_rate||0}%)`,ch.derechos)}{row(`TE (${ncm?.statistics_rate||0}%)`,ch.tasa_e)}{row(`IVA (${ncm?.iva_rate??21}%)`,ch.iva)}
             {ch.isMar?<>{row("IVA Adic. (20%)",ch.ivaAdic)}{row("IIGG (6%)",ch.iigg)}{row("IIBB (5%)",ch.iibb)}</>:<>{row("Gasto doc.",ch.gastoDoc)}{row("IVA desemb.",ch.ivaDesemb)}</>}
           </>:<>
@@ -11025,6 +11032,7 @@ function QuotesList({token}){
                 {!isB&&row("Impuestos",ch.totalTax)}
                 {row(isB?"Servicio Integral":"Flete internacional",Number(ch.flete||0)-Number(ch.battExtra||0))}
                 {Number(ch.battExtra||0)>0&&row("Recargo por baterías",ch.battExtra)}
+                {Number(ch.overweightSurcharge||0)>0&&row("Recargo por sobrepeso",ch.overweightSurcharge)}
                 {!isB&&row("Seguro",ch.seguro)}
                 {ch.shipCost>0&&row("Envío a domicilio",ch.shipCost)}
                 <div style={{display:"flex",justifyContent:"space-between",padding:"9px 0 0",borderTop:`1px solid ${isBest?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.08)"}`,marginTop:6}}>
@@ -11251,6 +11259,7 @@ function AdminCalculator({token}){
     const svcAmtPdf=fleteBasePdf+surchargePdf;
     if(svcAmtPdf>0)rowsServicios.push(`<div class="row"><span>${svcLabelPdf}</span><span>USD ${fmt(svcAmtPdf)}</span></div>`);
     if(battExtraPdf>0)rowsServicios.push(`<div class="row"><span>Recargo por baterías</span><span>USD ${fmt(battExtraPdf)}</span></div>`);
+    if(Number(ch.overweightSurcharge||0)>0)rowsServicios.push(`<div class="row"><span>Recargo por sobrepeso</span><span>USD ${fmt(ch.overweightSurcharge)}</span></div>`);
     if(Number(ch.seguro||0)>0)rowsServicios.push(`<div class="row"><span>Seguro</span><span>USD ${fmt(ch.seguro)}</span></div>`);
     // Sección 2: Aduana / impuestos
     const rowsAduana=[];
