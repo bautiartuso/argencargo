@@ -1995,6 +1995,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         {isBlanco&&items.length>0&&(()=>{
           const fmt2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
           const isAereoOp=op.channel?.includes("aereo");
+          const aereoMinKg=op.origin==="USA"?1:5; // mismo mínimo facturable que lib/calc.js
           const certFlRate=isAereoOp?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
           const certFlAmt=isAereoOp?(isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate):totCBM*certFlRate;
           const segLocal=(totalFob+certFlAmt)*0.01;
