@@ -5740,7 +5740,10 @@ function FinancePanel({token}){
     dq("finance_entries",{token,filters:"?select=*&auto_generated=is.false&order=date.desc,created_at.desc"}),
     dq("operations",{token,filters:"?select=id,operation_code,description,budget_total,is_collected,collection_date,collected_amount,collection_currency,collection_exchange_rate,credit_applied_usd,debt_applied_usd,extra_charge_usd,closed_at,cost_flete,cost_flete_method,cost_flete_paid_at,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_seguro_paid_at,cost_flete_local,cost_flete_local_paid_at,cost_otros,cost_otros_paid_at,service_type,cost_producto_usd,cost_producto_method,cost_producto_paid,cost_producto_paid_at,clients(first_name,last_name,client_code)&order=created_at.desc"}),
     dq("payment_management",{token,filters:"?select=*,operations(operation_code)"}),
-    dq("finance_entries",{token,filters:"?select=*,operations(operation_code),credit_cards(id,name,brand)&currency=eq.ARS&exchange_rate=is.null&auto_generated=eq.true&order=card_closing_date.asc"}),
+    // Pendientes de dollarizar: los auto-generados ARS sin TC, y TAMBIEN los gastos ARS
+    // cargados a mano con tarjeta que siguen sin debitar (Swiss/AFIP 18/05 no aparecian en
+    // NINGUNA tab: Dollarizacion filtraba auto_generated y Deuda Tarjeta solo detalla USD).
+    dq("finance_entries",{token,filters:"?select=*,operations(operation_code),credit_cards(id,name,brand)&currency=eq.ARS&exchange_rate=is.null&or=(auto_generated.eq.true,and(payment_method.eq.tarjeta_credito,is_paid.eq.false))&order=card_closing_date.asc"}),
     dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),
     dq("agent_signups",{token,filters:"?select=auth_user_id,first_name,last_name"}),
     dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),
