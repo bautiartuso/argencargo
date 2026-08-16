@@ -1904,7 +1904,20 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
   const [err,setErr]=useState("");
 
   // Cargar todos los clientes
-  useEffect(()=>{if(!token)return;(async()=>{const cl=await dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=client_code.asc"});if(!Array.isArray(cl)){console.error("[agente] error cargando clientes:",cl);setAllClients([]);return;}setAllClients(cl);})();},[token]);
+  useEffect(()=>{if(!token)return;(async()=>{
+    // PostgREST corta en 1000 filas por request y ya hay mas de 1000 clientes: ordenado
+    // alfabetico, los codigos del final (ULIVRA...) quedaban fuera del selector y el agente
+    // veia "Cliente no registrado". Se pagina de a 1000 hasta traer todos.
+    const todos=[];let desde=0;const PAGINA=1000;
+    while(true){
+      const cl=await dq("clients",{token,filters:`?select=id,first_name,last_name,client_code&order=client_code.asc&offset=${desde}&limit=${PAGINA}`});
+      if(!Array.isArray(cl)){console.error("[agente] error cargando clientes:",cl);break;}
+      todos.push(...cl);
+      if(cl.length<PAGINA)break;
+      desde+=PAGINA;
+    }
+    setAllClients(todos);
+  })();},[token]);
 
   const selectedClient=allClients.find(c=>c.id===clientId);
 
