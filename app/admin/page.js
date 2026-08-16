@@ -95,6 +95,10 @@ const dq=async(t,{method="GET",body,token,filters="",headers:h={}})=>{
 // Existe porque PostgREST no devuelve mas de 1000 filas por request y ese tope es del
 // servidor: no se puede subir con `limit`. Cualquier lista que crezca tiene que pedir de
 // a pedazos en vez de traerse entera y filtrarse en el navegador.
+// Trae TODAS las filas paginando de a 1000 — PostgREST corta cada request en 1000 filas y
+// las listas de clientes ya superan ese limite (EMISZA/ULIVRA quedaban invisibles en los
+// selectores). Requiere order= en filters para que la paginacion sea estable.
+const dqTodos=async(t,{token,filters=""})=>{const out=[];for(let desde=0;;desde+=1000){const sep=filters.includes("?")?"&":"?";const r=await dq(t,{token,filters:`${filters}${sep}offset=${desde}&limit=1000`});if(!Array.isArray(r))return out;out.push(...r);if(r.length<1000)return out;}};
 const dqPage=async(t,{token,filters="",desde=0,hasta=59})=>{
   const pedir=async(tk)=>fetch(`${SB_URL}/rest/v1/${t}${filters}`,{headers:{apikey:SB_KEY,"Content-Type":"application/json",Authorization:`Bearer ${tk}`,"Range-Unit":"items",Range:`${desde}-${hasta}`,Prefer:"count=exact"}});
   try{
@@ -897,7 +901,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   const [showReassign,setShowReassign]=useState(false);
   const [reassignToId,setReassignToId]=useState("");
   const [reassigning,setReassigning]=useState(false);
-  const loadAllClients=async()=>{const r=await dq("clients",{token,filters:"?select=id,client_code,first_name,last_name&order=client_code.asc"});setAllClients(Array.isArray(r)?r:[]);};
+  const loadAllClients=async()=>{const r=await dqTodos("clients",{token,filters:"?select=id,client_code,first_name,last_name&order=client_code.asc"});setAllClients(Array.isArray(r)?r:[]);};
   const openReassign=async()=>{if(allClients.length===0)await loadAllClients();setReassignToId("");setShowReassign(true);};
   const reassignClient=async()=>{
     if(!reassignToId||reassignToId===op.client_id){setShowReassign(false);return;}
@@ -7752,7 +7756,7 @@ function AgentsPanel({token}){
   const openMoveModal=async(pkg,fromOp)=>{
     setMovePkgState({pkg,fromOp});setMoveSearch("");setMoveSelClient(null);
     if(moveClients.length===0){
-      const r=await dq("clients",{token,filters:"?select=id,client_code,first_name,last_name&order=client_code.asc"});
+      const r=await dqTodos("clients",{token,filters:"?select=id,client_code,first_name,last_name&order=client_code.asc"});
       setMoveClients(Array.isArray(r)?r:[]);
     }
   };
@@ -8931,7 +8935,7 @@ function RetentionLTVCard({token}){
   useEffect(()=>{(async()=>{
     setLo(true);
     const [clients,ops,payments]=await Promise.all([
-      dq("clients",{token,filters:"?select=id,client_code,first_name,last_name,created_at,tier,whatsapp"}),
+      dqTodos("clients",{token,filters:"?select=id,client_code,first_name,last_name,created_at,tier,whatsapp&order=client_code.asc"}),
       dq("operations",{token,filters:"?select=id,client_id,created_at,closed_at,delivered_at,is_collected,collected_amount,budget_total,status&order=created_at.asc"}),
       dq("operation_client_payments",{token,filters:"?select=operation_id,amount_usd,payment_date"}),
     ]);
@@ -9138,7 +9142,7 @@ function OperationalAnalytics({token}){
     const [ops,fbs,clients,pmsRaw]=await Promise.all([
       dq("operations",{token,filters:"?select=id,operation_code,status,channel,service_type,budget_total,collected_amount,collection_currency,collection_exchange_rate,credit_applied_usd,discount_applied_usd,is_collected,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,cost_producto_usd,created_at,closed_at,client_id,clients(first_name,last_name,client_code)&order=created_at.desc"}),
       dq("op_feedback",{token,filters:"?select=operation_id,rating"}),
-      dq("clients",{token,filters:"?select=id,first_name,last_name,client_code,loyalty_level"}),
+      dqTodos("clients",{token,filters:"?select=id,first_name,last_name,client_code,loyalty_level&order=client_code.asc"}),
       dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,client_paid,client_paid_amount_usd,giro_amount_usd,giro_status,cost_comision_giro"})
     ]);
     const o=Array.isArray(ops)?ops:[];const fb=Array.isArray(fbs)?fbs:[];const cl=Array.isArray(clients)?clients:[];
@@ -10657,7 +10661,7 @@ function QuotesList({token}){
   const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [quoteOverrides,setQuoteOverrides]=useState([]);
   useEffect(()=>{(async()=>{const [q,cl,tf,cc]=await Promise.all([
     dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),
-    dq("clients",{token,filters:"?select=id,first_name,last_name,whatsapp,client_code,tax_condition"}),
+    dqTodos("clients",{token,filters:"?select=id,first_name,last_name,whatsapp,client_code,tax_condition&order=client_code.asc"}),
     dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),
     dq("calc_config",{token,filters:"?select=*"})
   ]);setQuotes(Array.isArray(q)?q:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);setLo(false);})();},[token]);
@@ -11119,7 +11123,7 @@ function AdminCalculator({token}){
     const [tf,cc,cl]=await Promise.all([
       dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("calc_config",{token,filters:"?select=*"}),
-      dq("clients",{token,filters:"?select=id,first_name,last_name,whatsapp,client_code,tax_condition&order=client_code.asc"})
+      dqTodos("clients",{token,filters:"?select=id,first_name,last_name,whatsapp,client_code,tax_condition&order=client_code.asc"})
     ]);
     setTariffs(Array.isArray(tf)?tf:[]);
     const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);

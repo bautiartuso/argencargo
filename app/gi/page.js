@@ -37,6 +37,9 @@ const dq=async(t,{method="GET",body,token,filters=""})=>{
   if(r.status>=400)console.error(`[dq] ${method} ${t} ${r.status}`,r.body);
   return r.body;
 };
+
+// Pagina de a 1000 (PostgREST corta cada request en 1000 y hay mas de 1000 clientes).
+const dqTodos=async(t,{token,filters=""})=>{const out=[];for(let desde=0;;desde+=1000){const sep=filters.includes("?")?"&":"?";const r=await dq(t,{token,filters:`${filters}${sep}offset=${desde}&limit=1000`});if(!Array.isArray(r))return out;out.push(...r);if(r.length<1000)return out;}};
 const saveSession=(d)=>{try{localStorage.setItem("ac_gi_s",JSON.stringify(d));}catch(e){}};
 const loadSession=()=>{try{const d=localStorage.getItem("ac_gi_s");return d?JSON.parse(d):null;}catch(e){return null;}};
 const clearSession=()=>{try{localStorage.removeItem("ac_gi_s");}catch(e){}};
@@ -417,7 +420,7 @@ function PaneQuotes({token,profileId}){
     setLo(true);
     const [r,cl]=await Promise.all([
       dq("gi_quote_requests",{token,filters:"?select=*,clients(first_name,last_name,client_code),gi_quote_request_products(*),gi_quotes(id,status,cost_courier_total_usd,cost_aereo_int_total_usd,cost_maritimo_lcl_total_usd,cost_maritimo_int_total_usd,honorarios_pct,gi_quote_products(quantity,unit_cost_usd))&order=created_at.desc"}),
-      dq("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"}),
+      dqTodos("clients",{token,filters:"?select=id,first_name,last_name,client_code&order=first_name.asc"}),
     ]);
     setReqs(Array.isArray(r)?r:[]);
     setClients(Array.isArray(cl)?cl:[]);
