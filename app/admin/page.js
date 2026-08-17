@@ -10669,8 +10669,13 @@ function QuotesList({token}){
     if(!selQuote){setEditProds([]);setEditPkgs([]);setEditTotalCost("");setDirty(false);setSavedAt(null);setQuoteOverrides([]);return;}
     const p=typeof selQuote.products==="string"?JSON.parse(selQuote.products):selQuote.products||[];
     const pk=typeof selQuote.packages==="string"?JSON.parse(selQuote.packages):selQuote.packages||[];
-    setEditProds(JSON.parse(JSON.stringify(Array.isArray(p)?p:[])));
-    setEditPkgs(JSON.parse(JSON.stringify(Array.isArray(pk)?pk:[])));
+    // Cotizaciones viejas guardadas con coma decimal ("29,2"): se normalizan al cargar,
+    // sino el input numerico las muestra vacias y los totales dan NaN.
+    const normNum=v=>typeof v==="string"&&v.includes(",")?v.replace(",","."):v;
+    const normPkg=x=>({...x,qty:normNum(x.qty),length:normNum(x.length),width:normNum(x.width),height:normNum(x.height),weight:normNum(x.weight)});
+    const normProd=x=>({...x,unit_price:normNum(x.unit_price),quantity:normNum(x.quantity)});
+    setEditProds(JSON.parse(JSON.stringify((Array.isArray(p)?p:[]).map(normProd))));
+    setEditPkgs(JSON.parse(JSON.stringify((Array.isArray(pk)?pk:[]).map(normPkg))));
     setEditTotalCost(String(selQuote.total_cost||""));
     setDirty(false);setSavedAt(null);
     if(selQuote.client_id)dq("client_tariff_overrides",{token,filters:`?client_id=eq.${selQuote.client_id}&select=*`}).then(ov=>setQuoteOverrides(Array.isArray(ov)?ov:[]));
@@ -11591,7 +11596,11 @@ function AdminCalculator({token}){
             origin:results.origin||null,
             channel_key:barata.key,
             channel_name:alts.length>1?`${alts.length} opciones (link)`:alts[0].name,
-            products,packages:pkgs,
+            // Normalizar coma decimal ("29,2" -> 29.2) antes de guardar: los strings con coma
+            // rompian el editor de la cotizacion (input number no los puede mostrar -> campos
+            // "borrados" y NaN en totales).
+            products:products.map(pr=>({...pr,unit_price:toN(pr.unit_price)||pr.unit_price,quantity:Number(String(pr.quantity??"1").replace(",","."))||1})),
+            packages:pkgs.map(pk=>({qty:Number(String(pk.qty??"1").replace(",","."))||1,length:toN(pk.length)||null,width:toN(pk.width)||null,height:toN(pk.height)||null,weight:toN(pk.weight)||null})),
             total_fob:results.totalFob,total_cbm:results.totCBM,
             total_weight:pkgs.reduce((sm,pk)=>sm+toN(pk.weight)*Number(pk.qty||1),0)||null,
             total_cost:barata.totalAbonar,

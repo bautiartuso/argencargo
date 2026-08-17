@@ -305,6 +305,38 @@ export default function PresupuestoPage({ params }) {
                 <span style={{ fontSize: 13, fontWeight: 700 }}>{q.origin}</span>
               </div>
             )}
+
+            {/* Con la opción ya confirmada, el detalle de la carga cierra con el costo de la
+                importación (impuestos + flete + seguro, SIN la mercadería) — el mismo desglose
+                que el cliente vio al elegir. Pedido 15/08. */}
+            {yaAceptada && elegidaFinal && (
+              <div style={{ marginTop: 16, paddingTop: 13, borderTop: "1px solid #eae4d6" }}>
+                <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(26,26,26,0.45)", margin: "0 0 8px" }}>Costo de importación · {elegidaFinal.name}</p>
+                {Number(elegidaFinal.totalTax || 0) > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
+                    <span style={{ color: "rgba(26,26,26,0.6)" }}>Impuestos</span><span style={{ fontWeight: 600 }}>USD {fmt(elegidaFinal.totalTax)}</span>
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
+                  <span style={{ color: "rgba(26,26,26,0.6)" }}>{Number(elegidaFinal.totalTax || 0) > 0 ? "Flete internacional" : "Servicio Integral de importación"}</span><span style={{ fontWeight: 600 }}>USD {fmt(elegidaFinal.flete)}</span>
+                </div>
+                {Number(elegidaFinal.seguro || 0) > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
+                    <span style={{ color: "rgba(26,26,26,0.6)" }}>Seguro</span><span style={{ fontWeight: 600 }}>USD {fmt(elegidaFinal.seguro)}</span>
+                  </div>
+                )}
+                {Number(elegidaFinal.shipCost || 0) > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
+                    <span style={{ color: "rgba(26,26,26,0.6)" }}>Envío a domicilio</span><span style={{ fontWeight: 600 }}>USD {fmt(elegidaFinal.shipCost)}</span>
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 0 0", marginTop: 5, borderTop: "1px solid #eae4d6" }}>
+                  <span style={{ fontSize: 13, fontWeight: 800 }}>Total de importación</span>
+                  <span style={{ fontSize: 15, fontWeight: 800 }}>USD {fmt(elegidaFinal.totalAbonar)}</span>
+                </div>
+                <p style={{ fontSize: 11, color: "rgba(26,26,26,0.45)", margin: "7px 0 0" }}>No incluye el valor de la mercadería.</p>
+              </div>
+            )}
           </div>
 
           {/* OPCIONES */}
