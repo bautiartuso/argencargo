@@ -10847,6 +10847,17 @@ function QuotesList({token}){
     return {t:"Link enviado",c:"#60a5fa"};
   };
   const norm=(x)=>String(x||"").toLowerCase();
+  // COTIZADO real: si el cliente ya eligió una opción en el link, mostrar el total de ESA
+  // opción (antes quedaba clavado el total de la más barata guardado al crear el link, y
+  // una aceptación de Aéreo mostraba el precio del marítimo).
+  const totalCotizado=(q)=>{
+    if(q.accepted_at&&q.client_selected_channel){
+      const alts=Array.isArray(q.channel_alternatives)?q.channel_alternatives:[];
+      const el=alts.find(a=>a.key===q.client_selected_channel);
+      if(el&&Number(el.totalAbonar||0)>0)return Number(el.totalAbonar);
+    }
+    return Number(q.total_cost||0);
+  };
   const conFiltro=quotes.filter(q=>{
     if(fStatus&&q.status!==fStatus)return false;
     const t=busq.trim().toLowerCase();
@@ -10912,7 +10923,7 @@ function QuotesList({token}){
               <span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{q.channel_name||"—"}{q.origin?` · ${q.origin}`:""}</span>
             </td>
             <td style={{...tdStyle,color:"rgba(255,255,255,0.8)",fontWeight:600,textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fmtN(q.total_fob)}</td>
-            <td style={{...tdStyle,color:IC,fontWeight:700,textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fmtN(q.total_cost)}</td>
+            <td style={{...tdStyle,color:IC,fontWeight:700,textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fmtN(totalCotizado(q))}</td>
             <td style={tdStyle}>
               {li
                 ?<span style={{fontSize:10.5,fontWeight:700,padding:"3px 9px",borderRadius:999,whiteSpace:"nowrap",color:li.c,background:`${li.c}1a`,border:`1px solid ${li.c}44`}}>{li.t}</span>
@@ -10920,7 +10931,7 @@ function QuotesList({token}){
             </td>
             <td style={tdStyle} onClick={e=>e.stopPropagation()}>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                {abandonada&&wa&&(()=>{const msg=encodeURIComponent(`Hola ${q.client_name}! Hace unos días cotizaste *${d}* por *${q.channel_name}* (USD ${fmtN(q.total_cost)}).\n\n¿Pudiste revisarla? Si querés avanzar esta semana te agilizo el proceso. Cualquier duda me escribís.`);
+                {abandonada&&wa&&(()=>{const msg=encodeURIComponent(`Hola ${q.client_name}! Hace unos días cotizaste *${d}* por *${q.channel_name}* (USD ${fmtN(totalCotizado(q))}).\n\n¿Pudiste revisarla? Si querés avanzar esta semana te agilizo el proceso. Cualquier duda me escribís.`);
                   return <a href={`https://wa.me/${wa}?text=${msg}`} target="_blank" rel="noopener noreferrer" title="Recordar por WhatsApp" style={{padding:"4px 8px",fontSize:10,fontWeight:700,borderRadius:6,cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",whiteSpace:"nowrap"}}>📱</a>;})()}
                 <select value={q.status} onChange={e=>updateStatus(q.id,e.target.value)} style={{padding:"4px 8px",fontSize:11,fontWeight:600,border:`1px solid ${(ST[q.status]||{}).c||"rgba(255,255,255,0.1)"}55`,borderRadius:6,background:`${(ST[q.status]||{}).c||"#fff"}14`,color:(ST[q.status]||{}).c||"#fff",outline:"none",cursor:"pointer"}}>
                   {Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038",color:"#fff"}}>{v.l}</option>)}
