@@ -11278,7 +11278,8 @@ function AdminCalculator({token}){
     const battExtraPdf=Number(ch.battExtra||0);
     const fleteBasePdf=Number(ch.flete||0)-battExtraPdf;
     // Recargo por valor: NO se discrimina, va folded dentro del Servicio Integral de importación.
-    const surchargePdf=Number(ch.surcharge||0);
+    // En blanco el surcharge es el recargo por sobrepeso y tiene fila propia — no se pliega.
+    const surchargePdf=bd.isBlanco?0:Number(ch.surcharge||0);
     const svcLabelPdf=ch.key==="maritimo_a_china"?"Servicio marítimo de importación":(surchargePdf>0?"Servicio Integral de importación":"Flete");
     const svcAmtPdf=fleteBasePdf+surchargePdf;
     if(svcAmtPdf>0)rowsServicios.push(`<div class="row"><span>${svcLabelPdf}</span><span>USD ${fmt(svcAmtPdf)}</span></div>`);
@@ -11486,8 +11487,11 @@ function AdminCalculator({token}){
         let effTotalImp=0;
         if(bd.isBlanco&&bd.isAereo)effTotalImp=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+desEff+ivaDesEff;
         else if(bd.isBlanco&&bd.isMaritimo)effTotalImp=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
+        // Recargo por sobrepeso (aéreo): item propio, fuera del flete. En el canal B el
+        // surcharge sigue siendo el recargo por valor (folded en el Servicio Integral).
+        const owEff=bd.isBlanco?Number(ch.overweightSurcharge||0):0;
         const effTotal=bd.isBlanco
-          ?(fleteEff+Number(ch.seguro||0)+effTotalImp)
+          ?(fleteEff+Number(ch.seguro||0)+effTotalImp+owEff)
           :(fleteEff+Number(ch.surcharge||0));
         const rowStyle={display:"flex",justifyContent:"space-between",alignItems:"baseline",fontSize:11.5,color:"rgba(255,255,255,0.65)"};
         const valStyle={color:"#fff",fontWeight:600,fontVariantNumeric:"tabular-nums"};
@@ -11503,7 +11507,8 @@ function AdminCalculator({token}){
             <p style={{fontSize:10,color:"rgba(251,191,36,0.85)",margin:"3px 0 0",lineHeight:1.4,fontWeight:500}}>{ch.notVisibleToClient}</p>
           </div>}
           <div style={{flex:1,display:"flex",flexDirection:"column",gap:5,marginBottom:10}}>
-            {(fleteEff+Number(ch.surcharge||0))>0&&<div style={rowStyle}><span>{ch.key==="maritimo_a_china"?"Servicio marítimo de importación":(Number(ch.surcharge||0)>0?"Servicio Integral de importación":"Flete")}</span><span style={valStyle}>USD {fmt(fleteEff+Number(ch.surcharge||0))}</span></div>}
+            {(()=>{const surchFold=bd.isBlanco?0:Number(ch.surcharge||0);const amt=fleteEff+surchFold;const lbl=ch.key==="maritimo_a_china"?"Servicio marítimo de importación":(surchFold>0?"Servicio Integral de importación":"Flete");return amt>0&&<div style={rowStyle}><span>{lbl}</span><span style={valStyle}>USD {fmt(amt)}</span></div>;})()}
+            {owEff>0&&<div style={rowStyle}><span>Recargo por sobrepeso</span><span style={valStyle}>USD {fmt(owEff)}</span></div>}
             {["aereo_a_china","maritimo_a_china","maritimo_b"].includes(ch.key)&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"6px 10px",background:"rgba(184,149,106,0.06)",borderRadius:7,border:"1px dashed rgba(184,149,106,0.25)"}}>
               <span style={{fontSize:11,color:"rgba(255,255,255,0.7)"}}>{ch.key==="aereo_a_china"?"USD/kg":"USD/CBM"} <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>(editable, solo esta cotización)</span></span>
               <div style={{display:"flex",alignItems:"center",gap:4}}>
@@ -11594,8 +11599,9 @@ function AdminCalculator({token}){
             let taxEff=0;
             if(bd.isBlanco&&bd.isAereo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+desEff+desEff*0.21;
             else if(bd.isBlanco&&bd.isMaritimo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
-            const totEff=bd.isBlanco?(fleteEff+Number(c.seguro||0)+taxEff):(fleteEff+Number(c.surcharge||0));
-            return {key:c.key,name:c.name,info:c.info,type:c.type,flete:bd.isBlanco?fleteEff:(fleteEff+Number(c.surcharge||0)),seguro:Number(c.seguro||0),shipCost:Number(c.shipCost||0),totalTax:taxEff,totalAbonar:totEff};
+            const owEffLink=bd.isBlanco?Number(c.overweightSurcharge||0):0;
+            const totEff=bd.isBlanco?(fleteEff+Number(c.seguro||0)+taxEff+owEffLink):(fleteEff+Number(c.surcharge||0));
+            return {key:c.key,name:c.name,info:c.info,type:c.type,flete:bd.isBlanco?fleteEff:(fleteEff+Number(c.surcharge||0)),overweight:owEffLink,seguro:Number(c.seguro||0),shipCost:Number(c.shipCost||0),totalTax:taxEff,totalAbonar:totEff};
           });
           const cli=clientId?allClients.find(c=>c.id===clientId):null;
           const barata=alts.reduce((mn,a)=>Number(a.totalAbonar||0)<Number(mn.totalAbonar||0)?a:mn,alts[0]);

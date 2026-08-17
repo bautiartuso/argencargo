@@ -320,6 +320,11 @@ export default function PresupuestoPage({ params }) {
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
                   <span style={{ color: "rgba(26,26,26,0.6)" }}>{Number(elegidaFinal.totalTax || 0) > 0 ? "Flete internacional" : "Servicio Integral de importación"}</span><span style={{ fontWeight: 600 }}>USD {fmt(elegidaFinal.flete)}</span>
                 </div>
+                {Number(elegidaFinal.overweight || 0) > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
+                    <span style={{ color: "rgba(26,26,26,0.6)" }}>Recargo por sobrepeso</span><span style={{ fontWeight: 600 }}>USD {fmt(elegidaFinal.overweight)}</span>
+                  </div>
+                )}
                 {Number(elegidaFinal.seguro || 0) > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
                     <span style={{ color: "rgba(26,26,26,0.6)" }}>Seguro</span><span style={{ fontWeight: 600 }}>USD {fmt(elegidaFinal.seguro)}</span>
@@ -350,6 +355,7 @@ export default function PresupuestoPage({ params }) {
                 const esBarata = barata != null && Number(a.totalAbonar || 0) === barata;
                 const comps = [
                   a.flete > 0 && [rotuloServicio(a), usd(a.flete)],
+                  Number(a.overweight || 0) > 0 && ["Recargo por sobrepeso", usd(a.overweight)],
                   a.seguro > 0 && ["Seguro", usd(a.seguro)],
                   a.totalTax > 0 && ["Impuestos y gastos de aduana", usd(a.totalTax)],
                   a.shipCost > 0 && ["Envío a domicilio", usd(a.shipCost)],
