@@ -2213,8 +2213,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       // Se suman al total para que coincida con la pestaña Finanzas. El flete (vía CC del vuelo)
       // se considera ya pagado.
       const isAereoBlancoGI=op.channel==="aereo_blanco";
+      // GI marítimo: el flete sale del prorrateo del contenedor (cost_flete, pagado en efectivo).
+      // También se suma acá para que el total de costos de la op lo incluya.
+      const isMaritimoGI=op.channel==="maritimo_negro"||op.channel==="maritimo_blanco";
       const opCostFlete=Number(op.cost_flete||0);
-      const opCostsExtra=isAereoBlancoGI?(opCostFlete+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)):0;
+      const opCostsExtra=(isAereoBlancoGI||isMaritimoGI)?(opCostFlete+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)):0;
       const totalCosto=supplierUsd+opCostsExtra;
       const totalCostoArs=supplierPayments.filter(p=>Number(p.amount_usd||0)<=0).reduce((s,p)=>s+sign(p)*Number(p.amount_ars||0),0);
       const totalPagadoCosto=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+sign(p)*Number(p.amount_usd||0),0)+opCostsExtra;
@@ -2305,7 +2308,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         {/* Tabla de costos. Incluye una fila VIRTUAL del flete del vuelo (GI aéreo blanco): se ve como
             un costo más pero NO es un registro real del ledger — el flete ya está descontado en la
             cuenta corriente del agente, registrarlo acá lo duplicaría. */}
-        {(supplierPayments.length>0||(isAereoBlancoGI&&opCostFlete>0))?<div style={{background:"rgba(0,0,0,0.18)",borderRadius:10,overflow:"hidden",marginBottom:16}}>
+        {(supplierPayments.length>0||((isAereoBlancoGI||isMaritimoGI)&&opCostFlete>0))?<div style={{background:"rgba(0,0,0,0.18)",borderRadius:10,overflow:"hidden",marginBottom:16}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead>
               <tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.02)"}}>
@@ -2333,6 +2336,17 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
                   <td style={{padding:"10px 14px",textAlign:"right",whiteSpace:"nowrap"}}><span title="Sale del reparto del costo del vuelo. Ya está descontado en la cuenta corriente del agente — no se registra acá para no duplicarlo." style={{fontSize:9,fontWeight:700,padding:"3px 7px",borderRadius:4,background:"rgba(96,165,250,0.15)",color:"#60a5fa",letterSpacing:"0.04em",textTransform:"uppercase",cursor:"help"}}>Auto · del vuelo</span></td>
                 </tr>;
               })()}
+              {/* Fila VIRTUAL del flete marítimo (no es un operation_supplier_payment — viene del
+                  prorrateo del costo del contenedor, cargado desde el panel Marítimos). */}
+              {isMaritimoGI&&opCostFlete>0&&<tr style={{borderBottom:"1px solid rgba(255,255,255,0.04)",background:"rgba(96,165,250,0.05)"}}>
+                <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{op.cost_flete_paid_at?new Date(String(op.cost_flete_paid_at).slice(0,10)+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"}):"—"}</td>
+                <td style={{padding:"10px 14px",textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}><span style={{color:"#c084fc",fontWeight:700}}>USD {opCostFlete.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></td>
+                <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.75)"}}>Flete internacional</td>
+                <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.3)"}}>—</td>
+                <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.6)"}}>Efectivo</td>
+                <td style={{padding:"10px 14px"}}><span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",letterSpacing:"0.05em"}}>✓ PAGADO</span></td>
+                <td style={{padding:"10px 14px",textAlign:"right",whiteSpace:"nowrap"}}><span title="Sale del reparto del costo del contenedor (Marítimos → Costos). Se edita desde ahí o desde Finanzas — no se registra acá para no duplicarlo." style={{fontSize:9,fontWeight:700,padding:"3px 7px",borderRadius:4,background:"rgba(96,165,250,0.15)",color:"#60a5fa",letterSpacing:"0.04em",textTransform:"uppercase",cursor:"help"}}>Auto · del contenedor</span></td>
+              </tr>}
               {supplierPayments.map(p=>{const isRefund=p.type==="refund";const rowBg=isRefund?"rgba(34,197,94,0.04)":"transparent";return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",background:rowBg}}>
                 <td style={{padding:"10px 14px",color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
                   {new Date(p.payment_date+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"numeric"})}
