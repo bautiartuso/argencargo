@@ -12802,18 +12802,23 @@ function MaritimePanel({token,allClients=[]}){
       if(status==="arribado")body.arrived_at=new Date().toISOString().slice(0,10);
       if(status==="en_transito")body.arrived_at=null; // volver atrás desde arribado
       await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${c.id}`,body});
-      let extra="";let newOps=[];
-      if(status==="arribado"){try{const r=await createOpsForContainer(c);extra=r.msg;newOps=esEmpleado()?[]:(r.ops||[]);}catch(e){console.error("auto-ops arribo",e);extra=" · ⚠️ error creando ops (ver consola)";}}
+      let extra="";
+      if(status==="arribado"){try{const r=await createOpsForContainer(c);extra=r.msg;}catch(e){console.error("auto-ops arribo",e);extra=" · ⚠️ error creando ops (ver consola)";}}
       flash(`Contenedor ${c.code} → ${status==="en_transito"?"en tránsito":"arribado"}${extra}`);
       await load();
-      if(newOps.length>0)setCostModal({code:c.code,ops:newOps});
+      // Modal de costos con TODAS las ops del contenedor (recién creadas + pre-vinculadas, ej. GI),
+      // leídas de DB — así el prorrateo por CBM reparte sobre el volumen completo.
+      if(status==="arribado"&&!esEmpleado())await openCostModalForContainer(c,{silent:true});
     }finally{setCreatingOp(false);}
   };
   // Abrir el modal de costos para un contenedor ya arribado (carga retroactiva).
-  const openCostModalForContainer=async(c)=>{
-    const conShips=shipments.filter(s=>s.container_id===c.id&&s.operation_id);
+  const openCostModalForContainer=async(c,{silent=false}={})=>{
+    // Cargas frescas de DB (no del estado): al abrirse justo después del arribo el estado puede no
+    // incluir vinculaciones nuevas, y las ops pre-vinculadas (ej. GI) quedarían fuera del prorrateo.
+    const shR=await dq("maritime_shipments",{token,filters:`?container_id=eq.${c.id}&operation_id=not.is.null&select=id,operation_id`});
+    const conShips=Array.isArray(shR)?shR:[];
     const opIds=[...new Set(conShips.map(s=>s.operation_id))];
-    if(opIds.length===0){alertDialog("Este contenedor no tiene operaciones creadas.");return;}
+    if(opIds.length===0){if(!silent)alertDialog("Este contenedor no tiene operaciones creadas.");return;}
     const [ops,pks]=await Promise.all([
       dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,budget_total,cost_flete,clients(first_name,last_name)&order=operation_code.asc`}),
       dq("maritime_packages",{token,filters:`?shipment_id=in.(${conShips.map(s=>s.id).join(",")})&select=shipment_id,quantity,length_cm,width_cm,height_cm`})

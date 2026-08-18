@@ -109,6 +109,27 @@ export async function POST(req) {
     });
   }
 
+  // operation_packages desde los bultos anotados en la cotización (pkg_* de cada producto).
+  // Sin esto, la op nace sin bultos y la tarjeta "Bultos" del panel GI queda vacía.
+  let pkgNum = 0;
+  for (const p of (quote.gi_quote_products || [])) {
+    const cnt = Number(p.pkg_count || 0);
+    if (cnt <= 0) continue;
+    pkgNum++;
+    await sbFetch(`/operation_packages`, {
+      method: "POST",
+      body: JSON.stringify({
+        operation_id: opId,
+        package_number: pkgNum,
+        quantity: cnt,
+        length_cm: p.pkg_length_cm ?? null,
+        width_cm: p.pkg_width_cm ?? null,
+        height_cm: p.pkg_height_cm ?? null,
+        gross_weight_kg: p.pkg_weight_kg ?? null,
+      }),
+    });
+  }
+
   // Update quote como converted
   await sbFetch(`/gi_quotes?id=eq.${quote.id}`, {
     method: "PATCH",
