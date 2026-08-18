@@ -2789,9 +2789,10 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       // Antes NO se contaban acá → la ganancia salía inflada (ignoraba el flete del vuelo).
       const opCostFlete=Number(op.cost_flete||0);
       const opCostImp=Number(op.cost_impuestos_reales||0);
-      // Solo aéreo blanco / canal A (consistente con la pestaña Costos).
+      // Aéreo blanco (flete del vuelo) y marítimo (flete del prorrateo del contenedor) — consistente con la pestaña Costos.
       const isAereoBlancoGI=op.channel==="aereo_blanco";
-      const opCostsExtra=isAereoBlancoGI?(opCostFlete+opCostImp+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)):0;
+      const isMaritimoGI=op.channel==="maritimo_negro"||op.channel==="maritimo_blanco";
+      const opCostsExtra=(isAereoBlancoGI||isMaritimoGI)?(opCostFlete+opCostImp+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)):0;
       const totalCostos=supplierSum+opCostsExtra;
       // Los costos a nivel op (flete del vuelo vía CC, etc.) se consideran comprometidos/pagados.
       const costoPagado=supplierPayments.filter(p=>p.is_paid).reduce((s,p)=>s+signCost(p)*Number(p.amount_usd||0),0)+opCostsExtra;
@@ -2829,7 +2830,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             Antes el flete no se veía en ningún lado en GI; ahora se lista y se cuenta en la ganancia. */}
         {opCostsExtra>0&&<div style={{background:"rgba(255,255,255,0.028)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:"16px 20px",marginBottom:18}}>
           <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"0 0 10px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Desglose de costos</p>
-          {[["Producto (proveedor)",supplierSum],["Flete internacional (del vuelo)",opCostFlete],["Impuestos",opCostImp],["Gasto documental",Number(op.cost_gasto_documental||0)],["Seguro",Number(op.cost_seguro||0)],["Flete local",Number(op.cost_flete_local||0)],["Otros",Number(op.cost_otros||0)]].filter(([,v])=>Math.abs(v)>0.005).map(([l,v])=>(
+          {[["Producto (proveedor)",supplierSum],[isMaritimoGI?"Flete internacional (del contenedor)":"Flete internacional (del vuelo)",opCostFlete],["Impuestos",opCostImp],["Gasto documental",Number(op.cost_gasto_documental||0)],["Seguro",Number(op.cost_seguro||0)],["Flete local",Number(op.cost_flete_local||0)],["Otros",Number(op.cost_otros||0)]].filter(([,v])=>Math.abs(v)>0.005).map(([l,v])=>(
             <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",fontSize:13,color:"rgba(255,255,255,0.8)",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><span>{l}</span><span style={{fontVariantNumeric:"tabular-nums"}}>{usdF(v)}</span></div>
           ))}
           <div style={{display:"flex",justifyContent:"space-between",padding:"9px 0 0",fontSize:14,fontWeight:800,color:"#ff6b6b"}}><span>TOTAL COSTOS</span><span style={{fontVariantNumeric:"tabular-nums"}}>{usdF(totalCostos)}</span></div>
