@@ -7589,7 +7589,7 @@ function AgentsPanel({token}){
       dq("operations",{token,filters:"?select=id,operation_code,description,client_id,created_by_agent_id,status,consolidation_confirmed,origin,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp,tax_condition,company_name,cuit)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
       dq("operation_packages",{token,filters:"?select=*&order=package_number.asc"}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
-      dq("flight_operations",{token,filters:"?select=*,operations(client_id,eta,budget_total,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(client_code),operation_packages(quantity))"}),
+      dq("flight_operations",{token,filters:"?select=*,operations(client_id,eta,status,budget_total,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(client_code),operation_packages(quantity))"}),
       dq("flight_invoice_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
       dq("operation_items",{token,filters:"?select=*&order=created_at.asc"}),
@@ -8204,7 +8204,7 @@ function AgentsPanel({token}){
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-            {["Código","Agente","Estado","Clientes","Bultos","Peso","USD/kg","Tracking","Demora","ETA","A cobrar","Ganancia est."].map(h=><th key={h} style={{padding:"10px 8px",textAlign:["Bultos","A cobrar","Ganancia est."].includes(h)?"right":"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
+            {["Código","Agente","Estado","Clientes","Bultos","Peso","USD/kg","Tracking","Demora","ETA","A cobrar"].map(h=><th key={h} style={{padding:"10px 8px",textAlign:"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
           </tr></thead>
           <tbody>{shownFlights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const a=signups.find(s=>s.auth_user_id===f.agent_id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
             // Demora del agente: días entre dispatched_at y carrier_pickup_at.
@@ -8233,24 +8233,31 @@ function AgentsPanel({token}){
             const etaOp=ops.map(fo=>fo.operations?.eta).filter(Boolean).sort()[0]||null;
             const etaTxt=etaOp?`${etaOp.slice(8,10)}/${etaOp.slice(5,7)}`:"";
             const aCobrar=ops.reduce((s,fo)=>s+Number(fo.operations?.budget_total||0),0);
-            const costosOps=ops.reduce((s,fo)=>{const o=fo.operations||{};return s+Number(o.cost_flete||0)+Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0)+Number(o.cost_seguro||0)+Number(o.cost_flete_local||0)+Number(o.cost_otros||0);},0);
-            const fleteEnOps=ops.reduce((s,fo)=>s+Number(fo.operations?.cost_flete||0),0);
-            // Si el costo del vuelo todavia no bajo a las ops, se descuenta el del vuelo.
-            const costosTot=costosOps+(fleteEnOps===0?Number(f.total_cost_usd||0):0);
-            const ganancia=aCobrar>0?aCobrar-costosTot:null;
+            // Estado abreviado (16/08): PREP / ETHEN / EN-TRA / GES-ADU / RECIB.
+            // GES-ADU: el vuelo esta despachado y alguna de sus ops ya entro en gestion aduanera
+            // (el tracking automatico la paso a en_aduana).
+            const enAduana=f.status==="despachado"&&ops.some(fo=>fo.operations?.status==="en_aduana");
+            const estado=(()=>{
+              const ready=f.status==="preparando"&&f.invoice_presented_at;
+              if(ready)return{label:"ETHEN",c:"#ec4899",glow:true};
+              if(f.status==="preparando")return{label:"PREP",c:"#fbbf24"};
+              if(enAduana)return{label:"GES-ADU",c:"#f87171"};
+              if(f.status==="despachado")return{label:"EN-TRA",c:"#60a5fa"};
+              if(f.status==="recibido")return{label:"RECIB",c:"#22c55e"};
+              return{label:f.status,c:"rgba(255,255,255,0.5)"};
+            })();
             return <tr key={f.id} onClick={()=>setSelFlight(f.id)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-            <td style={{padding:"10px 8px",fontFamily:"monospace",fontWeight:700,color:"#fff",whiteSpace:"nowrap",width:1}}>{f.flight_code}</td>
-            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",width:1}}>{a?(a.first_name+" "+(a.last_name||"")):"—"}</td>
-            <td style={{padding:"10px 8px",whiteSpace:"nowrap",width:1}}>{(()=>{const ready=f.status==="preparando"&&f.invoice_presented_at;const c=ready?"#ec4899":stColors[f.status];const label=ready?"⚡ listo para enviar":f.status;return <span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:4,color:c,background:`${c}22`,border:`1px solid ${c}66`,textTransform:"uppercase",boxShadow:ready?`0 0 12px ${c}55`:"none",letterSpacing:"0.04em"}}>{label}</span>;})()}</td>
-            <td style={{padding:"10px 8px",fontSize:11.5,color:"rgba(255,255,255,0.7)",fontFamily:"monospace",letterSpacing:"0.02em"}} title={clientCodes.join(" / ")}>{clientCodes.length>0?clientCodes.join(" / "):"—"}</td>
-            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{bultos||"—"}</td>
-            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{pesoFact>0?`${pesoFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
-            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}} title={f.total_cost_usd?`Costo total: ${usd(f.total_cost_usd)}`:""}>{costoKg!=null?`${usd(costoKg)}/kg`:"—"}</td>
-            <td style={{padding:"10px 8px",fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.35}}>{f.international_tracking?<><span style={{fontFamily:"monospace"}}>{f.international_tracking}</span>{f.international_carrier&&<><br/><span style={{fontSize:9,fontWeight:700,color:IC,letterSpacing:"0.04em",textTransform:"uppercase"}}>{f.international_carrier}</span></>}</>:"—"}</td>
-            <td style={{padding:"10px 8px",fontSize:13,fontWeight:700,color:demoraInfo.color,whiteSpace:"nowrap"}} title={demoraInfo.title||(f.dispatched_at?`Dispatched: ${formatDate(f.dispatched_at)}${f.carrier_pickup_at?` · Pickup: ${formatDate(f.carrier_pickup_at)}`:""}`:"")}>{demoraInfo.txt}</td>
-            <td style={{padding:"10px 8px",fontSize:12,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{etaTxt||"—"}</td>
-            <td style={{padding:"10px 8px",color:IC,fontWeight:700,textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{aCobrar>0?usd(aCobrar):"—"}</td>
-            <td style={{padding:"10px 8px",fontWeight:700,textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",color:ganancia==null?"rgba(255,255,255,0.35)":ganancia>=0?"#22c55e":"#f87171"}} title={ganancia!=null?`A cobrar ${usd(aCobrar)} − costos cargados ${usd(costosTot)}`:""}>{ganancia!=null?usd(ganancia):"—"}</td>
+            <td style={{padding:"10px 8px",fontFamily:"monospace",fontWeight:700,color:"#fff",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{f.flight_code}</td>
+            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{a?(a.first_name+" "+(a.last_name||"")):"—"}</td>
+            <td style={{padding:"10px 8px",whiteSpace:"nowrap",width:1,textAlign:"center"}}><span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:4,color:estado.c,background:`${estado.c}22`,border:`1px solid ${estado.c}66`,textTransform:"uppercase",boxShadow:estado.glow?`0 0 12px ${estado.c}55`:"none",letterSpacing:"0.04em"}}>{estado.glow?"⚡ ":""}{estado.label}</span></td>
+            <td style={{padding:"10px 8px",fontSize:11.5,color:"rgba(255,255,255,0.7)",fontFamily:"monospace",letterSpacing:"0.02em",textAlign:"center"}} title={clientCodes.join(" / ")}>{clientCodes.length>0?clientCodes.join(" / "):"—"}</td>
+            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{bultos||"—"}</td>
+            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}}>{pesoFact>0?`${pesoFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
+            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}} title={f.total_cost_usd?`Costo total: ${usd(f.total_cost_usd)}`:""}>{costoKg!=null?`${usd(costoKg)}/kg`:"—"}</td>
+            <td style={{padding:"10px 8px",fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.35,textAlign:"center"}}>{f.international_tracking?<><span style={{fontFamily:"monospace"}}>{f.international_tracking}</span>{f.international_carrier&&<><br/><span style={{fontSize:9,fontWeight:700,color:IC,letterSpacing:"0.04em",textTransform:"uppercase"}}>{f.international_carrier}</span></>}</>:"—"}</td>
+            <td style={{padding:"10px 8px",fontSize:13,fontWeight:700,color:demoraInfo.color,whiteSpace:"nowrap",textAlign:"center"}} title={demoraInfo.title||(f.dispatched_at?`Dispatched: ${formatDate(f.dispatched_at)}${f.carrier_pickup_at?` · Pickup: ${formatDate(f.carrier_pickup_at)}`:""}`:"")}>{demoraInfo.txt}</td>
+            <td style={{padding:"10px 8px",fontSize:12,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}}>{etaTxt||"—"}</td>
+            <td style={{padding:"10px 8px",color:IC,fontWeight:700,textAlign:"center",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{aCobrar>0?usd(aCobrar):"—"}</td>
           </tr>;})}</tbody>
         </table>
       </div>}
