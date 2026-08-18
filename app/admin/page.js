@@ -10796,8 +10796,24 @@ function QuotesList({token}){
     // Recalc totales derivados de bultos
     let totW=0,totCBM=0;editPkgs.forEach(p=>{const q=Number(p.qty||1);const w=Number(p.weight||0);totW+=w*q;const l=Number(p.length||0),wd=Number(p.width||0),h=Number(p.height||0);if(l&&wd&&h)totCBM+=((l*wd*h)/1000000)*q;});
     const allChannels=computeAllChannels();
-    // Alternativas guardadas con info mínima necesaria para que el cliente las vea y elija
-    const channelAlternatives=allChannels.map(c=>({key:c.key,name:c.name,info:c.info,type:c.type,totalTax:c.totalTax||0,flete:c.flete||0,seguro:c.seguro||0,shipCost:c.shipCost||0,totalAbonar:c.totalAbonar||0}));
+    // Alternativas guardadas con info mínima necesaria para que el cliente las vea y elija.
+    // Incluyen `detail` (desglose línea por línea, sale de calcOpBudget.taxDetail) para que el
+    // link muestre derechos/tasa/IVA/etc. igual que la card interna del admin.
+    const channelAlternatives=allChannels.map(c=>{
+      const opCh=CHANNEL_MAP[c.key]||"";
+      const isBlancoCh=opCh.includes("blanco");
+      const isAereoCh=opCh.includes("aereo");
+      const ow=isBlancoCh?Number(c.overweightSurcharge||0):0;
+      const td=c.taxDetail||{};
+      let detail=null;
+      if(isBlancoCh&&isAereoCh){
+        detail=[["Flete aéreo internacional",c.flete||0],["Recargo por sobrepeso",ow],["Seguro",c.seguro||0],["Derechos importación",td.derechos||0],["Tasa estadística",td.tasaE||0],["IVA de Importación",td.iva||0],["Desaduanaje",td.desembolso||0],["IVA 21% sobre desaduanaje",td.ivaDesembolso||0]];
+      }else if(isBlancoCh&&!isAereoCh){
+        detail=[["Servicio marítimo de importación",c.flete||0],["Seguro",c.seguro||0],["Derechos importación",td.derechos||0],["Tasa estadística",td.tasaE||0],["IVA de Importación",td.iva||0],["IVA adicional",td.ivaAdic||0],["Ganancias (IIGG)",td.iigg||0],["Ingresos brutos (IIBB)",td.iibb||0]];
+      }
+      if(detail)detail=detail.filter(([,v])=>Number(v||0)>0.005).map(([l,v])=>[l,Math.round(Number(v)*100)/100]);
+      return {key:c.key,name:c.name,info:c.info,type:c.type,totalTax:c.totalTax||0,flete:c.flete||0,overweight:ow,seguro:c.seguro||0,shipCost:c.shipCost||0,totalAbonar:c.totalAbonar||0,detail};
+    });
     // El "canal seleccionado" de la quote se mantiene para PDF + UI. Si el admin no tocó, conserva el original.
     const currentBr=computeBreakdown(selQuote.channel_key);
     const body={products:editProds,packages:editPkgs,total_fob:newFob,total_cost:currentBr?.totalAbonar||Number(editTotalCost)||selQuote.total_cost,total_weight:totW,total_cbm:totCBM,tax_breakdown:currentBr?{totalTax:currentBr.totalTax,flete:currentBr.flete,seguro:currentBr.seguro,shipCost:currentBr.shipCost}:null,channel_alternatives:channelAlternatives};
@@ -11639,7 +11655,16 @@ function AdminCalculator({token}){
             else if(bd.isBlanco&&bd.isMaritimo)taxEff=(bd.derechos||0)+(bd.tasaE||0)+(bd.iva||0)+(bd.ivaAdic||0)+(bd.iigg||0)+(bd.iibb||0);
             const owEffLink=bd.isBlanco?Number(c.overweightSurcharge||0):0;
             const totEff=bd.isBlanco?(fleteEff+Number(c.seguro||0)+taxEff+owEffLink):(fleteEff+Number(c.surcharge||0));
-            return {key:c.key,name:c.name,info:c.info,type:c.type,flete:bd.isBlanco?fleteEff:(fleteEff+Number(c.surcharge||0)),overweight:owEffLink,seguro:Number(c.seguro||0),shipCost:Number(c.shipCost||0),totalTax:taxEff,totalAbonar:totEff};
+            // Desglose detallado por linea (mismo nivel de detalle que la card interna del admin)
+            // para que el link lo muestre al expandir la opcion. [label, monto].
+            let detail=null;
+            if(bd.isBlanco&&bd.isAereo){
+              detail=[["Flete aéreo internacional",fleteEff],["Recargo por sobrepeso",owEffLink],["Seguro",Number(c.seguro||0)],["Derechos importación",bd.derechos||0],["Tasa estadística",bd.tasaE||0],["IVA de Importación",bd.iva||0],["Desaduanaje",desEff],["IVA 21% sobre desaduanaje",desEff*0.21]];
+            }else if(bd.isBlanco&&bd.isMaritimo){
+              detail=[["Servicio marítimo de importación",fleteEff],["Seguro",Number(c.seguro||0)],["Derechos importación",bd.derechos||0],["Tasa estadística",bd.tasaE||0],["IVA de Importación",bd.iva||0],["IVA adicional",bd.ivaAdic||0],["Ganancias (IIGG)",bd.iigg||0],["Ingresos brutos (IIBB)",bd.iibb||0]];
+            }
+            if(detail)detail=detail.filter(([,v])=>Number(v||0)>0.005).map(([l,v])=>[l,Math.round(Number(v)*100)/100]);
+            return {key:c.key,name:c.name,info:c.info,type:c.type,flete:bd.isBlanco?fleteEff:(fleteEff+Number(c.surcharge||0)),overweight:owEffLink,seguro:Number(c.seguro||0),shipCost:Number(c.shipCost||0),totalTax:taxEff,totalAbonar:totEff,detail};
           });
           const cli=clientId?allClients.find(c=>c.id===clientId):null;
           const barata=alts.reduce((mn,a)=>Number(a.totalAbonar||0)<Number(mn.totalAbonar||0)?a:mn,alts[0]);

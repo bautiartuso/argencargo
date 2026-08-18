@@ -312,24 +312,19 @@ export default function PresupuestoPage({ params }) {
             {yaAceptada && elegidaFinal && (
               <div style={{ marginTop: 16, paddingTop: 13, borderTop: "1px solid #eae4d6" }}>
                 <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(26,26,26,0.45)", margin: "0 0 8px" }}>Costo de importación · {elegidaFinal.name}</p>
-                {Number(elegidaFinal.totalTax || 0) > 0 && (
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
-                    <span style={{ color: "rgba(26,26,26,0.6)" }}>Impuestos</span><span style={{ fontWeight: 600 }}>USD {fmt(elegidaFinal.totalTax)}</span>
+                {(Array.isArray(elegidaFinal.detail) && elegidaFinal.detail.length > 0
+                  ? elegidaFinal.detail
+                  : [
+                      Number(elegidaFinal.totalTax || 0) > 0 && ["Impuestos", elegidaFinal.totalTax],
+                      [Number(elegidaFinal.totalTax || 0) > 0 ? "Flete internacional" : "Servicio Integral de importación", elegidaFinal.flete],
+                      Number(elegidaFinal.overweight || 0) > 0 && ["Recargo por sobrepeso", elegidaFinal.overweight],
+                      Number(elegidaFinal.seguro || 0) > 0 && ["Seguro", elegidaFinal.seguro],
+                    ].filter(Boolean)
+                ).map(([l, v], k) => (
+                  <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
+                    <span style={{ color: "rgba(26,26,26,0.6)" }}>{l}</span><span style={{ fontWeight: 600 }}>USD {fmt(v)}</span>
                   </div>
-                )}
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
-                  <span style={{ color: "rgba(26,26,26,0.6)" }}>{Number(elegidaFinal.totalTax || 0) > 0 ? "Flete internacional" : "Servicio Integral de importación"}</span><span style={{ fontWeight: 600 }}>USD {fmt(elegidaFinal.flete)}</span>
-                </div>
-                {Number(elegidaFinal.overweight || 0) > 0 && (
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
-                    <span style={{ color: "rgba(26,26,26,0.6)" }}>Recargo por sobrepeso</span><span style={{ fontWeight: 600 }}>USD {fmt(elegidaFinal.overweight)}</span>
-                  </div>
-                )}
-                {Number(elegidaFinal.seguro || 0) > 0 && (
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
-                    <span style={{ color: "rgba(26,26,26,0.6)" }}>Seguro</span><span style={{ fontWeight: 600 }}>USD {fmt(elegidaFinal.seguro)}</span>
-                  </div>
-                )}
+                ))}
                 {Number(elegidaFinal.shipCost || 0) > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 13 }}>
                     <span style={{ color: "rgba(26,26,26,0.6)" }}>Envío a domicilio</span><span style={{ fontWeight: 600 }}>USD {fmt(elegidaFinal.shipCost)}</span>
@@ -353,13 +348,17 @@ export default function PresupuestoPage({ params }) {
               {alts.map((a, i) => {
                 const sel = elegido === a.key;
                 const esBarata = barata != null && Number(a.totalAbonar || 0) === barata;
-                const comps = [
-                  a.flete > 0 && [rotuloServicio(a), usd(a.flete)],
-                  Number(a.overweight || 0) > 0 && ["Recargo por sobrepeso", usd(a.overweight)],
-                  a.seguro > 0 && ["Seguro", usd(a.seguro)],
-                  a.totalTax > 0 && ["Impuestos y gastos de aduana", usd(a.totalTax)],
-                  a.shipCost > 0 && ["Envío a domicilio", usd(a.shipCost)],
-                ].filter(Boolean);
+                // Cotizaciones nuevas traen `detail`: el desglose línea por línea (derechos, tasa,
+                // IVA, etc.) igual al de la card interna del admin. Las viejas caen al resumen.
+                const comps = (Array.isArray(a.detail) && a.detail.length > 0)
+                  ? [...a.detail.map(([l, v]) => [l, usd(v)]), a.shipCost > 0 && ["Envío a domicilio", usd(a.shipCost)]].filter(Boolean)
+                  : [
+                      a.flete > 0 && [rotuloServicio(a), usd(a.flete)],
+                      Number(a.overweight || 0) > 0 && ["Recargo por sobrepeso", usd(a.overweight)],
+                      a.seguro > 0 && ["Seguro", usd(a.seguro)],
+                      a.totalTax > 0 && ["Impuestos y gastos de aduana", usd(a.totalTax)],
+                      a.shipCost > 0 && ["Envío a domicilio", usd(a.shipCost)],
+                    ].filter(Boolean);
                 return (
                   <button key={a.key} onClick={() => !vencida && setElegido(a.key)} disabled={vencida}
                     className={`pz-opt ${sel ? "on" : ""} ${vencida ? "off" : ""}`}>
