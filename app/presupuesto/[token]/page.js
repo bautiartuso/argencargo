@@ -372,7 +372,7 @@ export default function PresupuestoPage({ params }) {
                     </div>
                     <div className="pz-opt-b">
                       <div className="pz-price">
-                        <span>Total puesto en Argentina</span>
+                        <span>Costo de importación total<small style={{ display: "block", fontSize: 10, fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "rgba(26,26,26,0.45)", marginTop: 2 }}>Sin gastos adicionales · no incluye el valor de la mercadería</small></span>
                         <b><i>USD</i>{fmt(a.totalAbonar)}</b>
                       </div>
                       {sel && comps.length > 0 && (
