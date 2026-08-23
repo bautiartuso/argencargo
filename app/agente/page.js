@@ -1991,7 +1991,7 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
       if(clientId==="unregistered"){
         for(let i=0;i<validBultos.length;i++){const b=validBultos[i];const body={national_tracking:tracking.trim(),package_number:i+1,quantity:1,registered_by_agent_id:agentId};
           if(b.weight)body.gross_weight_kg=Number(b.weight);if(b.length)body.length_cm=Number(b.length);if(b.width)body.width_cm=Number(b.width);if(b.height)body.height_cm=Number(b.height);
-          if(b.photo){const url=await uploadPackagePhoto(b.photo,token);if(url){body.photo_url=url;body.photo_uploaded_at=new Date().toISOString();}}
+          if(b.photo){try{const url=await uploadPackagePhoto(b.photo,token);if(url){body.photo_url=url;body.photo_uploaded_at=new Date().toISOString();}}catch(e){console.error("foto huerfano",e);}}
           await dq("unassigned_packages",{method:"POST",token,body});
         }
         // Notificar al admin: paquete huérfano recibido
@@ -2018,21 +2018,34 @@ function NewPackageForm({token,lang,t,agentId,onCancel,onSaved}){
         }
       }
       // PRIORIDAD 2: crear op nueva
-      else {
+      let opCreadaAhora=false; // para rollback si despues no se pudo insertar ningun bulto
+      if(!existingOp){
         const rpc=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
         const newCode=typeof rpc==="string"?rpc:null;
         if(!newCode){setErr(t.err_generic);setSaving(false);return;}
         const r=await dq("operations",{method:"POST",token,body:{operation_code:newCode,client_id:clientId,channel:"aereo_blanco",status:"en_deposito_origen",origin:"China",created_by_agent_id:agentId}});
         const created=Array.isArray(r)?r[0]:r;
         if(!created?.id){setErr(t.err_generic);setSaving(false);return;}
-        opId=created.id;
+        opId=created.id;opCreadaAhora=true;
       }
       const pkgs=await dq("operation_packages",{token,filters:`?operation_id=eq.${opId}&select=package_number&order=package_number.desc&limit=1`});
       const lastNum=Array.isArray(pkgs)&&pkgs[0]?Number(pkgs[0].package_number)||0:0;
-      for(let i=0;i<validBultos.length;i++){const b=validBultos[i];const body={operation_id:opId,package_number:lastNum+i+1,quantity:1,national_tracking:tracking.trim()};
-        if(b.weight)body.gross_weight_kg=Number(b.weight);if(b.length)body.length_cm=Number(b.length);if(b.width)body.width_cm=Number(b.width);if(b.height)body.height_cm=Number(b.height);
-        if(b.photo){const url=await uploadPackagePhoto(b.photo,token);if(url){body.photo_url=url;body.photo_uploaded_at=new Date().toISOString();}}
-        await dq("operation_packages",{method:"POST",token,body});
+      let bultosInsertados=0;
+      try{
+        for(let i=0;i<validBultos.length;i++){const b=validBultos[i];const body={operation_id:opId,package_number:lastNum+i+1,quantity:1,national_tracking:tracking.trim()};
+          if(b.weight)body.gross_weight_kg=Number(b.weight);if(b.length)body.length_cm=Number(b.length);if(b.width)body.width_cm=Number(b.width);if(b.height)body.height_cm=Number(b.height);
+          // La foto NO puede voltear el alta del bulto: si falla la subida (conexion del deposito),
+          // el bulto entra sin foto y el agente la puede reintentar despues.
+          if(b.photo){try{const url=await uploadPackagePhoto(b.photo,token);if(url){body.photo_url=url;body.photo_uploaded_at=new Date().toISOString();}}catch(e){console.error("foto bulto",e);}}
+          await dq("operation_packages",{method:"POST",token,body});
+          bultosInsertados++;
+        }
+      }catch(e){
+        // Rollback: si la op se creo en este mismo alta y no llego a tener NINGUN bulto,
+        // se borra para no dejar ops vacias (el cliente ya recibio el mail de deposito,
+        // pero peor es que le quede una op fantasma sin carga).
+        if(opCreadaAhora&&bultosInsertados===0){try{await dq("operations",{method:"DELETE",token,filters:`?id=eq.${opId}`});}catch(e2){console.error("rollback op vacia",e2);}}
+        throw e;
       }
       // Notificar al admin: paquete recibido en depósito
       try{
