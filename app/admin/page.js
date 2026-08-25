@@ -7016,6 +7016,25 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
         {(()=>{const ready=flight.status==="preparando"&&flight.invoice_presented_at;const c=ready?"#22c55e":stColors[flight.status];const label=ready?"listo para enviar":flight.status;return <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:4,color:c,background:`${c}20`,border:`1px solid ${c}40`,textTransform:"uppercase"}}>{label}</span>;})()}
         <span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{flightOps.length} operaciones</span>
+        {/* Totales del vuelo: bultos, bruto y facturable con el redondeo del agente (misma cuenta que cada fila) */}
+        {(()=>{
+          let nB=0,tBruto=0,tFactAg=0;
+          opsUnique.forEach(o=>{
+            const opAgent=signups.find(s=>s.auth_user_id===o.created_by_agent_id);
+            const opDiv=Number(opAgent?.volumetric_divisor)||5000;
+            depositPkgs.filter(p=>p.operation_id===o.id).forEach(p=>{
+              const q=Number(p.quantity||1);nB+=q;
+              const bruto=Number(p.gross_weight_kg||0)*q;tBruto+=bruto;
+              const l=Number(p.length_cm||0),wd=Number(p.width_cm||0),h=Number(p.height_cm||0);
+              const vol=l&&wd&&h?((l*wd*h)/opDiv)*q:0;
+              tFactAg+=Math.ceil(Math.max(bruto,vol)*2)/2;
+            });
+          });
+          const kg=v=>`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
+          return <span style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>
+            📦 <strong style={{color:"#fff"}}>{nB} bulto{nB!==1?"s":""}</strong> · bruto <strong style={{color:"rgba(255,255,255,0.8)"}}>{kg(tBruto)}</strong> · facturable agente ↑ <strong style={{color:"#fb923c"}}>{kg(tFactAg)}</strong>
+          </span>;
+        })()}
       </div>
       <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"12px 0 8px",textTransform:"uppercase"}}>Operaciones en este vuelo</p>
       <div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:"10px 14px",marginBottom:16}}>
