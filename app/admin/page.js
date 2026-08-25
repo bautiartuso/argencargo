@@ -13026,7 +13026,7 @@ function MaritimePanel({token,allClients=[]}){
           const fmtD=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
           const renderTable=(list)=><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.2)"}}>
-            {["","Recibido","Producto","Cliente","Origen","Tracking","Bultos","CBM","Estado",""].map((h,i)=><th key={i} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em",width:i===0?34:undefined}}>{h}</th>)}
+            {["","Recibido","Producto","Cliente","Origen","Tracking","Bultos","CBM","Valor","Estado",""].map((h,i)=><th key={i} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em",width:i===0?34:undefined}}>{h}</th>)}
           </tr></thead>
           <tbody>{list.map((sh,idx)=>{
             const cbm=cbmOf(sh.id);
@@ -13060,6 +13060,8 @@ function MaritimePanel({token,allClients=[]}){
                 <td style={{padding:"10px 12px",fontSize:11,fontFamily:"monospace",color:"rgba(255,255,255,0.55)"}}>{sh.tracking_number||<span style={{fontStyle:"italic",color:"rgba(255,255,255,0.3)"}}>sin código</span>}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",fontFeatureSettings:'"tnum"'}}>{bcount}</td>
                 <td style={{padding:"10px 12px",color:cbm>0?"#fff":"#fbbf24",fontWeight:700,fontFeatureSettings:'"tnum"'}}>{cbm>0?cbm.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4}):"Pendiente"}</td>
+                {/* Valor total de la mercadería: suma de los items anotados (cant × unitario) */}
+                {(()=>{const val=shItems.reduce((a,it)=>a+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);return <td style={{padding:"10px 12px",color:val>0?"#4ade80":"rgba(255,255,255,0.3)",fontWeight:700,fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}}>{val>0?`USD ${val.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"}</td>;})()}
                 <td style={{padding:"10px 12px"}}>
                   <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>
                     <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:stChip.bg,color:stChip.fg,whiteSpace:"nowrap"}}>{stChip.label}</span>
@@ -13079,7 +13081,7 @@ function MaritimePanel({token,allClients=[]}){
                 </td>
               </tr>;
               })()}
-              {isExp&&<tr><td colSpan={10} style={{padding:"0 12px 14px",background:"rgba(184,149,106,0.04)",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+              {isExp&&<tr><td colSpan={11} style={{padding:"0 12px 14px",background:"rgba(184,149,106,0.04)",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginTop:10}}>
                   <div>
                     <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.5)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Bultos ({shPkgs.length})</p>
