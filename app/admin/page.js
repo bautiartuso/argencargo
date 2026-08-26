@@ -7400,7 +7400,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             ...(brand>0?[[`🏷 Marca · USD 0,70/kg × ${kg.toLocaleString("es-AR",{maximumFractionDigits:2})} kg`,brand,true]]:[]),
             ...(Number(flight.cost_overweight_pieces||0)>0?[["⚖ Sobrepeso",35,true]]:[]),
           ];
-          return <div style={{marginTop:14,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"12px 16px",maxWidth:520}}>
+          return <div style={{marginTop:14,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"12px 16px"}}>
             <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>Desglose del costo</p>
             {rows.map(([l,v,esRecargo],k)=><div key={k} style={{display:"flex",justifyContent:"space-between",gap:12,padding:"4px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
               <span style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>{l}</span>
