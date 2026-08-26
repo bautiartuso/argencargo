@@ -1116,6 +1116,26 @@ function Dashboard({session,onLogout,lang,setLang,t}){
   </SimpleShell>;
 }
 
+// Input numerico con unidad (prefijo/sufijo). Vive a nivel modulo: definido inline dentro
+// del render se re-creaba en cada tecla y el campo perdia el foco (solo dejaba tipear 1 caracter).
+// Acepta "." o "," como separador decimal pero siempre muestra "," (1150,5).
+function AgAdornInp({label,req,value,onChange,placeholder,prefix,suffix}){
+  const clean=(v)=>{
+    let x=String(v).replace(/\./g,",").replace(/[^0-9,]/g,"");
+    const i1=x.indexOf(",");
+    if(i1>=0)x=x.slice(0,i1+1)+x.slice(i1+1).replace(/,/g,"");
+    return x;
+  };
+  return <div style={{marginBottom:14}}>
+    <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label>
+    <div style={{position:"relative"}}>
+      {prefix&&<span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.45)",pointerEvents:"none"}}>{prefix}</span>}
+      <input type="text" inputMode="decimal" value={value} onChange={e=>onChange(clean(e.target.value))} placeholder={placeholder} style={{width:"100%",padding:`11px ${suffix?"52px":"14px"} 11px ${prefix?"52px":"14px"}`,fontSize:15,fontWeight:600,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",fontFeatureSettings:'"tnum"'}}/>
+      {suffix&&<span style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.45)",pointerEvents:"none"}}>{suffix}</span>}
+    </div>
+  </div>;
+}
+
 function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onBack,onDispatched}){
   const [invoiceItems,setInvoiceItems]=useState([]);
   const [lightboxPhoto,setLightboxPhoto]=useState(null);
@@ -1244,7 +1264,11 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   // Total = kg facturable (editable) x USD/kg + baterias (10 total) + marca (0,7/kg) + sobrepeso (35 fijo)
   const kgAuto=autoFact>0?autoFact:autoWeight;
   const kgParaCosto=(()=>{const v=Number(String(factKgInput).replace(",","."));return v>0?v:kgAuto;})();
-  const computedCost=(()=>{const r=Number(String(costPerKg).replace(",","."));if(!(r>0)||!(kgParaCosto>0))return 0;return Math.round((kgParaCosto*r+(costBattery?10:0)+(costBrand?0.7*kgParaCosto:0)+(costOverweight?35:0))*100)/100;})();
+  // Cada componente se redondea a 2 decimales ANTES de sumar, para que las lineas del
+  // desglose sumen exacto el total mostrado.
+  const costBase=(()=>{const r=Number(String(costPerKg).replace(",","."));return r>0&&kgParaCosto>0?Math.round(kgParaCosto*r*100)/100:0;})();
+  const costBrandAmt=costBrand?Math.round(0.7*kgParaCosto*100)/100:0;
+  const computedCost=costBase>0?Math.round((costBase+(costBattery?10:0)+costBrandAmt+(costOverweight?35:0))*100)/100:0;
   const dispatch=async()=>{
     if(!(computedCost>0)||!tracking){setErr(t.err_generic);return;}
     if(autoWeight<=0){setErr("El peso total es 0 - cargá peso en los bultos primero");return;}
@@ -1377,16 +1401,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
       </div>
       {(()=>{
         const rate=Number(String(costPerKg).replace(",","."))||0;
-        const brandAmt=costBrand?0.7*kgParaCosto:0;
-        // Input con adornos (prefijo/sufijo) para que se entienda la unidad de una
-        const AdornInp=({label,req,value,onChange,placeholder,prefix,suffix})=><div style={{marginBottom:14}}>
-          <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label>
-          <div style={{position:"relative"}}>
-            {prefix&&<span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.45)",pointerEvents:"none"}}>{prefix}</span>}
-            <input type="number" step="any" min="0" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:`11px ${suffix?"52px":"14px"} 11px ${prefix?"52px":"14px"}`,fontSize:15,fontWeight:600,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",fontFeatureSettings:'"tnum"'}}/>
-            {suffix&&<span style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.45)",pointerEvents:"none"}}>{suffix}</span>}
-          </div>
-        </div>;
+        const brandAmt=costBrandAmt;
         // Toggle Sí/No con color propio al activar (verde baterías, rojo marcas/sobrepeso)
         const tog=(val,set,onColor)=><div style={{display:"flex",gap:6}}>{[[true,t.opt_yes],[false,t.opt_no]].map(([b,l])=>{
           const active=val===b;
@@ -1403,8 +1418,8 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
         const desgRow=(l,v)=><div style={{display:"flex",justifyContent:"space-between",gap:10,padding:"2px 0"}}><span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,0.75)",fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}}>{v}</span></div>;
         return <>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
-          <AdornInp label={t.fact_weight} value={factKgInput} onChange={setFactKgInput} placeholder={kgAuto>0?String(Math.round(kgAuto*100)/100):"0"} suffix="kg"/>
-          <AdornInp label={t.cost_per_kg} req value={costPerKg} onChange={setCostPerKg} placeholder="12.59" prefix="USD" suffix="/kg"/>
+          <AgAdornInp label={t.fact_weight} value={factKgInput} onChange={setFactKgInput} placeholder={kgAuto>0?String(Math.round(kgAuto*100)/100).replace(".",","):"0"} suffix="kg"/>
+          <AgAdornInp label={t.cost_per_kg} req value={costPerKg} onChange={setCostPerKg} placeholder="12,59" prefix="USD" suffix="/kg"/>
         </div>
         <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"stretch",marginBottom:14}}>
           <div style={{flex:"1 1 420px",display:"flex",gap:10,flexWrap:"wrap"}}>
@@ -1416,7 +1431,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
             <p style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t.cost_computed}</p>
             <p style={{fontSize:26,fontWeight:800,color:computedCost>0?"#4ade80":"rgba(255,255,255,0.35)",margin:"0 0 8px",fontFeatureSettings:'"tnum"'}}>{usdF(computedCost)}</p>
             {computedCost>0&&<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:7}}>
-              {desgRow(`${kgParaCosto.toLocaleString("es-AR",{maximumFractionDigits:2})} kg × ${usdF(rate)}/kg`,usdF(kgParaCosto*rate))}
+              {desgRow(`${kgParaCosto.toLocaleString("es-AR",{maximumFractionDigits:2})} kg × ${usdF(rate)}/kg`,usdF(costBase))}
               {costBattery&&desgRow(`🔋 ${t.battery_short}`,`+ ${usdF(10)}`)}
               {costBrand&&desgRow(`🏷️ ${t.brand_short} · USD 0,70/kg × ${kgParaCosto.toLocaleString("es-AR",{maximumFractionDigits:2})} kg`,`+ ${usdF(brandAmt)}`)}
               {costOverweight&&desgRow(`⚖️ ${t.ow_short}`,`+ ${usdF(35)}`)}
