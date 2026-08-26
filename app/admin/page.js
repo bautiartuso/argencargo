@@ -12713,13 +12713,15 @@ function MaritimePanel({token,allClients=[]}){
   };
   const importeContainer=(list)=>{
     if(!list||!list.length||!mtTariffs.length)return null;
-    return Object.values(clientImportes(list)).reduce((s,v)=>s+v,0);
+    // Suma por carga (no por cliente) para que los "a cobrar" cargados a mano pisen su parte.
+    return (list||[]).reduce((s,sh)=>s+importeOfShip(sh,list),0);
   };
   // Costo estimado por carga (lo carga el admin) → costo del contenedor = suma de sus cargas.
   const costOfShip=(sh)=>Number(sh?.cost_estimado||0);
   const costContainer=(list)=>(list||[]).reduce((s,sh)=>s+costOfShip(sh),0);
   // Importe a cobrar imputado a UNA carga = importe de su operación (cliente) prorrateado por CBM.
   const importeOfShip=(sh,list)=>{
+    if(sh?.revenue_manual!=null)return Number(sh.revenue_manual)||0; // a cobrar cargado a mano
     if(!sh?.client_id)return 0;
     const imp=clientImportes(list)[sh.client_id]||0;
     const cli=(list||[]).filter(s=>s.client_id===sh.client_id);
@@ -12748,6 +12750,13 @@ function MaritimePanel({token,allClients=[]}){
     const fresh=await dq("maritime_shipments",{token,filters:`?id=eq.${sh.id}&select=cost_estimado,cost_per_cbm,cost_manual`});
     const f=Array.isArray(fresh)?fresh[0]:null;
     setShipments(prev=>prev.map(x=>x.id===sh.id?{...x,...(f||body)}:x));
+  };
+  // Guarda el "a cobrar" de una carga. Vacio = volver al calculo automatico (tarifa x CBM).
+  const saveShipRevenue=async(sh,val)=>{
+    const v=String(val).trim();const r=v===""?null:Number(v.replace(",","."));
+    if(r!=null&&!isFinite(r))return;
+    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{revenue_manual:r}});
+    setShipments(prev=>prev.map(x=>x.id===sh.id?{...x,revenue_manual:r}:x));
   };
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
@@ -13119,8 +13128,11 @@ function MaritimePanel({token,allClients=[]}){
                       ?<span title="Borrá el campo para volver al automático" style={{fontSize:9,fontWeight:700,color:"#fbbf24",marginLeft:5}}>a mano</span>
                       :Number(sh.cost_per_cbm||0)>0&&<span title={`CBM × USD ${Number(sh.cost_per_cbm)}`} style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.35)",marginLeft:5}}>auto</span>}
                   </span>
-                  {(()=>{const imp=importeOfShip(sh,list);const cost=costOfShip(sh);const gan=imp-cost;return <>
-                    <span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>A cobrar est. <strong style={{color:"#4ade80",fontFeatureSettings:'"tnum"'}}>{usd(imp)}</strong></span>
+                  {(()=>{const imp=importeOfShip(sh,list);const cost=costOfShip(sh);const gan=imp-cost;const esManual=sh.revenue_manual!=null;return <>
+                    <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>A cobrar est. USD
+                      <input key={`${sh.id}-rev-${sh.revenue_manual??""}`} type="number" step="any" defaultValue={esManual?sh.revenue_manual:Math.round(imp*100)/100} placeholder="0" title={esManual?"A cobrar cargado a mano. Borrá el campo para volver al cálculo automático (tarifa × CBM).":"Automático: tarifa × CBM del cliente. Escribí un número para fijarlo a mano."} onBlur={e=>{const v=String(e.target.value).trim();const auto=String(Math.round(imp*100)/100);if(esManual?v!==String(sh.revenue_manual):(v!==""&&v!==auto))saveShipRevenue(sh,v);else if(esManual&&v==="")saveShipRevenue(sh,"");}} style={{width:96,padding:"5px 8px",fontSize:12.5,borderRadius:6,border:`1px solid ${esManual?"rgba(251,191,36,0.35)":"rgba(74,222,128,0.25)"}`,background:"rgba(0,0,0,0.25)",color:"#4ade80",fontWeight:700,fontFamily:"inherit",fontFeatureSettings:'"tnum"'}}/>
+                      {esManual?<span title="Borrá el campo para volver al automático" style={{fontSize:9,fontWeight:700,color:"#fbbf24"}}>a mano</span>:<span title="Tarifa × CBM del cliente, prorrateado por carga" style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.35)"}}>auto</span>}
+                    </span>
                     <span style={{fontSize:13,fontWeight:800,color:gan>=0?"#4ade80":"#f87171",fontFeatureSettings:'"tnum"'}}>📈 Ganancia est. {usd(gan)}</span>
                   </>;})()}
                 </div>}
