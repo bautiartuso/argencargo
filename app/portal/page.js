@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { ToastStack, toast, Skeleton, SkeletonTable, EmptyState, WhatsAppFab } from "../../lib/ui";
 import DatePicker from "../components/DatePicker";
 import { printQuotePdf, printClosingPdf } from "../../lib/pdf-templates";
-import { applyAntidumpingFloor } from "../../lib/calc";
+import { applyAntidumpingFloor, calcOpBudget } from "../../lib/calc";
 import HolidayBanner from "../components/HolidayBanner";
 import { useT, LANGS } from "../../lib/i18n-portal";
 import SupportPage from "./components/SupportPage";
@@ -618,6 +618,8 @@ function OperationDetail({op,token,client,onBack}){
   const [items,setItems]=useState([]);const [events,setEvents]=useState([]);const [pkgs,setPkgs]=useState([]);const [pmts,setPmts]=useState([]);const [cliPmts,setCliPmts]=useState([]);const [loading,setLoading]=useState(true);const [expItem,setExpItem]=useState(null);const [openSections,setOpenSections]=useState({budget:true,products:true,packages:true,tracking:true,payments:true});const [showDocPanel,setShowDocPanel]=useState(false);const [docItems,setDocItems]=useState([]);const [savingDocs,setSavingDocs]=useState(false);const [lightboxPhoto,setLightboxPhoto]=useState(null);const [repackInfo,setRepackInfo]=useState(null);const [showRepackDetail,setShowRepackDetail]=useState(false);const [declaredItems,setDeclaredItems]=useState([]);
   // Cliente tocó "Esperando más bultos": ack visual, sigue en depósito hasta confirmar consolidación.
   const [waitingMore,setWaitingMore]=useState(false);
+  // Tarifas/config/overrides para recomputar el desglose de impuestos (misma cuenta que el admin)
+  const [calcCtx,setCalcCtx]=useState(null);
   const [docInputMode,setDocInputMode]=useState(null); // 'pdf' | 'manual'
   const [localConfirmed,setLocalConfirmed]=useState(false);
   const [inFlight,setInFlight]=useState(false);
@@ -635,7 +637,8 @@ function OperationDetail({op,token,client,onBack}){
   const toggleSection=(s)=>setOpenSections(p=>({...p,[s]:!p[s]}));
   const downloadPdf=()=>printQuotePdf({op,items,pkgs,payments:pmts,cliPmts});
   const downloadClosingPdf=()=>printClosingPdf({op,items,pkgs,cliPmts,events});
-  const loadAll=async()=>{const [it,ev,pk,pm,cp,rk,fl,fii]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&status=eq.done&order=completed_at.desc&limit=1`}),dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=flight_id&limit=1`}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=description,hs_code,quantity,unit_price_declared_usd,sort_order&order=sort_order.asc`})]);
+  const loadAll=async()=>{const [it,ev,pk,pm,cp,rk,fl,fii,tf,cf,ov]=await Promise.all([dq("operation_items",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("tracking_events",{token,filters:`?operation_id=eq.${op.id}&select=*&order=occurred_at.desc`}),dq("operation_packages",{token,filters:`?operation_id=eq.${op.id}&select=*&order=package_number.asc`}),dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`}),dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`}),dq("repack_requests",{token,filters:`?operation_id=eq.${op.id}&status=eq.done&order=completed_at.desc&limit=1`}),dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=flight_id&limit=1`}),dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=description,hs_code,quantity,unit_price_declared_usd,sort_order&order=sort_order.asc`}),dq("tariffs",{token,filters:"?select=*"}),dq("calc_config",{token,filters:"?select=*"}),client?.id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${client.id}&select=*`}):Promise.resolve([])]);
+  {const cfg={};(Array.isArray(cf)?cf:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setCalcCtx({tariffs:Array.isArray(tf)?tf:[],config:cfg,overrides:Array.isArray(ov)?ov:[]});}
   setDeclaredItems(Array.isArray(fii)?fii:[]);
 
   setInFlight(Array.isArray(fl)&&fl.length>0);
@@ -884,6 +887,20 @@ function OperationDetail({op,token,client,onBack}){
           </div>
         </>}
         {!isGI&&!isB&&bTax>0&&(riPagaImpuestosDirecto?bRow("Impuestos (los abonás directo a la aerolínea)",bTax,false,false,"rgba(255,255,255,0.45)"):bRow("Total Impuestos",bTax))}
+        {/* Desglose de impuestos línea por línea: se recomputa con el motor real y solo se
+            muestra si cierra al centavo con el total guardado (presupuestos manuales o
+            desincronizados caen al agregado de siempre). */}
+        {!isGI&&!isB&&bTax>0&&(()=>{try{
+          if(!calcCtx)return null;
+          const r=calcOpBudget(op,items,pkgs,calcCtx.tariffs,calcCtx.config,calcCtx.overrides,client,declaredItems);
+          if(!r?.taxDetail||Math.abs(Number(r.totalTax||0)-bTax)>0.05)return null;
+          const td=r.taxDetail;
+          const rateU=(fld,def)=>{const set=[...new Set(items.filter(x=>Number(x.unit_price_usd)>0).map(x=>{const v=x[fld];return (v==null||v==="")?def:Number(v);}))];return set.length===1?set[0]:null;};
+          const pctL=(l,rt)=>rt!=null&&rt>0?`${l} (${String(rt).replace(".",",")}%)`:l;
+          const rows=[[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva],["IVA adicional (20%)",td.ivaAdic],["Ganancias IIGG (6%)",td.iigg],["Ingresos brutos IIBB (5%)",td.iibb],["Desaduanaje",td.desembolso],["IVA 21% sobre desaduanaje",td.ivaDesembolso]].filter(([,v])=>Number(v||0)>0.005);
+          if(rows.length===0)return null;
+          return <div style={{margin:"0 0 4px",padding:"2px 0 4px 14px",borderLeft:"2px solid rgba(184,149,106,0.25)"}}>{rows.map(([l,v],k)=><div key={k} style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{l}</span><span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)"}}>USD {Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>)}</div>;
+        }catch(e){return null;}})()}
         {!isGI&&(isB?(bt-shipCost):bFlete)>0&&bRow(isB?"Servicio Integral de importación":"Flete internacional",isB?(bt-shipCost):bFlete)}
         {!isGI&&!isB&&bSeg>0&&bRow("Seguro de carga",bSeg)}
         {!isGI&&!isB&&op.channel?.includes("aereo")&&Number(op.budget_surcharge||0)>0&&bRow("Recargo por sobrepeso",Number(op.budget_surcharge))}
