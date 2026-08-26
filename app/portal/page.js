@@ -897,9 +897,27 @@ function OperationDetail({op,token,client,onBack}){
           const td=r.taxDetail;
           const rateU=(fld,def)=>{const set=[...new Set(items.filter(x=>Number(x.unit_price_usd)>0).map(x=>{const v=x[fld];return (v==null||v==="")?def:Number(v);}))];return set.length===1?set[0]:null;};
           const pctL=(l,rt)=>rt!=null&&rt>0?`${l} (${String(rt).replace(".",",")}%)`:l;
-          const rows=[[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva],["IVA adicional (20%)",td.ivaAdic],["Ganancias IIGG (6%)",td.iigg],["Ingresos brutos IIBB (5%)",td.iibb],["Desaduanaje",td.desembolso],["IVA 21% sobre desaduanaje",td.ivaDesembolso]].filter(([,v])=>Number(v||0)>0.005);
+          const fmt2=v=>Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+          const fmtPct=v=>String(Math.round(Number(v)*100)/100).replace(".",",");
+          const fila=(l,v,k)=><div key={k} style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{l}</span><span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)"}}>USD {fmt2(v)}</span></div>;
+          // Alicuotas mezcladas entre productos (ej. IVA 10,5 y 21): desglose POR PRODUCTO.
+          const itemsDet=(td.items||[]).filter(x=>(x.derechos+x.tasaE+x.iva)>0.005);
+          const mixed=itemsDet.length>1&&["drPct","tePct","ivaPct"].some(f=>new Set(itemsDet.map(x=>Math.round(x[f]*100))).size>1);
+          const comunes=[["IVA adicional (20%)",td.ivaAdic],["Ganancias IIGG (6%)",td.iigg],["Ingresos brutos IIBB (5%)",td.iibb],["Desaduanaje",td.desembolso],["IVA 21% sobre desaduanaje",td.ivaDesembolso]].filter(([,v])=>Number(v||0)>0.005);
+          if(mixed){
+            return <div style={{margin:"0 0 4px",padding:"2px 0 4px 14px",borderLeft:"2px solid rgba(184,149,106,0.25)"}}>
+              {itemsDet.map((x,i)=><div key={i} style={{marginBottom:6}}>
+                <p style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,0.6)",margin:"0 0 1px"}}>{x.description||`Producto ${i+1}`}</p>
+                {fila(`Derechos importación (${fmtPct(x.drPct)}%)`,x.derechos,"d")}
+                {Number(x.tasaE)>0.005&&fila(`Tasa estadística (${fmtPct(x.tePct)}%)`,x.tasaE,"t")}
+                {fila(`IVA de Importación (${fmtPct(x.ivaPct)}%)`,x.iva,"i")}
+              </div>)}
+              {comunes.map(([l,v],k)=>fila(l,v,k))}
+            </div>;
+          }
+          const rows=[[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva],...comunes].filter(([,v])=>Number(v||0)>0.005);
           if(rows.length===0)return null;
-          return <div style={{margin:"0 0 4px",padding:"2px 0 4px 14px",borderLeft:"2px solid rgba(184,149,106,0.25)"}}>{rows.map(([l,v],k)=><div key={k} style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{l}</span><span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)"}}>USD {Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>)}</div>;
+          return <div style={{margin:"0 0 4px",padding:"2px 0 4px 14px",borderLeft:"2px solid rgba(184,149,106,0.25)"}}>{rows.map(([l,v],k)=>fila(l,v,k))}</div>;
         }catch(e){return null;}})()}
         {!isGI&&(isB?(bt-shipCost):bFlete)>0&&bRow(isB?"Servicio Integral de importación":"Flete internacional",isB?(bt-shipCost):bFlete)}
         {!isGI&&!isB&&bSeg>0&&bRow("Seguro de carga",bSeg)}

@@ -214,6 +214,11 @@ const I18N={
     dispatch_form:"Despachar vuelo",
     total_weight:"Peso total (kg)",
     total_cost:"Costo total (USD)",
+    cost_per_kg:"Costo por kilo (USD/kg)",
+    cost_battery:"Contiene baterías (+USD 10)",
+    cost_brand:"Mercadería con marca (+USD 0,70/kg)",
+    cost_overweight:"Piezas con sobrepeso (+USD 35 c/u)",
+    cost_computed:"Costo total calculado",
     intl_tracking:"Tracking internacional",
     courier:"Courier",
     payment_method_label:"Método de pago",
@@ -465,6 +470,11 @@ const I18N={
     dispatch_form:"发送航班",
     total_weight:"总重量 (公斤)",
     total_cost:"总费用 (美元)",
+    cost_per_kg:"每公斤费用 (美元/KG)",
+    cost_battery:"含电池 (+10美元)",
+    cost_brand:"品牌货 (+0.7美元/公斤)",
+    cost_overweight:"超重件数 (+35美元/件)",
+    cost_computed:"计算总费用",
     intl_tracking:"国际物流单号",
     courier:"快递",
     payment_method_label:"付款方式",
@@ -1110,6 +1120,12 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   // Peso facturable total para el reparto de cost_share.
   const autoFact=flightOps.reduce((s,fo)=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);return s+opPkgs.reduce((a,p)=>a+pkgFact(p),0);},0);
   const [totalCost,setTotalCost]=useState(flight.total_cost_usd||"");
+  // Costo desglosado (pedido 26/08: control de tarifas del agente): USD/kg + recargos del carrier.
+  const [costPerKg,setCostPerKg]=useState(flight.cost_per_kg_usd||"");
+  const [costBattery,setCostBattery]=useState(!!flight.cost_battery);
+  const [costBrand,setCostBrand]=useState(!!flight.cost_brand);
+  const owAuto=flightOps.reduce((s,fo)=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);return s+opPkgs.reduce((a,p)=>a+(Number(p.gross_weight_kg||0)>24?Number(p.quantity||1):0),0);},0);
+  const [owPieces,setOwPieces]=useState(flight.cost_overweight_pieces??owAuto);
   const [tracking,setTracking]=useState(flight.international_tracking||"");
   const [carrier,setCarrier]=useState(flight.international_carrier||"DHL");
   const [pmtMethod,setPmtMethod]=useState(flight.payment_method||"cuenta_corriente");
@@ -1205,16 +1221,19 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
       setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},100);
     }
   };
+  // Total = kg facturable x USD/kg + baterias (10 total) + marca (0,7/kg) + sobrepeso (35/pieza)
+  const kgParaCosto=autoFact>0?autoFact:autoWeight;
+  const computedCost=(()=>{const r=Number(String(costPerKg).replace(",","."));if(!(r>0)||!(kgParaCosto>0))return 0;return Math.round((kgParaCosto*r+(costBattery?10:0)+(costBrand?0.7*kgParaCosto:0)+35*(Number(owPieces)||0))*100)/100;})();
   const dispatch=async()=>{
-    if(!totalCost||!tracking){setErr(t.err_generic);return;}
+    if(!(computedCost>0)||!tracking){setErr(t.err_generic);return;}
     if(autoWeight<=0){setErr("El peso total es 0 - cargá peso en los bultos primero");return;}
     setSaving(true);setErr("");
     // Total del vuelo = peso FACTURABLE (max bruto vs volumétrico), porque es lo que cobra el carrier.
     // Si el facturable es 0 (sin dims cargadas) fallback al bruto.
-    const w=autoFact>0?autoFact:autoWeight,c=Number(totalCost);
+    const w=autoFact>0?autoFact:autoWeight,c=computedCost;
     const isAlibaba=pmtMethod==="alibaba";
     // Para Alibaba: el costo es PROVISIONAL (sin comisiones todavía). Admin completa después método tarjeta y se recalcula.
-    const flightPatch={total_weight_kg:w,total_cost_usd:c,international_tracking:tracking,international_carrier:carrier,payment_method:pmtMethod,status:"despachado",dispatched_at:new Date().toISOString()};
+    const flightPatch={total_weight_kg:w,total_cost_usd:c,cost_per_kg_usd:Number(String(costPerKg).replace(",","."))||null,cost_battery:costBattery,cost_brand:costBrand,cost_overweight_pieces:Number(owPieces)||0,international_tracking:tracking,international_carrier:carrier,payment_method:pmtMethod,status:"despachado",dispatched_at:new Date().toISOString()};
     if(isAlibaba){flightPatch.awaiting_alibaba_payment=true;flightPatch.alibaba_base_cost_usd=c;}
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:flightPatch});
     // 2. Distribuir costo según peso FACTURABLE (max bruto vs volumétrico) de cada op.
@@ -1330,14 +1349,20 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
           <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Peso facturable (vol &gt; bruto) · usado para $/kg y reparto</span>
           <span style={{fontSize:13,fontWeight:700,color:"#fb923c"}}>{autoFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</span>
         </div>}
-        {Number(totalCost)>0&&autoFact>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,paddingTop:6,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-          <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Tarifa resultante</span>
-          <span style={{fontSize:13,fontWeight:700,color:IC}}>{usdF(Number(totalCost)/autoFact)}/kg fact.</span>
+        {computedCost>0&&autoFact>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,paddingTop:6,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Tarifa resultante (todo incluido)</span>
+          <span style={{fontSize:13,fontWeight:700,color:IC}}>{usdF(computedCost/autoFact)}/kg fact.</span>
         </div>}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
-        <Inp label={t.total_cost} type="number" value={totalCost} onChange={setTotalCost} req placeholder="500"/>
+        <Inp label={t.cost_per_kg} type="number" value={costPerKg} onChange={setCostPerKg} req placeholder="12.59"/>
         <Inp label={t.intl_tracking} value={tracking} onChange={setTracking} req placeholder="1Z999AA10123456784"/>
+        <div style={{gridColumn:"1 / -1",display:"flex",gap:18,flexWrap:"wrap",alignItems:"center",marginBottom:14,padding:"10px 14px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10}}>
+          <label style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:12.5,color:"rgba(255,255,255,0.75)",cursor:"pointer"}}><input type="checkbox" checked={costBattery} onChange={e=>setCostBattery(e.target.checked)} style={{accentColor:"#B8956A"}}/>🔋 {t.cost_battery}</label>
+          <label style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:12.5,color:"rgba(255,255,255,0.75)",cursor:"pointer"}}><input type="checkbox" checked={costBrand} onChange={e=>setCostBrand(e.target.checked)} style={{accentColor:"#B8956A"}}/>🏷 {t.cost_brand}</label>
+          <label style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:12.5,color:"rgba(255,255,255,0.75)"}}>⚖ {t.cost_overweight}<input type="number" min="0" value={owPieces} onChange={e=>setOwPieces(e.target.value)} style={{width:58,padding:"6px 8px",fontSize:13,borderRadius:7,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}/></label>
+          <span style={{marginLeft:"auto",fontSize:13,color:"rgba(255,255,255,0.55)"}}>{t.cost_computed}: <strong style={{color:computedCost>0?"#4ade80":"rgba(255,255,255,0.4)",fontSize:15}}>{usdF(computedCost)}</strong>{computedCost>0&&kgParaCosto>0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:6}}>({kgParaCosto.toLocaleString("es-AR",{maximumFractionDigits:2})} kg × {usdF(Number(String(costPerKg).replace(",","."))||0)}/kg{costBattery?" + 10":""}{costBrand?" + 0,7/kg":""}{Number(owPieces)>0?` + 35×${owPieces}`:""})</span>}</span>
+        </div>
         <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.courier}</label>
           <select value={carrier} onChange={e=>setCarrier(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
             {["DHL","FedEx","UPS"].map(c=><option key={c} value={c} style={{background:"#142038"}}>{c}</option>)}
@@ -1350,7 +1375,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
           </select>
         </div>
       </div>
-      {!confirmDispatch?<Btn onClick={()=>setConfirmDispatch(true)} disabled={saving||!totalCost||!tracking||autoWeight<=0}>{t.confirm_dispatch}</Btn>:
+      {!confirmDispatch?<Btn onClick={()=>setConfirmDispatch(true)} disabled={saving||!(computedCost>0)||!tracking||autoWeight<=0}>{t.confirm_dispatch}</Btn>:
       <div style={{padding:"14px 18px",background:"rgba(251,191,36,0.1)",border:"1.5px solid rgba(251,191,36,0.35)",borderRadius:10}}>
         <p style={{fontSize:13,color:"#fbbf24",margin:"0 0 12px",fontWeight:600}}>{t.dispatch_warning}</p>
         <div style={{display:"flex",gap:10}}>

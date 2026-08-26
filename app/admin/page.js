@@ -7385,7 +7385,16 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>CARRIER</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.international_carrier||"—"}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>TRACKING</p><p style={{fontSize:14,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.international_tracking||"—"}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PESO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.total_weight_kg?`${flight.total_weight_kg} kg`:"—"}{totalFactKg>0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginLeft:6}}>· {totalFactKg.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg fact.</span>}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>COSTO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{usd(flight.total_cost_usd||0)}{totalFactKg>0?<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginLeft:6}}>· {usd((flight.total_cost_usd||0)/totalFactKg)}/kg fact.</span>:null}</p></div>
+          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>COSTO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{usd(flight.total_cost_usd||0)}{totalFactKg>0?<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginLeft:6}}>· {usd((flight.total_cost_usd||0)/totalFactKg)}/kg fact.</span>:null}</p>
+            {/* Desglose del costo cargado por el agente (control de tarifas): USD/kg + recargos */}
+            {Number(flight.cost_per_kg_usd||0)>0&&(()=>{const kg=Number(flight.total_weight_kg||0);const rate=Number(flight.cost_per_kg_usd);const bat=flight.cost_battery?10:0;const brand=flight.cost_brand?0.7*kg:0;const ow=35*Number(flight.cost_overweight_pieces||0);return <div style={{marginTop:6,paddingLeft:10,borderLeft:"2px solid rgba(184,149,106,0.3)",fontSize:11.5,color:"rgba(255,255,255,0.6)",lineHeight:1.7}}>
+              <div>Tarifa: <strong style={{color:IC}}>{usd(rate)}/kg</strong> × {kg.toLocaleString("es-AR",{maximumFractionDigits:2})} kg = {usd(rate*kg)}</div>
+              {bat>0&&<div>🔋 Baterías: <strong style={{color:"#fbbf24"}}>+ {usd(10)}</strong></div>}
+              {brand>0&&<div>🏷 Marca (0,70/kg): <strong style={{color:"#fbbf24"}}>+ {usd(brand)}</strong></div>}
+              {ow>0&&<div>⚖ Sobrepeso ({flight.cost_overweight_pieces} pieza{Number(flight.cost_overweight_pieces)>1?"s":""} × 35): <strong style={{color:"#fbbf24"}}>+ {usd(ow)}</strong></div>}
+            </div>;})()}
+            {!Number(flight.cost_per_kg_usd||0)&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",margin:"4px 0 0",fontStyle:"italic"}}>Sin desglose (despacho anterior al costo por kilo)</p>}
+          </div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PAGO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.payment_method||"—"}</p></div>
           <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>DESPACHADO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{formatDate(flight.dispatched_at)}</p></div>
         </div>
