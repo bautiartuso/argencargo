@@ -214,7 +214,12 @@ const I18N={
     dispatch_form:"Despachar vuelo",
     total_weight:"Peso total (kg)",
     total_cost:"Costo total (USD)",
-    fact_weight:"Peso facturable (kg)",
+    fact_weight:"Peso facturable",
+    fact_note:"Peso facturable (vol > bruto) · usado para $/kg y reparto",
+    rate_note:"Tarifa resultante (todo incluido)",
+    ow_short:"Sobrepeso",
+    brand_short:"Marca",
+    battery_short:"Baterías",
     cost_per_kg:"Tarifa por KG (USD/kg)",
     cost_battery:"Mercaderías contienen baterías",
     cost_brand:"Mercaderías contienen marcas",
@@ -473,7 +478,12 @@ const I18N={
     dispatch_form:"发送航班",
     total_weight:"总重量 (公斤)",
     total_cost:"总费用 (美元)",
-    fact_weight:"计费重量 (KG)",
+    fact_weight:"计费重量",
+    fact_note:"计费重量（体积重 > 实重）· 用于 $/kg 与分摊",
+    rate_note:"最终费率（全包）",
+    ow_short:"超重",
+    brand_short:"品牌",
+    battery_short:"电池",
     cost_per_kg:"每公斤费率 (美元/KG)",
     cost_battery:"货物含电池",
     cost_brand:"货物含品牌",
@@ -1133,7 +1143,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   const [costBattery,setCostBattery]=useState(!!flight.cost_battery);
   const [costBrand,setCostBrand]=useState(!!flight.cost_brand);
   const owAuto=flightOps.reduce((s,fo)=>{const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);return s+opPkgs.reduce((a,p)=>a+(Number(p.gross_weight_kg||0)>24?Number(p.quantity||1):0),0);},0);
-  const [costOverweight,setCostOverweight]=useState(flight.cost_overweight_pieces!=null?Number(flight.cost_overweight_pieces)>0:owAuto>0);
+  const [costOverweight,setCostOverweight]=useState(Number(flight.cost_overweight_pieces||0)>0);
   // Peso facturable: el agente lo puede ajustar a mano (prefill con el calculado de los bultos).
   const [factKgInput,setFactKgInput]=useState("");
   const [tracking,setTracking]=useState(flight.international_tracking||"");
@@ -1357,40 +1367,77 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
           <span style={{fontSize:16,fontWeight:700,color:IC}}>{autoWeight.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</span>
         </div>
         {autoFact>autoWeight+0.01&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,paddingTop:6,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-          <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Peso facturable (vol &gt; bruto) · usado para $/kg y reparto</span>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>{t.fact_note}</span>
           <span style={{fontSize:13,fontWeight:700,color:"#fb923c"}}>{autoFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</span>
         </div>}
         {computedCost>0&&autoFact>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,paddingTop:6,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-          <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Tarifa resultante (todo incluido)</span>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>{t.rate_note}</span>
           <span style={{fontSize:13,fontWeight:700,color:IC}}>{usdF(computedCost/autoFact)}/kg fact.</span>
         </div>}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
-        {(()=>{const tog=(val,set)=><div style={{display:"flex",gap:6}}>{[[true,`${t.opt_yes}`],[false,t.opt_no]].map(([b,l])=><button key={String(b)} type="button" onClick={()=>set(b)} style={{flex:1,padding:"9px 12px",fontSize:13,fontWeight:700,borderRadius:9,border:`1.5px solid ${val===b?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.12)"}`,background:val===b?"rgba(184,149,106,0.18)":"rgba(255,255,255,0.04)",color:val===b?"#E8C99B":"rgba(255,255,255,0.55)",cursor:"pointer"}}>{l}</button>)}</div>;
+      {(()=>{
+        const rate=Number(String(costPerKg).replace(",","."))||0;
+        const brandAmt=costBrand?0.7*kgParaCosto:0;
+        // Input con adornos (prefijo/sufijo) para que se entienda la unidad de una
+        const AdornInp=({label,req,value,onChange,placeholder,prefix,suffix})=><div style={{marginBottom:14}}>
+          <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{label}{req&&<span style={{color:"#ff6b6b"}}> *</span>}</label>
+          <div style={{position:"relative"}}>
+            {prefix&&<span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.45)",pointerEvents:"none"}}>{prefix}</span>}
+            <input type="number" step="any" min="0" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:`11px ${suffix?"52px":"14px"} 11px ${prefix?"52px":"14px"}`,fontSize:15,fontWeight:600,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",fontFeatureSettings:'"tnum"'}}/>
+            {suffix&&<span style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",fontSize:13,fontWeight:700,color:"rgba(255,255,255,0.45)",pointerEvents:"none"}}>{suffix}</span>}
+          </div>
+        </div>;
+        // Toggle Sí/No con color propio al activar (verde baterías, rojo marcas/sobrepeso)
+        const tog=(val,set,onColor)=><div style={{display:"flex",gap:6}}>{[[true,t.opt_yes],[false,t.opt_no]].map(([b,l])=>{
+          const active=val===b;
+          const col=b?onColor:{fg:"#E8C99B",bg:"rgba(184,149,106,0.16)",bd:"rgba(184,149,106,0.5)"};
+          return <button key={String(b)} type="button" onClick={()=>set(b)} style={{flex:1,padding:"10px 12px",fontSize:13.5,fontWeight:800,borderRadius:10,letterSpacing:"0.02em",border:`1.5px solid ${active?col.bd:"rgba(255,255,255,0.1)"}`,background:active?col.bg:"rgba(255,255,255,0.03)",color:active?col.fg:"rgba(255,255,255,0.45)",cursor:"pointer",transition:"all 140ms",boxShadow:active?`0 0 14px ${col.bg}`:"none"}}>{l}</button>;
+        })}</div>;
+        const VERDE={fg:"#4ade80",bg:"rgba(34,197,94,0.16)",bd:"rgba(34,197,94,0.55)"};
+        const ROJO={fg:"#f87171",bg:"rgba(248,113,113,0.14)",bd:"rgba(248,113,113,0.5)"};
+        const togCard=(icon,label,extra,val,set,onColor)=><div style={{flex:1,minWidth:150,padding:"12px 14px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12}}>
+          <p style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.7)",margin:"0 0 3px"}}>{icon} {label}</p>
+          <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"0 0 9px"}}>{extra}</p>
+          {tog(val,set,onColor)}
+        </div>;
+        const desgRow=(l,v)=><div style={{display:"flex",justifyContent:"space-between",gap:10,padding:"2px 0"}}><span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,0.75)",fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}}>{v}</span></div>;
         return <>
-        <Inp label={t.fact_weight} type="number" value={factKgInput} onChange={setFactKgInput} placeholder={kgAuto>0?String(Math.round(kgAuto*100)/100):"0"}/>
-        <Inp label={t.cost_per_kg} type="number" value={costPerKg} onChange={setCostPerKg} req placeholder="12.59"/>
-        <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>🔋 {t.cost_battery} <span style={{color:"rgba(255,255,255,0.4)"}}>(+USD 10)</span></label>{tog(costBattery,setCostBattery)}</div>
-        <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>🏷 {t.cost_brand} <span style={{color:"rgba(255,255,255,0.4)"}}>(+USD 0,70/kg)</span></label>{tog(costBrand,setCostBrand)}</div>
-        <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>⚖ {t.cost_overweight} <span style={{color:"rgba(255,255,255,0.4)"}}>(+USD 35)</span></label>{tog(costOverweight,setCostOverweight)}</div>
-        <div style={{gridColumn:"1 / -1",marginBottom:14,padding:"12px 16px",background:"rgba(34,197,94,0.06)",border:"1px solid rgba(34,197,94,0.22)",borderRadius:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          <span style={{fontSize:12.5,fontWeight:700,color:"rgba(255,255,255,0.65)",textTransform:"uppercase",letterSpacing:"0.04em"}}>{t.cost_computed}</span>
-          <span style={{textAlign:"right"}}><strong style={{color:computedCost>0?"#4ade80":"rgba(255,255,255,0.4)",fontSize:18}}>{usdF(computedCost)}</strong>{computedCost>0&&<span style={{display:"block",fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{kgParaCosto.toLocaleString("es-AR",{maximumFractionDigits:2})} kg × {usdF(Number(String(costPerKg).replace(",","."))||0)}/kg{costBattery?" + 10":""}{costBrand?" + 0,7/kg":""}{costOverweight?" + 35":""}</span>}</span>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+          <AdornInp label={t.fact_weight} value={factKgInput} onChange={setFactKgInput} placeholder={kgAuto>0?String(Math.round(kgAuto*100)/100):"0"} suffix="kg"/>
+          <AdornInp label={t.cost_per_kg} req value={costPerKg} onChange={setCostPerKg} placeholder="12.59" prefix="USD" suffix="/kg"/>
+        </div>
+        <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"stretch",marginBottom:14}}>
+          <div style={{flex:"1 1 420px",display:"flex",gap:10,flexWrap:"wrap"}}>
+            {togCard("🔋",t.cost_battery,"+ USD 10",costBattery,setCostBattery,VERDE)}
+            {togCard("⚖️",t.cost_overweight,"+ USD 35",costOverweight,setCostOverweight,ROJO)}
+            {togCard("🏷️",t.cost_brand,"+ USD 0,70/kg",costBrand,setCostBrand,ROJO)}
+          </div>
+          <div style={{flex:"1 1 260px",padding:"14px 18px",background:"linear-gradient(150deg,rgba(34,197,94,0.10),rgba(34,197,94,0.03))",border:"1.5px solid rgba(34,197,94,0.28)",borderRadius:12,display:"flex",flexDirection:"column",justifyContent:"center"}}>
+            <p style={{fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{t.cost_computed}</p>
+            <p style={{fontSize:26,fontWeight:800,color:computedCost>0?"#4ade80":"rgba(255,255,255,0.35)",margin:"0 0 8px",fontFeatureSettings:'"tnum"'}}>{usdF(computedCost)}</p>
+            {computedCost>0&&<div style={{borderTop:"1px solid rgba(255,255,255,0.08)",paddingTop:7}}>
+              {desgRow(`${kgParaCosto.toLocaleString("es-AR",{maximumFractionDigits:2})} kg × ${usdF(rate)}/kg`,usdF(kgParaCosto*rate))}
+              {costBattery&&desgRow(`🔋 ${t.battery_short}`,`+ ${usdF(10)}`)}
+              {costBrand&&desgRow(`🏷️ ${t.brand_short} · USD 0,70/kg × ${kgParaCosto.toLocaleString("es-AR",{maximumFractionDigits:2})} kg`,`+ ${usdF(brandAmt)}`)}
+              {costOverweight&&desgRow(`⚖️ ${t.ow_short}`,`+ ${usdF(35)}`)}
+            </div>}
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+          <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.courier}</label>
+            <select value={carrier} onChange={e=>setCarrier(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
+              {["DHL","FedEx","UPS"].map(c=><option key={c} value={c} style={{background:"#142038"}}>{c}</option>)}
+            </select>
+          </div>
+          <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.payment_method_label}</label>
+            <select value={pmtMethod} onChange={e=>setPmtMethod(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
+              <option value="cuenta_corriente" style={{background:"#142038"}}>{t.method_cc}</option>
+              <option value="alibaba" style={{background:"#142038"}}>{t.method_alibaba}</option>
+            </select>
+          </div>
+          <div style={{gridColumn:"1 / -1"}}><Inp label={t.intl_tracking} value={tracking} onChange={setTracking} req placeholder="1Z999AA10123456784"/></div>
         </div>
         </>;})()}
-        <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.courier}</label>
-          <select value={carrier} onChange={e=>setCarrier(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
-            {["DHL","FedEx","UPS"].map(c=><option key={c} value={c} style={{background:"#142038"}}>{c}</option>)}
-          </select>
-        </div>
-        <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.payment_method_label}</label>
-          <select value={pmtMethod} onChange={e=>setPmtMethod(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
-            <option value="cuenta_corriente" style={{background:"#142038"}}>{t.method_cc}</option>
-            <option value="alibaba" style={{background:"#142038"}}>{t.method_alibaba}</option>
-          </select>
-        </div>
-        <div style={{gridColumn:"1 / -1"}}><Inp label={t.intl_tracking} value={tracking} onChange={setTracking} req placeholder="1Z999AA10123456784"/></div>
-      </div>
       {!confirmDispatch?<Btn onClick={()=>setConfirmDispatch(true)} disabled={saving||!(computedCost>0)||!tracking||autoWeight<=0}>{t.confirm_dispatch}</Btn>:
       <div style={{padding:"14px 18px",background:"rgba(251,191,36,0.1)",border:"1.5px solid rgba(251,191,36,0.35)",borderRadius:10}}>
         <p style={{fontSize:13,color:"#fbbf24",margin:"0 0 12px",fontWeight:600}}>{t.dispatch_warning}</p>
