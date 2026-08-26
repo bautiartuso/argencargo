@@ -1395,9 +1395,9 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
         })}</div>;
         const VERDE={fg:"#4ade80",bg:"rgba(34,197,94,0.16)",bd:"rgba(34,197,94,0.55)"};
         const ROJO={fg:"#f87171",bg:"rgba(248,113,113,0.14)",bd:"rgba(248,113,113,0.5)"};
-        const togCard=(icon,label,extra,val,set,onColor)=><div style={{flex:1,minWidth:150,padding:"12px 14px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12}}>
-          <p style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.7)",margin:"0 0 3px"}}>{icon} {label}</p>
-          <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"0 0 9px"}}>{extra}</p>
+        const togCard=(icon,label,extra,val,set,onColor)=><div style={{flex:1,minWidth:150,padding:"12px 14px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,display:"flex",flexDirection:"column"}}>
+          <p style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.7)",margin:"0 0 3px",lineHeight:1.35}}>{icon} {label}</p>
+          <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"0 0 9px",flex:1}}>{extra}</p>
           {tog(val,set,onColor)}
         </div>;
         const desgRow=(l,v)=><div style={{display:"flex",justifyContent:"space-between",gap:10,padding:"2px 0"}}><span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,0.75)",fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}}>{v}</span></div>;
@@ -1408,7 +1408,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
         </div>
         <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"stretch",marginBottom:14}}>
           <div style={{flex:"1 1 420px",display:"flex",gap:10,flexWrap:"wrap"}}>
-            {togCard("🔋",t.cost_battery,"+ USD 10",costBattery,setCostBattery,VERDE)}
+            {togCard("🔋",t.cost_battery,"+ USD 10",costBattery,setCostBattery,ROJO)}
             {togCard("⚖️",t.cost_overweight,"+ USD 35",costOverweight,setCostOverweight,ROJO)}
             {togCard("🏷️",t.cost_brand,"+ USD 0,70/kg",costBrand,setCostBrand,ROJO)}
           </div>
