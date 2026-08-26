@@ -7381,14 +7381,22 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     })()}
     {(flight.status==="despachado"||flight.status==="recibido")&&<Card title="Datos del despacho (cargados por agente)" actions={!editCost?<Btn small variant="secondary" onClick={openEditCost}>✎ Editar</Btn>:null}>
       {!editCost?<>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,fontSize:12}}>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>CARRIER</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.international_carrier||"—"}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>TRACKING</p><p style={{fontSize:14,color:"#fff",margin:0,fontFamily:"monospace"}}>{flight.international_tracking||"—"}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PESO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.total_weight_kg?`${flight.total_weight_kg} kg`:"—"}{totalFactKg>0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginLeft:6}}>· {totalFactKg.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg fact.</span>}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>COSTO TOTAL</p><p style={{fontSize:14,color:"#fff",margin:0}}>{usd(flight.total_cost_usd||0)}{totalFactKg>0?<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",marginLeft:6}}>· {usd((flight.total_cost_usd||0)/totalFactKg)}/kg fact.</span>:null}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>PAGO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{flight.payment_method||"—"}</p></div>
-          <div><p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 4px"}}>DESPACHADO</p><p style={{fontSize:14,color:"#fff",margin:0}}>{formatDate(flight.dispatched_at)}</p></div>
-        </div>
+        {(()=>{
+          const pagoLbl={cuenta_corriente:"Cuenta corriente",alibaba:"Alibaba",alipay:"Alipay",tarjeta_credito:"Tarjeta de crédito",efectivo:"Efectivo",transferencia:"Transferencia"}[flight.payment_method]||flight.payment_method||"—";
+          const tile=(icon,label,val,sub)=><div style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"11px 14px"}}>
+            <p style={{fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.4)",margin:"0 0 5px",textTransform:"uppercase",letterSpacing:"0.07em"}}>{icon} {label}</p>
+            <p style={{fontSize:15,fontWeight:700,color:"#fff",margin:0,fontFeatureSettings:'"tnum"',overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{val}</p>
+            {sub&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{sub}</p>}
+          </div>;
+          return <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10}}>
+            {tile("✈️","Carrier",flight.international_carrier||"—")}
+            {tile("🔎","Tracking",<span style={{fontFamily:"monospace"}}>{flight.international_tracking||"—"}</span>)}
+            {tile("⚖️","Peso total",flight.total_weight_kg?`${Number(flight.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:2})} kg`:"—",totalFactKg>0?`${totalFactKg.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg facturable`:null)}
+            {tile("💵","Costo total",<span style={{color:"#4ade80"}}>{usd(flight.total_cost_usd||0)}</span>,totalFactKg>0?`${usd((flight.total_cost_usd||0)/totalFactKg)}/kg facturable`:null)}
+            {tile("💳","Pago",pagoLbl)}
+            {tile("📅","Despachado",formatDate(flight.dispatched_at))}
+          </div>;
+        })()}
         {/* Desglose del costo cargado por el agente (control de tarifas): USD/kg + recargos */}
         {Number(flight.cost_per_kg_usd||0)>0&&(()=>{
           const kg=Number(flight.total_weight_kg||0);const rate=Number(flight.cost_per_kg_usd);
