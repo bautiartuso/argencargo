@@ -742,7 +742,9 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     ]);
     const role=Array.isArray(prof)&&prof[0]?prof[0].role:null;
     if(role==="admin"){
-      setSignup({status:"approved",first_name:"Admin",email:session.user?.email,country:"Argentina"});
+      // tutorial_completed:true — el signup sintético del admin no tiene ficha donde persistir
+      // el tutorial, así que sin esto el overlay aparecía en CADA ingreso del admin.
+      setSignup({status:"approved",first_name:"Admin",email:session.user?.email,country:"Argentina",tutorial_completed:true});
       await reloadAll();
       setLoading(false);
       return;
