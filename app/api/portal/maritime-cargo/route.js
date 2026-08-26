@@ -60,7 +60,7 @@ export async function GET(req) {
   // Cargas del cliente que están en un contenedor y todavía no son operación. Las tarifas y
   // los overrides no dependen de esto, así que van en la misma tanda.
   const [ships, tariffs, ovs] = await Promise.all([
-    svc(`/rest/v1/maritime_shipments?client_id=eq.${clientId}&operation_id=is.null&container_id=not.is.null&select=id,product_description,status,container_id&order=created_at.desc`),
+    svc(`/rest/v1/maritime_shipments?client_id=eq.${clientId}&operation_id=is.null&container_id=not.is.null&select=id,product_description,status,container_id,revenue_manual&order=created_at.desc`),
     svc(`/rest/v1/tariffs?service_key=eq.maritimo_b&select=id,type,min_qty,max_qty,rate`),
     svc(`/rest/v1/client_tariff_overrides?client_id=eq.${clientId}&select=tariff_id,custom_rate`),
   ]);
@@ -121,6 +121,7 @@ export async function GET(req) {
         bultos: 0,
         _cbm: 0,
         _fob: 0,
+        _ships: [],
         container_status: c.status || null,       // en_transito | arribado
         eta_puerto: eEta,
         entrega_estimada: plus14(eEta),
@@ -131,13 +132,17 @@ export async function GET(req) {
     groups[cid].bultos += (bultos[s.id] || 0);
     groups[cid]._cbm += (cbmByShip[s.id] || 0);
     groups[cid]._fob += (fobByShip[s.id] || 0);
+    groups[cid]._ships.push({ cbm: cbmByShip[s.id] || 0, revenue_manual: s.revenue_manual != null ? Number(s.revenue_manual) : null });
   });
 
   // Total a abonar estimado por contenedor = flete (CBM combinado × rango) + recargo por valor.
+  // Si el admin fijó un "a cobrar" a mano en alguna carga (revenue_manual), esa carga usa ese
+  // valor y las demás su parte del automático prorrateada por CBM — igual que el panel admin.
   const cargo = Object.values(groups).map(g => {
     const flete = g._cbm * fleteRate(g._cbm);
-    const total = Math.round((flete + surchargeFor(g._fob, g._cbm)) * 100) / 100;
-    const { _cbm, _fob, ...rest } = g;
+    const auto = flete + surchargeFor(g._fob, g._cbm);
+    const total = Math.round(g._ships.reduce((acc, sh) => acc + (sh.revenue_manual != null ? sh.revenue_manual : (g._cbm > 0 ? auto * (sh.cbm / g._cbm) : auto / Math.max(g._ships.length, 1))), 0) * 100) / 100;
+    const { _cbm, _fob, _ships, ...rest } = g;
     return { ...rest, total_estimado: total > 0 ? total : null };
   }).sort((a, b) => {
     // Orden por fecha de llegada (ETA a puerto) ascendente; sin ETA al final.
