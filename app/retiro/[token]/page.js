@@ -315,7 +315,13 @@ export default function EntregaPublica({ params }) {
               <p style={{ fontSize: 11.5, fontWeight: 700, color: INK, margin: "0 0 2px" }}>¿Cómo querés pagar?</p>
               <p style={{ fontSize: 10.5, color: MUTED, margin: "0 0 9px", lineHeight: 1.5 }}>Marcá <b>una o varias</b> — si elegís más de una, repartís el total como quieras.</p>
               <PayCheck checked={payMethods.includes("efectivo")} onClick={() => !efectivoBlocked && togglePay("efectivo")} label="Efectivo" meta={efectivoBlocked ? "No disponible para envíos con transportista" : "En dólares o pesos, al retirar o recibir"} disabled={efectivoBlocked} />
-              <PayCheck checked={payMethods.includes("transferencia")} onClick={() => togglePay("transferencia")} label="Transferencia en pesos" meta={tcVenta > 0 ? `Al tipo de cambio del día ($${tcVenta.toLocaleString("es-AR")})` : "Te pasamos el monto por WhatsApp"} />
+              <PayCheck checked={payMethods.includes("transferencia")} onClick={() => togglePay("transferencia")} label="Transferencia en pesos" meta={(() => {
+                const sel = payMethods.includes("transferencia");
+                const parte = splitCliente.find((p) => p.method === "transferencia")?.amount || 0;
+                if (sel && tcVenta > 0 && parte > 0) return `Pagás ARS ${Math.round(parte * tcVenta).toLocaleString("es-AR")}`;
+                if (!sel && tcVenta > 0 && payMethods.length === 0) return `Serían ARS ${Math.round(total * tcVenta).toLocaleString("es-AR")}`;
+                return "El importe se pasa a pesos automáticamente";
+              })()} />
               <PayCheck checked={payMethods.includes("crypto")} onClick={() => togglePay("crypto")} label="Cripto (USDT)" meta="Red TRC-20 · te pasamos la billetera por WhatsApp" />
 
               {payMethods.includes("efectivo") && <div style={{ marginTop: 10, padding: "12px 14px", borderRadius: 11, background: "#f4efe3", border: `1px solid ${LINE}` }}>
@@ -323,7 +329,8 @@ export default function EntregaPublica({ params }) {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(90px,1fr))", gap: 6, marginBottom: 10 }}>
                   {[["USD", "Dólares"], ["ARS", "Pesos"], ["mixto", "Un poco de cada"]].map(([k, l]) => <button key={k} type="button" onClick={() => setCashCurrencyMode(k)} style={{ padding: "9px 8px", fontSize: 11.5, fontWeight: 800, borderRadius: 9, cursor: "pointer", border: `1.5px solid ${cashCurrencyMode === k ? GOLD_A : LINE}`, background: cashCurrencyMode === k ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff", color: cashCurrencyMode === k ? "#8b6f4a" : MUTED }}>{l}</button>)}
                 </div>
-                {cashCurrencyMode !== "USD" && tcVenta > 0 && <p style={{ fontSize: 10.5, color: "#1e5c3d", background: "#eaf6ef", border: "1px solid rgba(30,125,79,.2)", borderRadius: 8, padding: "8px 10px", margin: "0 0 10px", lineHeight: 1.5 }}>Los pesos se toman al <b>{data.tc.fuente}</b> del momento del pago — hoy <b>${tcVenta.toLocaleString("es-AR")}</b>.</p>}
+                {cashCurrencyMode === "ARS" && tcVenta > 0 && (() => { const parte = splitCliente.find((p) => p.method === "efectivo")?.amount || 0; return parte > 0 ? <p style={{ fontSize: 11, color: "#1e5c3d", background: "#eaf6ef", border: "1px solid rgba(30,125,79,.2)", borderRadius: 8, padding: "8px 10px", margin: "0 0 10px", lineHeight: 1.5 }}>En pesos son <b>ARS {Math.round(parte * tcVenta).toLocaleString("es-AR")}</b> (valor de hoy — se ajusta al día del pago).</p> : null; })()}
+                {cashCurrencyMode === "mixto" && <p style={{ fontSize: 10.5, color: MUTED, margin: "0 0 10px", lineHeight: 1.5 }}>Coordinamos por WhatsApp cuánto en cada moneda.</p>}
                 <p style={{ fontSize: 10.5, color: MUTED, margin: "0 0 7px", lineHeight: 1.5 }}>Si necesitás cambio, decinos con cuánto llegás así lo tenemos listo. (Opcional)</p>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input value={cashAmount} onChange={(e) => setCashAmount(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="Ej: 600" style={{ ...contactInputStyle(), flex: 1 }} />
@@ -340,12 +347,19 @@ export default function EntregaPublica({ params }) {
                   const monto = esUltimo ? montoResto : montoDe(m);
                   return <div key={m} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7, flexWrap: "wrap" }}>
                     <span style={{ flex: "1 1 120px", fontSize: 12.5, fontWeight: 700, color: INK }}>{PAY_LBL[m]}{esUltimo && <span style={{ fontSize: 9.5, fontWeight: 700, color: MUTED, display: "block" }}>el resto va acá</span>}</span>
-                    {esUltimo
-                      ? <span style={{ fontSize: 14, fontWeight: 800, color: montoResto > 0 ? GOLD_A : "#c0392b", fontVariantNumeric: "tabular-nums" }}>{fmt(montoResto)}{ars(montoResto) && (m === "transferencia" || (m === "efectivo" && cashCurrencyMode !== "USD")) ? <span style={{ display: "block", fontSize: 9.5, fontWeight: 600, color: MUTED, textAlign: "right" }}>{ars(montoResto)}</span> : null}</span>
-                      : <div style={{ position: "relative" }}>
-                          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 700, color: MUTED }}>USD</span>
-                          <input value={payAmounts[m] ?? ""} onChange={(e) => setPayAmounts((p) => ({ ...p, [m]: e.target.value.replace(/[^0-9.,]/g, "") }))} inputMode="decimal" placeholder="0" style={{ ...contactInputStyle(), width: 120, paddingLeft: 42, textAlign: "right" }} />
-                        </div>}
+                    {(()=>{
+                      const enPesos = m === "transferencia" || (m === "efectivo" && cashCurrencyMode === "ARS");
+                      const arsTag = (v) => enPesos && tcVenta > 0 && v > 0 ? <span style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#1e5c3d", textAlign: "right" }}>= ARS {Math.round(v * tcVenta).toLocaleString("es-AR")}</span> : null;
+                      return esUltimo
+                        ? <span style={{ fontSize: 14, fontWeight: 800, color: montoResto > 0 ? GOLD_A : "#c0392b", fontVariantNumeric: "tabular-nums" }}>{fmt(montoResto)}{arsTag(montoResto)}</span>
+                        : <div style={{ textAlign: "right" }}>
+                            <div style={{ position: "relative" }}>
+                              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 700, color: MUTED }}>USD</span>
+                              <input value={payAmounts[m] ?? ""} onChange={(e) => setPayAmounts((p) => ({ ...p, [m]: e.target.value.replace(/[^0-9.,]/g, "") }))} inputMode="decimal" placeholder="0" style={{ ...contactInputStyle(), width: 120, paddingLeft: 42, textAlign: "right" }} />
+                            </div>
+                            {arsTag(montoDe(m))}
+                          </div>;
+                    })()}
                   </div>;
                 })}
               </div>}
