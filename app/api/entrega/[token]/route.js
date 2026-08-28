@@ -34,6 +34,51 @@ function fullAddress(c) {
   return [parts, c.city].filter(Boolean).join(", ");
 }
 
+// Cobros parciales registrados por op (operation_client_payments) — el link los tiene que
+// restar igual que el panel de Entregas, si no le muestra al cliente un saldo inflado.
+async function pagosParciales(ids) {
+  if (!ids.length) return {};
+  const r = await sbFetch(`/operation_client_payments?operation_id=in.(${ids.join(",")})&select=operation_id,amount_usd`);
+  const m = {};
+  (Array.isArray(r.body) ? r.body : []).forEach((p) => { m[p.operation_id] = (m[p.operation_id] || 0) + Number(p.amount_usd || 0); });
+  return m;
+}
+// Mismo criterio que el panel: los cobros parciales registrados pisan al legacy collected.
+function collectedOf(op, pagos) { const p = Number(pagos || 0); return p > 0 ? p : usdCollected(op); }
+function saldoOf(op, pagos) {
+  return Math.max(0, Number(op.budget_total || 0) + Number(op.debt_applied_usd || 0)
+    - Number(op.total_anticipos || 0) - collectedOf(op, pagos)
+    - Number(op.credit_applied_usd || 0) - Number(op.discount_applied_usd || 0));
+}
+
+const HERMANA_SEL = "id,operation_code,description,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_day,delivery_slot,delivery_confirmed_at,delivery_group_id";
+
+// Otras cargas LISTAS del mismo cliente (avisadas o entregables, sin entregar todavía):
+// el link las ofrece para coordinar todo en una sola visita.
+async function loadHermanas(op) {
+  if (!op.client_id) return [];
+  const r = await sbFetch(`/operations?client_id=eq.${op.client_id}&id=neq.${op.id}&delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${HERMANA_SEL}&order=created_at.asc`);
+  const list = Array.isArray(r.body) ? r.body : [];
+  if (list.length === 0) return [];
+  const [pk, pagos] = await Promise.all([
+    sbFetch(`/operation_packages?operation_id=in.(${list.map((o) => o.id).join(",")})&select=operation_id,quantity`),
+    pagosParciales(list.map((o) => o.id)),
+  ]);
+  const bm = {};
+  (Array.isArray(pk.body) ? pk.body : []).forEach((p) => { bm[p.operation_id] = (bm[p.operation_id] || 0) + Number(p.quantity || 1); });
+  return list.map((o) => ({
+    id: o.id,
+    operation_code: o.operation_code,
+    description: o.description,
+    bultos: bm[o.id] || 0,
+    saldo: Math.round(saldoOf(o, pagos[o.id]) * 100) / 100,
+    delivery_day: o.delivery_day,
+    delivery_slot: o.delivery_slot,
+    delivery_confirmed_at: o.delivery_confirmed_at,
+    delivery_group_id: o.delivery_group_id,
+  }));
+}
+
 async function loadOpData(token) {
   const opRes = await sbFetch(`/operations?delivery_public_token=eq.${encodeURIComponent(token)}&select=*,clients(first_name,last_name,client_code,street,floor_apt,postal_code,city,province,tax_condition,dni,email,whatsapp)&limit=1`);
   if (opRes.status >= 400 || !Array.isArray(opRes.body) || opRes.body.length === 0) return null;
@@ -60,11 +105,13 @@ export async function GET(req, { params }) {
   const op = await loadOpData(token);
   if (!op) return Response.json({ error: "No encontramos esta operación o el link expiró" }, { status: 404 });
 
-  const [pkgsRes, settingsRes, itemsRes, { cfg, localities }] = await Promise.all([
+  const [pkgsRes, settingsRes, itemsRes, { cfg, localities }, hermanas, pagosOp] = await Promise.all([
     sbFetch(`/operation_packages?operation_id=eq.${op.id}&select=package_number,quantity,gross_weight_kg,length_cm,width_cm,height_cm,national_tracking&order=package_number.asc`),
     sbFetch(`/gi_settings?select=office_address,office_locality,office_hours,office_phone,payment_titular,payment_alias,payment_crypto_wallet&limit=1`),
     sbFetch(`/operation_items?operation_id=eq.${op.id}&select=description,quantity,unit_price_usd,import_duty_rate,statistics_rate,iva_rate,iva_additional_rate,iigg_rate,iibb_rate&order=created_at.asc`),
     loadDeliveryPricing(),
+    loadHermanas(op).catch(() => []),
+    pagosParciales([op.id]).catch(() => ({})),
   ]);
 
   const pkgs = Array.isArray(pkgsRes.body) ? pkgsRes.body : [];
@@ -194,7 +241,9 @@ export async function GET(req, { params }) {
       credit_applied_usd: Number(op.credit_applied_usd || 0),
       debt_applied_usd: Number(op.debt_applied_usd || 0),
       total_anticipos: Number(op.total_anticipos || 0),
-      collected_amount: usdCollected(op),
+      // "Cobrado efectivo": cobros parciales registrados (pisan al legacy) + descuento aplicado.
+      // El front lo resta tal cual para el saldo — así el link muestra lo mismo que el panel.
+      collected_amount: Math.round((collectedOf(op, pagosOp[op.id]) + Number(op.discount_applied_usd || 0)) * 100) / 100,
       delivery_choice: op.delivery_choice,
       delivery_zone: op.delivery_zone,
       delivery_address: op.delivery_address,
@@ -203,7 +252,9 @@ export async function GET(req, { params }) {
       delivery_day: op.delivery_day,
       delivery_slot: op.delivery_slot,
       payment_split: op.payment_split,
+      delivery_group_id: op.delivery_group_id,
     },
+    hermanas,
     client: { first_name: client.first_name, last_name: client.last_name, dni: client.dni || "", email: client.email || "", whatsapp: client.whatsapp || "", postal_code: client.postal_code || "", street: client.street || "", floor_apt: client.floor_apt || "", city: client.city || "" },
     tax_detail: taxDetail,
     cargo: { bultos, tracking, peso_facturable: Math.round(pesoFacturable * 100) / 100 },
@@ -253,6 +304,17 @@ export async function POST(req, { params }) {
   const op = await loadOpData(token);
   if (!op) return Response.json({ error: "No encontramos esta operación o el link expiró" }, { status: 404 });
 
+  // Cargas hermanas seleccionadas para coordinar en la misma visita. Solo cuentan ids que
+  // realmente sean cargas listas DEL MISMO CLIENTE — cualquier otra cosa se ignora.
+  let extraOps = [];
+  if (Array.isArray(body.extra_ops) && body.extra_ops.length > 0) {
+    const ids = body.extra_ops.filter((x) => typeof x === "string" && /^[0-9a-f-]{36}$/.test(x)).slice(0, 20);
+    if (ids.length > 0) {
+      const exRes = await sbFetch(`/operations?id=in.(${ids.join(",")})&client_id=eq.${op.client_id}&delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${HERMANA_SEL}`);
+      extraOps = Array.isArray(exRes.body) ? exRes.body : [];
+    }
+  }
+
   // El costo de envío se calcula server-side a partir de la localidad REGISTRADA del cliente —
   // nunca se confía en una zona/monto mandado por el cliente.
   const { cfg, localities } = await loadDeliveryPricing();
@@ -266,11 +328,9 @@ export async function POST(req, { params }) {
   }
 
   const bt = Number(op.budget_total || 0);
-  const debtApp = Number(op.debt_applied_usd || 0);
-  const creditApp = Number(op.credit_applied_usd || 0);
-  const totAnt = Number(op.total_anticipos || 0);
-  const collected = usdCollected(op);
-  const saldo = Math.max(0, bt + debtApp - totAnt - collected - creditApp);
+  // Cobros parciales de la op y de las hermanas seleccionadas — mismo saldo que muestra el GET.
+  const pagosMap = await pagosParciales([op.id, ...extraOps.map((x) => x.id)]).catch(() => ({}));
+  const saldo = saldoOf(op, pagosMap[op.id]);
   const finalTotal = Math.round((saldo + deliveryCost) * 100) / 100;
   // Reparto del pago: los montos se recalculan server-side contra el total real (el 2do metodo
   // absorbe el resto) — nunca se confia en montos que sumen otra cosa.
@@ -308,9 +368,40 @@ export async function POST(req, { params }) {
   const alreadyConfirmed = !!op.delivery_confirmed_at;
   const newBudgetTotal = !alreadyConfirmed && deliveryCost > 0 ? Math.round((bt + deliveryCost) * 100) / 100 : bt;
 
+  // Grupo de entrega: N ops que se retiran/reciben en la misma visita. El costo de envío va UNA
+  // sola vez (en la op del token); cada op guarda su propio split con SU saldo — nada se fusiona.
+  const groupId = extraOps.length > 0 ? crypto.randomUUID() : null;
+  const extrasCalc = extraOps.map((x) => {
+    const saldoX = Math.round(saldoOf(x, pagosMap[x.id]) * 100) / 100;
+    const splitX = splitFinal && splitFinal[0]
+      ? [{ method: splitFinal[0].method, amount: saldoX, ...(splitFinal[0].currency ? { currency: splitFinal[0].currency } : {}) }]
+      : [{ method: payment_method, amount: saldoX }];
+    return { op: x, saldo: saldoX, split: splitX };
+  });
+  const combinedTotal = Math.round((finalTotal + extrasCalc.reduce((a, e) => a + e.saldo, 0)) * 100) / 100;
+  const nowIso = new Date().toISOString();
+  const extraPatchesP = Promise.all(extrasCalc.map((e) => sbFetch(`/operations?id=eq.${e.op.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      delivery_choice,
+      delivery_zone: delivery_choice === "propio" ? deliveryZone : null,
+      delivery_address: delivery_choice === "propio" ? (delivery_address || null) : null,
+      delivery_cost_usd: 0,
+      payment_method_chosen: payment_method,
+      delivery_contact: (delivery_choice === "carrier" || delivery_choice === "propio") ? (delivery_contact || null) : null,
+      carrier_mode: delivery_choice === "carrier" ? (carrier_mode || null) : null,
+      delivery_day: (delivery_choice === "oficina" || delivery_choice === "propio") ? delivery_day : null,
+      delivery_slot: (delivery_choice === "oficina" || delivery_choice === "propio") ? delivery_slot : null,
+      payment_split: e.split,
+      delivery_group_id: groupId,
+      delivery_confirmed_at: nowIso,
+    }),
+  }).catch((err) => console.error("[POST entrega] extra patch failed", e.op.operation_code, err.message))));
+
   const patchP = sbFetch(`/operations?id=eq.${op.id}`, {
     method: "PATCH",
     body: JSON.stringify({
+      delivery_group_id: groupId,
       delivery_choice,
       delivery_zone: delivery_choice === "propio" ? deliveryZone : null,
       delivery_address: delivery_choice === "propio" ? (delivery_address || null) : null,
@@ -342,6 +433,8 @@ export async function POST(req, { params }) {
       ? `${PL[splitFinal[0].method]}${splitFinal[0].currency ? ` ${CUR_LBL[splitFinal[0].currency]}` : ""}`
       : (PL[payment_method] || payment_method);
   const diaLabel = delivery_day ? new Date(delivery_day + "T12:00:00Z").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric", timeZone: "UTC" }) : null;
+  const opsIncluidas = [op.operation_code, ...extrasCalc.map((e) => e.op.operation_code)];
+  const grupoTxt = extrasCalc.length > 0 ? `\n🔗 Se entrega junto con: ${extrasCalc.map((e) => e.op.operation_code).join(", ")} (total del grupo: USD ${combinedTotal.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` : "";
   const noteP = (async () => {
     await sbFetch(`/op_communications`, {
       method: "POST",
@@ -349,9 +442,18 @@ export async function POST(req, { params }) {
         operation_id: op.id,
         type: "note",
         direction: "in",
-        content: `✅ Cliente confirmó carga lista.\nEntrega: ${deliveryLabel}${diaLabel ? `\nDía y franja: ${diaLabel} · ${delivery_slot}` : ""}${delivery_choice === "propio" ? `\nDirección: ${delivery_address || "(sin especificar)"}` : ""}\nPago: ${payLabel}${usaEfectivo && Number(cash_amount) > 0 ? `\n💵 Llega con ${cash_currency === "ARS" ? "ARS" : "USD"} ${Number(cash_amount).toLocaleString("es-AR")} — tener cambio listo` : ""}\nTotal: USD ${finalTotal.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        content: `✅ Cliente confirmó carga lista.\nEntrega: ${deliveryLabel}${diaLabel ? `\nDía y franja: ${diaLabel} · ${delivery_slot}` : ""}${delivery_choice === "propio" ? `\nDirección: ${delivery_address || "(sin especificar)"}` : ""}\nPago: ${payLabel}${usaEfectivo && Number(cash_amount) > 0 ? `\n💵 Llega con ${cash_currency === "ARS" ? "ARS" : "USD"} ${Number(cash_amount).toLocaleString("es-AR")} — tener cambio listo` : ""}\nTotal: USD ${finalTotal.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${grupoTxt}`,
       }),
     });
+    await Promise.all(extrasCalc.map((e) => sbFetch(`/op_communications`, {
+      method: "POST",
+      body: JSON.stringify({
+        operation_id: e.op.id,
+        type: "note",
+        direction: "in",
+        content: `🔗 Coordinada junto con ${op.operation_code} (misma visita).\nEntrega: ${deliveryLabel}${diaLabel ? `\nDía y franja: ${diaLabel} · ${delivery_slot}` : ""}\nPago: ${payLabel}\nSaldo de esta op: USD ${e.saldo.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      }),
+    }).catch(() => {})));
   })().catch((e) => console.error("[POST entrega] log failed", e.message));
 
   // Avisar al admin: el cliente completo la info de retiro. Antes esto no notificaba nada, asi que
@@ -361,32 +463,38 @@ export async function POST(req, { params }) {
     const admins = await sbFetch(`/profiles?role=eq.admin&select=id`);
     const ids = (Array.isArray(admins.body) ? admins.body : []).map((a) => a.id).filter(Boolean);
     const cliCode = client.client_code ? `${client.client_code} · ` : "";
-    const title = `🚚 Retiro coordinado · ${op.operation_code}`;
-    const body2 = `${cliCode}${deliveryLabel} · ${payLabel}`;
+    const title = `🚚 Retiro coordinado · ${opsIncluidas.join(" + ")}`;
+    const body2 = `${cliCode}${deliveryLabel} · ${payLabel}${extrasCalc.length > 0 ? ` · ${opsIncluidas.length} ops juntas` : ""}`;
     await Promise.all(ids.flatMap((id) => [
       sbFetch(`/notifications`, { method: "POST", body: JSON.stringify({ user_id: id, portal: "admin", title, body: body2, link: "/admin" }) }).catch(() => {}),
       fetch(`${BASE_URL}/api/push/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: id, portal: "admin", title, body: body2, url: "/admin" }) }).catch(() => {}),
     ]));
   })().catch((e) => console.error("[POST entrega] aviso admin failed", e.message));
 
-  const [, , , settingsRes, tcJson] = await Promise.all([patchP, noteP, avisosP, settingsP, tcP]);
+  const [, , , , settingsRes, tcJson] = await Promise.all([patchP, extraPatchesP, noteP, avisosP, settingsP, tcP]);
   const stg = Array.isArray(settingsRes.body) && settingsRes.body[0] ? settingsRes.body[0] : {};
   const wallet = stg.payment_crypto_wallet || "";
   const tcVenta = Number(tcJson?.venta) > 0 ? Number(tcJson.venta) : 0;
 
   const anyCrypto = splitFinal ? splitFinal.some((p) => p.method === "crypto") : payment_method === "crypto";
   const anyTransfer = splitFinal ? splitFinal.some((p) => p.method === "transferencia") : payment_method === "transferencia";
+  // Para el resumen del cliente: con grupo, el split que se muestra lleva el total COMBINADO
+  // (lo que efectivamente paga en la visita) — los splits por op ya quedaron guardados arriba.
+  const splitDisplay = splitFinal && splitFinal.length === 1 && extrasCalc.length > 0
+    ? [{ ...splitFinal[0], amount: combinedTotal }]
+    : splitFinal;
   return Response.json({
     transfer: anyTransfer ? { alias: stg.payment_alias || "", titular: stg.payment_titular || "" } : null,
     tc_venta: tcVenta || null,
     ok: true,
-    total: finalTotal,
+    total: combinedTotal,
+    ops_incluidas: opsIncluidas,
     delivery_choice,
     delivery_zone: deliveryZone,
     delivery_day: (delivery_choice === "oficina" || delivery_choice === "propio") ? delivery_day : null,
     delivery_slot: (delivery_choice === "oficina" || delivery_choice === "propio") ? delivery_slot : null,
     payment_method,
-    payment_methods: splitFinal,
+    payment_methods: splitDisplay,
     crypto_wallet: anyCrypto ? wallet : null,
   });
 }

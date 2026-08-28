@@ -4611,7 +4611,7 @@ function EntregasPanel({token,onOpenOp}){
   //      pierden de vista al marcarlas entregadas, como pasaba antes.
   const load=async()=>{
     setLo(true);
-    const sel="id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,street,floor_apt,city,province,postal_code)";
+    const sel="id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,street,floor_apt,city,province,postal_code)";
     const [pend,entr,done]=await Promise.all([
       dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${sel}&order=eta.desc`}),
       dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.false&select=${sel}&order=delivery_completed_at.desc&limit=200`}).catch(()=>[]),
@@ -4788,7 +4788,10 @@ function EntregasPanel({token,onOpenOp}){
     if(!num){toast("El cliente no tiene WhatsApp cargado","error");return;}
     const nombre=(o.clients?.first_name||"").trim().split(" ")[0];
     const link=`https://argencargo.com.ar/retiro/${o.delivery_public_token}`;
-    const msg=encodeURIComponent(`Hola${nombre?` ${nombre}`:""}! 🎉 Tu carga de ${o.operation_code} ya está lista.\n\nEntrá acá para elegir cómo la recibís, el día y la forma de pago:\n${link}`);
+    // Otras cargas listas del mismo cliente sin entregar: el link se las muestra todas juntas.
+    const otras=rows.filter(x=>x.id!==o.id&&x.client_id===o.client_id&&!x.delivery_completed_at).length;
+    const extra=otras>0?`\n\n📦 Además tenés ${otras===1?"otra carga lista":`${otras} cargas más listas`} — desde el mismo link podés coordinar todo junto en una sola visita.`:"";
+    const msg=encodeURIComponent(`Hola${nombre?` ${nombre}`:""}! 🎉 Tu carga de ${o.operation_code} ya está lista.\n\nEntrá acá para elegir cómo la recibís, el día y la forma de pago:\n${link}${extra}`);
     window.open(`https://wa.me/${num}?text=${msg}`,"_blank");
     if(!o.delivery_ready_at){
       dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{delivery_ready_at:new Date().toISOString()}}).catch(()=>{});
@@ -4878,6 +4881,25 @@ function EntregasPanel({token,onOpenOp}){
     </div>;
   };
 
+  // Ops coordinadas en la misma visita (delivery_group_id compartido, desde el link o el bot):
+  // se renderizan juntas en un marco, con el total de la visita. Cada op mantiene sus acciones.
+  const renderConGrupos=(ops,contexto)=>{
+    const out=[];const seen=new Set();
+    for(const o of ops){
+      if(seen.has(o.id))continue;
+      const grupo=o.delivery_group_id?ops.filter(x=>x.delivery_group_id===o.delivery_group_id):[o];
+      grupo.forEach(x=>seen.add(x.id));
+      if(grupo.length>1){
+        const totGrupo=grupo.reduce((a,x)=>a+saldoFor(x),0);
+        out.push(<div key={"g"+o.delivery_group_id} style={{border:"1px dashed rgba(184,149,106,0.5)",borderRadius:13,padding:"9px 9px 5px",background:"rgba(184,149,106,0.05)"}}>
+          <p style={{fontSize:10.5,fontWeight:800,color:GOLD_LIGHT,margin:"0 0 7px 4px",letterSpacing:"0.05em"}}>🔗 SE ENTREGAN JUNTAS · {grupo.length} OPS{!sinMontos&&totGrupo>0.005?` · ${usd(totGrupo)}`:""}</p>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>{grupo.map(x=><CardOp key={x.id} o={x} contexto={contexto}/>)}</div>
+        </div>);
+      } else out.push(<CardOp key={o.id} o={o} contexto={contexto}/>);
+    }
+    return out;
+  };
+
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
 
   const sinAviso=sinConfirmar.filter(o=>!o.delivery_ready_at);
@@ -4954,16 +4976,16 @@ function EntregasPanel({token,onOpenOp}){
               {f!=="Sin franja"&&<span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)"}}>a {f.split(" a ")[1]}</span>}
             </div>
             <div style={{flex:1,borderLeft:"2px solid rgba(184,149,106,0.25)",paddingLeft:14,display:"flex",flexDirection:"column",gap:8}}>
-              {enFranja.map(o=><CardOp key={o.id} o={o} contexto="porentregar"/>)}
+              {renderConGrupos(enFranja,"porentregar")}
             </div>
           </div>;
         })}
         {sinFecha.length>0&&<Bloque titulo={<>🗓 Coordinadas sin día elegido <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {sinFecha.length}</span></>}>
-          {sinFecha.map(o=><CardOp key={o.id} o={o} contexto="porentregar"/>)}
+          {renderConGrupos(sinFecha,"porentregar")}
         </Bloque>}
         {carriers.length>0&&<Bloque titulo={<>📮 Transportista · para despachar <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {carriers.length}</span></>}
           accion={<Btn small variant="secondary" onClick={()=>imprimirEtiquetas("carrier_domicilio",carriers)}>🖨 Etiquetas</Btn>}>
-          {carriers.map(o=><CardOp key={o.id} o={o} contexto="porentregar"/>)}
+          {renderConGrupos(carriers,"porentregar")}
         </Bloque>}
       </>;
     })()}
@@ -4987,7 +5009,7 @@ function EntregasPanel({token,onOpenOp}){
         const ordenadas=[...inGroup].sort((a,b)=>(a.delivery_day||"9999")<(b.delivery_day||"9999")?-1:1);
         return <Bloque key={g.k} titulo={<>{g.l} <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {inGroup.length}</span></>}
           accion={g.k!=="oficina"&&<Btn small variant="secondary" onClick={()=>imprimirEtiquetas(g.k,ordenadas)}>🖨 {g.k.startsWith("carrier")?"Etiquetas de despacho":"Hoja de ruta"}</Btn>}>
-          {ordenadas.map(o=><CardOp key={o.id} o={o} contexto="porentregar"/>)}
+          {renderConGrupos(ordenadas,"porentregar")}
         </Bloque>;
       })}
     </>}

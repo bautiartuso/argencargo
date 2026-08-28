@@ -52,6 +52,8 @@ export default function EntregaPublica({ params }) {
   const [contacto, setContacto] = useState({ nombre: "", apellido: "", dni: "", email: "", telefono: "", direccion: "", piso: "", cp: "", sucursal: "" });
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState(null);
+  // Otras cargas listas del mismo cliente: ids seleccionadas para coordinar en la misma visita.
+  const [selExtra, setSelExtra] = useState([]);
 
   useEffect(() => {
     (async () => {
@@ -71,12 +73,22 @@ export default function EntregaPublica({ params }) {
         setDirLocalidad(d.client?.city || "");
         setDirCP(d.client?.postal_code || "");
         setDirTel(d.client?.whatsapp || "");
+        // Cargas hermanas: las que todavía no coordinaron arrancan marcadas (lo normal es
+        // llevarse todo junto); las ya coordinadas para otro día arrancan sin marcar.
+        const herm = Array.isArray(d.hermanas) ? d.hermanas : [];
+        setSelExtra(herm.filter((h) => !h.delivery_confirmed_at).map((h) => h.id));
         // Op ya confirmada: abrir directo en el resumen final (no repetir el formulario).
         // "Cambiar algo" vuelve al paso 2 con las elecciones precargadas.
         if (d.op.delivery_confirmed_at) {
           const bt2 = Number(d.op.budget_total || 0);
-          const saldo2 = Math.max(0, bt2 + Number(d.op.debt_applied_usd || 0) - Number(d.op.total_anticipos || 0) - Number(d.op.collected_amount || 0) - Number(d.op.credit_applied_usd || 0));
-          const split2 = Array.isArray(d.op.payment_split) ? d.op.payment_split : null;
+          let saldo2 = Math.max(0, bt2 + Number(d.op.debt_applied_usd || 0) - Number(d.op.total_anticipos || 0) - Number(d.op.collected_amount || 0) - Number(d.op.credit_applied_usd || 0));
+          // Si fue coordinada en grupo, el resumen muestra el total de la visita completa.
+          const delGrupo = d.op.delivery_group_id ? herm.filter((h) => h.delivery_group_id === d.op.delivery_group_id) : [];
+          saldo2 += delGrupo.reduce((a, h) => a + Number(h.saldo || 0), 0);
+          if (delGrupo.length) setSelExtra(delGrupo.map((h) => h.id));
+          // El split guardado es por op — para el resumen del grupo, el monto mostrado es el total de la visita.
+          let split2 = Array.isArray(d.op.payment_split) ? d.op.payment_split : null;
+          if (split2 && split2.length === 1 && delGrupo.length) split2 = [{ ...split2[0], amount: Math.round(saldo2 * 100) / 100 }];
           const metodos2 = split2 ? split2.map((p) => p.method) : (d.op.payment_method_chosen ? [d.op.payment_method_chosen] : []);
           if (d.op.delivery_choice) setDelivery(d.op.delivery_choice);
           if (d.op.delivery_day) setDiaEntrega(d.op.delivery_day);
@@ -86,6 +98,7 @@ export default function EntregaPublica({ params }) {
           if (efSplit?.currency) setCashCurrencyMode(efSplit.currency);
           setConfirmed({
             total: Math.round(saldo2 * 100) / 100,
+            ops_incluidas: [d.op.operation_code, ...delGrupo.map((h) => h.operation_code)],
             delivery_choice: d.op.delivery_choice,
             delivery_zone: d.op.delivery_zone,
             delivery_day: d.op.delivery_day,
@@ -148,7 +161,11 @@ export default function EntregaPublica({ params }) {
   const totAnt = Number(op.total_anticipos || 0);
   const collected = Number(op.collected_amount || 0);
   const saldo = Math.max(0, op.budget_total + debtApp - totAnt - collected - creditApp);
-  const total = Math.round((saldo + deliveryCost) * 100) / 100;
+  // Cargas hermanas seleccionadas: se suman al total de la visita (cada op mantiene su saldo).
+  const hermanas = Array.isArray(data.hermanas) ? data.hermanas : [];
+  const extraSel = hermanas.filter((h) => selExtra.includes(h.id));
+  const saldoExtras = extraSel.reduce((a, h) => a + Number(h.saldo || 0), 0);
+  const total = Math.round((saldo + saldoExtras + deliveryCost) * 100) / 100;
 
   const efectivoBlocked = delivery === "carrier";
 
@@ -198,6 +215,7 @@ export default function EntregaPublica({ params }) {
         delivery_slot: (delivery === "oficina" || delivery === "propio") ? franjaEntrega : null,
         delivery_contact: delivery === "carrier" ? contacto : delivery === "propio" ? { direccion: dirCalle.trim(), piso: dirPiso.trim(), localidad: dirLocalidad.trim(), cp: dirCP.trim(), telefono: dirTel.trim() } : null,
         carrier_mode: delivery === "carrier" ? carrierMode : null,
+        extra_ops: selExtra,
       }),
     });
     const d = await r.json();
@@ -262,8 +280,23 @@ export default function EntregaPublica({ params }) {
               {cargo.tracking.map((t, i) => <div key={i}>– {t}</div>)}
             </div>
           </>}
-          {paso===1&&<button onClick={()=>setPaso(2)} style={nextBtnStyle()}>Continuar →</button>}
+          {paso===1&&hermanas.length===0&&<button onClick={()=>setPaso(2)} style={nextBtnStyle()}>Continuar →</button>}
         </div>
+
+        {/* Cargas hermanas: coordinar todo en una sola visita, o destildar las que no se lleva hoy. */}
+        {hermanas.length>0&&<div style={stepStyle()}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 6 }}><span style={stepNStyle()}>+</span><span style={stepTitleStyle()}>También tenés {hermanas.length === 1 ? "otra carga lista" : `${hermanas.length} cargas más listas`}</span></div>
+          <p style={{ fontSize: 11, color: MUTED, margin: "0 0 10px", lineHeight: 1.5 }}>Podés coordinar todo en una sola visita — destildá las que no quieras incluir ahora.</p>
+          {hermanas.map((h) => {
+            const on = selExtra.includes(h.id);
+            const yaCoord = !!h.delivery_confirmed_at && h.delivery_day;
+            return <PayCheck key={h.id} checked={on} onClick={() => setSelExtra((p) => on ? p.filter((x) => x !== h.id) : [...p, h.id])}
+              label={`${h.operation_code} · ${h.description || "Carga"}`}
+              meta={<>{h.bultos} {h.bultos === 1 ? "bulto" : "bultos"} · saldo {fmt(h.saldo)}{yaCoord && <span style={{ color: GOLD_A, fontWeight: 700 }}> · ya coordinada: {new Date(h.delivery_day + "T12:00:00").toLocaleDateString("es-AR", { weekday: "short", day: "numeric", month: "numeric" })}{h.delivery_slot ? ` · ${h.delivery_slot}` : ""}</span>}</>} />;
+          })}
+          {selExtra.length>0&&<p style={{ fontSize: 11, color: "#1e5c3d", background: "#eaf6ef", border: "1px solid rgba(30,125,79,.2)", borderRadius: 8, padding: "8px 10px", margin: "6px 0 0", lineHeight: 1.5 }}>Vas a coordinar <b>{1 + selExtra.length} cargas juntas</b> — total de la visita: <b>{fmt(total)}</b></p>}
+          {paso===1&&<button onClick={()=>setPaso(2)} style={nextBtnStyle()}>Continuar →</button>}
+        </div>}
 
         </>}
 
@@ -524,6 +557,7 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
       </div>
       <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: "14px 16px", marginBottom: 12 }}>
         <p style={{ fontSize: 12, fontWeight: 800, margin: "0 0 10px" }}>Resumen</p>
+        {Array.isArray(data.ops_incluidas) && data.ops_incluidas.length > 1 && <div style={rowS}><span style={{ color: MUTED }}>Cargas</span><span style={{ fontWeight: 700, textAlign: "right", fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 11.5 }}>{data.ops_incluidas.join(" + ")}</span></div>}
         <div style={rowS}><span style={{ color: MUTED }}>Entrega</span><span style={{ fontWeight: 700, textAlign: "right" }}>{entregaLabel}</span></div>
         {data.delivery_day && <div style={rowS}><span style={{ color: MUTED }}>{delivery === "oficina" ? "Retirás" : "Te la llevamos"}</span><span style={{ fontWeight: 700 }}>{new Date(data.delivery_day + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric" })} · {data.delivery_slot}</span></div>}
         <div style={rowS}><span style={{ color: MUTED }}>Pago</span><span style={{ fontWeight: 700, textAlign: "right" }}>{payLabel}</span></div>

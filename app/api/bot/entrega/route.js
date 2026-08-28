@@ -72,7 +72,7 @@ function saldoOf(op, pagosUsd) {
   ) * 100) / 100;
 }
 
-const OP_SEL = "id,operation_code,status,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_ready_at,delivery_public_token,delivery_contact,carrier_mode,client_id,clients(first_name,last_name,client_code,whatsapp,email,street,floor_apt,city,province,postal_code)";
+const OP_SEL = "id,operation_code,status,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_ready_at,delivery_public_token,delivery_contact,carrier_mode,delivery_group_id,client_id,clients(first_name,last_name,client_code,whatsapp,email,street,floor_apt,city,province,postal_code)";
 
 async function opView(op) {
   const [pagosRes, pkRes] = await Promise.all([
@@ -97,6 +97,8 @@ async function opView(op) {
       contacto: op.delivery_contact,
       costo_envio_usd: Number(op.delivery_cost_usd || 0) || 0,
       confirmada: !!op.delivery_confirmed_at,
+      // Ops con el mismo grupo se entregan en la misma visita (coordinadas juntas).
+      grupo: op.delivery_group_id || null,
     },
     pago: {
       metodo: op.payment_method_chosen,
@@ -155,12 +157,24 @@ export async function POST(req) {
   if (!authOk(req)) return Response.json({ error: "No autorizado" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ error: "Server config missing" }, { status: 500 });
   let body = null; try { body = await req.json(); } catch {}
-  if (!body || !body.op) return Response.json({ error: "Falta op (código de operación)" }, { status: 400 });
+  // Una op ("op") o varias ("ops") — con varias, el mismo cambio se aplica a todas y quedan
+  // agrupadas para entregarse en la misma visita (delivery_group_id compartido).
+  const codes = Array.isArray(body?.ops) ? body.ops : body?.op ? [body.op] : [];
+  if (codes.length === 0 || codes.length > 20) return Response.json({ error: "Falta op (código) u ops (lista de códigos)" }, { status: 400 });
 
-  const op = await findOp(body.op);
-  if (!op) return Response.json({ error: "Operación no encontrada" }, { status: 404 });
-  if (op.delivery_completed_at) return Response.json({ error: "La operación ya fue entregada — no se puede recoordinar" }, { status: 409 });
+  const opsList = [];
+  for (const c of codes) {
+    const o = await findOp(c);
+    if (!o) return Response.json({ error: `Operación ${c} no encontrada` }, { status: 404 });
+    if (o.delivery_completed_at) return Response.json({ error: `${o.operation_code} ya fue entregada — no se puede recoordinar` }, { status: 409 });
+    opsList.push(o);
+  }
+  if (new Set(opsList.map((o) => o.client_id)).size > 1) return Response.json({ error: "Las ops de un grupo tienen que ser del mismo cliente" }, { status: 400 });
+  // Grupo: con varias ops se agrupan (manteniendo un grupo ya existente entre ellas si lo hay).
+  const groupId = opsList.length > 1 ? (opsList.find((o) => o.delivery_group_id)?.delivery_group_id || crypto.randomUUID()) : null;
 
+  const resultados = [];
+  for (const op of opsList) {
   const patch = {};
   const cambios = [];
 
@@ -225,20 +239,31 @@ export async function POST(req) {
   const completa = efPay && (op.delivery_choice === "carrier" || (efDay && efSlot));
   if (completa && !op.delivery_confirmed_at) patch.delivery_confirmed_at = new Date().toISOString();
   if (!op.delivery_ready_at) patch.delivery_ready_at = new Date().toISOString();
+  if (groupId) patch.delivery_group_id = groupId;
 
-  const upd = await sb(`/operations?id=eq.${op.id}`, { method: "PATCH", body: JSON.stringify(patch) });
-  if (upd.status >= 400) return Response.json({ error: "No se pudo actualizar la operación" }, { status: 500 });
+  resultados.push({ op, patch, cambios });
+  } // fin del loop de validación — recién acá, con todas las ops válidas, se aplica.
 
-  await sb(`/op_communications`, {
-    method: "POST",
-    body: JSON.stringify({
-      operation_id: op.id,
-      type: "note",
-      direction: "in",
-      content: `🤖 Bot de entregas — el cliente cambió por WhatsApp:\n${cambios.map((c) => `• ${c}`).join("\n")}${body.note ? `\n📝 ${String(body.note).slice(0, 500)}` : ""}`,
-    }),
+  const grupoTxt = opsList.length > 1 ? `\n🔗 Misma visita que: ${opsList.map((o) => o.operation_code).join(", ")}` : "";
+  for (const r of resultados) {
+    const upd = await sb(`/operations?id=eq.${r.op.id}`, { method: "PATCH", body: JSON.stringify(r.patch) });
+    if (upd.status >= 400) return Response.json({ error: `No se pudo actualizar ${r.op.operation_code}` }, { status: 500 });
+    await sb(`/op_communications`, {
+      method: "POST",
+      body: JSON.stringify({
+        operation_id: r.op.id,
+        type: "note",
+        direction: "in",
+        content: `🤖 Bot de entregas — el cliente cambió por WhatsApp:\n${r.cambios.map((c) => `• ${c}`).join("\n")}${grupoTxt}${body.note ? `\n📝 ${String(body.note).slice(0, 500)}` : ""}`,
+      }),
+    }).catch(() => {});
+  }
+
+  const vistas = await Promise.all(resultados.map(async (r) => opView(await findOp(r.op.operation_code) || r.op)));
+  return Response.json({
+    ok: true,
+    cambios: resultados[0].cambios,
+    grupo: groupId,
+    ...(vistas.length === 1 ? { operacion: vistas[0] } : { operaciones: vistas }),
   });
-
-  const fresh = await findOp(body.op);
-  return Response.json({ ok: true, cambios, operacion: await opView(fresh || op) });
 }
