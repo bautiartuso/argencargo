@@ -448,7 +448,7 @@ function OptRow({ selected, onClick, label, meta, price, disabled }) {
 
 function ConfirmedView({ data, delivery, clientName }) {
   const L = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };
-  const payLabel = Array.isArray(data.payment_methods) && data.payment_methods.length === 2
+  const payLabel = Array.isArray(data.payment_methods) && data.payment_methods.length > 1
     ? data.payment_methods.map((p) => `${L[p.method] || p.method} (${fmt(p.amount)})`).join(" + ")
     : (L[data.payment_method] || data.payment_method);
   const entregaLabel = delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${data.delivery_zone || ""}` : "Envío por transportista";
