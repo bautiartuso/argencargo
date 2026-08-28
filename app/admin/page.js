@@ -4395,6 +4395,18 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
     const dif=llegaUsd-saldo;
     return dif>0.01?dif:0;
   })():0;
+  // Pegar el comprobante directo con Cmd/Ctrl+V (captura del home banking, screenshot, etc.)
+  // mientras el modal está abierto — mismo camino que el adjuntar.
+  useEffect(()=>{
+    const onPaste=(e)=>{
+      if(!(metodo==="transferencia"||metodo==="crypto")||receipt.url||subiendo)return;
+      const item=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith("image/")||i.type==="application/pdf");
+      const f=item?.getAsFile();
+      if(f){e.preventDefault();subirComprobante(f);}
+    };
+    window.addEventListener("paste",onPaste);
+    return()=>window.removeEventListener("paste",onPaste);
+  });
   const subirComprobante=async(file)=>{
     if(!file)return;
     setSubiendo(true);setErr("");
@@ -4509,7 +4521,7 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
         {receipt.url
           ?<div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:9,fontSize:12,color:"#4ade80"}}>📎 {receipt.name} · {receipt.kb} KB<button onClick={()=>setReceipt({url:"",name:"",kb:0})} style={{marginLeft:"auto",background:"none",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer"}}>✕</button></div>
           :<label style={{display:"block",padding:"11px 12px",border:"1.5px dashed rgba(255,255,255,0.2)",borderRadius:9,fontSize:12.5,color:"rgba(255,255,255,0.5)",textAlign:"center",cursor:subiendo?"wait":"pointer"}}>
-            {subiendo?"Subiendo…":"📎 Adjuntar comprobante (foto o PDF)"}
+            {subiendo?"Subiendo…":<>📎 Adjuntar comprobante (foto o PDF)<span style={{display:"block",fontSize:10.5,color:"rgba(255,255,255,0.35)",marginTop:2}}>o pegalo directo con ⌘V / Ctrl+V</span></>}
             <input type="file" accept="image/*,.pdf" onChange={e=>subirComprobante(e.target.files?.[0])} style={{display:"none"}} disabled={subiendo}/>
           </label>}
         <p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:"5px 0 0"}}>{metodo==="transferencia"&&destino==="financiera"?"El cobro genera el movimiento en la CC de la financiera automáticamente, con el comprobante adjunto.":"El comprobante queda guardado en el cobro de la operación."}</p>
