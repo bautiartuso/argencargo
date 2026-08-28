@@ -33,7 +33,9 @@ export default function EntregaPublica({ params }) {
   const [franjaEntrega, setFranjaEntrega] = useState("");
   // Pago combinado: hasta 2 métodos. payMethods = ["efectivo","crypto"], payAmounts = {efectivo:"600"}.
   const [payMethods, setPayMethods] = useState(["efectivo"]);
-  const [payAmount1, setPayAmount1] = useState(""); // monto del PRIMER método cuando hay 2
+  const [payAmounts, setPayAmounts] = useState({}); // montos por método (el último seleccionado absorbe el resto)
+  const [cashCurrencyMode, setCashCurrencyMode] = useState("USD"); // USD | ARS | mixto (solo efectivo)
+  const [formError, setFormError] = useState("");
   // Si paga (parte) en efectivo: con cuánto llega, para tener el cambio listo.
   const [cashAmount, setCashAmount] = useState("");
   const [cashCurrency, setCashCurrency] = useState("USD");
@@ -85,8 +87,10 @@ export default function EntregaPublica({ params }) {
     setDiaEntrega(""); setFranjaEntrega("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [delivery]);
-  useEffect(() => { setPayment(payMethods[0] || "transferencia"); // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setPayment(payMethods[0] || "transferencia"); setFormError(""); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payMethods]);
+  useEffect(() => { setFormError(""); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paso, diaEntrega, franjaEntrega, delivery]);
 
   if (loading) return <div style={pageStyle()}><p style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>Cargando…</p></div>;
   if (err) return <div style={pageStyle()}><div style={{ maxWidth: 440, padding: 30, background: "rgba(255,255,255,0.04)", borderRadius: 14, textAlign: "center" }}><p style={{ fontSize: 15, fontWeight: 600, color: "#f87171" }}>{err}</p></div></div>;
@@ -123,21 +127,33 @@ export default function EntregaPublica({ params }) {
     if ((delivery === "oficina" || delivery === "propio") && (!diaEntrega || !franjaEntrega)) return delivery === "oficina" ? "Elegí qué día y en qué horario pasás a retirar." : "Elegí qué día y en qué franja querés recibir la entrega.";
     return null;
   };
-  // Montos del pago combinado: monto1 = lo que paga con el primer método; el resto va al segundo.
-  const monto1 = Number(String(payAmount1).replace(",", ".")) || 0;
-  const monto2 = payMethods.length === 2 ? Math.max(0, Math.round((total - monto1) * 100) / 100) : 0;
+  // Reparto del pago: con varios métodos, todos menos el ÚLTIMO tienen monto editable;
+  // el último absorbe automáticamente el resto (nunca se descuadra la suma).
+  const montoDe = (m) => Number(String(payAmounts[m] ?? "").replace(",", ".")) || 0;
+  const editables = payMethods.slice(0, -1);
+  const sumaEditables = editables.reduce((s2, m) => s2 + montoDe(m), 0);
+  const montoResto = Math.max(0, Math.round((total - sumaEditables) * 100) / 100);
+  const splitCliente = payMethods.length === 1
+    ? [{ method: payMethods[0], amount: total }]
+    : payMethods.map((m, i) => ({ method: m, amount: i === payMethods.length - 1 ? montoResto : montoDe(m) }));
+  const tcVenta = Number(data?.tc?.venta || 0);
+  const ars = (usd) => tcVenta > 0 ? `≈ ARS ${Math.round(usd * tcVenta).toLocaleString("es-AR")}` : null;
   const validarPago = () => {
     if (payMethods.length === 0) return "Elegí al menos una forma de pago.";
-    if (payMethods.length === 2 && (!(monto1 > 0) || monto1 >= total)) return "Indicá cuánto pagás con el primer método (mayor a 0 y menor al total).";
+    if (payMethods.length > 1) {
+      for (const m of editables) if (!(montoDe(m) > 0)) return "Completá cuánto pagás con cada método.";
+      if (sumaEditables >= total) return "Los montos superan el total — bajá alguno para que quede algo para el último método.";
+    }
     return null;
   };
 
   const confirm = async () => {
     // Andreani no despacha sin DNI del destinatario, asi que se pide antes de confirmar.
     const errEntrega = validarEntrega();
-    if (errEntrega) { alert(errEntrega); return; }
+    if (errEntrega) { setFormError(errEntrega); return; }
     const errPago = validarPago();
-    if (errPago) { alert(errPago); return; }
+    if (errPago) { setFormError(errPago); return; }
+    setFormError("");
     setConfirming(true);
     // La zona/precio los recalcula el server a partir de la localidad registrada — no se manda acá.
     const r = await fetch(`/api/entrega/${token}`, {
@@ -147,7 +163,7 @@ export default function EntregaPublica({ params }) {
         delivery_choice: delivery,
         delivery_address: delivery === "propio" ? address : null,
         payment_method: payMethods[0],
-        payment_methods: payMethods.map((m, i) => ({ method: m, amount: payMethods.length === 2 ? (i === 0 ? monto1 : monto2) : total })),
+        payment_methods: splitCliente.map((p) => p.method === "efectivo" ? { ...p, currency: cashCurrencyMode } : p),
         cash_amount: payMethods.includes("efectivo") && Number(String(cashAmount).replace(",", ".")) > 0 ? Number(String(cashAmount).replace(",", ".")) : null,
         cash_currency: payMethods.includes("efectivo") ? cashCurrency : null,
         delivery_day: (delivery === "oficina" || delivery === "propio") ? diaEntrega : null,
@@ -158,7 +174,7 @@ export default function EntregaPublica({ params }) {
     });
     const d = await r.json();
     setConfirming(false);
-    if (!r.ok) { alert(d.error || "Error al confirmar"); return; }
+    if (!r.ok) { setFormError(d.error || "Error al confirmar"); return; }
     setConfirmed(d);
   };
 
@@ -268,9 +284,10 @@ export default function EntregaPublica({ params }) {
               )}
             </div>
           )}
+          {formError && <ErrorBanner msg={formError} />}
           {paso===2&&<div style={{ display: "flex", gap: 8, marginTop: 14 }}>
             <button onClick={()=>setPaso(1)} style={backBtnStyle()}>← Volver</button>
-            <button onClick={()=>{const e=validarEntrega();if(e){alert(e);return;}setPaso(3);}} style={{...nextBtnStyle(), marginTop: 0, flex: 1}}>Continuar →</button>
+            <button onClick={()=>{const e=validarEntrega();if(e){setFormError(e);return;}setFormError("");setPaso(3);}} style={{...nextBtnStyle(), marginTop: 0, flex: 1}}>Continuar →</button>
           </div>}
         </div>
         </>}
@@ -291,49 +308,52 @@ export default function EntregaPublica({ params }) {
           {creditApp <= 0.01 && debtApp > 0.01 && <div style={adjustCardStyle(false)}><span>ⓘ</span><span>Se sumaron <b>{fmt(debtApp)}</b> por saldo pendiente anterior</span></div>}
 
           {(()=>{
-            const togglePay = (m) => setPayMethods((prev) => {
-              if (prev.includes(m)) { const r = prev.filter(x => x !== m); return r.length ? r : prev; }
-              if (prev.length >= 2) return prev; // máximo 2 métodos
-              return [...prev, m];
-            });
+            const togglePay = (m) => setPayMethods((prev) => prev.includes(m) ? (prev.length > 1 ? prev.filter(x => x !== m) : prev) : [...prev, m]);
             const PAY_LBL = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };
-            const combinado = payMethods.length === 2;
+            const combinado = payMethods.length > 1;
             return <div style={{ marginTop: 12 }}>
-              <p style={{ fontSize: 10.5, color: MUTED, margin: "0 0 8px", lineHeight: 1.5 }}>Podés elegir <b>hasta dos</b> formas de pago y repartir el total (ej: una parte en efectivo y otra por transferencia).</p>
-              <OptRow selected={payMethods.includes("efectivo")} onClick={() => !efectivoBlocked && togglePay("efectivo")} label="Efectivo" meta={efectivoBlocked ? "No disponible para envíos con transportista" : "En ARS o USD, al retirar o recibir"} disabled={efectivoBlocked} />
-              <OptRow selected={payMethods.includes("transferencia")} onClick={() => togglePay("transferencia")} label="Transferencia en pesos" meta="Te pasamos el monto por WhatsApp" />
-              <OptRow selected={payMethods.includes("crypto")} onClick={() => togglePay("crypto")} label="Cripto" meta="USDT (TRC-20) · te pasamos la billetera por WhatsApp" />
+              <p style={{ fontSize: 11.5, fontWeight: 700, color: INK, margin: "0 0 2px" }}>¿Cómo querés pagar?</p>
+              <p style={{ fontSize: 10.5, color: MUTED, margin: "0 0 9px", lineHeight: 1.5 }}>Marcá <b>una o varias</b> — si elegís más de una, repartís el total como quieras.</p>
+              <PayCheck checked={payMethods.includes("efectivo")} onClick={() => !efectivoBlocked && togglePay("efectivo")} label="Efectivo" meta={efectivoBlocked ? "No disponible para envíos con transportista" : "En dólares o pesos, al retirar o recibir"} disabled={efectivoBlocked} />
+              <PayCheck checked={payMethods.includes("transferencia")} onClick={() => togglePay("transferencia")} label="Transferencia en pesos" meta={tcVenta > 0 ? `Al tipo de cambio del día ($${tcVenta.toLocaleString("es-AR")})` : "Te pasamos el monto por WhatsApp"} />
+              <PayCheck checked={payMethods.includes("crypto")} onClick={() => togglePay("crypto")} label="Cripto (USDT)" meta="Red TRC-20 · te pasamos la billetera por WhatsApp" />
 
-              {combinado && <div style={{ marginTop: 10, padding: "13px 15px", borderRadius: 11, background: "rgba(10,22,40,0.035)", border: "1px solid rgba(10,22,40,0.10)" }}>
-                <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(10,22,40,0.55)", margin: "0 0 8px" }}>¿Cómo repartís el pago?</p>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
-                  <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: INK }}>{PAY_LBL[payMethods[0]]}</span>
-                  <div style={{ position: "relative" }}>
-                    <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 700, color: MUTED }}>USD</span>
-                    <input value={payAmount1} onChange={(e) => setPayAmount1(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="0" style={{ ...contactInputStyle(), width: 130, paddingLeft: 42, textAlign: "right" }} />
-                  </div>
+              {payMethods.includes("efectivo") && <div style={{ marginTop: 10, padding: "12px 14px", borderRadius: 11, background: "#f4efe3", border: `1px solid ${LINE}` }}>
+                <p style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase", color: "rgba(10,22,40,0.55)", margin: "0 0 8px" }}>💵 El efectivo, ¿en qué moneda?</p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(90px,1fr))", gap: 6, marginBottom: 10 }}>
+                  {[["USD", "Dólares"], ["ARS", "Pesos"], ["mixto", "Un poco de cada"]].map(([k, l]) => <button key={k} type="button" onClick={() => setCashCurrencyMode(k)} style={{ padding: "9px 8px", fontSize: 11.5, fontWeight: 800, borderRadius: 9, cursor: "pointer", border: `1.5px solid ${cashCurrencyMode === k ? GOLD_A : LINE}`, background: cashCurrencyMode === k ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff", color: cashCurrencyMode === k ? "#8b6f4a" : MUTED }}>{l}</button>)}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: INK }}>{PAY_LBL[payMethods[1]]}</span>
-                  <span style={{ fontSize: 13.5, fontWeight: 800, color: monto1 > 0 && monto1 < total ? GOLD_A : MUTED, fontVariantNumeric: "tabular-nums" }}>{fmt(monto2)}</span>
-                </div>
-                <p style={{ fontSize: 10, color: MUTED, margin: "8px 0 0", lineHeight: 1.5 }}>Poné cuánto pagás con {PAY_LBL[payMethods[0]].toLowerCase()} — el resto queda para el otro método.</p>
-              </div>}
-
-              {payMethods.includes("efectivo") && <div style={{ marginTop: 10, padding: "13px 15px", borderRadius: 11, background: "#f4efe3", border: `1px solid ${LINE}` }}>
-                <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(10,22,40,0.55)", margin: "0 0 3px" }}>💵 ¿Con cuánto venís?</p>
-                <p style={{ fontSize: 10.5, color: MUTED, margin: "0 0 9px", lineHeight: 1.5 }}>Si necesitás cambio, decinos con cuánto llegás así lo tenemos listo. (Opcional)</p>
+                {cashCurrencyMode !== "USD" && tcVenta > 0 && <p style={{ fontSize: 10.5, color: "#1e5c3d", background: "#eaf6ef", border: "1px solid rgba(30,125,79,.2)", borderRadius: 8, padding: "8px 10px", margin: "0 0 10px", lineHeight: 1.5 }}>Los pesos se toman al <b>{data.tc.fuente}</b> del momento del pago — hoy <b>${tcVenta.toLocaleString("es-AR")}</b>.</p>}
+                <p style={{ fontSize: 10.5, color: MUTED, margin: "0 0 7px", lineHeight: 1.5 }}>Si necesitás cambio, decinos con cuánto llegás así lo tenemos listo. (Opcional)</p>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input value={cashAmount} onChange={(e) => setCashAmount(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="Ej: 600" style={{ ...contactInputStyle(), flex: 1 }} />
                   <div style={{ display: "flex", gap: 4 }}>
-                    {["USD", "ARS"].map((c) => <button key={c} type="button" onClick={() => setCashCurrency(c)} style={{ padding: "8px 14px", fontSize: 12, fontWeight: 800, borderRadius: 9, cursor: "pointer", border: `1.5px solid ${cashCurrency === c ? GOLD_A : LINE}`, background: cashCurrency === c ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff", color: cashCurrency === c ? "#8b6f4a" : MUTED }}>{c}</button>)}
+                    {["USD", "ARS"].map((c) => <button key={c} type="button" onClick={() => setCashCurrency(c)} style={{ padding: "8px 13px", fontSize: 12, fontWeight: 800, borderRadius: 9, cursor: "pointer", border: `1.5px solid ${cashCurrency === c ? GOLD_A : LINE}`, background: cashCurrency === c ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff", color: cashCurrency === c ? "#8b6f4a" : MUTED }}>{c}</button>)}
                   </div>
                 </div>
+              </div>}
+
+              {combinado && <div style={{ marginTop: 10, padding: "12px 14px", borderRadius: 11, background: "rgba(10,22,40,0.035)", border: "1px solid rgba(10,22,40,0.10)" }}>
+                <p style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase", color: "rgba(10,22,40,0.55)", margin: "0 0 8px" }}>¿Cómo repartís el pago?</p>
+                {payMethods.map((m, i2) => {
+                  const esUltimo = i2 === payMethods.length - 1;
+                  const monto = esUltimo ? montoResto : montoDe(m);
+                  return <div key={m} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7, flexWrap: "wrap" }}>
+                    <span style={{ flex: "1 1 120px", fontSize: 12.5, fontWeight: 700, color: INK }}>{PAY_LBL[m]}{esUltimo && <span style={{ fontSize: 9.5, fontWeight: 700, color: MUTED, display: "block" }}>el resto va acá</span>}</span>
+                    {esUltimo
+                      ? <span style={{ fontSize: 14, fontWeight: 800, color: montoResto > 0 ? GOLD_A : "#c0392b", fontVariantNumeric: "tabular-nums" }}>{fmt(montoResto)}{ars(montoResto) && (m === "transferencia" || (m === "efectivo" && cashCurrencyMode !== "USD")) ? <span style={{ display: "block", fontSize: 9.5, fontWeight: 600, color: MUTED, textAlign: "right" }}>{ars(montoResto)}</span> : null}</span>
+                      : <div style={{ position: "relative" }}>
+                          <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 700, color: MUTED }}>USD</span>
+                          <input value={payAmounts[m] ?? ""} onChange={(e) => setPayAmounts((p) => ({ ...p, [m]: e.target.value.replace(/[^0-9.,]/g, "") }))} inputMode="decimal" placeholder="0" style={{ ...contactInputStyle(), width: 120, paddingLeft: 42, textAlign: "right" }} />
+                        </div>}
+                  </div>;
+                })}
               </div>}
             </div>;
           })()}
         </div>
 
+        {formError && <ErrorBanner msg={formError} />}
         <button onClick={()=>setPaso(2)} style={{...backBtnStyle(), width: "100%", marginBottom: -4}}>← Volver a la forma de entrega</button>
         <button onClick={confirm} disabled={confirming} style={ctaStyle(confirming)}>{confirming ? "Confirmando…" : "Confirmar y avisar a Argencargo"}</button>
         <p style={{ textAlign: "center", fontSize: 10.5, color: MUTED, margin: "-8px 0 0" }}>Al confirmar, un asesor coordina el retiro o el envío por WhatsApp.</p>
@@ -372,18 +392,41 @@ function DiaFranja({ modo, dia, setDia, franja, setFranja }) {
   const chip = (active) => ({ padding: "9px 6px", borderRadius: 9, cursor: "pointer", textAlign: "center", border: `1.5px solid ${active ? GOLD_A : LINE}`, background: active ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff", boxShadow: active ? "0 3px 10px rgba(184,149,106,0.18)" : "none" });
   return <div style={{ marginTop: 12 }}>
     <label style={fieldLblStyle()}>{modo === "oficina" ? "¿Qué día pasás a retirar?" : "¿Qué día querés recibirla?"}</label>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6, marginBottom: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(62px,1fr))", gap: 6, marginBottom: 10 }}>
       {dias.map((x) => <div key={x.iso} onClick={() => setDia(x.iso)} style={chip(dia === x.iso)}>
         <div style={{ fontSize: 11.5, fontWeight: 800, color: INK }}>{x.label}</div>
         <div style={{ fontSize: 10, color: MUTED, marginTop: 1 }}>{x.fecha}</div>
       </div>)}
     </div>
     <label style={fieldLblStyle()}>¿En qué horario?</label>
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${franjas.length},1fr)`, gap: 6 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(108px,1fr))", gap: 6 }}>
       {franjas.map((f) => <div key={f} onClick={() => setFranja(f)} style={chip(franja === f)}>
         <div style={{ fontSize: 11.5, fontWeight: 700, color: INK, whiteSpace: "nowrap" }}>{f}</div>
       </div>)}
     </div>
+  </div>;
+}
+
+// Checkbox de forma de pago (cuadrado con tilde: comunica que se puede marcar más de uno).
+function PayCheck({ checked, onClick, label, meta, disabled }) {
+  return <div onClick={disabled ? undefined : onClick} style={{
+    display: "flex", alignItems: "center", gap: 11, padding: "12px 13px", borderRadius: 10,
+    border: `1.5px solid ${checked ? GOLD_A : LINE}`, cursor: disabled ? "not-allowed" : "pointer",
+    background: checked ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff",
+    boxShadow: checked ? "0 3px 10px rgba(184,149,106,0.18)" : "none", marginBottom: 7, opacity: disabled ? 0.45 : 1,
+  }}>
+    <span style={{ width: 19, height: 19, borderRadius: 6, flexShrink: 0, border: `2px solid ${checked ? GOLD_A : "#c9bb9c"}`, background: checked ? GOLD_A : "#fff", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 900 }}>{checked ? "✓" : ""}</span>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: INK }}>{label}</div>
+      <div style={{ fontSize: 10.5, color: MUTED, marginTop: 1 }}>{meta}</div>
+    </div>
+  </div>;
+}
+
+// Cartel de error propio (nada de alert() del navegador).
+function ErrorBanner({ msg }) {
+  return <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "11px 14px", borderRadius: 10, marginTop: 12, background: "#fdecea", border: "1.5px solid rgba(192,57,43,0.35)", color: "#8f2318", fontSize: 12.5, fontWeight: 600, lineHeight: 1.45 }}>
+    <span style={{ fontSize: 14 }}>⚠️</span><span>{msg}</span>
   </div>;
 }
 

@@ -108,7 +108,19 @@ export async function GET(req, { params }) {
     }
   } catch (e) { console.error("[GET entrega] preferential", e.message); }
 
+  // Tipo de cambio blue automático (DolarAPI, sin key). Best-effort: si falla, el link
+  // simplemente no muestra equivalentes en pesos.
+  let tc = null;
+  try {
+    const tcRes = await fetch("https://dolarapi.com/v1/dolares/blue", { next: { revalidate: 300 } });
+    if (tcRes.ok) {
+      const d = await tcRes.json();
+      if (Number(d?.venta) > 0) tc = { venta: Number(d.venta), fuente: "Dólar blue (venta)", actualizado: d.fechaActualizacion || null };
+    }
+  } catch (e) { console.error("[GET entrega] tc", e.message); }
+
   return Response.json({
+    tc,
     op: {
       operation_code: op.operation_code,
       description: op.description,
@@ -163,7 +175,8 @@ export async function POST(req, { params }) {
   if (!["efectivo", "transferencia", "crypto"].includes(payment_method)) return Response.json({ error: "Método de pago inválido" }, { status: 400 });
   // Pago combinado: hasta 2 métodos con montos. Se valida acá y se recorta contra el total real más abajo.
   const payMethods = Array.isArray(body.payment_methods) ? body.payment_methods.filter((p) => p && ["efectivo", "transferencia", "crypto"].includes(p.method)) : null;
-  if (payMethods && (payMethods.length < 1 || payMethods.length > 2)) return Response.json({ error: "Elegí una o dos formas de pago" }, { status: 400 });
+  if (payMethods && (payMethods.length < 1 || payMethods.length > 3)) return Response.json({ error: "Elegí entre una y tres formas de pago" }, { status: 400 });
+  if (payMethods && new Set(payMethods.map((p) => p.method)).size !== payMethods.length) return Response.json({ error: "Formas de pago repetidas" }, { status: 400 });
   const usaEfectivo = payMethods ? payMethods.some((p) => p.method === "efectivo") : payment_method === "efectivo";
   if (usaEfectivo && delivery_choice === "carrier") {
     return Response.json({ error: "Efectivo no disponible para envíos con transportista externo" }, { status: 400 });
@@ -201,18 +214,20 @@ export async function POST(req, { params }) {
   // Reparto del pago: los montos se recalculan server-side contra el total real (el 2do metodo
   // absorbe el resto) — nunca se confia en montos que sumen otra cosa.
   let splitFinal = null;
-  if (payMethods && payMethods.length === 2 && !(Number(payMethods[0].amount) > 0)) {
-    return Response.json({ error: "Indicá cuánto pagás con el primer método" }, { status: 400 });
-  }
   if (payMethods) {
-    if (payMethods.length === 2) {
-      const m1 = Math.min(Math.round(Number(payMethods[0].amount || 0) * 100) / 100, Math.max(0, finalTotal - 0.01));
-      splitFinal = [
-        { method: payMethods[0].method, amount: m1 },
-        { method: payMethods[1].method, amount: Math.round((finalTotal - m1) * 100) / 100 },
-      ];
+    const cur = (p) => p.method === "efectivo" && ["USD", "ARS", "mixto"].includes(p.currency) ? { currency: p.currency } : {};
+    if (payMethods.length === 1) {
+      splitFinal = [{ method: payMethods[0].method, amount: finalTotal, ...cur(payMethods[0]) }];
     } else {
-      splitFinal = [{ method: payMethods[0].method, amount: finalTotal }];
+      // Todos menos el último con monto propio (validado); el último absorbe el resto.
+      const editables = payMethods.slice(0, -1);
+      for (const p of editables) if (!(Number(p.amount) > 0)) return Response.json({ error: "Completá cuánto pagás con cada método" }, { status: 400 });
+      let suma = 0;
+      splitFinal = editables.map((p) => { const m = Math.round(Number(p.amount) * 100) / 100; suma += m; return { method: p.method, amount: m, ...cur(p) }; });
+      const resto = Math.round((finalTotal - suma) * 100) / 100;
+      if (!(resto > 0)) return Response.json({ error: "Los montos superan el total a abonar" }, { status: 400 });
+      const last = payMethods[payMethods.length - 1];
+      splitFinal.push({ method: last.method, amount: resto, ...cur(last) });
     }
   }
 
@@ -247,9 +262,12 @@ export async function POST(req, { params }) {
 
   const deliveryLabel = delivery_choice === "oficina" ? "Retiro por oficina" : delivery_choice === "propio" ? `Envío a domicilio · ${deliveryZone}` : "Envío por transportista (Via Cargo/Andreani)";
   const PL = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };
-  const payLabel = splitFinal && splitFinal.length === 2
-    ? splitFinal.map((p) => `${PL[p.method]} (USD ${p.amount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`).join(" + ")
-    : (PL[payment_method] || payment_method);
+  const CUR_LBL = { USD: "en dólares", ARS: "en pesos", mixto: "USD + ARS" };
+  const payLabel = splitFinal && splitFinal.length > 1
+    ? splitFinal.map((p) => `${PL[p.method]}${p.currency ? ` ${CUR_LBL[p.currency]}` : ""} (USD ${p.amount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`).join(" + ")
+    : splitFinal && splitFinal[0]
+      ? `${PL[splitFinal[0].method]}${splitFinal[0].currency ? ` ${CUR_LBL[splitFinal[0].currency]}` : ""}`
+      : (PL[payment_method] || payment_method);
   const diaLabel = delivery_day ? new Date(delivery_day + "T12:00:00Z").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric", timeZone: "UTC" }) : null;
   try {
     await sbFetch(`/op_communications`, {
