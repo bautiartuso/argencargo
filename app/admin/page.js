@@ -10217,8 +10217,12 @@ function FinanceDashboard({token}){
       const deudaTCUsd=deudaTCUsdFinance+deudaTCUsdPmts+deudaTCUsdSup+deudaTCUsdFlete;
       const cashDisponible=totCobrado-totCostosTotales;
       // Ops listas para entregar (status=entregada) sin cobro completo: lo que falta cobrar al cliente.
+      // Saldo canónico (igual que la lista de ops y Entregas): el presupuesto MÁS la deuda de CC
+      // aplicada a la op, menos crédito/descuento. Sin debt_applied, la deuda vieja de un cliente
+      // con op lista desaparecía del dashboard: acá no se sumaba y Deuda CC lo excluye (balance 0
+      // tras aplicarse).
       const opsListasParaEntregar=ops.filter(o=>o.status==="entregada").map(o=>{
-        const bt=Number(o.budget_total||0);
+        const bt=Number(o.budget_total||0)+Number(o.debt_applied_usd||0)-Number(o.credit_applied_usd||0)-Number(o.discount_applied_usd||0);
         const pmtsPaid=(clientPmts||[]).filter(p=>p.operation_id===o.id).reduce((s,p)=>s+Number(p.amount_usd||0),0);
         const colCash=o.is_collected?Number(o.collected_amount||0):0;
         const totalPagado=Math.max(pmtsPaid,colCash);
