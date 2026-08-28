@@ -167,7 +167,9 @@ export async function GET(req, { params }) {
   // simplemente no muestra equivalentes en pesos.
   let tc = null;
   try {
-    const tcRes = await fetch("https://dolarapi.com/v1/dolares/blue", { next: { revalidate: 300 } });
+    // Timeout corto: si DolarAPI esta lenta NO puede colgar la carga del link (paso 28/08:
+    // 55 segundos de "Cargando..." por este fetch sin limite).
+    const tcRes = await fetch("https://dolarapi.com/v1/dolares/blue", { next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) });
     if (tcRes.ok) {
       const d = await tcRes.json();
       if (Number(d?.venta) > 0) tc = { venta: Number(d.venta), fuente: "Dólar blue (venta)", actualizado: d.fechaActualizacion || null };
@@ -372,7 +374,7 @@ export async function POST(req, { params }) {
   const wallet = stg.payment_crypto_wallet || "";
   // TC del dia para mostrar los montos en pesos ya convertidos en el resumen.
   let tcVenta = 0;
-  try { const tr = await fetch("https://dolarapi.com/v1/dolares/blue"); if (tr.ok) { const d2 = await tr.json(); tcVenta = Number(d2?.venta) > 0 ? Number(d2.venta) : 0; } } catch {}
+  try { const tr = await fetch("https://dolarapi.com/v1/dolares/blue", { next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) }); if (tr.ok) { const d2 = await tr.json(); tcVenta = Number(d2?.venta) > 0 ? Number(d2.venta) : 0; } } catch {}
 
   const anyCrypto = splitFinal ? splitFinal.some((p) => p.method === "crypto") : payment_method === "crypto";
   const anyTransfer = splitFinal ? splitFinal.some((p) => p.method === "transferencia") : payment_method === "transferencia";
