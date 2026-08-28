@@ -200,6 +200,9 @@ export async function GET(req, { params }) {
       delivery_address: op.delivery_address,
       payment_method_chosen: op.payment_method_chosen,
       delivery_confirmed_at: op.delivery_confirmed_at,
+      delivery_day: op.delivery_day,
+      delivery_slot: op.delivery_slot,
+      payment_split: op.payment_split,
     },
     client: { first_name: client.first_name, last_name: client.last_name, dni: client.dni || "", email: client.email || "", whatsapp: client.whatsapp || "", postal_code: client.postal_code || "", street: client.street || "", floor_apt: client.floor_apt || "", city: client.city || "" },
     tax_detail: taxDetail,
@@ -305,7 +308,7 @@ export async function POST(req, { params }) {
   const alreadyConfirmed = !!op.delivery_confirmed_at;
   const newBudgetTotal = !alreadyConfirmed && deliveryCost > 0 ? Math.round((bt + deliveryCost) * 100) / 100 : bt;
 
-  await sbFetch(`/operations?id=eq.${op.id}`, {
+  const patchP = sbFetch(`/operations?id=eq.${op.id}`, {
     method: "PATCH",
     body: JSON.stringify({
       delivery_choice,
@@ -325,6 +328,10 @@ export async function POST(req, { params }) {
       delivery_confirmed_at: new Date().toISOString(),
     }),
   });
+  // Todo lo que sigue (nota, avisos, settings, TC) corre EN PARALELO con el PATCH para que
+  // el "Confirmar" no acumule latencias en serie (la demora que se veia era esta suma).
+  const settingsP = sbFetch(`/gi_settings?select=payment_crypto_wallet,payment_alias,payment_titular&limit=1`);
+  const tcP = fetch("https://dolarapi.com/v1/dolares/blue", { next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) }).then((r) => r.ok ? r.json() : null).catch(() => null);
 
   const deliveryLabel = delivery_choice === "oficina" ? "Retiro por oficina" : delivery_choice === "propio" ? `Envío a domicilio · ${deliveryZone}` : "Envío por transportista (Via Cargo/Andreani)";
   const PL = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };
@@ -335,7 +342,7 @@ export async function POST(req, { params }) {
       ? `${PL[splitFinal[0].method]}${splitFinal[0].currency ? ` ${CUR_LBL[splitFinal[0].currency]}` : ""}`
       : (PL[payment_method] || payment_method);
   const diaLabel = delivery_day ? new Date(delivery_day + "T12:00:00Z").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric", timeZone: "UTC" }) : null;
-  try {
+  const noteP = (async () => {
     await sbFetch(`/op_communications`, {
       method: "POST",
       body: JSON.stringify({
@@ -345,36 +352,27 @@ export async function POST(req, { params }) {
         content: `✅ Cliente confirmó carga lista.\nEntrega: ${deliveryLabel}${diaLabel ? `\nDía y franja: ${diaLabel} · ${delivery_slot}` : ""}${delivery_choice === "propio" ? `\nDirección: ${delivery_address || "(sin especificar)"}` : ""}\nPago: ${payLabel}${usaEfectivo && Number(cash_amount) > 0 ? `\n💵 Llega con ${cash_currency === "ARS" ? "ARS" : "USD"} ${Number(cash_amount).toLocaleString("es-AR")} — tener cambio listo` : ""}\nTotal: USD ${finalTotal.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       }),
     });
-  } catch (e) { console.error("[POST entrega] log failed", e.message); }
+  })().catch((e) => console.error("[POST entrega] log failed", e.message));
 
   // Avisar al admin: el cliente completo la info de retiro. Antes esto no notificaba nada, asi que
   // el admin se enteraba solo si entraba a mirar el panel de Entregas. Best-effort: si el aviso
   // falla, la confirmacion del cliente ya quedo guardada arriba.
-  try {
+  const avisosP = (async () => {
     const admins = await sbFetch(`/profiles?role=eq.admin&select=id`);
     const ids = (Array.isArray(admins.body) ? admins.body : []).map((a) => a.id).filter(Boolean);
     const cliCode = client.client_code ? `${client.client_code} · ` : "";
     const title = `🚚 Retiro coordinado · ${op.operation_code}`;
-    const body = `${cliCode}${deliveryLabel} · ${payLabel}`;
-    for (const id of ids) {
-      await sbFetch(`/notifications`, {
-        method: "POST",
-        body: JSON.stringify({ user_id: id, portal: "admin", title, body, link: "/admin" }),
-      }).catch(() => {});
-      fetch(`${BASE_URL}/api/push/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: id, portal: "admin", title, body, url: "/admin" }),
-      }).catch(() => {});
-    }
-  } catch (e) { console.error("[POST entrega] aviso admin failed", e.message); }
+    const body2 = `${cliCode}${deliveryLabel} · ${payLabel}`;
+    await Promise.all(ids.flatMap((id) => [
+      sbFetch(`/notifications`, { method: "POST", body: JSON.stringify({ user_id: id, portal: "admin", title, body: body2, link: "/admin" }) }).catch(() => {}),
+      fetch(`${BASE_URL}/api/push/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: id, portal: "admin", title, body: body2, url: "/admin" }) }).catch(() => {}),
+    ]));
+  })().catch((e) => console.error("[POST entrega] aviso admin failed", e.message));
 
-  const settingsRes = await sbFetch(`/gi_settings?select=payment_crypto_wallet,payment_alias,payment_titular&limit=1`);
+  const [, , , settingsRes, tcJson] = await Promise.all([patchP, noteP, avisosP, settingsP, tcP]);
   const stg = Array.isArray(settingsRes.body) && settingsRes.body[0] ? settingsRes.body[0] : {};
   const wallet = stg.payment_crypto_wallet || "";
-  // TC del dia para mostrar los montos en pesos ya convertidos en el resumen.
-  let tcVenta = 0;
-  try { const tr = await fetch("https://dolarapi.com/v1/dolares/blue", { next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) }); if (tr.ok) { const d2 = await tr.json(); tcVenta = Number(d2?.venta) > 0 ? Number(d2.venta) : 0; } } catch {}
+  const tcVenta = Number(tcJson?.venta) > 0 ? Number(tcJson.venta) : 0;
 
   const anyCrypto = splitFinal ? splitFinal.some((p) => p.method === "crypto") : payment_method === "crypto";
   const anyTransfer = splitFinal ? splitFinal.some((p) => p.method === "transferencia") : payment_method === "transferencia";
