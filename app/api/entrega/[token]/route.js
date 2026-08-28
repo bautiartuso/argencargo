@@ -60,9 +60,10 @@ export async function GET(req, { params }) {
   const op = await loadOpData(token);
   if (!op) return Response.json({ error: "No encontramos esta operación o el link expiró" }, { status: 404 });
 
-  const [pkgsRes, settingsRes, { cfg, localities }] = await Promise.all([
+  const [pkgsRes, settingsRes, itemsRes, { cfg, localities }] = await Promise.all([
     sbFetch(`/operation_packages?operation_id=eq.${op.id}&select=package_number,quantity,gross_weight_kg,length_cm,width_cm,height_cm,national_tracking&order=package_number.asc`),
     sbFetch(`/gi_settings?select=office_address,office_locality,office_hours,office_phone,payment_titular,payment_alias,payment_crypto_wallet&limit=1`),
+    sbFetch(`/operation_items?operation_id=eq.${op.id}&select=description,quantity,unit_price_usd,import_duty_rate,statistics_rate,iva_rate,iva_additional_rate,iigg_rate,iibb_rate&order=created_at.asc`),
     loadDeliveryPricing(),
   ]);
 
@@ -89,6 +90,60 @@ export async function GET(req, { params }) {
   // Se compara el USD/kg efectivo contra el de lista vigente (effective_to null = version actual).
   // Si no se puede determinar la tarifa de lista, NO se marca: mejor no decir nada que afirmar de
   // mas en algo que ve el cliente.
+  // Desglose impositivo POR PRODUCTO para la solapita del link. Misma descomposición que el
+  // motor (certificación derivada del seguro guardado, prorrateo por FOB, desaduanaje por tabla).
+  // Solo se devuelve si las lineas SUMAN el budget_taxes guardado (±0,05) — si no cuadra
+  // (despacho real RI, antidumping, presupuesto manual raro), no se muestra y listo.
+  let taxDetail = null;
+  try {
+    const items = (Array.isArray(itemsRes.body) ? itemsRes.body : []).filter((it) => Number(it.unit_price_usd) > 0);
+    const bTaxes = Number(op.budget_taxes || 0);
+    const bSeg = Number(op.budget_seguro || 0);
+    const isAereoCh = String(op.channel || "").includes("aereo");
+    const totFob = items.reduce((a, it) => a + Number(it.unit_price_usd) * Number(it.quantity || 1), 0);
+    const certFl = bSeg * 100 - totFob;
+    if (items.length > 0 && bTaxes > 0 && totFob > 0 && certFl > -0.01) {
+      const cif = totFob + certFl + bSeg;
+      const desembTabla = [[5, 0], [9, 36], [20, 50], [50, 58], [100, 65], [400, 72], [800, 84], [1000, 96], [Infinity, 120]];
+      const getDes = (c) => { for (const [mx, amt] of desembTabla) if (c < mx) return amt; return 120; };
+      const r2 = (v) => Math.round(v * 100) / 100;
+      const pct1 = (v) => String(r2(v)).replace(".", ",");
+      let suma = 0, desembTot = 0;
+      const productos = items.map((it) => {
+        const fob = Number(it.unit_price_usd) * Number(it.quantity || 1);
+        const pct = fob / totFob;
+        const iCif = fob + certFl * pct + (fob + certFl * pct) * 0.01;
+        const dr = (it.import_duty_rate == null || it.import_duty_rate === "") ? 0 : Number(it.import_duty_rate) / 100;
+        const te = (it.statistics_rate == null || it.statistics_rate === "") ? 0 : Number(it.statistics_rate) / 100;
+        const ivaR = (it.iva_rate == null || it.iva_rate === "") ? 0.21 : Number(it.iva_rate) / 100;
+        const die = iCif * dr, tasa = iCif * te, bi = iCif + die + tasa, iva = bi * ivaR;
+        const rows = [];
+        if (die > 0.005) rows.push([`Derechos importación (${pct1(dr * 100)}%)`, r2(die)]);
+        if (tasa > 0.005) rows.push([`Tasa estadística (${pct1(te * 100)}%)`, r2(tasa)]);
+        if (iva > 0.005) rows.push([`IVA de Importación (${pct1(ivaR * 100)}%)`, r2(iva)]);
+        suma += die + tasa + iva;
+        if (isAereoCh) { desembTot += getDes(cif) * pct; }
+        else {
+          const adR = (it.iva_additional_rate == null) ? 0.20 : Number(it.iva_additional_rate) / 100;
+          const igR = (it.iigg_rate == null) ? 0.06 : Number(it.iigg_rate) / 100;
+          const ibR = (it.iibb_rate == null) ? 0.05 : Number(it.iibb_rate) / 100;
+          const ad = bi * adR, ig = bi * igR, ib = bi * ibR;
+          if (ad > 0.005) rows.push([`IVA adicional (${pct1(adR * 100)}%)`, r2(ad)]);
+          if (ig > 0.005) rows.push([`Ganancias IIGG (${pct1(igR * 100)}%)`, r2(ig)]);
+          if (ib > 0.005) rows.push([`Ingresos brutos IIBB (${pct1(ibR * 100)}%)`, r2(ib)]);
+          suma += ad + ig + ib;
+        }
+        return { name: it.description || "Producto", rows };
+      });
+      const extras = [];
+      if (isAereoCh && desembTot > 0) {
+        extras.push(["Desaduanaje", r2(desembTot)], ["IVA 21% sobre desaduanaje", r2(desembTot * 0.21)]);
+        suma += desembTot + desembTot * 0.21;
+      }
+      if (Math.abs(suma - bTaxes) <= 0.05) taxDetail = { productos, extras };
+    }
+  } catch (e) { console.error("[GET entrega] taxDetail", e.message); }
+
   let preferential = null;
   try {
     const bFlete = Number(op.budget_flete || 0);
@@ -144,7 +199,8 @@ export async function GET(req, { params }) {
       payment_method_chosen: op.payment_method_chosen,
       delivery_confirmed_at: op.delivery_confirmed_at,
     },
-    client: { first_name: client.first_name, last_name: client.last_name, dni: client.dni || "", email: client.email || "", whatsapp: client.whatsapp || "", postal_code: client.postal_code || "" },
+    client: { first_name: client.first_name, last_name: client.last_name, dni: client.dni || "", email: client.email || "", whatsapp: client.whatsapp || "", postal_code: client.postal_code || "", street: client.street || "", floor_apt: client.floor_apt || "", city: client.city || "" },
+    tax_detail: taxDetail,
     cargo: { bultos, tracking, peso_facturable: Math.round(pesoFacturable * 100) / 100 },
     preferential,
     delivery: {
@@ -215,7 +271,15 @@ export async function POST(req, { params }) {
   // absorbe el resto) — nunca se confia en montos que sumen otra cosa.
   let splitFinal = null;
   if (payMethods) {
-    const cur = (p) => p.method === "efectivo" && ["USD", "ARS", "mixto"].includes(p.currency) ? { currency: p.currency } : {};
+    const cur = (p) => {
+      if (p.method !== "efectivo" || !["USD", "ARS", "mixto"].includes(p.currency)) return {};
+      const out = { currency: p.currency };
+      if (p.currency === "mixto") {
+        if (Number(p.usd_part) > 0) out.usd_part = Math.round(Number(p.usd_part) * 100) / 100;
+        if (Number(p.ars_part) > 0) out.ars_part = Math.round(Number(p.ars_part));
+      }
+      return out;
+    };
     if (payMethods.length === 1) {
       splitFinal = [{ method: payMethods[0].method, amount: finalTotal, ...cur(payMethods[0]) }];
     } else {
@@ -249,7 +313,7 @@ export async function POST(req, { params }) {
       budget_total: newBudgetTotal,
       payment_method_chosen: payment_method,
       // Solo para transportista: quien recibe, con el DNI que exige el despacho.
-      delivery_contact: delivery_choice === "carrier" ? (delivery_contact || null) : null,
+      delivery_contact: (delivery_choice === "carrier" || delivery_choice === "propio") ? (delivery_contact || null) : null,
       carrier_mode: delivery_choice === "carrier" ? (carrier_mode || null) : null,
       delivery_day: (delivery_choice === "oficina" || delivery_choice === "propio") ? delivery_day : null,
       delivery_slot: (delivery_choice === "oficina" || delivery_choice === "propio") ? delivery_slot : null,
@@ -303,11 +367,18 @@ export async function POST(req, { params }) {
     }
   } catch (e) { console.error("[POST entrega] aviso admin failed", e.message); }
 
-  const settingsRes = await sbFetch(`/gi_settings?select=payment_crypto_wallet&limit=1`);
-  const wallet = Array.isArray(settingsRes.body) && settingsRes.body[0] ? settingsRes.body[0].payment_crypto_wallet : "";
+  const settingsRes = await sbFetch(`/gi_settings?select=payment_crypto_wallet,payment_alias,payment_titular&limit=1`);
+  const stg = Array.isArray(settingsRes.body) && settingsRes.body[0] ? settingsRes.body[0] : {};
+  const wallet = stg.payment_crypto_wallet || "";
+  // TC del dia para mostrar los montos en pesos ya convertidos en el resumen.
+  let tcVenta = 0;
+  try { const tr = await fetch("https://dolarapi.com/v1/dolares/blue"); if (tr.ok) { const d2 = await tr.json(); tcVenta = Number(d2?.venta) > 0 ? Number(d2.venta) : 0; } } catch {}
 
   const anyCrypto = splitFinal ? splitFinal.some((p) => p.method === "crypto") : payment_method === "crypto";
+  const anyTransfer = splitFinal ? splitFinal.some((p) => p.method === "transferencia") : payment_method === "transferencia";
   return Response.json({
+    transfer: anyTransfer ? { alias: stg.payment_alias || "", titular: stg.payment_titular || "" } : null,
+    tc_venta: tcVenta || null,
     ok: true,
     total: finalTotal,
     delivery_choice,

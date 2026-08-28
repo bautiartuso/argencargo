@@ -21,6 +21,12 @@ export default function EntregaPublica({ params }) {
   const [delivery, setDelivery] = useState("oficina"); // oficina | propio | carrier
   const [address, setAddress] = useState("");
   const [addressChanged, setAddressChanged] = useState(false);
+  // Dirección estructurada para envío propio (precargada del cliente, editable)
+  const [dirCalle, setDirCalle] = useState("");
+  const [dirPiso, setDirPiso] = useState("");
+  const [dirLocalidad, setDirLocalidad] = useState("");
+  const [dirCP, setDirCP] = useState("");
+  const [dirTel, setDirTel] = useState("");
   const [payment, setPayment] = useState("efectivo"); // legacy: primer método (se mantiene sincronizado)
   // Quien recibe, solo para envio por transportista (Andreani): el despacho exige el DNI. Se
   // precarga con los datos del cliente, pero es editable porque a veces recibe otra persona.
@@ -32,10 +38,13 @@ export default function EntregaPublica({ params }) {
   const [diaEntrega, setDiaEntrega] = useState("");
   const [franjaEntrega, setFranjaEntrega] = useState("");
   // Pago combinado: hasta 2 métodos. payMethods = ["efectivo","crypto"], payAmounts = {efectivo:"600"}.
-  const [payMethods, setPayMethods] = useState(["efectivo"]);
+  const [payMethods, setPayMethods] = useState([]); // arranca sin nada marcado; se pueden combinar
   const [payAmounts, setPayAmounts] = useState({}); // montos por método (el último seleccionado absorbe el resto)
   const [cashCurrencyMode, setCashCurrencyMode] = useState("USD"); // USD | ARS | mixto (solo efectivo)
   const [formError, setFormError] = useState("");
+  const [taxOpen, setTaxOpen] = useState(false); // solapita del desglose de impuestos
+  const [cashMixUsd, setCashMixUsd] = useState(""); // efectivo "un poco de cada": cuánto USD (opcional)
+  const [cashMixArs, setCashMixArs] = useState(""); // y cuánto ARS (opcional)
   // Si paga (parte) en efectivo: con cuánto llega, para tener el cambio listo.
   const [cashAmount, setCashAmount] = useState("");
   const [cashCurrency, setCashCurrency] = useState("USD");
@@ -56,7 +65,12 @@ export default function EntregaPublica({ params }) {
         const hasPropio = d.delivery.price != null;
         setDelivery(hasPropio || !d.delivery.inferred_zone ? "oficina" : "carrier");
         setAddress(d.delivery.default_address || "");
-        if (!hasPropio && !d.delivery.inferred_zone) setPayMethods(["transferencia"]);
+        // arranca sin metodo marcado; con transportista el efectivo directamente no aparece habilitado
+        setDirCalle(d.client?.street || "");
+        setDirPiso(d.client?.floor_apt || "");
+        setDirLocalidad(d.client?.city || "");
+        setDirCP(d.client?.postal_code || "");
+        setDirTel(d.client?.whatsapp || "");
         setContacto((c) => ({
           ...c,
           nombre: c.nombre || d.client?.first_name || "",
@@ -87,7 +101,7 @@ export default function EntregaPublica({ params }) {
     setDiaEntrega(""); setFranjaEntrega("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [delivery]);
-  useEffect(() => { setPayment(payMethods[0] || "transferencia"); setFormError(""); // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (payMethods[0]) setPayment(payMethods[0]); setFormError(""); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payMethods]);
   useEffect(() => { setFormError(""); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paso, diaEntrega, franjaEntrega, delivery]);
@@ -123,7 +137,7 @@ export default function EntregaPublica({ params }) {
       if (carrierMode === "sucursal" && !contacto.sucursal.trim()) return "Indicá en qué sucursal lo vas a retirar.";
       if (carrierMode === "domicilio" && !contacto.direccion.trim()) return "Completá la dirección de entrega.";
     }
-    if (delivery === "propio" && !address.trim()) return "Completá la dirección de entrega.";
+    if (delivery === "propio" && (!dirCalle.trim() || !dirLocalidad.trim())) return "Completá al menos calle y localidad de la entrega.";
     if ((delivery === "oficina" || delivery === "propio") && (!diaEntrega || !franjaEntrega)) return delivery === "oficina" ? "Elegí qué día y en qué horario pasás a retirar." : "Elegí qué día y en qué franja querés recibir la entrega.";
     return null;
   };
@@ -161,14 +175,14 @@ export default function EntregaPublica({ params }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         delivery_choice: delivery,
-        delivery_address: delivery === "propio" ? address : null,
+        delivery_address: delivery === "propio" ? [dirCalle.trim(), dirPiso.trim(), dirLocalidad.trim(), dirCP.trim() ? `CP ${dirCP.trim()}` : ""].filter(Boolean).join(", ") : null,
         payment_method: payMethods[0],
-        payment_methods: splitCliente.map((p) => p.method === "efectivo" ? { ...p, currency: cashCurrencyMode } : p),
+        payment_methods: splitCliente.map((p) => p.method === "efectivo" ? { ...p, currency: cashCurrencyMode, ...(cashCurrencyMode === "mixto" ? { usd_part: Number(String(cashMixUsd).replace(",", ".")) || 0, ars_part: Number(String(cashMixArs).replace(",", ".")) || 0 } : {}) } : p),
         cash_amount: payMethods.includes("efectivo") && Number(String(cashAmount).replace(",", ".")) > 0 ? Number(String(cashAmount).replace(",", ".")) : null,
         cash_currency: payMethods.includes("efectivo") ? cashCurrency : null,
         delivery_day: (delivery === "oficina" || delivery === "propio") ? diaEntrega : null,
         delivery_slot: (delivery === "oficina" || delivery === "propio") ? franjaEntrega : null,
-        delivery_contact: delivery === "carrier" ? contacto : null,
+        delivery_contact: delivery === "carrier" ? contacto : delivery === "propio" ? { direccion: dirCalle.trim(), piso: dirPiso.trim(), localidad: dirLocalidad.trim(), cp: dirCP.trim(), telefono: dirTel.trim() } : null,
         carrier_mode: delivery === "carrier" ? carrierMode : null,
       }),
     });
@@ -178,7 +192,7 @@ export default function EntregaPublica({ params }) {
     setConfirmed(d);
   };
 
-  if (confirmed) return <ConfirmedView data={confirmed} delivery={delivery} clientName={clientName} />;
+  if (confirmed) return <ConfirmedView data={confirmed} delivery={delivery} clientName={clientName} op={op} cargo={cargo} taxDetail={data.tax_detail} isBlanco={isBlanco} onEdit={() => { setConfirmed(null); setPaso(2); }} />;
 
   return <div style={pageStyle()}>
     <div style={cardStyle()}>
@@ -213,7 +227,19 @@ export default function EntregaPublica({ params }) {
           </div>
           {isBlanco && <div style={{ marginTop: 12, paddingTop: 4, borderTop: `1px solid ${LINE}` }}>
             {op.budget_flete > 0 && <div style={rowStyle()}><span>Flete Internacional</span><span style={rowValStyle()}>{fmt(op.budget_flete)}</span></div>}
-            {op.budget_taxes > 0 && op.taxes_billed_by_argencargo !== false && <div style={rowStyle()}><span>Impuestos &amp; Aduana</span><span style={rowValStyle()}>{fmt(op.budget_taxes)}</span></div>}
+            {op.budget_taxes > 0 && op.taxes_billed_by_argencargo !== false && <>
+              <div style={{ ...rowStyle(), cursor: data.tax_detail ? "pointer" : "default" }} onClick={() => data.tax_detail && setTaxOpen(v => !v)}>
+                <span>Impuestos &amp; Aduana{data.tax_detail && <span style={{ marginLeft: 6, fontSize: 10, color: GOLD_A, fontWeight: 700 }}>{taxOpen ? "ocultar ▲" : "ver desglose ▼"}</span>}</span>
+                <span style={rowValStyle()}>{fmt(op.budget_taxes)}</span>
+              </div>
+              {taxOpen && data.tax_detail && <div style={{ padding: "8px 0 8px 12px", borderLeft: `2px solid ${LINE}`, margin: "4px 0" }}>
+                {data.tax_detail.productos.map((pr, i) => <div key={i} style={{ marginBottom: 8 }}>
+                  <p style={{ fontSize: 11, fontWeight: 800, color: INK, margin: "0 0 3px" }}>{pr.name}</p>
+                  {pr.rows.map(([l, v], k) => <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: MUTED, padding: "2px 0" }}><span>{l}</span><span style={{ fontWeight: 600, color: "#5c5646" }}>{fmt(v)}</span></div>)}
+                </div>)}
+                {data.tax_detail.extras.map(([l, v], k) => <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: MUTED, padding: "2px 0" }}><span>{l}</span><span style={{ fontWeight: 600, color: "#5c5646" }}>{fmt(v)}</span></div>)}
+              </div>}
+            </>}
             {op.budget_seguro > 0 && <div style={{ ...rowStyle(), borderBottom: "none" }}><span>Seguro de Carga</span><span style={rowValStyle()}>{fmt(op.budget_seguro)}</span></div>}
           </div>}
           {cargo.tracking.length > 0 && <>
@@ -236,9 +262,14 @@ export default function EntregaPublica({ params }) {
           {hasPropio && <OptRow selected={delivery === "propio"} onClick={() => setDelivery("propio")} label="Envío a domicilio" meta={`Coordinamos día y horario · ${inferredZone}`} price={"+ " + fmt(deliveryInfo.price)} />}
           {hasPropio && delivery === "propio" && <div style={{ marginTop: 10 }}>
             <label style={fieldLblStyle()}>Dirección de entrega</label>
-            <input value={address} onChange={e => { setAddress(e.target.value); setAddressChanged(e.target.value.trim() !== (deliveryInfo.default_address || "").trim()); }} style={inputStyle()} />
-            <p style={{ fontSize: 10, color: MUTED, marginTop: 6, lineHeight: 1.5 }}>Precargamos la dirección registrada en tu cuenta — la podés editar si querés que te entreguemos en otra.</p>
-            {addressChanged && <p style={{ fontSize: 10, color: "#8b6f4a", marginTop: 4, lineHeight: 1.5 }}>🖊️ Vas a pedir entrega en una dirección distinta a la registrada — se lo avisamos a Argencargo junto con tu confirmación.</p>}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 8 }}>
+              <input value={dirCalle} onChange={e => setDirCalle(e.target.value)} placeholder="Calle y número" style={{ ...contactInputStyle(), gridColumn: "1 / -1" }} />
+              <input value={dirPiso} onChange={e => setDirPiso(e.target.value)} placeholder="Piso / depto (si lleva)" style={contactInputStyle()} />
+              <input value={dirLocalidad} onChange={e => setDirLocalidad(e.target.value)} placeholder="Localidad" style={contactInputStyle()} />
+              <input value={dirCP} onChange={e => setDirCP(e.target.value)} placeholder="Código postal" inputMode="numeric" style={contactInputStyle()} />
+              <input value={dirTel} onChange={e => setDirTel(e.target.value)} placeholder="Teléfono de contacto" inputMode="tel" style={contactInputStyle()} />
+            </div>
+            <p style={{ fontSize: 10, color: MUTED, marginTop: 6, lineHeight: 1.5 }}>Precargamos los datos registrados en tu cuenta — editá lo que necesites.</p>
             <DiaFranja modo="propio" dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} />
           </div>}
           {!hasPropio && <OptRow selected={delivery === "carrier"} onClick={() => setDelivery("carrier")} label="Envío por Via Cargo / Andreani" meta="Tu zona está fuera del reparto propio de Argencargo" price="A coordinar" />}
@@ -301,14 +332,22 @@ export default function EntregaPublica({ params }) {
               <p style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase" }}>Total a abonar</p>
               <p style={{ fontSize: 10, fontWeight: 600, color: "rgba(10,22,40,0.65)", marginTop: 2 }}>{CHANNEL_NAME[op.channel] || op.channel} · {delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${inferredZone}` : "Envío por transportista"}</p>
             </div>
-            <p style={{ fontSize: 23, fontWeight: 800, letterSpacing: "-0.02em" }}>{fmt(total)}</p>
+            {(() => {
+              const todoEnPesos = payMethods.length > 0 && tcVenta > 0 && payMethods.every((m) => m === "transferencia" || (m === "efectivo" && cashCurrencyMode === "ARS"));
+              return todoEnPesos
+                ? <div style={{ textAlign: "right" }}>
+                    <p style={{ fontSize: 23, fontWeight: 800, letterSpacing: "-0.02em" }}>ARS {Math.round(total * tcVenta).toLocaleString("es-AR")}</p>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(10,22,40,0.6)" }}>USD {total.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  </div>
+                : <p style={{ fontSize: 23, fontWeight: 800, letterSpacing: "-0.02em" }}>{fmt(total)}</p>;
+            })()}
           </div>
           {creditApp > 0.01 && <div style={adjustCardStyle(true)}><span>✓</span><span>Se descontaron <b>{fmt(creditApp)}</b> de tu saldo a favor</span></div>}
           {data.preferential && <div style={adjustCardStyle(true)}><span>⭐</span><span>Tenés <b>tarifa preferencial</b>: USD {data.preferential.usd_por_kg} por kilo, en vez de USD {data.preferential.lista_usd_por_kg}.</span></div>}
           {creditApp <= 0.01 && debtApp > 0.01 && <div style={adjustCardStyle(false)}><span>ⓘ</span><span>Se sumaron <b>{fmt(debtApp)}</b> por saldo pendiente anterior</span></div>}
 
           {(()=>{
-            const togglePay = (m) => setPayMethods((prev) => prev.includes(m) ? (prev.length > 1 ? prev.filter(x => x !== m) : prev) : [...prev, m]);
+            const togglePay = (m) => setPayMethods((prev) => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
             const PAY_LBL = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };
             const combinado = payMethods.length > 1;
             return <div style={{ marginTop: 12 }}>
@@ -330,7 +369,19 @@ export default function EntregaPublica({ params }) {
                   {[["USD", "Dólares"], ["ARS", "Pesos"], ["mixto", "Un poco de cada"]].map(([k, l]) => <button key={k} type="button" onClick={() => setCashCurrencyMode(k)} style={{ padding: "9px 8px", fontSize: 11.5, fontWeight: 800, borderRadius: 9, cursor: "pointer", border: `1.5px solid ${cashCurrencyMode === k ? GOLD_A : LINE}`, background: cashCurrencyMode === k ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff", color: cashCurrencyMode === k ? "#8b6f4a" : MUTED }}>{l}</button>)}
                 </div>
                 {cashCurrencyMode === "ARS" && tcVenta > 0 && (() => { const parte = splitCliente.find((p) => p.method === "efectivo")?.amount || 0; return parte > 0 ? <p style={{ fontSize: 11, color: "#1e5c3d", background: "#eaf6ef", border: "1px solid rgba(30,125,79,.2)", borderRadius: 8, padding: "8px 10px", margin: "0 0 10px", lineHeight: 1.5 }}>En pesos son <b>ARS {Math.round(parte * tcVenta).toLocaleString("es-AR")}</b> (valor de hoy — se ajusta al día del pago).</p> : null; })()}
-                {cashCurrencyMode === "mixto" && <p style={{ fontSize: 10.5, color: MUTED, margin: "0 0 10px", lineHeight: 1.5 }}>Coordinamos por WhatsApp cuánto en cada moneda.</p>}
+                {cashCurrencyMode === "mixto" && <div style={{ margin: "0 0 10px" }}>
+                  <p style={{ fontSize: 10.5, color: MUTED, margin: "0 0 7px", lineHeight: 1.5 }}>Si ya sabés cuánto vas a poner en cada moneda, anotalo (opcional):</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div style={{ position: "relative" }}>
+                      <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 700, color: MUTED }}>USD</span>
+                      <input value={cashMixUsd} onChange={(e) => setCashMixUsd(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="0" style={{ ...contactInputStyle(), paddingLeft: 44, textAlign: "right" }} />
+                    </div>
+                    <div style={{ position: "relative" }}>
+                      <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 700, color: MUTED }}>ARS</span>
+                      <input value={cashMixArs} onChange={(e) => setCashMixArs(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="0" style={{ ...contactInputStyle(), paddingLeft: 44, textAlign: "right" }} />
+                    </div>
+                  </div>
+                </div>}
                 <p style={{ fontSize: 10.5, color: MUTED, margin: "0 0 7px", lineHeight: 1.5 }}>Si necesitás cambio, decinos con cuánto llegás así lo tenemos listo. (Opcional)</p>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input value={cashAmount} onChange={(e) => setCashAmount(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="Ej: 600" style={{ ...contactInputStyle(), flex: 1 }} />
@@ -391,32 +442,42 @@ function DiaFranja({ modo, dia, setDia, franja, setFranja }) {
   const franjas = modo === "oficina"
     ? ["10:00 a 12:00", "12:00 a 14:00", "14:00 a 16:00", "16:00 a 18:00"]
     : ["10:00 a 13:00", "13:00 a 16:00", "16:00 a 19:00"];
+  // Una franja de HOY ya no sirve si su hora de fin ya pasó (12:24 → la de 10-12 no va más).
+  const ahora = new Date();
+  const finDe = (f) => Number(f.split(" a ")[1].split(":")[0]);
+  const franjaPasada = (isoDia, f) => {
+    const hoyIso = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}-${String(ahora.getDate()).padStart(2, "0")}`;
+    return isoDia === hoyIso && (ahora.getHours() + ahora.getMinutes() / 60) >= finDe(f);
+  };
   const dias = [];
   const d = new Date();
   while (dias.length < 5) {
     const dow = d.getDay();
     if (dow >= 1 && dow <= 5) {
       const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      const hoy = dias.length === 0 && new Date().toDateString() === d.toDateString();
+      const esHoy = new Date().toDateString() === d.toDateString();
       const nombre = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"][dow];
-      dias.push({ iso, label: hoy ? "Hoy" : nombre, fecha: `${d.getDate()}/${d.getMonth() + 1}` });
+      // "Hoy" se deshabilita si ya no queda ninguna franja disponible.
+      const sinFranjas = esHoy && franjas.every((f) => franjaPasada(iso, f));
+      if (!(esHoy && sinFranjas && dias.length === 0)) dias.push({ iso, label: esHoy ? "Hoy" : nombre, fecha: `${d.getDate()}/${d.getMonth() + 1}` });
+      else dias.push({ iso, label: "Hoy", fecha: `${d.getDate()}/${d.getMonth() + 1}`, disabled: true });
     }
     d.setDate(d.getDate() + 1);
   }
-  const chip = (active) => ({ padding: "9px 6px", borderRadius: 9, cursor: "pointer", textAlign: "center", border: `1.5px solid ${active ? GOLD_A : LINE}`, background: active ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff", boxShadow: active ? "0 3px 10px rgba(184,149,106,0.18)" : "none" });
+  const chip = (active, disabled) => ({ padding: "9px 6px", borderRadius: 9, cursor: disabled ? "not-allowed" : "pointer", textAlign: "center", border: `1.5px solid ${active ? GOLD_A : LINE}`, background: active ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff", boxShadow: active ? "0 3px 10px rgba(184,149,106,0.18)" : "none", opacity: disabled ? 0.35 : 1 });
   return <div style={{ marginTop: 12 }}>
     <label style={fieldLblStyle()}>{modo === "oficina" ? "¿Qué día pasás a retirar?" : "¿Qué día querés recibirla?"}</label>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(62px,1fr))", gap: 6, marginBottom: 10 }}>
-      {dias.map((x) => <div key={x.iso} onClick={() => setDia(x.iso)} style={chip(dia === x.iso)}>
+      {dias.map((x) => <div key={x.iso} onClick={() => { if (x.disabled) return; setDia(x.iso); if (franja && franjaPasada(x.iso, franja)) setFranja(""); }} style={chip(dia === x.iso, x.disabled)}>
         <div style={{ fontSize: 11.5, fontWeight: 800, color: INK }}>{x.label}</div>
         <div style={{ fontSize: 10, color: MUTED, marginTop: 1 }}>{x.fecha}</div>
       </div>)}
     </div>
     <label style={fieldLblStyle()}>¿En qué horario?</label>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(108px,1fr))", gap: 6 }}>
-      {franjas.map((f) => <div key={f} onClick={() => setFranja(f)} style={chip(franja === f)}>
-        <div style={{ fontSize: 11.5, fontWeight: 700, color: INK, whiteSpace: "nowrap" }}>{f}</div>
-      </div>)}
+      {franjas.map((f) => { const off = dia ? franjaPasada(dia, f) : false; return <div key={f} onClick={() => !off && setFranja(f)} style={chip(franja === f, off)}>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: off ? MUTED : INK, whiteSpace: "nowrap", textDecoration: off ? "line-through" : "none" }}>{f}</div>
+      </div>; })}
     </div>
   </div>;
 }
@@ -460,13 +521,21 @@ function OptRow({ selected, onClick, label, meta, price, disabled }) {
   </div>;
 }
 
-function ConfirmedView({ data, delivery, clientName }) {
+function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBlanco, onEdit }) {
   const L = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };
-  const payLabel = Array.isArray(data.payment_methods) && data.payment_methods.length > 1
-    ? data.payment_methods.map((p) => `${L[p.method] || p.method} (${fmt(p.amount)})`).join(" + ")
-    : (L[data.payment_method] || data.payment_method);
+  const tc = Number(data.tc_venta || 0);
+  const enPesos = (p) => p.method === "transferencia" || (p.method === "efectivo" && p.currency === "ARS");
+  const montoTxt = (p) => enPesos(p) && tc > 0 ? `ARS ${Math.round(p.amount * tc).toLocaleString("es-AR")}` : fmt(p.amount);
+  const split = Array.isArray(data.payment_methods) ? data.payment_methods : null;
+  const todoEnPesos = split && split.length > 0 && tc > 0 && split.every(enPesos);
+  const payLabel = split && split.length > 1
+    ? split.map((p) => `${L[p.method] || p.method} (${montoTxt(p)})`).join(" + ")
+    : split && split[0] ? `${L[split[0].method]}${split[0].currency === "ARS" ? " en pesos" : split[0].currency === "mixto" ? " (USD + ARS)" : ""}` : (L[data.payment_method] || data.payment_method);
+  const transfPart = split ? split.find((p) => p.method === "transferencia") : null;
   const entregaLabel = delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${data.delivery_zone || ""}` : "Envío por transportista";
   const what = delivery === "oficina" ? "tu retiro" : delivery === "propio" ? "la entrega en tu domicilio" : "el envío con el transportista";
+  const [verDetalle, setVerDetalle] = useState(false);
+  const rowS = { display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${LINE}`, gap: 12 };
   return <div style={pageStyle()}>
     <div style={{ maxWidth: 480, width: "100%", padding: "32px 28px", background: CREAM, color: INK, borderRadius: 16, boxShadow: "0 24px 80px rgba(0,0,0,0.55)" }}>
       <div style={{ textAlign: "center", marginBottom: 18 }}>
@@ -474,22 +543,51 @@ function ConfirmedView({ data, delivery, clientName }) {
         <p style={{ fontSize: 17, fontWeight: 800, margin: "0 0 4px", letterSpacing: "-0.01em" }}>¡Listo, confirmamos tu pedido!</p>
         <p style={{ fontSize: 12.5, color: MUTED, margin: 0, lineHeight: 1.5 }}>Un asesor de Argencargo te escribe por WhatsApp para coordinar {what}.</p>
       </div>
-      <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: "14px 16px", marginBottom: 14 }}>
+      <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: "14px 16px", marginBottom: 12 }}>
         <p style={{ fontSize: 12, fontWeight: 800, margin: "0 0 10px" }}>Resumen</p>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${LINE}` }}><span style={{ color: MUTED }}>Entrega</span><span style={{ fontWeight: 700 }}>{entregaLabel}</span></div>
-        {data.delivery_day && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${LINE}` }}><span style={{ color: MUTED }}>{delivery === "oficina" ? "Retirás" : "Te la llevamos"}</span><span style={{ fontWeight: 700 }}>{new Date(data.delivery_day + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric" })} · {data.delivery_slot}</span></div>}
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${LINE}`, gap: 12 }}><span style={{ color: MUTED }}>Pago</span><span style={{ fontWeight: 700, textAlign: "right" }}>{payLabel}</span></div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "6px 0" }}><span style={{ color: MUTED }}>Total</span><span style={{ fontWeight: 800, color: GOLD_A }}>{fmt(data.total)}</span></div>
+        <div style={rowS}><span style={{ color: MUTED }}>Entrega</span><span style={{ fontWeight: 700, textAlign: "right" }}>{entregaLabel}</span></div>
+        {data.delivery_day && <div style={rowS}><span style={{ color: MUTED }}>{delivery === "oficina" ? "Retirás" : "Te la llevamos"}</span><span style={{ fontWeight: 700 }}>{new Date(data.delivery_day + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric" })} · {data.delivery_slot}</span></div>}
+        <div style={rowS}><span style={{ color: MUTED }}>Pago</span><span style={{ fontWeight: 700, textAlign: "right" }}>{payLabel}</span></div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "6px 0" }}><span style={{ color: MUTED }}>Total</span><span style={{ fontWeight: 800, color: GOLD_A, textAlign: "right" }}>{todoEnPesos ? <>ARS {Math.round(data.total * tc).toLocaleString("es-AR")}<span style={{ display: "block", fontSize: 10.5, color: MUTED, fontWeight: 600 }}>USD {Number(data.total).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></> : fmt(data.total)}</span></div>
       </div>
-      <div style={payDetailStyle()}>
-        {data.payment_method === "crypto" && <span>Te vamos a pasar por WhatsApp la billetera y el monto exacto a transferir.</span>}
-        {data.payment_method === "transferencia" && <span>Te vamos a pasar por WhatsApp el monto exacto a transferir en pesos, al tipo de cambio del momento.</span>}
-        {data.payment_method === "efectivo" && <span>Tené preparado el pago en efectivo (ARS o USD) para cuando {delivery === "oficina" ? "retires tu carga." : "la recibas."}</span>}
-      </div>
+
+      {transfPart && data.transfer && (data.transfer.alias || data.transfer.titular) && <div style={{ background: "#eaf6ef", border: "1px solid rgba(30,125,79,.25)", borderRadius: 12, padding: "13px 16px", marginBottom: 12 }}>
+        <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: "#1e5c3d", margin: "0 0 7px" }}>💸 Datos para transferir</p>
+        {data.transfer.alias && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0" }}><span style={{ color: "#3d6b52" }}>Alias</span><span style={{ fontWeight: 800, fontFamily: "'SF Mono','JetBrains Mono',monospace" }}>{data.transfer.alias}</span></div>}
+        {data.transfer.titular && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0" }}><span style={{ color: "#3d6b52" }}>Titular</span><span style={{ fontWeight: 700 }}>{data.transfer.titular}</span></div>}
+        {tc > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "3px 0", borderTop: "1px dashed rgba(30,125,79,.25)", marginTop: 4, paddingTop: 7 }}><span style={{ color: "#3d6b52" }}>Monto a transferir</span><span style={{ fontWeight: 800 }}>ARS {Math.round(transfPart.amount * tc).toLocaleString("es-AR")}</span></div>}
+        <p style={{ fontSize: 10, color: "#3d6b52", margin: "7px 0 0", lineHeight: 1.5 }}>El monto en pesos se ajusta al valor del día en que transferís — te lo reconfirmamos por WhatsApp.</p>
+      </div>}
+
+      {data.crypto_wallet && <div style={{ background: "#f4efe3", border: `1px solid ${LINE}`, borderRadius: 12, padding: "13px 16px", marginBottom: 12 }}>
+        <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(10,22,40,0.55)", margin: "0 0 6px" }}>🪙 Billetera USDT (TRC-20)</p>
+        <p style={{ fontSize: 11.5, fontFamily: "'SF Mono','JetBrains Mono',monospace", wordBreak: "break-all", margin: 0, fontWeight: 700 }}>{data.crypto_wallet}</p>
+      </div>}
+
+      {op && <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: "14px 16px", marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setVerDetalle(v => !v)}>
+          <p style={{ fontSize: 12, fontWeight: 800, margin: 0 }}>Detalle de la operación · {op.operation_code}</p>
+          <span style={{ fontSize: 10, color: GOLD_A, fontWeight: 700 }}>{verDetalle ? "ocultar ▲" : "ver ▼"}</span>
+        </div>
+        {verDetalle && <div style={{ marginTop: 8 }}>
+          {cargo && <div style={rowS}><span style={{ color: MUTED }}>Bultos</span><span style={{ fontWeight: 700 }}>{cargo.bultos}</span></div>}
+          {cargo && isBlanco && <div style={rowS}><span style={{ color: MUTED }}>Peso facturable</span><span style={{ fontWeight: 700 }}>{cargo.peso_facturable.toLocaleString("es-AR")} kg</span></div>}
+          {op.budget_flete > 0 && <div style={rowS}><span style={{ color: MUTED }}>Flete internacional</span><span style={{ fontWeight: 700 }}>{fmt(op.budget_flete)}</span></div>}
+          {op.budget_taxes > 0 && op.taxes_billed_by_argencargo !== false && <div style={rowS}><span style={{ color: MUTED }}>Impuestos &amp; Aduana</span><span style={{ fontWeight: 700 }}>{fmt(op.budget_taxes)}</span></div>}
+          {taxDetail && taxDetail.productos.map((pr, i2) => <div key={i2} style={{ padding: "4px 0 4px 12px", borderLeft: `2px solid ${LINE}` }}>
+            <p style={{ fontSize: 10.5, fontWeight: 800, margin: "0 0 2px" }}>{pr.name}</p>
+            {pr.rows.map(([l, v], k) => <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: MUTED, padding: "1px 0" }}><span>{l}</span><span>{fmt(v)}</span></div>)}
+          </div>)}
+          {taxDetail && taxDetail.extras.map(([l, v], k) => <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: MUTED, padding: "1px 0 1px 12px" }}><span>{l}</span><span>{fmt(v)}</span></div>)}
+          {op.budget_seguro > 0 && <div style={rowS}><span style={{ color: MUTED }}>Seguro de carga</span><span style={{ fontWeight: 700 }}>{fmt(op.budget_seguro)}</span></div>}
+        </div>}
+      </div>}
+
+      <button onClick={onEdit} style={{ width: "100%", padding: "12px 16px", fontSize: 13, fontWeight: 700, borderRadius: 11, border: `1.5px solid ${GOLD_A}`, background: "#fff", color: "#8b6f4a", cursor: "pointer" }}>✏️ Cambiar algo (día, horario o forma de pago)</button>
+      <p style={{ textAlign: "center", fontSize: 10, color: MUTED, margin: "8px 0 0", lineHeight: 1.5 }}>Podés modificar tu elección las veces que necesites — siempre vale la última confirmación.</p>
     </div>
   </div>;
 }
-
 function pageStyle() { return { minHeight: "100vh", background: NAVY, padding: "32px 18px 60px", display: "flex", justifyContent: "center", alignItems: "flex-start", fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", color: "#fff" }; }
 function cardStyle() { return { maxWidth: 640, width: "100%", background: CREAM, borderRadius: 14, overflow: "hidden", boxShadow: "0 28px 80px rgba(0,0,0,0.5)" }; }
 function lblStyle() { return { fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", color: "rgba(232,208,152,0.65)", textTransform: "uppercase", marginBottom: 3 }; }
