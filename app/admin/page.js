@@ -4360,6 +4360,172 @@ const DELIVERY_GROUPS=[
   {k:"carrier_domicilio",l:"📮 Transportista · a domicilio",match:o=>o.delivery_choice==="carrier"&&o.carrier_mode==="domicilio"},
 ];
 
+// Modal del panel de Entregas: cobrar y marcar entregada en un solo paso.
+// Replica el flujo de cobro del editor de op (operation_client_payments + movimiento automatico
+// en la CC de SOLFIN si es transferencia a la financiera + comprobante al bucket) para que el
+// empleado/bot no tenga que abrir la operacion. NO cierra la op salvo cobro exacto (is_collected).
+function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,onClose,onSaved}){
+  const hoy=new Date().toISOString().slice(0,10);
+  const metodoIni=(Array.isArray(op.payment_split)&&op.payment_split[0]?.method)||op.payment_method_chosen||"efectivo";
+  const efIni=Array.isArray(op.payment_split)?op.payment_split.find(p=>p.method==="efectivo"):null;
+  const [metodo,setMetodo]=useState(metodoIni);
+  const [moneda,setMoneda]=useState(efIni?.currency==="ARS"?"ARS":"USD"); // moneda del efectivo
+  const [monto,setMonto]=useState(""); // vacio: el boton "saldo exacto" lo llena en la moneda que corresponda
+  const [tc,setTc]=useState("");
+  const [comision,setComision]=useState("2.5");
+  const [destino,setDestino]=useState("financiera");
+  const [receipt,setReceipt]=useState({url:"",name:"",kb:0});
+  const [subiendo,setSubiendo]=useState(false);
+  const [guardando,setGuardando]=useState(false);
+  const [err,setErr]=useState("");
+  const [soloEntregar,setSoloEntregar]=useState(false);
+  // TC del dia precargado (best effort)
+  useEffect(()=>{(async()=>{try{const r=await fetch("https://dolarapi.com/v1/dolares/blue",{signal:AbortSignal.timeout(2500)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTc(String(d.venta));}}catch{}})();},[]);
+  const monedaCobro=metodo==="crypto"?"USD":metodo==="transferencia"?"ARS":moneda;
+  const esArs=monedaCobro==="ARS";
+  const nMonto=Number(String(monto||"").replace(",","."))||0;
+  const nTc=Number(String(tc||"").replace(",","."))||0;
+  const nCom=Number(String(comision||"").replace(",","."))||0;
+  const cobroUsd=esArs?(nTc>0?Math.round((nMonto/nTc)*100)/100:0):nMonto;
+  const comArs=Math.round(nMonto*(nCom/100)*100)/100;
+  const esTransfFin=metodo==="transferencia"&&destino==="financiera";
+  const cambio=(op.cash_arrival_amount&&metodo==="efectivo"&&!sinMontos)?(()=>{
+    const llega=Number(op.cash_arrival_amount||0);
+    const llegaUsd=op.cash_arrival_currency==="ARS"?(nTc>0?llega/nTc:0):llega;
+    const dif=llegaUsd-saldo;
+    return dif>0.01?dif:0;
+  })():0;
+  const subirComprobante=async(file)=>{
+    if(!file)return;
+    setSubiendo(true);setErr("");
+    try{
+      const ext=(file.name||"c").split(".").pop().toLowerCase().replace(/[^a-z0-9]/g,"")||"jpg";
+      const filename=`cobro-${op.operation_code}-${Date.now()}.${ext}`;
+      const r=await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/${filename}`,{method:"POST",headers:{Authorization:`Bearer ${token}`,apikey:SB_KEY,"Content-Type":file.type,"x-upsert":"false"},body:file});
+      if(!r.ok)throw new Error("upload "+r.status);
+      setReceipt({url:`${SB_URL}/storage/v1/object/public/solfin-comprobantes/${filename}`,name:file.name||"comprobante",kb:Math.max(1,Math.round(file.size/1024))});
+    }catch(e){setErr("No se pudo subir el comprobante: "+e.message);}
+    setSubiendo(false);
+  };
+  const guardar=async()=>{
+    setErr("");
+    if(!soloEntregar){
+      if(nMonto<=0){setErr("Cargá el monto cobrado.");return;}
+      if(esArs&&nTc<=0){setErr("Cargá el tipo de cambio ARS/USD.");return;}
+    }
+    setGuardando(true);
+    try{
+      if(!soloEntregar){
+        // Igual que registrarCobro del editor: primero preservar un cobro legacy si existiera.
+        let prevTotal=cobradoPrevio;
+        const legacyRaw=Number(op.collected_amount||0);
+        const legacyRate=Number(op.collection_exchange_rate||0);
+        const legacy=op.collection_currency==="ARS"&&legacyRate>0?legacyRaw/legacyRate:legacyRaw;
+        if(cobradoPrevio<=0.01&&op.is_collected===false&&legacy>0.01){
+          const lb={operation_id:op.id,payment_date:hoy,amount_usd:legacy,currency:op.collection_currency||"USD",payment_method:op.collection_method||"transferencia",notes:"Cobro previo (migrado del registro anterior)"};
+          if(op.collection_currency==="ARS"&&legacyRate>0){lb.amount_ars=legacyRaw;lb.exchange_rate=legacyRate;}
+          const insL=await dq("operation_client_payments",{method:"POST",token,body:lb,headers:{Prefer:"return=representation"}});
+          if(!(Array.isArray(insL)?insL[0]:insL)?.id)throw new Error("No se pudo preservar el cobro previo");
+          prevTotal=legacy;
+        }
+        const body={operation_id:op.id,payment_date:hoy,amount_usd:cobroUsd,currency:monedaCobro,payment_method:metodo==="crypto"?"cripto":metodo,receipt_url:receipt.url||null};
+        if(esArs){body.amount_ars=nMonto;body.exchange_rate=nTc;}
+        if(metodo==="transferencia"){body.ars_destination=destino;body.commission_pct=destino==="financiera"?nCom:null;}
+        const ins=await dq("operation_client_payments",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
+        const inserted=Array.isArray(ins)?ins[0]:ins;
+        if(!inserted?.id)throw new Error(inserted?.message||"El cobro no se pudo guardar");
+        if(esTransfFin){
+          try{
+            await dq("cc_solfin_movements",{method:"POST",token,body:{date:hoy,type:"ingreso",currency:"ARS",amount:nMonto,commission_pct:nCom||null,commission_amount:nCom>0?comArs:null,net_amount:nMonto-comArs,provisional_rate:nTc,description:`Cobro ${op.operation_code}${op.clients?.client_code?` · ${op.clients.client_code}`:""}`,image_url:receipt.url||null,operation_id:op.id,client_payment_id:inserted.id,auto_generated:true}});
+          }catch(e){console.error("cc solfin mov",e);}
+        }
+        const newTotal=prevTotal+cobroUsd;
+        const upd={collected_amount:newTotal,collection_method:metodo==="crypto"?"cripto":metodo,collection_currency:"USD",collection_date:hoy};
+        // Cobro exacto (o de mas por centavos): cerramos el cobro. Con diferencia real queda
+        // abierto para resolverla desde la op ("Cerrar cobro" del editor).
+        if(Math.abs(newTotal-(saldo+cobradoPrevio))<=0.01)upd.is_collected=true;
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:upd});
+      }
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{delivery_completed_at:new Date().toISOString()}});
+      onSaved();
+    }catch(e){setErr("Error: "+e.message);setGuardando(false);return;}
+  };
+  const inp={width:"100%",padding:"10px 12px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:9,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",fontFeatureSettings:'"tnum"'};
+  const lbl={display:"block",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
+  const segBtn=(act)=>({flex:1,padding:"9px 10px",fontSize:12.5,fontWeight:800,borderRadius:9,cursor:"pointer",border:`1.5px solid ${act?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.12)"}`,background:act?"rgba(184,149,106,0.16)":"rgba(255,255,255,0.03)",color:act?"#E8C99B":"rgba(255,255,255,0.5)"});
+  const nombre=op.clients?`${op.clients.first_name||""} ${op.clients.last_name||""}`.trim():"";
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"34px 16px",overflowY:"auto"}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:480,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:14,padding:"20px 22px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",margin:"auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+        <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>✓ Entregar y cobrar</h3>
+        <button onClick={onClose} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
+      </div>
+      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.55)",margin:"0 0 14px"}}><strong style={{fontFamily:"monospace",color:"#E8C99B"}}>{op.operation_code}</strong> · {nombre}{!sinMontos&&<> · saldo <strong style={{color:saldo>0.005?"#fbbf24":"#22c55e"}}>USD {saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></>}</p>
+
+      <label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12.5,color:"rgba(255,255,255,0.7)",marginBottom:12,cursor:"pointer"}}>
+        <input type="checkbox" checked={soloEntregar} onChange={e=>setSoloEntregar(e.target.checked)} style={{accentColor:"#B8956A"}}/>
+        Solo marcar entregada (sin registrar cobro ahora)
+      </label>
+
+      {!soloEntregar&&<>
+      <label style={lbl}>Método de pago</label>
+      <div style={{display:"flex",gap:6,marginBottom:12}}>
+        {[["efectivo","💵 Efectivo"],["transferencia","🏦 Transferencia"],["crypto","🪙 Cripto"]].map(([k,l])=><button key={k} type="button" onClick={()=>setMetodo(k)} style={segBtn(metodo===k)}>{l}</button>)}
+      </div>
+
+      {metodo==="efectivo"&&<>
+        <label style={lbl}>Moneda del efectivo</label>
+        <div style={{display:"flex",gap:6,marginBottom:12}}>
+          {[["USD","Dólares"],["ARS","Pesos"]].map(([k,l])=><button key={k} type="button" onClick={()=>setMoneda(k)} style={segBtn(moneda===k)}>{l}</button>)}
+        </div>
+        {op.cash_arrival_amount&&<p style={{fontSize:11.5,color:"#4ade80",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.25)",borderRadius:8,padding:"7px 10px",margin:"0 0 12px"}}>💵 Avisó que llega con <b>{op.cash_arrival_currency||"USD"} {Number(op.cash_arrival_amount).toLocaleString("es-AR")}</b>{cambio>0?` — cambio a devolver ≈ USD ${cambio.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:""}</p>}
+      </>}
+
+      <div style={{display:"grid",gridTemplateColumns:esArs?"1fr 1fr":"1fr",gap:"0 10px"}}>
+        <div style={{marginBottom:12}}>
+          <label style={{...lbl,display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>Monto cobrado {esArs?"(ARS)":"(USD)"}{!sinMontos&&saldo>0.005&&(!esArs||nTc>0)&&<button type="button" onClick={()=>setMonto(esArs?String(Math.round(saldo*nTc)):String(saldo))} style={{background:"none",border:"none",color:"#E8C99B",fontSize:10.5,fontWeight:700,cursor:"pointer",padding:0,textTransform:"none",letterSpacing:0}}>usar saldo exacto{esArs?` (ARS ${Math.round(saldo*nTc).toLocaleString("es-AR")})`:""}</button>}</label>
+          <input value={monto} onChange={e=>setMonto(e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" placeholder={esArs?(nTc>0?String(Math.round(saldo*nTc)):"0"):String(saldo||0)} style={inp}/>
+        </div>
+        {esArs&&<div style={{marginBottom:12}}>
+          <label style={lbl}>Tipo de cambio</label>
+          <input value={tc} onChange={e=>setTc(e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" placeholder="1500" style={inp}/>
+        </div>}
+      </div>
+      {esArs&&cobroUsd>0&&<p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"-4px 0 12px"}}>= USD {cobroUsd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>}
+
+      {metodo==="transferencia"&&<>
+        <label style={lbl}>¿A dónde entró?</label>
+        <div style={{display:"flex",gap:6,marginBottom:12}}>
+          {[["financiera","Financiera (SolFin)"],["cuenta","Otra cuenta"]].map(([k,l])=><button key={k} type="button" onClick={()=>setDestino(k)} style={segBtn(destino===k)}>{l}</button>)}
+        </div>
+        {destino==="financiera"&&<div style={{marginBottom:12}}>
+          <label style={lbl}>Comisión financiera (%)</label>
+          <input value={comision} onChange={e=>setComision(e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={{...inp,maxWidth:120}}/>
+        </div>}
+      </>}
+
+      {(metodo==="transferencia"||metodo==="crypto")&&<div style={{marginBottom:12}}>
+        <label style={lbl}>Comprobante {metodo==="crypto"?"(hash / captura)":""}</label>
+        {receipt.url
+          ?<div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",background:"rgba(34,197,94,0.08)",border:"1px solid rgba(34,197,94,0.3)",borderRadius:9,fontSize:12,color:"#4ade80"}}>📎 {receipt.name} · {receipt.kb} KB<button onClick={()=>setReceipt({url:"",name:"",kb:0})} style={{marginLeft:"auto",background:"none",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer"}}>✕</button></div>
+          :<label style={{display:"block",padding:"11px 12px",border:"1.5px dashed rgba(255,255,255,0.2)",borderRadius:9,fontSize:12.5,color:"rgba(255,255,255,0.5)",textAlign:"center",cursor:subiendo?"wait":"pointer"}}>
+            {subiendo?"Subiendo…":"📎 Adjuntar comprobante (foto o PDF)"}
+            <input type="file" accept="image/*,.pdf" onChange={e=>subirComprobante(e.target.files?.[0])} style={{display:"none"}} disabled={subiendo}/>
+          </label>}
+        <p style={{fontSize:10,color:"rgba(255,255,255,0.35)",margin:"5px 0 0"}}>{metodo==="transferencia"&&destino==="financiera"?"El cobro genera el movimiento en la CC de la financiera automáticamente, con el comprobante adjunto.":"El comprobante queda guardado en el cobro de la operación."}</p>
+      </div>}
+      </>}
+
+      {err&&<div style={{padding:"9px 12px",background:"rgba(255,80,80,0.1)",border:"1px solid rgba(255,80,80,0.3)",borderRadius:8,fontSize:12,color:"#ff6b6b",marginBottom:12}}>{err}</div>}
+
+      <div style={{display:"flex",gap:8}}>
+        <Btn onClick={guardar} disabled={guardando||subiendo}>{guardando?"Guardando…":soloEntregar?"✓ Marcar entregada":"✓ Cobrar y marcar entregada"}</Btn>
+        <Btn variant="secondary" onClick={onClose} disabled={guardando}>Cancelar</Btn>
+      </div>
+    </div>
+  </div>;
+}
+
 function EntregasPanel({token,onOpenOp}){
   // Empleado: coordina la entrega pero no ve montos — solo el estado (cobrada o no).
   const sinMontos=esEmpleado();
@@ -4367,7 +4533,9 @@ function EntregasPanel({token,onOpenOp}){
   const [bultosByOp,setBultosByOp]=useState({});const [cobrosByOp,setCobrosByOp]=useState({});
   const [lo,setLo]=useState(true);
   const [q,setQ]=useState("");
-  const [tab,setTab]=useState("pendientes"); // pendientes | entregadas
+  const [tab,setTab]=useState("agenda"); // agenda | pendientes | entregadas
+  const [cobroModal,setCobroModal]=useState(null); // op a cobrar/entregar desde la agenda
+  const [diaAgenda,setDiaAgenda]=useState(new Date().toISOString().slice(0,10));
   const usd=v=>sinMontos?"—":`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
   // Universo: dos tramos.
@@ -4377,7 +4545,7 @@ function EntregasPanel({token,onOpenOp}){
   //      pierden de vista al marcarlas entregadas, como pasaba antes.
   const load=async()=>{
     setLo(true);
-    const sel="id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,street,floor_apt,city,province,postal_code)";
+    const sel="id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,street,floor_apt,city,province,postal_code)";
     const [pend,entr]=await Promise.all([
       dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${sel}&order=eta.desc`}),
       dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.false&select=${sel}&order=delivery_completed_at.desc&limit=200`}).catch(()=>[]),
@@ -4628,12 +4796,127 @@ function EntregasPanel({token,onOpenOp}){
       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Entregas</h2>
         <div style={{display:"flex",gap:6}}>
+          {tabBtn("agenda","📅 Agenda del día",0)}
           {tabBtn("pendientes","Pendientes",pendientes.length)}
           {tabBtn("entregadas","Entregadas a cobrar",entregadasSinCobrar.length)}
         </div>
       </div>
       <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por código o cliente..." style={{padding:"9px 14px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",minWidth:220}}/>
     </div>
+
+    {tab==="agenda"&&(()=>{
+      // ===== AGENDA DEL DÍA =====
+      // Coordinadas con día elegido en el link → timeline por franja horaria.
+      // Sin fecha → bloque aparte (viejas o confirmadas antes de la feature).
+      const conFecha=confirmadas.filter(o=>o.delivery_day);
+      const sinFecha=confirmadas.filter(o=>!o.delivery_day&&o.delivery_choice!=="carrier");
+      const carriers=confirmadas.filter(o=>o.delivery_choice==="carrier");
+      // Chips de dias: hoy + proximos 5 habiles + cualquier dia con entregas agendadas
+      const dias=[];{
+        const d=new Date();
+        while(dias.length<6){const dow=d.getDay();if(dow>=1&&dow<=5){dias.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);}d.setDate(d.getDate()+1);}
+      }
+      conFecha.forEach(o=>{if(!dias.includes(o.delivery_day))dias.push(o.delivery_day);});
+      dias.sort();
+      const hoyIso=new Date().toISOString().slice(0,10);
+      const delDia=conFecha.filter(o=>o.delivery_day===diaAgenda);
+      const vencidas=conFecha.filter(o=>o.delivery_day<hoyIso&&!o.delivery_completed_at);
+      // Resumen de caja del día
+      const totCobrar=delDia.reduce((s2,o)=>s2+saldoFor(o),0);
+      const pagadas=delDia.filter(o=>saldoFor(o)<=0.005);
+      const porMetodo=(m)=>delDia.filter(o=>saldoFor(o)>0.005&&(o.payment_method_chosen||(Array.isArray(o.payment_split)&&o.payment_split[0]?.method)||"efectivo")===m);
+      const sumSaldo=(list)=>list.reduce((s2,o)=>s2+saldoFor(o),0);
+      const efect=porMetodo("efectivo"),transf=porMetodo("transferencia"),cripto=porMetodo("crypto");
+      // Timeline por franja (retiros 2hs + fletero 3hs, ordenadas por hora de inicio)
+      const franjaDe=(o)=>o.delivery_slot||"Sin franja";
+      const franjas=[...new Set(delDia.map(franjaDe))].sort((a,b)=>{const h=(x)=>x==="Sin franja"?99:Number(x.split(":")[0]);return h(a)-h(b);});
+      const fmtDia=(iso)=>{const d=new Date(iso+"T12:00:00");const hoy2=iso===hoyIso;return {top:hoy2?"Hoy":["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][d.getDay()],sub:`${d.getDate()}/${d.getMonth()+1}`};};
+      const statCard=(icon,titulo,valor,sub,color)=><div style={{flex:"1 1 150px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"12px 14px"}}>
+        <p style={{fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.4)",margin:"0 0 5px",textTransform:"uppercase",letterSpacing:"0.07em"}}>{icon} {titulo}</p>
+        <p style={{fontSize:19,fontWeight:800,color:color||"#fff",margin:0,fontFeatureSettings:'"tnum"'}}>{valor}</p>
+        {sub&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{sub}</p>}
+      </div>;
+      const CardEntrega=({o})=>{
+        const saldo=saldoFor(o);
+        const pagada=saldo<=0.005;
+        const metodo=o.payment_method_chosen||(Array.isArray(o.payment_split)&&o.payment_split[0]?.method)||"efectivo";
+        const efSplit=Array.isArray(o.payment_split)?o.payment_split.find(p=>p.method==="efectivo"):null;
+        const esEnvio=o.delivery_choice==="propio";
+        const dc=o.delivery_contact||{};
+        const nombre=o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"—";
+        const tel=dc.telefono||o.clients?.whatsapp||"";
+        const waNum=String(tel).replace(/[^0-9]/g,"");
+        const bultos=bultosByOp[o.id]||0;
+        const metodoBadge=metodo==="efectivo"
+          ?{l:`💵 Efectivo${efSplit?.currency==="ARS"?" · pesos":efSplit?.currency==="mixto"?" · USD+ARS":" · dólares"}`,c:"#4ade80"}
+          :metodo==="transferencia"?{l:"🏦 Transferencia",c:"#60a5fa"}:{l:"🪙 Cripto",c:"#c084fc"};
+        return <div style={{display:"flex",gap:12,alignItems:"center",padding:"12px 14px",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:11,flexWrap:"wrap"}}>
+          <div style={{width:38,height:38,borderRadius:10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,background:esEnvio?"rgba(96,165,250,0.12)":"rgba(184,149,106,0.12)",border:`1px solid ${esEnvio?"rgba(96,165,250,0.3)":"rgba(184,149,106,0.3)"}`}}>{esEnvio?"🚚":"📦"}</div>
+          <div style={{flex:"1 1 200px",minWidth:0,cursor:"pointer"}} onClick={()=>onOpenOp(o)}>
+            <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0}}>{nombre} <span style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{o.clients?.client_code}</span></p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}><span style={{fontFamily:"monospace",color:"#E8C99B",fontWeight:700}}>{o.operation_code}</span> · {bultos||"?"} bulto{bultos!==1?"s":""}{esEnvio&&o.delivery_address?<span style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>📍 {o.delivery_address}{tel?` · 📞 ${tel}`:""}</span>:null}</p>
+          </div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:6,background:"rgba(255,255,255,0.05)",color:metodoBadge.c,border:"1px solid rgba(255,255,255,0.1)",whiteSpace:"nowrap"}}>{metodoBadge.l}</span>
+            {!sinMontos&&o.cash_arrival_amount&&metodo==="efectivo"&&<span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.45)",marginTop:3}}>llega con {o.cash_arrival_currency||"USD"} {Number(o.cash_arrival_amount).toLocaleString("es-AR")}</span>}
+            <span style={{display:"block",marginTop:4,fontSize:12.5,fontWeight:800,color:pagada?"#22c55e":"#fbbf24"}}>{pagada?"✓ PAGADO":usd(saldo)}</span>
+          </div>
+          <div style={{display:"flex",gap:6,flexShrink:0}} onClick={e=>e.stopPropagation()}>
+            {waNum&&<a href={`https://wa.me/${waNum}`} target="_blank" rel="noopener noreferrer" style={{padding:"7px 10px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.35)",background:"rgba(34,197,94,0.08)",color:"#22c55e",textDecoration:"none"}}>WA</a>}
+            <Btn small onClick={()=>setCobroModal(o)}>✓ Entregar</Btn>
+          </div>
+        </div>;
+      };
+      return <>
+        {/* selector de dia */}
+        <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+          {dias.map(iso=>{const f=fmtDia(iso);const n=conFecha.filter(o=>o.delivery_day===iso).length;const act=diaAgenda===iso;return <button key={iso} onClick={()=>setDiaAgenda(iso)} style={{padding:"9px 14px",borderRadius:10,cursor:"pointer",textAlign:"center",border:`1.5px solid ${act?GOLD:"rgba(255,255,255,0.1)"}`,background:act?"rgba(184,149,106,0.14)":"rgba(255,255,255,0.02)",minWidth:64}}>
+            <span style={{display:"block",fontSize:12.5,fontWeight:800,color:act?GOLD_LIGHT:"#fff"}}>{f.top}</span>
+            <span style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.4)"}}>{f.sub}</span>
+            {n>0&&<span style={{display:"inline-block",marginTop:3,fontSize:9.5,fontWeight:800,padding:"1px 7px",borderRadius:8,background:act?GOLD:"rgba(255,255,255,0.1)",color:act?"#0F1F3A":"rgba(255,255,255,0.6)"}}>{n}</span>}
+          </button>;})}
+        </div>
+
+        {/* alerta de vencidas */}
+        {vencidas.length>0&&<div style={{padding:"10px 14px",marginBottom:14,background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:10,fontSize:12.5,color:"#f87171",fontWeight:600}}>
+          ⚠️ {vencidas.length} entrega{vencidas.length>1?"s":""} agendada{vencidas.length>1?"s":""} de días anteriores sin marcar como entregada{vencidas.length>1?"s":""}: {vencidas.map(o=>o.operation_code).join(", ")} — marcalas o el cliente reagenda desde el link.
+        </div>}
+
+        {/* resumen de caja del dia */}
+        <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
+          {statCard("📦","Entregas del día",String(delDia.length),`${delDia.filter(o=>o.delivery_choice!=="propio").length} retiros · ${delDia.filter(o=>o.delivery_choice==="propio").length} envíos`)}
+          {!sinMontos&&statCard("💰","Por cobrar hoy",usd(totCobrar),pagadas.length>0?`${pagadas.length} ya pagada${pagadas.length>1?"s":""}`:null,"#fbbf24")}
+          {!sinMontos&&efect.length>0&&statCard("💵","En efectivo",usd(sumSaldo(efect)),`${efect.length} cliente${efect.length>1?"s":""}`,"#4ade80")}
+          {!sinMontos&&transf.length>0&&statCard("🏦","Por transferencia",usd(sumSaldo(transf)),`${transf.length} cliente${transf.length>1?"s":""}`,"#60a5fa")}
+          {!sinMontos&&cripto.length>0&&statCard("🪙","En cripto",usd(sumSaldo(cripto)),`${cripto.length} cliente${cripto.length>1?"s":""}`,"#c084fc")}
+        </div>
+
+        {/* timeline por franja */}
+        {delDia.length===0&&<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"2.5rem 0",fontSize:13}}>No hay entregas agendadas para este día.</p>}
+        {franjas.map(f=>{
+          const enFranja=delDia.filter(o=>franjaDe(o)===f);
+          return <div key={f} style={{display:"flex",gap:14,marginBottom:16}}>
+            <div style={{flexShrink:0,width:74,textAlign:"right",paddingTop:12}}>
+              <span style={{fontSize:12.5,fontWeight:800,color:GOLD_LIGHT,fontFeatureSettings:'"tnum"'}}>{f==="Sin franja"?"—":f.split(" a ")[0]}</span>
+              {f!=="Sin franja"&&<span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)"}}>a {f.split(" a ")[1]}</span>}
+            </div>
+            <div style={{flex:1,borderLeft:"2px solid rgba(184,149,106,0.25)",paddingLeft:14,display:"flex",flexDirection:"column",gap:8}}>
+              {enFranja.map(o=><CardEntrega key={o.id} o={o}/>)}
+            </div>
+          </div>;
+        })}
+
+        {/* sin fecha + carriers */}
+        {sinFecha.length>0&&<Bloque titulo={<>🗓 Coordinadas sin día elegido <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {sinFecha.length}</span></>}>
+          <div style={{padding:12,display:"flex",flexDirection:"column",gap:8}}>{sinFecha.map(o=><CardEntrega key={o.id} o={o}/>)}</div>
+        </Bloque>}
+        {carriers.length>0&&<Bloque titulo={<>📮 Transportista · para despachar <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {carriers.length}</span></>}>
+          <div style={{padding:12,display:"flex",flexDirection:"column",gap:8}}>{carriers.map(o=><CardEntrega key={o.id} o={o}/>)}</div>
+        </Bloque>}
+      </>;
+    })()}
+
+    {cobroModal&&<CobroEntregaModal op={cobroModal} saldo={saldoFor(cobroModal)} cobradoPrevio={Number(cobrosByOp[cobroModal.id]||0)} token={token} sinMontos={sinMontos} onClose={()=>setCobroModal(null)} onSaved={()=>{setCobroModal(null);load();toast("✓ Entrega registrada","success");}}/>}
 
     {tab==="pendientes"&&<>
       {DELIVERY_GROUPS.map(g=>{
