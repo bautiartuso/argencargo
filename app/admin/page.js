@@ -355,7 +355,11 @@ function OperationsList({token,onSelect,onNew}){
     } else if(o.is_collected){
       const raw=Number(o.collected_amount||0);
       const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
-      const cash=isArs&&rate>0?raw/rate:raw;
+      // Los cobros registrados (operation_client_payments) pisan al legacy — mismo criterio que
+      // calcSaldo. Sin esto, una op cobrada por cobros parciales que suman exacto quedaba con
+      // is_collected=true y collected_amount=0 → ingreso 0 → pérdida fantasma por sus costos.
+      const cliPaid=Number(cliPmtsByOp[o.id]||0);
+      const cash=cliPaid>0?cliPaid:(isArs&&rate>0?raw/rate:raw);
       // Sumar solo crédito de CC aplicado (es ingreso real ya recibido en su momento). El descuento NO suma — es plata que no entró.
       // Capear el cash al total que ESTA op tenía para cobrar: presupuesto + deuda anterior aplicada.
       // Incluir debt_applied_usd es clave: cuando el cliente paga acá la deuda de ops anteriores, esa
@@ -531,8 +535,10 @@ function OperationsList({token,onSelect,onNew}){
             ?<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,fontWeight:700,padding:"4px 10px",borderRadius:999,color:"#fca5a5",background:"rgba(239,68,68,0.10)",border:"1px solid rgba(239,68,68,0.35)",letterSpacing:"0.06em",textTransform:"uppercase"}}><span style={{display:"inline-block",width:5,height:5,borderRadius:"50%",background:"#f87171"}}/>Pérdida</span>
             :<span style={{color:"rgba(255,255,255,0.5)"}}>{formatDateShort(op.collection_date||op.closed_at)}</span>}</td>:<><td style={{padding:"14px 16px",color:"rgba(255,255,255,0.55)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{formatDateShort(op.eta)}</td><td style={{padding:"14px 24px 14px 16px",whiteSpace:"nowrap",fontSize:12.5,fontWeight:700,fontVariantNumeric:"tabular-nums",textAlign:"right",color:saldo===null?"rgba(255,255,255,0.35)":saldo===0?"#22c55e":GOLD_LIGHT}}>{saldo===null?<span style={{fontWeight:500}}>—</span>:saldo===0?"Cobrada":`USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`}</td></>}
           {showGanancia&&<td style={{padding:"14px 24px 14px 16px",fontWeight:700,textAlign:"right",color:gan>0?"#22c55e":gan<0?"#ff6b6b":"rgba(255,255,255,0.4)",whiteSpace:"nowrap",fontSize:12.5,fontVariantNumeric:"tabular-nums"}}>{(()=>{
-            const realIng=op.is_collected?Number(op.collected_amount||0):Number(op.budget_total||0);
-            const hasData=realIng>0||Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)>0;
+            const realIng=op.is_collected?Math.max(Number(op.collected_amount||0),Number(cliPmtsByOp[op.id]||0)):Number(op.budget_total||0);
+            // El costo de producto (GI) también es dato: sin él, una GI con solo ese costo mostraba "—".
+            const costProdCell=op.service_type==="gestion_integral"?Number(op.cost_producto_usd||0):0;
+            const hasData=realIng>0||costProdCell+Number(op.cost_flete||0)+Number(op.cost_impuestos_reales||0)+Number(op.cost_gasto_documental||0)+Number(op.cost_seguro||0)+Number(op.cost_flete_local||0)+Number(op.cost_otros||0)>0;
             if(!hasData)return "—";
             const sign=gan<0?"-":"";
             const txt=`${sign}USD ${Math.abs(gan).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
