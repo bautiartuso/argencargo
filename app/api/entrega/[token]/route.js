@@ -158,11 +158,22 @@ export async function POST(req, { params }) {
   if (!body || !body.delivery_choice || !body.payment_method) {
     return Response.json({ error: "Faltan datos: delivery_choice y payment_method" }, { status: 400 });
   }
-  const { delivery_choice, delivery_address, payment_method, delivery_contact, carrier_mode } = body;
+  const { delivery_choice, delivery_address, payment_method, delivery_contact, carrier_mode, delivery_day, delivery_slot, cash_amount, cash_currency } = body;
   if (!["oficina", "propio", "carrier"].includes(delivery_choice)) return Response.json({ error: "Entrega inválida" }, { status: 400 });
   if (!["efectivo", "transferencia", "crypto"].includes(payment_method)) return Response.json({ error: "Método de pago inválido" }, { status: 400 });
-  if (payment_method === "efectivo" && delivery_choice === "carrier") {
+  // Pago combinado: hasta 2 métodos con montos. Se valida acá y se recorta contra el total real más abajo.
+  const payMethods = Array.isArray(body.payment_methods) ? body.payment_methods.filter((p) => p && ["efectivo", "transferencia", "crypto"].includes(p.method)) : null;
+  if (payMethods && (payMethods.length < 1 || payMethods.length > 2)) return Response.json({ error: "Elegí una o dos formas de pago" }, { status: 400 });
+  const usaEfectivo = payMethods ? payMethods.some((p) => p.method === "efectivo") : payment_method === "efectivo";
+  if (usaEfectivo && delivery_choice === "carrier") {
     return Response.json({ error: "Efectivo no disponible para envíos con transportista externo" }, { status: 400 });
+  }
+  // Día y franja: obligatorios para oficina y fletero propio.
+  if ((delivery_choice === "oficina" || delivery_choice === "propio")) {
+    if (!delivery_day || !/^\d{4}-\d{2}-\d{2}$/.test(String(delivery_day))) return Response.json({ error: "Elegí el día" }, { status: 400 });
+    if (!delivery_slot || String(delivery_slot).length > 30) return Response.json({ error: "Elegí la franja horaria" }, { status: 400 });
+    const dow = new Date(delivery_day + "T12:00:00Z").getUTCDay();
+    if (dow === 0 || dow === 6) return Response.json({ error: "Elegí un día hábil (lunes a viernes)" }, { status: 400 });
   }
 
   const op = await loadOpData(token);
@@ -187,6 +198,23 @@ export async function POST(req, { params }) {
   const collected = usdCollected(op);
   const saldo = Math.max(0, bt + debtApp - totAnt - collected - creditApp);
   const finalTotal = Math.round((saldo + deliveryCost) * 100) / 100;
+  // Reparto del pago: los montos se recalculan server-side contra el total real (el 2do metodo
+  // absorbe el resto) — nunca se confia en montos que sumen otra cosa.
+  let splitFinal = null;
+  if (payMethods && payMethods.length === 2 && !(Number(payMethods[0].amount) > 0)) {
+    return Response.json({ error: "Indicá cuánto pagás con el primer método" }, { status: 400 });
+  }
+  if (payMethods) {
+    if (payMethods.length === 2) {
+      const m1 = Math.min(Math.round(Number(payMethods[0].amount || 0) * 100) / 100, Math.max(0, finalTotal - 0.01));
+      splitFinal = [
+        { method: payMethods[0].method, amount: m1 },
+        { method: payMethods[1].method, amount: Math.round((finalTotal - m1) * 100) / 100 },
+      ];
+    } else {
+      splitFinal = [{ method: payMethods[0].method, amount: finalTotal }];
+    }
+  }
 
   // El costo de envío a domicilio es parte de lo que el cliente debe pagar — se suma al
   // budget_total real de la op (no solo a un total mostrado ad-hoc) para que quede reflejado en
@@ -208,12 +236,21 @@ export async function POST(req, { params }) {
       // Solo para transportista: quien recibe, con el DNI que exige el despacho.
       delivery_contact: delivery_choice === "carrier" ? (delivery_contact || null) : null,
       carrier_mode: delivery_choice === "carrier" ? (carrier_mode || null) : null,
+      delivery_day: (delivery_choice === "oficina" || delivery_choice === "propio") ? delivery_day : null,
+      delivery_slot: (delivery_choice === "oficina" || delivery_choice === "propio") ? delivery_slot : null,
+      payment_split: splitFinal,
+      cash_arrival_amount: usaEfectivo && Number(cash_amount) > 0 ? Number(cash_amount) : null,
+      cash_arrival_currency: usaEfectivo && Number(cash_amount) > 0 ? (cash_currency === "ARS" ? "ARS" : "USD") : null,
       delivery_confirmed_at: new Date().toISOString(),
     }),
   });
 
   const deliveryLabel = delivery_choice === "oficina" ? "Retiro por oficina" : delivery_choice === "propio" ? `Envío a domicilio · ${deliveryZone}` : "Envío por transportista (Via Cargo/Andreani)";
-  const payLabel = payment_method === "efectivo" ? "Efectivo" : payment_method === "transferencia" ? "Transferencia en pesos" : "Cripto (USDT)";
+  const PL = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };
+  const payLabel = splitFinal && splitFinal.length === 2
+    ? splitFinal.map((p) => `${PL[p.method]} (USD ${p.amount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`).join(" + ")
+    : (PL[payment_method] || payment_method);
+  const diaLabel = delivery_day ? new Date(delivery_day + "T12:00:00Z").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric", timeZone: "UTC" }) : null;
   try {
     await sbFetch(`/op_communications`, {
       method: "POST",
@@ -221,7 +258,7 @@ export async function POST(req, { params }) {
         operation_id: op.id,
         type: "note",
         direction: "in",
-        content: `✅ Cliente confirmó carga lista.\nEntrega: ${deliveryLabel}${delivery_choice === "propio" ? `\nDirección: ${delivery_address || "(sin especificar)"}` : ""}\nPago: ${payLabel}\nTotal: USD ${finalTotal.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        content: `✅ Cliente confirmó carga lista.\nEntrega: ${deliveryLabel}${diaLabel ? `\nDía y franja: ${diaLabel} · ${delivery_slot}` : ""}${delivery_choice === "propio" ? `\nDirección: ${delivery_address || "(sin especificar)"}` : ""}\nPago: ${payLabel}${usaEfectivo && Number(cash_amount) > 0 ? `\n💵 Llega con ${cash_currency === "ARS" ? "ARS" : "USD"} ${Number(cash_amount).toLocaleString("es-AR")} — tener cambio listo` : ""}\nTotal: USD ${finalTotal.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       }),
     });
   } catch (e) { console.error("[POST entrega] log failed", e.message); }
@@ -251,12 +288,16 @@ export async function POST(req, { params }) {
   const settingsRes = await sbFetch(`/gi_settings?select=payment_crypto_wallet&limit=1`);
   const wallet = Array.isArray(settingsRes.body) && settingsRes.body[0] ? settingsRes.body[0].payment_crypto_wallet : "";
 
+  const anyCrypto = splitFinal ? splitFinal.some((p) => p.method === "crypto") : payment_method === "crypto";
   return Response.json({
     ok: true,
     total: finalTotal,
     delivery_choice,
     delivery_zone: deliveryZone,
+    delivery_day: (delivery_choice === "oficina" || delivery_choice === "propio") ? delivery_day : null,
+    delivery_slot: (delivery_choice === "oficina" || delivery_choice === "propio") ? delivery_slot : null,
     payment_method,
-    crypto_wallet: payment_method === "crypto" ? wallet : null,
+    payment_methods: splitFinal,
+    crypto_wallet: anyCrypto ? wallet : null,
   });
 }

@@ -21,13 +21,22 @@ export default function EntregaPublica({ params }) {
   const [delivery, setDelivery] = useState("oficina"); // oficina | propio | carrier
   const [address, setAddress] = useState("");
   const [addressChanged, setAddressChanged] = useState(false);
-  const [payment, setPayment] = useState("efectivo");
+  const [payment, setPayment] = useState("efectivo"); // legacy: primer método (se mantiene sincronizado)
   // Quien recibe, solo para envio por transportista (Andreani): el despacho exige el DNI. Se
   // precarga con los datos del cliente, pero es editable porque a veces recibe otra persona.
   // El link avanza de a bloques, como el de MyBox: se ve un paso por vez y el siguiente aparece
   // recién cuando el anterior está resuelto. Mostrar los tres juntos hacía que el cliente saltara
   // datos y llegara al final con cosas sin completar.
   const [paso, setPaso] = useState(1);
+  // Día y franja horaria elegidos (retiro por oficina y envío con fletero propio).
+  const [diaEntrega, setDiaEntrega] = useState("");
+  const [franjaEntrega, setFranjaEntrega] = useState("");
+  // Pago combinado: hasta 2 métodos. payMethods = ["efectivo","crypto"], payAmounts = {efectivo:"600"}.
+  const [payMethods, setPayMethods] = useState(["efectivo"]);
+  const [payAmount1, setPayAmount1] = useState(""); // monto del PRIMER método cuando hay 2
+  // Si paga (parte) en efectivo: con cuánto llega, para tener el cambio listo.
+  const [cashAmount, setCashAmount] = useState("");
+  const [cashCurrency, setCashCurrency] = useState("USD");
   const [carrierMode, setCarrierMode] = useState(""); // sucursal | domicilio (solo con transportista)
   const [contacto, setContacto] = useState({ nombre: "", apellido: "", dni: "", email: "", telefono: "", direccion: "", piso: "", cp: "", sucursal: "" });
   const [confirming, setConfirming] = useState(false);
@@ -45,7 +54,7 @@ export default function EntregaPublica({ params }) {
         const hasPropio = d.delivery.price != null;
         setDelivery(hasPropio || !d.delivery.inferred_zone ? "oficina" : "carrier");
         setAddress(d.delivery.default_address || "");
-        if (payment === "efectivo" && !hasPropio && !d.delivery.inferred_zone) setPayment("transferencia");
+        if (!hasPropio && !d.delivery.inferred_zone) setPayMethods(["transferencia"]);
         setContacto((c) => ({
           ...c,
           nombre: c.nombre || d.client?.first_name || "",
@@ -68,9 +77,16 @@ export default function EntregaPublica({ params }) {
   // de la selección. Este efecto va ANTES de cualquier return temprano (loading/err/!data) para no
   // violar las reglas de hooks (la cantidad de hooks debe ser la misma en cada render).
   useEffect(() => {
-    if (delivery === "carrier" && payment === "efectivo") setPayment("transferencia");
+    if (delivery === "carrier" && payMethods.includes("efectivo")) {
+      const rest = payMethods.filter(m => m !== "efectivo");
+      setPayMethods(rest.length ? rest : ["transferencia"]);
+    }
+    // Cambiar la forma de entrega invalida el día/franja elegidos (las franjas difieren).
+    setDiaEntrega(""); setFranjaEntrega("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [delivery]);
+  useEffect(() => { setPayment(payMethods[0] || "transferencia"); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payMethods]);
 
   if (loading) return <div style={pageStyle()}><p style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>Cargando…</p></div>;
   if (err) return <div style={pageStyle()}><div style={{ maxWidth: 440, padding: 30, background: "rgba(255,255,255,0.04)", borderRadius: 14, textAlign: "center" }}><p style={{ fontSize: 15, fontWeight: 600, color: "#f87171" }}>{err}</p></div></div>;
@@ -104,6 +120,15 @@ export default function EntregaPublica({ params }) {
       if (carrierMode === "domicilio" && !contacto.direccion.trim()) return "Completá la dirección de entrega.";
     }
     if (delivery === "propio" && !address.trim()) return "Completá la dirección de entrega.";
+    if ((delivery === "oficina" || delivery === "propio") && (!diaEntrega || !franjaEntrega)) return delivery === "oficina" ? "Elegí qué día y en qué horario pasás a retirar." : "Elegí qué día y en qué franja querés recibir la entrega.";
+    return null;
+  };
+  // Montos del pago combinado: monto1 = lo que paga con el primer método; el resto va al segundo.
+  const monto1 = Number(String(payAmount1).replace(",", ".")) || 0;
+  const monto2 = payMethods.length === 2 ? Math.max(0, Math.round((total - monto1) * 100) / 100) : 0;
+  const validarPago = () => {
+    if (payMethods.length === 0) return "Elegí al menos una forma de pago.";
+    if (payMethods.length === 2 && (!(monto1 > 0) || monto1 >= total)) return "Indicá cuánto pagás con el primer método (mayor a 0 y menor al total).";
     return null;
   };
 
@@ -111,12 +136,25 @@ export default function EntregaPublica({ params }) {
     // Andreani no despacha sin DNI del destinatario, asi que se pide antes de confirmar.
     const errEntrega = validarEntrega();
     if (errEntrega) { alert(errEntrega); return; }
+    const errPago = validarPago();
+    if (errPago) { alert(errPago); return; }
     setConfirming(true);
     // La zona/precio los recalcula el server a partir de la localidad registrada — no se manda acá.
     const r = await fetch(`/api/entrega/${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delivery_choice: delivery, delivery_address: delivery === "propio" ? address : null, payment_method: payment, delivery_contact: delivery === "carrier" ? contacto : null, carrier_mode: delivery === "carrier" ? carrierMode : null }),
+      body: JSON.stringify({
+        delivery_choice: delivery,
+        delivery_address: delivery === "propio" ? address : null,
+        payment_method: payMethods[0],
+        payment_methods: payMethods.map((m, i) => ({ method: m, amount: payMethods.length === 2 ? (i === 0 ? monto1 : monto2) : total })),
+        cash_amount: payMethods.includes("efectivo") && Number(String(cashAmount).replace(",", ".")) > 0 ? Number(String(cashAmount).replace(",", ".")) : null,
+        cash_currency: payMethods.includes("efectivo") ? cashCurrency : null,
+        delivery_day: (delivery === "oficina" || delivery === "propio") ? diaEntrega : null,
+        delivery_slot: (delivery === "oficina" || delivery === "propio") ? franjaEntrega : null,
+        delivery_contact: delivery === "carrier" ? contacto : null,
+        carrier_mode: delivery === "carrier" ? carrierMode : null,
+      }),
     });
     const d = await r.json();
     setConfirming(false);
@@ -178,12 +216,14 @@ export default function EntregaPublica({ params }) {
         <div style={stepStyle()}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>02</span><span style={stepTitleStyle()}>¿Cómo la recibís?</span></div>
           <OptRow selected={delivery === "oficina"} onClick={() => setDelivery("oficina")} label="Retiro por oficina" meta={`${deliveryInfo.office_address || ""}${deliveryInfo.office_locality ? " · " + deliveryInfo.office_locality : ""}${deliveryInfo.office_hours ? " · " + deliveryInfo.office_hours : ""}`} />
+          {delivery === "oficina" && <div style={{ margin: "4px 0 10px" }}><DiaFranja modo="oficina" dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} /></div>}
           {hasPropio && <OptRow selected={delivery === "propio"} onClick={() => setDelivery("propio")} label="Envío a domicilio" meta={`Coordinamos día y horario · ${inferredZone}`} price={"+ " + fmt(deliveryInfo.price)} />}
           {hasPropio && delivery === "propio" && <div style={{ marginTop: 10 }}>
             <label style={fieldLblStyle()}>Dirección de entrega</label>
             <input value={address} onChange={e => { setAddress(e.target.value); setAddressChanged(e.target.value.trim() !== (deliveryInfo.default_address || "").trim()); }} style={inputStyle()} />
             <p style={{ fontSize: 10, color: MUTED, marginTop: 6, lineHeight: 1.5 }}>Precargamos la dirección registrada en tu cuenta — la podés editar si querés que te entreguemos en otra.</p>
             {addressChanged && <p style={{ fontSize: 10, color: "#8b6f4a", marginTop: 4, lineHeight: 1.5 }}>🖊️ Vas a pedir entrega en una dirección distinta a la registrada — se lo avisamos a Argencargo junto con tu confirmación.</p>}
+            <DiaFranja modo="propio" dia={diaEntrega} setDia={setDiaEntrega} franja={franjaEntrega} setFranja={setFranjaEntrega} />
           </div>}
           {!hasPropio && <OptRow selected={delivery === "carrier"} onClick={() => setDelivery("carrier")} label="Envío por Via Cargo / Andreani" meta="Tu zona está fuera del reparto propio de Argencargo" price="A coordinar" />}
 
@@ -250,11 +290,48 @@ export default function EntregaPublica({ params }) {
           {data.preferential && <div style={adjustCardStyle(true)}><span>⭐</span><span>Tenés <b>tarifa preferencial</b>: USD {data.preferential.usd_por_kg} por kilo, en vez de USD {data.preferential.lista_usd_por_kg}.</span></div>}
           {creditApp <= 0.01 && debtApp > 0.01 && <div style={adjustCardStyle(false)}><span>ⓘ</span><span>Se sumaron <b>{fmt(debtApp)}</b> por saldo pendiente anterior</span></div>}
 
-          <div style={{ marginTop: 12 }}>
-            <OptRow selected={payment === "efectivo"} onClick={() => !efectivoBlocked && setPayment("efectivo")} label="Efectivo" meta={efectivoBlocked ? "No disponible para envíos con transportista" : "En ARS o USD, al retirar o recibir"} disabled={efectivoBlocked} />
-            <OptRow selected={payment === "transferencia"} onClick={() => setPayment("transferencia")} label="Transferencia en pesos" meta="Te pasamos el monto por WhatsApp" />
-            <OptRow selected={payment === "crypto"} onClick={() => setPayment("crypto")} label="Cripto" meta="USDT (TRC-20) · te pasamos la billetera por WhatsApp" />
-          </div>
+          {(()=>{
+            const togglePay = (m) => setPayMethods((prev) => {
+              if (prev.includes(m)) { const r = prev.filter(x => x !== m); return r.length ? r : prev; }
+              if (prev.length >= 2) return prev; // máximo 2 métodos
+              return [...prev, m];
+            });
+            const PAY_LBL = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };
+            const combinado = payMethods.length === 2;
+            return <div style={{ marginTop: 12 }}>
+              <p style={{ fontSize: 10.5, color: MUTED, margin: "0 0 8px", lineHeight: 1.5 }}>Podés elegir <b>hasta dos</b> formas de pago y repartir el total (ej: una parte en efectivo y otra por transferencia).</p>
+              <OptRow selected={payMethods.includes("efectivo")} onClick={() => !efectivoBlocked && togglePay("efectivo")} label="Efectivo" meta={efectivoBlocked ? "No disponible para envíos con transportista" : "En ARS o USD, al retirar o recibir"} disabled={efectivoBlocked} />
+              <OptRow selected={payMethods.includes("transferencia")} onClick={() => togglePay("transferencia")} label="Transferencia en pesos" meta="Te pasamos el monto por WhatsApp" />
+              <OptRow selected={payMethods.includes("crypto")} onClick={() => togglePay("crypto")} label="Cripto" meta="USDT (TRC-20) · te pasamos la billetera por WhatsApp" />
+
+              {combinado && <div style={{ marginTop: 10, padding: "13px 15px", borderRadius: 11, background: "rgba(10,22,40,0.035)", border: "1px solid rgba(10,22,40,0.10)" }}>
+                <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(10,22,40,0.55)", margin: "0 0 8px" }}>¿Cómo repartís el pago?</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+                  <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: INK }}>{PAY_LBL[payMethods[0]]}</span>
+                  <div style={{ position: "relative" }}>
+                    <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, fontWeight: 700, color: MUTED }}>USD</span>
+                    <input value={payAmount1} onChange={(e) => setPayAmount1(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="0" style={{ ...contactInputStyle(), width: 130, paddingLeft: 42, textAlign: "right" }} />
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: INK }}>{PAY_LBL[payMethods[1]]}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 800, color: monto1 > 0 && monto1 < total ? GOLD_A : MUTED, fontVariantNumeric: "tabular-nums" }}>{fmt(monto2)}</span>
+                </div>
+                <p style={{ fontSize: 10, color: MUTED, margin: "8px 0 0", lineHeight: 1.5 }}>Poné cuánto pagás con {PAY_LBL[payMethods[0]].toLowerCase()} — el resto queda para el otro método.</p>
+              </div>}
+
+              {payMethods.includes("efectivo") && <div style={{ marginTop: 10, padding: "13px 15px", borderRadius: 11, background: "#f4efe3", border: `1px solid ${LINE}` }}>
+                <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(10,22,40,0.55)", margin: "0 0 3px" }}>💵 ¿Con cuánto venís?</p>
+                <p style={{ fontSize: 10.5, color: MUTED, margin: "0 0 9px", lineHeight: 1.5 }}>Si necesitás cambio, decinos con cuánto llegás así lo tenemos listo. (Opcional)</p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input value={cashAmount} onChange={(e) => setCashAmount(e.target.value.replace(/[^0-9.,]/g, ""))} inputMode="decimal" placeholder="Ej: 600" style={{ ...contactInputStyle(), flex: 1 }} />
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {["USD", "ARS"].map((c) => <button key={c} type="button" onClick={() => setCashCurrency(c)} style={{ padding: "8px 14px", fontSize: 12, fontWeight: 800, borderRadius: 9, cursor: "pointer", border: `1.5px solid ${cashCurrency === c ? GOLD_A : LINE}`, background: cashCurrency === c ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff", color: cashCurrency === c ? "#8b6f4a" : MUTED }}>{c}</button>)}
+                  </div>
+                </div>
+              </div>}
+            </div>;
+          })()}
         </div>
 
         <button onClick={()=>setPaso(2)} style={{...backBtnStyle(), width: "100%", marginBottom: -4}}>← Volver a la forma de entrega</button>
@@ -270,6 +347,42 @@ export default function EntregaPublica({ params }) {
         </div>
         <p style={{ fontSize: 11.5, fontWeight: 700, color: GOLD_B, letterSpacing: "0.03em" }}>argencargo.com.ar</p>
       </div>
+    </div>
+  </div>;
+}
+
+// Selector de día (próximos 5 días hábiles) + franja horaria. Las franjas dependen del modo:
+// oficina cada 2 hs (10-18), fletero propio cada 3 hs (10-19).
+function DiaFranja({ modo, dia, setDia, franja, setFranja }) {
+  const franjas = modo === "oficina"
+    ? ["10:00 a 12:00", "12:00 a 14:00", "14:00 a 16:00", "16:00 a 18:00"]
+    : ["10:00 a 13:00", "13:00 a 16:00", "16:00 a 19:00"];
+  const dias = [];
+  const d = new Date();
+  while (dias.length < 5) {
+    const dow = d.getDay();
+    if (dow >= 1 && dow <= 5) {
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const hoy = dias.length === 0 && new Date().toDateString() === d.toDateString();
+      const nombre = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"][dow];
+      dias.push({ iso, label: hoy ? "Hoy" : nombre, fecha: `${d.getDate()}/${d.getMonth() + 1}` });
+    }
+    d.setDate(d.getDate() + 1);
+  }
+  const chip = (active) => ({ padding: "9px 6px", borderRadius: 9, cursor: "pointer", textAlign: "center", border: `1.5px solid ${active ? GOLD_A : LINE}`, background: active ? "linear-gradient(135deg,#fdf6e8,#faedd0)" : "#fff", boxShadow: active ? "0 3px 10px rgba(184,149,106,0.18)" : "none" });
+  return <div style={{ marginTop: 12 }}>
+    <label style={fieldLblStyle()}>{modo === "oficina" ? "¿Qué día pasás a retirar?" : "¿Qué día querés recibirla?"}</label>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6, marginBottom: 10 }}>
+      {dias.map((x) => <div key={x.iso} onClick={() => setDia(x.iso)} style={chip(dia === x.iso)}>
+        <div style={{ fontSize: 11.5, fontWeight: 800, color: INK }}>{x.label}</div>
+        <div style={{ fontSize: 10, color: MUTED, marginTop: 1 }}>{x.fecha}</div>
+      </div>)}
+    </div>
+    <label style={fieldLblStyle()}>¿En qué horario?</label>
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${franjas.length},1fr)`, gap: 6 }}>
+      {franjas.map((f) => <div key={f} onClick={() => setFranja(f)} style={chip(franja === f)}>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: INK, whiteSpace: "nowrap" }}>{f}</div>
+      </div>)}
     </div>
   </div>;
 }
@@ -291,7 +404,10 @@ function OptRow({ selected, onClick, label, meta, price, disabled }) {
 }
 
 function ConfirmedView({ data, delivery, clientName }) {
-  const payLabel = data.payment_method === "efectivo" ? "Efectivo" : data.payment_method === "transferencia" ? "Transferencia en pesos" : "Cripto (USDT)";
+  const L = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };
+  const payLabel = Array.isArray(data.payment_methods) && data.payment_methods.length === 2
+    ? data.payment_methods.map((p) => `${L[p.method] || p.method} (${fmt(p.amount)})`).join(" + ")
+    : (L[data.payment_method] || data.payment_method);
   const entregaLabel = delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${data.delivery_zone || ""}` : "Envío por transportista";
   const what = delivery === "oficina" ? "tu retiro" : delivery === "propio" ? "la entrega en tu domicilio" : "el envío con el transportista";
   return <div style={pageStyle()}>
@@ -304,7 +420,8 @@ function ConfirmedView({ data, delivery, clientName }) {
       <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: "14px 16px", marginBottom: 14 }}>
         <p style={{ fontSize: 12, fontWeight: 800, margin: "0 0 10px" }}>Resumen</p>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${LINE}` }}><span style={{ color: MUTED }}>Entrega</span><span style={{ fontWeight: 700 }}>{entregaLabel}</span></div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${LINE}` }}><span style={{ color: MUTED }}>Pago</span><span style={{ fontWeight: 700 }}>{payLabel}</span></div>
+        {data.delivery_day && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${LINE}` }}><span style={{ color: MUTED }}>{delivery === "oficina" ? "Retirás" : "Te la llevamos"}</span><span style={{ fontWeight: 700 }}>{new Date(data.delivery_day + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric" })} · {data.delivery_slot}</span></div>}
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${LINE}`, gap: 12 }}><span style={{ color: MUTED }}>Pago</span><span style={{ fontWeight: 700, textAlign: "right" }}>{payLabel}</span></div>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "6px 0" }}><span style={{ color: MUTED }}>Total</span><span style={{ fontWeight: 800, color: GOLD_A }}>{fmt(data.total)}</span></div>
       </div>
       <div style={payDetailStyle()}>
@@ -316,7 +433,7 @@ function ConfirmedView({ data, delivery, clientName }) {
   </div>;
 }
 
-function pageStyle() { return { minHeight: "100vh", background: NAVY, padding: "32px 18px 60px", display: "flex", justifyContent: "center", fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", color: "#fff" }; }
+function pageStyle() { return { minHeight: "100vh", background: NAVY, padding: "32px 18px 60px", display: "flex", justifyContent: "center", alignItems: "flex-start", fontFamily: "'Inter','Helvetica Neue',Arial,sans-serif", color: "#fff" }; }
 function cardStyle() { return { maxWidth: 640, width: "100%", background: CREAM, borderRadius: 14, overflow: "hidden", boxShadow: "0 28px 80px rgba(0,0,0,0.5)" }; }
 function lblStyle() { return { fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", color: "rgba(232,208,152,0.65)", textTransform: "uppercase", marginBottom: 3 }; }
 function backBtnStyle() { return { padding: "12px 16px", fontSize: 13.5, fontWeight: 700, borderRadius: 11, border: `1px solid ${LINE}`, background: "#fff", color: MUTED, cursor: "pointer" }; }
