@@ -444,7 +444,10 @@ export default function EntregaPublica({ params }) {
           <p style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: "0.08em" }}>ARGENCARGO</p>
           <p style={{ fontSize: 10.5, color: "rgba(255,255,255,0.65)", marginTop: 3 }}>{deliveryInfo.office_hours ? `Tel · ${deliveryInfo.office_hours}` : ""}</p>
         </div>
-        <p style={{ fontSize: 11.5, fontWeight: 700, color: GOLD_B, letterSpacing: "0.03em" }}>argencargo.com.ar</p>
+        <div style={{ textAlign: "right" }}>
+          <p style={{ fontSize: 11.5, fontWeight: 700, color: GOLD_B, letterSpacing: "0.03em" }}>argencargo.com.ar</p>
+          <a href="/terminos" target="_blank" rel="noopener" style={{ fontSize: 9.5, color: "rgba(255,255,255,0.45)", textDecoration: "none" }}>El servicio se rige por nuestros Términos y Condiciones</a>
+        </div>
       </div>
     </div>
   </div>;

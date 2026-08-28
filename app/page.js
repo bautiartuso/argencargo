@@ -265,6 +265,7 @@ export default function Landing(){
         <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
           <a href="/portal" style={{fontSize:12,color:"rgba(255,255,255,0.4)",textDecoration:"none"}}>Portal clientes</a>
           <a href="/agente" style={{fontSize:12,color:"rgba(255,255,255,0.4)",textDecoration:"none"}}>Portal agentes</a>
+          <a href="/terminos" style={{fontSize:12,color:"rgba(255,255,255,0.4)",textDecoration:"none"}}>Términos y condiciones</a>
           <a href="mailto:info@argencargo.com.ar" style={{fontSize:12,color:"rgba(255,255,255,0.4)",textDecoration:"none"}}>info@argencargo.com.ar</a>
         </div>
       </div>
