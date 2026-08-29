@@ -126,6 +126,8 @@ async function opView(op) {
     },
     link: op.delivery_public_token ? `https://argencargo.com.ar/retiro/${op.delivery_public_token}` : null,
     franjas_validas: op.delivery_choice === "propio" ? FRANJAS.propio : FRANJAS.oficina,
+    // Si se cambia la modalidad, las franjas válidas pasan a ser las de la nueva.
+    franjas_por_modalidad: { oficina: FRANJAS.oficina, envio_domicilio: FRANJAS.propio },
   };
 }
 
