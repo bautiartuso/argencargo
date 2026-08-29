@@ -497,12 +497,15 @@ export async function POST(req, { params }) {
         const stg2 = Array.isArray(settingsRes.body) && settingsRes.body[0] ? settingsRes.body[0] : {};
         pagoTxt = `Pagás por transferencia en pesos${stg2.payment_alias ? ` — alias: ${stg2.payment_alias}${stg2.payment_titular ? `, titular: ${stg2.payment_titular}` : ""}` : ""}. Apenas transfieras, mandanos el comprobante por acá 🙏`;
       } else if (payment_method === "crypto") {
-        pagoTxt = "Pagás en cripto (USDT, red TRC-20) — la billetera está en el link de tu carga.";
+        const stg3 = Array.isArray(settingsRes.body) && settingsRes.body[0] ? settingsRes.body[0] : {};
+        pagoTxt = `Pagás en USDT — IMPORTANTE: red TRC-20.${stg3.payment_crypto_wallet ? ` Billetera: ${stg3.payment_crypto_wallet}` : " La billetera está en el link de tu carga."}`;
       } else {
         pagoTxt = `Pagás en efectivo${splitFinal?.[0]?.currency === "ARS" ? " en pesos" : splitFinal?.[0]?.currency === "mixto" ? " (USD + ARS)" : " en dólares"} al momento de la entrega${usaEfectivo && Number(cash_amount) > 0 ? ` — te esperamos con el cambio listo` : ""}.`;
       }
+      // Una sola carga → con su descripción ("Mazos de cartas (AC-0121)"); grupo → los códigos.
+      const cargaTxt = opsIncluidas.length === 1 && op.description ? `${op.description} (${op.operation_code})` : opsIncluidas.join(" + ");
       await sendWaTemplate(client.whatsapp, "coordinacion_confirmada", [
-        client.first_name || "Hola", opsIncluidas.join(" + "), cuando, totalTxt, pagoTxt,
+        client.first_name || "Hola", cargaTxt, cuando, totalTxt, pagoTxt,
       ]);
     }
   } catch (e) { console.error("[POST entrega] wa confirm failed", e.message); }

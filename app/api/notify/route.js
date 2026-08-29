@@ -258,7 +258,8 @@ export async function POST(req) {
         const { sendWaTemplate, waConfigured } = await import("../../../lib/wa");
         if (waConfigured() && (force || !op.sent_notifications?.wa_retiro)) {
           const link = `${BASE_URL}/retiro/${op.delivery_public_token}`;
-          const r2 = await sendWaTemplate(client.whatsapp, "carga_lista", [client.first_name || "Hola", op.operation_code, link]);
+          const carga = op.description ? `${op.description} (${op.operation_code})` : op.operation_code;
+          const r2 = await sendWaTemplate(client.whatsapp, "carga_lista", [client.first_name || "Hola", carga, link]);
           if (r2?.ok) newSent.wa_retiro = new Date().toISOString();
         }
       } catch (e) { console.error("[notify] wa_retiro failed", e.message); }

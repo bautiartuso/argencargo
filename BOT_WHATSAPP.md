@@ -1,7 +1,7 @@
 # Bot de entregas por WhatsApp — guía de encendido
 
 Todo el bot ya está programado y deployado. Para encenderlo solo hay que conectarle
-el número de WhatsApp (cuenta de Meta) y cargar 5 plantillas. Nada más.
+el número de WhatsApp (cuenta de Meta) y cargar 4 plantillas. Nada más.
 
 ## Cómo funciona (resumen)
 
@@ -9,13 +9,12 @@ el número de WhatsApp (cuenta de Meta) y cargar 5 plantillas. Nada más.
 |---|---|---|
 | La carga queda lista (mismo gatillo que el mail) | `carga_lista` con el link | No — $0 |
 | +60 h sin coordinar → 1º recordatorio | `recordatorio_coordinar` (simple) | No — $0 |
-| +60 h → 2º recordatorio | `recordatorio_almacenaje` (paga = almacenaje gratis sin límite; sin pagar = puede correr costo diario) | No — $0 |
-| +60 h → 3º y ÚLTIMO | `recordatorio_final` (sin coordinar y sin pagar: desde ahora corren gastos diarios) + **pasa a gestión humana** (te notifica) | No — $0 |
+| +60 h → 2º y ÚLTIMO recordatorio | `recordatorio_almacenaje` (paga = gratis sin límite; sin pagar = USD 0,5/día por kg) + **pasa a gestión humana** (te notifica) | No — $0 |
 | Coordinó por el link | `coordinacion_confirmada`: día, franja, total, detalle de pago, "respondé para cambiar" | No — $0 |
 | **El cliente escribe** | El agente responde: estado, reprogramar, cambiar pago/modalidad (calcula el costo de envío por zona), agrupar cargas | Sí — centavos |
 | Manda un comprobante | Se guarda, queda adjunto a la op, te notifica, se reenvía a tu WhatsApp interno, y queda **precargado en el modal 💰 Cobrar** (al registrar el cobro fluye a la CC financiera) | No confirma pagos |
 
-Después del 3º recordatorio el bot no insiste más — la gestión es tuya.
+Después del 2º recordatorio el bot no insiste más — la gestión es tuya.
 El agente deriva a humano: reclamos, precios, zonas fuera de reparto, números
 desconocidos, confirmar pagos, transportista externo.
 
@@ -42,23 +41,42 @@ desconocidos, confirmar pagos, transportista externo.
 
 ## Paso 2 — Plantillas (Meta → WhatsApp Manager → Message templates)
 
-Crear estas 5, categoría **Utility**, idioma **Spanish (ARG)** (`es_AR`), con estos
+Crear estas 4, categoría **Utility**, idioma **Spanish (ARG)** (`es_AR`), con estos
 nombres y cuerpos EXACTOS (las `{{n}}` las completa el sistema):
 
 **`carga_lista`**
-> Hola {{1}}! 🎉 Tu carga de {{2}} ya está lista. Entrá acá para elegir cómo la recibís, el día y la forma de pago: {{3}}
+> Hola {{1}}! 🎉
+>
+> Tu carga de {{2}} ya está lista en la oficina de Buenos Aires.
+>
+> Entrá acá para elegir cómo la recibís, el día y la forma de pago:
+> {{3}}
 
 **`recordatorio_coordinar`**
-> Hola {{1}}! Te recordamos que tu carga de {{2}} ya está lista y sigue pendiente de coordinar. Elegí el día, el horario y la forma de pago acá: {{3}}
+> Buenas {{1}}!
+>
+> Te recordamos que tu carga de {{2}} sigue pendiente de coordinar.
+>
+> Elegí el día, el horario y la forma de pago acá: {{3}}
 
 **`recordatorio_almacenaje`**
-> Hola {{1}}! Tu carga de {{2}} sigue pendiente de retirar. Si abonás el saldo, te la almacenamos sin cargo todo el tiempo que necesites; si no está paga, pueden correr costos de almacenaje diario. Coordiná y aboná acá: {{3}}
-
-**`recordatorio_final`**
-> Hola {{1}}! Tu carga de {{2}} sigue pendiente de coordinar y de pago. A partir de hoy comienzan a correr gastos diarios de almacenaje. Coordiná y aboná acá: {{3}}
+> Hola {{1}}!
+>
+> Por favor recordá que tu carga de {{2}} sigue pendiente de coordinar.
+>
+> Podemos almacenar la mercadería durante el tiempo que necesites, pero necesitamos el pago!
+>
+> En caso de que no se realice el pago, empezará a regir un *costo de almacenaje de USD 0,5 diarios por kg*.
+>
+> Si abonás el saldo, te la almacenamos sin cargo todo el tiempo que necesites. Coordiná y aboná acá: {{3}}
 
 **`coordinacion_confirmada`**
 > {{1}}, quedó coordinada tu entrega de {{2}} ✅ {{3}}. Total a abonar: {{4}}. {{5}} Si necesitás cambiar el día, el horario o la forma de pago, respondé este mensaje.
+
+En {{2}} de los primeros tres va la carga como "descripción (AC-0123)". En la
+confirmación, {{5}} lleva el detalle del pago: transferencia con alias y titular de la
+cuenta cargada (Vantum), efectivo con el aviso del cambio, o cripto con la billetera
+cargada y la aclaración de la red TRC-20.
 
 La aprobación de Meta suele tardar de minutos a horas.
 

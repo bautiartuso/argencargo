@@ -1,13 +1,11 @@
 // GET /api/cron/bot-entregas — recordatorios automáticos del bot de entregas.
 // Corre cada hora (vercel.json). Plantillas fijas de WhatsApp — cero IA, costo cero.
 //
-// Escalera para cargas LISTAS SIN COORDINAR, cada 60 h reloj, tope 3:
-//   1º recordatorio_coordinar  → "tu carga sigue lista y pendiente de coordinar" (simple)
-//   2º recordatorio_almacenaje → "si abonás el saldo la almacenamos sin cargo el tiempo
-//                                 que necesites; si no está paga, corren costos diarios"
-//   3º recordatorio_final      → "sigue sin coordinar y sin pagar: desde ahora corren
-//                                 gastos diarios de almacenaje" + pasa a GESTIÓN HUMANA
-//                                 (notificación al admin) y no se manda nada más.
+// Escalera para cargas LISTAS SIN COORDINAR, cada 60 h reloj, tope 2:
+//   1º recordatorio_coordinar  → "tu carga sigue pendiente de coordinar" (simple)
+//   2º recordatorio_almacenaje → "podemos almacenarla el tiempo que necesites pero
+//      necesitamos el pago; sin pago rige USD 0,5 diarios por kg" — después de este,
+//      pasa a GESTIÓN HUMANA (notificación al admin) y no se manda nada más.
 //
 // Sin credenciales de Meta todo es no-op. ?dry=1 devuelve qué mandaría sin mandar.
 
@@ -20,7 +18,7 @@ const BASE_URL = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
 export const maxDuration = 60;
 
 const H60 = 60 * 3600 * 1000;
-const ESCALERA = ["recordatorio_coordinar", "recordatorio_almacenaje", "recordatorio_final"];
+const ESCALERA = ["recordatorio_coordinar", "recordatorio_almacenaje"];
 
 async function sb(path, opts = {}) {
   const r = await fetch(`${SB_URL}/rest/v1${path}`, {
@@ -49,7 +47,7 @@ export async function GET(req) {
   const dry = new URL(req.url).searchParams.get("dry") === "1";
   const now = Date.now();
 
-  const r1 = await sb(`/operations?delivery_ready_at=not.is.null&delivery_confirmed_at=is.null&delivery_completed_at=is.null&bot_coord_reminder_count=lt.3&select=id,operation_code,delivery_public_token,delivery_ready_at,bot_coord_reminder_at,bot_coord_reminder_count,clients(first_name,last_name,client_code,whatsapp)`);
+  const r1 = await sb(`/operations?delivery_ready_at=not.is.null&delivery_confirmed_at=is.null&delivery_completed_at=is.null&bot_coord_reminder_count=lt.2&select=id,operation_code,description,delivery_public_token,delivery_ready_at,bot_coord_reminder_at,bot_coord_reminder_count,clients(first_name,last_name,client_code,whatsapp)`);
   const out = { recordatorios: [], enviados: 0, wa: waConfigured() };
 
   for (const op of Array.isArray(r1.body) ? r1.body : []) {
@@ -61,16 +59,18 @@ export async function GET(req) {
     const plantilla = ESCALERA[paso];
     out.recordatorios.push(`${op.operation_code} → ${plantilla}`);
     if (dry) continue;
+    // "Mazos de cartas (AC-0121)" — con la descripción el cliente sabe de qué carga hablamos.
+    const carga = op.description ? `${op.description} (${op.operation_code})` : op.operation_code;
     const r = await sendWaTemplate(num, plantilla, [
-      op.clients?.first_name || "Hola", op.operation_code, `${BASE_URL}/retiro/${op.delivery_public_token}`,
+      op.clients?.first_name || "Hola", carga, `${BASE_URL}/retiro/${op.delivery_public_token}`,
     ]);
     if (r?.ok) {
       out.enviados++;
       await sb(`/operations?id=eq.${op.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ bot_coord_reminder_at: new Date().toISOString(), bot_coord_reminder_count: paso + 1 }) });
-      // Tras el 3º y último aviso, la gestión pasa a un humano — el bot no insiste más.
-      if (paso === 2) {
+      // Tras el 2º y último aviso, la gestión pasa a un humano — el bot no insiste más.
+      if (paso === 1) {
         const c = op.clients || {};
-        await notifyAdmins("⚠️ Entrega sin respuesta — tomar gestión humana", `${c.first_name || ""} ${c.last_name || ""} (${c.client_code || "?"}) · ${op.operation_code}: 3 recordatorios sin coordinar ni pagar. Desde hoy corren gastos de almacenaje.`);
+        await notifyAdmins("⚠️ Entrega sin respuesta — tomar gestión humana", `${c.first_name || ""} ${c.last_name || ""} (${c.client_code || "?"}) · ${op.operation_code}: 2 recordatorios sin coordinar ni pagar.`);
       }
     }
   }
