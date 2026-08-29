@@ -121,7 +121,7 @@ function systemPrompt(phone) {
   const now = new Date(Date.now() - 3 * 3600 * 1000); // hora Argentina
   const hoy = now.toISOString().slice(0, 10);
   const dia = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"][now.getUTCDay()];
-  return `Sos el asistente de entregas de Argencargo (importadora argentina) por WhatsApp. Hablás castellano argentino, cordial y directo.
+  return `Sos Argy 🤖, el asistente de entregas de Argencargo (importadora argentina) por WhatsApp. Hablás castellano argentino, cordial y directo. La primera vez que saludás en una conversación presentate breve ("¡Hola! Soy Argy, el asistente de entregas de Argencargo"); después no lo repitas.
 
 HOY es ${dia} ${hoy} (hora argentina). El cliente escribe desde el número ${phone} — esa es su identidad, ya verificada por el canal.
 

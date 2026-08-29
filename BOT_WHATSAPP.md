@@ -23,6 +23,9 @@ desconocidos, confirmar pagos, transportista externo.
 1. Conseguí un número NUEVO dedicado (que nunca haya tenido WhatsApp).
 2. https://developers.facebook.com → **Create App** → tipo **Business**.
 3. **Add product → WhatsApp** → asociá tu Meta Business y registrá el número.
+   Como **display name** del número poné **"Argencargo Entregas"** (Meta exige que el
+   nombre se relacione con el negocio; la marca visible además evita que los clientes
+   desconfíen del número nuevo). Dentro del chat, el asistente se presenta como **Argy**.
 4. En *WhatsApp → API Setup*: copiá el **Phone number ID** y generá un **token permanente**
    (System User con permiso `whatsapp_business_messaging`).
 5. Inventá un **verify token** (cualquier texto, ej. `argencargo-bot-2026`).
