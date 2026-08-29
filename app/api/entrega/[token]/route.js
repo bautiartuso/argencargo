@@ -495,7 +495,7 @@ export async function POST(req, { params }) {
       let pagoTxt;
       if (payment_method === "transferencia") {
         const stg2 = Array.isArray(settingsRes.body) && settingsRes.body[0] ? settingsRes.body[0] : {};
-        pagoTxt = `Pagás por transferencia en pesos${stg2.payment_alias ? ` — alias: ${stg2.payment_alias}${stg2.payment_titular ? `, titular: ${stg2.payment_titular}` : ""}` : ""}. Apenas transfieras, mandanos el comprobante por acá 🙏 (la primera semana de almacenaje es sin cargo; a partir de la segunda necesitamos el pago realizado).`;
+        pagoTxt = `Pagás por transferencia en pesos${stg2.payment_alias ? ` — alias: ${stg2.payment_alias}${stg2.payment_titular ? `, titular: ${stg2.payment_titular}` : ""}` : ""}. Apenas transfieras, mandanos el comprobante por acá 🙏`;
       } else if (payment_method === "crypto") {
         pagoTxt = "Pagás en cripto (USDT, red TRC-20) — la billetera está en el link de tu carga.";
       } else {

@@ -4387,6 +4387,13 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
   const [soloEntregar,setSoloEntregar]=useState(false);
   // TC del dia precargado (best effort)
   useEffect(()=>{(async()=>{try{const r=await fetch("https://dolarapi.com/v1/dolares/blue",{signal:AbortSignal.timeout(2500)});if(r.ok){const d=await r.json();if(Number(d?.venta)>0)setTc(String(d.venta));}}catch{}})();},[]);
+  // Si el cliente mandó el comprobante por WhatsApp (nota del bot), se precarga acá:
+  // el cobro sale con un click y el archivo fluye a la CC financiera como siempre.
+  useEffect(()=>{(async()=>{try{
+    const notas=await dq("op_communications",{token,filters:`?operation_id=eq.${op.id}&content=like.*Comprobante recibido por WhatsApp*&select=content&order=created_at.desc&limit=1`});
+    const url=(Array.isArray(notas)?notas[0]:null)?.content?.match(/https?:\/\/\S+/)?.[0];
+    if(url)setReceipt(r=>r.url?r:{url,name:"🤖 Comprobante recibido por WhatsApp",kb:0});
+  }catch{}})();},[]);
   const monedaCobro=metodo==="crypto"?"USD":metodo==="transferencia"?"ARS":moneda;
   const esArs=monedaCobro==="ARS";
   const nMonto=Number(String(monto||"").replace(",","."))||0;

@@ -133,7 +133,8 @@ REGLAS:
 - Retiros por oficina: lunes a viernes. Las franjas válidas vienen en la consulta (franjas_por_modalidad: ¡las de envío a domicilio difieren de las de oficina!). Si cambiás la modalidad, usá EXACTAMENTE las franjas de la nueva modalidad. Si pide una hora puntual, ofrecele la franja que la contiene.
 - CRÍTICO: nada está coordinado ni confirmado hasta que la tool coordinar devuelva ok. Jamás digas "confirmado", "listo" o "quedó coordinado" antes de eso — mientras junten los datos, dejá claro que falta confirmar. Apenas tengas día+franja (+dirección si es envío), ejecutá coordinar; el método de pago se puede cambiar después con otro llamado.
 - Efectivo: preguntá con qué moneda paga (dólares, pesos o mixto) y, si necesita cambio, con cuánto llega. Pesos: usá el tc_blue_venta de la consulta para decirle el monto en ARS (aclarando que se ajusta al valor del día del pago).
-- Transferencia: monto en ARS con el tc de la consulta + los datos de transferencia los tiene en el link de su carga. IMPORTANTE: pedile que haga la transferencia cuanto antes (aunque todavía no retire) y que mande el comprobante por este chat. Si menciona que va a demorar el retiro o el pago: recordale con buena onda que la primera semana de almacenaje es sin cargo, y que a partir de la segunda semana necesitamos el pago realizado o se aplica un costo diario de almacenaje.
+- Transferencia: monto en ARS con el tc de la consulta + los datos de transferencia los tiene en el link de su carga. Pedile que mande el comprobante por este chat cuando transfiera.
+- Política de almacenaje (mencionala solo si el cliente pregunta o dice que va a demorar): con la carga PAGA se la almacenamos sin cargo el tiempo que necesite; si no está paga, pueden correr costos diarios de almacenaje.
 - Si manda un comprobante (imagen/documento): agradecé, confirmá que lo recibiste y que el equipo lo verifica — NUNCA confirmes que el pago está acreditado.
 - Si el número no corresponde a ningún cliente: pedile su código de cliente o nombre completo, avisá al admin, y no des información de nadie.
 - Mensajes CORTOS, estilo WhatsApp (usá *negrita* para montos y fechas, nada de tablas ni markdown raro). Una pregunta por vez. Mandá UN solo mensaje por turno.
@@ -254,8 +255,14 @@ export async function POST(req) {
       // jamás da un pago por acreditado sin verificación humana.
       let guardado = "";
       try {
-        const { fetchWaMedia } = await import("../../../../lib/wa");
+        const { fetchWaMedia, forwardWaMedia } = await import("../../../../lib/wa");
         const mediaId = msg.image?.id || msg.document?.id;
+        // Reenvío del comprobante al número interno (WA_COMPROBANTES_TO), si está configurado.
+        // Best-effort: si la ventana de 24 h del destinatario está cerrada, Meta lo rechaza y
+        // queda igual la notificación push + la nota en la op.
+        if (mediaId && process.env.WA_COMPROBANTES_TO) {
+          forwardWaMedia(process.env.WA_COMPROBANTES_TO, mediaId, msg.type, `🧾 Comprobante de ${phone}`).catch(() => {});
+        }
         const media = mediaId ? await fetchWaMedia(mediaId) : null;
         if (media) {
           const ext = media.mime.includes("pdf") ? "pdf" : media.mime.includes("png") ? "png" : "jpg";
