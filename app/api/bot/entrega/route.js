@@ -15,14 +15,33 @@
 //   delivery_contact  quién recibe (envíos)
 //   note            texto libre del bot que se agrega a la nota admin
 //
-// Cambiar la MODALIDAD (oficina ↔ envío) queda afuera a propósito: envío propio implica
-// recalcular costo por zona y dirección — para eso el bot reenvía el link al cliente.
+//   delivery_choice "oficina" | "propio"  — cambiar modalidad (requiere day+slot nuevos;
+//                   el costo del envío lo calcula el sistema por la zona del cliente y se
+//                   suma/quita del presupuesto; transportista se gestiona con un asesor)
+//   delivery_address  dirección de entrega (solo envío propio)
 // Cada cambio deja una nota "🤖 Bot de entregas" en la op para que se vea en el panel.
+
+import { DELIVERY_CFG_KEYS, matchLocality, computeDeliveryCostUsd } from "../../../../lib/delivery";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 
 export const maxDuration = 15;
+
+// Zona y costo del envío propio para la localidad registrada del cliente —
+// mismo cálculo server-side que usa el link (nunca se confía en montos del cliente).
+async function envioDomicilio(client) {
+  try {
+    const [cfgRes, locRes] = await Promise.all([
+      sb(`/calc_config?key=in.(${DELIVERY_CFG_KEYS})&select=key,value`),
+      sb(`/delivery_localities?active=eq.true&select=name,keywords,km_from_origin&order=sort_order.asc`),
+    ]);
+    const cfg = {}; (Array.isArray(cfgRes.body) ? cfgRes.body : []).forEach((r) => { cfg[r.key] = Number(r.value); });
+    const match = matchLocality(client?.city, client?.province, Array.isArray(locRes.body) ? locRes.body : []);
+    if (!match) return null;
+    return { zona: match.name, costo_usd: computeDeliveryCostUsd(match, cfg) };
+  } catch { return null; }
+}
 
 const FRANJAS = {
   oficina: ["10:00 a 12:00", "12:00 a 14:00", "14:00 a 16:00", "16:00 a 18:00"],
@@ -142,10 +161,15 @@ export async function GET(req) {
     const ids = clients.map((c) => c.id).join(",");
     const opsRes = await sb(`/operations?client_id=in.(${ids})&or=(and(delivery_completed_at.is.null,or(status.eq.entregada,delivery_ready_at.not.is.null)),and(delivery_completed_at.not.is.null,is_collected.eq.false))&select=${OP_SEL}&order=created_at.desc`);
     const ops = Array.isArray(opsRes.body) ? opsRes.body : [];
-    const views = await Promise.all(ops.map(opView));
+    const [views, envio] = await Promise.all([
+      Promise.all(ops.map(opView)),
+      envioDomicilio(ops[0]?.clients || null),
+    ]);
     const c0 = clients[0];
     return Response.json({
       cliente: { nombre: `${c0.first_name || ""} ${c0.last_name || ""}`.trim(), codigo: c0.client_code, email: c0.email },
+      // null = la localidad del cliente está fuera del reparto propio (solo oficina/transportista).
+      envio_domicilio: envio,
       operaciones: views,
     });
   }
@@ -178,11 +202,45 @@ export async function POST(req) {
   const patch = {};
   const cambios = [];
 
+  // ── Cambiar modalidad (retiro por oficina ↔ envío a domicilio) ──────────
+  // El costo del envío lo calcula el sistema por la zona REGISTRADA del cliente y se
+  // suma/resta del presupuesto — nunca se acepta un monto que diga el cliente.
+  let choiceEfectivo = op.delivery_choice;
+  if (body.delivery_choice !== undefined) {
+    const dc = body.delivery_choice;
+    if (!["oficina", "propio"].includes(dc)) return Response.json({ error: "delivery_choice inválido (oficina/propio — transportista se gestiona con un asesor)" }, { status: 400 });
+    if (body.delivery_day === undefined || body.delivery_slot === undefined) {
+      return Response.json({ error: "Cambiar la modalidad requiere delivery_day y delivery_slot (las franjas difieren entre oficina y envío)" }, { status: 400 });
+    }
+    const costoActual = Number(op.delivery_cost_usd || 0);
+    if (dc === "propio" && op.delivery_choice !== "propio") {
+      const envio = await envioDomicilio(op.clients);
+      if (!envio) return Response.json({ error: "La localidad del cliente está fuera de la zona de envío propio — derivar a un asesor" }, { status: 400 });
+      patch.delivery_choice = "propio";
+      patch.delivery_zone = envio.zona;
+      patch.delivery_cost_usd = envio.costo_usd;
+      patch.delivery_address = body.delivery_address ? String(body.delivery_address).slice(0, 300) : [op.clients?.street, op.clients?.floor_apt, op.clients?.city].filter(Boolean).join(", ");
+      patch.budget_total = Math.round((Number(op.budget_total || 0) - costoActual + envio.costo_usd) * 100) / 100;
+      cambios.push(`Modalidad → Envío a domicilio · ${envio.zona} (+USD ${envio.costo_usd.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`);
+    } else if (dc === "oficina" && op.delivery_choice !== "oficina") {
+      patch.delivery_choice = "oficina";
+      patch.delivery_zone = null;
+      patch.delivery_address = null;
+      patch.delivery_cost_usd = 0;
+      if (costoActual > 0) patch.budget_total = Math.round((Number(op.budget_total || 0) - costoActual) * 100) / 100;
+      cambios.push(`Modalidad → Retiro por oficina${costoActual > 0 ? ` (se quitó el envío de USD ${costoActual.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` : ""}`);
+    }
+    choiceEfectivo = dc;
+  } else if (body.delivery_address !== undefined && op.delivery_choice === "propio") {
+    patch.delivery_address = String(body.delivery_address).slice(0, 300);
+    cambios.push(`Dirección de entrega → ${patch.delivery_address}`);
+  }
+
   // ── Reprogramar día y franja ─────────────────────────────────────────────
   const quiereDia = body.delivery_day !== undefined || body.delivery_slot !== undefined;
   if (quiereDia) {
-    const modo = op.delivery_choice === "propio" ? "propio" : "oficina";
-    if (op.delivery_choice === "carrier") return Response.json({ error: "Envío por transportista: no lleva día y franja" }, { status: 400 });
+    const modo = choiceEfectivo === "propio" ? "propio" : "oficina";
+    if (choiceEfectivo === "carrier") return Response.json({ error: "Envío por transportista: no lleva día y franja" }, { status: 400 });
     const dia = body.delivery_day, franja = body.delivery_slot;
     if (!dia || !/^\d{4}-\d{2}-\d{2}$/.test(String(dia))) return Response.json({ error: "delivery_day inválido (YYYY-MM-DD)" }, { status: 400 });
     if (!FRANJAS[modo].includes(franja)) return Response.json({ error: `Franja inválida para ${modo}. Válidas: ${FRANJAS[modo].join(" / ")}` }, { status: 400 });
@@ -200,10 +258,10 @@ export async function POST(req) {
   if (body.payment_method !== undefined) {
     const m = body.payment_method;
     if (!METODOS.includes(m)) return Response.json({ error: "payment_method inválido (efectivo/transferencia/crypto)" }, { status: 400 });
-    if (m === "efectivo" && op.delivery_choice === "carrier") return Response.json({ error: "Efectivo no disponible para transportista externo" }, { status: 400 });
+    if (m === "efectivo" && choiceEfectivo === "carrier") return Response.json({ error: "Efectivo no disponible para transportista externo" }, { status: 400 });
     const pagosRes = await sb(`/operation_client_payments?operation_id=eq.${op.id}&select=amount_usd`);
     const pagos = (Array.isArray(pagosRes.body) ? pagosRes.body : []).reduce((a, p) => a + Number(p.amount_usd || 0), 0);
-    const saldo = saldoOf(op, pagos);
+    const saldo = Math.round(saldoOf({ ...op, budget_total: patch.budget_total ?? op.budget_total }, pagos) * 100) / 100;
     const split = { method: m, amount: saldo };
     if (m === "efectivo") {
       const cur = body.cash_currency;
@@ -224,6 +282,15 @@ export async function POST(req) {
     if (patch.cash_arrival_amount) cambios.push(`💵 Llega con ${patch.cash_arrival_currency} ${patch.cash_arrival_amount.toLocaleString("es-AR")} — tener cambio listo`);
   }
 
+  // Si el presupuesto cambió (envío sumado o quitado) y el pago no se tocó, el split
+  // guardado queda con el monto viejo — se refresca con el saldo nuevo.
+  if (patch.budget_total !== undefined && body.payment_method === undefined && Array.isArray(op.payment_split) && op.payment_split.length === 1) {
+    const pr = await sb(`/operation_client_payments?operation_id=eq.${op.id}&select=amount_usd`);
+    const pg = (Array.isArray(pr.body) ? pr.body : []).reduce((a, p) => a + Number(p.amount_usd || 0), 0);
+    const saldoN = Math.round(saldoOf({ ...op, budget_total: patch.budget_total }, pg) * 100) / 100;
+    patch.payment_split = [{ ...op.payment_split[0], amount: saldoN }];
+  }
+
   // ── Quién recibe ─────────────────────────────────────────────────────────
   if (body.delivery_contact !== undefined) {
     patch.delivery_contact = body.delivery_contact ? String(body.delivery_contact).slice(0, 300) : null;
@@ -236,7 +303,7 @@ export async function POST(req) {
   const efDay = patch.delivery_day ?? op.delivery_day;
   const efSlot = patch.delivery_slot ?? op.delivery_slot;
   const efPay = patch.payment_method_chosen ?? op.payment_method_chosen;
-  const completa = efPay && (op.delivery_choice === "carrier" || (efDay && efSlot));
+  const completa = efPay && (choiceEfectivo === "carrier" || (efDay && efSlot));
   if (completa && !op.delivery_confirmed_at) patch.delivery_confirmed_at = new Date().toISOString();
   if (!op.delivery_ready_at) patch.delivery_ready_at = new Date().toISOString();
   if (groupId) patch.delivery_group_id = groupId;

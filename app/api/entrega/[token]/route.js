@@ -478,6 +478,34 @@ export async function POST(req, { params }) {
 
   const anyCrypto = splitFinal ? splitFinal.some((p) => p.method === "crypto") : payment_method === "crypto";
   const anyTransfer = splitFinal ? splitFinal.some((p) => p.method === "transferencia") : payment_method === "transferencia";
+
+  // Confirmación por WhatsApp con el detalle de lo coordinado (plantilla fija, sin IA).
+  // Best-effort: si Meta no está configurado o falla, la coordinación ya quedó guardada.
+  try {
+    const { sendWaTemplate, waConfigured } = await import("../../../../lib/wa");
+    if (waConfigured() && client.whatsapp) {
+      const combinedTot = Math.round((finalTotal + extrasCalc.reduce((a, e) => a + e.saldo, 0)) * 100) / 100;
+      const fmtU = (v) => `USD ${v.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const tcV = Number(tcJson?.venta) > 0 ? Number(tcJson.venta) : 0;
+      const cuando = (delivery_choice === "carrier")
+        ? "Va por transportista — te avisamos apenas se despache"
+        : `${delivery_choice === "oficina" ? "Te esperamos" : "Te la llevamos"} el ${diaLabel} de ${delivery_slot}`;
+      const enPesos = payment_method === "transferencia" || (payment_method === "efectivo" && splitFinal?.[0]?.currency === "ARS");
+      const totalTxt = enPesos && tcV > 0 ? `ARS ${Math.round(combinedTot * tcV).toLocaleString("es-AR")} (${fmtU(combinedTot)})` : fmtU(combinedTot);
+      let pagoTxt;
+      if (payment_method === "transferencia") {
+        const stg2 = Array.isArray(settingsRes.body) && settingsRes.body[0] ? settingsRes.body[0] : {};
+        pagoTxt = `Pagás por transferencia en pesos${stg2.payment_alias ? ` — alias: ${stg2.payment_alias}${stg2.payment_titular ? `, titular: ${stg2.payment_titular}` : ""}` : ""}. Apenas transfieras, mandanos el comprobante por acá 🙏 (la primera semana de almacenaje es sin cargo; a partir de la segunda necesitamos el pago realizado).`;
+      } else if (payment_method === "crypto") {
+        pagoTxt = "Pagás en cripto (USDT, red TRC-20) — la billetera está en el link de tu carga.";
+      } else {
+        pagoTxt = `Pagás en efectivo${splitFinal?.[0]?.currency === "ARS" ? " en pesos" : splitFinal?.[0]?.currency === "mixto" ? " (USD + ARS)" : " en dólares"} al momento de la entrega${usaEfectivo && Number(cash_amount) > 0 ? ` — te esperamos con el cambio listo` : ""}.`;
+      }
+      await sendWaTemplate(client.whatsapp, "coordinacion_confirmada", [
+        client.first_name || "Hola", opsIncluidas.join(" + "), cuando, totalTxt, pagoTxt,
+      ]);
+    }
+  } catch (e) { console.error("[POST entrega] wa confirm failed", e.message); }
   // Para el resumen del cliente: con grupo, el split que se muestra lleva el total COMBINADO
   // (lo que efectivamente paga en la visita) — los splits por op ya quedaron guardados arriba.
   const splitDisplay = splitFinal && splitFinal.length === 1 && extrasCalc.length > 0

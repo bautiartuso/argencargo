@@ -217,7 +217,7 @@ export async function POST(req) {
       return Response.json({ error: "trigger inválido" }, { status: 400 });
 
     // Fetch op + client
-    const opArr = await sb(`/rest/v1/operations?id=eq.${op_id}&select=*,clients(id,first_name,last_name,email,skip_review_request)`);
+    const opArr = await sb(`/rest/v1/operations?id=eq.${op_id}&select=*,clients(id,first_name,last_name,email,whatsapp,skip_review_request)`);
     const op = Array.isArray(opArr) ? opArr[0] : null;
     if (!op) return Response.json({ error: "op no encontrada" }, { status: 404 });
     const client = op.clients;
@@ -250,8 +250,19 @@ export async function POST(req) {
     const resp = await r.json();
     if (!r.ok) return Response.json({ error: "resend_failed", detail: resp }, { status: 500 });
 
-    // Marcar como enviado
+    // Aviso de retiro también por WhatsApp (bot de entregas): plantilla fija, sin IA.
+    // Best-effort y no-op sin credenciales de Meta — el mail ya salió igual.
     const newSent = { ...(op.sent_notifications || {}), [sentKey]: new Date().toISOString() };
+    if (trigger === "retiro" && client.whatsapp && op.delivery_public_token) {
+      try {
+        const { sendWaTemplate, waConfigured } = await import("../../../lib/wa");
+        if (waConfigured() && (force || !op.sent_notifications?.wa_retiro)) {
+          const link = `${BASE_URL}/retiro/${op.delivery_public_token}`;
+          const r2 = await sendWaTemplate(client.whatsapp, "carga_lista", [client.first_name || "Hola", op.operation_code, link]);
+          if (r2?.ok) newSent.wa_retiro = new Date().toISOString();
+        }
+      } catch (e) { console.error("[notify] wa_retiro failed", e.message); }
+    }
     await sb(`/rest/v1/operations?id=eq.${op_id}`, {
       method: "PATCH",
       headers: { Prefer: "return=minimal" },

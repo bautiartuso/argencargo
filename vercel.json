@@ -43,6 +43,10 @@
     {
       "path": "/api/cron/cinabrio-habits",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/bot-entregas",
+      "schedule": "30 * * * *"
     }
   ]
 }
