@@ -4740,8 +4740,11 @@ function EntregasPanel({token,onOpenOp}){
         @page{size:100mm 150mm;margin:0}
         *{box-sizing:border-box;margin:0}
         body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#000;margin:0}
-        .pag{width:100mm;height:150mm;padding:6mm 6mm 5mm;page-break-after:always;display:flex;flex-direction:column;gap:3.2mm;overflow:hidden}
-        .pag:last-of-type{page-break-after:auto}
+        /* El salto de página va ANTES de cada etiqueta (salvo la primera): después de la última
+           no queda nada que pueda generar una hoja vacía. Alto 149mm: 1mm de colchón para que
+           ningún redondeo de la impresora desborde a una página extra. */
+        .pag{width:100mm;height:149mm;padding:6mm 6mm 5mm;display:flex;flex-direction:column;gap:3.2mm;overflow:hidden}
+        .pag+.pag{page-break-before:always}
         .pag-head{display:flex;justify-content:space-between;align-items:center;border-bottom:2.5px solid #000;padding-bottom:2.5mm}
         .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;font-size:17pt}
         .bultos{font-size:11pt;font-weight:800;letter-spacing:0.05em;background:#000;color:#fff;padding:1.2mm 4mm;border-radius:99px;white-space:nowrap}
