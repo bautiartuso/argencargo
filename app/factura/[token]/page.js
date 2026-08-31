@@ -121,8 +121,8 @@ export default async function FacturaPublica({ params }) {
             <div style={{ ...kv, gridColumn: "1 / -1" }}><span style={kLbl}>Cliente</span><span style={{ ...kVal, fontSize: 16 }}>{inv.receptor_nombre || "Consumidor Final"}</span></div>
             <div style={kv}><span style={kLbl}>{docLbl}</span><span style={{ ...kVal, fontFamily: "ui-monospace,monospace" }}>{inv.doc_nro || "—"}</span></div>
             <div style={kv}><span style={kLbl}>Condición IVA</span><span style={kVal}>{COND_IVA[inv.receptor_cond_iva] || "—"}</span></div>
-            {inv.receptor_domicilio && <div style={kv}><span style={kLbl}>Domicilio</span><span style={kVal}>{inv.receptor_domicilio}</span></div>}
             {inv.operations?.operation_code && <div style={kv}><span style={kLbl}>Operación</span><span style={{ ...kVal, fontFamily: "ui-monospace,monospace" }}>{inv.operations.operation_code}</span></div>}
+            {inv.receptor_domicilio && <div style={{ ...kv, gridColumn: "1 / -1" }}><span style={kLbl}>Domicilio</span><span style={kVal}>{inv.receptor_domicilio}</span></div>}
           </div>
 
           {/* Detalle */}
