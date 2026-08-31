@@ -4711,6 +4711,51 @@ function EntregasPanel({token,onOpenOp}){
     const esCarrier=String(grupo).startsWith("carrier");
     const aDomicilio=grupo==="carrier_domicilio";
     const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    // Transportista: impresora térmica de 100×150 mm — una etiqueta por hoja, vertical,
+    // con campos rotulados (DNI/Nombre/CP/Sucursal o Domicilio/Teléfono/Mail). El rótulo
+    // Sucursal/Domicilio sale del carrier_mode de CADA op (una tanda puede venir mixta).
+    if(esCarrier){
+      const paginas=ops.map(o=>{
+        const c=o.clients||{};const dc=o.delivery_contact||{};
+        const nombre=(dc.nombre||dc.apellido)?`${dc.nombre||""} ${dc.apellido||""}`.trim():(`${c.first_name||""} ${c.last_name||""}`.trim()||"—");
+        const esSuc=(o.carrier_mode||"").toLowerCase()==="sucursal";
+        const lugarVal=esSuc?(dc.sucursal||"⚠ SIN ESPECIFICAR"):([dc.direccion,dc.piso].filter(Boolean).join(", ")||"⚠ SIN ESPECIFICAR");
+        const localidad=[c.city,c.province].filter(Boolean).join(", ");
+        const bultos=bultosByOp[o.id]||0;
+        const f=(l,v,big)=>`<div class="f${big?" big":""}"><span class="l">${l}</span><span class="v">${esc(String(v||"—"))}</span></div>`;
+        return `<div class="pag">
+          <div class="pag-head"><span class="code">${esc(o.operation_code)}</span><span class="bultos">${bultos} ${bultos===1?"BULTO":"BULTOS"}</span></div>
+          ${f("DNI",dc.dni,true)}
+          ${f("Nombre",nombre,true)}
+          ${f("Código Postal",dc.cp||c.postal_code)}
+          ${f(esSuc?"Sucursal":"Domicilio",lugarVal,true)}
+          ${localidad?f("Localidad",localidad):""}
+          ${f("Teléfono",dc.telefono||c.whatsapp)}
+          ${f("Mail",dc.email||c.email)}
+          <div class="pag-foot">ARGENCARGO</div>
+        </div>`;
+      }).join("");
+      const html=`<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas de despacho · Transportista</title><style>
+        @page{size:100mm 150mm;margin:0}
+        *{box-sizing:border-box;margin:0}
+        body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#000;margin:0}
+        .pag{width:100mm;height:150mm;padding:6mm 6mm 5mm;page-break-after:always;display:flex;flex-direction:column;gap:3.2mm}
+        .pag:last-child{page-break-after:auto}
+        .pag-head{display:flex;justify-content:space-between;align-items:center;border-bottom:2.5px solid #000;padding-bottom:2.5mm}
+        .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;font-size:17pt}
+        .bultos{font-size:11pt;font-weight:800;letter-spacing:0.05em;background:#000;color:#fff;padding:1.2mm 4mm;border-radius:99px;white-space:nowrap}
+        .f{display:flex;flex-direction:column;gap:0.6mm}
+        .f .l{font-size:8pt;font-weight:800;letter-spacing:0.12em;text-transform:uppercase}
+        .f .l::after{content:":"}
+        .f .v{font-size:11.5pt;font-weight:600;line-height:1.2;overflow-wrap:anywhere}
+        .f.big .v{font-size:14pt;font-weight:800}
+        .pag-foot{margin-top:auto;text-align:center;font-size:8pt;font-weight:800;letter-spacing:0.3em;border-top:1.5px solid #000;padding-top:2mm}
+      </style></head><body>${paginas}<script>window.onload=function(){window.print();};</script></body></html>`;
+      const w=window.open("","_blank");
+      if(!w){toast("El navegador bloqueó la ventana de impresión — permití popups","error");return;}
+      w.document.write(html);w.document.close();
+      return;
+    }
     const etiquetas=ops.map(o=>{
       const c=o.clients||{};
       const dc=o.delivery_contact||{};
