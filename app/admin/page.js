@@ -4359,12 +4359,6 @@ const usdCollected=(o)=>{
 // Grupos de entrega, igual que en MyBox: retiro por oficina / flete propio / transportista.
 // Antes flete propio y transportista estaban fundidos en "domicilio", pero se operan distinto
 // (uno es hoja de ruta, el otro son etiquetas de despacho) así que van separados.
-const DELIVERY_GROUPS=[
-  {k:"oficina",l:"📦 Retiro por oficina",match:o=>o.delivery_choice!=="propio"&&o.delivery_choice!=="carrier"},
-  {k:"propio",l:"🚚 Envío a domicilio · Flete privado",match:o=>o.delivery_choice==="propio"},
-  {k:"carrier_sucursal",l:"📮 Transportista · a sucursal",match:o=>o.delivery_choice==="carrier"&&o.carrier_mode!=="domicilio"},
-  {k:"carrier_domicilio",l:"📮 Transportista · a domicilio",match:o=>o.delivery_choice==="carrier"&&o.carrier_mode==="domicilio"},
-];
 
 // Modal del panel de Entregas: cobrar y marcar entregada en un solo paso.
 // Replica el flujo de cobro del editor de op (operation_client_payments + movimiento automatico
@@ -5020,7 +5014,6 @@ function EntregasPanel({token,onOpenOp}){
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           {tabBtn("agenda","📅 Agenda",0)}
           {tabBtn("avisos","📣 Avisos",sinAviso.length+esperando.length,sinAviso.length>0?"#fbbf24":null)}
-          {tabBtn("porentregar","🚚 Por entregar",confirmadas.length)}
           {tabBtn("acobrar","💰 A cobrar",entregadasSinCobrar.length,entregadasSinCobrar.length>0?"#f87171":null)}
           {tabBtn("hechas","✓ Hechas",0)}
         </div>
@@ -5072,7 +5065,7 @@ function EntregasPanel({token,onOpenOp}){
           {!sinMontos&&transf.length>0&&statCard("🏦","Por transferencia",usd(sumSaldo(transf)),`${transf.length} cliente${transf.length>1?"s":""}`,"#60a5fa")}
           {!sinMontos&&cripto.length>0&&statCard("🪙","En cripto",usd(sumSaldo(cripto)),`${cripto.length} cliente${cripto.length>1?"s":""}`,"#c084fc")}
         </div>
-        {(()=>{const envios=delDia.filter(o=>o.delivery_choice==="propio");return envios.length>0&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio_etiq",envios)}>🏷 Etiquetas de envíos ({envios.length})</Btn></div>;})()}
+        {(()=>{const envios=delDia.filter(o=>o.delivery_choice==="propio");return envios.length>0&&<div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:12}}><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio_etiq",envios)}>🏷 Etiquetas de envíos ({envios.length})</Btn><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio",envios)}>🖨 Hoja de ruta</Btn></div>;})()}
         {delDia.length===0&&<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"2.5rem 0",fontSize:13}}>No hay entregas agendadas para este día.</p>}
         {franjas.map(f=>{
           const enFranja=delDia.filter(o=>franjaDe(o)===f);
@@ -5105,19 +5098,6 @@ function EntregasPanel({token,onOpenOp}){
         {esperando.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"14px 0",fontSize:13,margin:0}}>Nadie pendiente de responder.</p>
           :[...esperando].sort((a,b)=>new Date(a.delivery_ready_at)-new Date(b.delivery_ready_at)).map(o=><CardOp key={o.id} o={o} contexto="esperando"/>)}
       </Bloque>
-    </>}
-
-    {tab==="porentregar"&&<>
-      {confirmadas.length===0&&<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>No hay entregas coordinadas pendientes.</p>}
-      {DELIVERY_GROUPS.map(g=>{
-        const inGroup=confirmadas.filter(g.match);
-        if(inGroup.length===0)return null;
-        const ordenadas=[...inGroup].sort((a,b)=>(a.delivery_day||"9999")<(b.delivery_day||"9999")?-1:1);
-        return <Bloque key={g.k} titulo={<>{g.l} <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {inGroup.length}</span></>}
-          accion={g.k!=="oficina"&&<span style={{display:"inline-flex",gap:6}}>{g.k==="propio"&&<Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio_etiq",ordenadas)}>🏷 Etiquetas</Btn>}<Btn small variant="secondary" onClick={()=>imprimirEtiquetas(g.k,ordenadas)}>🖨 {g.k.startsWith("carrier")?"Etiquetas de despacho":"Hoja de ruta"}</Btn></span>}>
-          {renderConGrupos(ordenadas,"porentregar")}
-        </Bloque>;
-      })}
     </>}
 
     {tab==="acobrar"&&<Bloque titulo={<>💰 Entregadas con saldo pendiente <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {entregadasSinCobrar.length}</span></>}>
