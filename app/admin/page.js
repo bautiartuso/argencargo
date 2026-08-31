@@ -9966,7 +9966,11 @@ function FinanceDashboard({token}){
     } else if(o.is_collected){
       const raw=Number(o.is_collected?(o.collected_amount||0):(o.collected_amount||o.budget_total||0));
       const isArs=o.collection_currency==="ARS";const rate=Number(o.collection_exchange_rate||0);
-      const cash=isArs&&rate>0?raw/rate:raw;
+      // Los cobros registrados (operation_client_payments) pisan al legacy — mismo fix que el
+      // calcGan del listado: una op cobrada por cobros parciales exactos queda is_collected=true
+      // con collected_amount=0, y acá figuraba a pérdida con ingreso 0 (ej. Marítimo A ago/26).
+      const cliPaid=(clientPmts||[]).filter(p=>p.operation_id===o.id).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+      const cash=cliPaid>0?cliPaid:(isArs&&rate>0?raw/rate:raw);
       const bt=Number(o.budget_total||0);
       // Si hay extra_charge_usd (cargo adicional explícito), ese excedente es ingreso real y no se capea
       // al presupuesto — mismo criterio que el otro calcGan() y que el KPI de caja de arriba.
