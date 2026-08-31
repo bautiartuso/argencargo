@@ -9996,6 +9996,131 @@ function AgpForm({token,allClients,editing,onClose,onSaved}){
     </div>
   </div>;
 }
+// ===== FACTURACIÓN ARCA (Factura C monotributo) =====
+function FacturasPanel({token}){
+  const [rows,setRows]=useState([]);const [lo,setLo]=useState(true);const [configured,setConfigured]=useState(true);
+  const [modal,setModal]=useState(false);const [emitiendo,setEmitiendo]=useState(false);const [err,setErr]=useState("");
+  const [opCode,setOpCode]=useState("");const [opInfo,setOpInfo]=useState(null);
+  const [docTipo,setDocTipo]=useState(96);const [docNro,setDocNro]=useState("");const [nombre,setNombre]=useState("");
+  const [domicilio,setDomicilio]=useState("");const [condIva,setCondIva]=useState(5);const [importe,setImporte]=useState("");const [detalle,setDetalle]=useState("Servicios logísticos");
+  const [buscandoPadron,setBuscandoPadron]=useState(false);
+  const COND={1:"IVA Responsable Inscripto",4:"IVA Sujeto Exento",5:"Consumidor Final",6:"Responsable Monotributo",7:"Sujeto No Categorizado",13:"Monotributista Social"};
+  const load=async()=>{setLo(true);try{const r=await fetch("/api/facturas",{headers:{Authorization:`Bearer ${token}`}}).then(x=>x.json());setRows(r.facturas||[]);setConfigured(r.configured!==false);}catch{}setLo(false);};
+  useEffect(()=>{load();},[token]);
+  // Precarga desde la op: cliente, documento (CUIT si es RI, DNI si no) y cobros en ARS.
+  const traerOp=async()=>{
+    setErr("");const code=opCode.trim().toUpperCase();if(!code)return;
+    const r=await dq("operations",{token,filters:`?operation_code=eq.${encodeURIComponent(code)}&select=id,operation_code,description,client_id,clients(first_name,last_name,client_code,dni,cuit,company_name,tax_condition,street,floor_apt,city,province)&limit=1`});
+    const op=Array.isArray(r)?r[0]:null;
+    if(!op){setErr(`No existe la operación ${code}`);setOpInfo(null);return;}
+    const c=op.clients||{};
+    const esRI=c.tax_condition==="responsable_inscripto"&&c.cuit;
+    setOpInfo({id:op.id,code:op.operation_code,client_id:op.client_id,cliente:`${c.first_name||""} ${c.last_name||""}`.trim()});
+    setDocTipo(esRI?80:96);
+    setDocNro(esRI?String(c.cuit).replace(/\D/g,""):String(c.dni||"").replace(/\D/g,""));
+    setNombre(esRI?(c.company_name||`${c.first_name||""} ${c.last_name||""}`.trim()):`${c.first_name||""} ${c.last_name||""}`.trim());
+    setDomicilio([c.street,c.floor_apt,c.city,c.province].filter(Boolean).join(", "));
+    setCondIva(esRI?1:5);
+    setDetalle(`Servicios logísticos${op.description?` · ${op.description}`:""}`);
+    // Sugerencia de importe: suma de cobros en ARS registrados en la op.
+    const cp=await dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=amount_ars`});
+    const ars=(Array.isArray(cp)?cp:[]).reduce((s,p)=>s+Number(p.amount_ars||0),0);
+    if(ars>0)setImporte(String(Math.round(ars)));
+  };
+  const buscarPadron=async()=>{
+    setBuscandoPadron(true);setErr("");
+    try{
+      const r=await fetch(`/api/facturas/padron?cuit=${docNro.replace(/\D/g,"")}`,{headers:{Authorization:`Bearer ${token}`}}).then(x=>x.json());
+      if(r.error){setErr(`Padrón: ${r.error}`);}
+      else{if(r.nombre)setNombre(r.nombre);if(r.domicilio)setDomicilio(r.domicilio);if(r.cond_iva)setCondIva(r.cond_iva);}
+    }catch(e){setErr("Padrón: error de red");}
+    setBuscandoPadron(false);
+  };
+  const emitir=async()=>{
+    setErr("");const imp=Number(String(importe).replace(/\./g,"").replace(",","."));
+    if(!(imp>0)){setErr("Cargá el importe en pesos.");return;}
+    setEmitiendo(true);
+    try{
+      const r=await fetch("/api/facturas",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({
+        operation_id:opInfo?.id||null,client_id:opInfo?.client_id||null,doc_tipo:docTipo,doc_nro:docNro,receptor_nombre:nombre,receptor_domicilio:domicilio,receptor_cond_iva:condIva,importe:imp,detalle,
+      })}).then(x=>x.json());
+      if(r.error){setErr(r.error);setEmitiendo(false);load();return;}
+      window.open(`/factura/${r.public_token}`,"_blank");
+      setModal(false);setEmitiendo(false);setOpCode("");setOpInfo(null);setImporte("");load();
+    }catch(e){setErr("Error: "+e.message);setEmitiendo(false);}
+  };
+  const inp={width:"100%",padding:"9px 11px",fontSize:13.5,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:9,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"};
+  const lb={display:"block",fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",margin:"10px 0 4px",textTransform:"uppercase",letterSpacing:"0.05em"};
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+      <h2 style={{fontSize:20,fontWeight:700,color:"#fff",margin:0}}>Facturación <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>ARCA · Factura C</span></h2>
+      <Btn onClick={()=>{setModal(true);setErr("");}}>🧾 Nueva factura</Btn>
+    </div>
+    {!configured&&<div style={{padding:"12px 16px",marginBottom:14,background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.35)",borderRadius:10,fontSize:12.5,color:"#fbbf24",lineHeight:1.6}}>
+      ⚠ ARCA sin conectar todavía: faltan cargar el certificado y el CUIT en Vercel (ARCA_CUIT, ARCA_CERT, ARCA_KEY). La guía de trámites está en FACTURACION_ARCA.md del repo.
+    </div>}
+    {lo?<p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>
+    :rows.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"3rem 0",fontSize:13}}>Todavía no hay facturas emitidas.</p>
+    :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {rows.map(f=><div key={f.id} style={{display:"flex",gap:12,alignItems:"center",padding:"12px 14px",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:11,flexWrap:"wrap"}}>
+        <div style={{flex:"1 1 220px",minWidth:0}}>
+          <p style={{fontSize:13.5,fontWeight:700,color:"#fff",margin:0}}>{f.receptor_nombre||"Consumidor Final"} {f.environment!=="produccion"&&<span style={{fontSize:9.5,fontWeight:800,padding:"2px 6px",borderRadius:5,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.4)",marginLeft:6}}>PRUEBA</span>}</p>
+          <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>
+            <span style={{fontFamily:"monospace",color:"#E8C99B"}}>{f.numero?`${String(f.punto_venta).padStart(5,"0")}-${String(f.numero).padStart(8,"0")}`:"—"}</span>
+            {" · "}{new Date(f.fecha+"T12:00:00Z").toLocaleDateString("es-AR",{timeZone:"UTC"})}
+            {f.operations?.operation_code&&<> · {f.operations.operation_code}</>}
+          </p>
+        </div>
+        <span style={{fontSize:13.5,fontWeight:800,color:"#fff",fontFeatureSettings:'"tnum"'}}>$ {Number(f.importe).toLocaleString("es-AR",{minimumFractionDigits:2})}</span>
+        <span style={{fontSize:10.5,fontWeight:800,padding:"3px 9px",borderRadius:6,background:f.status==="emitida"?"rgba(34,197,94,0.12)":f.status==="error"?"rgba(248,113,113,0.12)":"rgba(255,255,255,0.06)",color:f.status==="emitida"?"#4ade80":f.status==="error"?"#f87171":"rgba(255,255,255,0.5)",border:"1px solid rgba(255,255,255,0.1)"}} title={f.error_detalle||""}>{f.status.toUpperCase()}</span>
+        {f.status==="emitida"&&<Btn small variant="secondary" onClick={()=>window.open(`/factura/${f.public_token}`,"_blank")}>Ver</Btn>}
+        {f.status==="emitida"&&<Btn small variant="secondary" onClick={()=>{navigator.clipboard.writeText(`${window.location.origin}/factura/${f.public_token}`);toast("Link copiado","success");}}>📋</Btn>}
+      </div>)}
+    </div>}
+
+    {modal&&<div onClick={()=>setModal(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"34px 16px",overflowY:"auto"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:520,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.35)",borderRadius:14,padding:"20px 22px",margin:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>🧾 Nueva Factura C</h3>
+          <button onClick={()=>setModal(false)} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0}}>×</button>
+        </div>
+        <label style={lb}>Precargar desde una operación (opcional)</label>
+        <div style={{display:"flex",gap:8}}>
+          <input value={opCode} onChange={e=>setOpCode(e.target.value)} placeholder="AC-0123" style={{...inp,flex:1,fontFamily:"monospace"}} onKeyDown={e=>e.key==="Enter"&&traerOp()}/>
+          <Btn small variant="secondary" onClick={traerOp}>Traer datos</Btn>
+        </div>
+        {opInfo&&<p style={{fontSize:11.5,color:"#4ade80",margin:"6px 0 0"}}>✓ {opInfo.code} · {opInfo.cliente}</p>}
+        <div style={{display:"grid",gridTemplateColumns:"130px 1fr auto",gap:8,alignItems:"end"}}>
+          <div><label style={lb}>Documento</label>
+            <select value={docTipo} onChange={e=>{const v=Number(e.target.value);setDocTipo(v);if(v===99)setDocNro("");}} style={inp}>
+              <option value={96}>DNI</option><option value={80}>CUIT</option><option value={99}>Cons. Final s/doc</option>
+            </select></div>
+          <div><label style={lb}>Número</label><input value={docNro} onChange={e=>setDocNro(e.target.value.replace(/[^0-9]/g,""))} disabled={docTipo===99} placeholder={docTipo===80?"30123456789":"12345678"} style={{...inp,fontFamily:"monospace"}}/></div>
+          {docTipo===80&&<Btn small variant="secondary" onClick={buscarPadron} disabled={buscandoPadron}>{buscandoPadron?"…":"🔍 Padrón"}</Btn>}
+        </div>
+        <label style={lb}>Nombre / Razón social</label>
+        <input value={nombre} onChange={e=>setNombre(e.target.value)} style={inp}/>
+        <label style={lb}>Domicilio</label>
+        <input value={domicilio} onChange={e=>setDomicilio(e.target.value)} style={inp}/>
+        <label style={lb}>Condición IVA del receptor</label>
+        <select value={condIva} onChange={e=>setCondIva(Number(e.target.value))} style={inp}>
+          {Object.entries(COND).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+        </select>
+        <label style={lb}>Importe (ARS)</label>
+        <input value={importe} onChange={e=>setImporte(e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" placeholder="1500000" style={{...inp,fontSize:16,fontWeight:700}}/>
+        <label style={lb}>Detalle</label>
+        <input value={detalle} onChange={e=>setDetalle(e.target.value)} style={inp}/>
+        {err&&<p style={{fontSize:12,color:"#f87171",margin:"10px 0 0",lineHeight:1.5}}>{err}</p>}
+        <div style={{display:"flex",gap:8,marginTop:16}}>
+          <Btn onClick={emitir} disabled={emitiendo}>{emitiendo?"Emitiendo en ARCA…":"🧾 Emitir factura"}</Btn>
+          <Btn variant="secondary" onClick={()=>setModal(false)}>Cancelar</Btn>
+        </div>
+        <p style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",margin:"10px 0 0",lineHeight:1.5}}>La factura se emite en ARCA al instante (CAE real) y se abre con el diseño de Argencargo para imprimir o mandar al cliente.</p>
+      </div>
+    </div>}
+  </div>;
+}
+
 function FinanceDashboard({token}){
   const [ops,setOps]=useState([]);const [clients,setClients]=useState([]);const [quotes,setQuotes]=useState([]);const [finEntries,setFinEntries]=useState([]);const [pmtsByOp,setPmtsByOp]=useState({});const [agentMvs,setAgentMvs]=useState([]);const [supplierPmts,setSupplierPmts]=useState([]);const [clientPmts,setClientPmts]=useState([]);const [lo,setLo]=useState(true);const [period,setPeriod]=useState("month");const [selMonth,setSelMonth]=useState(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;});const [selDay,setSelDay]=useState(()=>new Date().toISOString().slice(0,10));const [selWeekMon,setSelWeekMon]=useState(()=>{const n=new Date();const dow=(n.getDay()+6)%7;const m=new Date(n);m.setDate(n.getDate()-dow);return m.toISOString().slice(0,10);});
   useEffect(()=>{(async()=>{const [o,c,q,fe,pm,am,sp,cp]=await Promise.all([dq("operations",{token,filters:"?select=*,clients(first_name,last_name,client_code)&order=created_at.desc"}),dq("clients",{token,filters:`?select=*&or=(account_balance_usd.neq.0,created_at.gte.${new Date().toISOString().slice(0,7)}-01)`}),dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),dq("finance_entries",{token,filters:"?select=*&order=date.desc"}),dq("payment_management",{token,filters:"?select=operation_id,client_amount_usd,giro_amount_usd,cost_comision_giro,client_paid,giro_status,giro_payment_method,giro_tarjeta_paid"}),dq("agent_account_movements",{token,filters:"?select=*&order=date.desc"}),dq("operation_supplier_payments",{token,filters:"?select=*&order=payment_date.asc"}),dq("operation_client_payments",{token,filters:"?select=*&order=payment_date.asc"})]);setOps(Array.isArray(o)?o:[]);setClients(Array.isArray(c)?c:[]);setQuotes(Array.isArray(q)?q:[]);setFinEntries(Array.isArray(fe)?fe:[]);setAgentMvs(Array.isArray(am)?am:[]);setSupplierPmts(Array.isArray(sp)?sp:[]);setClientPmts(Array.isArray(cp)?cp:[]);const m={};(Array.isArray(pm)?pm:[]).forEach(p=>{if(!m[p.operation_id])m[p.operation_id]=[];m[p.operation_id].push(p);});setPmtsByOp(m);setLo(false);})();},[token]);
@@ -12842,6 +12967,7 @@ function AdminDashboard({session,onLogout}){
       {key:"dashboard",label:"Dashboard",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},
       {key:"finance",label:"Libro diario",p:["M4 19.5A2.5 2.5 0 0 1 6.5 17H20","M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"]},
       {key:"tariffs",label:"Tarifas",p:["M18 20V10","M12 20V4","M6 20v-6"]},
+      {key:"facturas",label:"Facturación",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M9 13h6","M9 17h4"]},
       {key:"ccfin",label:"CC Financiera",href:"/ccfinanciera",p:["M3 10h18","M5 6h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z","M7 15h2","M11 15h2"]},
     ]},
     {section:"Gestión Integral",items:[
@@ -12941,6 +13067,7 @@ function AdminDashboard({session,onLogout}){
       {page==="agp"&&<AgpPanel token={token} allClients={allClients}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
+      {page==="facturas"&&<FacturasPanel token={token}/>}
       {page==="calculator"&&<Calculator token={token} clients={allClients}/>}
       {page==="quotes"&&<QuotesList token={token}/>}
       {page==="calc"&&<AdminCalculator token={token}/>}
