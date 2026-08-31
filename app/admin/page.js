@@ -4721,10 +4721,11 @@ function EntregasPanel({token,onOpenOp}){
         const esSuc=(o.carrier_mode||"").toLowerCase()==="sucursal";
         const lugarVal=esSuc?(dc.sucursal||"⚠ SIN ESPECIFICAR"):([dc.direccion,dc.piso].filter(Boolean).join(", ")||"⚠ SIN ESPECIFICAR");
         const localidad=[c.city,c.province].filter(Boolean).join(", ");
-        const bultos=bultosByOp[o.id]||0;
+        const bultos=Math.max(1,bultosByOp[o.id]||0);
         const f=(l,v,big)=>`<div class="f${big?" big":""}"><span class="l">${l}</span><span class="v">${esc(String(v||"—"))}</span></div>`;
-        return `<div class="pag">
-          <div class="pag-head"><span class="code">${esc(o.operation_code)}</span><span class="bultos">${bultos} ${bultos===1?"BULTO":"BULTOS"}</span></div>
+        // Una etiqueta POR BULTO: cada caja viaja con la suya ("BULTO 2/3").
+        return Array.from({length:bultos},(_,i)=>`<div class="pag">
+          <div class="pag-head"><span class="code">${esc(o.operation_code)}</span><span class="bultos">BULTO ${i+1}/${bultos}</span></div>
           ${f("DNI",dc.dni,true)}
           ${f("Nombre",nombre,true)}
           ${f("Código Postal",dc.cp||c.postal_code)}
@@ -4733,14 +4734,14 @@ function EntregasPanel({token,onOpenOp}){
           ${f("Teléfono",dc.telefono||c.whatsapp)}
           ${f("Mail",dc.email||c.email)}
           <div class="pag-foot">ARGENCARGO</div>
-        </div>`;
+        </div>`).join("");
       }).join("");
       const html=`<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas de despacho · Transportista</title><style>
         @page{size:100mm 150mm;margin:0}
         *{box-sizing:border-box;margin:0}
         body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#000;margin:0}
-        .pag{width:100mm;height:150mm;padding:6mm 6mm 5mm;page-break-after:always;display:flex;flex-direction:column;gap:3.2mm}
-        .pag:last-child{page-break-after:auto}
+        .pag{width:100mm;height:150mm;padding:6mm 6mm 5mm;page-break-after:always;display:flex;flex-direction:column;gap:3.2mm;overflow:hidden}
+        .pag:last-of-type{page-break-after:auto}
         .pag-head{display:flex;justify-content:space-between;align-items:center;border-bottom:2.5px solid #000;padding-bottom:2.5mm}
         .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;font-size:17pt}
         .bultos{font-size:11pt;font-weight:800;letter-spacing:0.05em;background:#000;color:#fff;padding:1.2mm 4mm;border-radius:99px;white-space:nowrap}
