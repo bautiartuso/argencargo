@@ -7708,7 +7708,16 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         prorratea entre los conceptos facturados. Si una op no se cobro, su ingreso es 0 y el
         concepto queda negativo por su costo. */}
     {(flight.status==="despachado"||flight.status==="recibido")&&opsUnique.length>0&&(()=>{
-      const usdOf=(o)=>{const raw=Number(o.collected_amount||0);const r=Number(o.collection_exchange_rate||0);return o.collection_currency==="ARS"&&r>0?raw/r:raw;};
+      // Los cobros registrados (operation_client_payments) pisan al legacy — mismo criterio que
+      // calcGan del listado y del dashboard: una op cobrada por cobros parciales exactos queda
+      // is_collected=true con collected_amount=0, y con solo el legacy su "cobrado" daba 0 y
+      // los conceptos del vuelo figuraban en negativo (ej. AC-0149 / AC-0133).
+      const usdOf=(o)=>{
+        const cliPaid=flightCliPmts.filter(p=>p.operation_id===o.id).reduce((s,p)=>s+Number(p.amount_usd||0),0);
+        if(cliPaid>0)return cliPaid;
+        const raw=Number(o.collected_amount||0);const r=Number(o.collection_exchange_rate||0);
+        return o.collection_currency==="ARS"&&r>0?raw/r:raw;
+      };
       let ingBruto=0,comisionTot=0;
       const acc={flete:{fact:0,cob:0,costo:0},seguro:{fact:0,cob:0,costo:0},impuestos:{fact:0,cob:0,costo:0}};
       let otrosCosto=0;
