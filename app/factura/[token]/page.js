@@ -1,6 +1,6 @@
-// /factura/[token] — Factura C con diseño propio (logo + marca), lista para imprimir
-// o mandar al cliente. Incluye todo lo que exige ARCA: datos de emisor y receptor,
-// tipo y número de comprobante, CAE con vencimiento y el QR oficial (RG 4892).
+// /factura/[token] — Factura C con diseño propio (logo + marca de agua), lista para
+// imprimir en A4 completo o mandar al cliente por link. Incluye todo lo que exige ARCA:
+// emisor, receptor, tipo y número, CAE con vencimiento y el QR oficial (RG 4892).
 
 import QRCode from "qrcode";
 import { arcaConfig, qrUrl, COND_IVA } from "../../../lib/arca";
@@ -34,89 +34,102 @@ export default async function FacturaPublica({ params }) {
   const qr = await QRCode.toDataURL(qrUrl(inv, cfg?.cuit || process.env.ARCA_CUIT || "0"), { margin: 0, width: 220 });
   const nroCompleto = `${pad(inv.punto_venta, 5)}-${pad(inv.numero, 8)}`;
   const esHomo = inv.environment !== "produccion";
-  const row = { display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12.5, padding: "2px 0" };
-  const lbl = { color: "#64748b" };
+  const docLbl = inv.doc_tipo === 80 ? "CUIT" : inv.doc_tipo === 96 ? "DNI" : "Documento";
+  const items = Array.isArray(inv.items) && inv.items.length > 0 ? inv.items : [{ label: inv.detalle, usd: 0, ars: inv.importe }];
+
+  const kv = { display: "flex", flexDirection: "column", gap: 2 };
+  const kLbl = { fontSize: 9, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#94a3b8" };
+  const kVal = { fontSize: 13.5, fontWeight: 700, color: "#111" };
 
   return <div className="fac-page" style={{ minHeight: "100vh", background: "#e8eaee", padding: "28px 14px 60px", fontFamily: "system-ui,-apple-system,'Segoe UI',sans-serif", color: "#111" }}>
     <style>{`
       @page{size:A4;margin:0}
+      .fac-card{-webkit-print-color-adjust:exact;print-color-adjust:exact}
       @media print{
         .fac-page{background:#fff !important;padding:0 !important;min-height:auto !important}
         .fac-wrap{max-width:none !important}
-        .fac-card{border-radius:0 !important;box-shadow:none !important;min-height:297mm;display:flex;flex-direction:column;padding:10mm 12mm 8mm;box-sizing:border-box}
+        .fac-card{border-radius:0 !important;box-shadow:none !important;min-height:297mm;display:flex;flex-direction:column;padding:12mm 13mm 10mm !important;box-sizing:border-box}
+        .fac-inner{flex:1;display:flex;flex-direction:column}
         .fac-detalle{flex:1}
-        .fac-foot-url{display:none !important}
+        .fac-foot-url,.fac-banner{display:none !important}
       }
     `}</style>
-    <div className="fac-wrap" style={{ maxWidth: 760, margin: "0 auto" }}>
-      {esHomo && <div style={{ background: "#fef3c7", border: "1px solid #f59e0b", color: "#92400e", borderRadius: 10, padding: "9px 14px", fontSize: 12.5, fontWeight: 700, marginBottom: 12, textAlign: "center" }}>⚠ COMPROBANTE DE PRUEBA (ambiente de homologación de ARCA) — SIN VALOR FISCAL</div>}
-      <div className="fac-card" style={{ background: "#fff", borderRadius: 12, overflow: "hidden", boxShadow: "0 10px 40px rgba(0,0,0,0.12)" }}>
+    <div className="fac-wrap" style={{ maxWidth: 780, margin: "0 auto" }}>
+      {esHomo && <div className="fac-banner" style={{ background: "#fef3c7", border: "1px solid #f59e0b", color: "#92400e", borderRadius: 10, padding: "9px 14px", fontSize: 12.5, fontWeight: 700, marginBottom: 12, textAlign: "center" }}>⚠ COMPROBANTE DE PRUEBA (ambiente de homologación de ARCA) — SIN VALOR FISCAL</div>}
 
-        {/* Encabezado */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 64px 1fr", alignItems: "stretch", borderBottom: `3px solid ${NAVY}` }}>
-          <div style={{ padding: "18px 20px" }}>
-            <img src={LOGO} alt="Argencargo" style={{ height: 38, filter: "brightness(0.2)" }} />
-            <p style={{ fontSize: 13.5, fontWeight: 800, margin: "10px 0 2px" }}>{cfg?.razon_social || "—"}</p>
-            <p style={{ fontSize: 11.5, color: "#475569", margin: 0, lineHeight: 1.5 }}>{cfg?.domicilio || ""}</p>
-            <p style={{ fontSize: 11.5, color: "#475569", margin: "3px 0 0" }}>Responsable Monotributo</p>
-          </div>
-          <div style={{ borderLeft: "1.5px solid #cbd5e1", borderRight: "1.5px solid #cbd5e1", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 14 }}>
-            <span style={{ fontSize: 34, fontWeight: 900, lineHeight: 1 }}>C</span>
-            <span style={{ fontSize: 9, color: "#64748b", marginTop: 2 }}>COD. {pad(inv.tipo_cbte, 2)}</span>
-          </div>
-          <div style={{ padding: "18px 20px", textAlign: "right" }}>
-            <p style={{ fontSize: 17, fontWeight: 900, margin: "0 0 6px", letterSpacing: "0.02em" }}>FACTURA</p>
-            <div style={{ ...row, justifyContent: "flex-end", gap: 8 }}><span style={lbl}>Nº</span><b style={{ fontFamily: "ui-monospace,monospace" }}>{nroCompleto}</b></div>
-            <div style={{ ...row, justifyContent: "flex-end", gap: 8 }}><span style={lbl}>Fecha</span><b>{fmtFecha(inv.fecha)}</b></div>
-            <div style={{ ...row, justifyContent: "flex-end", gap: 8 }}><span style={lbl}>CUIT</span><b style={{ fontFamily: "ui-monospace,monospace" }}>{cfg?.cuit || "—"}</b></div>
-            {cfg?.inicio_actividades && <div style={{ ...row, justifyContent: "flex-end", gap: 8 }}><span style={lbl}>Inicio act.</span><b>{fmtFecha(cfg.inicio_actividades)}</b></div>}
-          </div>
-        </div>
+      <div className="fac-card" style={{ background: "#fff", borderRadius: 14, boxShadow: "0 10px 40px rgba(0,0,0,0.12)", padding: "26px 30px", position: "relative", overflow: "hidden" }}>
+        {/* Marca de agua: el logo grande y translúcido, centrado detrás de todo */}
+        <img src={LOGO} alt="" aria-hidden style={{ position: "absolute", left: "50%", top: "52%", transform: "translate(-50%,-50%) rotate(-14deg)", width: "78%", opacity: 0.045, filter: "brightness(0.25)", pointerEvents: "none" }} />
 
-        {/* Receptor */}
-        <div style={{ padding: "14px 20px", borderBottom: "1px solid #e2e8f0", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: "4px 24px" }}>
-          <div style={row}><span style={lbl}>Cliente</span><b>{inv.receptor_nombre || "Consumidor Final"}</b></div>
-          <div style={row}><span style={lbl}>{inv.doc_tipo === 80 ? "CUIT" : inv.doc_tipo === 96 ? "DNI" : "Doc."}</span><b style={{ fontFamily: "ui-monospace,monospace" }}>{inv.doc_nro || "—"}</b></div>
-          {inv.receptor_domicilio && <div style={row}><span style={lbl}>Domicilio</span><b style={{ textAlign: "right" }}>{inv.receptor_domicilio}</b></div>}
-          <div style={row}><span style={lbl}>Cond. IVA</span><b>{COND_IVA[inv.receptor_cond_iva] || "—"}</b></div>
-          <div style={row}><span style={lbl}>Cond. de venta</span><b>Contado</b></div>
-        </div>
-
-        {/* Detalle — una fila por concepto; cada uno con su USD y el TC aplicado */}
-        <div className="fac-detalle" style={{ padding: "16px 20px 6px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "#64748b", borderBottom: "1.5px solid #cbd5e1", paddingBottom: 6 }}>
-            <span>Descripción</span><span>Importe</span>
-          </div>
-          {Array.isArray(inv.items) && inv.items.length > 0 ? inv.items.map((it, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "10px 0", borderBottom: "1px solid #f1f5f9", fontSize: 13.5, alignItems: "baseline" }}>
-              <span>{it.label}{inv.operations?.operation_code && i === 0 ? ` · Operación ${inv.operations.operation_code}` : ""}
-                {Number(it.usd) > 0 && Number(inv.tc) > 0 && <span style={{ display: "block", fontSize: 10.5, color: "#94a3b8", marginTop: 2 }}>USD {fmt(it.usd)} · TC $ {fmt(inv.tc)}</span>}
-              </span>
-              <b style={{ fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap" }}>$ {fmt(it.ars)}</b>
+        <div className="fac-inner" style={{ position: "relative" }}>
+          {/* Encabezado */}
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 18, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div>
+              <img src={LOGO} alt="Argencargo" style={{ height: 54, filter: "brightness(0.2)" }} />
+              <p style={{ fontSize: 15, fontWeight: 800, margin: "12px 0 2px", letterSpacing: "-0.01em" }}>{cfg?.razon_social || "—"}</p>
+              <p style={{ fontSize: 11.5, color: "#475569", margin: 0, lineHeight: 1.5, maxWidth: 300 }}>{cfg?.domicilio || ""}</p>
+              <p style={{ fontSize: 11.5, color: "#475569", margin: "2px 0 0" }}>Responsable Monotributo · CUIT <b style={{ fontFamily: "ui-monospace,monospace", color: "#111" }}>{cfg?.cuit || "—"}</b></p>
+              <p style={{ fontSize: 11, color: "#94a3b8", margin: "2px 0 0" }}>Inicio de actividades: {fmtFecha(cfg?.inicio_actividades)}</p>
             </div>
-          )) : (
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "12px 0 14px", fontSize: 13.5 }}>
-              <span>{inv.detalle}{inv.operations?.operation_code ? ` · Operación ${inv.operations.operation_code}` : ""}</span>
-              <b style={{ fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap" }}>$ {fmt(inv.importe)}</b>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                <div style={{ width: 52, height: 52, border: `2.5px solid ${NAVY}`, borderRadius: 10, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>
+                  <span style={{ fontSize: 26, fontWeight: 900 }}>C</span>
+                  <span style={{ fontSize: 7.5, color: "#64748b", marginTop: 1 }}>COD. {pad(inv.tipo_cbte, 2)}</span>
+                </div>
+                <div style={{ textAlign: "left" }}>
+                  <p style={{ fontSize: 21, fontWeight: 900, letterSpacing: "0.01em", margin: 0 }}>FACTURA</p>
+                  <p style={{ fontSize: 14, fontWeight: 800, fontFamily: "ui-monospace,monospace", margin: "1px 0 0", color: "#334155" }}>{nroCompleto}</p>
+                </div>
+              </div>
+              <p style={{ fontSize: 12, color: "#475569", margin: 0 }}>Fecha de emisión: <b style={{ color: "#111" }}>{fmtFecha(inv.fecha)}</b></p>
             </div>
-          )}
-        </div>
-
-        {/* Total */}
-        <div style={{ margin: "0 20px", background: NAVY, color: "#fff", borderRadius: 10, padding: "13px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: "0.1em" }}>TOTAL</span>
-          <span style={{ fontSize: 21, fontWeight: 900, fontFamily: "ui-monospace,monospace" }}>$ {fmt(inv.importe)}</span>
-        </div>
-
-        {/* CAE + QR */}
-        <div style={{ padding: "16px 20px 20px", display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
-          <div>
-            <img src={qr} alt="QR ARCA" style={{ width: 108, height: 108 }} />
           </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ ...row, justifyContent: "flex-end", gap: 8 }}><span style={lbl}>CAE Nº</span><b style={{ fontFamily: "ui-monospace,monospace" }}>{inv.cae}</b></div>
-            <div style={{ ...row, justifyContent: "flex-end", gap: 8 }}><span style={lbl}>Vto. CAE</span><b>{fmtFecha(inv.cae_vto)}</b></div>
-            <p style={{ fontSize: 10, color: "#94a3b8", margin: "8px 0 0" }}>Comprobante autorizado por ARCA</p>
+
+          <div style={{ height: 3.5, background: NAVY, borderRadius: 2, margin: "18px 0", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }} />
+
+          {/* Cliente */}
+          <p style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: NAVY, margin: "0 0 8px" }}>Facturado a</p>
+          <div style={{ background: "#f7f8fa", border: "1px solid #e2e8f0", borderRadius: 12, padding: "14px 18px", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: "12px 22px", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
+            <div style={{ ...kv, gridColumn: "1 / -1" }}><span style={kLbl}>Cliente</span><span style={{ ...kVal, fontSize: 16 }}>{inv.receptor_nombre || "Consumidor Final"}</span></div>
+            <div style={kv}><span style={kLbl}>{docLbl}</span><span style={{ ...kVal, fontFamily: "ui-monospace,monospace" }}>{inv.doc_nro || "—"}</span></div>
+            <div style={kv}><span style={kLbl}>Condición IVA</span><span style={kVal}>{COND_IVA[inv.receptor_cond_iva] || "—"}</span></div>
+            {inv.receptor_domicilio && <div style={kv}><span style={kLbl}>Domicilio</span><span style={kVal}>{inv.receptor_domicilio}</span></div>}
+            {inv.operations?.operation_code && <div style={kv}><span style={kLbl}>Operación</span><span style={{ ...kVal, fontFamily: "ui-monospace,monospace" }}>{inv.operations.operation_code}</span></div>}
+          </div>
+
+          {/* Detalle */}
+          <div className="fac-detalle" style={{ marginTop: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: NAVY, borderBottom: `2px solid ${NAVY}`, paddingBottom: 7 }}>
+              <span>Descripción</span><span>Importe</span>
+            </div>
+            {items.map((it, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "12px 0", borderBottom: "1px solid #eef2f6", fontSize: 13.5, alignItems: "baseline" }}>
+                <span style={{ fontWeight: 600 }}>{it.label}
+                  {Number(it.usd) > 0 && Number(inv.tc) > 0 && <span style={{ display: "block", fontSize: 10.5, color: "#94a3b8", marginTop: 2, fontWeight: 500 }}>USD {fmt(it.usd)} · Tipo de cambio $ {fmt(inv.tc)}</span>}
+                </span>
+                <b style={{ fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", fontSize: 14 }}>$ {fmt(it.ars)}</b>
+              </div>
+            ))}
+          </div>
+
+          {/* Total */}
+          <div style={{ marginTop: 18, background: NAVY, color: "#fff", borderRadius: 12, padding: "15px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
+            <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: "0.14em" }}>TOTAL</span>
+            <span style={{ fontSize: 23, fontWeight: 900, fontFamily: "ui-monospace,monospace" }}>$ {fmt(inv.importe)}</span>
+          </div>
+
+          {/* CAE + QR */}
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <img src={qr} alt="QR ARCA" style={{ width: 96, height: 96 }} />
+              <p style={{ fontSize: 9.5, color: "#94a3b8", maxWidth: 130, lineHeight: 1.5, margin: 0 }}>Escaneá el código para verificar este comprobante en ARCA</p>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>CAE N° <b style={{ fontFamily: "ui-monospace,monospace", color: "#111", fontSize: 13 }}>{inv.cae}</b></p>
+              <p style={{ fontSize: 11, color: "#64748b", margin: "3px 0 0" }}>Vencimiento CAE: <b style={{ color: "#111" }}>{fmtFecha(inv.cae_vto)}</b></p>
+              <p style={{ fontSize: 9.5, color: "#94a3b8", margin: "6px 0 0" }}>Comprobante autorizado por ARCA · argencargo.com.ar</p>
+            </div>
           </div>
         </div>
       </div>
