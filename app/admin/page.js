@@ -4711,28 +4711,56 @@ function EntregasPanel({token,onOpenOp}){
     const esCarrier=String(grupo).startsWith("carrier");
     const aDomicilio=grupo==="carrier_domicilio";
     const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-    // Transportista: impresora térmica de 100×150 mm — una etiqueta por hoja, vertical,
-    // con campos rotulados (DNI/Nombre/CP/Sucursal o Domicilio/Teléfono/Mail). El rótulo
-    // Sucursal/Domicilio sale del carrier_mode de CADA op (una tanda puede venir mixta).
-    if(esCarrier){
+    // Impresora térmica de 100×150 mm — una etiqueta por hoja, vertical, una POR BULTO.
+    // · Transportista: DNI/Nombre/CP/Sucursal o Domicilio/Localidad/Teléfono/Mail (el
+    //   rótulo Sucursal/Domicilio sale del carrier_mode de CADA op — tandas mixtas ok).
+    // · Flete propio ("propio_etiq"): Nombre/Domicilio/Teléfono/Franja + banda de COBRO
+    //   (el fletero sí cobra; al transportista externo no le corresponde).
+    const esPropioEtiq=grupo==="propio_etiq";
+    if(esCarrier||esPropioEtiq){
       const paginas=ops.map(o=>{
         const c=o.clients||{};const dc=o.delivery_contact||{};
-        const nombre=(dc.nombre||dc.apellido)?`${dc.nombre||""} ${dc.apellido||""}`.trim():(`${c.first_name||""} ${c.last_name||""}`.trim()||"—");
-        const esSuc=(o.carrier_mode||"").toLowerCase()==="sucursal";
-        const lugarVal=esSuc?(dc.sucursal||"⚠ SIN ESPECIFICAR"):([dc.direccion,dc.piso].filter(Boolean).join(", ")||"⚠ SIN ESPECIFICAR");
-        const localidad=[c.city,c.province].filter(Boolean).join(", ");
         const bultos=Math.max(1,bultosByOp[o.id]||0);
         const f=(l,v,big)=>`<div class="f${big?" big":""}"><span class="l">${l}</span><span class="v">${esc(String(v||"—"))}</span></div>`;
+        let cuerpo,banda="";
+        if(esPropioEtiq){
+          const nombre=`${c.first_name||""} ${c.last_name||""}`.trim()||"—";
+          const dir=o.delivery_address||[c.street,c.floor_apt,c.city,c.province,c.postal_code].filter(Boolean).join(", ")||"⚠ SIN DIRECCIÓN";
+          const diaTxt=o.delivery_day?`${new Date(o.delivery_day+"T12:00:00Z").toLocaleDateString("es-AR",{weekday:"short",day:"numeric",month:"numeric",timeZone:"UTC"})}${o.delivery_slot?` · ${o.delivery_slot}`:""}`:(o.delivery_slot||"a coordinar");
+          cuerpo=[
+            f("Nombre",nombre,true),
+            f("Domicilio",dir,true),
+            f("Teléfono",dc.telefono||c.whatsapp),
+            f("Entrega",diaTxt),
+          ].join("");
+          const saldo=saldoFor(o);
+          const metodo=(Array.isArray(o.payment_split)&&o.payment_split[0]?.method)||o.payment_method_chosen||"";
+          if(saldo<=0.005)banda=`<div class="banda ok">✓ PAGADO — NO COBRAR</div>`;
+          else if(metodo==="efectivo"){
+            const monArr=Array.isArray(o.payment_split)?o.payment_split[0]?.currency:null;
+            const llega=o.cash_arrival_amount?` · llega con ${o.cash_arrival_currency||"USD"} ${Number(o.cash_arrival_amount).toLocaleString("es-AR")}`:"";
+            banda=`<div class="banda cobrar">💵 COBRAR USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}${monArr==="ARS"?" (paga en pesos)":monArr==="mixto"?" (USD + ARS)":""}${esc(llega)}</div>`;
+          }else banda=`<div class="banda ok">Saldo USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} — paga por ${metodo==="crypto"?"cripto":"transferencia"}, NO cobrar en mano</div>`;
+        }else{
+          const nombre=(dc.nombre||dc.apellido)?`${dc.nombre||""} ${dc.apellido||""}`.trim():(`${c.first_name||""} ${c.last_name||""}`.trim()||"—");
+          const esSuc=(o.carrier_mode||"").toLowerCase()==="sucursal";
+          const lugarVal=esSuc?(dc.sucursal||"⚠ SIN ESPECIFICAR"):([dc.direccion,dc.piso].filter(Boolean).join(", ")||"⚠ SIN ESPECIFICAR");
+          const localidad=[c.city,c.province].filter(Boolean).join(", ");
+          cuerpo=[
+            f("DNI",dc.dni,true),
+            f("Nombre",nombre,true),
+            f("Código Postal",dc.cp||c.postal_code),
+            f(esSuc?"Sucursal":"Domicilio",lugarVal,true),
+            localidad?f("Localidad",localidad):"",
+            f("Teléfono",dc.telefono||c.whatsapp),
+            f("Mail",dc.email||c.email),
+          ].join("");
+        }
         // Una etiqueta POR BULTO: cada caja viaja con la suya ("BULTO 2/3").
         return Array.from({length:bultos},(_,i)=>`<div class="pag">
           <div class="pag-head"><span class="code">${esc(o.operation_code)}</span><span class="bultos">BULTO ${i+1}/${bultos}</span></div>
-          ${f("DNI",dc.dni,true)}
-          ${f("Nombre",nombre,true)}
-          ${f("Código Postal",dc.cp||c.postal_code)}
-          ${f(esSuc?"Sucursal":"Domicilio",lugarVal,true)}
-          ${localidad?f("Localidad",localidad):""}
-          ${f("Teléfono",dc.telefono||c.whatsapp)}
-          ${f("Mail",dc.email||c.email)}
+          ${cuerpo}
+          ${banda}
           <div class="pag-foot">ARGENCARGO</div>
         </div>`).join("");
       }).join("");
@@ -4753,6 +4781,9 @@ function EntregasPanel({token,onOpenOp}){
         .f .l::after{content:":"}
         .f .v{font-size:11.5pt;font-weight:600;line-height:1.2;overflow-wrap:anywhere}
         .f.big .v{font-size:14pt;font-weight:800}
+        .banda{margin-top:auto;font-size:11.5pt;font-weight:800;border:2.5px solid #000;border-radius:3mm;padding:2.5mm 3mm;text-align:center}
+        .banda.cobrar{background:#000;color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+        .banda~.pag-foot{margin-top:3mm}
         .pag-foot{margin-top:auto;text-align:center;font-size:8pt;font-weight:800;letter-spacing:0.3em;border-top:1.5px solid #000;padding-top:2mm}
       </style></head><body>${paginas}<script>window.onload=function(){window.print();};</script></body></html>`;
       const w=window.open("","_blank");
@@ -5041,6 +5072,7 @@ function EntregasPanel({token,onOpenOp}){
           {!sinMontos&&transf.length>0&&statCard("🏦","Por transferencia",usd(sumSaldo(transf)),`${transf.length} cliente${transf.length>1?"s":""}`,"#60a5fa")}
           {!sinMontos&&cripto.length>0&&statCard("🪙","En cripto",usd(sumSaldo(cripto)),`${cripto.length} cliente${cripto.length>1?"s":""}`,"#c084fc")}
         </div>
+        {(()=>{const envios=delDia.filter(o=>o.delivery_choice==="propio");return envios.length>0&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}><Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio_etiq",envios)}>🏷 Etiquetas de envíos ({envios.length})</Btn></div>;})()}
         {delDia.length===0&&<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"2.5rem 0",fontSize:13}}>No hay entregas agendadas para este día.</p>}
         {franjas.map(f=>{
           const enFranja=delDia.filter(o=>franjaDe(o)===f);
@@ -5082,7 +5114,7 @@ function EntregasPanel({token,onOpenOp}){
         if(inGroup.length===0)return null;
         const ordenadas=[...inGroup].sort((a,b)=>(a.delivery_day||"9999")<(b.delivery_day||"9999")?-1:1);
         return <Bloque key={g.k} titulo={<>{g.l} <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {inGroup.length}</span></>}
-          accion={g.k!=="oficina"&&<Btn small variant="secondary" onClick={()=>imprimirEtiquetas(g.k,ordenadas)}>🖨 {g.k.startsWith("carrier")?"Etiquetas de despacho":"Hoja de ruta"}</Btn>}>
+          accion={g.k!=="oficina"&&<span style={{display:"inline-flex",gap:6}}>{g.k==="propio"&&<Btn small variant="secondary" onClick={()=>imprimirEtiquetas("propio_etiq",ordenadas)}>🏷 Etiquetas</Btn>}<Btn small variant="secondary" onClick={()=>imprimirEtiquetas(g.k,ordenadas)}>🖨 {g.k.startsWith("carrier")?"Etiquetas de despacho":"Hoja de ruta"}</Btn></span>}>
           {renderConGrupos(ordenadas,"porentregar")}
         </Bloque>;
       })}
