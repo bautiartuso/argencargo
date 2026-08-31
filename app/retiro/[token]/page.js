@@ -338,6 +338,16 @@ export default function EntregaPublica({ params }) {
           </div>}
           {!hasPropio && <OptRow selected={delivery === "carrier"} onClick={() => setDelivery("carrier")} label="Envío por Via Cargo / Andreani" meta="Tu zona está fuera del reparto propio de Argencargo" price="A coordinar" />}
 
+          {/* Próximamente: envío directo al Full de Mercado Libre (solo anuncio, sin flujo aún) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 9, border: `1.5px dashed ${LINE}`, background: "#f7f4ec", marginBottom: 7, opacity: 0.75, cursor: "default" }}>
+            <span style={{ width: 16, height: 16, borderRadius: "50%", flexShrink: 0, border: "2px solid #d5c9ab", background: "transparent" }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: INK }}>Envío a Full de Mercado Libre</div>
+              <div style={{ fontSize: 10.5, color: MUTED, marginTop: 1 }}>Muy pronto vas a poder mandar tu carga directo al depósito de Full</div>
+            </div>
+            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.08em", color: "#8b6f4a", background: "linear-gradient(135deg,#fdf6e8,#faedd0)", border: `1px solid ${GOLD_A}`, padding: "3px 8px", borderRadius: 999, whiteSpace: "nowrap" }}>PRÓXIMAMENTE</span>
+          </div>
+
           {/* Con transportista hay dos modalidades y piden datos distintos: a sucursal alcanza con
               quién retira; a domicilio se suma la dirección. */}
           {!hasPropio && delivery === "carrier" && (
