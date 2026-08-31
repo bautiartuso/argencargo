@@ -10,8 +10,24 @@ const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 const LOGO = "https://nhfslvixhlbiyfmedmbr.supabase.co/storage/v1/object/public/assets/logo_argencargo.png";
 const NAVY = "#0A1628";
 
-export const metadata = { title: "Factura — Argencargo" };
 export const dynamic = "force-dynamic";
+
+// El título de la página es el nombre de archivo que propone el navegador al guardar
+// como PDF: "Cliente - AC-0123" (sin el sufijo del layout).
+export async function generateMetadata({ params }) {
+  const { token } = await params;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/invoices?public_token=eq.${encodeURIComponent(token)}&select=receptor_nombre,operations(operation_code)&limit=1`, {
+      headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` }, cache: "no-store",
+    }).then((x) => x.json());
+    const inv = Array.isArray(r) && r[0];
+    if (inv?.receptor_nombre) {
+      const nombre = `${inv.receptor_nombre}${inv.operations?.operation_code ? ` - ${inv.operations.operation_code}` : ""}`;
+      return { title: { absolute: nombre } };
+    }
+  } catch {}
+  return { title: { absolute: "Factura Argencargo" } };
+}
 
 const fmt = (n) => Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtFecha = (d) => d ? new Date(d + "T12:00:00Z").toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }) : "—";
@@ -36,6 +52,17 @@ export default async function FacturaPublica({ params }) {
   const esHomo = inv.environment !== "produccion";
   const docLbl = inv.doc_tipo === 80 ? "CUIT" : inv.doc_tipo === 96 ? "DNI" : "Documento";
   const items = Array.isArray(inv.items) && inv.items.length > 0 ? inv.items : [{ label: inv.detalle, usd: 0, ars: inv.importe }];
+
+  // Mercaderías de la operación (si la factura salió de una op): lista numerada bajo el detalle.
+  let mercaderias = [];
+  if (inv.operation_id) {
+    try {
+      const mi = await fetch(`${SB_URL}/rest/v1/operation_items?operation_id=eq.${inv.operation_id}&select=description,quantity&order=created_at.asc`, {
+        headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` }, cache: "no-store",
+      }).then((x) => x.json());
+      mercaderias = (Array.isArray(mi) ? mi : []).filter((m) => (m.description || "").trim()).map((m) => `${m.description.trim()}${Number(m.quantity) > 1 ? ` x${Number(m.quantity)}` : ""}`);
+    } catch {}
+  }
 
   const kv = { display: "flex", flexDirection: "column", gap: 2 };
   const kLbl = { fontSize: 9, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#94a3b8" };
@@ -105,12 +132,14 @@ export default async function FacturaPublica({ params }) {
             </div>
             {items.map((it, i) => (
               <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "12px 0", borderBottom: "1px solid #eef2f6", fontSize: 13.5, alignItems: "baseline" }}>
-                <span style={{ fontWeight: 600 }}>{it.label}
-                  {Number(it.usd) > 0 && Number(inv.tc) > 0 && <span style={{ display: "block", fontSize: 10.5, color: "#94a3b8", marginTop: 2, fontWeight: 500 }}>USD {fmt(it.usd)} · Tipo de cambio $ {fmt(inv.tc)}</span>}
-                </span>
+                <span style={{ fontWeight: 600 }}>{it.label}</span>
                 <b style={{ fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", fontSize: 14 }}>$ {fmt(it.ars)}</b>
               </div>
             ))}
+            {mercaderias.length > 0 && <div style={{ marginTop: 12, padding: "10px 14px", background: "#f7f8fa", border: "1px solid #e2e8f0", borderRadius: 10, WebkitPrintColorAdjust: "exact", printColorAdjust: "exact" }}>
+              <p style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#94a3b8", margin: "0 0 5px" }}>Detalle de mercaderías</p>
+              {mercaderias.map((m, i) => <p key={i} style={{ fontSize: 11.5, color: "#334155", margin: "2px 0", lineHeight: 1.45 }}>{i + 1} - {m}</p>)}
+            </div>}
           </div>
 
           {/* Total */}
