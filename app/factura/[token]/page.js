@@ -37,10 +37,20 @@ export default async function FacturaPublica({ params }) {
   const row = { display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12.5, padding: "2px 0" };
   const lbl = { color: "#64748b" };
 
-  return <div style={{ minHeight: "100vh", background: "#e8eaee", padding: "28px 14px 60px", fontFamily: "system-ui,-apple-system,'Segoe UI',sans-serif", color: "#111" }}>
-    <div style={{ maxWidth: 760, margin: "0 auto" }}>
+  return <div className="fac-page" style={{ minHeight: "100vh", background: "#e8eaee", padding: "28px 14px 60px", fontFamily: "system-ui,-apple-system,'Segoe UI',sans-serif", color: "#111" }}>
+    <style>{`
+      @page{size:A4;margin:0}
+      @media print{
+        .fac-page{background:#fff !important;padding:0 !important;min-height:auto !important}
+        .fac-wrap{max-width:none !important}
+        .fac-card{border-radius:0 !important;box-shadow:none !important;min-height:297mm;display:flex;flex-direction:column;padding:10mm 12mm 8mm;box-sizing:border-box}
+        .fac-detalle{flex:1}
+        .fac-foot-url{display:none !important}
+      }
+    `}</style>
+    <div className="fac-wrap" style={{ maxWidth: 760, margin: "0 auto" }}>
       {esHomo && <div style={{ background: "#fef3c7", border: "1px solid #f59e0b", color: "#92400e", borderRadius: 10, padding: "9px 14px", fontSize: 12.5, fontWeight: 700, marginBottom: 12, textAlign: "center" }}>⚠ COMPROBANTE DE PRUEBA (ambiente de homologación de ARCA) — SIN VALOR FISCAL</div>}
-      <div style={{ background: "#fff", borderRadius: 12, overflow: "hidden", boxShadow: "0 10px 40px rgba(0,0,0,0.12)" }}>
+      <div className="fac-card" style={{ background: "#fff", borderRadius: 12, overflow: "hidden", boxShadow: "0 10px 40px rgba(0,0,0,0.12)" }}>
 
         {/* Encabezado */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 64px 1fr", alignItems: "stretch", borderBottom: `3px solid ${NAVY}` }}>
@@ -72,15 +82,24 @@ export default async function FacturaPublica({ params }) {
           <div style={row}><span style={lbl}>Cond. de venta</span><b>Contado</b></div>
         </div>
 
-        {/* Detalle */}
-        <div style={{ padding: "16px 20px 6px" }}>
+        {/* Detalle — una fila por concepto; cada uno con su USD y el TC aplicado */}
+        <div className="fac-detalle" style={{ padding: "16px 20px 6px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "#64748b", borderBottom: "1.5px solid #cbd5e1", paddingBottom: 6 }}>
             <span>Descripción</span><span>Importe</span>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "12px 0 14px", fontSize: 13.5 }}>
-            <span>{inv.detalle}{inv.operations?.operation_code ? ` · Operación ${inv.operations.operation_code}` : ""}</span>
-            <b style={{ fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap" }}>$ {fmt(inv.importe)}</b>
-          </div>
+          {Array.isArray(inv.items) && inv.items.length > 0 ? inv.items.map((it, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "10px 0", borderBottom: "1px solid #f1f5f9", fontSize: 13.5, alignItems: "baseline" }}>
+              <span>{it.label}{inv.operations?.operation_code && i === 0 ? ` · Operación ${inv.operations.operation_code}` : ""}
+                {Number(it.usd) > 0 && Number(inv.tc) > 0 && <span style={{ display: "block", fontSize: 10.5, color: "#94a3b8", marginTop: 2 }}>USD {fmt(it.usd)} · TC $ {fmt(inv.tc)}</span>}
+              </span>
+              <b style={{ fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap" }}>$ {fmt(it.ars)}</b>
+            </div>
+          )) : (
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "12px 0 14px", fontSize: 13.5 }}>
+              <span>{inv.detalle}{inv.operations?.operation_code ? ` · Operación ${inv.operations.operation_code}` : ""}</span>
+              <b style={{ fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap" }}>$ {fmt(inv.importe)}</b>
+            </div>
+          )}
         </div>
 
         {/* Total */}
@@ -101,7 +120,7 @@ export default async function FacturaPublica({ params }) {
           </div>
         </div>
       </div>
-      <p style={{ textAlign: "center", fontSize: 11, color: "#64748b", marginTop: 14 }}>argencargo.com.ar</p>
+      <p className="fac-foot-url" style={{ textAlign: "center", fontSize: 11, color: "#64748b", marginTop: 14 }}>argencargo.com.ar</p>
     </div>
   </div>;
 }

@@ -77,6 +77,9 @@ export async function POST(req) {
       receptor_cond_iva: condIva,
       detalle: String(body.detalle || "Servicios logísticos").slice(0, 500),
       importe,
+      // Conceptos con su USD y el TC aplicado — solo presentación del PDF (el total fiscal es importe).
+      items: Array.isArray(body.items) && body.items.length > 0 ? body.items.slice(0, 12).map((i) => ({ label: String(i.label || "").slice(0, 120), usd: Number(i.usd) || 0, ars: Number(i.ars) || 0 })) : null,
+      tc: Number(body.tc) > 0 ? Number(body.tc) : null,
       status: "pendiente",
     }),
   });
