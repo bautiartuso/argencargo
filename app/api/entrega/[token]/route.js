@@ -29,6 +29,14 @@ function usdCollected(op) {
   return raw;
 }
 
+// RI con entrega directa por courier al domicilio: el link no coordina nada — es
+// detalle + documentos + pago. NULL en ri_entrega_directa = automatico para RI;
+// false = excepcion (ese RI usa el flujo normal); true = forzar.
+function esRiDirecta(op) {
+  if (op.ri_entrega_directa === false) return false;
+  return op.ri_entrega_directa === true || op.clients?.tax_condition === "responsable_inscripto";
+}
+
 function fullAddress(c) {
   const parts = [c.street, c.floor_apt].filter(Boolean).join(", ");
   return [parts, c.city].filter(Boolean).join(", ");
@@ -105,13 +113,14 @@ export async function GET(req, { params }) {
   const op = await loadOpData(token);
   if (!op) return Response.json({ error: "No encontramos esta operación o el link expiró" }, { status: 404 });
 
-  const [pkgsRes, settingsRes, itemsRes, { cfg, localities }, hermanas, pagosOp] = await Promise.all([
+  const [pkgsRes, settingsRes, itemsRes, { cfg, localities }, hermanas, pagosOp, factRes] = await Promise.all([
     sbFetch(`/operation_packages?operation_id=eq.${op.id}&select=package_number,quantity,gross_weight_kg,length_cm,width_cm,height_cm,national_tracking&order=package_number.asc`),
     sbFetch(`/gi_settings?select=office_address,office_locality,office_hours,office_phone,payment_titular,payment_alias,payment_crypto_wallet&limit=1`),
     sbFetch(`/operation_items?operation_id=eq.${op.id}&select=description,quantity,unit_price_usd,import_duty_rate,statistics_rate,iva_rate,iva_additional_rate,iigg_rate,iibb_rate&order=created_at.asc`),
     loadDeliveryPricing(),
     loadHermanas(op).catch(() => []),
     pagosParciales([op.id]).catch(() => ({})),
+    sbFetch(`/invoices?operation_id=eq.${op.id}&status=eq.emitida&select=numero,punto_venta,fecha,importe,public_token&order=created_at.desc`).catch(() => ({ body: [] })),
   ]);
 
   const pkgs = Array.isArray(pkgsRes.body) ? pkgsRes.body : [];
@@ -254,6 +263,12 @@ export async function GET(req, { params }) {
       payment_split: op.payment_split,
       delivery_group_id: op.delivery_group_id,
     },
+    // Modo RI: la carga la entrega el courier en el domicilio — el link es solo pago+docs.
+    modo_ri: esRiDirecta(op),
+    facturas: (Array.isArray(factRes?.body) ? factRes.body : []).map((f) => ({
+      numero: `${String(f.punto_venta).padStart(5, "0")}-${String(f.numero).padStart(8, "0")}`,
+      fecha: f.fecha, importe: Number(f.importe), url: `/factura/${f.public_token}`,
+    })),
     hermanas,
     client: { first_name: client.first_name, last_name: client.last_name, dni: client.dni || "", email: client.email || "", whatsapp: client.whatsapp || "", postal_code: client.postal_code || "", street: client.street || "", floor_apt: client.floor_apt || "", city: client.city || "" },
     tax_detail: taxDetail,
@@ -279,8 +294,43 @@ export async function POST(req, { params }) {
   if (!SB) return Response.json({ error: "Server config missing" }, { status: 500 });
   const { token } = await params;
   let body = null; try { body = await req.json(); } catch {}
-  if (!body || !body.delivery_choice || !body.payment_method) {
+  if (!body || !body.payment_method || (!body.delivery_choice && !body.modo_ri)) {
     return Response.json({ error: "Faltan datos: delivery_choice y payment_method" }, { status: 400 });
+  }
+  // ── Modo RI (entrega directa por courier): solo se registra la forma de pago ──
+  if (body.modo_ri === true) {
+    const opRi = await loadOpData(token);
+    if (!opRi) return Response.json({ error: "No encontramos esta operación o el link expiró" }, { status: 404 });
+    if (!esRiDirecta(opRi)) return Response.json({ error: "Esta operación no es de entrega directa" }, { status: 400 });
+    if (!["efectivo", "transferencia", "crypto"].includes(body.payment_method)) return Response.json({ error: "Método de pago inválido" }, { status: 400 });
+    const pagosRi = await pagosParciales([opRi.id]).catch(() => ({}));
+    const saldoRi = Math.round(saldoOf(opRi, pagosRi[opRi.id]) * 100) / 100;
+    const splitRi = [{ method: body.payment_method, amount: saldoRi }];
+    await sbFetch(`/operations?id=eq.${opRi.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        payment_method_chosen: body.payment_method,
+        payment_split: splitRi,
+        delivery_choice: null, delivery_day: null, delivery_slot: null, delivery_cost_usd: 0,
+        delivery_confirmed_at: new Date().toISOString(),
+      }),
+    });
+    const PLri = { efectivo: "Efectivo", transferencia: "Transferencia en pesos", crypto: "Cripto (USDT)" };
+    sbFetch(`/op_communications`, { method: "POST", body: JSON.stringify({ operation_id: opRi.id, type: "note", direction: "in", content: `✅ Cliente RI (entrega directa por courier) eligió forma de pago: ${PLri[body.payment_method]}\nSaldo: USD ${saldoRi.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` }) }).catch(() => {});
+    const [stgRi, tcRi] = await Promise.all([
+      sbFetch(`/gi_settings?select=payment_crypto_wallet,payment_alias,payment_titular&limit=1`),
+      fetch("https://dolarapi.com/v1/dolares/blue", { next: { revalidate: 300 }, signal: AbortSignal.timeout(2500) }).then((r) => r.ok ? r.json() : null).catch(() => null),
+    ]);
+    const stg0 = Array.isArray(stgRi.body) && stgRi.body[0] ? stgRi.body[0] : {};
+    return Response.json({
+      ok: true, total: saldoRi,
+      transfer: body.payment_method === "transferencia" ? { alias: stg0.payment_alias || "", titular: stg0.payment_titular || "" } : null,
+      crypto_wallet: body.payment_method === "crypto" ? (stg0.payment_crypto_wallet || "") : null,
+      tc_venta: Number(tcRi?.venta) > 0 ? Number(tcRi.venta) : null,
+      delivery_choice: null, delivery_day: null, delivery_slot: null,
+      payment_method: body.payment_method, payment_methods: splitRi,
+      ops_incluidas: [opRi.operation_code],
+    });
   }
   const { delivery_choice, delivery_address, payment_method, delivery_contact, carrier_mode, delivery_day, delivery_slot, cash_amount, cash_currency } = body;
   if (!["oficina", "propio", "carrier"].includes(delivery_choice)) return Response.json({ error: "Entrega inválida" }, { status: 400 });

@@ -217,11 +217,17 @@ export async function POST(req) {
       return Response.json({ error: "trigger inválido" }, { status: 400 });
 
     // Fetch op + client
-    const opArr = await sb(`/rest/v1/operations?id=eq.${op_id}&select=*,clients(id,first_name,last_name,email,whatsapp,skip_review_request)`);
+    const opArr = await sb(`/rest/v1/operations?id=eq.${op_id}&select=*,clients(id,first_name,last_name,email,whatsapp,tax_condition,skip_review_request)`);
     const op = Array.isArray(opArr) ? opArr[0] : null;
     if (!op) return Response.json({ error: "op no encontrada" }, { status: 404 });
     const client = op.clients;
     if (!client?.email) return Response.json({ error: "cliente sin email" }, { status: 400 });
+
+    // RI con entrega directa: el courier entrega en el domicilio — el aviso de "lista para
+    // retirar" no aplica (el link de pago lo dispara el sync de tracking al entregarse).
+    if (trigger === "retiro" && op.ri_entrega_directa !== false && (op.ri_entrega_directa === true || client?.tax_condition === "responsable_inscripto")) {
+      return Response.json({ skipped: "ri_entrega_directa" });
+    }
 
     // Check ya enviado
     const sentKey = `email_${trigger}`;

@@ -73,6 +73,9 @@ export default function EntregaPublica({ params }) {
         setDirLocalidad(d.client?.city || "");
         setDirCP(d.client?.postal_code || "");
         setDirTel(d.client?.whatsapp || "");
+        // Modo RI: el courier ya entrega/entregó en el domicilio — el link es solo
+        // detalle + documentos + pago (sin modalidad, día ni franja).
+        if (d.modo_ri) setPayMethods((p) => p.length ? p : ["transferencia"]);
         // Cargas hermanas: las que todavía no coordinaron arrancan marcadas (lo normal es
         // llevarse todo junto); las ya coordinadas para otro día arrancan sin marcar.
         const herm = Array.isArray(d.hermanas) ? d.hermanas : [];
@@ -90,7 +93,7 @@ export default function EntregaPublica({ params }) {
           let split2 = Array.isArray(d.op.payment_split) ? d.op.payment_split : null;
           if (split2 && split2.length === 1 && delGrupo.length) split2 = [{ ...split2[0], amount: Math.round(saldo2 * 100) / 100 }];
           const metodos2 = split2 ? split2.map((p) => p.method) : (d.op.payment_method_chosen ? [d.op.payment_method_chosen] : []);
-          if (d.op.delivery_choice) setDelivery(d.op.delivery_choice);
+          if (d.modo_ri) setDelivery("ri"); else if (d.op.delivery_choice) setDelivery(d.op.delivery_choice);
           if (d.op.delivery_day) setDiaEntrega(d.op.delivery_day);
           if (d.op.delivery_slot) setFranjaEntrega(d.op.delivery_slot);
           if (metodos2.length) setPayMethods([metodos2[0]]);
@@ -150,6 +153,8 @@ export default function EntregaPublica({ params }) {
   if (!data) return null;
 
   const { op, client, cargo, delivery: deliveryInfo } = data;
+  const modoRi = !!data.modo_ri;
+  const facturas = Array.isArray(data.facturas) ? data.facturas : [];
   const isBlanco = op.channel?.includes("blanco");
   const inferredZone = deliveryInfo.inferred_zone;
   const hasPropio = deliveryInfo.price != null;
@@ -171,6 +176,7 @@ export default function EntregaPublica({ params }) {
 
   // Devuelve el motivo por el que no se puede avanzar, o null si está todo bien.
   const validarEntrega = () => {
+    if (modoRi) return null; // entrega el courier: no hay nada que coordinar
     if (delivery === "carrier") {
       if (!carrierMode) return "Elegí si lo recibís en sucursal o en tu domicilio.";
       if (!contacto.nombre.trim() || !contacto.apellido.trim()) return "Completá nombre y apellido de quien recibe.";
@@ -205,7 +211,8 @@ export default function EntregaPublica({ params }) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        delivery_choice: delivery,
+        modo_ri: modoRi || undefined,
+        delivery_choice: modoRi ? null : delivery,
         delivery_address: delivery === "propio" ? [dirCalle.trim(), dirPiso.trim(), dirLocalidad.trim(), dirCP.trim() ? `CP ${dirCP.trim()}` : ""].filter(Boolean).join(", ") : null,
         payment_method: payMethods[0],
         payment_methods: splitCliente.map((p) => p.method === "efectivo" ? { ...p, currency: cashCurrencyMode, ...(cashCurrencyMode === "mixto" ? { usd_part: Number(String(cashMixUsd).replace(",", ".")) || 0, ars_part: Number(String(cashMixArs).replace(",", ".")) || 0 } : {}) } : p),
@@ -224,7 +231,7 @@ export default function EntregaPublica({ params }) {
     setConfirmed(d);
   };
 
-  if (confirmed) return <ConfirmedView data={confirmed} delivery={delivery} clientName={clientName} op={op} cargo={cargo} taxDetail={data.tax_detail} isBlanco={isBlanco} onEdit={() => { setConfirmed(null); setPaso(2); }} />;
+  if (confirmed) return <ConfirmedView data={confirmed} delivery={modoRi ? "ri" : delivery} clientName={clientName} op={op} cargo={cargo} taxDetail={data.tax_detail} isBlanco={isBlanco} onEdit={() => { setConfirmed(null); setPaso(data.modo_ri ? 3 : 2); }} />;
 
   return <div style={pageStyle()}>
     <div style={cardStyle()}>
@@ -243,6 +250,9 @@ export default function EntregaPublica({ params }) {
 
       <div style={{ padding: "22px 24px 26px", display: "flex", flexDirection: "column", gap: 16, background: CREAM, color: INK }}>
         {paso===1&&<>
+        {modoRi&&<div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "12px 15px", borderRadius: 11, background: "#eaf6ef", border: "1px solid rgba(30,125,79,.25)", color: "#1e5c3d", fontSize: 12.5, lineHeight: 1.5, fontWeight: 600 }}>
+          <span style={{ fontSize: 16 }}>📦</span><span>Tu carga {op.status === "entregada" ? "fue entregada" : "se entrega"} directamente en tu domicilio por el courier internacional — no hace falta coordinar nada. Acá tenés el detalle completo, la documentación y los datos para abonar.</span>
+        </div>}
         {/* 01 — carga */}
         <div style={stepStyle()}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12 }}><span style={stepNStyle()}>01</span><span style={stepTitleStyle()}>Tu carga</span></div>
@@ -274,17 +284,24 @@ export default function EntregaPublica({ params }) {
             </>}
             {op.budget_seguro > 0 && <div style={{ ...rowStyle(), borderBottom: "none" }}><span>Seguro de Carga</span><span style={rowValStyle()}>{fmt(op.budget_seguro)}</span></div>}
           </div>}
+          {facturas.length > 0 && <>
+            <p style={{ ...factLblStyle(), margin: "12px 0 6px" }}>📄 Documentos</p>
+            {facturas.map((f, i) => <a key={i} href={f.url} target="_blank" rel="noopener" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 9, border: `1px solid ${LINE}`, background: "#fff", textDecoration: "none", marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: INK }}>🧾 Factura {f.numero}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: GOLD_A }}>ver / descargar →</span>
+            </a>)}
+          </>}
           {cargo.tracking.length > 0 && <>
             <p style={{ ...factLblStyle(), margin: "12px 0 6px" }}>Tracking</p>
             <div style={{ fontFamily: "'SF Mono','JetBrains Mono',monospace", fontSize: 12, color: INK, lineHeight: 1.9 }}>
               {cargo.tracking.map((t, i) => <div key={i}>– {t}</div>)}
             </div>
           </>}
-          {paso===1&&hermanas.length===0&&<button onClick={()=>setPaso(2)} style={nextBtnStyle()}>Continuar →</button>}
+          {paso===1&&(hermanas.length===0||modoRi)&&<button onClick={()=>setPaso(modoRi?3:2)} style={nextBtnStyle()}>Continuar →</button>}
         </div>
 
         {/* Cargas hermanas: coordinar todo en una sola visita, o destildar las que no se lleva hoy. */}
-        {hermanas.length>0&&<div style={stepStyle()}>
+        {hermanas.length>0&&!modoRi&&<div style={stepStyle()}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 6 }}><span style={stepNStyle()}>+</span><span style={stepTitleStyle()}>También tenés {hermanas.length === 1 ? "otra carga lista" : `${hermanas.length} cargas más listas`}</span></div>
           <p style={{ fontSize: 11, color: MUTED, margin: "0 0 10px", lineHeight: 1.5 }}>Podés coordinar todo en una sola visita — destildá las que no quieras incluir ahora.</p>
           {hermanas.map((h) => {
@@ -377,7 +394,7 @@ export default function EntregaPublica({ params }) {
           <div style={{ padding: "15px 17px", borderRadius: 11, background: `linear-gradient(135deg,${GOLD_A},${GOLD_B})`, color: NAVY, display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 5px 16px rgba(184,149,106,0.25)" }}>
             <div>
               <p style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase" }}>Total a abonar</p>
-              <p style={{ fontSize: 10, fontWeight: 600, color: "rgba(10,22,40,0.65)", marginTop: 2 }}>{CHANNEL_NAME[op.channel] || op.channel} · {delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${inferredZone}` : "Envío por transportista"}</p>
+              <p style={{ fontSize: 10, fontWeight: 600, color: "rgba(10,22,40,0.65)", marginTop: 2 }}>{CHANNEL_NAME[op.channel] || op.channel} · {modoRi ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${inferredZone}` : "Envío por transportista"}</p>
             </div>
             {(() => {
               const todoEnPesos = payMethods.length === 1 && tcVenta > 0 && (payMethods[0] === "transferencia" || (payMethods[0] === "efectivo" && cashCurrencyMode === "ARS"));
@@ -395,9 +412,10 @@ export default function EntregaPublica({ params }) {
 
           {(()=>{
             const elegir = (m) => setPayMethods([m]);
+            const soloRemoto = modoRi; // courier entrega: el pago es remoto (transferencia/cripto)
             return <div style={{ marginTop: 12 }}>
               <p style={{ fontSize: 11.5, fontWeight: 700, color: INK, margin: "0 0 9px" }}>¿Cómo querés pagar?</p>
-              <OptRow selected={payMethods.includes("efectivo")} onClick={() => !efectivoBlocked && elegir("efectivo")} label="Efectivo" meta={efectivoBlocked ? "No disponible para envíos con transportista" : "En dólares o pesos, al retirar o recibir"} disabled={efectivoBlocked} />
+              {!soloRemoto && <OptRow selected={payMethods.includes("efectivo")} onClick={() => !efectivoBlocked && elegir("efectivo")} label="Efectivo" meta={efectivoBlocked ? "No disponible para envíos con transportista" : "En dólares o pesos, al retirar o recibir"} disabled={efectivoBlocked} />}
               <OptRow selected={payMethods.includes("transferencia")} onClick={() => elegir("transferencia")} label="Transferencia en pesos" meta={payMethods.includes("transferencia") && tcVenta > 0 ? `Pagás ARS ${Math.round(total * tcVenta).toLocaleString("es-AR")}` : "El importe se pasa a pesos automáticamente"} />
               <OptRow selected={payMethods.includes("crypto")} onClick={() => elegir("crypto")} label="Cripto (USDT)" meta="Red TRC-20 · te pasamos la billetera por WhatsApp" />
 
@@ -433,9 +451,9 @@ export default function EntregaPublica({ params }) {
         </div>
 
         {formError && <ErrorBanner msg={formError} />}
-        <button onClick={()=>setPaso(2)} style={{...backBtnStyle(), width: "100%", marginBottom: -4}}>← Volver a la forma de entrega</button>
+        <button onClick={()=>setPaso(modoRi?1:2)} style={{...backBtnStyle(), width: "100%", marginBottom: -4}}>← Volver{modoRi?"":" a la forma de entrega"}</button>
         <button onClick={confirm} disabled={confirming} style={ctaStyle(confirming)}>{confirming ? "Confirmando…" : "Confirmar y avisar a Argencargo"}</button>
-        <p style={{ textAlign: "center", fontSize: 10.5, color: MUTED, margin: "-8px 0 0" }}>Al confirmar, un asesor coordina el retiro o el envío por WhatsApp.</p>
+        <p style={{ textAlign: "center", fontSize: 10.5, color: MUTED, margin: "-8px 0 0" }}>{modoRi ? "Al confirmar registramos tu forma de pago — cualquier duda te respondemos por WhatsApp." : "Al confirmar, un asesor coordina el retiro o el envío por WhatsApp."}</p>
         </>}
       </div>
 
@@ -549,14 +567,14 @@ function ConfirmedView({ data, delivery, clientName, op, cargo, taxDetail, isBla
     ? split.map((p) => `${L[p.method] || p.method} (${montoTxt(p)})`).join(" + ")
     : split && split[0] ? `${L[split[0].method]}${split[0].currency === "ARS" ? " en pesos" : split[0].currency === "mixto" ? " (USD + ARS)" : ""}` : (L[data.payment_method] || data.payment_method);
   const transfPart = split ? split.find((p) => p.method === "transferencia") : null;
-  const entregaLabel = delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${data.delivery_zone || ""}` : "Envío por transportista";
+  const entregaLabel = delivery === "ri" ? "Entrega a domicilio por courier" : delivery === "oficina" ? "Retiro por oficina" : delivery === "propio" ? `Envío a domicilio · ${data.delivery_zone || ""}` : "Envío por transportista";
   const [verDetalle, setVerDetalle] = useState(false);
   const rowS = { display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${LINE}`, gap: 12 };
   return <div style={pageStyle()}>
     <div style={{ maxWidth: 480, width: "100%", padding: "32px 28px", background: CREAM, color: INK, borderRadius: 16, boxShadow: "0 24px 80px rgba(0,0,0,0.55)" }}>
       <div style={{ textAlign: "center", marginBottom: 18 }}>
         <div style={{ width: 52, height: 52, borderRadius: "50%", background: "linear-gradient(135deg,#22c55e,#16a34a)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 26, color: "#fff", marginBottom: 10 }}>✓</div>
-        <p style={{ fontSize: 17, fontWeight: 800, margin: "0 0 4px", letterSpacing: "-0.01em" }}>¡Listo, ya coordinaste {delivery === "oficina" ? "tu retiro" : delivery === "propio" ? "tu entrega" : "tu envío"}!</p>
+        <p style={{ fontSize: 17, fontWeight: 800, margin: "0 0 4px", letterSpacing: "-0.01em" }}>{delivery === "ri" ? "¡Listo! Acá tenés todo para abonar" : `¡Listo, ya coordinaste ${delivery === "oficina" ? "tu retiro" : delivery === "propio" ? "tu entrega" : "tu envío"}!`}</p>
       </div>
       <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: "14px 16px", marginBottom: 12 }}>
         <p style={{ fontSize: 12, fontWeight: 800, margin: "0 0 10px" }}>Resumen</p>

@@ -1,7 +1,7 @@
 # Bot de entregas por WhatsApp — guía de encendido
 
 Todo el bot ya está programado y deployado. Para encenderlo solo hay que conectarle
-el número de WhatsApp (cuenta de Meta) y cargar 4 plantillas. Nada más.
+el número de WhatsApp (cuenta de Meta) y cargar 5 plantillas. Nada más.
 
 ## Cómo funciona (resumen)
 
@@ -44,7 +44,7 @@ desconocidos, confirmar pagos, transportista externo.
 
 ## Paso 2 — Plantillas (Meta → WhatsApp Manager → Message templates)
 
-Crear estas 4, categoría **Utility**, idioma **Spanish (ARG)** (`es_AR`), con estos
+Crear estas 5, categoría **Utility**, idioma **Spanish (ARG)** (`es_AR`), con estos
 nombres y cuerpos EXACTOS (las `{{n}}` las completa el sistema):
 
 **`carga_lista`**
@@ -72,6 +72,14 @@ nombres y cuerpos EXACTOS (las `{{n}}` las completa el sistema):
 > En caso de que no se realice el pago, empezará a regir un *costo de almacenaje de USD 0,5 diarios por kg*.
 >
 > Si abonás el saldo, te la almacenamos sin cargo todo el tiempo que necesites. Coordiná y aboná acá: {{3}}
+
+**`ri_entregada`** *(solo clientes RI con entrega directa por courier)*
+> Hola {{1}}! 📦
+>
+> Tu carga de {{2}} ya fue entregada en tu domicilio.
+>
+> Acá tenés el detalle completo, la documentación y los datos para abonar:
+> {{3}}
 
 **`coordinacion_confirmada`**
 > {{1}}, quedó coordinada tu entrega de {{2}} ✅ {{3}}. Total a abonar: {{4}}. {{5}} Si necesitás cambiar el día, el horario o la forma de pago, respondé este mensaje.

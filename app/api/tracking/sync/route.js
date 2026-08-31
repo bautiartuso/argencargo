@@ -147,6 +147,42 @@ async function applyEventsToOp(op, route, d) {
     if (m) patch.eta = m[1];
   }
 
+  // RI con entrega directa: el courier (DHL/FedEx/UPS) entrega en el domicilio del cliente,
+  // asi que al detectar la entrega real: (1) la op queda ENTREGADA en el sistema (pasa
+  // directo a "A cobrar" del panel — no hay nada que coordinar) y (2) el bot dispara el
+  // link con el detalle, la documentacion y los datos para abonar. Dedup por
+  // sent_notifications.wa_ri_entregada.
+  if (d.actualDelivery) {
+    try {
+      const rFull = await fetch(`${SB_URL}/rest/v1/operations?id=eq.${op.id}&select=id,operation_code,description,delivery_public_token,delivery_completed_at,ri_entrega_directa,sent_notifications,clients(first_name,tax_condition,whatsapp)`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+      const full = (await rFull.json())?.[0];
+      const esRiDirecta = full && full.ri_entrega_directa !== false && (full.ri_entrega_directa === true || full.clients?.tax_condition === "responsable_inscripto");
+      if (esRiDirecta) {
+        const upd = {};
+        if (!full.delivery_completed_at) {
+          const m2 = String(d.actualDelivery).match(/^(\d{4}-\d{2}-\d{2})/);
+          upd.delivery_completed_at = m2 ? `${m2[1]}T12:00:00Z` : new Date().toISOString();
+        }
+        if (!full.sent_notifications?.wa_ri_entregada && full.clients?.whatsapp && full.delivery_public_token) {
+          const { sendWaTemplate, waConfigured } = await import("../../../../lib/wa");
+          if (waConfigured()) {
+            const carga = full.description ? `${full.description} (${full.operation_code})` : full.operation_code;
+            const link = `${BASE_URL}/retiro/${full.delivery_public_token}`;
+            const wres = await sendWaTemplate(full.clients.whatsapp, "ri_entregada", [full.clients.first_name || "Hola", carga, link]);
+            if (wres?.ok) upd.sent_notifications = { ...(full.sent_notifications || {}), wa_ri_entregada: new Date().toISOString() };
+          }
+        }
+        if (Object.keys(upd).length) {
+          await fetch(`${SB_URL}/rest/v1/operations?id=eq.${op.id}`, {
+            method: "PATCH",
+            headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+            body: JSON.stringify(upd),
+          });
+        }
+      }
+    } catch (e) { console.error("[sync] ri_entrega_directa hook failed", e.message); }
+  }
+
   // Las transiciones de status (en_transito → arribo_argentina → en_aduana → entregada)
   // se manejan en DB vía la función SQL auto_update_op_statuses() que corre con pg_cron
   // cada 15 min. Esa lógica se basa en la ubicación de los tracking_events (detecta

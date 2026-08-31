@@ -4630,7 +4630,7 @@ function EntregasPanel({token,onOpenOp}){
   //      pierden de vista al marcarlas entregadas, como pasaba antes.
   const load=async()=>{
     setLo(true);
-    const sel="id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,street,floor_apt,city,province,postal_code)";
+    const sel="id,operation_code,channel,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code)";
     const [pend,entr,done]=await Promise.all([
       dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${sel}&order=eta.desc`}),
       dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.false&select=${sel}&order=delivery_completed_at.desc&limit=200`}).catch(()=>[]),
@@ -5001,8 +5001,9 @@ function EntregasPanel({token,onOpenOp}){
 
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
 
-  const sinAviso=sinConfirmar.filter(o=>!o.delivery_ready_at);
-  const esperando=sinConfirmar.filter(o=>o.delivery_ready_at);
+  const esRiDir=o=>o.ri_entrega_directa!==false&&(o.ri_entrega_directa===true||o.clients?.tax_condition==="responsable_inscripto");
+  const sinAviso=sinConfirmar.filter(o=>!o.delivery_ready_at&&!esRiDir(o));
+  const esperando=sinConfirmar.filter(o=>o.delivery_ready_at&&!esRiDir(o));
   const hechasFiltradas=hechas.filter(matchesQ);
 
   const tabBtn=(k,l,n,color)=><button onClick={()=>setTab(k)} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${tab===k?GOLD:"rgba(255,255,255,0.12)"}`,background:tab===k?"rgba(184,149,106,0.14)":"transparent",color:tab===k?GOLD_LIGHT:"rgba(255,255,255,0.55)",whiteSpace:"nowrap"}}>{l}{n>0&&<span style={{marginLeft:6,fontSize:10.5,fontWeight:800,padding:"1px 7px",borderRadius:8,background:color||"rgba(255,255,255,0.1)",color:color?"#0F1F3A":"rgba(255,255,255,0.6)"}}>{n}</span>}</button>;
