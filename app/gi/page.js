@@ -443,7 +443,7 @@ function PaneQuotes({token,profileId}){
     const base=((first.substring(0,3)+(partes[1]||first).substring(0,3)).toUpperCase().normalize("NFD").replace(/[^A-Z0-9]/g,"")||"PROSPE").padEnd(6,"X");
     let creado=null;
     for(const code of [base,...[2,3,4,5,6,7,8,9].map(n=>base.slice(0,5)+n)]){
-      const r=await dq("clients",{method:"POST",token,body:{first_name:first,last_name:last,client_code:code,gi_partner_id:profileId,whatsapp:"",email:"",street:"",postal_code:"",city:"",province:"",tax_condition:"ninguna"},headers:{Prefer:"return=representation"}});
+      const r=await dq("clients",{method:"POST",token,body:{first_name:first,last_name:last,client_code:code,gi_partner_id:profileId,whatsapp:"—",email:"—",street:"—",postal_code:"—",city:"—",province:"—",tax_condition:"ninguna"},headers:{Prefer:"return=representation"}});
       const row=Array.isArray(r)?r[0]:r;
       if(row?.id){creado=row;break;}
       if(!String(row?.message||"").includes("duplicate"))break; // otro error: no insistir
