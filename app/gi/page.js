@@ -432,6 +432,28 @@ function PaneQuotes({token,profileId}){
     return <CotizadorWizard token={token} requestId={wizardId} profileId={profileId} onBack={()=>{setWizardId(null);setSelDetail(null);load();}}/>;
   }
 
+  // Prospecto nuevo (no registrado): ficha mínima con el nombre, asignada a este socio
+  // (gi_partner_id) — así entra a su cartera y todo el flujo posterior funciona igual.
+  const crearProspecto=async()=>{
+    const raw=newClientSearch.trim();
+    if(!raw||newSaving)return;
+    setNewSaving(true);
+    const partes=raw.split(/\s+/);
+    const first=partes[0];const last=partes.slice(1).join(" ")||"—";
+    const base=((first.substring(0,3)+(partes[1]||first).substring(0,3)).toUpperCase().normalize("NFD").replace(/[^A-Z0-9]/g,"")||"PROSPE").padEnd(6,"X");
+    let creado=null;
+    for(const code of [base,...[2,3,4,5,6,7,8,9].map(n=>base.slice(0,5)+n)]){
+      const r=await dq("clients",{method:"POST",token,body:{first_name:first,last_name:last,client_code:code,gi_partner_id:profileId,whatsapp:"",email:"",street:"",postal_code:"",city:"",province:"",tax_condition:"ninguna"},headers:{Prefer:"return=representation"}});
+      const row=Array.isArray(r)?r[0]:r;
+      if(row?.id){creado=row;break;}
+      if(!String(row?.message||"").includes("duplicate"))break; // otro error: no insistir
+    }
+    setNewSaving(false);
+    if(!creado){alert("No se pudo crear el cliente nuevo.");return;}
+    setClients(p=>[...p,creado].sort((a,b)=>String(a.first_name).localeCompare(String(b.first_name))));
+    selectClient(creado);
+  };
+
   const startDirectQuote=async()=>{
     if(!newClientId){alert("Seleccioná un cliente");return;}
     setNewSaving(true);
@@ -497,16 +519,17 @@ function PaneQuotes({token,profileId}){
 
     {creatingNew&&<div style={{marginTop:18,marginBottom:18,padding:18,background:"rgba(184,149,106,0.06)",border:"1.5px solid rgba(184,149,106,0.3)",borderRadius:12}}>
       <h3 style={{fontSize:13,fontWeight:700,color:GOLD_LIGHT,textTransform:"uppercase",letterSpacing:"0.1em",margin:"0 0 12px"}}>Nueva cotización directa</h3>
-      <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",marginBottom:14}}>Empezás directo sin esperar al admin. Elegí el cliente (debe estar registrado en Argencargo) y arrancás el wizard.</p>
+      <p style={{fontSize:11.5,color:"rgba(255,255,255,0.6)",marginBottom:14}}>Empezás directo sin esperar al admin. Buscá el cliente — y si todavía no está registrado, escribí su nombre y crealo al toque desde acá.</p>
       <div style={{display:"grid",gridTemplateColumns:"1fr 200px",gap:10,alignItems:"end"}}>
         <div style={{position:"relative"}}>
           <label style={lblStyle()}>Cliente</label>
           <input value={newClientSearch} onChange={e=>{setNewClientSearch(e.target.value);setNewClientId("");setShowClientList(true);}} onFocus={()=>setShowClientList(true)} placeholder="Buscar por nombre o código..." style={{...inpStyle(),padding:"9px 12px",fontSize:13,border:`1px solid ${newClientId?"rgba(34,197,94,0.4)":"rgba(255,255,255,0.12)"}`}}/>
-          {showClientList&&filteredClients.length>0&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,maxHeight:240,overflowY:"auto",zIndex:50,boxShadow:"0 12px 30px rgba(0,0,0,0.5)"}}>
+          {showClientList&&(filteredClients.length>0||newClientSearch.trim().length>2)&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,background:"#142038",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,maxHeight:240,overflowY:"auto",zIndex:50,boxShadow:"0 12px 30px rgba(0,0,0,0.5)"}}>
             {filteredClients.map(c=><button key={c.id} onClick={()=>selectClient(c)} style={{width:"100%",textAlign:"left",padding:"9px 12px",fontSize:12.5,background:"transparent",border:"none",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:"inherit"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(184,149,106,0.08)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
               <strong>{`${c.first_name||""} ${c.last_name||""}`.trim()}</strong>
               <span style={{fontFamily:"monospace",fontSize:10.5,color:GOLD_LIGHT}}>{c.client_code||""}</span>
             </button>)}
+            {newClientSearch.trim().length>2&&!newClientId&&<button onClick={crearProspecto} disabled={newSaving} style={{width:"100%",textAlign:"left",padding:"10px 12px",fontSize:12.5,background:"rgba(34,197,94,0.06)",border:"none",borderTop:"1px solid rgba(255,255,255,0.08)",cursor:"pointer",color:"#4ade80",fontWeight:700,fontFamily:"inherit"}}>{newSaving?"Creando…":`➕ Crear cliente nuevo: “${newClientSearch.trim()}”`}</button>}
           </div>}
         </div>
         <div style={{display:"flex",gap:8,alignItems:"end",height:"100%"}}>
