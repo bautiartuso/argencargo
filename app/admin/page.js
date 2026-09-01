@@ -5121,6 +5121,13 @@ function EntregaTab({op,opClient,token,onMarkDelivered,onReload}){
   const [wallet,setWallet]=useState("");
   const [guardando,setGuardando]=useState(false);
   const [costoEnvio,setCostoEnvio]=useState("");
+  // Cobros parciales registrados: sin esto la card mostraba el total entero aunque el
+  // cliente ya hubiera pagado parte (ej: pagó 1.150 de 1.152,74 → hay que pasarle 2,74).
+  const [cliPagos,setCliPagos]=useState(0);
+  useEffect(()=>{(async()=>{
+    const r=await dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=amount_usd`});
+    setCliPagos((Array.isArray(r)?r:[]).reduce((a,p)=>a+Number(p.amount_usd||0),0));
+  })();},[op.id,op.collected_amount,token]);
   const usd=v=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const retiroLink=op.delivery_public_token?`https://argencargo.com.ar/retiro/${op.delivery_public_token}`:null;
   useEffect(()=>{
@@ -5139,7 +5146,8 @@ function EntregaTab({op,opClient,token,onMarkDelivered,onReload}){
   }
 
   const bt=Number(op.budget_total||0);
-  const total=Math.round(Math.max(0,bt+Number(op.debt_applied_usd||0)-Number(op.total_anticipos||0)-usdCollected(op)-Number(op.credit_applied_usd||0))*100)/100;
+  const collectedReal=cliPagos>0?cliPagos:usdCollected(op);
+  const total=Math.round(Math.max(0,bt+Number(op.debt_applied_usd||0)-Number(op.total_anticipos||0)-collectedReal-Number(op.credit_applied_usd||0)-Number(op.discount_applied_usd||0))*100)/100;
   const deliveryCost=Number(op.delivery_cost_usd||0);
   const isTransferencia=op.payment_method_chosen==="transferencia";
   const isCrypto=op.payment_method_chosen==="crypto";
