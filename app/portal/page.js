@@ -2720,6 +2720,7 @@ function ReferralsPage({token,client}){
 // Sección "Tu carga marítima en camino": cargas que ya están en un contenedor pero
 // todavía no son operación. Solo lectura, sin precio. No muestra naviera ni N° de contenedor.
 function MaritimeCargoSection({cargo}){
+  const [openId,setOpenId]=useState(null); // card con el detalle de bultos desplegado
   if(!cargo||cargo.length===0)return null;
   const fmtD=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"}):"—";
   const statusChip=(c)=>c.container_status==="arribado"
@@ -2751,6 +2752,23 @@ function MaritimeCargoSection({cargo}){
             <p style={{fontSize:10,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>Sujeto a confirmación al arribo</p>
           </div>
           <span style={{fontSize:19,fontWeight:800,color:"#4ade80",fontVariantNumeric:"tabular-nums"}}>USD {Number(c.total_estimado).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        </div>}
+        {Array.isArray(c.bultos_detalle)&&c.bultos_detalle.length>0&&<div style={{marginTop:12}}>
+          <button onClick={()=>setOpenId(openId===c.id?null:c.id)} style={{width:"100%",padding:"9px 12px",fontSize:12,fontWeight:700,borderRadius:9,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.06)",color:"#93c5fd",cursor:"pointer",fontFamily:"inherit"}}>
+            📦 {openId===c.id?"Ocultar detalle de bultos ▲":"Ver detalle de bultos ▼"}
+          </button>
+          {openId===c.id&&<div style={{marginTop:8,background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"4px 12px"}}>
+            {c.bultos_detalle.map((b,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"8px 0",borderBottom:i<c.bultos_detalle.length-1?"1px solid rgba(255,255,255,0.05)":"none",flexWrap:"wrap"}}>
+              <div style={{minWidth:0}}>
+                <p style={{fontSize:12.5,fontWeight:700,color:"#fff",margin:0}}>Bulto {b.n||i+1}{b.qty>1?` · ×${b.qty}`:""}{b.label?<span style={{fontWeight:500,color:"rgba(255,255,255,0.5)"}}> · {b.label}</span>:""}</p>
+                {b.carga&&c.descriptions?.length>1&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"1px 0 0"}}>{b.carga}</p>}
+              </div>
+              <div style={{textAlign:"right",whiteSpace:"nowrap"}}>
+                <p style={{fontSize:12.5,fontWeight:700,color:"#93c5fd",margin:0,fontVariantNumeric:"tabular-nums"}}>{b.dims||"—"}</p>
+                {b.cbm>0&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"1px 0 0",fontVariantNumeric:"tabular-nums"}}>{b.cbm.toFixed(4)} m³</p>}
+              </div>
+            </div>)}
+          </div>}
         </div>}
         {c.transbordo&&<div style={{marginTop:12,padding:"9px 12px",background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.25)",borderRadius:9,display:"flex",alignItems:"center",gap:9}}>
           <span style={{fontSize:16}}>🔄</span>

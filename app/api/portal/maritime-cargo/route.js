@@ -73,16 +73,22 @@ export async function GET(req) {
   const shipIds = list.map(s => s.id);
   const [conts, pkgs, its] = await Promise.all([
     contIds.length ? svc(`/rest/v1/maritime_containers?id=in.(${contIds.join(",")})&select=id,eta,status,transbordo_dias,transbordo_lugar`) : Promise.resolve([]),
-    svc(`/rest/v1/maritime_packages?shipment_id=in.(${shipIds.join(",")})&select=shipment_id,quantity,cbm`),
+    svc(`/rest/v1/maritime_packages?shipment_id=in.(${shipIds.join(",")})&select=shipment_id,bulto_number,label,length_cm,width_cm,height_cm,quantity,cbm&order=bulto_number.asc`),
     svc(`/rest/v1/maritime_items?shipment_id=in.(${shipIds.join(",")})&select=shipment_id,unit_price_usd,quantity`),
   ]);
   const contMap = {};
   (Array.isArray(conts) ? conts : []).forEach(c => { contMap[c.id] = c; });
 
-  const bultos = {}, cbmByShip = {};
+  const bultos = {}, cbmByShip = {}, pkgsByShip = {};
   (Array.isArray(pkgs) ? pkgs : []).forEach(p => {
     bultos[p.shipment_id] = (bultos[p.shipment_id] || 0) + Number(p.quantity || 1);
     cbmByShip[p.shipment_id] = (cbmByShip[p.shipment_id] || 0) + Number(p.cbm || 0);
+    // Detalle por bulto para la card expandible del portal (solo datos del propio cliente).
+    (pkgsByShip[p.shipment_id] = pkgsByShip[p.shipment_id] || []).push({
+      n: p.bulto_number, label: p.label || null,
+      dims: (p.length_cm && p.width_cm && p.height_cm) ? `${Number(p.length_cm)}×${Number(p.width_cm)}×${Number(p.height_cm)} cm` : null,
+      qty: Number(p.quantity || 1), cbm: Number(p.cbm || 0),
+    });
   });
 
   // FOB por carga, para el recargo por valor (mismo criterio que el panel admin).
@@ -118,6 +124,7 @@ export async function GET(req) {
       groups[cid] = {
         id: cid,
         descriptions: [],
+        bultos_detalle: [],
         bultos: 0,
         _cbm: 0,
         _fob: 0,
@@ -129,6 +136,7 @@ export async function GET(req) {
       };
     }
     if (s.product_description) groups[cid].descriptions.push(s.product_description);
+    (pkgsByShip[s.id] || []).forEach(pk => groups[cid].bultos_detalle.push({ ...pk, carga: s.product_description || null }));
     groups[cid].bultos += (bultos[s.id] || 0);
     groups[cid]._cbm += (cbmByShip[s.id] || 0);
     groups[cid]._fob += (fobByShip[s.id] || 0);
