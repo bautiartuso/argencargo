@@ -215,6 +215,10 @@ const I18N={
     total_weight:"Peso total (kg)",
     total_cost:"Costo total (USD)",
     fact_weight:"Peso facturable",
+    dispatch_photo:"Foto del desglose de bultos",
+    dispatch_photo_hint:"Subí la captura del sistema del courier con el peso y las medidas de cada bulto",
+    photo_ok:"Foto cargada ✓",
+    photo_change:"Cambiar foto",
     fact_note:"Peso facturable (vol > bruto) · usado para $/kg y reparto",
     rate_note:"Tarifa resultante (todo incluido)",
     ow_short:"Sobrepeso",
@@ -479,6 +483,10 @@ const I18N={
     total_weight:"总重量 (公斤)",
     total_cost:"总费用 (美元)",
     fact_weight:"计费重量",
+    dispatch_photo:"包裹明细截图",
+    dispatch_photo_hint:"上传快递系统中每件包裹重量和尺寸的截图",
+    photo_ok:"已上传 ✓",
+    photo_change:"更换图片",
     fact_note:"计费重量（体积重 > 实重）· 用于 $/kg 与分摊",
     rate_note:"最终费率（全包）",
     ow_short:"超重",
@@ -1172,6 +1180,17 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
   const [confirmDispatch,setConfirmDispatch]=useState(false);
+  // Captura del sistema del courier con el desglose por bulto (peso/medidas reales):
+  // constancia cuando el agente reembala sin avisar.
+  const [dispatchPhotoUrl,setDispatchPhotoUrl]=useState(flight.dispatch_photo_url||"");
+  const [subiendoFoto,setSubiendoFoto]=useState(false);
+  const subirFotoDespacho=async(file)=>{
+    if(!file)return;
+    setSubiendoFoto(true);
+    const url=await uploadPackagePhoto(file,token);
+    if(url)setDispatchPhotoUrl(url);
+    setSubiendoFoto(false);
+  };
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
   const usdF=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   useEffect(()=>{(async()=>{const r=await dq("flight_invoice_items",{token,filters:`?flight_id=eq.${flight.id}&select=*&order=sort_order.asc`});setInvoiceItems(Array.isArray(r)?r:[]);})();},[flight.id,token]);
@@ -1278,7 +1297,7 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
     const w=kgParaCosto,c=computedCost;
     const isAlibaba=pmtMethod==="alibaba";
     // Para Alibaba: el costo es PROVISIONAL (sin comisiones todavía). Admin completa después método tarjeta y se recalcula.
-    const flightPatch={total_weight_kg:w,total_cost_usd:c,cost_per_kg_usd:Number(String(costPerKg).replace(",","."))||null,cost_battery:costBattery,cost_brand:costBrand,cost_overweight_pieces:costOverweight?1:0,international_tracking:tracking,international_carrier:carrier,payment_method:pmtMethod,status:"despachado",dispatched_at:new Date().toISOString()};
+    const flightPatch={total_weight_kg:w,total_cost_usd:c,cost_per_kg_usd:Number(String(costPerKg).replace(",","."))||null,cost_battery:costBattery,cost_brand:costBrand,cost_overweight_pieces:costOverweight?1:0,international_tracking:tracking,international_carrier:carrier,payment_method:pmtMethod,dispatch_photo_url:dispatchPhotoUrl||null,status:"despachado",dispatched_at:new Date().toISOString()};
     if(isAlibaba){flightPatch.awaiting_alibaba_payment=true;flightPatch.alibaba_base_cost_usd=c;}
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:flightPatch});
     // 2. Distribuir costo según peso FACTURABLE (max bruto vs volumétrico) de cada op.
@@ -1451,6 +1470,19 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
             </select>
           </div>
           <div style={{gridColumn:"1 / -1"}}><Inp label={t.intl_tracking} value={tracking} onChange={setTracking} req placeholder="1Z999AA10123456784"/></div>
+          <div style={{gridColumn:"1 / -1",marginBottom:14}}>
+            <label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>📷 {t.dispatch_photo}</label>
+            <label style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",border:`1.5px dashed ${dispatchPhotoUrl?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.18)"}`,borderRadius:10,cursor:"pointer",background:dispatchPhotoUrl?"rgba(34,197,94,0.06)":"rgba(255,255,255,0.03)"}}>
+              <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{subirFotoDespacho(e.target.files?.[0]);e.target.value="";}}/>
+              {dispatchPhotoUrl?<>
+                <img src={dispatchPhotoUrl} alt="" style={{width:52,height:52,objectFit:"cover",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)"}}/>
+                <div style={{flex:1}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.photo_ok}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{t.photo_change}</p></div>
+              </>:<>
+                <span style={{fontSize:20}}>{subiendoFoto?"⏳":"📎"}</span>
+                <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:0,lineHeight:1.45}}>{subiendoFoto?"...":t.dispatch_photo_hint}</p>
+              </>}
+            </label>
+          </div>
         </div>
         </>;})()}
       {!confirmDispatch?<Btn onClick={()=>setConfirmDispatch(true)} disabled={saving||!(computedCost>0)||!tracking||autoWeight<=0}>{t.confirm_dispatch}</Btn>:

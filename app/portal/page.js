@@ -493,7 +493,7 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
   const updateItem=(i,f,v)=>setItems(p=>p.map((it,j)=>j===i?{...it,[f]:v}:it));
   const toggleAll=(checked)=>{const sel={};items.forEach((_,i)=>sel[i]=checked);setSelected(sel);};
   const confirm=()=>{
-    const final=items.filter((_,i)=>selected[i]).map(it=>({description:it.description,quantity:Number(it.quantity)||1,unit_price_usd:Number(it.unit_price_usd)||0,hs_code:it.hs_code?String(it.hs_code).trim():null}));
+    const final=items.filter((_,i)=>selected[i]).map(it=>({description:it.description,quantity:Number(it.quantity)||1,unit_price_usd:Number(String(it.unit_price_usd).replace(",","."))||0,hs_code:it.hs_code?String(it.hs_code).trim():null}));
     if(final.length===0){setError("Seleccioná al menos un producto");return;}
     onItemsConfirmed(final);
   };
@@ -527,7 +527,7 @@ function PdfInvoiceReader({onItemsConfirmed,onCancel,labels={}}){
             <div style={{flex:1,display:"grid",gridTemplateColumns:"3fr 1fr 1.2fr",gap:6}}>
               <input value={it.description} onChange={e=>updateItem(i,"description",e.target.value)} placeholder="Descripción" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
               <input type="number" value={it.quantity} onChange={e=>updateItem(i,"quantity",e.target.value)} placeholder="Cant" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
-              <input type="number" step="0.01" value={it.unit_price_usd} onChange={e=>updateItem(i,"unit_price_usd",e.target.value)} placeholder="USD c/u" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
+              <input type="text" inputMode="decimal" value={it.unit_price_usd} onChange={e=>updateItem(i,"unit_price_usd",e.target.value.replace(/[^0-9.,]/g,""))} placeholder="USD c/u" style={{padding:"6px 8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"#fff",outline:"none"}}/>
             </div>
           </div>
           {it.hs_code&&<div style={{marginLeft:24,marginTop:6,display:"flex",alignItems:"center",gap:8}}>
@@ -607,7 +607,7 @@ function EditableItemRow({item,editable,token,onChange}){
     <input value={desc} onChange={e=>{setDesc(e.target.value);debouncedSave({description:e.target.value});}} style={inputStyle}/>
     <input value={hs} onChange={e=>{setHs(e.target.value);debouncedSave({ncm_code:e.target.value||null});}} placeholder="HS Code" style={{...inputStyle,fontFamily:"monospace"}}/>
     <input type="number" value={qty} onChange={e=>{const v=e.target.value;setQty(v);debouncedSave({quantity:Number(v)||0});}} style={{...inputStyle,textAlign:"right"}}/>
-    <input type="number" step="0.01" value={price} onChange={e=>{const v=e.target.value;setPrice(v);debouncedSave({unit_price_usd:Number(v)||0});}} style={{...inputStyle,textAlign:"right"}}/>
+    <input type="text" inputMode="decimal" value={price} onChange={e=>{const v=e.target.value.replace(/[^0-9.,]/g,"");setPrice(v);debouncedSave({unit_price_usd:Number(String(v).replace(",","."))||0});}} style={{...inputStyle,textAlign:"right"}}/>
     <span style={{textAlign:"right",fontWeight:700,opacity:saving?0.5:1}}>USD {subtotal.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
     <button onClick={onDel} title="Eliminar" style={{padding:"4px 6px",fontSize:11,borderRadius:4,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>✕</button>
   </div>;

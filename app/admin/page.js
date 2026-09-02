@@ -7871,6 +7871,13 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             </div>
           </div>;
         })()}
+        {/* Captura del courier con el desglose por bulto que subió el agente al despachar */}
+        {flight.dispatch_photo_url&&<div style={{marginTop:14,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"12px 16px"}}>
+          <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>📷 Desglose de bultos del courier</p>
+          <a href={flight.dispatch_photo_url} target="_blank" rel="noopener" title="Abrir en tamaño completo">
+            <img src={flight.dispatch_photo_url} alt="Desglose de bultos" style={{maxWidth:"100%",maxHeight:260,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",display:"block",cursor:"zoom-in"}}/>
+          </a>
+        </div>}
         {/* Pickup del carrier: auto para DHL/FedEx (vía API), manual para UPS */}
         {flight.dispatched_at&&<CarrierPickupBlock flight={flight} token={token} onReload={onReload}/>}
         {flight.status==="despachado"&&<div style={{marginTop:14}}><Btn small onClick={markReceived}>✓ Marcar como recibido en Bs As</Btn></div>}
