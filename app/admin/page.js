@@ -8014,7 +8014,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
             {tile("✈️","Carrier",flight.international_carrier||"—")}
             {tile("🔎","Tracking",<span style={{fontFamily:"monospace"}}>{flight.international_tracking||"—"}</span>)}
             {tile("⚖️","Peso total",flight.total_weight_kg?`${Number(flight.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:2})} kg`:"—",totalFactKg>0?`${totalFactKg.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg facturable`:null)}
-            {tile("💵","Costo total",<span style={{color:"#4ade80"}}>{usd(flight.total_cost_usd||0)}</span>,totalFactKg>0?(finK>0?`${usd((flight.total_cost_usd||0)*(1+finK)/totalFactKg)}/kg efectivo (con comisión ${(finK*100).toFixed(2).replace(".",",")}%)`:`${usd((flight.total_cost_usd||0)/totalFactKg)}/kg facturable`):null)}
+            {tile("💵",finK>0?"Costo agente":"Costo total",<span style={{color:"#4ade80"}}>{usd(flight.total_cost_usd||0)}</span>,finK>0?`Efectivo ${usd((flight.total_cost_usd||0)*(1+finK))} con comisión ${(finK*100).toFixed(2).replace(".",",")}%${totalFactKg>0?` · ${usd((flight.total_cost_usd||0)*(1+finK)/totalFactKg)}/kg`:""}`:(totalFactKg>0?`${usd((flight.total_cost_usd||0)/totalFactKg)}/kg facturable`:null))}
             {tile("💳","Pago",pagoLbl)}
             {tile("📅","Despachado",formatDate(flight.dispatched_at))}
           </div>;
