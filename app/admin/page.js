@@ -6980,8 +6980,89 @@ function CarrierPickupBlock({flight,token,onReload}){
   </div>;
 }
 
+// Extraer bultos de la foto del courier con visión de Claude: el admin revisa las filas,
+// asigna cada bulto a la op que corresponda (los vuelos multi-op no se adivinan — si hubo
+// reembalaje solo él sabe qué caja es de quién) y al aplicar se REEMPLAZAN los bultos de
+// esas ops. El presupuesto no se toca automáticamente: se avisa para revisarlo.
+function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
+  const ops=flightOps.map(fo=>({id:fo.operation_id,code:fo.operations?.operation_code||"?"}));
+  const unaOp=ops.length===1?ops[0].id:null;
+  const [filas,setFilas]=useState(null);const [cargando,setCargando]=useState(true);
+  const [err,setErr]=useState("");const [aplicando,setAplicando]=useState(false);
+  useEffect(()=>{(async()=>{
+    try{
+      const r=await fetch("/api/admin/extract-packages",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({flight_id:flight.id})}).then(x=>x.json());
+      if(r.error){setErr(r.error);setCargando(false);return;}
+      setFilas(r.bultos.map(b=>({peso:b.peso_kg??"",l:b.largo_cm??"",a:b.ancho_cm??"",h:b.alto_cm??"",opId:unaOp||""})));
+      setCargando(false);
+    }catch(e){setErr("Error de red");setCargando(false);}
+  })();},[flight.id]);
+  const upd=(i,k,v)=>setFilas(p=>p.map((f,j)=>j===i?{...f,[k]:v}:f));
+  const num=(v)=>Number(String(v).replace(",","."))||0;
+  const sinAsignar=(filas||[]).filter(f=>!f.opId).length;
+  const aplicar=async()=>{
+    setErr("");
+    if(sinAsignar>0){setErr(`Asigná la operación de ${sinAsignar} bulto${sinAsignar>1?"s":""} (o eliminalos).`);return;}
+    setAplicando(true);
+    try{
+      const porOp={};
+      filas.forEach(f=>{(porOp[f.opId]=porOp[f.opId]||[]).push(f);});
+      for(const [opId,fs] of Object.entries(porOp)){
+        await dq("operation_packages",{method:"DELETE",token,filters:`?operation_id=eq.${opId}`});
+        for(let i=0;i<fs.length;i++){
+          const f=fs[i];
+          await dq("operation_packages",{method:"POST",token,body:{operation_id:opId,package_number:i+1,quantity:1,gross_weight_kg:num(f.peso)||null,length_cm:num(f.l)||null,width_cm:num(f.a)||null,height_cm:num(f.h)||null},headers:{Prefer:"return=representation"}});
+        }
+        const code=ops.find(o=>o.id===opId)?.code||"";
+        dq("op_communications",{method:"POST",token,body:{operation_id:opId,type:"note",direction:"in",content:`📷 Bultos reemplazados desde la foto del courier (${flight.flight_code}): ${fs.length} bulto${fs.length>1?"s":""}, ${fs.reduce((a2,f2)=>a2+num(f2.peso),0).toLocaleString("es-AR",{maximumFractionDigits:2})} kg reales. Revisar presupuesto de ${code}.`},headers:{Prefer:"return=representation"}}).catch(()=>{});
+      }
+      toast("Bultos reemplazados — revisá el presupuesto de las ops","success");
+      onDone();
+    }catch(e){setErr("Error aplicando: "+e.message);setAplicando(false);}
+  };
+  const inp={width:"100%",padding:"6px 8px",fontSize:12.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none",textAlign:"right"};
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"34px 16px",overflowY:"auto"}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:640,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.35)",borderRadius:14,padding:"20px 22px",margin:"auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+        <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>🔍 Bultos leídos de la foto · {flight.flight_code}</h3>
+        <button onClick={onClose} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0}}>×</button>
+      </div>
+      <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 12px",lineHeight:1.5}}>Revisá y corregí lo que leyó la IA{ops.length>1?" y asigná cada bulto a su operación (hubo reembalaje: solo vos sabés qué caja es de quién)":""}. Al aplicar se <b style={{color:"#fbbf24"}}>reemplazan</b> los bultos de las ops elegidas.</p>
+      {cargando?<p style={{color:"rgba(255,255,255,0.5)",textAlign:"center",padding:"2rem 0"}}>🔍 Leyendo la foto…</p>
+      :!filas?<p style={{color:"#f87171",fontSize:13,padding:"1rem 0"}}>{err}</p>
+      :<>
+        <div style={{display:"grid",gridTemplateColumns:`26px 1fr 72px 62px 62px 62px ${ops.length>1?"120px":""} 30px`,gap:6,alignItems:"center",fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>
+          <span>#</span><span></span><span style={{textAlign:"right"}}>Peso kg</span><span style={{textAlign:"right"}}>Largo</span><span style={{textAlign:"right"}}>Ancho</span><span style={{textAlign:"right"}}>Alto</span>{ops.length>1&&<span>Operación</span>}<span></span>
+        </div>
+        {filas.map((f,i)=><div key={i} style={{display:"grid",gridTemplateColumns:`26px 1fr 72px 62px 62px 62px ${ops.length>1?"120px":""} 30px`,gap:6,alignItems:"center",marginBottom:5}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#E8C99B",fontFamily:"monospace"}}>{i+1}</span><span></span>
+          <input value={f.peso} onChange={e=>upd(i,"peso",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
+          <input value={f.l} onChange={e=>upd(i,"l",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
+          <input value={f.a} onChange={e=>upd(i,"a",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
+          <input value={f.h} onChange={e=>upd(i,"h",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
+          {ops.length>1&&<select value={f.opId} onChange={e=>upd(i,"opId",e.target.value)} style={{...inp,textAlign:"left",padding:"6px 6px"}}>
+            <option value="">— op —</option>
+            {ops.map(o=><option key={o.id} value={o.id}>{o.code}</option>)}
+          </select>}
+          <button onClick={()=>setFilas(p=>p.filter((_,j)=>j!==i))} title="Eliminar fila" style={{background:"transparent",border:"none",color:"rgba(248,113,113,0.7)",fontSize:15,cursor:"pointer",padding:0}}>✕</button>
+        </div>)}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,padding:"9px 12px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:9}}>
+          <span style={{fontSize:11,fontWeight:800,color:"#E8C99B",letterSpacing:"0.05em"}}>{filas.length} BULTOS</span>
+          <span style={{fontSize:13,fontWeight:800,color:"#fff",fontFeatureSettings:'"tnum"'}}>{filas.reduce((a2,f2)=>a2+num(f2.peso),0).toLocaleString("es-AR",{maximumFractionDigits:2})} kg reales</span>
+        </div>
+        {err&&<p style={{fontSize:12,color:"#f87171",margin:"10px 0 0"}}>{err}</p>}
+        <div style={{display:"flex",gap:8,marginTop:14}}>
+          <Btn onClick={aplicar} disabled={aplicando||filas.length===0}>{aplicando?"Aplicando…":"✓ Reemplazar bultos en las ops"}</Btn>
+          <Btn variant="secondary" onClick={onClose}>Cancelar</Btn>
+        </div>
+      </>}
+    </div>
+  </div>;
+}
+
 function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceItems,depositPkgs,onReload,onFlash,onBack,usd}){
   const a=signups.find(s=>s.auth_user_id===flight.agent_id);
+  const [extraerBultos,setExtraerBultos]=useState(false); // modal: leer bultos de la foto con IA
   // Peso facturable por paquete (max bruto vs volumétrico) — usado para $/kg y reparto de cost_share.
   const VOL_DIV=Number(a?.volumetric_divisor)||5000;
   const pkgFact=(p)=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0)*q;const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const vol=l&&w&&h?((l*w*h)/VOL_DIV)*q:0;return Math.max(gw,vol);};
@@ -7873,11 +7954,15 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         })()}
         {/* Captura del courier con el desglose por bulto que subió el agente al despachar */}
         {flight.dispatch_photo_url&&<div style={{marginTop:14,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"12px 16px"}}>
-          <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.45)",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>📷 Desglose de bultos del courier</p>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:10}}>
+            <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>📷 Desglose de bultos del courier</p>
+            <Btn small variant="secondary" onClick={()=>setExtraerBultos(true)}>🔍 Extraer bultos con IA</Btn>
+          </div>
           <a href={flight.dispatch_photo_url} target="_blank" rel="noopener" title="Abrir en tamaño completo">
             <img src={flight.dispatch_photo_url} alt="Desglose de bultos" style={{maxWidth:"100%",maxHeight:260,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",display:"block",cursor:"zoom-in"}}/>
           </a>
         </div>}
+        {extraerBultos&&<ExtraerBultosModal flight={flight} flightOps={flightOps} token={token} onClose={()=>setExtraerBultos(false)} onDone={()=>{setExtraerBultos(false);onReload?.();}}/>}
         {/* Pickup del carrier: auto para DHL/FedEx (vía API), manual para UPS */}
         {flight.dispatched_at&&<CarrierPickupBlock flight={flight} token={token} onReload={onReload}/>}
         {flight.status==="despachado"&&<div style={{marginTop:14}}><Btn small onClick={markReceived}>✓ Marcar como recibido en Bs As</Btn></div>}
@@ -8727,9 +8812,9 @@ function AgentsPanel({token}){
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-            {["Código","Agente","Estado","Clientes","Bultos","Peso","USD/kg","Tracking","Fact. cerrada","Demora","ETA","A cobrar"].map(h=><th key={h} style={{padding:"10px 8px",textAlign:"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
+            {["Código","Estado","Clientes","Bultos","Peso","Kg vuelo","USD/kg","Tracking","Fact. cerrada","Demora","ETA"].map(h=><th key={h} style={{padding:"10px 8px",textAlign:"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
           </tr></thead>
-          <tbody>{shownFlights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const a=signups.find(s=>s.auth_user_id===f.agent_id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
+          <tbody>{shownFlights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
             // Demora del agente: días entre dispatched_at y carrier_pickup_at.
             // Auto para DHL/FedEx (vía API), manual para UPS (cargado por admin).
             const demoraInfo=(()=>{
@@ -8751,12 +8836,15 @@ function AgentsPanel({token}){
             // Columnas nuevas (16/08): bultos, peso facturable, USD/kg, ETA, a cobrar y ganancia
             // estimada — la ganancia se recalcula sola a medida que se cargan costos en las ops.
             const bultos=ops.reduce((s,fo)=>s+((fo.operations?.operation_packages)||[]).reduce((a,pk)=>a+Number(pk.quantity||1),0),0);
-            const pesoFact=ops.reduce((s,fo)=>s+Number(fo.weight_kg||0),0)||Number(f.total_weight_kg||0);
-            const costoKg=Number(f.total_cost_usd||0)>0&&pesoFact>0?Number(f.total_cost_usd)/pesoFact:null;
+            const pesoFact=ops.reduce((s,fo)=>s+Number(fo.weight_kg||0),0); // lo que suma el sistema (facturable de las ops)
+            const kgVuelo=Number(f.total_weight_kg||0);                  // lo que declaró el agente al despachar
+            // Peso sistema vs kg del agente: si el agente declara MÁS de lo que se factura, se pierde plata.
+            const pierdo=kgVuelo>0&&pesoFact>0&&kgVuelo>pesoFact+0.01;
+            const gano=kgVuelo>0&&pesoFact>kgVuelo+0.01;
+            const costoKg=Number(f.total_cost_usd||0)>0&&(kgVuelo>0||pesoFact>0)?Number(f.total_cost_usd)/(kgVuelo||pesoFact):null;
             const etaOp=ops.map(fo=>fo.operations?.eta).filter(Boolean).sort()[0]||null;
             const etaTxt=etaOp?`${etaOp.slice(8,10)}/${etaOp.slice(5,7)}`:"";
-            const aCobrar=ops.reduce((s,fo)=>s+Number(fo.operations?.budget_total||0),0);
-            // Estado abreviado (16/08): PREP / ETHEN / EN-TRA / GES-ADU / RECIB.
+                        // Estado abreviado (16/08): PREP / ETHEN / EN-TRA / GES-ADU / RECIB.
             // GES-ADU: el vuelo esta despachado y alguna de sus ops ya entro en gestion aduanera
             // (el tracking automatico la paso a en_aduana).
             const enAduana=f.status==="despachado"&&ops.some(fo=>fo.operations?.status==="en_aduana");
@@ -8771,17 +8859,16 @@ function AgentsPanel({token}){
             })();
             return <tr key={f.id} onClick={()=>setSelFlight(f.id)} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 120ms"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(184,149,106,0.05)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
             <td style={{padding:"10px 8px",fontFamily:"monospace",fontWeight:700,color:"#fff",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{f.flight_code}</td>
-            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",width:1,textAlign:"center"}}>{a?(a.first_name+" "+(a.last_name||"")):"—"}</td>
             <td style={{padding:"10px 8px",whiteSpace:"nowrap",width:1,textAlign:"center"}}><span style={{fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:4,color:estado.c,background:`${estado.c}22`,border:`1px solid ${estado.c}66`,textTransform:"uppercase",boxShadow:estado.glow?`0 0 12px ${estado.c}55`:"none",letterSpacing:"0.04em"}}>{estado.glow?"⚡ ":""}{estado.label}</span></td>
             <td style={{padding:"10px 8px",fontSize:11.5,color:"rgba(255,255,255,0.7)",fontFamily:"monospace",letterSpacing:"0.02em",textAlign:"center"}} title={clientCodes.join(" / ")}>{clientCodes.length>0?clientCodes.join(" / "):"—"}</td>
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{bultos||"—"}</td>
-            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}}>{pesoFact>0?`${pesoFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
+            <td style={{padding:"10px 8px",color:pierdo?"#ff5252":gano?"#4ade80":"rgba(255,255,255,0.6)",fontWeight:(pierdo||gano)?800:400,textShadow:pierdo?"0 0 10px rgba(255,82,82,0.55)":"none",whiteSpace:"nowrap",textAlign:"center"}} title={pierdo?`El agente declaró ${kgVuelo.toLocaleString("es-AR",{maximumFractionDigits:2})} kg y el sistema factura ${pesoFact.toLocaleString("es-AR",{maximumFractionDigits:2})} kg — estás pagando más kg de los que cobrás`:gano?"El facturable supera el kg declarado por el agente":""}>{pesoFact>0?`${pesoFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
+            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}}>{kgVuelo>0?`${kgVuelo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}} title={f.total_cost_usd?`Costo total: ${usd(f.total_cost_usd)}`:""}>{costoKg!=null?`${usd(costoKg)}/kg`:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.35,textAlign:"center"}}>{f.international_tracking?<><span style={{fontFamily:"monospace"}}>{f.international_tracking}</span>{f.international_carrier&&<><br/><span style={{fontSize:9,fontWeight:700,color:IC,letterSpacing:"0.04em",textTransform:"uppercase"}}>{f.international_carrier}</span></>}</>:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:12,color:f.invoice_presented_at?"#4ade80":"rgba(255,255,255,0.3)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}} title={f.invoice_presented_at?`Factura cerrada el ${formatDate(f.invoice_presented_at)} — el agente ya puede despachar`:"Factura todavía sin cerrar"}>{f.invoice_presented_at?`${String(new Date(f.invoice_presented_at).getDate()).padStart(2,"0")}/${String(new Date(f.invoice_presented_at).getMonth()+1).padStart(2,"0")}`:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:13,fontWeight:700,color:demoraInfo.color,whiteSpace:"nowrap",textAlign:"center"}} title={demoraInfo.title||(f.dispatched_at?`Dispatched: ${formatDate(f.dispatched_at)}${f.carrier_pickup_at?` · Pickup: ${formatDate(f.carrier_pickup_at)}`:""}`:"")}>{demoraInfo.txt}</td>
             <td style={{padding:"10px 8px",fontSize:12,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}}>{etaTxt||"—"}</td>
-            <td style={{padding:"10px 8px",color:IC,fontWeight:700,textAlign:"center",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{aCobrar>0?usd(aCobrar):"—"}</td>
           </tr>;})}</tbody>
         </table>
       </div>}
