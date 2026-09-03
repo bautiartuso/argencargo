@@ -1115,8 +1115,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       if(isBlanco&&its.length===0)return;
       if(!isBlanco&&pks.length===0)return;
       // RI: impuestos sobre el valor declarado (flight_invoice_items de esta op).
-      const{totalTax,flete,seguro,totalAbonar,surcharge}=calcOpBudget(opForCalc,its,pks,tariffsFresh,config,overridesFresh,clientFresh,declFresh);
-      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}});
+      const{totalTax,flete,seguro,totalAbonar,surcharge,taxDetail}=calcOpBudget(opForCalc,its,pks,tariffsFresh,config,overridesFresh,clientFresh,declFresh);
+      await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar,budget_tax_detail:taxDetail||null}});
       setOp(p=>({...p,budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}));
     }catch(e){console.error("autoSync budget",e);}
   };
@@ -2095,7 +2095,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         })()}
         {hasStoredBudget&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)",gap:12,flexWrap:"wrap"}}>
           <p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:0,fontStyle:"italic",flex:1}}>Presupuesto cargado manualmente. Si querés recalcular con productos/bultos, limpialo primero.</p>
-          <Btn variant="danger" small onClick={async()=>{if(!await confirmDialog("¿Limpiar presupuesto guardado? Se borrarán los valores actuales y podrás recargar productos/bultos para recalcular."))return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0}});setOp(p=>({...p,budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0}));flash("Presupuesto limpiado");setSaving(false);}} disabled={saving}>Limpiar presupuesto</Btn>
+          <Btn variant="danger" small onClick={async()=>{if(!await confirmDialog("¿Limpiar presupuesto guardado? Se borrarán los valores actuales y podrás recargar productos/bultos para recalcular."))return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0,budget_tax_detail:null}});setOp(p=>({...p,budget_taxes:0,budget_flete:0,budget_seguro:0,budget_total:0,budget_tax_detail:null}));flash("Presupuesto limpiado");setSaving(false);}} disabled={saving}>Limpiar presupuesto</Btn>
         </div>}
         {/* El presupuesto se auto-sincroniza al guardar cualquier cambio de items/bultos/configuración.
             El botón manual se removió — el cálculo siempre refleja el estado actual. */}
@@ -5493,8 +5493,8 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
           if(isBlanco&&items.length===0)continue;
           if(!isBlanco&&pkgs.length===0)continue;
           // RI: impuestos sobre el valor declarado.
-          const{totalTax,flete,seguro,totalAbonar}=calcOpBudget(o,items,pkgs,tariffsFresh,cfg,overridesFresh,clientFresh,declForOp);
-          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar}});
+          const{totalTax,flete,seguro,totalAbonar,taxDetail}=calcOpBudget(o,items,pkgs,tariffsFresh,cfg,overridesFresh,clientFresh,declForOp);
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${o.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_total:totalAbonar,budget_tax_detail:taxDetail||null}});
         }catch(e){console.error(`syncClientOps ${o.operation_code}`,e);}
       }
     }catch(e){console.error("syncClientOps",e);}
@@ -8656,8 +8656,8 @@ function AgentsPanel({token}){
         const pkgs=Array.isArray(pks)?pks:[];
         const isBlanco=opForCalc.channel?.includes("blanco");
         if((isBlanco&&its.length>0)||(!isBlanco&&pkgs.length>0)){
-          const {totalTax,flete,seguro,totalAbonar,surcharge}=calcOpBudget(opForCalc,its,pkgs,tarFresh||[],configMap,overr||[],client);
-          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar}});
+          const {totalTax,flete,seguro,totalAbonar,surcharge,taxDetail}=calcOpBudget(opForCalc,its,pkgs,tarFresh||[],configMap,overr||[],client);
+          await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{budget_taxes:totalTax,budget_flete:flete,budget_seguro:seguro,budget_surcharge:surcharge||0,budget_total:totalAbonar,budget_tax_detail:taxDetail||null}});
         }
       }catch(e){console.error("auto budget on flight create",op.id,e);}
     }

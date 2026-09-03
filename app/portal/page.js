@@ -891,12 +891,17 @@ function OperationDetail({op,token,client,onBack}){
             muestra si cierra al centavo con el total guardado (presupuestos manuales o
             desincronizados caen al agregado de siempre). */}
         {!isGI&&!isB&&bTax>0&&(()=>{try{
-          if(!calcCtx)return null;
-          const r=calcOpBudget(op,items,pkgs,calcCtx.tariffs,calcCtx.config,calcCtx.overrides,client,declaredItems);
-          if(!r?.taxDetail||Math.abs(Number(r.totalTax||0)-bTax)>0.05)return null;
-          const td=r.taxDetail;
+          // Preferimos el desglose guardado al presupuestar (es exactamente lo que se cobró).
+          // Si la op es vieja y no lo tiene, se recalcula y se muestra solo si cierra al centavo.
+          let td=op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:null;
+          if(!td){
+            if(!calcCtx)return null;
+            const r=calcOpBudget(op,items,pkgs,calcCtx.tariffs,calcCtx.config,calcCtx.overrides,client,declaredItems);
+            if(!r?.taxDetail||Math.abs(Number(r.totalTax||0)-bTax)>0.05)return null;
+            td=r.taxDetail;
+          }
           const rateU=(fld,def)=>{const set=[...new Set(items.filter(x=>Number(x.unit_price_usd)>0).map(x=>{const v=x[fld];return (v==null||v==="")?def:Number(v);}))];return set.length===1?set[0]:null;};
-          const pctL=(l,rt)=>rt!=null&&rt>0?`${l} (${String(rt).replace(".",",")}%)`:l;
+          const pctL=(l,rt)=>rt!=null?`${l} (${String(rt).replace(".",",")}%)`:l;
           const fmt2=v=>Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
           const fmtPct=v=>String(Math.round(Number(v)*100)/100).replace(".",",");
           const fila=(l,v,k)=><div key={k} style={{display:"flex",justifyContent:"space-between",padding:"3px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>{l}</span><span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)"}}>USD {fmt2(v)}</span></div>;
@@ -909,13 +914,13 @@ function OperationDetail({op,token,client,onBack}){
               {itemsDet.map((x,i)=><div key={i} style={{marginBottom:6}}>
                 <p style={{fontSize:11.5,fontWeight:700,color:"rgba(255,255,255,0.6)",margin:"0 0 1px"}}>{x.description||`Producto ${i+1}`}</p>
                 {fila(`Derechos importación (${fmtPct(x.drPct)}%)`,x.derechos,"d")}
-                {Number(x.tasaE)>0.005&&fila(`Tasa estadística (${fmtPct(x.tePct)}%)`,x.tasaE,"t")}
+                {fila(`Tasa estadística (${fmtPct(x.tePct)}%)`,x.tasaE,"t")}
                 {fila(`IVA de Importación (${fmtPct(x.ivaPct)}%)`,x.iva,"i")}
               </div>)}
               {comunes.map(([l,v],k)=>fila(l,v,k))}
             </div>;
           }
-          const rows=[[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva],...comunes].filter(([,v])=>Number(v||0)>0.005);
+          const rows=[[pctL("Derechos importación",rateU("import_duty_rate",0)),td.derechos,true],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE,true],[pctL("IVA de Importación",rateU("iva_rate",21)),td.iva],...comunes].filter(([,v,always])=>always||Number(v||0)>0.005);
           if(rows.length===0)return null;
           return <div style={{margin:"0 0 4px",padding:"2px 0 4px 14px",borderLeft:"2px solid rgba(184,149,106,0.25)"}}>{rows.map(([l,v],k)=>fila(l,v,k))}</div>;
         }catch(e){return null;}})()}
