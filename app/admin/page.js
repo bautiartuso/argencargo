@@ -13968,11 +13968,7 @@ function MaritimePanel({token,allClients=[]}){
 
   return <div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:18,flexWrap:"wrap",gap:14}}>
-      <div>
-        <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.02em"}}>Marítimos en tránsito</h2>
-        <p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:0}}>Listado de pedidos consolidados por depósito · {filtered.length} pedido{filtered.length!==1?"s":""}</p>
-      </div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginLeft:"auto"}}>
         <Btn variant="secondary" onClick={()=>setEditingWh({})}>+ Nuevo depósito</Btn>
         <Btn onClick={()=>{setEditingId(null);setShowNew(true);}}>+ Nuevo pedido marítimo</Btn>
       </div>
@@ -14024,14 +14020,7 @@ function MaritimePanel({token,allClients=[]}){
         <button onClick={()=>setWarehouseFilter("all")} style={{padding:"6px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:6,cursor:"pointer",background:warehouseFilter==="all"?"rgba(96,165,250,0.2)":"transparent",color:warehouseFilter==="all"?"#60a5fa":"rgba(255,255,255,0.6)"}}>Todos depósitos</button>
         {warehouses.map(w=><button key={w} onClick={()=>setWarehouseFilter(w)} style={{padding:"6px 14px",fontSize:12,fontWeight:700,border:"none",borderRadius:6,cursor:"pointer",background:warehouseFilter===w?"rgba(96,165,250,0.2)":"transparent",color:warehouseFilter===w?"#60a5fa":"rgba(255,255,255,0.6)"}}>📦 {w}</button>)}
       </div>}
-      {/* Filtro por cliente: solo lista clientes con cargas activas en depósito */}
-      {clientsWithShipments.length>0&&<div style={{display:"flex",alignItems:"center",gap:6}}>
-        <select value={clientFilter} onChange={e=>setClientFilter(e.target.value)} style={{padding:"8px 12px",fontSize:12,fontWeight:600,border:`1px solid ${clientFilter?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.08)"}`,borderRadius:8,background:clientFilter?"rgba(184,149,106,0.10)":"rgba(255,255,255,0.04)",color:clientFilter?GOLD_LIGHT:"rgba(255,255,255,0.75)",outline:"none",cursor:"pointer",maxWidth:260}}>
-          <option value="" style={{background:"#142038"}}>👤 Todos los clientes</option>
-          {clientsWithShipments.map(c=><option key={c.id} value={c.id} style={{background:"#142038"}}>{c.client_code} — {c.first_name} {c.last_name}</option>)}
-        </select>
-        {clientFilter&&<button onClick={()=>setClientFilter("")} title="Limpiar filtro de cliente" style={{padding:"7px 10px",fontSize:12,fontWeight:700,borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer"}}>×</button>}
-      </div>}
+
     </div>
 
     {/* Form nuevo / editar — modal centrado para que no se pierda contexto al editar desde abajo */}
