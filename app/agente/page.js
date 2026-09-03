@@ -1188,7 +1188,14 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
     if(!file)return;
     setSubiendoFoto(true);
     const url=await uploadPackagePhoto(file,token);
-    if(url)setDispatchPhotoUrl(url);
+    if(url){
+      setDispatchPhotoUrl(url);
+      // Vuelo ya despachado/recibido (histórico): no hay botón de despacho que persista
+      // después, así que se guarda al instante.
+      if(flight.status!=="preparando"){
+        await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{dispatch_photo_url:url}});
+      }
+    }
     setSubiendoFoto(false);
   };
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
@@ -1501,6 +1508,19 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
         <span><strong style={{color:"#fff"}}>{t.total_cost}:</strong> {usdF(flight.total_cost_usd)}</span>
         <span><strong style={{color:"#fff"}}>{t.courier}:</strong> {flight.international_carrier}</span>
         <span><strong style={{color:"#fff"}}>{t.intl_tracking}:</strong> {flight.international_tracking}</span>
+      </div>
+      <div style={{marginTop:12}}>
+        <label style={{display:"block",fontSize:11,fontWeight:700,color:IC,marginBottom:5,textTransform:"uppercase"}}>📷 {t.dispatch_photo}</label>
+        <label style={{display:"flex",alignItems:"center",gap:12,padding:"11px 13px",border:`1.5px dashed ${dispatchPhotoUrl?"rgba(34,197,94,0.5)":"rgba(255,255,255,0.18)"}`,borderRadius:10,cursor:"pointer",background:dispatchPhotoUrl?"rgba(34,197,94,0.06)":"rgba(255,255,255,0.03)"}}>
+          <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{subirFotoDespacho(e.target.files?.[0]);e.target.value="";}}/>
+          {dispatchPhotoUrl?<>
+            <img src={dispatchPhotoUrl} alt="" onClick={e=>{e.preventDefault();setLightboxPhoto(dispatchPhotoUrl);}} style={{width:52,height:52,objectFit:"cover",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",cursor:"zoom-in"}}/>
+            <div style={{flex:1}}><p style={{fontSize:12.5,fontWeight:700,color:"#4ade80",margin:0}}>{t.photo_ok}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{t.photo_change}</p></div>
+          </>:<>
+            <span style={{fontSize:20}}>{subiendoFoto?"⏳":"📎"}</span>
+            <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:0,lineHeight:1.45}}>{subiendoFoto?"...":t.dispatch_photo_hint}</p>
+          </>}
+        </label>
       </div>
     </div>}
     {lightboxPhoto&&<div onClick={()=>setLightboxPhoto(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,cursor:"zoom-out"}}>
