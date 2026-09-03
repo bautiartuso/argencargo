@@ -7065,7 +7065,9 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
   </div>;
 }
 
-function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceItems,depositPkgs,onReload,onFlash,onBack,usd}){
+function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOps,invoiceItems,depositPkgs,onReload,onFlash,onBack,usd}){
+  // Comisión financiera aplicable: solo si el vuelo se pagó con la cuenta corriente del agente.
+  const finK=flight.payment_method==="cuenta_corriente"?Number(finRate||0):0;
   const a=signups.find(s=>s.auth_user_id===flight.agent_id);
   const [extraerBultos,setExtraerBultos]=useState(false); // modal: leer bultos de la foto con IA
   // Peso facturable por paquete (max bruto vs volumétrico) — usado para $/kg y reparto de cost_share.
@@ -7929,7 +7931,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         // Factor de prorrateo: que porcion de lo facturado se cobro realmente. Se capea en 1 porque
         // si pago de mas, el excedente es saldo a favor / cargo extra de la op, no ingreso del vuelo.
         const f=facturado>0?Math.min(cobradoNeto/facturado,1):0;
-        acc.flete.fact+=bFlete;acc.flete.cob+=bFlete*f;acc.flete.costo+=Number(o.cost_flete||0);
+        acc.flete.fact+=bFlete;acc.flete.cob+=bFlete*f;acc.flete.costo+=Number(o.cost_flete||0)*(1+finK);
         acc.seguro.fact+=bSeg;acc.seguro.cob+=bSeg*f;acc.seguro.costo+=Number(o.cost_seguro||0);
         acc.impuestos.fact+=impFacturado;acc.impuestos.cob+=impFacturado*f;acc.impuestos.costo+=Number(o.cost_impuestos_reales||0)+Number(o.cost_gasto_documental||0);
         otrosCosto+=Number(o.cost_flete_local||0)+Number(o.cost_otros||0);
@@ -7957,7 +7959,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       const th={padding:"8px",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",textAlign:"right",whiteSpace:"nowrap"};
       return <Card title="Detalle financiero del vuelo">
         <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>
-          Suma de las {opsUnique.length} operacion{opsUnique.length!==1?"es":""} del vuelo. Lo cobrado es <strong style={{color:"rgba(255,255,255,0.75)"}}>neto</strong>, ya descontada la comisión de cada transferencia. Es solo informativo — estos números ya los aporta cada op, así que no se suman en Finanzas.
+          Suma de las {opsUnique.length} operacion{opsUnique.length!==1?"es":""} del vuelo. Lo cobrado es <strong style={{color:"rgba(255,255,255,0.75)"}}>neto</strong>, ya descontada la comisión de cada transferencia. Es solo informativo — estos números ya los aporta cada op, así que no se suman en Finanzas.{finK>0&&<> El costo del flete incluye la <strong style={{color:"#fb923c"}}>comisión financiera del {(finK*100).toFixed(2).replace(".",",")}%</strong> de los anticipos.</>}
         </p>
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",minWidth:520}}>
@@ -8012,7 +8014,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             {tile("✈️","Carrier",flight.international_carrier||"—")}
             {tile("🔎","Tracking",<span style={{fontFamily:"monospace"}}>{flight.international_tracking||"—"}</span>)}
             {tile("⚖️","Peso total",flight.total_weight_kg?`${Number(flight.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:2})} kg`:"—",totalFactKg>0?`${totalFactKg.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg facturable`:null)}
-            {tile("💵","Costo total",<span style={{color:"#4ade80"}}>{usd(flight.total_cost_usd||0)}</span>,totalFactKg>0?`${usd((flight.total_cost_usd||0)/totalFactKg)}/kg facturable`:null)}
+            {tile("💵","Costo total",<span style={{color:"#4ade80"}}>{usd(flight.total_cost_usd||0)}</span>,totalFactKg>0?(finK>0?`${usd((flight.total_cost_usd||0)*(1+finK)/totalFactKg)}/kg efectivo (con comisión ${(finK*100).toFixed(2).replace(".",",")}%)`:`${usd((flight.total_cost_usd||0)/totalFactKg)}/kg facturable`):null)}
             {tile("💳","Pago",pagoLbl)}
             {tile("📅","Despachado",formatDate(flight.dispatched_at))}
           </div>;
@@ -8038,6 +8040,16 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
               <span style={{fontSize:12.5,fontWeight:800,color:"#fff"}}>Total</span>
               <span style={{fontSize:13.5,fontWeight:800,color:"#4ade80",fontFeatureSettings:'"tnum"'}}>{usd(flight.total_cost_usd||0)}</span>
             </div>
+            {finK>0&&(()=>{const c=Number(flight.total_cost_usd||0);const fin=c*finK;const kgF=Number(flight.total_weight_kg||0)||totalFactKg;return <>
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"6px 0",borderTop:"1px solid rgba(255,255,255,0.06)",marginTop:6}}>
+                <span style={{fontSize:12,color:"rgba(255,255,255,0.55)"}} title="Comisión ponderada de tus anticipos a este agente (últimos 12 meses). Ya está como gasto en el libro diario: acá es solo para que veas el costo real del kilo.">💸 Costo financiero · comisión anticipos {(finK*100).toFixed(2).replace(".",",")}%</span>
+                <span style={{fontSize:12,fontWeight:700,color:"#fb923c",fontFeatureSettings:'"tnum"',whiteSpace:"nowrap"}}>+ {usd(fin)}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"6px 0 0"}}>
+                <span style={{fontSize:12.5,fontWeight:800,color:"#fff"}}>Costo efectivo</span>
+                <span style={{fontSize:13.5,fontWeight:800,color:"#fb923c",fontFeatureSettings:'"tnum"'}}>{usd(c+fin)}{kgF>0?<span style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.5)",marginLeft:8}}>{usd((c+fin)/kgF)}/kg</span>:null}</span>
+              </div>
+            </>;})()}
           </div>;
         })()}
         {/* Captura del courier con el desglose por bulto que subió el agente al despachar */}
@@ -8568,6 +8580,15 @@ function AgentsPanel({token}){
     const amt=isCredit&&m.amount_received_usd!=null?Number(m.amount_received_usd):Number(m.amount_usd);
     return s+(isCredit?amt:-amt);
   },0);
+  // Comisión financiera ponderada del agente: (pagado ÷ recibido − 1) sobre sus anticipos de los
+  // últimos 12 meses. Es lo que te cuesta cada dólar que llega a la cuenta corriente; se usa para
+  // mostrar el costo EFECTIVO por kg (solo informativo — la comisión ya es gasto en el libro diario).
+  const finRateOf=(agentId)=>{
+    if(!agentId)return 0;
+    const desde=Date.now()-365*864e5;let pag=0,rec=0;
+    accMovements.forEach(m=>{if(m.agent_id!==agentId||m.type!=="anticipo")return;const r=Number(m.amount_received_usd),pgd=Number(m.amount_usd);if(!(r>0)||!(pgd>=r))return;if(m.date&&new Date(m.date).getTime()<desde)return;pag+=pgd;rec+=r;});
+    return rec>0?pag/rec-1:0;
+  };
   const toggleSelOp=(opId)=>setSelectedOps(p=>p.includes(opId)?p.filter(x=>x!==opId):[...p,opId]);
   const createFlight=async()=>{
     if(selectedOps.length===0)return;
@@ -9051,7 +9072,9 @@ function AgentsPanel({token}){
             // Peso sistema vs kg del agente: si el agente declara MÁS de lo que se factura, se pierde plata.
             const pierdo=kgVuelo>0&&pesoFact>0&&kgVuelo>pesoFact+0.01;
             const gano=kgVuelo>0&&pesoFact>kgVuelo+0.01;
-            const costoKg=Number(f.total_cost_usd||0)>0&&(kgVuelo>0||pesoFact>0)?Number(f.total_cost_usd)/(kgVuelo||pesoFact):null;
+            const finR=f.payment_method==="cuenta_corriente"?finRateOf(f.agent_id):0;
+            const costoEf=Number(f.total_cost_usd||0)*(1+finR);
+            const costoKg=Number(f.total_cost_usd||0)>0&&(kgVuelo>0||pesoFact>0)?costoEf/(kgVuelo||pesoFact):null;
             const etaOp=ops.map(fo=>fo.operations?.eta).filter(Boolean).sort()[0]||null;
             const etaTxt=etaOp?`${etaOp.slice(8,10)}/${etaOp.slice(5,7)}`:"";
             // Pipeline visual del vuelo: Preparando → Factura lista → En tránsito → Aduana → Recibido.
@@ -9075,7 +9098,7 @@ function AgentsPanel({token}){
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{bultos||"—"}</td>
             <td style={{padding:"10px 8px",color:pierdo?"#ff5252":gano?"#4ade80":"rgba(255,255,255,0.6)",fontWeight:(pierdo||gano)?800:400,textShadow:pierdo?"0 0 10px rgba(255,82,82,0.55)":"none",whiteSpace:"nowrap",textAlign:"center"}} title={pierdo?`El agente declaró ${kgVuelo.toLocaleString("es-AR",{maximumFractionDigits:2})} kg y el sistema factura ${pesoFact.toLocaleString("es-AR",{maximumFractionDigits:2})} kg — estás pagando más kg de los que cobrás`:gano?"El facturable supera el kg declarado por el agente":""}>{pesoFact>0?`${pesoFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}}>{kgVuelo>0?`${kgVuelo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
-            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}} title={f.total_cost_usd?`Costo total: ${usd(f.total_cost_usd)}`:""}>{costoKg!=null?`${usd(costoKg)}/kg`:"—"}</td>
+            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}} title={f.total_cost_usd?(finR>0?`Costo agente ${usd(f.total_cost_usd)} + comisión financiera ${(finR*100).toFixed(2).replace(".",",")}% (${usd(costoEf-Number(f.total_cost_usd))}) = ${usd(costoEf)} efectivo`:`Costo total: ${usd(f.total_cost_usd)}`):""}>{costoKg!=null?`${usd(costoKg)}/kg`:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.35,textAlign:"center"}}>{f.international_tracking?<><span style={{fontFamily:"monospace"}}>{f.international_tracking}</span>{f.international_carrier&&<><br/><span style={{fontSize:9,fontWeight:700,color:IC,letterSpacing:"0.04em",textTransform:"uppercase"}}>{f.international_carrier}</span></>}</>:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:12,color:f.invoice_presented_at?"rgba(255,255,255,0.6)":"rgba(255,255,255,0.3)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}} title={f.invoice_presented_at?`Factura cerrada el ${formatDate(f.invoice_presented_at)} — el agente ya puede despachar`:"Factura todavía sin cerrar"}>{f.invoice_presented_at?`${String(new Date(f.invoice_presented_at).getDate()).padStart(2,"0")}/${String(new Date(f.invoice_presented_at).getMonth()+1).padStart(2,"0")}`:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:13,fontWeight:700,color:demoraInfo.color,whiteSpace:"nowrap",textAlign:"center"}} title={demoraInfo.title||(f.dispatched_at?`Dispatched: ${formatDate(f.dispatched_at)}${f.carrier_pickup_at?` · Pickup: ${formatDate(f.carrier_pickup_at)}`:""}`:"")}>{demoraInfo.txt}</td>
@@ -9093,7 +9116,7 @@ function AgentsPanel({token}){
     </div>;
     })()}
 
-    {tab==="flights"&&selFlight&&flight&&<FlightEditor key={flight.id} token={token} flight={flight} signups={signups} flightOps={flightOpsForSel} depositOps={depositOps} allOps={allOps} invoiceItems={invoiceItemsForSel} depositPkgs={depositPkgs} onReload={load} onFlash={flash} onBack={()=>setSelFlight(null)} usd={usd}/>}
+    {tab==="flights"&&selFlight&&flight&&<FlightEditor key={flight.id} token={token} flight={flight} finRate={finRateOf(flight.agent_id)} signups={signups} flightOps={flightOpsForSel} depositOps={depositOps} allOps={allOps} invoiceItems={invoiceItemsForSel} depositPkgs={depositPkgs} onReload={load} onFlash={flash} onBack={()=>setSelFlight(null)} usd={usd}/>}
 
     {tab==="accounts"&&<div>
       {approvedAgents.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"3rem 0"}}>No hay agentes aprobados</p>:
