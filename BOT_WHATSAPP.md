@@ -12,7 +12,7 @@ el número de WhatsApp (cuenta de Meta) y cargar 5 plantillas. Nada más.
 | +60 h → 2º y ÚLTIMO recordatorio | `recordatorio_almacenaje` (paga = gratis sin límite; sin pagar = USD 0,5/día por kg) + **pasa a gestión humana** (te notifica) | No — $0 |
 | Coordinó por el link | `coordinacion_confirmada`: día, franja, total, detalle de pago, "respondé para cambiar" | No — $0 |
 | **El cliente escribe** | El agente responde: estado, reprogramar, cambiar pago/modalidad (calcula el costo de envío por zona), agrupar cargas | Sí — centavos |
-| Manda un comprobante | Se guarda, queda adjunto a la op, te notifica, se reenvía a tu WhatsApp interno, y queda **precargado en el modal 💰 Cobrar** (al registrar el cobro fluye a la CC financiera) | No confirma pagos |
+| Manda un comprobante | Claude **lee** el comprobante (monto, fecha, destino, referencia) y lo compara con el saldo al blue del día; se guarda, queda adjunto a la op con la lectura, te notifica, se reenvía por plantilla (`aviso_comprobante_img` / `aviso_comprobante_pdf`) a los números de `WA_COMPROBANTES_TO` (Bautista y Manu) y queda **precargado en el modal 💰 Cobrar** con el monto leído | No confirma pagos |
 
 Después del 2º recordatorio el bot no insiste más — la gestión es tuya.
 El agente deriva a humano: reclamos, precios, zonas fuera de reparto, números

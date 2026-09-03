@@ -77,6 +77,60 @@ async function notifyAdmins(title, body) {
   ]));
 }
 
+// ── Lectura de comprobantes (Claude con visión / PDF) ────────────────────────
+const LECTURA_SCHEMA = {
+  type: "object",
+  properties: {
+    es_comprobante: { type: "boolean", description: "true si la imagen/PDF es un comprobante de transferencia o pago" },
+    monto: { anyOf: [{ type: "number" }, { type: "null" }], description: "Importe transferido, número sin separadores de miles" },
+    moneda: { anyOf: [{ type: "string", enum: ["ARS", "USD"] }, { type: "null" }] },
+    fecha: { anyOf: [{ type: "string" }, { type: "null" }], description: "Fecha de la operación tal como figura, formato DD/MM/AAAA" },
+    destinatario: { anyOf: [{ type: "string" }, { type: "null" }], description: "Nombre, alias o CBU/CVU de quien RECIBE el dinero" },
+    remitente: { anyOf: [{ type: "string" }, { type: "null" }], description: "Nombre de quien ENVÍA el dinero" },
+    banco: { anyOf: [{ type: "string" }, { type: "null" }], description: "Banco o billetera desde la que se hizo" },
+    referencia: { anyOf: [{ type: "string" }, { type: "null" }], description: "Número de operación / comprobante / referencia" },
+    observaciones: { type: "string", description: "Cualquier cosa rara: comprobante editado, borroso, pendiente, rechazado, etc. Vacío si nada." },
+  },
+  required: ["es_comprobante", "monto", "moneda", "fecha", "destinatario", "remitente", "banco", "referencia", "observaciones"],
+  additionalProperties: false,
+};
+
+async function leerComprobante(media) {
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const b64 = media.buffer.toString("base64");
+  const isPdf = media.mime.includes("pdf");
+  const block = isPdf
+    ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } }
+    : { type: "image", source: { type: "base64", media_type: /png|jpe?g|webp|gif/.test(media.mime) ? media.mime : "image/jpeg", data: b64 } };
+  const res = await client.messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: 800,
+    system: "Extraés datos de comprobantes de transferencia bancaria o billetera virtual argentinos (Mercado Pago, bancos, Ualá, etc.). Respondé solo con el JSON pedido. Si no es un comprobante de pago, es_comprobante=false y el resto null.",
+    messages: [{ role: "user", content: [block, { type: "text", text: "Leé este archivo y extraé los datos del comprobante." }] }],
+    output_config: { format: { type: "json_schema", schema: LECTURA_SCHEMA } },
+  });
+  const txt = res.content.find((b) => b.type === "text")?.text || "";
+  return JSON.parse(txt);
+}
+
+function resumirLectura(l, esperadoArs) {
+  if (!l) return "no se pudo leer el archivo";
+  if (!l.es_comprobante) return `no parece un comprobante${l.observaciones ? ` (${l.observaciones})` : ""}`;
+  const partes = [];
+  if (l.monto != null) partes.push(`${l.moneda || "ARS"} ${Number(l.monto).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+  if (l.fecha) partes.push(`el ${l.fecha}`);
+  if (l.destinatario) partes.push(`a ${l.destinatario}`);
+  if (l.remitente) partes.push(`de ${l.remitente}`);
+  if (l.banco) partes.push(`vía ${l.banco}`);
+  if (l.referencia) partes.push(`ref ${l.referencia}`);
+  if (esperadoArs && l.monto != null && (l.moneda || "ARS") === "ARS") {
+    const diff = Math.abs(Number(l.monto) - esperadoArs) / esperadoArs;
+    partes.push(diff <= 0.03 ? "✅ coincide con el saldo" : `⚠️ esperado ≈ ARS ${esperadoArs.toLocaleString("es-AR")}`);
+  }
+  if (l.observaciones) partes.push(`⚠️ ${l.observaciones}`);
+  return partes.join(" · ") || "comprobante sin datos legibles";
+}
+
 // ── Agente ───────────────────────────────────────────────────────────────────
 const TOOLS = [
   {
@@ -318,22 +372,31 @@ export async function POST(req) {
     let text = null;
     if (msg.type === "text") text = String(msg.text?.body || "").slice(0, 2000);
     else if (msg.type === "image" || msg.type === "document") {
-      // Comprobante: se descarga de Meta, se guarda en el bucket de comprobantes y se
-      // adjunta como nota a la op con transferencia pendiente del cliente. El COBRO lo
-      // registra el admin (un click en 💰 Cobrar con el comprobante ya a mano) — el bot
-      // jamás da un pago por acreditado sin verificación humana.
+      // Comprobante: se descarga de Meta, Claude lo LEE (monto, fecha, destino, referencia),
+      // se guarda en el bucket, queda como nota en la op con la lectura, se reenvía por
+      // plantilla a los números internos (WA_COMPROBANTES_TO) y se notifica al admin.
+      // El COBRO lo registra el admin (💰 Cobrar sale precargado con el monto leído) — el
+      // bot jamás da un pago por acreditado sin verificación humana.
       let guardado = "";
+      let lectura = null;
+      let opDest = null;
+      let esperadoArs = null;
       try {
-        const { fetchWaMedia, forwardWaMedia } = await import("../../../../lib/wa");
+        const { fetchWaMedia, uploadWaMedia, sendWaMediaTemplate, forwardWaMedia } = await import("../../../../lib/wa");
         const mediaId = msg.image?.id || msg.document?.id;
-        // Reenvío del comprobante al número interno (WA_COMPROBANTES_TO), si está configurado.
-        // Best-effort: si la ventana de 24 h del destinatario está cerrada, Meta lo rechaza y
-        // queda igual la notificación push + la nota en la op.
-        if (mediaId && process.env.WA_COMPROBANTES_TO) {
-          forwardWaMedia(process.env.WA_COMPROBANTES_TO, mediaId, msg.type, `🧾 Comprobante de ${phone}`).catch(() => {});
-        }
         const media = mediaId ? await fetchWaMedia(mediaId) : null;
+        const mias = await apiEntrega("GET", `whatsapp=${encodeURIComponent(phone)}`);
+        opDest = (mias.operaciones || []).find((o) => o.pago?.metodo === "transferencia" && o.saldo_usd > 0) || (mias.operaciones || []).find((o) => o.saldo_usd > 0) || (mias.operaciones || [])[0] || null;
+        const quien = `${mias.cliente?.nombre || "cliente"}${mias.cliente?.codigo ? ` (${mias.cliente.codigo})` : ""} · ${phone}`;
+        // Saldo esperado en ARS al blue del día (best effort).
+        if (opDest && Number(opDest.saldo_usd) > 0) {
+          try {
+            const r = await fetch("https://dolarapi.com/v1/dolares/blue", { signal: AbortSignal.timeout(2500) });
+            if (r.ok) { const d = await r.json(); if (Number(d?.venta) > 0) esperadoArs = Math.round(Number(opDest.saldo_usd) * Number(d.venta)); }
+          } catch {}
+        }
         if (media) {
+          lectura = await leerComprobante(media).catch((e) => { console.error("[bot/whatsapp] lectura", e.message); return null; });
           const ext = media.mime.includes("pdf") ? "pdf" : media.mime.includes("png") ? "png" : "jpg";
           const path = `wa-${phone}-${Date.now()}.${ext}`;
           const up = await fetch(`${SB_URL}/storage/v1/object/solfin-comprobantes/${path}`, {
@@ -341,23 +404,46 @@ export async function POST(req) {
             headers: { Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": media.mime },
             body: media.buffer,
           });
+          const resumen = resumirLectura(lectura, esperadoArs);
           if (up.ok) {
             const fileUrl = `${SB_URL}/storage/v1/object/public/solfin-comprobantes/${path}`;
             guardado = fileUrl;
-            // Nota en la op con transferencia pendiente más reciente del cliente.
-            const mias = await apiEntrega("GET", `whatsapp=${encodeURIComponent(phone)}`);
-            const opDest = (mias.operaciones || []).find((o) => o.pago?.metodo === "transferencia" && o.saldo_usd > 0) || (mias.operaciones || [])[0];
             if (opDest) {
               const full = await sb(`/operations?operation_code=eq.${opDest.op}&select=id`);
               const opId = Array.isArray(full.body) && full.body[0]?.id;
-              if (opId) await sb(`/op_communications`, { method: "POST", body: JSON.stringify({ operation_id: opId, type: "note", direction: "in", content: `🧾 Comprobante recibido por WhatsApp (bot):\n${fileUrl}` }) });
+              if (opId) {
+                const lineas = [`🧾 Comprobante recibido por WhatsApp (bot):`, fileUrl];
+                if (lectura?.es_comprobante) {
+                  if (lectura.monto != null) lineas.push(`Monto leído: ${lectura.moneda || "ARS"} ${Number(lectura.monto).toFixed(2)}`);
+                  lineas.push(`Lectura: ${resumen}`);
+                } else lineas.push(`Lectura: ${resumen}`);
+                await sb(`/op_communications`, { method: "POST", body: JSON.stringify({ operation_id: opId, type: "note", direction: "in", content: lineas.join("\n") }) });
+              }
               guardado += ` · op ${opDest.op}`;
+            }
+          }
+          // Reenvío interno: plantilla con el archivo adjunto (llega sin ventana de 24 h).
+          // Si la plantilla todavía no está aprobada, se intenta el reenvío libre (solo llega
+          // si ese número le escribió al bot en las últimas 24 h).
+          const destinos = String(process.env.WA_COMPROBANTES_TO || "").split(/[,;\s]+/).filter(Boolean);
+          if (destinos.length) {
+            const kind = media.mime.includes("pdf") ? "document" : "image";
+            const newId = await uploadWaMedia(media.buffer, media.mime, kind === "document" ? "comprobante.pdf" : "comprobante.jpg");
+            const opTxt = opDest ? `${opDest.op}${esperadoArs ? ` (esperado ARS ${esperadoArs.toLocaleString("es-AR")})` : ` (saldo USD ${opDest.saldo_usd})`}` : "sin operación identificada";
+            for (const d of destinos) {
+              let r = newId ? await sendWaMediaTemplate(d, kind === "document" ? "aviso_comprobante_pdf" : "aviso_comprobante_img", { kind, mediaId: newId }, [opTxt, quien, resumen]) : { error: "sin media" };
+              if (!r?.ok) r = await forwardWaMedia(d, mediaId, msg.type, `🧾 Comprobante de ${quien} · ${opTxt} · ${resumen}`);
+              if (!r?.ok) console.error("[bot/whatsapp] reenvío falló", d, r?.error);
             }
           }
         }
       } catch (e) { console.error("[bot/whatsapp] media", e.message); }
-      await notifyAdmins("🧾 Comprobante por WhatsApp", `${phone} envió ${msg.type === "image" ? "una imagen" : "un documento"}${guardado ? ` — guardado (${guardado})` : ""} — verificar y registrar el cobro.`);
-      text = `[El cliente envió ${msg.type === "image" ? "una imagen" : "un documento"} — probablemente un comprobante de pago. ${guardado ? "Quedó guardado y adjunto a su operación, y el equipo ya fue notificado." : "El equipo ya fue notificado."} Agradecele, confirmá que lo recibieron y que lo van a verificar — sin dar el pago por acreditado.]`;
+      const resumen = resumirLectura(lectura, esperadoArs);
+      await notifyAdmins("🧾 Comprobante por WhatsApp", `${phone} envió ${msg.type === "image" ? "una imagen" : "un documento"}${opDest ? ` · ${opDest.op}` : ""} — ${resumen}${guardado ? ` — guardado` : ""}. Verificar y registrar el cobro.`);
+      const coincide = lectura?.es_comprobante && lectura.monto != null && esperadoArs && (lectura.moneda || "ARS") === "ARS" ? (Math.abs(Number(lectura.monto) - esperadoArs) / esperadoArs <= 0.03 ? "coincide con el saldo" : `NO coincide con el saldo esperado (≈ ARS ${esperadoArs.toLocaleString("es-AR")})`) : "";
+      text = lectura?.es_comprobante
+        ? `[El cliente envió un comprobante de pago. Lectura automática: ${resumen}${coincide ? ` — ${coincide}` : ""}. ${guardado ? "Quedó guardado y adjunto a su operación, y el equipo ya fue notificado." : "El equipo ya fue notificado."} Confirmale qué recibiste (monto y fecha, en *negrita*), y que el equipo lo verifica antes de acreditarlo. Si NO coincide con el saldo, decíselo con suavidad y que el equipo lo revisa. Nunca des el pago por acreditado.]`
+        : `[El cliente envió ${msg.type === "image" ? "una imagen" : "un documento"} que no parece un comprobante de pago (${resumen}). El equipo fue notificado. Preguntale de qué se trata, sin asumir que es un pago.]`;
     } else return Response.json({ ok: true });
     if (!phone || !text) return Response.json({ ok: true });
     const history = await loadHistory(phone);

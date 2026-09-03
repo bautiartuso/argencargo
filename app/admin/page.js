@@ -4385,8 +4385,12 @@ function CobroEntregaModal({op,saldo,cobradoPrevio,token,sinMontos,soloCobro,onC
   // el cobro sale con un click y el archivo fluye a la CC financiera como siempre.
   useEffect(()=>{(async()=>{try{
     const notas=await dq("op_communications",{token,filters:`?operation_id=eq.${op.id}&content=like.*Comprobante recibido por WhatsApp*&select=content&order=created_at.desc&limit=1`});
-    const url=(Array.isArray(notas)?notas[0]:null)?.content?.match(/https?:\/\/\S+/)?.[0];
+    const content=(Array.isArray(notas)?notas[0]:null)?.content||"";
+    const url=content.match(/https?:\/\/\S+/)?.[0];
     if(url)setReceipt(r=>r.url?r:{url,name:"🤖 Comprobante recibido por WhatsApp",kb:0});
+    // El bot lee el comprobante: si el monto leído es en ARS, se precarga (el admin igual lo verifica).
+    const ml=content.match(/Monto leído: ARS ([\d.]+)/);
+    if(ml)setMonto(prev=>prev||ml[1]);
   }catch{}})();},[]);
   const monedaCobro=metodo==="crypto"?"USD":metodo==="transferencia"?"ARS":moneda;
   const esArs=monedaCobro==="ARS";
