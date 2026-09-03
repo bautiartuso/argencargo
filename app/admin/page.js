@@ -14369,6 +14369,9 @@ const mtLoadPrefs=()=>{try{const r=JSON.parse(localStorage.getItem("mt")||"{}");
 const mtSavePrefs=(p)=>{try{localStorage.setItem("mt",JSON.stringify(p));}catch{}};
 const mtToggleSet=(set,id)=>{const n=new Set(set);if(n.has(id))n.delete(id);else n.add(id);return n;};
 const mtErr=(r,fallback)=>(r&&!Array.isArray(r)&&(r.message||r.hint||r.details))||fallback||"Error guardando";
+// Lista blanca de columnas de maritime_shipments para el EMPLEADO (sin plata: ni revenue_manual ni cost_*).
+// La usan el tablero (load/refetch/PATCH) y el hook del Historial cuando !verPlata. El admin pide "*".
+const MT_SH_COLS="id,shipment_code,tracking_number,product_description,origin,warehouse,warehouse_id,client_id,client_name_snapshot,is_fragile,is_repack,in_warehouse,notes,status,created_at,updated_at,received_at,shipped_to_ar_at,operation_id,container_id,awaiting_supplier";
 // Paleta (misma del admin)
 const MT_AZ="#60a5fa",MT_VE="#22c55e",MT_AM="#fbbf24",MT_RO="#f87171",MT_VI="#a78bfa",MT_GR="#94a3b8",MT_NA="#fb923c";
 const mtChipS=(col,extra)=>({fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:`${col}22`,color:col,whiteSpace:"nowrap",display:"inline-block",lineHeight:1.5,...extra});
@@ -14625,7 +14628,7 @@ function MtContCard({P,c,list,open,onToggle,showWh}){
         <span style={{fontSize:11,color:mtDim(0.6)}}>{nCli} {mtPlural(nCli,"cliente")} · {list.length} {mtPlural(list.length,"carga")} · {bulC} {mtPlural(bulC,"bulto")} · <strong style={{color:"#fff"}}>{mtM3(cbmC)} m³</strong>{sinMedir>0&&<span style={{color:MT_AM}}> (+{sinMedir} sin medir)</span>}</span>
         {P.plata&&gan!=null&&<span title={`A cobrar est. ${mtUsd(imp)} · Costo est. ${mtUsd(cost)}`} style={mtChipS(gan>=0?"#4ade80":MT_RO)}>A cobrar {mtUsd(imp)} · Costo {mtUsd(cost)} · Gan. {mtUsd(gan)}{imp>0?` (${Math.round(gan/imp*100)} %)`:""}</span>}
         <div style={{display:"flex",gap:5,marginLeft:"auto",flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
-          {c.status==="en_transito"&&<MtB col={MT_VE} disabled={P.busy} onClick={()=>P.act.setContainerStatus(c,"arribado")} title="Marcar arribado: crea las operaciones y manda los mails de retiro">{P.busy?"⏳":"⚓ Arribó"}</MtB>}
+          {c.status==="en_transito"&&<MtB col={MT_VE} disabled={P.busy} onClick={()=>P.act.setContainerStatus(c,"arribado")} title={P.plata?"Marcar arribado: crea las operaciones y manda los mails de retiro":"Marcar arribado (las operaciones las crea Bautista)"}>{P.busy?"⏳":"⚓ Arribó"}</MtB>}
           <MtB col={MT_AZ} onClick={()=>setPicker(p=>!p)}>+ Agregar cargas</MtB>
           <MtB col={MT_AZ} onClick={()=>P.editContainer(c)} title="Editar contenedor">✎</MtB>
           {!P.isMobile&&<MtB col={GOLD_LIGHT} onClick={()=>P.downloadPdf(c.warehouse,{scope:c.id})} title="PDF de este contenedor">PDF</MtB>}
@@ -14740,7 +14743,7 @@ function MtTrayDeposito({P,wh,list,open,onToggle,focus}){
       <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>{selIds.length} {mtPlural(selIds.length,"seleccionada")} · {mtM3(selCbm)} m³</span>
       <MtDrop label="Subir a ▾" col={MT_AZ} solid items={mtSubirItems(P,wh,selIds)}/>
       <MtB col={MT_AZ} onClick={()=>P.act.nuevoContConCargas(selIds,wh)}>+ Nuevo contenedor con estas</MtB>
-      <MtB col={GOLD_LIGHT} disabled={P.busy} onClick={()=>P.act.createOperationFromShipments(selIds)}>{P.busy?"Creando…":"Crear op consolidada"}</MtB>
+      {P.plata&&<MtB col={GOLD_LIGHT} disabled={P.busy} onClick={()=>P.act.createOperationFromShipments(selIds)}>{P.busy?"Creando…":"Crear op consolidada"}</MtB>}
       <MtB col={MT_GR} onClick={()=>setSel(new Set())} style={{border:"none"}}>Limpiar</MtB>
     </div>}
   </MtTray>;
@@ -14882,17 +14885,17 @@ function MtDepositosModal({P,onClose}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>⚙ Depósitos</h3><div style={{display:"flex",gap:8}}><MtB col={GOLD_LIGHT} onClick={()=>setEditing({})}>+ Nuevo depósito</MtB><button onClick={onClose} style={{background:"transparent",border:"none",color:mtDim(0.5),fontSize:20,cursor:"pointer"}}>×</button></div></div>
       <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
         <thead><tr>{["Nombre","Origen","Rótulo","Costo USD/m³","Orden","Activas","En tránsito",""].map((h,i)=><th key={i} style={{textAlign:"left",padding:"6px 8px",fontSize:10,color:mtDim(0.45),textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{h}</th>)}</tr></thead>
-        <tbody>{P.whs.map(w=>{const act=P.shipments.filter(s=>s.warehouse===w.name&&!esPlaceholder(s)).length;const tr=P.containers.filter(c=>c.warehouse===w.name&&c.status==="en_transito").length;return <tr key={w.id} style={{opacity:w.archived?0.45:1,borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+        <tbody>{P.whs.map(w=>{const act=P.shipments.filter(s=>s.warehouse===w.name&&!esPlaceholder(s)).length;const tr=P.containers.filter(c=>c.warehouse===w.name&&c.status==="en_transito").length;const actTot=P.shipments.filter(s=>s.warehouse===w.name&&!s.operation_id).length;const bloq=!w.archived&&(actTot>0||tr>0);return <tr key={w.id} style={{opacity:w.archived?0.45:1,borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
           <td style={{padding:"7px 8px",color:"#fff",fontWeight:700}}>{w.name}{w.archived&&<span style={mtChipS(MT_GR,{marginLeft:6})}>ARCHIVADO</span>}</td>
           <td style={{padding:"7px 8px"}}>{w.origin==="usa"?"🇺🇸 USA":"🇨🇳 China"}</td>
           <td style={{padding:"7px 8px",color:mtDim(0.6),fontSize:11,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{w.rotulo||"—"}</td>
           <td style={{padding:"7px 8px",color:w.default_cost_per_cbm?"#fff":MT_AM,...mtMono}}>{w.default_cost_per_cbm?Number(w.default_cost_per_cbm):"sin tarifa"}</td>
           <td style={{padding:"7px 8px",color:mtDim(0.6),...mtMono}}>{w.sort_order??"—"}</td>
           <td style={{padding:"7px 8px",...mtMono}}>{act}</td><td style={{padding:"7px 8px",...mtMono}}>{tr}</td>
-          <td style={{padding:"7px 8px",whiteSpace:"nowrap"}}><MtB col={MT_AZ} onClick={()=>setEditing(w)}>✎</MtB> <MtB col={w.archived?MT_VE:MT_GR} onClick={()=>P.act.archiveWh(w,!w.archived)}>{w.archived?"Restaurar":"Archivar"}</MtB></td>
+          <td style={{padding:"7px 8px",whiteSpace:"nowrap"}}><MtB col={MT_AZ} onClick={()=>setEditing(w)}>✎</MtB> <MtB col={w.archived?MT_VE:MT_GR} disabled={bloq} title={bloq?"Tiene cargas activas o contenedores en tránsito: no se puede archivar":undefined} onClick={()=>P.act.archiveWh(w,!w.archived)}>{w.archived?"Restaurar":"Archivar"}</MtB></td>
         </tr>;})}</tbody>
       </table></div>
-      {editing&&<WarehouseForm token={P.token} editing={editing.id?editing:null} onSave={()=>{setEditing(null);P.act.reload();}} onCancel={()=>setEditing(null)}/>}
+      {editing&&<WarehouseForm token={P.token} editing={editing.id?editing:null} archiveBlocked={editing.id&&!editing.archived&&(P.shipments.some(s=>s.warehouse===editing.name&&!s.operation_id)||P.containers.some(c=>c.warehouse===editing.name&&c.status==="en_transito"))} onSave={()=>{setEditing(null);P.act.reload();}} onCancel={()=>setEditing(null)}/>}
     </div>
   </div>;
 }
@@ -14942,7 +14945,7 @@ function MaritimePanel2({token,allClients=[]}){
   const [shipments,setShipments]=useState([]);const [packages,setPackages]=useState([]);const [items,setItems]=useState([]);
   const [containers,setContainers]=useState([]);const [whs,setWhs]=useState([]);
   const [mtTariffs,setMtTariffs]=useState([]);const [mtConfig,setMtConfig]=useState({});const [mtOverrides,setMtOverrides]=useState({});
-  const [lo,setLo]=useState(true);const loadedOnce=useRef(false);
+  const [lo,setLo]=useState(true);const [loadErr,setLoadErr]=useState(null);const loadedOnce=useRef(false);
   // Preferencias de UI persistidas (localStorage.mt). Nada de negocio.
   const p0=useRef(mtLoadPrefs()).current;
   const [tab,setTab]=useState(p0.tab==="analisis"&&!plata?"tablero":(p0.tab||"tablero"));
@@ -14970,41 +14973,59 @@ function MaritimePanel2({token,allClients=[]}){
   const flash=(m,kind="success")=>toast(m,kind);
 
   // ── Carga ──────────────────────────────────────────────────────────────────
-  // El select es condicional por rol: el empleado NO pide el embed operations ni revenue_manual.
-  const SH_COLS="id,shipment_code,tracking_number,product_description,origin,warehouse,warehouse_id,client_id,client_name_snapshot,is_fragile,is_repack,in_warehouse,notes,status,created_at,updated_at,received_at,shipped_to_ar_at,operation_id,container_id,cost_per_cbm,cost_estimado,cost_manual,awaiting_supplier";
+  // El select es condicional por rol: el empleado NO pide el embed operations, ni revenue_manual ni cost_* (lista blanca MT_SH_COLS).
+  const SH_COLS=MT_SH_COLS;
   const shSelect=plata?"*,operations(operation_code,budget_total,cost_flete)":SH_COLS;
   const fetchShipments=()=>dqTodos("maritime_shipments",{token,filters:`?select=${shSelect}&operation_id=is.null&order=created_at.desc,id.asc`});
   // packages/items de esos shipments, en lotes de 80 ids (la URL tiene límite).
   const fetchChildren=async(table,ids,order)=>{const out=[];for(let i=0;i<ids.length;i+=80){const r=await dq(table,{token,filters:`?shipment_id=in.(${ids.slice(i,i+80).join(",")})&select=*&order=${order}`});if(Array.isArray(r))out.push(...r);}return out;};
   const load=async()=>{
     if(!loadedOnce.current)setLo(true);
-    const [sh,wh,ct,tf,cf,ov]=await Promise.all([
-      fetchShipments(),
-      dq("maritime_warehouses",{token,filters:"?select=*&order=sort_order.asc,name.asc"}),
-      dq("maritime_containers",{token,filters:"?select=*&order=created_at.asc"}),
-      dq("tariffs",{token,filters:"?select=*"}),dq("calc_config",{token,filters:"?select=*"}),dq("client_tariff_overrides",{token,filters:"?select=*"}),
-    ]);
-    const ids=sh.map(s=>s.id);
-    const [pk,it]=await Promise.all([fetchChildren("maritime_packages",ids,"bulto_number.asc"),fetchChildren("maritime_items",ids,"sort_order.asc")]);
-    setShipments(sh);setPackages(pk);setItems(it);
-    setWhs(Array.isArray(wh)?wh:[]);setContainers(Array.isArray(ct)?ct:[]);setMtTariffs(Array.isArray(tf)?tf:[]);
-    const cfg={};(Array.isArray(cf)?cf:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setMtConfig(cfg);
-    const ovMap={};(Array.isArray(ov)?ov:[]).forEach(r=>{(ovMap[r.client_id]=ovMap[r.client_id]||[]).push(r);});setMtOverrides(ovMap);
-    loadedOnce.current=true;setLo(false);
+    setLoadErr(null);
+    try{
+      const [sh,wh,ct,tf,cf,ov]=await Promise.all([
+        fetchShipments(),
+        dq("maritime_warehouses",{token,filters:"?select=*&order=sort_order.asc,name.asc"}),
+        dq("maritime_containers",{token,filters:"?select=*&order=created_at.asc"}),
+        dq("tariffs",{token,filters:"?select=*"}),dq("calc_config",{token,filters:"?select=*"}),dq("client_tariff_overrides",{token,filters:"?select=*"}),
+      ]);
+      if(!Array.isArray(sh))throw new Error(mtErr(sh,"No se pudieron leer las cargas"));
+      const ids=sh.map(s=>s.id);
+      const [pk,it]=await Promise.all([fetchChildren("maritime_packages",ids,"bulto_number.asc"),fetchChildren("maritime_items",ids,"sort_order.asc")]);
+      setShipments(sh);setPackages(pk);setItems(it);
+      setWhs(Array.isArray(wh)?wh:[]);setContainers(Array.isArray(ct)?ct:[]);setMtTariffs(Array.isArray(tf)?tf:[]);
+      const cfg={};(Array.isArray(cf)?cf:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setMtConfig(cfg);
+      const ovMap={};(Array.isArray(ov)?ov:[]).forEach(r=>{(ovMap[r.client_id]=ovMap[r.client_id]||[]).push(r);});setMtOverrides(ovMap);
+      loadedOnce.current=true;setLo(false);
+    }catch(e){
+      // Sin red al abrir: en vez del skeleton eterno se muestra el error con Reintentar (render de abajo).
+      console.error("[muelle] load",e);
+      setLoadErr(e?.message||"Sin conexión");setLo(false);
+      if(loadedOnce.current)toast(`No se pudo actualizar Marítimos: ${e?.message||"sin conexión"}`,"error");
+    }
   };
   useEffect(()=>{load();},[token]);
   // Refetch silencioso (60 s + al volver a la pestaña): reconcilia por updated_at y avisa si otro usuario movió algo.
   const shipsRef=useRef(shipments);shipsRef.current=shipments;
   const busyRef=useRef(false);
+  // Mutaciones optimistas en vuelo (PATCH/POST de cargas y bultos): el refetch no arranca mientras hay
+  // una, y descarta su resultado si empezó alguna mientras esperaba (si no, la foto vieja pisa la UI y
+  // el usuario repite la acción → bultos duplicados).
+  const mutVer=useRef(0);const mutPend=useRef(0);
+  const withMut=async(fn)=>{mutVer.current++;mutPend.current++;try{return await fn();}finally{mutPend.current--;}};
   const silentRefetch=async()=>{
-    if(busyRef.current||document.hidden||!loadedOnce.current)return;
-    const [sh,ct]=await Promise.all([fetchShipments(),dq("maritime_containers",{token,filters:"?select=*&order=created_at.asc"})]);
-    if(!Array.isArray(sh))return;
-    const local={};shipsRef.current.forEach(s=>{local[s.id]=s;});
-    const moved=sh.filter(s=>local[s.id]&&local[s.id].updated_at&&s.updated_at&&local[s.id].updated_at!==s.updated_at&&(local[s.id].status!==s.status||local[s.id].container_id!==s.container_id));
-    if(moved.length)toast(`${moved.length} ${mtPlural(moved.length,"carga la movió","cargas las movió")} otro usuario: ${moved.slice(0,3).map(s=>s.product_description||s.tracking_number).join(", ")}`,"warn");
-    const pk=await fetchChildren("maritime_packages",sh.map(s=>s.id),"bulto_number.asc");
-    setShipments(sh);setPackages(pk);if(Array.isArray(ct))setContainers(ct);
+    if(busyRef.current||mutPend.current>0||document.hidden||!loadedOnce.current)return;
+    const v0=mutVer.current;
+    try{
+      const [sh,ct]=await Promise.all([fetchShipments(),dq("maritime_containers",{token,filters:"?select=*&order=created_at.asc"})]);
+      if(mutVer.current!==v0||!Array.isArray(sh))return;
+      const local={};shipsRef.current.forEach(s=>{local[s.id]=s;});
+      const moved=sh.filter(s=>local[s.id]&&local[s.id].updated_at&&s.updated_at&&local[s.id].updated_at!==s.updated_at&&(local[s.id].status!==s.status||local[s.id].container_id!==s.container_id));
+      if(moved.length)toast(`${moved.length} ${mtPlural(moved.length,"carga la movió","cargas las movió")} otro usuario: ${moved.slice(0,3).map(s=>s.product_description||s.tracking_number).join(", ")}`,"warn");
+      const pk=await fetchChildren("maritime_packages",sh.map(s=>s.id),"bulto_number.asc");
+      if(mutVer.current!==v0||mutPend.current>0)return;
+      setShipments(sh);setPackages(pk);if(Array.isArray(ct))setContainers(ct);
+    }catch(e){console.warn("[muelle] refetch",e?.message||e);} // sin red: el próximo tick lo intenta de nuevo
   };
   useEffect(()=>{const t=setInterval(silentRefetch,60000);const v=()=>{if(!document.hidden)silentRefetch();};document.addEventListener("visibilitychange",v);return()=>{clearInterval(t);document.removeEventListener("visibilitychange",v);};},[token,plata]);
 
@@ -15020,34 +15041,42 @@ function MaritimePanel2({token,allClients=[]}){
   const whByName=useMemo(()=>{const m={};whs.forEach(w=>{m[w.name]=w;});return m;},[whs]);
 
   // ── PATCH optimista con reversión ──────────────────────────────────────────
-  const patchShips=async(ids,body,{silent}={})=>{
+  const patchShips=(ids,body,{silent}={})=>withMut(async()=>{
     if(!ids.length)return true;
     const prev=shipsRef.current;const idSet=new Set(ids);
     setShipments(prev.map(s=>idSet.has(s.id)?{...s,...body}:s));
-    const r=await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})&select=${shSelect}`,body});
+    let r;try{r=await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})&select=${shSelect}`,body});}catch(e){r={message:e?.message||"Sin conexión"};}
     if(!Array.isArray(r)){setShipments(prev);toast(mtErr(r,"No se pudo guardar; se revirtió"),"error");return false;}
     const byId={};r.forEach(x=>{byId[x.id]=x;});
     setShipments(cur=>cur.map(s=>byId[s.id]?{...s,...byId[s.id]}:s));
     return true;
-  };
-  const patchCont=async(id,body)=>{
+  });
+  const patchCont=(id,body)=>withMut(async()=>{
     const prev=containers;setContainers(prev.map(c=>c.id===id?{...c,...body}:c));
-    const r=await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${id}`,body});
+    let r;try{r=await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${id}`,body});}catch(e){r={message:e?.message||"Sin conexión"};}
     if(!Array.isArray(r)){setContainers(prev);toast(mtErr(r,"No se pudo guardar el contenedor"),"error");return false;}
     setContainers(cur=>cur.map(c=>c.id===id?{...c,...r[0]}:c));return true;
-  };
+  });
   const copy=async(text,msg)=>{try{await navigator.clipboard.writeText(text);flash(msg||"Copiado");}catch{toast("No se pudo copiar","error");}};
 
   // ── Acciones de carga ──────────────────────────────────────────────────────
   // Recibido = status en_deposito + received_at (+ bultos). Los bultos se POSTean aparte y se
   // verifican; si fallan, la carga queda recibida sin medir (se ve el botón MEDIR).
-  const recibir=async(sh,{fecha,bultos})=>{
+  const recibir=(sh,{fecha,bultos})=>withMut(async()=>{
     const ok=await patchShips([sh.id],{status:"en_deposito",received_at:fecha||mtHoy(),awaiting_supplier:false,shipped_to_ar_at:null});
     if(!ok)return false;
     const valid=(bultos||[]).filter(r=>mtCbmLive(r)>0).map((r,i)=>({shipment_id:sh.id,bulto_number:i+1,quantity:Math.max(1,Number(r.quantity)||1),length_cm:Number(r.length_cm),width_cm:Number(r.width_cm),height_cm:Number(r.height_cm)}));
-    if(valid.length){const r=await dq("maritime_packages",{method:"POST",token,body:valid});if(Array.isArray(r))setPackages(cur=>[...cur.filter(p=>p.shipment_id!==sh.id),...r]);else toast(mtErr(r,"La carga quedó recibida pero los bultos no se guardaron"),"error");}
+    if(valid.length){
+      // La carga puede tener bultos ya guardados (medidas del proveedor cargadas en el form): se
+      // reemplazan con DELETE + POST, igual que savePackages, para no duplicar CBM/cost_estimado.
+      const d=await dq("maritime_packages",{method:"DELETE",token,filters:`?shipment_id=eq.${sh.id}`});
+      if(d&&d.message){toast(mtErr(d,"La carga quedó recibida pero no se pudieron reemplazar los bultos viejos"),"error");return true;}
+      const r=await dq("maritime_packages",{method:"POST",token,body:valid});
+      if(Array.isArray(r))setPackages(cur=>[...cur.filter(p=>p.shipment_id!==sh.id),...r]);
+      else{setPackages(cur=>cur.filter(p=>p.shipment_id!==sh.id));toast(mtErr(r,"La carga quedó recibida pero los bultos no se guardaron: volvé a medirla"),"error");}
+    }
     flash(`📦 ${sh.product_description||"Carga"} recibida${valid.length?` · ${mtM3(valid.reduce((s,r)=>s+mtCbmLive(r),0))} m³`:" (sin medir)"}`);return true;
-  };
+  });
   const recibirMasivo=async(ids,fecha)=>{const ok=await patchShips(ids,{status:"en_deposito",received_at:fecha||mtHoy(),awaiting_supplier:false,shipped_to_ar_at:null});if(ok)flash(`📦 ${ids.length} ${mtPlural(ids.length,"carga recibida","cargas recibidas")}`);return ok;};
   // Subir a contenedor = ÚNICA forma de pasar a en_camino_ar. received_at=coalesce(received_at,hoy):
   // las que no tienen fecha van en un segundo PATCH con received_at=hoy.
@@ -15093,7 +15122,7 @@ function MaritimePanel2({token,allClients=[]}){
     setShipments(cur=>cur.filter(s=>s.id!==id));setDrawer(d=>d?.id===id?null:d);flash("Pedido eliminado");
   };
   // Bultos del drawer: DELETE + POST con verificación y un reintento del POST (no es atómico).
-  const savePackages=async(shId,rows)=>{
+  const savePackages=(shId,rows)=>withMut(async()=>{
     const valid=rows.filter(r=>mtCbmLive(r)>0).map((r,i)=>({shipment_id:shId,bulto_number:i+1,quantity:Math.max(1,Number(r.quantity)||1),length_cm:Number(r.length_cm),width_cm:Number(r.width_cm),height_cm:Number(r.height_cm)}));
     const d=await dq("maritime_packages",{method:"DELETE",token,filters:`?shipment_id=eq.${shId}`});
     if(d&&d.message){toast(mtErr(d,"No se pudieron borrar los bultos viejos"),"error");return false;}
@@ -15101,10 +15130,10 @@ function MaritimePanel2({token,allClients=[]}){
     if(!Array.isArray(r)&&valid.length)r=await dq("maritime_packages",{method:"POST",token,body:valid}); // reintento
     if(!Array.isArray(r)){toast(mtErr(r,"Los bultos no se guardaron: volvé a cargarlos"),"error");setPackages(cur=>cur.filter(p=>p.shipment_id!==shId));return false;}
     setPackages(cur=>[...cur.filter(p=>p.shipment_id!==shId),...r]);flash("Bultos guardados");
-    // cost_estimado auto lo recalcula el trigger → releer esa carga.
-    const f=await dq("maritime_shipments",{token,filters:`?id=eq.${shId}&select=cost_estimado,cost_per_cbm,cost_manual`});if(Array.isArray(f)&&f[0])setShipments(cur=>cur.map(s=>s.id===shId?{...s,...f[0]}:s));
+    // cost_estimado auto lo recalcula el trigger → releer esa carga (solo admin: el empleado no pide costos).
+    if(plata){const f=await dq("maritime_shipments",{token,filters:`?id=eq.${shId}&select=cost_estimado,cost_per_cbm,cost_manual`});if(Array.isArray(f)&&f[0])setShipments(cur=>cur.map(s=>s.id===shId?{...s,...f[0]}:s));}
     return true;
-  };
+  });
   // Costo / a cobrar a mano (copiado del panel viejo, con verificación).
   const saveShipCost=async(sh,val)=>{
     const v=String(val).trim();const r=v===""?null:Number(v.replace(",","."));if(r!=null&&!isFinite(r))return;
@@ -15121,6 +15150,8 @@ function MaritimePanel2({token,allClients=[]}){
   // si no, se bloquea (admin puede forzar con un segundo confirm rojo).
   const createOperationFromShipments=async(ids,{force}={})=>{
     if(!ids.length)return;
+    // Solo el admin crea ops (presupuesto, cost_flete, mail de retiro). El empleado no maneja plata.
+    if(!plata){alertDialog("Las operaciones las crea Bautista.");return;}
     const selObjs=shipsRef.current.filter(s=>ids.includes(s.id));
     const clientIds=new Set(selObjs.map(s=>s.client_id).filter(Boolean));
     if(clientIds.size!==1){alertDialog("Las cargas seleccionadas deben ser del mismo cliente.");return;}
@@ -15161,6 +15192,9 @@ function MaritimePanel2({token,allClients=[]}){
   // Al arribar: UNA op por cliente con las cargas sin operar. Copiado tal cual; el único cambio es que
   // un POST fallido avisa con toast en vez de `continue` silencioso.
   const createOpsForContainer=async(c)=>{
+    // Guard duro: ningún atajo (card, alerta HOY, calendario, historial) crea ops sin plata. El empleado
+    // solo marca el arribo; las ops las crea Bautista desde la alerta "sin operar" / Historial [Crear ops].
+    if(!plata)return{msg:" · ops pendientes (las crea Bautista desde la alerta \"sin operar\")",ops:[]};
     const conShips=shipsRef.current.filter(s=>s.container_id===c.id&&!s.operation_id);
     const byClient={};conShips.forEach(s=>{if(s.client_id)(byClient[s.client_id]=byClient[s.client_id]||[]).push(s);});
     const clientIds=Object.keys(byClient);if(clientIds.length===0)return{msg:"",ops:[]};
@@ -15171,7 +15205,10 @@ function MaritimePanel2({token,allClients=[]}){
     for(const cid of clientIds){
       const ships=byClient[cid];const ids=ships.map(s=>s.id);const client=clientOf(cid)||{};const origin=ships[0].origin==="usa"?"USA":"China";
       const [itR,pkR,ovR]=await Promise.all([dq("maritime_items",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=*&order=shipment_id.asc,sort_order.asc`}),dq("maritime_packages",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=*&order=shipment_id.asc,bulto_number.asc`}),dq("client_tariff_overrides",{token,filters:`?client_id=eq.${cid}&select=*`})]);
-      const mItems=Array.isArray(itR)?itR:[];const mPkgs=Array.isArray(pkR)?pkR:[];const overrides=Array.isArray(ovR)?ovR:[];
+      const mItems=Array.isArray(itR)?itR:[];const mPkgs=Array.isArray(pkR)?pkR:[];
+      // Si no se pudieron leer los overrides (RLS/red) NO se crea la op a tarifa de lista en silencio.
+      if(!Array.isArray(ovR)){toast(`No se pudo leer la tarifa pactada de ${client.client_code||cid}: ${mtErr(ovR,"error")} · op NO creada`,"error");continue;}
+      const overrides=ovR;
       const desc=ships.map(s=>s.product_description).filter(Boolean).join(" · ");
       const calcItems=mItems.map(it=>({unit_price_usd:Number(it.unit_price_usd||0),quantity:Number(it.quantity||1),import_duty_rate:0,statistics_rate:0,iva_rate:21}));
       const calcPkgs=mPkgs.map(p=>({quantity:Number(p.quantity||1),gross_weight_kg:0,length_cm:Number(p.length_cm||0),width_cm:Number(p.width_cm||0),height_cm:Number(p.height_cm||0)}));
@@ -15214,15 +15251,17 @@ function MaritimePanel2({token,allClients=[]}){
       const clis=[...new Set(pend.map(x=>x.client_id))];const nCli=clis.length;
       const eta=mtEffEta(c);const adelantado=eta&&diasDesde(eta)< -3;
       const nombres=clis.map(id=>clientOf(id)?.client_code||"").filter(Boolean).slice(0,6).join(", ");
-      if(!await confirmDialog(`¿Marcar "${c.code}" como ARRIBADO?${nCli>0?`\n\nSe crean ${nCli} operación${nCli>1?"es":""} (una por cliente, con ${pend.length} carga${pend.length>1?"s":""}), nacen LISTAS PARA RETIRAR y se les manda el mail de retiro${nombres?` a ${nombres}`:""}. Tarda unos segundos — no cierres la pantalla.`:""}${adelantado?`\n\n⚠ La ETA es ${mtFmtD(eta)}, ¿seguro que ya arribó?`:""}`))return;
+      if(!await confirmDialog(`¿Marcar "${c.code}" como ARRIBADO?${nCli>0?(plata?`\n\nSe crean ${nCli} operación${nCli>1?"es":""} (una por cliente, con ${pend.length} carga${pend.length>1?"s":""}), nacen LISTAS PARA RETIRAR y se les manda el mail de retiro${nombres?` a ${nombres}`:""}. Tarda unos segundos — no cierres la pantalla.`:`\n\nHay ${pend.length} ${mtPlural(pend.length,"carga sin operar","cargas sin operar")} de ${nCli} ${mtPlural(nCli,"cliente")}: las operaciones y el aviso de retiro los crea Bautista (quedan en la alerta "sin operar").`):""}${adelantado?`\n\n⚠ La ETA es ${mtFmtD(eta)}, ¿seguro que ya arribó?`:""}`))return;
     }
     setCreatingOp(true);busyRef.current=true;
     try{
       const body={status};if(status==="arribado")body.arrived_at=mtHoy();if(status==="en_transito")body.arrived_at=null;
       const ok=await patchCont(c.id,body);if(!ok)return;
       let extra="";
-      if(status==="arribado"){try{const r=await createOpsForContainer(c);extra=r.msg;}catch(e){console.error("auto-ops arribo",e);extra=" · ⚠️ error creando ops (ver consola)";}}
-      flash(`Contenedor ${c.code} → ${status==="en_transito"?"en tránsito":"arribado"}${extra}`);
+      // El EMPLEADO solo marca status + arrived_at: no crea ops ni calcula presupuestos ni abre el modal de costos.
+      if(status==="arribado"&&plata){try{const r=await createOpsForContainer(c);extra=r.msg;}catch(e){console.error("auto-ops arribo",e);extra=" · ⚠️ error creando ops (ver consola)";}}
+      if(status==="arribado"&&!plata)flash(`⚓ Arribo de ${c.code} marcado · Bautista crea las operaciones`);
+      else flash(`Contenedor ${c.code} → ${status==="en_transito"?"en tránsito":"arribado"}${extra}`);
       await load();
       if(status==="arribado"&&plata)await openCostModalForContainer(c,{silent:true});
     }finally{setCreatingOp(false);busyRef.current=false;}
@@ -15235,7 +15274,11 @@ function MaritimePanel2({token,allClients=[]}){
     if(r&&r.message){toast(mtErr(r,"No se pudo eliminar el contenedor"),"error");load();return;}
     setContainers(cur=>cur.filter(x=>x.id!==c.id));flash(`Contenedor ${c.code} eliminado`);
   };
-  const archiveWh=async(w,archived)=>{const prev=whs;setWhs(prev.map(x=>x.id===w.id?{...x,archived}:x));const r=await dq("maritime_warehouses",{method:"PATCH",token,filters:`?id=eq.${w.id}`,body:{archived}});if(!Array.isArray(r)){setWhs(prev);toast(mtErr(r,"No se pudo archivar"),"error");}else flash(archived?`${w.name} archivado`:`${w.name} restaurado`);};
+  // No se archiva un depósito con cargas activas (sin operar) o contenedores en tránsito: desaparecería del tablero con actividad adentro.
+  const whBloqueoArchivo=(w)=>{const act=shipsRef.current.filter(s=>s.warehouse===w.name&&!s.operation_id).length;const tr=containers.filter(c=>c.warehouse===w.name&&c.status==="en_transito").length;return act||tr?{act,tr}:null;};
+  const archiveWh=async(w,archived)=>{
+    if(archived){const b=whBloqueoArchivo(w);if(b){alertDialog(`No se puede archivar ${w.name}: tiene ${b.act} ${mtPlural(b.act,"carga activa","cargas activas")} y ${b.tr} ${mtPlural(b.tr,"contenedor en tránsito","contenedores en tránsito")}. Operá o mové esas cargas primero.`);return;}}
+    const prev=whs;setWhs(prev.map(x=>x.id===w.id?{...x,archived}:x));const r=await dq("maritime_warehouses",{method:"PATCH",token,filters:`?id=eq.${w.id}`,body:{archived}});if(!Array.isArray(r)){setWhs(prev);toast(mtErr(r,"No se pudo archivar"),"error");}else flash(archived?`${w.name} archivado`:`${w.name} restaurado`);};
   // PDF con alcance: depósito completo / un contenedor / sin contenedor; placeholders solo si se pide.
   const downloadPdf=(warehouse,{lang="es",scope="all",withValues=false,includeWaiting=false}={})=>{
     const arrivedIds=new Set(containers.filter(c=>c.status==="arribado").map(c=>c.id));
@@ -15243,11 +15286,12 @@ function MaritimePanel2({token,allClients=[]}){
     let list=shipments.filter(s=>!s.operation_id&&s.warehouse===warehouse&&!(s.container_id&&arrivedIds.has(s.container_id)));
     if(scope==="none")list=list.filter(s=>!s.container_id);else if(scope!=="all")list=list.filter(s=>s.container_id===scope);
     if(!includeWaiting)list=list.filter(s=>!esPlaceholder(s));
-    const wsShipments=list.map(s=>({...s,packages:pkgByShip[s.id]||[],items:itemsByShip[s.id]||[]})).sort((a,b)=>{const ra=a.received_at?new Date(a.received_at).getTime():null;const rb=b.received_at?new Date(b.received_at).getTime():null;if(ra!==null&&rb!==null)return ra-rb;if(ra!==null)return -1;if(rb!==null)return 1;return new Date(a.created_at||0).getTime()-new Date(b.created_at||0).getTime();});
+    // Los placeholders (esperando al proveedor) van sin tracking: el SEA… interno no se imprime como si fuera un código real.
+    const wsShipments=list.map(s=>({...s,tracking_number:esPlaceholder(s)?null:s.tracking_number,packages:pkgByShip[s.id]||[],items:itemsByShip[s.id]||[]})).sort((a,b)=>{const ra=a.received_at?new Date(a.received_at).getTime():null;const rb=b.received_at?new Date(b.received_at).getTime():null;if(ra!==null&&rb!==null)return ra-rb;if(ra!==null)return -1;if(rb!==null)return 1;return new Date(a.created_at||0).getTime()-new Date(b.created_at||0).getTime();});
     if(wsShipments.length===0){toast("No hay cargas para ese alcance","warn");return;}
     const rotulo=w?.rotulo||`MARÍTIMO ${warehouse.toUpperCase()} (código cliente)`;
     const whContainers=containers.filter(c=>c.warehouse===warehouse&&c.status==="en_transito"&&(scope==="all"||c.id===scope));
-    try{printMaritimePdf({warehouse,origin,shipments:wsShipments,rotulo,lang,withValues:plata&&withValues,containers:whContainers});}catch(e){console.error(e);toast("No se pudo abrir el PDF (¿popup bloqueado?)","error");}
+    try{const ok=printMaritimePdf({warehouse,origin,shipments:wsShipments,rotulo,lang,withValues:plata&&withValues,containers:whContainers});if(ok===false)toast("El navegador bloqueó la ventana del PDF. Permití pop-ups.","error");}catch(e){console.error(e);toast("No se pudo abrir el PDF","error");}
   };
 
   // ── Navegación: abrir + scroll + flash ─────────────────────────────────────
@@ -15290,7 +15334,9 @@ function MaritimePanel2({token,allClients=[]}){
   const whList=useMemo(()=>{
     const actBy={};active.forEach(s=>{if(!esPlaceholder(s)&&!(s.container_id&&arrivedIds.has(s.container_id)))actBy[s.warehouse]=(actBy[s.warehouse]||0)+1;});
     const trBy={};containers.forEach(c=>{if(c.status==="en_transito")trBy[c.warehouse]=(trBy[c.warehouse]||0)+1;});
-    const names=new Set(whs.filter(w=>!w.archived).map(w=>w.name));active.forEach(s=>{if(s.warehouse&&!whByName[s.warehouse])names.add(s.warehouse);});
+    // Un depósito archivado que igual tiene cargas activas o contenedores en tránsito sigue visible (con badge ARCHIVADO).
+    const hasAct={};active.forEach(s=>{if(s.warehouse)hasAct[s.warehouse]=true;});
+    const names=new Set(whs.filter(w=>!w.archived||hasAct[w.name]||trBy[w.name]).map(w=>w.name));active.forEach(s=>{if(s.warehouse&&!whByName[s.warehouse])names.add(s.warehouse);});
     return [...names].map(n=>({name:n,w:whByName[n]||{name:n,origin:active.find(s=>s.warehouse===n)?.origin||"china"},act:actBy[n]||0,tr:trBy[n]||0})).sort((a,b)=>{const sa=a.w.sort_order??999,sb=b.w.sort_order??999;if(sa!==sb)return sa-sb;return (b.act+b.tr*3)-(a.act+a.tr*3);});
   },[whs,active,containers,arrivedIds,whByName]);
   const inFilter=(wh)=>whFilter==="all"||whFilter===wh;
@@ -15360,6 +15406,7 @@ function MaritimePanel2({token,allClients=[]}){
     return <div key={name} style={{marginBottom:18}}>
       <div style={{position:"sticky",top:isMobile?96:52,zIndex:4,background:"#0A1628",padding:"8px 0 6px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderBottom:"1px solid rgba(255,255,255,0.06)",marginBottom:8}}>
         <span style={{fontSize:14,fontWeight:800,color:MT_AZ}}>{name} {w.w.origin==="usa"?"🇺🇸":"🇨🇳"}</span>
+        {w.w.archived&&<span style={mtChipS(MT_GR,{fontWeight:800})} title="Depósito archivado con actividad pendiente">ARCHIVADO</span>}
         {rot&&<span style={{fontSize:11,color:mtDim(0.45),fontStyle:"italic",display:"inline-flex",gap:5,alignItems:"center",maxWidth:isMobile?"100%":320,overflow:"hidden"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>Rótulo: <span style={{color:IC,fontWeight:600}}>{rot}</span></span><span onClick={()=>copy(rot,"Rótulo copiado")} title="Copiar rótulo" style={{cursor:"pointer"}}>📋</span></span>}
         <span style={{fontSize:11,color:mtDim(0.6)}}>{trConts.length} {mtPlural(trConts.length,"contenedor","contenedores")} · {real.length} {mtPlural(real.length,"carga")} · {mtM3(cbm)} m³{sinMedir?<span style={{color:MT_AM}}> (+{sinMedir} sin medir)</span>:null}{esp.length?<span style={{color:MT_VI}}> · +{esp.length} esperando al proveedor</span>:null}</span>
         {tot&&tot.importe>0&&<span title={`A cobrar ${mtUsd(tot.importe)} · Costo ${mtUsd(tot.costo)}`} style={mtChipS(tot.ganancia>=0?"#4ade80":MT_RO)}>gan. est. en viaje {mtUsd(tot.ganancia)}</span>}
@@ -15396,7 +15443,8 @@ function MaritimePanel2({token,allClients=[]}){
         {plata&&<MtB col={MT_GR} onClick={()=>setShowDepositos(true)} title="Depósitos">⚙</MtB>}
       </div>
     </div>
-    {lo&&!loadedOnce.current?<div>{[0,1,2].map(i=><div key={i} className="mtSkel" style={{height:i===0?90:140,marginBottom:12}}/>)}</div>:<>
+    {loadErr&&!loadedOnce.current?<div style={{padding:"10px 14px",borderRadius:8,background:`${MT_RO}14`,border:`1px solid ${MT_RO}55`,color:MT_RO,fontSize:12,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}><span>No se pudo cargar Marítimos: {loadErr}</span><MtB col={MT_RO} onClick={()=>load()}>Reintentar</MtB></div>
+    :lo&&!loadedOnce.current?<div>{[0,1,2].map(i=><div key={i} className="mtSkel" style={{height:i===0?90:140,marginBottom:12}}/>)}</div>:<>
       {/* NIVEL 1 · pipeline + HOY */}
       <MtPipeline P={P} stats={stats} alerts={alerts} stageFocus={stageFocus} setStageFocus={setStageFocus} mute={mute}/>
       {/* NIVEL 2 · tabs */}
@@ -15419,7 +15467,7 @@ function MaritimePanel2({token,allClients=[]}){
     {drawerSh&&<MtDrawer P={P} sh={drawerSh} listIds={drawer.listIds} section={drawer.section} onClose={()=>setDrawer(null)}/>}
     {showNew&&<div onClick={()=>setShowNew(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:isMobile?"12px 8px":"40px 20px",overflowY:"auto"}}>
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:920,background:"#0F1F3A",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,padding:isMobile?"16px 14px":"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",margin:"auto"}}>
-        <MaritimeForm token={token} editing={showNew.editing||null} packages={showNew.editing?.id?pkgByShip[showNew.editing.id]||[]:[]} items={showNew.editing?.id?itemsByShip[showNew.editing.id]||[]:[]} allClients={allClients} warehouses={whs.filter(w=>!w.archived)} shipments={shipments} containers={containers} onCreateWarehouse={()=>setEditingWh({})} onSave={()=>{setShowNew(null);load();}} onCancel={()=>setShowNew(null)}/>
+        <MaritimeForm token={token} editing={showNew.editing||null} packages={showNew.editing?.id?pkgByShip[showNew.editing.id]||[]:[]} items={showNew.editing?.id?itemsByShip[showNew.editing.id]||[]:[]} allClients={allClients} warehouses={whs} shipments={shipments} containers={containers} onCreateWarehouse={()=>setEditingWh({})} onSave={()=>{setShowNew(null);load();}} onCancel={()=>setShowNew(null)}/>
       </div>
     </div>}
     {editingContainer&&<ContainerForm token={token} editing={editingContainer.id?editingContainer:null} warehouse={editingContainer.warehouse} warehouses={whs} onSave={async()=>{
@@ -15437,7 +15485,7 @@ function MaritimePanel2({token,allClients=[]}){
       let ok=true;if(con.length)ok=await patchShips(con,base);if(ok&&sin.length)ok=await patchShips(sin,{...base,received_at:hoy});
       if(ok){flash(`🚢 ${nuevo.code} creado con ${after.ids.length} ${mtPlural(after.ids.length,"carga")}`);setOpenCont(s=>new Set([...s,nuevo.id]));setSel({});}
     }} onCancel={()=>setEditingContainer(null)}/>}
-    {editingWh&&<WarehouseForm token={token} editing={editingWh.id?editingWh:null} onSave={()=>{setEditingWh(null);load();}} onCancel={()=>setEditingWh(null)}/>}
+    {editingWh&&<WarehouseForm token={token} editing={editingWh.id?editingWh:null} archiveBlocked={!!(editingWh.id&&!editingWh.archived&&whBloqueoArchivo(editingWh))} onSave={()=>{setEditingWh(null);load();}} onCancel={()=>setEditingWh(null)}/>}
     {showDepositos&&plata&&<MtDepositosModal P={P} onClose={()=>setShowDepositos(false)}/>}
     {linking&&<MtLinkModal P={P} c={linking} onClose={()=>setLinking(null)}/>}
     {costModal&&plata&&<MaritimeCostModal data={costModal} token={token} onClose={()=>setCostModal(null)} onSaved={()=>{setCostModal(null);load();flash("✅ Costos guardados");}}/>}
@@ -15560,13 +15608,16 @@ function mtxUseArribados({token,verPlata,dep}){
   const fetchPage=useCallback(async(offset)=>{
     if(busy.current)return;busy.current=true;
     setSt(p=>({...p,loading:true,error:null}));
+    // try/catch/finally: si dq lanza (red caída) busy vuelve a false y el banner muestra el error con Reintentar.
+    try{
     const conts=await dq("maritime_containers",{token,filters:`?status=eq.arribado&select=*&order=arrived_at.desc,id.asc&limit=${MTX_PAGE}&offset=${offset}`});
-    if(!Array.isArray(conts)){busy.current=false;setSt(p=>({...p,loading:false,loaded:true,error:conts?.message||"No se pudo cargar el historial"}));toast("No se pudo cargar el historial","error");return;}
+    if(!Array.isArray(conts)){setSt(p=>({...p,loading:false,loaded:true,error:conts?.message||"No se pudo cargar el historial"}));toast("No se pudo cargar el historial","error");return;}
     const ids=conts.map(c=>c.id);
     const ships=[];
     for(const lote of mtxChunk(ids,MTX_LOTE)){
       // delivered_at se pide para medir arribó→entrega en Análisis (la columna existe en operations).
-      const r=await dq("maritime_shipments",{token,filters:`?container_id=in.(${lote.join(",")})&select=*${verPlata?",operations(operation_code,budget_total,cost_flete,delivered_at)":""}&order=created_at.asc`});
+      // Empleado: lista blanca MT_SH_COLS (sin revenue_manual ni cost_*); admin: * + embed operations.
+      const r=await dq("maritime_shipments",{token,filters:`?container_id=in.(${lote.join(",")})&select=${verPlata?"*,operations(operation_code,budget_total,cost_flete,delivered_at)":MT_SH_COLS}&order=created_at.asc`});
       if(Array.isArray(r))ships.push(...r);else toast(`Cargas del historial: ${r?.message||"error"}`,"error");
     }
     const sids=ships.map(s=>s.id);const pkgs=[];const items=[];
@@ -15576,7 +15627,11 @@ function mtxUseArribados({token,verPlata,dep}){
       if(verPlata){const it=await dq("maritime_items",{token,filters:`?shipment_id=in.(${lote.join(",")})&select=shipment_id,quantity,unit_price_usd`});if(Array.isArray(it))items.push(...it);}
     }
     setSt(p=>{const reset=offset===0;return {rows:reset?conts:[...p.rows,...conts],ships:reset?ships:[...p.ships,...ships],pkgs:reset?pkgs:[...p.pkgs,...pkgs],items:reset?items:[...p.items,...items],loading:false,loaded:true,hasMore:conts.length===MTX_PAGE,error:null};});
-    busy.current=false;
+    }catch(e){
+      console.error("[mtxUseArribados]",e);
+      setSt(p=>({...p,loading:false,loaded:true,error:e?.message||"No se pudo cargar el historial"}));
+      toast("No se pudo cargar el historial","error");
+    }finally{busy.current=false;}
   },[token,verPlata]);
   useEffect(()=>{fetchPage(0);},[fetchPage,dep]);
   const cbmMap=useMemo(()=>{const m={};st.pkgs.forEach(p=>{m[p.shipment_id]=(m[p.shipment_id]||0)+Number(p.cbm||0);});return m;},[st.pkgs]);
@@ -15671,7 +15726,7 @@ function MtCalendario({ctx}){
           <span onClick={()=>actions.openContainer(c.id)} style={{fontFamily:MTX.mono,fontWeight:800,color:"#fff",cursor:"pointer"}}>{c.code}</span>
           <span style={{color:MTX.dim}}>{c.warehouse} · Puerto BA {fd(effEta(c))} · <span style={{color:MTX.red,fontWeight:700}}>vencido hace {d} d</span></span>
           <MtxBtn color={MTX.amber} onClick={()=>actions.editContainer(c)}>Corregir ETA</MtxBtn>
-          <MtxBtn color={MTX.green} disabled={busy} onClick={()=>runArribo(c)}>{busy?"⏳ Creando ops…":"⚓ Arribó"}</MtxBtn>
+          <MtxBtn color={MTX.green} disabled={busy} onClick={()=>runArribo(c)}>{busy?(verPlata?"⏳ Creando ops…":"⏳"):"⚓ Arribó"}</MtxBtn>
         </div>;})}
       </div>
     </div>}
@@ -16367,8 +16422,12 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     let code=editing?.shipment_code||null;
     const changedWh=isEdit&&editing?.warehouse!==selectedWh.name;
     if(!isEdit||changedWh){
-      const existingInWh=shipments.filter(s=>s.warehouse===selectedWh.name&&s.id!==editId).length;
-      code=`#${existingInWh+1}`;
+      // Máximo real del depósito en la base (el prop `shipments` trae solo las activas → contar duplicaba
+      // códigos de cargas ya operadas). Se calcula del lado cliente: en texto "#9" > "#10".
+      const r=await dq("maritime_shipments",{token,filters:`?select=shipment_code&warehouse=eq.${encodeURIComponent(selectedWh.name)}`});
+      if(!Array.isArray(r)){setErr(r?.message||"No se pudo calcular el número de pedido");setSaving(false);return;}
+      const maxN=r.reduce((m,s)=>{const n=parseInt(String(s.shipment_code||"").replace(/\D/g,""),10);return Number.isFinite(n)&&n>m?n:m;},0);
+      code=`#${maxN+1}`;
     }
     const hoy=new Date().toISOString().slice(0,10);
     // Contenedor: solo válido si pertenece al depósito elegido y la carga no está esperando al proveedor.
@@ -16551,7 +16610,7 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
   </div>;
 }
 
-function WarehouseForm({token,editing,onSave,onCancel}){
+function WarehouseForm({token,editing,onSave,onCancel,archiveBlocked=false}){
   const isEdit=!!editing?.id;
   const [name,setName]=useState(editing?.name||"");
   const [rotulo,setRotulo]=useState(editing?.rotulo||"");
@@ -16601,8 +16660,8 @@ function WarehouseForm({token,editing,onSave,onCancel}){
       <Inp label="Orden en el tablero" type="number" value={sortOrder} onChange={setSortOrder} placeholder="1, 2, 3… (menor = más arriba)"/>
     </div>
     {isEdit&&<label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",padding:"9px 12px",marginBottom:12,borderRadius:8,fontSize:12.5,fontWeight:600,color:"rgba(255,255,255,0.85)",background:archived?"rgba(248,113,113,0.07)":"rgba(255,255,255,0.03)",border:`1px solid ${archived?"rgba(248,113,113,0.3)":"rgba(255,255,255,0.08)"}`}}>
-      <input type="checkbox" checked={archived} onChange={e=>setArchived(e.target.checked)} style={{accentColor:"#f87171",width:16,height:16,cursor:"pointer",flexShrink:0}}/>
-      <span>🗄 Archivado <span style={{fontSize:10.5,fontWeight:500,color:"rgba(255,255,255,0.45)"}}>· sale de los chips y del tablero; sigue en historial y análisis</span></span>
+      <input type="checkbox" checked={archived} disabled={archiveBlocked&&!archived} onChange={e=>setArchived(e.target.checked)} style={{accentColor:"#f87171",width:16,height:16,cursor:archiveBlocked&&!archived?"not-allowed":"pointer",flexShrink:0}}/>
+      <span>🗄 Archivado <span style={{fontSize:10.5,fontWeight:500,color:"rgba(255,255,255,0.45)"}}>{archiveBlocked&&!archived?"· tiene cargas activas o contenedores en tránsito: no se puede archivar":"· sale de los chips y del tablero; sigue en historial y análisis"}</span></span>
     </label>}
     {err&&<p style={{fontSize:12,color:"#f87171",background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"8px 10px",margin:"0 0 6px"}}>✕ {err}</p>}
     <div style={{display:"flex",gap:10,marginTop:14,justifyContent:"flex-end"}}>
