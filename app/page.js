@@ -96,8 +96,9 @@ export default function Landing() {
     let raf = 0, lastStage = -1, lastScrolled = false;
     const update = () => {
       raf = 0;
-      const y = window.scrollY || 0;
       const el = heroRef.current;
+      const rect = el ? el.getBoundingClientRect() : { top: 0 };
+      const y = Math.max(0, -rect.top);
       const span = el ? el.offsetHeight - window.innerHeight : 1;
       const p = reduce ? 0.32 : Math.min(1, Math.max(0, y / Math.max(1, span)));
       progressRef.current = p;
@@ -108,10 +109,10 @@ export default function Landing() {
       if (overlayRef.current) overlayRef.current.style.opacity = String(0.82 * Math.min(1, Math.max(0, (p - 0.9) / 0.1)));
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
-    window.addEventListener("scroll", onScroll, { passive: true });
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
     window.addEventListener("resize", onScroll, { passive: true });
     update();
-    return () => { window.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); if (raf) cancelAnimationFrame(raf); };
+    return () => { document.removeEventListener("scroll", onScroll, { capture: true }); window.removeEventListener("resize", onScroll); if (raf) cancelAnimationFrame(raf); };
   }, []);
 
   useEffect(() => {
@@ -341,7 +342,9 @@ export default function Landing() {
 }
 
 const CSS = `
-.lp{font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;color:#fff;background:${BG};overflow-x:hidden;-webkit-font-smoothing:antialiased}
+/* globals.css pone overflow-x:hidden en html/body (rompe position:sticky) y fuerza h1/h2/h3 chicos en mobile con !important: se pisan solo acá. */
+html,body{overflow-x:clip!important;max-width:none!important}
+.lp{font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;color:#fff;background:${BG};-webkit-font-smoothing:antialiased}
 .lp *{box-sizing:border-box}
 .lp a{text-decoration:none;color:inherit}
 .lp button{font-family:inherit}
@@ -464,6 +467,13 @@ const CSS = `
   .lp-live{grid-template-columns:1fr 1fr;gap:10px}.lp-live-card{padding:18px 14px;border-radius:14px}.lp-live-n{font-size:30px}.lp-live-l{font-size:12.5px}
   .lp-feats{grid-template-columns:1fr}.lp-step{gap:14px}
   .lp-footer .row{justify-content:flex-start}
+}
+@media(max-width:768px){
+  .lp .lp-stage h1{font-size:clamp(44px,13vw,64px)!important;line-height:.98!important}
+  .lp .lp-stage h2{font-size:clamp(30px,8.6vw,44px)!important;line-height:1.05!important}
+  .lp .lp-h2{font-size:clamp(30px,8vw,40px)!important;line-height:1.06!important}
+  .lp .lp-serv-in h3,.lp .lp-step h3,.lp .lp-modal h3{font-size:22px!important}
+  .lp .lp-feat h4{font-size:15px!important}
 }
 @media(prefers-reduced-motion:reduce){.lp-dot,.lp-hint{animation:none}.lp-stage{transition:none!important}}
 `;

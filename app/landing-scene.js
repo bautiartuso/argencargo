@@ -9,6 +9,19 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Environment, Clouds, Cloud, useTexture, useProgress } from "@react-three/drei";
 
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t);
+const clamp01 = (v) => Math.min(1, Math.max(0, v || 0));
+
+/* Corre primero en cada frame: suaviza el progreso del scroll (inercia tipo Lenis). */
+function Smoother({ progressRef }) {
+  useFrame((_, dt) => {
+    const target = clamp01(progressRef.current);
+    const cur = progressRef.smooth == null ? target : progressRef.smooth;
+    const k = 1 - Math.pow(0.0008, Math.min(dt, 0.05));
+    progressRef.smooth = cur + (target - cur) * k;
+  });
+  return null;
+}
+const readP = (ref) => clamp01(ref.smooth == null ? ref.current : ref.smooth);
 
 /* El 747 real: billboard con la foto recortada. Viene de lejos y pasa cerca de la cámara. */
 function Plane({ progressRef, mobile }) {
@@ -21,7 +34,7 @@ function Plane({ progressRef, mobile }) {
   const h = w / aspect;
   useFrame((state) => {
     if (!ref.current) return;
-    const p = Math.min(1, Math.max(0, progressRef.current || 0));
+    const p = readP(progressRef);
     const t = state.clock.elapsedTime;
     const e = easeInOut(p);
     const z = THREE.MathUtils.lerp(-38, 6, e);
@@ -51,7 +64,7 @@ function Sky({ progressRef, mobile }) {
   const group = useRef();
   useFrame(() => {
     if (!group.current) return;
-    const p = Math.min(1, Math.max(0, progressRef.current || 0));
+    const p = readP(progressRef);
     // la cámara "avanza": las nubes vienen hacia nosotros
     group.current.position.z = easeInOut(p) * 44;
   });
@@ -84,7 +97,7 @@ function CameraRig({ progressRef, mobile }) {
   const { camera } = useThree();
   const target = useMemo(() => new THREE.Vector3(0, 0, -30), []);
   useFrame((state, dt) => {
-    const p = Math.min(1, Math.max(0, progressRef.current || 0));
+    const p = readP(progressRef);
     const px = mobile ? 0 : state.pointer.x;
     const py = mobile ? 0 : state.pointer.y;
     const k = 1 - Math.pow(0.001, dt);
@@ -120,6 +133,7 @@ export default function HeroScene({ progressRef, mobile }) {
       }}
     >
       <color attach="background" args={["#8fb6e6"]} />
+      <Smoother progressRef={progressRef} />
       <Suspense fallback={null}>
         <Environment files={mobile ? "/landing/sky_1k.hdr" : "/landing/sky_2k.hdr"} background backgroundBlurriness={0} backgroundRotation={[0, Math.PI * 1.15, 0]} environmentIntensity={1} />
         <CameraRig progressRef={progressRef} mobile={mobile} />
