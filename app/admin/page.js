@@ -5542,7 +5542,8 @@ function ClientDetail({client:initClient,token,onBack,onSelectOp,onDelete}){
         <Inp label="CP" value={cl.postal_code} onChange={chCl("postal_code")}/>
         <Inp label="Ciudad" value={cl.city} onChange={chCl("city")}/>
         <Inp label="Provincia" value={cl.province} onChange={chCl("province")}/>
-        {cl.tax_condition==="responsable_inscripto"&&<><Inp label="Empresa" value={cl.company_name} onChange={chCl("company_name")}/><Inp label="CUIT" value={cl.cuit} onChange={chCl("cuit")}/></>}
+        {cl.tax_condition==="responsable_inscripto"&&<Inp label="Empresa" value={cl.company_name} onChange={chCl("company_name")}/>}
+        {(cl.tax_condition==="responsable_inscripto"||cl.tax_condition==="monotributista")&&<Inp label="CUIT" value={cl.cuit} onChange={chCl("cuit")}/>}
         <Inp label="Puntos" type="number" value={cl.points_balance} onChange={v=>chCl("points_balance")(Number(v)||0)}/>
       </div>
       <div style={{marginTop:18,padding:"14px 16px",background:"linear-gradient(90deg,rgba(184,149,106,0.08),rgba(184,149,106,0.02))",border:"1px solid rgba(184,149,106,0.25)",borderRadius:10}}>
