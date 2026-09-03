@@ -7,7 +7,6 @@ import { Suspense, useRef, useMemo, useState, useEffect } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Environment, Clouds, Cloud, useTexture, useProgress } from "@react-three/drei";
-import { EffectComposer, Bloom, Noise, Vignette } from "@react-three/postprocessing";
 
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t);
 
@@ -42,13 +41,10 @@ function Plane({ progressRef, mobile }) {
 
 /* Nubes volumétricas que la cámara atraviesa al scrollear. */
 const CLOUD_SET = [
-  { p: [-9, -2.5, -6], b: [14, 3, 6], v: 9, o: 0.85, c: "#ffffff" },
-  { p: [10, -3.5, -14], b: [16, 3, 7], v: 10, o: 0.8, c: "#f4f8ff" },
-  { p: [-14, 1.5, -26], b: [18, 4, 8], v: 12, o: 0.75, c: "#ffffff" },
-  { p: [12, 3, -36], b: [20, 4, 8], v: 12, o: 0.7, c: "#eef4ff" },
-  { p: [-6, -4, -48], b: [22, 4, 9], v: 14, o: 0.7, c: "#ffffff" },
-  { p: [16, -1, -60], b: [22, 5, 9], v: 14, o: 0.65, c: "#f4f8ff" },
-  { p: [-18, 4, -74], b: [26, 5, 10], v: 16, o: 0.6, c: "#ffffff" },
+  { p: [-9, -3, -8], b: [16, 3, 6], v: 10, o: 0.85, c: "#ffffff" },
+  { p: [11, -2.5, -22], b: [18, 4, 7], v: 12, o: 0.8, c: "#f4f8ff" },
+  { p: [-12, 2, -40], b: [22, 4, 8], v: 14, o: 0.7, c: "#ffffff" },
+  { p: [14, -1, -60], b: [24, 5, 9], v: 14, o: 0.65, c: "#eef4ff" },
 ];
 
 function Sky({ progressRef, mobile }) {
@@ -59,15 +55,15 @@ function Sky({ progressRef, mobile }) {
     // la cámara "avanza": las nubes vienen hacia nosotros
     group.current.position.z = easeInOut(p) * 44;
   });
-  const clouds = mobile ? CLOUD_SET.filter((_, i) => i % 2 === 0) : CLOUD_SET;
+  const clouds = mobile ? CLOUD_SET.slice(0, 3) : CLOUD_SET;
   return (
     <group ref={group}>
-      <Clouds material={THREE.MeshBasicMaterial} limit={mobile ? 220 : 420} range={mobile ? 220 : 420}>
+      <Clouds material={THREE.MeshBasicMaterial} limit={mobile ? 60 : 110} range={mobile ? 60 : 110}>
         {clouds.map((c, i) => (
           <Cloud
             key={i}
             seed={i + 3}
-            segments={mobile ? 14 : 26}
+            segments={mobile ? 10 : 16}
             bounds={c.b}
             volume={c.v}
             color={c.c}
@@ -109,22 +105,14 @@ function Ready() {
   return null;
 }
 
-function Effects({ mobile }) {
-  return (
-    <EffectComposer disableNormalPass multisampling={mobile ? 0 : 4}>
-      {!mobile && <Bloom luminanceThreshold={0.97} intensity={0.12} mipmapBlur />}
-      <Noise opacity={mobile ? 0.03 : 0.05} />
-      <Vignette eskil={false} offset={0.22} darkness={0.58} />
-    </EffectComposer>
-  );
-}
+function Effects() { return null; }
 
 export default function HeroScene({ progressRef, mobile }) {
   return (
     <Canvas
-      dpr={[1, mobile ? 1.5 : 1.75]}
+      dpr={[1, mobile ? 1.15 : 1.35]}
       camera={{ fov: mobile ? 62 : 52, position: [0, 0.2, 10], near: 0.1, far: 400 }}
-      gl={{ antialias: true, powerPreference: "high-performance", alpha: false }}
+      gl={{ antialias: false, powerPreference: "high-performance", alpha: false, stencil: false, depth: true }}
       style={{ position: "absolute", inset: 0 }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;

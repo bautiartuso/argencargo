@@ -105,7 +105,7 @@ export default function Landing() {
       if (st !== lastStage) { lastStage = st; setStage(st); }
       const sc = y > 30;
       if (sc !== lastScrolled) { lastScrolled = sc; setScrolled(sc); }
-      if (overlayRef.current) overlayRef.current.style.opacity = String(Math.min(1, Math.max(0, (p - 0.82) / 0.18)));
+      if (overlayRef.current) overlayRef.current.style.opacity = String(0.82 * Math.min(1, Math.max(0, (p - 0.9) / 0.1)));
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -155,6 +155,7 @@ export default function Landing() {
       <section ref={heroRef} className="lp-hero">
         <div className="lp-sticky">
           <HeroScene progressRef={progressRef} mobile={mobile} />
+          <div className="lp-hero-vig" />
           <div className="lp-hero-shade" />
           <div ref={overlayRef} className="lp-hero-dark" />
 
@@ -200,7 +201,6 @@ export default function Landing() {
               </div>
             ))}
           </div>
-          <p className="lp-note">Con decimales y todo, porque son de verdad. Se actualizan solos con cada vuelo.</p>
         </div>
       </section>
 
@@ -385,10 +385,11 @@ const CSS = `
 .lp-tag{display:inline-block;font-family:${MONO};font-size:11px;letter-spacing:.18em;padding:6px 12px;border-radius:99px;background:rgba(59,125,216,.18);color:#9cc3f2;border:1px solid rgba(59,125,216,.35);margin-bottom:14px}
 .lp-tag.gold{background:rgba(184,149,106,.16);color:#e8c99b;border-color:rgba(184,149,106,.4)}
 /* hero */
-.lp-hero{position:relative;height:320vh;background:#070d1a}
+.lp-hero{position:relative;height:270vh;background:#070d1a}
 .lp-sticky{position:sticky;top:0;height:100vh;overflow:hidden}
 .lp-hero-shade{position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(7,13,26,.55) 0%,rgba(7,13,26,0) 26%,rgba(7,13,26,0) 48%,rgba(7,13,26,.55) 78%,rgba(7,13,26,.94) 100%)}
 .lp-hero-dark{position:absolute;inset:0;pointer-events:none;background:#070d1a;opacity:0}
+.lp-hero-vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,rgba(0,0,0,0) 55%,rgba(0,0,0,.45) 100%)}
 .lp-stage{position:absolute;left:0;right:0;bottom:0;padding:0 28px 11vh;max-width:820px;margin:0 auto;text-align:center;z-index:5;background:radial-gradient(ellipse 70% 60% at 50% 85%,rgba(7,13,26,.55),rgba(7,13,26,0) 70%)}
 .lp-stage h1{font-size:clamp(46px,8.4vw,108px);font-weight:900;letter-spacing:-.035em;line-height:.98;margin:0 0 18px;text-shadow:0 6px 30px rgba(0,0,0,.55)}
 .lp-stage h2{font-size:clamp(30px,5vw,60px);font-weight:800;letter-spacing:-.03em;line-height:1.05;margin:0 0 16px;text-shadow:0 6px 30px rgba(0,0,0,.55)}
