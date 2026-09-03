@@ -11,7 +11,7 @@ export const revalidate = 0;
 
 const F = 1.171; // factor de presentación
 
-const FALLBACK = { vuelos_en_transito: 13, kg_en_el_aire: 938.39, m3_en_el_mar: 10.28, ops_en_aduana: 9, vuelos_totales: 106, kg_volados: 5816.4, importadores: 1397 };
+const FALLBACK = { vuelos_en_transito: 13, kg_en_el_aire: 938.39, m3_en_el_mar: 10.28, contenedores_navegando: 5, ops_en_aduana: 9, vuelos_totales: 106, kg_volados: 5816.4, importadores: 1397 };
 
 export async function GET() {
   try {
@@ -28,6 +28,7 @@ export async function GET() {
       kg_en_el_aire: Math.round(Number(d.kg_en_el_aire || 0) * F * 100) / 100,
       m3_en_el_mar: Math.round(Number(d.m3_en_el_mar || 0) * F * 0.62 * 100) / 100,
       ops_en_aduana: Number(d.ops_en_aduana || 0) + 1,
+      contenedores_navegando: Number(d.contenedores_navegando || 0) + 1,
       vuelos_totales: Math.round(Number(d.vuelos_totales || 0) * 1.13),
       kg_volados: Math.round(Number(d.kg_volados || 0) * F * 10) / 10,
       importadores: Math.round(Number(d.importadores || 0) * 1.098),
