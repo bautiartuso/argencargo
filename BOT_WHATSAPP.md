@@ -44,7 +44,7 @@ desconocidos, confirmar pagos, transportista externo.
 
 ## Paso 2 — Plantillas (Meta → WhatsApp Manager → Message templates)
 
-Crear estas 5, categoría **Utility**, idioma **Spanish (ARG)** (`es_AR`), con estos
+(Meta no permite que una plantilla empiece ni termine con una variable: por eso el saludo y el cierre.) Crear estas 5, categoría **Utility**, idioma **Spanish (ARG)** (`es_AR`), con estos
 nombres y cuerpos EXACTOS (las `{{n}}` las completa el sistema):
 
 **`carga_lista`**
@@ -54,6 +54,8 @@ nombres y cuerpos EXACTOS (las `{{n}}` las completa el sistema):
 >
 > Entrá acá para elegir cómo la recibís, el día y la forma de pago:
 > {{3}}
+>
+> Cualquier duda, respondé este mensaje. ¡Gracias!
 
 **`recordatorio_coordinar`**
 > Buenas {{1}}!
@@ -61,6 +63,8 @@ nombres y cuerpos EXACTOS (las `{{n}}` las completa el sistema):
 > Te recordamos que tu carga de {{2}} sigue pendiente de coordinar.
 >
 > Elegí el día, el horario y la forma de pago acá: {{3}}
+>
+> Cualquier duda, respondé este mensaje.
 
 **`recordatorio_almacenaje`**
 > Hola {{1}}!
@@ -72,6 +76,8 @@ nombres y cuerpos EXACTOS (las `{{n}}` las completa el sistema):
 > En caso de que no se realice el pago, empezará a regir un *costo de almacenaje de USD 0,5 diarios por kg*.
 >
 > Si abonás el saldo, te la almacenamos sin cargo todo el tiempo que necesites. Coordiná y aboná acá: {{3}}
+>
+> Cualquier duda, respondé este mensaje.
 
 **`ri_entregada`** *(solo clientes RI con entrega directa por courier)*
 > Hola {{1}}! 📦
@@ -80,9 +86,11 @@ nombres y cuerpos EXACTOS (las `{{n}}` las completa el sistema):
 >
 > Acá tenés el detalle completo, la documentación y los datos para abonar:
 > {{3}}
+>
+> Cualquier duda, respondé este mensaje. ¡Gracias!
 
 **`coordinacion_confirmada`**
-> {{1}}, quedó coordinada tu entrega de {{2}} ✅ {{3}}. Total a abonar: {{4}}. {{5}} Si necesitás cambiar el día, el horario o la forma de pago, respondé este mensaje.
+> Hola {{1}}, quedó coordinada tu entrega de {{2}} ✅ {{3}}. Total a abonar: {{4}}. {{5}} Si necesitás cambiar el día, el horario o la forma de pago, respondé este mensaje.
 
 En {{2}} de los primeros tres va la carga como "descripción (AC-0123)". En la
 confirmación, {{5}} lleva el detalle del pago: transferencia con alias y titular de la
