@@ -14976,7 +14976,10 @@ function MaritimePanel2({token,allClients=[]}){
   // El select es condicional por rol: el empleado NO pide el embed operations, ni revenue_manual ni cost_* (lista blanca MT_SH_COLS).
   const SH_COLS=MT_SH_COLS;
   const shSelect=plata?"*,operations(operation_code,budget_total,cost_flete)":SH_COLS;
-  const fetchShipments=()=>dqTodos("maritime_shipments",{token,filters:`?select=${shSelect}&operation_id=is.null&order=created_at.desc,id.asc`});
+  // La fecha de recepción manda: una carga con received_at y sin contenedor está EN DEPÓSITO aunque
+  // el status haya quedado en "proveedor" (pasaba al cargar la fecha desde el form viejo).
+  const mtNormaliza=(rows)=>Array.isArray(rows)?rows.map(r=>(r.received_at&&!r.container_id&&!r.operation_id&&r.status==="proveedor"&&!r.awaiting_supplier)?{...r,status:"en_deposito"}:r):rows;
+  const fetchShipments=async()=>mtNormaliza(await dqTodos("maritime_shipments",{token,filters:`?select=${shSelect}&operation_id=is.null&order=created_at.desc,id.asc`}));
   // packages/items de esos shipments, en lotes de 80 ids (la URL tiene límite).
   const fetchChildren=async(table,ids,order)=>{const out=[];for(let i=0;i<ids.length;i+=80){const r=await dq(table,{token,filters:`?shipment_id=in.(${ids.slice(i,i+80).join(",")})&select=*&order=${order}`});if(Array.isArray(r))out.push(...r);}return out;};
   const load=async()=>{
@@ -16539,18 +16542,6 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       </div>
       {!awaiting&&<Inp label="Fecha de recepción en depósito" type="date" value={receivedAt} onChange={setReceivedAt}/>}
     </div>
-    {!isEdit&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"-6px 0 12px",fontStyle:"italic"}}>Estado inicial: {awaiting?"⏳ Esperando al proveedor":containerId?"🚢 En tránsito (por el contenedor elegido)":receivedAt?"📦 En depósito":"🚚 En camino al depósito"}</p>}
-
-    {/* 5. Frágil / reenvío / notas */}
-    <div style={{display:"flex",gap:16,flexWrap:"wrap",marginBottom:12}}>
-      <label style={CHK}><input type="checkbox" checked={fragile} onChange={e=>setFragile(e.target.checked)} style={{accentColor:"#fbbf24",width:16,height:16,cursor:"pointer"}}/>⚠️ Frágil</label>
-      <label style={CHK}><input type="checkbox" checked={repack} onChange={e=>setRepack(e.target.checked)} style={{accentColor:"#60a5fa",width:16,height:16,cursor:"pointer"}}/>🔁 Reenvío / reempaque</label>
-    </div>
-    <div style={{marginBottom:12}}>
-      <label style={LBL}>Notas</label>
-      <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={2} placeholder="Reclamos al proveedor, observaciones internas…" style={{width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
-    </div>
-
     {/* 6. Mercaderia unificada: desc + detalle comercial en una sola grilla (USD c/u solo admin) */}
     <div style={{marginTop:2,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
