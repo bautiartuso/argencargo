@@ -63,10 +63,12 @@ Extraé UNA fila por bulto con: peso real en kg (实重), largo, ancho y alto en
                 alto_cm: { type: ["number", "null"] },
               },
               required: ["peso_kg", "largo_cm", "ancho_cm", "alto_cm"],
+              additionalProperties: false,
             },
           },
         },
         required: ["bultos"],
+        additionalProperties: false,
       },
     });
     const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
