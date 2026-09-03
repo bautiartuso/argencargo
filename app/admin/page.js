@@ -8703,36 +8703,7 @@ function AgentsPanel({token}){
   const invoiceItemsForSel=useMemo(()=>flight?invoiceItems.filter(i=>i.flight_id===flight.id):[],[invoiceItems,flight?.id]);
   const usd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-      <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.02em"}}>Agentes y Vuelos</h2><p style={{fontSize:13,color:"rgba(255,255,255,0.45)",margin:0}}>Depósito, vuelos consolidados, cuentas corrientes y solicitudes</p></div>
-    </div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12,animation:"ac_fade_in 200ms"}}>✓ {msg}</p>}
-    {/* Tablero de la mañana: qué requiere acción HOY, con salto directo al lugar ya filtrado.
-        Todo se calcula con datos que load() ya trae — cero queries extra. Sin pendientes → cero chips. */}
-    {!lo&&(()=>{
-      const now=Date.now();
-      const nListos=flights.filter(f=>f.status==="preparando"&&f.invoice_presented_at).length;
-      const nFactPend=flights.filter(f=>f.status==="preparando"&&!f.invoice_presented_at).length;
-      const nDemorados=flights.filter(f=>f.status==="despachado"&&f.dispatched_at&&!f.carrier_pickup_at&&(now-new Date(f.dispatched_at).getTime())>2*864e5).length;
-      const nPagos=flights.filter(f=>f.awaiting_alibaba_payment||f.awaiting_alipay_payment).length;
-      const nHuerfViejos=unassigned.filter(u2=>u2.created_at&&(now-new Date(u2.created_at).getTime())>3*864e5).length;
-      const nSolic=signups.filter(s2=>s2.status==="pending").length;
-      const nOpsListas=depositOps.filter(o=>!opsInFlightIds.has(o.id)&&o.consolidation_confirmed&&opsWithDocs.has(o.id)).length;
-      const goFlights=()=>{setTab("flights");setFlightsSubTab("active");setSelFlight(null);};
-      const chips=[
-        nListos>0&&{l:`⚡ ${nListos} vuelo${nListos>1?"s":""} listo${nListos>1?"s":""} p/despachar`,c:"#ec4899",go:goFlights},
-        nDemorados>0&&{l:`🚚 ${nDemorados} despachado${nDemorados>1?"s":""} sin pickup +2d`,c:"#f87171",go:goFlights},
-        nPagos>0&&{l:`💳 ${nPagos} pago${nPagos>1?"s":""} Alibaba/Alipay pendiente${nPagos>1?"s":""}`,c:"#f87171",go:goFlights},
-        nFactPend>0&&{l:`📄 ${nFactPend} factura${nFactPend>1?"s":""} sin cerrar`,c:"#fbbf24",go:goFlights},
-        nOpsListas>0&&{l:`📦 ${nOpsListas} op${nOpsListas>1?"s":""} LISTO sin vuelo`,c:"#22c55e",go:()=>{setTab("deposito");setDepFilter(0);setDepSearch("");setCollapsedAgents(new Set());setSelFlight(null);}},
-        nHuerfViejos>0&&{l:`👻 ${nHuerfViejos} huérfano${nHuerfViejos>1?"s":""} +3 días`,c:"#a78bfa",go:()=>{setTab("orphans");setSelFlight(null);}},
-        nSolic>0&&{l:`👤 ${nSolic} solicitud${nSolic>1?"es":""} de agente`,c:"#60a5fa",go:()=>{setTab("signups");setSelFlight(null);}},
-      ].filter(Boolean);
-      if(chips.length===0)return null;
-      return <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
-        {chips.map((ch,i)=><button key={i} onClick={ch.go} style={{padding:"6px 13px",fontSize:11.5,fontWeight:700,borderRadius:99,border:`1px solid ${ch.c}55`,background:`${ch.c}14`,color:ch.c,cursor:"pointer",letterSpacing:"0.02em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.background=`${ch.c}28`;}} onMouseLeave={e=>{e.currentTarget.style.background=`${ch.c}14`;}}>{ch.l}</button>)}
-      </div>;
-    })()}
     <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
       {[{k:"deposito",l:"Depósito",n:depositOps.length},{k:"flights",l:"Vuelos",n:flights.length},{k:"accounts",l:"CC Agentes",n:approvedAgents.length},{k:"signups",l:"Solicitudes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"10px 16px",fontSize:12,fontWeight:active?700:600,border:"none",background:"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",display:"inline-flex",alignItems:"center",gap:6}} onMouseEnter={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.8)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{tb.l}{tb.n!==undefined&&<span style={{fontSize:10,fontWeight:700,color:active?GOLD_LIGHT:"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
     </div>
@@ -8857,7 +8828,7 @@ function AgentsPanel({token}){
                   return <span title={fullList} style={{display:"block"}}><span style={{display:"inline-block",maxWidth:more>0?160:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",verticalAlign:"middle"}}>{first}</span>{more>0&&<span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,marginLeft:6,verticalAlign:"middle"}}>+{more}</span>}</span>;
                 })()}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{pkgsCount}</td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{w?`${w.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}{payingVol&&<span title={`Paga volumétrico: bruto ${grossW.toLocaleString("es-AR",{maximumFractionDigits:1})} kg pero factura ${w.toLocaleString("es-AR",{maximumFractionDigits:1})} kg — un reempaque puede ahorrar`} style={{fontSize:8.5,fontWeight:800,padding:"1px 5px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.35)",marginLeft:5,cursor:"help",letterSpacing:"0.03em"}}>▲VOL +{Math.round((w/grossW-1)*100)}%</span>}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{w?`${w.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}{payingVol&&<span title={`Paga volumétrico: bruto ${grossW.toLocaleString("es-AR",{maximumFractionDigits:1})} kg pero factura ${w.toLocaleString("es-AR",{maximumFractionDigits:1})} kg — un reempaque puede ahorrar`} style={{display:"block",width:"fit-content",fontSize:8.5,fontWeight:800,padding:"1px 5px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.35)",marginTop:3,cursor:"help",letterSpacing:"0.03em"}}>▲VOL +{Math.round((w/grossW-1)*100)}%</span>}</td>
                 <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{days==null?<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>:<span title={`Último bulto recibido hace ${days} día${days!==1?"s":""}`} style={{fontSize:10,fontWeight:dCol.w,padding:"2px 7px",borderRadius:5,background:dCol.bg,color:dCol.c,fontFamily:"monospace",fontVariantNumeric:"tabular-nums"}}>{days}d</span>}</td>
                 <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>
                   {inFlight?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,whiteSpace:"nowrap"}}>EN VUELO</span>:
@@ -9059,7 +9030,7 @@ function AgentsPanel({token}){
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}}>{kgVuelo>0?`${kgVuelo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}} title={f.total_cost_usd?`Costo total: ${usd(f.total_cost_usd)}`:""}>{costoKg!=null?`${usd(costoKg)}/kg`:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.35,textAlign:"center"}}>{f.international_tracking?<><span style={{fontFamily:"monospace"}}>{f.international_tracking}</span>{f.international_carrier&&<><br/><span style={{fontSize:9,fontWeight:700,color:IC,letterSpacing:"0.04em",textTransform:"uppercase"}}>{f.international_carrier}</span></>}</>:"—"}</td>
-            <td style={{padding:"10px 8px",fontSize:12,color:f.invoice_presented_at?"#4ade80":"rgba(255,255,255,0.3)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}} title={f.invoice_presented_at?`Factura cerrada el ${formatDate(f.invoice_presented_at)} — el agente ya puede despachar`:"Factura todavía sin cerrar"}>{f.invoice_presented_at?`${String(new Date(f.invoice_presented_at).getDate()).padStart(2,"0")}/${String(new Date(f.invoice_presented_at).getMonth()+1).padStart(2,"0")}`:"—"}</td>
+            <td style={{padding:"10px 8px",fontSize:12,color:f.invoice_presented_at?"rgba(255,255,255,0.6)":"rgba(255,255,255,0.3)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}} title={f.invoice_presented_at?`Factura cerrada el ${formatDate(f.invoice_presented_at)} — el agente ya puede despachar`:"Factura todavía sin cerrar"}>{f.invoice_presented_at?`${String(new Date(f.invoice_presented_at).getDate()).padStart(2,"0")}/${String(new Date(f.invoice_presented_at).getMonth()+1).padStart(2,"0")}`:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:13,fontWeight:700,color:demoraInfo.color,whiteSpace:"nowrap",textAlign:"center"}} title={demoraInfo.title||(f.dispatched_at?`Dispatched: ${formatDate(f.dispatched_at)}${f.carrier_pickup_at?` · Pickup: ${formatDate(f.carrier_pickup_at)}`:""}`:"")}>{demoraInfo.txt}</td>
             <td style={{padding:"10px 8px",fontSize:12,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}}>{etaTxt||"—"}</td>
           </tr>;})}</tbody>
