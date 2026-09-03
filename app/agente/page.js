@@ -1193,7 +1193,9 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
       // Vuelo ya despachado/recibido (histórico): no hay botón de despacho que persista
       // después, así que se guarda al instante.
       if(flight.status!=="preparando"){
-        await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{dispatch_photo_url:url}});
+        // La policy de UPDATE del agente solo cubre vuelos en "preparando": para un vuelo ya
+        // despachado se guarda vía RPC (toca solo esta columna, dueño verificado).
+        await dq("rpc/set_flight_dispatch_photo",{method:"POST",token,body:{p_flight_id:flight.id,p_url:url}});
       }
     }
     setSubiendoFoto(false);
