@@ -7009,10 +7009,14 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
       const porOp={};
       filas.forEach(f=>{(porOp[f.opId]=porOp[f.opId]||[]).push(f);});
       for(const [opId,fs] of Object.entries(porOp)){
+        // Los bultos nuevos heredan la trazabilidad de los originales: los últimos 5 del
+        // tracking de cada bulto viejo, unidos con "/" (ej. 97426/92587/85819/74902).
+        const orig=await dq("operation_packages",{token,filters:`?operation_id=eq.${opId}&select=national_tracking&order=package_number.asc`});
+        const trk=(Array.isArray(orig)?orig:[]).map(p2=>String(p2.national_tracking||"").trim()).filter(Boolean).map(t=>t.slice(-5)).join("/");
         await dq("operation_packages",{method:"DELETE",token,filters:`?operation_id=eq.${opId}`});
         for(let i=0;i<fs.length;i++){
           const f=fs[i];
-          await dq("operation_packages",{method:"POST",token,body:{operation_id:opId,package_number:i+1,quantity:1,gross_weight_kg:num(f.peso)||null,length_cm:num(f.l)||null,width_cm:num(f.a)||null,height_cm:num(f.h)||null},headers:{Prefer:"return=representation"}});
+          await dq("operation_packages",{method:"POST",token,body:{operation_id:opId,package_number:i+1,quantity:1,gross_weight_kg:num(f.peso)||null,length_cm:num(f.l)||null,width_cm:num(f.a)||null,height_cm:num(f.h)||null,national_tracking:trk||null},headers:{Prefer:"return=representation"}});
         }
         const code=ops.find(o=>o.id===opId)?.code||"";
         dq("op_communications",{method:"POST",token,body:{operation_id:opId,type:"note",direction:"in",content:`📷 Bultos reemplazados desde la foto del courier (${flight.flight_code}): ${fs.length} bulto${fs.length>1?"s":""}, ${fs.reduce((a2,f2)=>a2+num(f2.peso),0).toLocaleString("es-AR",{maximumFractionDigits:2})} kg reales. Revisar presupuesto de ${code}.`},headers:{Prefer:"return=representation"}}).catch(()=>{});
@@ -7936,14 +7940,17 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
       const resultado=cobradoTot-costoTot;
       const money=(v)=>`USD ${Math.abs(Number(v||0)).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
       const signed=(v)=>`${Number(v)<-0.005?"−":""}${money(v)}`;
+      const estimadoTot=(acc.flete.fact+acc.seguro.fact+acc.impuestos.fact)-costoTot;
       const bloque=(titulo,d)=>{
         const res=d.cob-d.costo;
+        const est=d.fact-d.costo; // ganancia neta estimada si se cobra todo lo facturado
         if(d.fact<=0.005&&d.costo<=0.005)return null;
         return <tr key={titulo} style={{borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
           <td style={{padding:"9px 8px",fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.65)",textTransform:"uppercase",letterSpacing:"0.04em",whiteSpace:"nowrap"}}>{titulo}</td>
           <td style={{padding:"9px 8px",fontSize:12.5,color:"rgba(255,255,255,0.5)",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{money(d.fact)}</td>
           <td style={{padding:"9px 8px",fontSize:12.5,color:"#22c55e",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{money(d.cob)}</td>
           <td style={{padding:"9px 8px",fontSize:12.5,color:"#ff9b9b",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{money(d.costo)}</td>
+          <td title="Ganancia neta estimada: facturado − costo real (si se cobra todo)" style={{padding:"9px 8px",fontSize:12.5,fontWeight:600,color:est>=0?"#93c5fd":"#f87171",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{est>=0?"+":"−"}{money(est)}</td>
           <td style={{padding:"9px 8px",fontSize:13,fontWeight:700,color:res>=0?"#22c55e":"#f87171",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{res>=0?"+":"−"}{money(res)}</td>
         </tr>;
       };
@@ -7959,6 +7966,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
               <th style={th}>Facturado</th>
               <th style={th}>Cobrado neto</th>
               <th style={th}>Costo real</th>
+              <th style={th} title="Facturado − costo real: lo que queda si se cobra todo">Estimado</th>
               <th style={th}>Resultado</th>
             </tr></thead>
             <tbody>
@@ -7970,6 +7978,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
                 <td style={{padding:"9px 8px",fontSize:12.5,color:"rgba(255,255,255,0.3)",textAlign:"right"}}>—</td>
                 <td style={{padding:"9px 8px",fontSize:12.5,color:"rgba(255,255,255,0.3)",textAlign:"right"}}>—</td>
                 <td style={{padding:"9px 8px",fontSize:12.5,color:"#ff9b9b",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{money(otrosCosto)}</td>
+                <td style={{padding:"9px 8px",fontSize:12.5,fontWeight:600,color:"#f87171",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>−{money(otrosCosto)}</td>
                 <td style={{padding:"9px 8px",fontSize:13,fontWeight:700,color:"#f87171",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>−{money(otrosCosto)}</td>
               </tr>}
             </tbody>
@@ -7984,7 +7993,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
         <div style={{marginTop:14,padding:"14px 18px",borderRadius:12,background:resultado>=0?"rgba(34,197,94,0.06)":"rgba(255,80,80,0.06)",border:`1px solid ${resultado>=0?"rgba(34,197,94,0.2)":"rgba(255,80,80,0.2)"}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <div>
             <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:0,textTransform:"uppercase",letterSpacing:"0.07em"}}>Resultado del vuelo</p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{money(cobradoTot)} cobrado neto − {money(costoTot)} de costos</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.45)",margin:"3px 0 0"}}>{money(cobradoTot)} cobrado neto − {money(costoTot)} de costos · estimado si se cobra todo: <strong style={{color:estimadoTot>=0?"#93c5fd":"#f87171"}}>{signed(estimadoTot)}</strong></p>
           </div>
           <p style={{fontSize:22,fontWeight:800,color:resultado>=0?"#22c55e":"#f87171",margin:0,fontVariantNumeric:"tabular-nums"}}>{signed(resultado)}</p>
         </div>
