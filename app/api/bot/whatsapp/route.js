@@ -308,7 +308,12 @@ export async function POST(req) {
   try {
     const value = body?.entry?.[0]?.changes?.[0]?.value;
     const msg = value?.messages?.[0];
-    if (!msg) return Response.json({ ok: true }); // statuses (delivered/read) y otros eventos
+    if (!msg) {
+      // Statuses (sent/delivered/read/failed): se loguean para poder diagnosticar entregas fallidas.
+      const st = value?.statuses?.[0];
+      if (st) console.log("[bot/whatsapp] status", JSON.stringify({ id: st.id, status: st.status, to: st.recipient_id, errors: st.errors || null }));
+      return Response.json({ ok: true });
+    }
     const phone = String(msg.from || "").replace(/\D/g, "");
     let text = null;
     if (msg.type === "text") text = String(msg.text?.body || "").slice(0, 2000);
