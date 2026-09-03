@@ -13506,7 +13506,7 @@ function AdminDashboard({session,onLogout}){
       {page==="entregas"&&!selOp&&<EntregasPanel token={token} onOpenOp={(op)=>{setSelOp(op);setSelOpTab("entrega");}}/>}
       {page==="entregas"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
-      {page==="maritime"&&<MaritimePanel token={token} allClients={allClients}/>}
+      {page==="maritime"&&(mtLegacyOn()?<MaritimePanel token={token} allClients={allClients}/>:<MaritimePanel2 token={token} allClients={allClients}/>)}
       {page==="agp"&&<AgpPanel token={token} allClients={allClients}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
@@ -14327,6 +14327,1794 @@ function MaritimePanel({token,allClients=[]}){
 // Form de contenedor marítimo: código, estado, fechas y notas. Pertenece a UN depósito.
 // Modal de carga de costos por operación al arribar un contenedor marítimo.
 // Por cada op: costo, moneda (USD/ARS + TC), fecha de pago, guía. Método: efectivo.
+
+// Fallback al panel viejo de Marítimos: localStorage.mt_legacy="1"
+const mtLegacyOn=()=>{try{return typeof window!=="undefined"&&localStorage.getItem("mt_legacy")==="1";}catch{return false;}};
+
+// ════════════════════════════════════════════════════════════════════════════
+// MARÍTIMOS · "MUELLE" — panel nuevo (tablero por etapa). El panel viejo (MaritimePanel)
+// queda arriba como fallback: localStorage.mt_legacy="1" lo vuelve a mostrar.
+// ════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+// MUELLE · Marítimos v2 — helpers de módulo + MaritimePanel2
+// Todo lo nuevo a nivel módulo lleva prefijo mt/Mt (o los nombres únicos que pide la spec)
+// para no chocar con lo que ya vive en page.js.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Un solo guard de plata: si es empleado no ve montos, ni embed operations, ni Análisis.
+const verPlata=()=>!esEmpleado();
+// Placeholder = "esperando al proveedor". La columna manda; la regex SEA… (solo letras) queda
+// como red de seguridad para filas cargadas antes del backfill.
+const esPlaceholder=(sh)=>sh.awaiting_supplier===true||(sh.status==="proveedor"&&!sh.container_id&&(!sh.tracking_number||/^SEA[A-Z]*$/i.test(String(sh.tracking_number).trim())));
+// Fecha local YYYY-MM-DD (no toISOString: en AR después de las 21 h UTC ya es "mañana").
+const mtIsoLocal=(d)=>{const x=d||new Date();return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;};
+const mtHoy=()=>mtIsoLocal();
+const mtParse=(iso)=>{if(!iso)return null;const s=String(iso).slice(0,10);const m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);if(!m)return null;return new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12);};
+const mtAddDays=(iso,n)=>{const d=mtParse(iso);if(!d)return null;d.setDate(d.getDate()+Number(n||0));return mtIsoLocal(d);};
+// ETA efectiva a Puerto BA = eta + días de transbordo. Centraliza la constante que vivía en 4 lados.
+const mtEffEta=(c)=>{if(!c?.eta)return null;const d=Number(c.transbordo_dias||0);return d?mtAddDays(c.eta,d):String(c.eta).slice(0,10);};
+// Entrega estimada al cliente = Puerto BA + 14 días (despacho aduanero + retiro).
+const mtEntregaEst=(c)=>{const e=mtEffEta(c);return e?mtAddDays(e,14):null;};
+// Días enteros desde una fecha hasta hoy (positivo = pasado, negativo = futuro). null si no hay fecha.
+const diasDesde=(iso)=>{const d=mtParse(iso);if(!d)return null;const h=mtParse(mtHoy());return Math.round((h-d)/864e5);};
+const mtDiasEntre=(a,b)=>{const da=mtParse(a),db=mtParse(b);if(!da||!db)return null;return Math.round((db-da)/864e5);};
+// Semáforo del contenedor según ETA efectiva: vencido (pasó y sigue en tránsito) / pronto (≤7 d) / ok / sin_eta.
+const semaforoCont=(c)=>{const e=mtEffEta(c);if(!e)return{estado:"sin_eta",dias:null};const pasado=diasDesde(e);if(c.status==="en_transito"&&pasado>0)return{estado:"vencido",dias:pasado};const faltan=-pasado;return{estado:faltan<=7?"pronto":"ok",dias:faltan};};
+const mtFmtD=(d)=>{if(!d)return "—";const s=String(d).slice(0,10);return `${s.slice(8,10)}/${s.slice(5,7)}`;};
+const mtUsd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+const mtM3=(v,dec=2)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:dec,maximumFractionDigits:dec});
+const mtPlural=(n,s,p)=>n===1?s:(p||s+"s");
+// Preferencias de UI en localStorage.mt (nada de negocio). Tolera que el accessor tire.
+const mtLoadPrefs=()=>{try{const r=JSON.parse(localStorage.getItem("mt")||"{}");return r&&typeof r==="object"?r:{};}catch{return{};}};
+const mtSavePrefs=(p)=>{try{localStorage.setItem("mt",JSON.stringify(p));}catch{}};
+const mtToggleSet=(set,id)=>{const n=new Set(set);if(n.has(id))n.delete(id);else n.add(id);return n;};
+const mtErr=(r,fallback)=>(r&&!Array.isArray(r)&&(r.message||r.hint||r.details))||fallback||"Error guardando";
+// Paleta (misma del admin)
+const MT_AZ="#60a5fa",MT_VE="#22c55e",MT_AM="#fbbf24",MT_RO="#f87171",MT_VI="#a78bfa",MT_GR="#94a3b8",MT_NA="#fb923c";
+const mtChipS=(col,extra)=>({fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:`${col}22`,color:col,whiteSpace:"nowrap",display:"inline-block",lineHeight:1.5,...extra});
+const mtMono={fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace",fontFeatureSettings:'"tnum"'};
+const mtDim=(a=0.5)=>`rgba(255,255,255,${a})`;
+// Capacidad estándar por tamaño (para el hint "definir tamaño").
+const MT_SEMAF={vencido:MT_RO,pronto:MT_AM,ok:MT_VE,sin_eta:MT_GR};
+
+// Helpers de plata como funciones puras (copiadas de MaritimePanel, reciben tarifas/overrides).
+function mtMoney({tariffs,overrides,pkgByShip,itemsByShip,shipments,containers}){
+  const cbmOf=(shId)=>(pkgByShip[shId]||[]).reduce((s,p)=>s+Number(p.cbm||0),0);
+  // Total de bultos = suma de quantity (un row de qty=3 cuenta como 3 bultos)
+  const bultosOf=(shId)=>(pkgByShip[shId]||[]).reduce((s,p)=>s+Number(p.quantity||1),0);
+  // Tarifa marítimo_b (USD/m³) según el RANGO de CBM, con override del cliente.
+  const mbRatesSorted=tariffs.filter(t=>t.service_key==="maritimo_b"&&t.type==="rate").map(t=>({id:t.id,min:Number(t.min_qty||0),max:t.max_qty!=null?Number(t.max_qty):Infinity,rate:Number(t.rate||0)})).sort((a,b)=>a.min-b.min);
+  const mbSurchSorted=tariffs.filter(t=>t.service_key==="maritimo_b"&&t.type==="surcharge").map(t=>({min:Number(t.min_qty||0),rate:Number(t.rate||0)})).sort((a,b)=>b.min-a.min);
+  const fleteRateForCbm=(cbm,ov)=>{for(const r of mbRatesSorted){if(cbm>=r.min&&cbm<r.max){const o=(ov||[]).find(x=>x.tariff_id===r.id);return o?Number(o.custom_rate):r.rate;}}const last=mbRatesSorted[mbRatesSorted.length-1];return last?last.rate:0;};
+  // Recargo por valor (canal B): si vpu = FOB/CBM supera el umbral, cobra ese % del FOB.
+  const surchargeForValue=(fob,cbm)=>{if(!(fob>0&&cbm>0))return 0;const vpu=fob/cbm;for(const s of mbSurchSorted){if(vpu>=s.min)return Math.round(fob*(s.rate/100)*100)/100;}return 0;};
+  // Importe por CLIENTE en un contenedor: una sola operación (CBM combinado × rango + recargo).
+  const clientImportes=(list)=>{
+    const byCli={};(list||[]).forEach(sh=>{if(sh.client_id)(byCli[sh.client_id]=byCli[sh.client_id]||[]).push(sh);});
+    const out={};
+    Object.entries(byCli).forEach(([cid,ships])=>{
+      const cbm=ships.reduce((s,sh)=>s+cbmOf(sh.id),0);
+      const fob=ships.reduce((s,sh)=>s+(itemsByShip[sh.id]||[]).reduce((a,it)=>a+Number(it.unit_price_usd||0)*Number(it.quantity||1),0),0);
+      out[cid]=cbm*fleteRateForCbm(cbm,overrides[cid]||[])+surchargeForValue(fob,cbm);
+    });
+    return out;
+  };
+  const costOfShip=(sh)=>Number(sh?.cost_estimado||0);
+  const costContainer=(list)=>(list||[]).reduce((s,sh)=>s+costOfShip(sh),0);
+  // Importe imputado a UNA carga = importe de su cliente prorrateado por CBM; revenue_manual pisa.
+  const importeOfShip=(sh,list)=>{
+    if(sh?.revenue_manual!=null)return Number(sh.revenue_manual)||0;
+    if(!sh?.client_id)return 0;
+    const imp=clientImportes(list)[sh.client_id]||0;
+    const cli=(list||[]).filter(s=>s.client_id===sh.client_id);
+    const cbmCli=cli.reduce((s,x)=>s+cbmOf(x.id),0);
+    return cbmCli>0?imp*(cbmOf(sh.id)/cbmCli):imp/Math.max(cli.length,1);
+  };
+  const importeContainer=(list)=>{if(!list||!list.length||!tariffs.length)return null;return list.reduce((s,sh)=>s+importeOfShip(sh,list),0);};
+  // Total del depósito (contenedores EN TRÁNSITO): {importe, costo, ganancia} o null.
+  const whEnTransito=(warehouse)=>{
+    const conts=containers.filter(c=>c.warehouse===warehouse&&c.status==="en_transito");
+    let importe=0,costo=0,any=false;
+    conts.forEach(c=>{const lst=shipments.filter(s=>!s.operation_id&&s.container_id===c.id);const v=importeContainer(lst);if(v!=null){importe+=v;costo+=costContainer(lst);any=true;}});
+    return any?{importe,costo,ganancia:importe-costo}:null;
+  };
+  return {cbmOf,bultosOf,fleteRateForCbm,surchargeForValue,clientImportes,importeOfShip,costOfShip,importeContainer,costContainer,whEnTransito};
+}
+
+// ── Piezas de UI chicas ──────────────────────────────────────────────────────
+function MtB({col=MT_AZ,onClick,children,title,disabled,style,solid}){
+  return <button title={title} disabled={disabled} onClick={e=>{e.stopPropagation();onClick&&onClick(e);}} style={{padding:"4px 10px",fontSize:10.5,fontWeight:700,borderRadius:6,border:`1px solid ${col}66`,background:solid?col:`${col}18`,color:solid?"#0A1628":col,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.5:1,fontFamily:"inherit",whiteSpace:"nowrap",lineHeight:1.4,...style}}>{children}</button>;
+}
+// Dropdown genérico (⋯ / Subir a ▾ / PDF ▾). Cierra al clickear afuera o con Esc.
+function MtDrop({label,col=MT_GR,items,children,right,width=220,solid}){
+  const [open,setOpen]=useState(false);const ref=useRef(null);
+  useEffect(()=>{if(!open)return;const f=(e)=>{if(ref.current&&!ref.current.contains(e.target))setOpen(false);};const k=(e)=>{if(e.key==="Escape")setOpen(false);};document.addEventListener("mousedown",f);document.addEventListener("keydown",k);return()=>{document.removeEventListener("mousedown",f);document.removeEventListener("keydown",k);};},[open]);
+  return <div ref={ref} style={{position:"relative",display:"inline-block"}} onClick={e=>e.stopPropagation()}>
+    <MtB col={col} solid={solid} onClick={()=>setOpen(o=>!o)}>{label}</MtB>
+    {open&&<div style={{position:"absolute",top:"calc(100% + 4px)",[right?"right":"left"]:0,zIndex:50,minWidth:width,maxWidth:"min(92vw,360px)",background:"#142038",border:"1px solid rgba(184,149,106,0.35)",borderRadius:10,boxShadow:"0 14px 40px rgba(0,0,0,0.55)",padding:6}}>
+      {items&&items.map((it,i)=>it==="-"?<div key={i} style={{height:1,background:mtDim(0.08),margin:"4px 0"}}/>:<button key={i} disabled={it.disabled} onClick={()=>{if(it.disabled)return;setOpen(false);it.onClick&&it.onClick();}} style={{display:"block",width:"100%",textAlign:"left",padding:"7px 10px",fontSize:12,fontWeight:600,borderRadius:6,border:"none",background:"transparent",color:it.danger?MT_RO:it.disabled?mtDim(0.3):"rgba(255,255,255,0.85)",cursor:it.disabled?"not-allowed":"pointer",fontFamily:"inherit"}} onMouseEnter={e=>{if(!it.disabled)e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>{it.label}{it.sub&&<span style={{display:"block",fontSize:10,color:mtDim(0.4),fontWeight:500}}>{it.sub}</span>}</button>)}
+      {typeof children==="function"?children(()=>setOpen(false)):children}
+    </div>}
+  </div>;
+}
+function MtCheck({checked,onChange,disabled,title}){
+  return <input type="checkbox" checked={!!checked} disabled={disabled} title={title} onChange={e=>{e.stopPropagation();onChange&&onChange(e.target.checked);}} onClick={e=>e.stopPropagation()} style={{width:16,height:16,cursor:disabled?"not-allowed":"pointer",accentColor:IC,flexShrink:0}}/>;
+}
+// Grilla rápida de bultos (cant · L · A · H) con CBM en vivo. rows: [{quantity,length_cm,width_cm,height_cm}]
+const mtCbmLive=(p)=>{const l=Number(p.length_cm),w=Number(p.width_cm),h=Number(p.height_cm),q=Number(p.quantity||1);return l&&w&&h?(l*w*h/1e6)*q:0;};
+function MtBultosGrid({rows,setRows,compact}){
+  const inp=(v,on,w,ph)=><input type="number" min="0" step="any" value={v} placeholder={ph} onChange={e=>on(e.target.value)} onClick={e=>e.stopPropagation()} style={{width:w,padding:"5px 6px",fontSize:12,borderRadius:6,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",...mtMono}}/>;
+  const upd=(i,k,v)=>setRows(rows.map((r,j)=>j===i?{...r,[k]:v}:r));
+  const total=rows.reduce((s,r)=>s+mtCbmLive(r),0);
+  return <div onClick={e=>e.stopPropagation()}>
+    <div style={{display:"grid",gridTemplateColumns:"48px 1fr 1fr 1fr 70px 24px",gap:5,fontSize:9.5,fontWeight:700,color:mtDim(0.4),textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:4}}><span>Cant</span><span>Largo</span><span>Ancho</span><span>Alto</span><span style={{textAlign:"right"}}>m³</span><span/></div>
+    {rows.map((r,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"48px 1fr 1fr 1fr 70px 24px",gap:5,alignItems:"center",marginBottom:4}}>
+      {inp(r.quantity,v=>upd(i,"quantity",v),"100%","1")}{inp(r.length_cm,v=>upd(i,"length_cm",v),"100%","cm")}{inp(r.width_cm,v=>upd(i,"width_cm",v),"100%","cm")}{inp(r.height_cm,v=>upd(i,"height_cm",v),"100%","cm")}
+      <span style={{textAlign:"right",fontSize:11.5,fontWeight:700,color:mtCbmLive(r)>0?GOLD_LIGHT:mtDim(0.3),...mtMono}}>{mtM3(mtCbmLive(r),4)}</span>
+      <button onClick={()=>setRows(rows.filter((_,j)=>j!==i))} title="Quitar bulto" style={{background:"transparent",border:"none",color:mtDim(0.4),cursor:"pointer",fontSize:14,padding:0}}>×</button>
+    </div>)}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:2}}>
+      <button onClick={()=>setRows([...rows,{quantity:1,length_cm:"",width_cm:"",height_cm:""}])} style={{background:"transparent",border:"1px dashed rgba(255,255,255,0.2)",color:mtDim(0.6),borderRadius:6,padding:"3px 9px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>+ bulto</button>
+      {!compact&&<span style={{fontSize:11.5,color:mtDim(0.6)}}>Total <strong style={{color:GOLD_LIGHT,...mtMono}}>{mtM3(total,4)} m³</strong></span>}
+    </div>
+  </div>;
+}
+// Chip de etapa de una carga (drawer, buscador).
+const mtEtapa=(sh,contById)=>{
+  if(sh.operation_id)return{l:`OPERADO ${sh.operations?.operation_code||""}`.trim(),col:IC};
+  const c=sh.container_id?contById[sh.container_id]:null;
+  if(c&&c.status==="arribado")return{l:"ARRIBADO",col:MT_VE};
+  if(sh.container_id)return{l:"EN TRÁNSITO",col:MT_AZ};
+  if(sh.status==="en_deposito")return{l:"EN DEPÓSITO",col:MT_AM};
+  if(esPlaceholder(sh))return{l:"AVISADO",col:MT_VI};
+  return{l:"EN CAMINO",col:MT_GR};
+};
+
+// ── Buscador global ──────────────────────────────────────────────────────────
+// Busca en cargas activas, contenedores y clientes. Enter = primero, Esc = limpiar, "/" enfoca.
+function MtSearch({P,inputRef}){
+  const [q,setQ]=useState("");const [open,setOpen]=useState(false);const [cliSel,setCliSel]=useState(null);
+  const wrap=useRef(null);
+  useEffect(()=>{const f=(e)=>{if(wrap.current&&!wrap.current.contains(e.target))setOpen(false);};document.addEventListener("mousedown",f);return()=>document.removeEventListener("mousedown",f);},[]);
+  const res=useMemo(()=>{
+    const s=q.trim().toLowerCase();if(s.length<2)return null;
+    const has=(v)=>String(v||"").toLowerCase().includes(s);
+    const cargas=P.shipments.filter(sh=>{const cli=P.clientOf(sh.client_id);return has(sh.tracking_number)||has(sh.product_description)||has(sh.client_name_snapshot)||has(sh.shipment_code)||has(cli?.client_code)||has(`${cli?.first_name||""} ${cli?.last_name||""}`);}).slice(0,10);
+    const conts=P.containers.filter(c=>has(c.code)||has(c.shipping_line)).slice(0,6);
+    const activeByCli={};P.shipments.forEach(sh=>{if(sh.client_id)activeByCli[sh.client_id]=(activeByCli[sh.client_id]||0)+1;});
+    const clis=P.allClients.filter(c=>activeByCli[c.id]&&(has(c.client_code)||has(`${c.first_name||""} ${c.last_name||""}`))).slice(0,5).map(c=>({...c,n:activeByCli[c.id]}));
+    return{cargas,conts,clis};
+  },[q,P.shipments,P.containers,P.allClients]);
+  const pick=(kind,obj)=>{setOpen(false);setQ("");setCliSel(null);if(kind==="sh")P.goToShip(obj.id);else if(kind==="c")P.openContainer(obj.id);};
+  const first=res&&(res.cargas[0]?["sh",res.cargas[0]]:res.conts[0]?["c",res.conts[0]]:null);
+  const cliCargas=cliSel?P.shipments.filter(sh=>sh.client_id===cliSel.id):null;
+  const row=(onClick,children,key)=><div key={key} onMouseDown={e=>{e.preventDefault();onClick();}} style={{padding:"7px 10px",borderRadius:7,cursor:"pointer",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",fontSize:12}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>{children}</div>;
+  const head=(t)=><p style={{fontSize:9.5,fontWeight:800,color:mtDim(0.4),textTransform:"uppercase",letterSpacing:"0.08em",margin:"8px 10px 3px"}}>{t}</p>;
+  const shRow=(sh)=>{const et=mtEtapa(sh,P.contById);const c=sh.container_id?P.contById[sh.container_id]:null;return row(()=>pick("sh",sh),<>
+    <span style={{color:"#fff",fontWeight:600,flex:"1 1 160px",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sh.product_description||"—"}</span>
+    <span style={{color:mtDim(0.6)}}>{P.cliLabel(sh)}</span>
+    {!esPlaceholder(sh)&&sh.tracking_number&&<span style={{color:mtDim(0.5),fontSize:11,...mtMono}}>{sh.tracking_number}</span>}
+    <span style={mtChipS(et.col)}>{esPlaceholder(sh)?"SIN TRACKING":et.l}</span>
+    <span style={{color:mtDim(0.4),fontSize:11}}>{c?c.code:sh.warehouse}</span>
+  </>,sh.id);};
+  return <div ref={wrap} style={{position:"relative",flex:"1 1 260px",minWidth:0}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderRadius:10,border:`1px solid ${open?GOLD:"rgba(255,255,255,0.12)"}`,background:"rgba(255,255,255,0.05)"}}>
+      <span style={{color:mtDim(0.5),fontSize:13}}>🔍</span>
+      <input ref={inputRef} value={q} onChange={e=>{setQ(e.target.value);setOpen(true);setCliSel(null);}} onFocus={()=>setOpen(true)} onKeyDown={e=>{if(e.key==="Escape"){setQ("");setOpen(false);e.target.blur();}if(e.key==="Enter"&&first)pick(first[0],first[1]);}} placeholder="Tracking, cliente, producto o contenedor…" style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",color:"#fff",fontSize:13,fontFamily:"inherit"}}/>
+      {q?<button onClick={()=>{setQ("");setCliSel(null);}} style={{background:"transparent",border:"none",color:mtDim(0.5),cursor:"pointer",fontSize:15,padding:0}}>×</button>:<kbd style={{fontSize:10,color:mtDim(0.35),border:"1px solid rgba(255,255,255,0.15)",borderRadius:4,padding:"0 5px"}}>/</kbd>}
+    </div>
+    {open&&res&&<div style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,zIndex:60,background:"#142038",border:"1px solid rgba(184,149,106,0.35)",borderRadius:12,boxShadow:"0 18px 50px rgba(0,0,0,0.6)",padding:6,maxHeight:"min(70vh,480px)",overflowY:"auto"}}>
+      {cliSel?<>
+        {head(`Cargas activas de ${cliSel.client_code||""} · ${cliSel.first_name||""} ${cliSel.last_name||""}`)}
+        {cliCargas.map(shRow)}
+      </>:<>
+        {res.cargas.length>0&&<>{head("Cargas")}{res.cargas.map(shRow)}</>}
+        {res.conts.length>0&&<>{head("Contenedores")}{res.conts.map(c=>{const n=P.shipments.filter(s=>s.container_id===c.id).length;return row(()=>pick("c",c),<><span style={{color:IC,fontWeight:800,...mtMono}}>🚢 {c.code}</span>{c.shipping_line&&<span style={{color:mtDim(0.55)}}>{c.shipping_line}</span>}<span style={{color:mtDim(0.5),fontSize:11}}>ETA {mtFmtD(mtEffEta(c))} · {n} {mtPlural(n,"carga")} · {c.status==="arribado"?"arribado":"en tránsito"}</span></>,c.id);})}</>}
+        {res.clis.length>0&&<>{head("Clientes")}{res.clis.map(c=>row(()=>setCliSel(c),<><span style={{color:GOLD_LIGHT,fontWeight:700,...mtMono}}>{c.client_code}</span><span style={{color:"#fff"}}>{c.first_name} {c.last_name}</span><span style={{color:mtDim(0.5),fontSize:11}}>{c.n} {mtPlural(c.n,"carga activa","cargas activas")}</span></>,c.id))}</>}
+        {res.cargas.length+res.conts.length+res.clis.length===0&&<div style={{padding:"12px 10px"}}>
+          <p style={{fontSize:12,color:mtDim(0.5),margin:"0 0 8px"}}>Sin resultados para "{q.trim()}"</p>
+          <MtB col={GOLD_LIGHT} onClick={()=>{setOpen(false);P.newShip({tracking_number:q.trim()});setQ("");}}>+ Crear pedido con este tracking</MtB>
+        </div>}
+      </>}
+    </div>}
+  </div>;
+}
+
+// ── Tira de pipeline + fila HOY ──────────────────────────────────────────────
+function MtPipeline({P,stats,alerts,stageFocus,setStageFocus,mute}){
+  const cards=[
+    {k:"esperando",icon:"⏳",t:"Esperando al proveedor",col:MT_VI,big:stats.esp.n,sub:stats.esp.n?`${stats.esp.prom} d prom.`:"—",warn:stats.esp.viejos>0?`${stats.esp.viejos} con +14 d`:null,hint:stats.esp.oldest},
+    {k:"camino",icon:"🚚",t:"En camino al depósito",col:MT_GR,big:stats.cam.n,sub:stats.cam.viejos>0?`${stats.cam.viejos} con +20 d`:"en fecha",warn:null},
+    {k:"deposito",icon:"📦",t:"En depósito",col:MT_AM,big:stats.dep.n,sub:`${mtM3(stats.dep.cbm)} m³ · ${stats.dep.sinMedir} sin medir`,warn:null},
+    {k:"transito",icon:"🚢",t:"En tránsito",col:MT_AZ,big:stats.tr.conts,sub:`${stats.tr.n} cargas · ${mtM3(stats.tr.cbm)} m³`,warn:null,next:stats.tr.next,plata:P.plata&&stats.tr.importe!=null?`a cobrar est. ${mtUsd(stats.tr.importe)} · gan. est. ${mtUsd(stats.tr.gan)}`:null},
+    {k:"arribados",icon:"⚓",t:"Arribados",col:MT_VE,big:stats.arr.mes,sub:"este mes",warn:stats.arr.sinOperar>0?`${stats.arr.sinOperar} sin operar`:null,plata:P.plata&&stats.arr.ganMes!=null?`gan. real mes ${mtUsd(stats.arr.ganMes)}`:null},
+  ];
+  const tot=Math.max(stats.totCbm,0.0001);
+  const cbmDe={esperando:0,camino:0,deposito:stats.dep.cbm,transito:stats.tr.cbm,arribados:stats.arr.cbm};
+  return <div style={{marginBottom:14}}>
+    <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:4,scrollSnapType:"x mandatory"}}>
+      {cards.map(c=>{const on=stageFocus===c.k;const dim=stageFocus&&!on;return <div key={c.k} onClick={()=>setStageFocus(on?null:c.k)} style={{flex:"1 0 170px",minWidth:170,scrollSnapAlign:"start",padding:"10px 12px",borderRadius:12,cursor:"pointer",background:on?`${c.col}1f`:"rgba(255,255,255,0.03)",border:`1px solid ${on?c.col+"88":"rgba(255,255,255,0.08)"}`,opacity:dim?0.55:1,position:"relative",transition:"all 150ms"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:9.5,fontWeight:800,color:c.col,textTransform:"uppercase",letterSpacing:"0.07em"}}>{c.icon} {c.t}</span>{on&&<span title="Ver todo" style={{fontSize:12,color:c.col,fontWeight:800}}>×</span>}</div>
+        <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:4}}><span style={{fontSize:26,fontWeight:800,color:"#fff",lineHeight:1,...mtMono}}>{c.big}</span><span title={c.hint||undefined} style={{fontSize:11,color:mtDim(0.55)}}>{c.sub}</span></div>
+        {c.warn&&<p style={{fontSize:11,fontWeight:700,color:MT_RO,margin:"3px 0 0"}}>{c.warn}</p>}
+        {c.next&&<p onClick={e=>{e.stopPropagation();P.openContainer(c.next.id);}} style={{fontSize:11,color:MT_AZ,margin:"3px 0 0",cursor:"pointer",textDecoration:"underline dotted"}}>próximo: {c.next.code} en {c.next.dias} d</p>}
+        {c.plata&&<p style={{fontSize:10.5,fontWeight:700,color:"#4ade80",margin:"3px 0 0"}}>{c.plata}</p>}
+        <div style={{height:3,borderRadius:2,background:"rgba(255,255,255,0.06)",marginTop:8,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,(cbmDe[c.k]||0)/tot*100)}%`,background:c.col}}/></div>
+      </div>;})}
+    </div>
+    {/* Fila HOY */}
+    {alerts.length===0?<p style={{fontSize:12,color:MT_VE,margin:"8px 2px 0",fontWeight:600}}>✓ Todo en fecha</p>
+    :<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+      {alerts.map(a=><div key={a.id} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 8px 5px 10px",borderRadius:8,background:`${a.col}14`,border:`1px solid ${a.col}44`,fontSize:11.5,color:"rgba(255,255,255,0.85)"}}>
+        <span onClick={a.go} style={{cursor:a.go?"pointer":"default",fontWeight:600}}>{a.dot} {a.text}</span>
+        {(a.acts||[]).map((x,i)=><MtB key={i} col={x.col||a.col} disabled={x.disabled} onClick={x.onClick} style={{padding:"2px 7px",fontSize:10}}>{x.label}</MtB>)}
+        <button onClick={()=>mute(a.id)} title="Silenciar 24 h" style={{background:"transparent",border:"none",color:mtDim(0.4),cursor:"pointer",fontSize:13,padding:"0 2px",lineHeight:1}}>×</button>
+      </div>)}
+    </div>}
+  </div>;
+}
+
+// ── Fila de carga (compartida por card y bandejas) ───────────────────────────
+// Una línea en desktop, 2 líneas en celu. `extra` = celdas propias de cada bandeja; `menu` = items del ⋯.
+function MtShipRow({P,sh,check,onCheck,checkDisabled,extra,actions,menu,dim,listIds,tone}){
+  const cbm=P.money.cbmOf(sh.id);const b=P.money.bultosOf(sh.id);
+  const isFlash=P.flashId===`sh:${sh.id}`;
+  const badges=<>{sh.is_fragile&&<span style={mtChipS(MT_AM,{fontSize:9})}>FRÁGIL</span>}{sh.is_repack&&<span style={mtChipS(MT_NA,{fontSize:9})}>REENVÍO</span>}</>;
+  const track=esPlaceholder(sh)?<span style={mtChipS(MT_VI)}>SIN TRACKING</span>:sh.tracking_number?<span onClick={e=>{e.stopPropagation();P.copy(sh.tracking_number,"Tracking copiado");}} title="Copiar tracking" style={{fontSize:11,color:mtDim(0.55),cursor:"copy",...mtMono}}>{sh.tracking_number}</span>:<span style={{fontSize:11,color:mtDim(0.3),fontStyle:"italic"}}>sin tracking</span>;
+  const cbmCell=cbm>0?<span style={{fontSize:11.5,fontWeight:700,color:"#fff",...mtMono}}>{b} {mtPlural(b,"bulto")} · {mtM3(cbm,2)} m³</span>:<span style={mtChipS(MT_AM)}>PENDIENTE</span>;
+  return <div ref={el=>P.reg(`sh:${sh.id}`,el)} onClick={()=>P.openDrawer(sh.id,listIds)} className={isFlash?"mtFlash":undefined} style={{display:"flex",alignItems:"center",gap:10,padding:P.isMobile?"9px 10px":"7px 12px",borderTop:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",opacity:dim?0.5:1,background:tone||"transparent",flexWrap:P.isMobile?"wrap":"nowrap"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.035)";}} onMouseLeave={e=>{e.currentTarget.style.background=tone||"transparent";}}>
+    {onCheck&&<MtCheck checked={check} onChange={onCheck} disabled={checkDisabled}/>}
+    <div style={{flex:"1 1 200px",minWidth:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><span style={{fontSize:12.5,fontWeight:600,color:"#fff"}}>{sh.product_description||"—"}</span>{badges}</div>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:2}}><span style={{fontSize:11,color:mtDim(0.6)}}>{P.cliLabel(sh)}</span>{P.isMobile&&track}{P.isMobile&&cbmCell}</div>
+    </div>
+    {!P.isMobile&&<div style={{flex:"0 0 150px",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{track}</div>}
+    {!P.isMobile&&<div style={{flex:"0 0 130px"}}>{cbmCell}</div>}
+    {extra&&<div style={{flex:P.isMobile?"1 1 100%":"1 1 160px",fontSize:11,color:mtDim(0.55),display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>{extra}</div>}
+    <div style={{display:"flex",gap:5,alignItems:"center",marginLeft:"auto",flexShrink:0}} onClick={e=>e.stopPropagation()}>
+      {actions}
+      {menu&&<MtDrop label="⋯" right items={menu}/>}
+    </div>
+  </div>;
+}
+
+// Mini-form inline "✓ Recibido": fecha (DatePicker del proyecto) + grilla de bultos.
+function MtRecibirForm({P,sh,onDone}){
+  const [fecha,setFecha]=useState(mtHoy());const [rows,setRows]=useState([{quantity:1,length_cm:"",width_cm:"",height_cm:""}]);const [saving,setSaving]=useState(false);
+  const go=async(conBultos)=>{setSaving(true);const ok=await P.act.recibir(sh,{fecha:fecha||mtHoy(),bultos:conBultos?rows:[]});setSaving(false);if(ok)onDone();};
+  return <div onClick={e=>e.stopPropagation()} style={{padding:"10px 12px 12px 40px",background:"rgba(34,197,94,0.05)",borderTop:"1px dashed rgba(34,197,94,0.3)"}}>
+    <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-start"}}>
+      <div style={{flex:"0 0 170px"}}><p style={{fontSize:9.5,fontWeight:700,color:mtDim(0.45),textTransform:"uppercase",letterSpacing:"0.06em",margin:"0 0 4px"}}>Fecha de recepción</p><DatePicker value={fecha} onChange={setFecha} small/></div>
+      <div style={{flex:"1 1 320px",minWidth:0}}><p style={{fontSize:9.5,fontWeight:700,color:mtDim(0.45),textTransform:"uppercase",letterSpacing:"0.06em",margin:"0 0 4px"}}>Bultos medidos</p><MtBultosGrid rows={rows} setRows={setRows}/></div>
+    </div>
+    <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
+      <MtB col={MT_VE} solid disabled={saving||!rows.some(r=>mtCbmLive(r)>0)} onClick={()=>go(true)}>{saving?"Guardando…":"Guardar"}</MtB>
+      <MtB col={MT_GR} disabled={saving} onClick={()=>go(false)}>Guardar sin medir</MtB>
+      <MtB col={MT_GR} disabled={saving} onClick={onDone} style={{border:"none"}}>Cancelar</MtB>
+    </div>
+  </div>;
+}
+
+// ── Card de contenedor en tránsito (unidad principal del tablero) ────────────
+function MtContCard({P,c,list,open,onToggle,showWh}){
+  const sem=semaforoCont(c);const col=MT_SEMAF[sem.estado];
+  const cbmC=list.reduce((s,sh)=>s+P.money.cbmOf(sh.id),0);const bulC=list.reduce((s,sh)=>s+P.money.bultosOf(sh.id),0);
+  const sinMedir=list.filter(sh=>P.money.cbmOf(sh.id)===0).length;
+  const nCli=new Set(list.map(s=>s.client_id||s.client_name_snapshot)).size;
+  const imp=P.plata?P.money.importeContainer(list):null;const cost=P.money.costContainer(list);const gan=imp!=null?imp-cost:null;
+  const cap=Number(c.capacity_cbm||0);const pct=cap>0?Math.min(100,cbmC/cap*100):null;
+  const eEta=mtEffEta(c),ent=mtEntregaEst(c),tb=Number(c.transbordo_dias||0);
+  const semLabel=sem.estado==="vencido"?`VENCIDO hace ${sem.dias} d`:sem.estado==="pronto"?`llega en ${sem.dias} d`:sem.estado==="ok"?`llega en ${sem.dias} d`:"sin ETA";
+  // Progreso de viaje: zarpó→entrega est., pintado hasta HOY. Rojo pasada la ETA si está vencido.
+  const totalD=mtDiasEntre(c.departed_at,ent);const doneD=diasDesde(c.departed_at);
+  const prog=c.departed_at&&totalD>0?Math.max(0,Math.min(100,doneD/totalD*100)):null;
+  const nodes=[{l:"Zarpó",d:c.departed_at,col:mtDim(0.7)},...(tb>0?[{l:`Transbordo ${c.transbordo_lugar||"Brasil"} +${tb} d`,d:c.eta,col:MT_NA}]:[]),{l:"Puerto BA",d:eEta,col:sem.estado==="vencido"?MT_RO:"#93c5fd",click:()=>P.editContainer(c)},{l:"Entrega est.",d:ent,col:"#4ade80"}];
+  const isFlash=P.flashId===`c:${c.id}`;
+  // Agrupado por cliente con subtotal (admin: a cobrar por cliente).
+  const groups=useMemo(()=>{const m={};list.forEach(sh=>{const k=sh.client_id||`snap:${sh.client_name_snapshot||"—"}`;(m[k]=m[k]||[]).push(sh);});return Object.entries(m).map(([k,ships])=>({k,ships,cbm:ships.reduce((s,x)=>s+P.money.cbmOf(x.id),0),imp:P.plata&&imp!=null?ships.reduce((s,x)=>s+P.money.importeOfShip(x,list),0):null})).sort((a,b)=>P.cliLabel(a.ships[0]).localeCompare(P.cliLabel(b.ships[0])));},[list,imp,P.plata]);
+  const listIds=list.map(s=>s.id);
+  const [picker,setPicker]=useState(false);
+  return <div ref={el=>P.reg(`c:${c.id}`,el)} className={isFlash?"mtFlash":undefined} style={{marginBottom:10,borderRadius:12,border:`1px solid ${sem.estado==="vencido"?"rgba(248,113,113,0.5)":"rgba(184,149,106,0.22)"}`,background:"rgba(184,149,106,0.04)",overflow:"visible"}}>
+    <div onClick={onToggle} style={{padding:"10px 14px",cursor:"pointer",display:"flex",flexDirection:"column",gap:8}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <span style={{fontSize:11,color:IC,transform:open?"rotate(90deg)":"none",display:"inline-block",transition:"transform 150ms"}}>▶</span>
+        <span style={{fontSize:15,fontWeight:800,color:IC,...mtMono}}>🚢 {c.code}</span>
+        {c.shipping_line?<span style={mtChipS("#93c5fd")}>⚓ {c.shipping_line}</span>:<span onClick={e=>{e.stopPropagation();P.editContainer(c);}} style={mtChipS(MT_GR,{cursor:"pointer"})} title="Cargar naviera">sin naviera</span>}
+        {showWh&&<span style={{fontSize:11,color:mtDim(0.5)}}>{c.warehouse}</span>}
+        <span style={mtChipS(col,{fontWeight:800})}>{semLabel}</span>
+        <span style={{fontSize:11,color:mtDim(0.6)}}>{nCli} {mtPlural(nCli,"cliente")} · {list.length} {mtPlural(list.length,"carga")} · {bulC} {mtPlural(bulC,"bulto")} · <strong style={{color:"#fff"}}>{mtM3(cbmC)} m³</strong>{sinMedir>0&&<span style={{color:MT_AM}}> (+{sinMedir} sin medir)</span>}</span>
+        {P.plata&&gan!=null&&<span title={`A cobrar est. ${mtUsd(imp)} · Costo est. ${mtUsd(cost)}`} style={mtChipS(gan>=0?"#4ade80":MT_RO)}>A cobrar {mtUsd(imp)} · Costo {mtUsd(cost)} · Gan. {mtUsd(gan)}{imp>0?` (${Math.round(gan/imp*100)} %)`:""}</span>}
+        <div style={{display:"flex",gap:5,marginLeft:"auto",flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+          {c.status==="en_transito"&&<MtB col={MT_VE} disabled={P.busy} onClick={()=>P.act.setContainerStatus(c,"arribado")} title="Marcar arribado: crea las operaciones y manda los mails de retiro">{P.busy?"⏳":"⚓ Arribó"}</MtB>}
+          <MtB col={MT_AZ} onClick={()=>setPicker(p=>!p)}>+ Agregar cargas</MtB>
+          <MtB col={MT_AZ} onClick={()=>P.editContainer(c)} title="Editar contenedor">✎</MtB>
+          {!P.isMobile&&<MtB col={GOLD_LIGHT} onClick={()=>P.downloadPdf(c.warehouse,{scope:c.id})} title="PDF de este contenedor">PDF</MtB>}
+          <MtDrop label="⋯" right items={[
+            {label:"Notas / editar",onClick:()=>P.editContainer(c)},
+            ...(P.isMobile?[{label:"PDF del contenedor",onClick:()=>P.downloadPdf(c.warehouse,{scope:c.id})}]:[]),
+            {label:"Bajar todas las cargas",sub:"vuelven a En depósito",disabled:list.length===0,onClick:()=>P.act.bajar(listIds,{confirm:true})},
+            "-",{label:"Eliminar contenedor",danger:true,onClick:()=>P.act.delContainer(c)}]}/>
+        </div>
+      </div>
+      {/* Timeline */}
+      <div style={{display:"flex",flexDirection:P.isMobile?"column":"row",gap:P.isMobile?6:0,alignItems:P.isMobile?"stretch":"center",position:"relative"}}>
+        {!P.isMobile&&<div style={{position:"absolute",left:60,right:60,top:7,height:4,borderRadius:2,background:"rgba(255,255,255,0.08)",overflow:"hidden"}}>
+          {prog!=null&&<div style={{height:"100%",width:`${prog}%`,background:sem.estado==="vencido"?`linear-gradient(90deg,${GOLD} 0%,${GOLD} 70%,${MT_RO} 100%)`:GOLD_GRADIENT}}/>}
+          {prog!=null&&<div title="HOY" style={{position:"absolute",left:`calc(${prog}% - 1px)`,top:-2,width:2,height:8,background:"#fff"}}/>}
+        </div>}
+        {nodes.map((n,i)=><div key={i} onClick={n.click?e=>{e.stopPropagation();n.click();}:undefined} style={{flex:1,display:"flex",flexDirection:P.isMobile?"row":"column",alignItems:"center",gap:P.isMobile?8:3,position:"relative",zIndex:1,cursor:n.click?"pointer":"default"}}>
+          <span style={{width:14,height:14,borderRadius:"50%",background:n.d?n.col:"rgba(255,255,255,0.15)",border:"2px solid #0F1F3A",boxShadow:`0 0 0 1px ${n.d?n.col:"transparent"}`}}/>
+          <span style={{fontSize:10,color:mtDim(0.5),whiteSpace:"nowrap"}}>{n.l}</span>
+          <span style={{fontSize:11.5,fontWeight:700,color:n.d?n.col:mtDim(0.3),...mtMono}}>{n.d?mtFmtD(n.d):"—"}</span>
+        </div>)}
+        {!c.departed_at&&<span style={{fontSize:10.5,color:mtDim(0.4),fontStyle:"italic",whiteSpace:"nowrap"}}>sin fecha de salida</span>}
+      </div>
+      {/* Llenado */}
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={{flex:1,height:6,borderRadius:3,background:"rgba(255,255,255,0.07)",overflow:"hidden"}}><div style={{height:"100%",width:`${pct??Math.min(100,cbmC/58*100)}%`,background:pct==null?"rgba(255,255,255,0.2)":pct>95?MT_RO:pct>80?MT_AM:MT_AZ}}/></div>
+        {pct!=null?<span style={{fontSize:11,color:mtDim(0.65),whiteSpace:"nowrap",...mtMono}}>{mtM3(cbmC,1)} / {mtM3(cap,0)} m³ ({Math.round(pct)} %)</span>
+        :<span style={{fontSize:11,color:mtDim(0.5),whiteSpace:"nowrap"}}>{mtM3(cbmC,1)} m³ · <span onClick={e=>{e.stopPropagation();P.editContainer(c);}} style={{color:MT_AZ,cursor:"pointer",textDecoration:"underline dotted"}}>definir tamaño</span></span>}
+      </div>
+      {c.notes&&<p style={{fontSize:10.5,color:mtDim(0.45),fontStyle:"italic",margin:0}}>■ {c.notes}</p>}
+    </div>
+    {picker&&<MtPicker P={P} c={c} cbmC={cbmC} cap={cap} onClose={()=>setPicker(false)}/>}
+    {open&&<div style={{borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+      {list.length===0&&<p style={{padding:"10px 14px",fontSize:11.5,color:mtDim(0.4),fontStyle:"italic",margin:0}}>Sin cargas todavía · <span onClick={()=>setPicker(true)} style={{color:MT_AZ,cursor:"pointer"}}>+ Agregar cargas</span></p>}
+      {groups.map(g=><div key={g.k}>
+        <div style={{padding:"6px 12px 4px",fontSize:11,fontWeight:700,color:GOLD_LIGHT,background:"rgba(255,255,255,0.02)",display:"flex",gap:8,flexWrap:"wrap"}}><span>{P.cliLabel(g.ships[0])}</span><span style={{color:mtDim(0.5),fontWeight:600}}>{g.ships.length} {mtPlural(g.ships.length,"carga")} · {mtM3(g.cbm)} m³</span>{g.imp!=null&&<span style={{color:"#4ade80",fontWeight:700}}>· a cobrar {mtUsd(g.imp)}</span>}</div>
+        {g.ships.map(sh=>{const dd=sh.received_at?mtDiasEntre(sh.received_at,c.departed_at||mtHoy()):null;return <MtShipRow key={sh.id} P={P} sh={sh} listIds={listIds}
+          extra={sh.received_at?<span>recibido {mtFmtD(sh.received_at)}{dd!=null&&dd>=0?` · ${dd} d en depósito`:""}</span>:<span style={{color:MT_AM}}>sin fecha de recepción</span>}
+          menu={[{label:"Ficha",onClick:()=>P.openDrawer(sh.id,listIds)},{label:"Bajar del contenedor",sub:"vuelve a En depósito",onClick:()=>P.act.bajar([sh.id])},{label:"Editar",onClick:()=>P.editShip(sh)},"-",{label:"Eliminar",danger:true,onClick:()=>P.act.delShipment(sh.id)}]}/>;})}
+      </div>)}
+    </div>}
+  </div>;
+}
+
+// Picker "+ Agregar cargas": cargas del mismo depósito en_deposito o en camino (con tracking).
+// Los placeholders se listan en gris, no tildables.
+function MtPicker({P,c,cbmC,cap,onClose}){
+  const [sel,setSel]=useState(new Set());const [saving,setSaving]=useState(false);
+  const cands=P.shipments.filter(sh=>sh.warehouse===c.warehouse&&!sh.container_id&&!sh.operation_id).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
+  const selCbm=[...sel].reduce((s,id)=>s+P.money.cbmOf(id),0);
+  const enCamino=[...sel].filter(id=>{const s=P.shipments.find(x=>x.id===id);return s&&s.status==="proveedor";}).length;
+  const go=async()=>{setSaving(true);const ok=await P.act.subirA([...sel],c.id);setSaving(false);if(ok)onClose();};
+  return <div onClick={e=>e.stopPropagation()} style={{margin:"0 14px 10px",padding:10,borderRadius:10,background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.3)"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,gap:8,flexWrap:"wrap"}}>
+      <span style={{fontSize:11.5,fontWeight:700,color:MT_AZ}}>Agregar cargas de {c.warehouse} a {c.code}</span>
+      <button onClick={onClose} style={{background:"transparent",border:"none",color:mtDim(0.5),cursor:"pointer",fontSize:16}}>×</button>
+    </div>
+    {cands.length===0&&<p style={{fontSize:11.5,color:mtDim(0.45),margin:"6px 0",fontStyle:"italic"}}>No hay cargas sin contenedor en este depósito.</p>}
+    <div style={{maxHeight:260,overflowY:"auto"}}>
+      {cands.map(sh=>{const ph=esPlaceholder(sh);const on=sel.has(sh.id);const cbm=P.money.cbmOf(sh.id);const d=diasDesde(sh.received_at||sh.created_at);return <label key={sh.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 6px",borderRadius:6,cursor:ph?"not-allowed":"pointer",opacity:ph?0.45:1,background:on?"rgba(96,165,250,0.12)":"transparent",fontSize:11.5}}>
+        <MtCheck checked={on} disabled={ph} onChange={()=>setSel(mtToggleSet(sel,sh.id))}/>
+        <span style={{color:mtDim(0.7),minWidth:110}}>{P.cliLabel(sh)}</span>
+        <span style={{color:"#fff",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sh.product_description||"—"}</span>
+        {ph?<span style={mtChipS(MT_VI)}>sin despachar</span>:<span style={mtChipS(sh.status==="en_deposito"?MT_AM:MT_GR)}>{sh.status==="en_deposito"?"en depósito":"en camino"}</span>}
+        <span style={{color:cbm>0?"#fff":MT_AM,...mtMono}}>{cbm>0?`${mtM3(cbm)} m³`:"sin medir"}</span>
+        <span style={{color:mtDim(0.45),whiteSpace:"nowrap"}}>{d} d</span>
+      </label>;})}
+    </div>
+    {sel.size>0&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8,gap:8,flexWrap:"wrap"}}>
+      <span style={{fontSize:11.5,color:"#fff",fontWeight:600}}>Subir {sel.size} {mtPlural(sel.size,"carga")} · {mtM3(selCbm)} m³{cap>0?` → llenado ${Math.round((cbmC+selCbm)/cap*100)} %`:""}{enCamino>0&&<span style={{color:MT_AM}}> · {enCamino} se marcan recibidas hoy</span>}</span>
+      <MtB col={MT_AZ} solid disabled={saving} onClick={go}>{saving?"Subiendo…":`Subir al ${c.code}`}</MtB>
+    </div>}
+  </div>;
+}
+
+// ── Bandeja genérica (header colapsable + cuerpo) ────────────────────────────
+function MtTray({title,col,open,onToggle,count,summary,right,children,empty}){
+  return <div style={{marginBottom:10,borderRadius:12,border:`1px solid ${col}33`,background:`${col}08`,overflow:"visible"}}>
+    <div onClick={onToggle} style={{padding:"8px 12px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",cursor:"pointer"}}>
+      <span style={{fontSize:10,color:col,transform:open?"rotate(90deg)":"none",display:"inline-block",transition:"transform 150ms"}}>▶</span>
+      <span style={{fontSize:11.5,fontWeight:800,color:col,textTransform:"uppercase",letterSpacing:"0.05em"}}>{title}</span>
+      <span style={{fontSize:11,color:mtDim(0.6)}}>{summary}</span>
+      <div style={{marginLeft:"auto",display:"flex",gap:5}} onClick={e=>e.stopPropagation()}>{right}</div>
+    </div>
+    {open&&(count===0?<p style={{padding:"4px 12px 10px",fontSize:11.5,color:mtDim(0.4),margin:0,fontStyle:"italic"}}>{empty}</p>:<div style={{borderTop:`1px solid ${col}22`}}>{children}</div>)}
+  </div>;
+}
+// Popover "Subir a ▾": contenedores en tránsito del depósito + nuevo contenedor con estas cargas.
+const mtSubirItems=(P,wh,ids,extra)=>{
+  const conts=P.containers.filter(c=>c.warehouse===wh&&c.status==="en_transito").sort((a,b)=>String(mtEffEta(a)||"9").localeCompare(String(mtEffEta(b)||"9")));
+  return [...conts.map(c=>{const used=P.shipments.filter(s=>s.container_id===c.id).reduce((s,x)=>s+P.money.cbmOf(x.id),0);const cap=Number(c.capacity_cbm||0);return{label:`🚢 ${c.code}`,sub:`ETA ${mtFmtD(mtEffEta(c))}${cap>0?` · libres ${mtM3(Math.max(0,cap-used),1)} m³`:""}`,onClick:()=>P.act.subirA(ids,c.id,extra)};}),...(conts.length?["-"]:[]),{label:"+ Nuevo contenedor con estas cargas",onClick:()=>P.act.nuevoContConCargas(ids,wh)}];
+};
+
+// ── Bandeja EN DEPÓSITO · sin contenedor ─────────────────────────────────────
+function MtTrayDeposito({P,wh,list,open,onToggle,focus}){
+  const key=`dep:${wh}`;const sel=P.sel[key]||new Set();const setSel=(s)=>P.setSelFor(key,s);
+  const cbm=list.reduce((s,sh)=>s+P.money.cbmOf(sh.id),0);const sinMedir=list.filter(sh=>P.money.cbmOf(sh.id)===0).length;
+  const conts=P.containers.filter(c=>c.warehouse===wh&&c.status==="en_transito");
+  // Sugerido = contenedor con más espacio libre (solo si tiene capacity_cbm).
+  const sug=conts.map(c=>{const cap=Number(c.capacity_cbm||0);if(!cap)return null;const used=P.shipments.filter(s=>s.container_id===c.id).reduce((s,x)=>s+P.money.cbmOf(x.id),0);return{c,libre:cap-used};}).filter(Boolean).sort((a,b)=>b.libre-a.libre)[0]||null;
+  const selIds=[...sel].filter(id=>list.some(s=>s.id===id));const selCbm=selIds.reduce((s,id)=>s+P.money.cbmOf(id),0);
+  const listIds=list.map(s=>s.id);
+  return <MtTray title="📦 En depósito · sin contenedor" col={MT_AM} open={open} onToggle={onToggle} count={list.length}
+    summary={list.length?`${list.length} ${mtPlural(list.length,"carga")} · ${mtM3(cbm)} m³${sinMedir?` · ${sinMedir} sin medir`:""} · listo para armar: ${mtM3(cbm)} m³`:"0"}
+    empty={focus?"Nada en depósito. Las cargas aparecen acá al marcar Recibido en 'En camino al depósito'.":"📦 En depósito: 0"}
+    right={list.length>0&&<MtB col={MT_GR} onClick={()=>setSel(selIds.length===list.length?new Set():new Set(listIds))} style={{fontSize:10}}>{selIds.length===list.length?"Ninguna":"Todas"}</MtB>}>
+    {list.map(sh=>{const d=diasDesde(sh.received_at);const deuda=sh.status==="en_camino_ar";return <MtShipRow key={sh.id} P={P} sh={sh} listIds={listIds} check={sel.has(sh.id)} onCheck={()=>setSel(mtToggleSet(sel,sh.id))}
+      extra={<>{deuda&&<span style={mtChipS(MT_RO)}>EN TRÁNSITO SIN CONTENEDOR — asignar</span>}{sh.received_at?<span style={{color:d>40?MT_RO:d>20?MT_AM:mtDim(0.55)}}>recibido {mtFmtD(sh.received_at)} · hace {d} d</span>:<span style={{color:MT_AM}}>sin fecha</span>}{sug&&<span style={{color:mtDim(0.4)}}>sugerido → <span onClick={e=>{e.stopPropagation();P.act.subirA([sh.id],sug.c.id);}} style={{color:MT_AZ,cursor:"pointer"}}>{sug.c.code}</span> (libres {mtM3(sug.libre,1)} m³)</span>}</>}
+      actions={<>{P.money.cbmOf(sh.id)===0&&<MtB col={MT_AM} onClick={()=>P.openDrawer(sh.id,listIds,"bultos")}>MEDIR</MtB>}<MtDrop label="Subir a ▾" col={MT_AZ} right items={mtSubirItems(P,wh,[sh.id])}/></>}
+      menu={[{label:"Ficha",onClick:()=>P.openDrawer(sh.id,listIds)},{label:"Volver a 'en camino'",sub:"status proveedor, limpia received_at",onClick:()=>P.act.volverACamino(sh)},{label:"Editar",onClick:()=>P.editShip(sh)},"-",{label:"Eliminar",danger:true,onClick:()=>P.act.delShipment(sh.id)}]}/>;})}
+    {selIds.length>0&&<div style={{position:"sticky",bottom:0,padding:"8px 12px",background:"#14213a",borderTop:"1px solid rgba(184,149,106,0.35)",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderRadius:"0 0 12px 12px"}}>
+      <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>{selIds.length} {mtPlural(selIds.length,"seleccionada")} · {mtM3(selCbm)} m³</span>
+      <MtDrop label="Subir a ▾" col={MT_AZ} solid items={mtSubirItems(P,wh,selIds)}/>
+      <MtB col={MT_AZ} onClick={()=>P.act.nuevoContConCargas(selIds,wh)}>+ Nuevo contenedor con estas</MtB>
+      <MtB col={GOLD_LIGHT} disabled={P.busy} onClick={()=>P.act.createOperationFromShipments(selIds)}>{P.busy?"Creando…":"Crear op consolidada"}</MtB>
+      <MtB col={MT_GR} onClick={()=>setSel(new Set())} style={{border:"none"}}>Limpiar</MtB>
+    </div>}
+  </MtTray>;
+}
+
+// ── Bandeja EN CAMINO AL DEPÓSITO (proveedor con tracking real) ──────────────
+function MtTrayCamino({P,wh,list,open,onToggle,focus}){
+  const key=`cam:${wh}`;const sel=P.sel[key]||new Set();const setSel=(s)=>P.setSelFor(key,s);
+  const [recibiendo,setRecibiendo]=useState(null);const [masivo,setMasivo]=useState(false);const [fechaM,setFechaM]=useState(mtHoy());
+  const viejos=list.filter(sh=>diasDesde(sh.created_at)>20).length;
+  const selIds=[...sel].filter(id=>list.some(s=>s.id===id));const listIds=list.map(s=>s.id);
+  return <MtTray title="🚚 En camino al depósito" col={MT_AZ} open={open} onToggle={onToggle} count={list.length}
+    summary={list.length?`${list.length}${viejos?` · ${viejos} con +20 d`:""}`:"0"}
+    empty={focus?"Nada en camino. Los pedidos con tracking real del proveedor aparecen acá.":"🚚 En camino: 0"}
+    right={selIds.length>0&&<MtB col={MT_VE} onClick={()=>setMasivo(m=>!m)}>✓ Recibir {selIds.length}</MtB>}>
+    {masivo&&selIds.length>0&&<div onClick={e=>e.stopPropagation()} style={{padding:"8px 12px",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",background:"rgba(34,197,94,0.06)"}}>
+      <span style={{fontSize:11.5,color:"#fff",fontWeight:600}}>Recepción masiva ({selIds.length}) · sin bultos</span>
+      <div style={{width:160}}><DatePicker value={fechaM} onChange={setFechaM} small/></div>
+      <MtB col={MT_VE} solid onClick={async()=>{const ok=await P.act.recibirMasivo(selIds,fechaM||mtHoy());if(ok){setMasivo(false);setSel(new Set());}}}>Guardar</MtB>
+      <MtB col={MT_GR} onClick={()=>setMasivo(false)} style={{border:"none"}}>Cancelar</MtB>
+    </div>}
+    {list.map(sh=>{const d=diasDesde(sh.created_at);return <Fragment key={sh.id}><MtShipRow P={P} sh={sh} listIds={listIds} check={sel.has(sh.id)} onCheck={()=>setSel(mtToggleSet(sel,sh.id))}
+      extra={<span style={{color:d>45?MT_RO:d>20?MT_AM:mtDim(0.55)}}>despachado hace {d} d</span>}
+      actions={<MtB col={MT_VE} onClick={()=>setRecibiendo(recibiendo===sh.id?null:sh.id)}>✓ Recibido</MtB>}
+      menu={[{label:"Ficha",onClick:()=>P.openDrawer(sh.id,listIds)},...mtSubirItems(P,wh,[sh.id],{directo:true}).map(it=>it==="-"?it:{...it,label:it.label.startsWith("+")?it.label:`Subir a ${it.label}`}),"-",{label:"Editar",onClick:()=>P.editShip(sh)},{label:"El proveedor no despachó",sub:"vuelve a Esperando al proveedor",onClick:()=>P.act.noDespacho(sh)},{label:"Eliminar",danger:true,onClick:()=>P.act.delShipment(sh.id)}]}/>
+      {recibiendo===sh.id&&<MtRecibirForm P={P} sh={sh} onDone={()=>setRecibiendo(null)}/>}
+    </Fragment>;})}
+  </MtTray>;
+}
+
+// ── Bandeja ESPERANDO AL PROVEEDOR (placeholders) ────────────────────────────
+const mtUltimaGestion=(notes)=>{const m=String(notes||"").match(/Reclamado (\d{2}\/\d{2}(?:\/\d{2,4})?)/g);return m?m[m.length-1].replace("Reclamado ","reclamado "):null;};
+function MtTrayEsperando({P,wh,list,open,onToggle}){
+  const [llego,setLlego]=useState(null);const [trk,setTrk]=useState("");const [fecha,setFecha]=useState("");const [saving,setSaving]=useState(false);
+  const dias=list.map(sh=>diasDesde(sh.created_at)||0);const prom=dias.length?Math.round(dias.reduce((a,b)=>a+b,0)/dias.length):0;const viejos=dias.filter(d=>d>14).length;
+  const listIds=list.map(s=>s.id);
+  return <MtTray title="⏳ Esperando al proveedor" col={MT_VI} open={open} onToggle={onToggle} count={list.length}
+    summary={list.length?`${list.length} · ${prom} d promedio${viejos?` · ${viejos} con +14 d`:""}`:"0"} empty="⏳ Esperando al proveedor: 0">
+    {list.map(sh=>{const d=diasDesde(sh.created_at);const col=d>14?MT_RO:d>=7?MT_AM:MT_VE;const ug=mtUltimaGestion(sh.notes);return <Fragment key={sh.id}><MtShipRow P={P} sh={sh} listIds={listIds}
+      extra={<><span style={{color:col,fontWeight:600}}>avisado {mtFmtD(sh.created_at)} · hace {d} d</span>{ug&&<span style={{color:mtDim(0.4)}}>última gestión: {ug}</span>}</>}
+      actions={<><MtB col={MT_VE} onClick={()=>{setLlego(llego===sh.id?null:sh.id);setTrk("");setFecha("");}}>✓ Llegó tracking</MtB><MtB col={MT_VI} onClick={()=>P.act.reclamar(sh)} title="Reclamar por WhatsApp">📲 Reclamar</MtB></>}
+      menu={[{label:"Ficha",onClick:()=>P.openDrawer(sh.id,listIds)},{label:"Editar",onClick:()=>P.editShip(sh)},"-",{label:"Eliminar (cliente desistió)",danger:true,onClick:()=>P.act.delShipment(sh.id)}]}/>
+      {llego===sh.id&&<div onClick={e=>e.stopPropagation()} style={{padding:"10px 12px 12px 40px",background:"rgba(167,139,250,0.06)",borderTop:"1px dashed rgba(167,139,250,0.35)",display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+        <div style={{flex:"1 1 200px"}}><p style={{fontSize:9.5,fontWeight:700,color:mtDim(0.45),textTransform:"uppercase",letterSpacing:"0.06em",margin:"0 0 4px"}}>Tracking real</p><input autoFocus value={trk} onChange={e=>setTrk(e.target.value)} onKeyDown={e=>{if(e.key==="Escape")setLlego(null);}} placeholder="Tracking del proveedor" style={{width:"100%",boxSizing:"border-box",padding:"7px 10px",fontSize:12.5,borderRadius:8,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",...mtMono}}/></div>
+        <div style={{flex:"0 0 170px"}}><p style={{fontSize:9.5,fontWeight:700,color:mtDim(0.45),textTransform:"uppercase",letterSpacing:"0.06em",margin:"0 0 4px"}}>Ya llegó al depósito (opcional)</p><DatePicker value={fecha} onChange={setFecha} small placeholder="Sin fecha"/></div>
+        <MtB col={MT_VE} solid disabled={saving||!trk.trim()} onClick={async()=>{setSaving(true);const ok=await P.act.llegoTracking(sh,{tracking:trk.trim(),fecha});setSaving(false);if(ok)setLlego(null);}}>{saving?"Guardando…":"Guardar"}</MtB>
+        <MtB col={MT_GR} onClick={()=>setLlego(null)} style={{border:"none"}}>Cancelar</MtB>
+      </div>}
+    </Fragment>;})}
+  </MtTray>;
+}
+
+// ── Drawer: ficha de carga ───────────────────────────────────────────────────
+function MtDrawer({P,sh,listIds,section,onClose}){
+  const c=sh.container_id?P.contById[sh.container_id]:null;const et=mtEtapa(sh,P.contById);const ph=esPlaceholder(sh);
+  const pk=P.pkgByShip[sh.id]||[];const its=P.itemsByShip[sh.id]||[];
+  const [rows,setRows]=useState(null); // null = viendo; array = editando bultos
+  const [notes,setNotes]=useState(sh.notes||"");const [savingPk,setSavingPk]=useState(false);
+  const bultosRef=useRef(null);
+  useEffect(()=>{setNotes(sh.notes||"");setRows(null);},[sh.id]);
+  useEffect(()=>{if(section==="bultos"){setRows(pk.length?pk.map(p=>({quantity:p.quantity||1,length_cm:p.length_cm||"",width_cm:p.width_cm||"",height_cm:p.height_cm||""})):[{quantity:1,length_cm:"",width_cm:"",height_cm:""}]);setTimeout(()=>bultosRef.current?.scrollIntoView({behavior:"smooth",block:"center"}),50);}},[sh.id,section]);
+  // Teclado: Esc cierra, ↑/↓ navegan la misma lista.
+  useEffect(()=>{const k=(e)=>{const tag=e.target?.tagName;if(tag==="INPUT"||tag==="TEXTAREA")return;if(e.key==="Escape")onClose();if((e.key==="ArrowDown"||e.key==="ArrowUp")&&listIds?.length){const i=listIds.indexOf(sh.id);const j=e.key==="ArrowDown"?i+1:i-1;if(j>=0&&j<listIds.length){e.preventDefault();P.openDrawer(listIds[j],listIds);}}};document.addEventListener("keydown",k);return()=>document.removeEventListener("keydown",k);},[sh.id,listIds]);
+  const cbm=P.money.cbmOf(sh.id);const fob=its.reduce((a,it)=>a+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
+  const contList=c?P.shipments.filter(s=>s.container_id===c.id):[];
+  const imp=P.plata?P.money.importeOfShip(sh,contList.length?contList:[sh]):0;const cost=P.money.costOfShip(sh);
+  // Timeline vertical: hitos con fecha y días entre pasos; futuros en gris.
+  const steps=[{l:"Anotado",d:sh.created_at},{l:ph?"Tracking":"Tracking",d:ph?null:(sh.tracking_number?sh.created_at:null),txt:ph?"sin tracking":sh.tracking_number},{l:"Recibido",d:sh.received_at},{l:"Subido",d:sh.shipped_to_ar_at||(c?c.departed_at:null),txt:c?c.code:null},{l:"Puerto BA",d:c?mtEffEta(c):null,fut:c?diasDesde(mtEffEta(c))<0:true},{l:"Arribó",d:c?.arrived_at},{l:"Operación",d:sh.operation_id?sh.updated_at:null,txt:sh.operations?.operation_code}];
+  const H=(t)=><p style={{fontSize:10,fontWeight:800,color:mtDim(0.45),textTransform:"uppercase",letterSpacing:"0.07em",margin:"16px 0 6px"}}>{t}</p>;
+  const patch=(body)=>P.act.patchShips([sh.id],body);
+  const savePk=async()=>{setSavingPk(true);const ok=await P.act.savePackages(sh.id,rows);setSavingPk(false);if(ok)setRows(null);};
+  const stageBtns=()=>{
+    if(sh.operation_id)return null;
+    if(ph)return <MtB col={MT_VE} onClick={()=>{onClose();P.flash("Usá ✓ Llegó tracking en la bandeja Esperando al proveedor");}}>✓ Llegó tracking</MtB>;
+    if(sh.status==="proveedor"&&!c)return <><MtB col={MT_VE} onClick={()=>P.act.recibir(sh,{fecha:mtHoy(),bultos:[]})}>✓ Recibido hoy</MtB><MtDrop label="Subir a ▾" col={MT_AZ} items={mtSubirItems(P,sh.warehouse,[sh.id],{directo:true})}/></>;
+    if(!c)return <><MtDrop label="Subir a ▾" col={MT_AZ} items={mtSubirItems(P,sh.warehouse,[sh.id])}/><MtB col={MT_GR} onClick={()=>P.act.volverACamino(sh)}>↶ Volver a en camino</MtB></>;
+    if(c.status==="en_transito")return <MtB col={MT_GR} onClick={()=>P.act.bajar([sh.id])}>↓ Bajar del contenedor</MtB>;
+    return null;
+  };
+  const inpS={padding:"5px 8px",fontSize:12.5,borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",...mtMono};
+  return <>
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:900}}/>
+    <div style={{position:"fixed",top:0,right:0,bottom:0,width:P.isMobile?"100%":440,maxWidth:"100vw",background:"#0F1F3A",borderLeft:"1px solid rgba(184,149,106,0.35)",boxShadow:"-20px 0 60px rgba(0,0,0,0.5)",zIndex:901,overflowY:"auto",padding:"16px 18px 40px",boxSizing:"border-box"}} className="mtSlideIn">
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+        <div style={{minWidth:0}}>
+          <p style={{fontSize:11,fontWeight:700,color:GOLD_LIGHT,margin:0,...mtMono}}>{P.cliLabel(sh)}</p>
+          <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:"3px 0 6px",lineHeight:1.25}}>{sh.product_description||"—"}</h3>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}><span style={mtChipS(et.col)}>{et.l}</span>{sh.is_fragile&&<span style={mtChipS(MT_AM)}>FRÁGIL</span>}{sh.is_repack&&<span style={mtChipS(MT_NA)}>REENVÍO</span>}<span style={{fontSize:11,color:mtDim(0.5)}}>{sh.warehouse}{c&&<> · <span onClick={()=>{onClose();P.openContainer(c.id);}} style={{color:MT_AZ,cursor:"pointer",textDecoration:"underline dotted"}}>{c.code}</span></>}</span></div>
+        </div>
+        <div style={{display:"flex",gap:4,flexShrink:0}}>
+          {listIds?.length>1&&<><MtB col={MT_GR} onClick={()=>{const i=listIds.indexOf(sh.id);if(i>0)P.openDrawer(listIds[i-1],listIds);}} title="Anterior (↑)">↑</MtB><MtB col={MT_GR} onClick={()=>{const i=listIds.indexOf(sh.id);if(i<listIds.length-1)P.openDrawer(listIds[i+1],listIds);}} title="Siguiente (↓)">↓</MtB></>}
+          <button onClick={onClose} style={{background:"transparent",border:"none",color:mtDim(0.6),fontSize:22,cursor:"pointer",padding:"0 4px",lineHeight:1}}>{P.isMobile?"←":"×"}</button>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:12}}>{stageBtns()}<MtB col={MT_AZ} onClick={()=>P.editShip(sh)}>✎ Editar todo</MtB><MtB col={MT_RO} onClick={()=>P.act.delShipment(sh.id)}>🗑</MtB></div>
+      {H("Recorrido")}
+      <div style={{paddingLeft:6}}>{steps.map((s,i)=>{const done=!!s.d&&!s.fut;const prev=steps.slice(0,i).reverse().find(x=>x.d);const gap=done&&prev?mtDiasEntre(prev.d,s.d):null;return <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",position:"relative",paddingBottom:i<steps.length-1?12:0}}>
+        {i<steps.length-1&&<span style={{position:"absolute",left:5,top:14,bottom:0,width:2,background:done?"rgba(184,149,106,0.4)":"rgba(255,255,255,0.08)"}}/>}
+        <span style={{width:12,height:12,borderRadius:"50%",marginTop:2,background:done?GOLD_LIGHT:"rgba(255,255,255,0.12)",flexShrink:0}}/>
+        <div style={{flex:1,display:"flex",justifyContent:"space-between",gap:8,fontSize:12}}>
+          <span style={{color:done?"#fff":mtDim(0.35),fontWeight:600}}>{s.l}{s.txt&&<span style={{color:done?mtDim(0.6):mtDim(0.35),fontWeight:500,marginLeft:6,...mtMono}}>{s.txt}</span>}</span>
+          <span style={{color:done?GOLD_LIGHT:mtDim(0.3),whiteSpace:"nowrap",...mtMono}}>{s.d?mtFmtD(s.d):"—"}{gap!=null&&gap>0&&<span style={{color:mtDim(0.4),marginLeft:5}}>+{gap} d</span>}</span>
+        </div>
+      </div>;})}</div>
+      <div ref={bultosRef}/>{H(`Bultos (${pk.length}) · ${mtM3(cbm,4)} m³`)}
+      {rows?<div>
+        <MtBultosGrid rows={rows} setRows={setRows}/>
+        <div style={{display:"flex",gap:6,marginTop:8}}><MtB col={MT_VE} solid disabled={savingPk} onClick={savePk}>{savingPk?"Guardando…":"Guardar bultos"}</MtB><MtB col={MT_GR} onClick={()=>setRows(null)} style={{border:"none"}}>Cancelar</MtB></div>
+      </div>:<div>
+        {pk.length===0?<p style={{fontSize:11.5,color:mtDim(0.4),margin:"0 0 6px",fontStyle:"italic"}}>Sin bultos medidos</p>:pk.map(p=><div key={p.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><span style={{color:mtDim(0.7)}}>×{p.quantity||1} · {p.length_cm}×{p.width_cm}×{p.height_cm} cm</span><span style={{color:GOLD_LIGHT,...mtMono}}>{mtM3(p.cbm,4)}</span></div>)}
+        {!sh.operation_id&&<MtB col={MT_AM} style={{marginTop:6}} onClick={()=>setRows(pk.length?pk.map(p=>({quantity:p.quantity||1,length_cm:p.length_cm||"",width_cm:p.width_cm||"",height_cm:p.height_cm||""})):[{quantity:1,length_cm:"",width_cm:"",height_cm:""}])}>{pk.length?"✎ Editar bultos":"+ Bulto"}</MtB>}
+      </div>}
+      {H(`Mercadería (${its.length})`)}
+      {its.length===0?<p style={{fontSize:11.5,color:mtDim(0.4),margin:0,fontStyle:"italic"}}>Sin detalle cargado</p>:<div>{its.map(it=><div key={it.id} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:12,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><span style={{color:mtDim(0.8)}}>{it.description}</span><span style={{color:mtDim(0.55),whiteSpace:"nowrap",...mtMono}}>{it.quantity} u.{P.plata?` × ${mtUsd(it.unit_price_usd)}`:""}</span></div>)}{P.plata&&fob>0&&<p style={{fontSize:12,fontWeight:700,color:"#4ade80",margin:"6px 0 0",textAlign:"right"}}>Total FOB {mtUsd(fob)}</p>}</div>}
+      {P.plata&&!sh.operation_id&&<>
+        {H("Plata (estimado)")}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,padding:"10px 12px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8}}>
+          <label style={{fontSize:11,color:mtDim(0.55)}}>Costo est. USD<br/><input key={`${sh.id}-c-${sh.cost_estimado??""}`} type="number" step="any" defaultValue={sh.cost_estimado??""} placeholder="0" title={sh.cost_manual?"A mano. Borrá para volver al automático.":`Automático: CBM × USD ${Number(sh.cost_per_cbm||0)} del depósito`} onBlur={e=>{if(String(e.target.value).trim()!==String(sh.cost_estimado??""))P.act.saveShipCost(sh,e.target.value);}} style={{...inpS,width:"100%",boxSizing:"border-box",marginTop:3,borderColor:sh.cost_manual?"rgba(251,191,36,0.4)":"rgba(255,255,255,0.15)"}}/><span style={{fontSize:9.5,color:sh.cost_manual?MT_AM:mtDim(0.35)}}>{sh.cost_manual?"a mano":"auto"}</span></label>
+          <label style={{fontSize:11,color:mtDim(0.55)}}>A cobrar est. USD<br/><input key={`${sh.id}-r-${sh.revenue_manual??""}`} type="number" step="any" defaultValue={sh.revenue_manual!=null?sh.revenue_manual:Math.round(imp*100)/100} placeholder="0" onBlur={e=>{const v=String(e.target.value).trim();const auto=String(Math.round(imp*100)/100);const man=sh.revenue_manual!=null;if(man?v!==String(sh.revenue_manual):(v!==""&&v!==auto))P.act.saveShipRevenue(sh,v);else if(man&&v==="")P.act.saveShipRevenue(sh,"");}} style={{...inpS,width:"100%",boxSizing:"border-box",marginTop:3,color:"#4ade80",borderColor:sh.revenue_manual!=null?"rgba(251,191,36,0.4)":"rgba(74,222,128,0.3)"}}/><span style={{fontSize:9.5,color:sh.revenue_manual!=null?MT_AM:mtDim(0.35)}}>{sh.revenue_manual!=null?"a mano":"auto · tarifa × CBM"}</span></label>
+          <p style={{gridColumn:"1 / -1",margin:0,fontSize:13,fontWeight:800,color:imp-cost>=0?"#4ade80":MT_RO}}>📈 Ganancia est. {mtUsd(imp-cost)}</p>
+        </div>
+      </>}
+      {H("Notas y marcas")}
+      <textarea value={notes} onChange={e=>setNotes(e.target.value)} onBlur={()=>{if((notes||"")!==(sh.notes||""))patch({notes:notes||null});}} rows={3} placeholder="Notas internas…" style={{width:"100%",boxSizing:"border-box",padding:"8px 10px",fontSize:12.5,borderRadius:8,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(0,0,0,0.25)",color:"#fff",fontFamily:"inherit",resize:"vertical"}}/>
+      <div style={{display:"flex",gap:16,marginTop:8,fontSize:12,color:mtDim(0.75)}}>
+        <label style={{display:"flex",gap:6,alignItems:"center",cursor:"pointer"}}><MtCheck checked={sh.is_fragile} onChange={v=>patch({is_fragile:v})}/>Frágil</label>
+        <label style={{display:"flex",gap:6,alignItems:"center",cursor:"pointer"}}><MtCheck checked={sh.is_repack} onChange={v=>patch({is_repack:v})}/>Reenvío</label>
+      </div>
+      {sh.shipment_code&&<p style={{fontSize:10.5,color:mtDim(0.3),margin:"14px 0 0",...mtMono}}>{sh.shipment_code} · anotado {formatDate(sh.created_at)}</p>}
+    </div>
+  </>;
+}
+
+// ── Modal ⚙ Depósitos (admin) ────────────────────────────────────────────────
+function MtDepositosModal({P,onClose}){
+  const [editing,setEditing]=useState(null);
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:820,maxHeight:"88vh",overflowY:"auto",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:14,padding:"20px 22px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>⚙ Depósitos</h3><div style={{display:"flex",gap:8}}><MtB col={GOLD_LIGHT} onClick={()=>setEditing({})}>+ Nuevo depósito</MtB><button onClick={onClose} style={{background:"transparent",border:"none",color:mtDim(0.5),fontSize:20,cursor:"pointer"}}>×</button></div></div>
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+        <thead><tr>{["Nombre","Origen","Rótulo","Costo USD/m³","Orden","Activas","En tránsito",""].map((h,i)=><th key={i} style={{textAlign:"left",padding:"6px 8px",fontSize:10,color:mtDim(0.45),textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>{h}</th>)}</tr></thead>
+        <tbody>{P.whs.map(w=>{const act=P.shipments.filter(s=>s.warehouse===w.name&&!esPlaceholder(s)).length;const tr=P.containers.filter(c=>c.warehouse===w.name&&c.status==="en_transito").length;return <tr key={w.id} style={{opacity:w.archived?0.45:1,borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+          <td style={{padding:"7px 8px",color:"#fff",fontWeight:700}}>{w.name}{w.archived&&<span style={mtChipS(MT_GR,{marginLeft:6})}>ARCHIVADO</span>}</td>
+          <td style={{padding:"7px 8px"}}>{w.origin==="usa"?"🇺🇸 USA":"🇨🇳 China"}</td>
+          <td style={{padding:"7px 8px",color:mtDim(0.6),fontSize:11,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{w.rotulo||"—"}</td>
+          <td style={{padding:"7px 8px",color:w.default_cost_per_cbm?"#fff":MT_AM,...mtMono}}>{w.default_cost_per_cbm?Number(w.default_cost_per_cbm):"sin tarifa"}</td>
+          <td style={{padding:"7px 8px",color:mtDim(0.6),...mtMono}}>{w.sort_order??"—"}</td>
+          <td style={{padding:"7px 8px",...mtMono}}>{act}</td><td style={{padding:"7px 8px",...mtMono}}>{tr}</td>
+          <td style={{padding:"7px 8px",whiteSpace:"nowrap"}}><MtB col={MT_AZ} onClick={()=>setEditing(w)}>✎</MtB> <MtB col={w.archived?MT_VE:MT_GR} onClick={()=>P.act.archiveWh(w,!w.archived)}>{w.archived?"Restaurar":"Archivar"}</MtB></td>
+        </tr>;})}</tbody>
+      </table></div>
+      {editing&&<WarehouseForm token={P.token} editing={editing.id?editing:null} onSave={()=>{setEditing(null);P.act.reload();}} onCancel={()=>setEditing(null)}/>}
+    </div>
+  </div>;
+}
+
+// ── Modal: vincular cargas YA OPERADAS a un contenedor (revive el modal viejo) ─
+function MtLinkModal({P,c,onClose}){
+  const [cands,setCands]=useState(null);const [sel,setSel]=useState(new Set());const [saving,setSaving]=useState(false);
+  useEffect(()=>{(async()=>{const r=await dq("maritime_shipments",{token:P.token,filters:`?warehouse=eq.${encodeURIComponent(c.warehouse)}&operation_id=not.is.null&container_id=is.null&select=id,product_description,client_name_snapshot,client_id,tracking_number${P.plata?",operations(operation_code)":""}&order=created_at.desc&limit=300`});setCands(Array.isArray(r)?r:[]);})();},[c.id]);
+  const go=async()=>{setSaving(true);const r=await dq("maritime_shipments",{method:"PATCH",token:P.token,filters:`?id=in.(${[...sel].join(",")})`,body:{container_id:c.id}});setSaving(false);if(Array.isArray(r)){P.flash(`🔗 ${sel.size} ${mtPlural(sel.size,"carga vinculada","cargas vinculadas")} a ${c.code}`);onClose();P.act.reload();}else toast(mtErr(r,"No se pudo vincular"),"error");};
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:560,maxHeight:"85vh",overflowY:"auto",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:14,padding:"20px 22px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><h3 style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>🔗 Vincular cargas a {c.code}</h3><button onClick={onClose} style={{background:"transparent",border:"none",color:mtDim(0.5),fontSize:20,cursor:"pointer"}}>×</button></div>
+      <p style={{fontSize:12,color:mtDim(0.5),margin:"0 0 12px"}}>Cargas de <strong style={{color:"#fff"}}>{c.warehouse}</strong> ya operadas y sin contenedor. Tildá las que vinieron en este.</p>
+      {cands==null?<p style={{color:mtDim(0.4),fontSize:12}}>Buscando…</p>:cands.length===0?<p style={{color:mtDim(0.4),fontSize:12,fontStyle:"italic",textAlign:"center",padding:"16px 0"}}>No hay cargas operadas sin contenedor en este depósito.</p>:cands.map(s=><label key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",marginBottom:5,borderRadius:8,background:sel.has(s.id)?"rgba(184,149,106,0.08)":"rgba(255,255,255,0.025)",border:`1px solid ${sel.has(s.id)?"rgba(184,149,106,0.4)":"rgba(255,255,255,0.06)"}`,cursor:"pointer"}}>
+        <MtCheck checked={sel.has(s.id)} onChange={()=>setSel(mtToggleSet(sel,s.id))}/>
+        <div style={{flex:1,minWidth:0}}><p style={{fontSize:12.5,fontWeight:600,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.product_description||"—"}</p><p style={{fontSize:10.5,color:mtDim(0.45),margin:"1px 0 0"}}>{P.cliLabel(s)} · {s.tracking_number||"sin tracking"}</p></div>
+        {s.operations?.operation_code&&<span style={mtChipS(IC)}>{s.operations.operation_code}</span>}
+      </label>)}
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}><MtB col={MT_GR} onClick={onClose}>Cancelar</MtB><MtB col={GOLD_LIGHT} solid disabled={sel.size===0||saving} onClick={go}>🔗 Vincular {sel.size||""}</MtB></div>
+    </div>
+  </div>;
+}
+
+// ── Popover PDF por depósito ─────────────────────────────────────────────────
+function MtPdfPop({P,wh,close}){
+  const [lang,setLang]=useState("es");const [scope,setScope]=useState("all");const [vals,setVals]=useState(false);const [esp,setEsp]=useState(false);
+  const conts=P.containers.filter(c=>c.warehouse===wh&&c.status==="en_transito");
+  const radio=(on,label,onClick)=><label onClick={onClick} style={{display:"flex",gap:7,alignItems:"center",fontSize:12,color:on?"#fff":mtDim(0.6),cursor:"pointer",padding:"3px 0"}}><span style={{width:12,height:12,borderRadius:"50%",border:`2px solid ${on?GOLD_LIGHT:"rgba(255,255,255,0.3)"}`,background:on?GOLD_LIGHT:"transparent"}}/>{label}</label>;
+  return <div style={{padding:"6px 8px",minWidth:240}}>
+    <p style={{fontSize:9.5,fontWeight:800,color:mtDim(0.4),textTransform:"uppercase",letterSpacing:"0.07em",margin:"4px 0"}}>Idioma</p>
+    <div style={{display:"flex",gap:14}}>{radio(lang==="es","Español",()=>setLang("es"))}{radio(lang==="zh","中文",()=>setLang("zh"))}</div>
+    <p style={{fontSize:9.5,fontWeight:800,color:mtDim(0.4),textTransform:"uppercase",letterSpacing:"0.07em",margin:"8px 0 4px"}}>Alcance</p>
+    {radio(scope==="all","Todo el depósito",()=>setScope("all"))}{conts.map(c=>radio(scope===c.id,`Solo ${c.code}`,()=>setScope(c.id)))}{radio(scope==="none","Solo sin contenedor",()=>setScope("none"))}
+    <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
+      {P.plata&&<label style={{display:"flex",gap:7,alignItems:"center",fontSize:12,color:mtDim(0.75),cursor:"pointer"}}><MtCheck checked={vals} onChange={setVals}/>Incluir valores</label>}
+      <label style={{display:"flex",gap:7,alignItems:"center",fontSize:12,color:mtDim(0.75),cursor:"pointer"}}><MtCheck checked={esp} onChange={setEsp}/>Incluir esperando al proveedor</label>
+    </div>
+    <MtB col={GOLD_LIGHT} solid style={{marginTop:10,width:"100%"}} onClick={()=>{close();P.downloadPdf(wh,{lang,scope,withValues:P.plata&&vals,includeWaiting:esp});}}>Generar PDF</MtB>
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MaritimePanel2 — el panel MUELLE
+// ═══════════════════════════════════════════════════════════════════════════════
+function MaritimePanel2({token,allClients=[]}){
+  const plata=verPlata();
+  const [shipments,setShipments]=useState([]);const [packages,setPackages]=useState([]);const [items,setItems]=useState([]);
+  const [containers,setContainers]=useState([]);const [whs,setWhs]=useState([]);
+  const [mtTariffs,setMtTariffs]=useState([]);const [mtConfig,setMtConfig]=useState({});const [mtOverrides,setMtOverrides]=useState({});
+  const [lo,setLo]=useState(true);const loadedOnce=useRef(false);
+  // Preferencias de UI persistidas (localStorage.mt). Nada de negocio.
+  const p0=useRef(mtLoadPrefs()).current;
+  const [tab,setTab]=useState(p0.tab==="analisis"&&!plata?"tablero":(p0.tab||"tablero"));
+  const [whFilter,setWhFilter]=useState(p0.whFilter||"all");
+  const [stageFocus,setStageFocus]=useState(p0.stageFocus||null);
+  const [openCont,setOpenCont]=useState(new Set(p0.openCont||[]));const [closedCont,setClosedCont]=useState(new Set(p0.closedCont||[]));
+  const [openTrays,setOpenTrays]=useState(new Set(p0.openTrays||[]));const [closedTrays,setClosedTrays]=useState(new Set(p0.closedTrays||[]));
+  const [muted,setMuted]=useState(p0.muted&&typeof p0.muted==="object"?p0.muted:{});
+  const [showEmpty,setShowEmpty]=useState(false);
+  useEffect(()=>{mtSavePrefs({tab,whFilter,stageFocus,openCont:[...openCont],closedCont:[...closedCont],openTrays:[...openTrays],closedTrays:[...closedTrays],muted});},[tab,whFilter,stageFocus,openCont,closedCont,openTrays,closedTrays,muted]);
+  // UI transitoria
+  const [drawer,setDrawer]=useState(null); // {id,listIds,section}
+  const [sel,setSel]=useState({}); // {trayKey: Set}
+  const [showNew,setShowNew]=useState(null); // null | {editing}
+  const [editingContainer,setEditingContainer]=useState(null); // {warehouse,afterCreate?} | row
+  const [editingWh,setEditingWh]=useState(null);const [showDepositos,setShowDepositos]=useState(false);
+  const [costModal,setCostModal]=useState(null);const [linking,setLinking]=useState(null);
+  const [creatingOp,setCreatingOp]=useState(false);
+  const [flashId,setFlashId]=useState(null);
+  const [isMobile,setIsMobile]=useState(false);
+  const refs=useRef({});const searchRef=useRef(null);
+  useEffect(()=>{const f=()=>setIsMobile(window.innerWidth<768);f();window.addEventListener("resize",f);return()=>window.removeEventListener("resize",f);},[]);
+  // "/" enfoca el buscador (si no se está escribiendo en otro input).
+  useEffect(()=>{const k=(e)=>{if(e.key==="/"&&!["INPUT","TEXTAREA","SELECT"].includes(e.target?.tagName)){e.preventDefault();searchRef.current?.focus();}};document.addEventListener("keydown",k);return()=>document.removeEventListener("keydown",k);},[]);
+  const flash=(m,kind="success")=>toast(m,kind);
+
+  // ── Carga ──────────────────────────────────────────────────────────────────
+  // El select es condicional por rol: el empleado NO pide el embed operations ni revenue_manual.
+  const SH_COLS="id,shipment_code,tracking_number,product_description,origin,warehouse,warehouse_id,client_id,client_name_snapshot,is_fragile,is_repack,in_warehouse,notes,status,created_at,updated_at,received_at,shipped_to_ar_at,operation_id,container_id,cost_per_cbm,cost_estimado,cost_manual,awaiting_supplier";
+  const shSelect=plata?"*,operations(operation_code,budget_total,cost_flete)":SH_COLS;
+  const fetchShipments=()=>dqTodos("maritime_shipments",{token,filters:`?select=${shSelect}&operation_id=is.null&order=created_at.desc,id.asc`});
+  // packages/items de esos shipments, en lotes de 80 ids (la URL tiene límite).
+  const fetchChildren=async(table,ids,order)=>{const out=[];for(let i=0;i<ids.length;i+=80){const r=await dq(table,{token,filters:`?shipment_id=in.(${ids.slice(i,i+80).join(",")})&select=*&order=${order}`});if(Array.isArray(r))out.push(...r);}return out;};
+  const load=async()=>{
+    if(!loadedOnce.current)setLo(true);
+    const [sh,wh,ct,tf,cf,ov]=await Promise.all([
+      fetchShipments(),
+      dq("maritime_warehouses",{token,filters:"?select=*&order=sort_order.asc,name.asc"}),
+      dq("maritime_containers",{token,filters:"?select=*&order=created_at.asc"}),
+      dq("tariffs",{token,filters:"?select=*"}),dq("calc_config",{token,filters:"?select=*"}),dq("client_tariff_overrides",{token,filters:"?select=*"}),
+    ]);
+    const ids=sh.map(s=>s.id);
+    const [pk,it]=await Promise.all([fetchChildren("maritime_packages",ids,"bulto_number.asc"),fetchChildren("maritime_items",ids,"sort_order.asc")]);
+    setShipments(sh);setPackages(pk);setItems(it);
+    setWhs(Array.isArray(wh)?wh:[]);setContainers(Array.isArray(ct)?ct:[]);setMtTariffs(Array.isArray(tf)?tf:[]);
+    const cfg={};(Array.isArray(cf)?cf:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setMtConfig(cfg);
+    const ovMap={};(Array.isArray(ov)?ov:[]).forEach(r=>{(ovMap[r.client_id]=ovMap[r.client_id]||[]).push(r);});setMtOverrides(ovMap);
+    loadedOnce.current=true;setLo(false);
+  };
+  useEffect(()=>{load();},[token]);
+  // Refetch silencioso (60 s + al volver a la pestaña): reconcilia por updated_at y avisa si otro usuario movió algo.
+  const shipsRef=useRef(shipments);shipsRef.current=shipments;
+  const busyRef=useRef(false);
+  const silentRefetch=async()=>{
+    if(busyRef.current||document.hidden||!loadedOnce.current)return;
+    const [sh,ct]=await Promise.all([fetchShipments(),dq("maritime_containers",{token,filters:"?select=*&order=created_at.asc"})]);
+    if(!Array.isArray(sh))return;
+    const local={};shipsRef.current.forEach(s=>{local[s.id]=s;});
+    const moved=sh.filter(s=>local[s.id]&&local[s.id].updated_at&&s.updated_at&&local[s.id].updated_at!==s.updated_at&&(local[s.id].status!==s.status||local[s.id].container_id!==s.container_id));
+    if(moved.length)toast(`${moved.length} ${mtPlural(moved.length,"carga la movió","cargas las movió")} otro usuario: ${moved.slice(0,3).map(s=>s.product_description||s.tracking_number).join(", ")}`,"warn");
+    const pk=await fetchChildren("maritime_packages",sh.map(s=>s.id),"bulto_number.asc");
+    setShipments(sh);setPackages(pk);if(Array.isArray(ct))setContainers(ct);
+  };
+  useEffect(()=>{const t=setInterval(silentRefetch,60000);const v=()=>{if(!document.hidden)silentRefetch();};document.addEventListener("visibilitychange",v);return()=>{clearInterval(t);document.removeEventListener("visibilitychange",v);};},[token,plata]);
+
+  // ── Índices y helpers de plata ─────────────────────────────────────────────
+  const pkgByShip=useMemo(()=>{const m={};packages.forEach(p=>{(m[p.shipment_id]=m[p.shipment_id]||[]).push(p);});return m;},[packages]);
+  const itemsByShip=useMemo(()=>{const m={};items.forEach(i=>{(m[i.shipment_id]=m[i.shipment_id]||[]).push(i);});return m;},[items]);
+  const contById=useMemo(()=>{const m={};containers.forEach(c=>{m[c.id]=c;});return m;},[containers]);
+  const cliById=useMemo(()=>{const m={};allClients.forEach(c=>{m[c.id]=c;});return m;},[allClients]);
+  const clientOf=(id)=>id&&cliById[id]?cliById[id]:null;
+  // "CLI-023 · Fernández" (lo que va en el rótulo y en la op); fallback al snapshot.
+  const cliLabel=(sh)=>{const c=clientOf(sh.client_id);if(!c)return sh.client_name_snapshot||"—";const nom=(c.last_name||c.first_name||"").trim()||sh.client_name_snapshot||"";return c.client_code?`${c.client_code} · ${nom}`:nom||"—";};
+  const money=useMemo(()=>mtMoney({tariffs:mtTariffs,overrides:mtOverrides,pkgByShip,itemsByShip,shipments,containers}),[mtTariffs,mtOverrides,pkgByShip,itemsByShip,shipments,containers]);
+  const whByName=useMemo(()=>{const m={};whs.forEach(w=>{m[w.name]=w;});return m;},[whs]);
+
+  // ── PATCH optimista con reversión ──────────────────────────────────────────
+  const patchShips=async(ids,body,{silent}={})=>{
+    if(!ids.length)return true;
+    const prev=shipsRef.current;const idSet=new Set(ids);
+    setShipments(prev.map(s=>idSet.has(s.id)?{...s,...body}:s));
+    const r=await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=in.(${ids.join(",")})&select=${shSelect}`,body});
+    if(!Array.isArray(r)){setShipments(prev);toast(mtErr(r,"No se pudo guardar; se revirtió"),"error");return false;}
+    const byId={};r.forEach(x=>{byId[x.id]=x;});
+    setShipments(cur=>cur.map(s=>byId[s.id]?{...s,...byId[s.id]}:s));
+    return true;
+  };
+  const patchCont=async(id,body)=>{
+    const prev=containers;setContainers(prev.map(c=>c.id===id?{...c,...body}:c));
+    const r=await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${id}`,body});
+    if(!Array.isArray(r)){setContainers(prev);toast(mtErr(r,"No se pudo guardar el contenedor"),"error");return false;}
+    setContainers(cur=>cur.map(c=>c.id===id?{...c,...r[0]}:c));return true;
+  };
+  const copy=async(text,msg)=>{try{await navigator.clipboard.writeText(text);flash(msg||"Copiado");}catch{toast("No se pudo copiar","error");}};
+
+  // ── Acciones de carga ──────────────────────────────────────────────────────
+  // Recibido = status en_deposito + received_at (+ bultos). Los bultos se POSTean aparte y se
+  // verifican; si fallan, la carga queda recibida sin medir (se ve el botón MEDIR).
+  const recibir=async(sh,{fecha,bultos})=>{
+    const ok=await patchShips([sh.id],{status:"en_deposito",received_at:fecha||mtHoy(),awaiting_supplier:false,shipped_to_ar_at:null});
+    if(!ok)return false;
+    const valid=(bultos||[]).filter(r=>mtCbmLive(r)>0).map((r,i)=>({shipment_id:sh.id,bulto_number:i+1,quantity:Math.max(1,Number(r.quantity)||1),length_cm:Number(r.length_cm),width_cm:Number(r.width_cm),height_cm:Number(r.height_cm)}));
+    if(valid.length){const r=await dq("maritime_packages",{method:"POST",token,body:valid});if(Array.isArray(r))setPackages(cur=>[...cur.filter(p=>p.shipment_id!==sh.id),...r]);else toast(mtErr(r,"La carga quedó recibida pero los bultos no se guardaron"),"error");}
+    flash(`📦 ${sh.product_description||"Carga"} recibida${valid.length?` · ${mtM3(valid.reduce((s,r)=>s+mtCbmLive(r),0))} m³`:" (sin medir)"}`);return true;
+  };
+  const recibirMasivo=async(ids,fecha)=>{const ok=await patchShips(ids,{status:"en_deposito",received_at:fecha||mtHoy(),awaiting_supplier:false,shipped_to_ar_at:null});if(ok)flash(`📦 ${ids.length} ${mtPlural(ids.length,"carga recibida","cargas recibidas")}`);return ok;};
+  // Subir a contenedor = ÚNICA forma de pasar a en_camino_ar. received_at=coalesce(received_at,hoy):
+  // las que no tienen fecha van en un segundo PATCH con received_at=hoy.
+  const subirA=async(ids,contId,{directo}={})=>{
+    const c=contById[contId];if(!c)return false;
+    const objs=shipsRef.current.filter(s=>ids.includes(s.id));
+    if(objs.some(esPlaceholder)){alertDialog("Hay cargas esperando al proveedor: primero cargá el tracking real.");return false;}
+    const sinRec=objs.filter(s=>!s.received_at);
+    if(sinRec.length&&!await confirmDialog(`${sinRec.length} ${mtPlural(sinRec.length,"carga no está marcada como recibida","cargas no están marcadas como recibidas")}: se ${sinRec.length===1?"marca recibida":"marcan recibidas"} hoy y ${sinRec.length===1?"sube":"suben"} a ${c.code}. ¿Seguir?`))return false;
+    const hoy=mtHoy();const base={container_id:contId,status:"en_camino_ar",shipped_to_ar_at:hoy,awaiting_supplier:false};
+    const conRec=objs.filter(s=>s.received_at).map(s=>s.id);
+    let ok=true;
+    if(conRec.length)ok=await patchShips(conRec,base);
+    if(ok&&sinRec.length)ok=await patchShips(sinRec.map(s=>s.id),{...base,received_at:hoy});
+    if(ok){flash(`🚢 ${ids.length} ${mtPlural(ids.length,"carga subida","cargas subidas")} a ${c.code}`);setOpenCont(s=>new Set([...s,contId]));setClosedCont(s=>{const n=new Set(s);n.delete(contId);return n;});setSel({});}
+    return ok;
+  };
+  // "+ Nuevo contenedor con estas cargas": abre ContainerForm; al guardar detecta el contenedor nuevo
+  // del depósito (diff de ids) y asigna en el mismo paso, igual que hoy (nunca queda "armándose").
+  const nuevoContConCargas=(ids,wh)=>{setEditingContainer({warehouse:wh,afterCreate:{ids,prevIds:new Set(containers.map(c=>c.id))}});};
+  const bajar=async(ids,{confirm}={})=>{
+    if(confirm&&!await confirmDialog(`¿Bajar ${ids.length} ${mtPlural(ids.length,"carga")} del contenedor? Vuelven a En depósito.`))return false;
+    const ok=await patchShips(ids,{container_id:null,status:"en_deposito",shipped_to_ar_at:null});if(ok)flash(`↓ ${ids.length} ${mtPlural(ids.length,"carga bajada","cargas bajadas")} · en depósito`);return ok;
+  };
+  const volverACamino=async(sh)=>patchShips([sh.id],{status:"proveedor",received_at:null,shipped_to_ar_at:null,container_id:null});
+  const noDespacho=async(sh)=>{const ok=await patchShips([sh.id],{awaiting_supplier:true,status:"proveedor",received_at:null,shipped_to_ar_at:null});if(ok)flash("Vuelve a Esperando al proveedor");return ok;};
+  // Llegó tracking: conserva created_at (los días de espera siguen contando en Análisis).
+  const llegoTracking=async(sh,{tracking,fecha})=>{const body=fecha?{tracking_number:tracking,awaiting_supplier:false,status:"en_deposito",received_at:fecha}:{tracking_number:tracking,awaiting_supplier:false,status:"proveedor"};const ok=await patchShips([sh.id],body);if(ok)flash("Tracking cargado");return ok;};
+  // Reclamar por WhatsApp; si el cliente no tiene número válido, copia el texto. Registra en notes.
+  const reclamar=async(sh)=>{
+    const c=clientOf(sh.client_id);const nom=c?.first_name||sh.client_name_snapshot||"";
+    const txt=`Hola ${nom}, ¿tu proveedor ya despachó ${sh.product_description||"tu pedido"} (avisado el ${mtFmtD(sh.created_at)})? Pasanos el tracking cuando lo tengas.`;
+    const num=String(c?.whatsapp||"").replace(/\D/g,"");
+    if(num.length>=8)window.open(`https://wa.me/${num}?text=${encodeURIComponent(txt)}`,"_blank","noopener");
+    else await copy(txt,"El cliente no tiene WhatsApp: texto copiado al portapapeles");
+    const linea=`Reclamado ${mtFmtD(mtHoy())}`;
+    await patchShips([sh.id],{notes:sh.notes?`${sh.notes}\n${linea}`:linea});
+  };
+  const delShipment=async(id)=>{
+    if(!await confirmDialog("¿Eliminar este pedido marítimo? Se borran los bultos e items asociados."))return;
+    const r=await dq("maritime_shipments",{method:"DELETE",token,filters:`?id=eq.${id}`});
+    if(r&&r.message){toast(mtErr(r,"No se pudo eliminar"),"error");return;}
+    setShipments(cur=>cur.filter(s=>s.id!==id));setDrawer(d=>d?.id===id?null:d);flash("Pedido eliminado");
+  };
+  // Bultos del drawer: DELETE + POST con verificación y un reintento del POST (no es atómico).
+  const savePackages=async(shId,rows)=>{
+    const valid=rows.filter(r=>mtCbmLive(r)>0).map((r,i)=>({shipment_id:shId,bulto_number:i+1,quantity:Math.max(1,Number(r.quantity)||1),length_cm:Number(r.length_cm),width_cm:Number(r.width_cm),height_cm:Number(r.height_cm)}));
+    const d=await dq("maritime_packages",{method:"DELETE",token,filters:`?shipment_id=eq.${shId}`});
+    if(d&&d.message){toast(mtErr(d,"No se pudieron borrar los bultos viejos"),"error");return false;}
+    let r=valid.length?await dq("maritime_packages",{method:"POST",token,body:valid}):[];
+    if(!Array.isArray(r)&&valid.length)r=await dq("maritime_packages",{method:"POST",token,body:valid}); // reintento
+    if(!Array.isArray(r)){toast(mtErr(r,"Los bultos no se guardaron: volvé a cargarlos"),"error");setPackages(cur=>cur.filter(p=>p.shipment_id!==shId));return false;}
+    setPackages(cur=>[...cur.filter(p=>p.shipment_id!==shId),...r]);flash("Bultos guardados");
+    // cost_estimado auto lo recalcula el trigger → releer esa carga.
+    const f=await dq("maritime_shipments",{token,filters:`?id=eq.${shId}&select=cost_estimado,cost_per_cbm,cost_manual`});if(Array.isArray(f)&&f[0])setShipments(cur=>cur.map(s=>s.id===shId?{...s,...f[0]}:s));
+    return true;
+  };
+  // Costo / a cobrar a mano (copiado del panel viejo, con verificación).
+  const saveShipCost=async(sh,val)=>{
+    const v=String(val).trim();const r=v===""?null:Number(v.replace(",","."));if(r!=null&&!isFinite(r))return;
+    const body=r==null?{cost_estimado:null,cost_manual:false}:{cost_estimado:r,cost_manual:true};
+    const res=await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body});
+    if(!Array.isArray(res)){toast(mtErr(res,"No se pudo guardar el costo"),"error");return;}
+    const fresh=await dq("maritime_shipments",{token,filters:`?id=eq.${sh.id}&select=cost_estimado,cost_per_cbm,cost_manual`});const f=Array.isArray(fresh)?fresh[0]:null;
+    setShipments(prev=>prev.map(x=>x.id===sh.id?{...x,...(f||body)}:x));
+  };
+  const saveShipRevenue=async(sh,val)=>{const v=String(val).trim();const r=v===""?null:Number(v.replace(",","."));if(r!=null&&!isFinite(r))return;await patchShips([sh.id],{revenue_manual:r});};
+
+  // ── Operaciones (lógica copiada del panel viejo) ───────────────────────────
+  // Crear op consolidada. Validación nueva: todas en depósito con received_at o de contenedor arribado;
+  // si no, se bloquea (admin puede forzar con un segundo confirm rojo).
+  const createOperationFromShipments=async(ids,{force}={})=>{
+    if(!ids.length)return;
+    const selObjs=shipsRef.current.filter(s=>ids.includes(s.id));
+    const clientIds=new Set(selObjs.map(s=>s.client_id).filter(Boolean));
+    if(clientIds.size!==1){alertDialog("Las cargas seleccionadas deben ser del mismo cliente.");return;}
+    if(new Set(selObjs.map(s=>s.warehouse)).size!==1){alertDialog("Las cargas seleccionadas deben ser del mismo depósito.");return;}
+    const noLlego=selObjs.filter(s=>!(s.received_at&&s.status==="en_deposito")&&!(s.container_id&&contById[s.container_id]?.status==="arribado"));
+    if(noLlego.length&&!force){
+      if(!plata){alertDialog("Estas cargas todavía no llegaron: no se puede avisar retiro.");return;}
+      if(!await confirmDialog(`⚠ ${noLlego.length} ${mtPlural(noLlego.length,"carga todavía no llegó","cargas todavía no llegaron")} (sin recepción ni contenedor arribado). Se le avisa retiro al cliente igual.\n\n¿Forzar la creación de la operación?`))return;
+    }
+    const clientId=[...clientIds][0];const client=clientOf(clientId);
+    const desc=selObjs.map(s=>s.product_description).filter(Boolean).join(" · ");
+    const trackings=selObjs.map(s=>s.tracking_number).filter(Boolean).join(" · ");
+    if(!await confirmDialog(`¿Crear operación marítima Integral AC con ${ids.length} carga${ids.length>1?"s":""} de ${client?.client_code||"—"}?\n\nDescripción: ${desc.slice(0,80)}${desc.length>80?"…":""}\n\n• La op nace LISTA PARA RETIRAR\n• Se le manda el email "lista para retirar" al cliente\n• Las cargas salen del depósito (quedan guardadas, linkeadas a la op)`))return;
+    setCreatingOp(true);busyRef.current=true;
+    try{
+      const newCode=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
+      const costoOp=Math.round(selObjs.reduce((a,x)=>a+Number(x.cost_estimado||0),0)*100)/100;
+      const opBody={operation_code:newCode,client_id:clientId,channel:"maritimo_negro",...(costoOp>0?{cost_flete:costoOp,cost_flete_currency:"USD"}:{}),status:"entregada",closed_at:new Date().toISOString(),origin:selObjs[0].origin==="usa"?"USA":"China",description:desc||null,international_tracking:trackings||null};
+      const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
+      const op=Array.isArray(r)?r[0]:r;
+      if(!op?.id){alertDialog(`Error creando la operación: ${mtErr(r,"")}`);return;}
+      for(const id of ids){await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{operation_id:op.id}});}
+      const shipPkgs=await dq("maritime_packages",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=*&order=shipment_id.asc,bulto_number.asc`});
+      const shipItems=await dq("maritime_items",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=*&order=shipment_id.asc,sort_order.asc`});
+      const trackByShipment={};selObjs.forEach(s=>{trackByShipment[s.id]=s.tracking_number||null;});
+      let pkgNum=0;
+      for(const p of (Array.isArray(shipPkgs)?shipPkgs:[])){pkgNum++;await dq("operation_packages",{method:"POST",token,body:{operation_id:op.id,package_number:pkgNum,quantity:Number(p.quantity||1),length_cm:p.length_cm||null,width_cm:p.width_cm||null,height_cm:p.height_cm||null,national_tracking:trackByShipment[p.shipment_id]||null}});}
+      for(const it of (Array.isArray(shipItems)?shipItems:[])){await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:it.description||null,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_usd||0),notes:it.notes||null}});}
+      let emailNote="";
+      try{const res=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"retiro"})});const j=await res.json().catch(()=>({}));
+        if(j?.ok)emailNote=" · ✉️ email enviado al cliente";else if(j?.skipped==="already_sent")emailNote=" · ✉️ email ya estaba enviado";else if(j?.skipped)emailNote=` · ⚠️ email no enviado (${j.skipped})`;else emailNote=` · ⚠️ email falló (${j?.error||"ver consola"})`;
+        if(!j?.ok&&!j?.skipped)console.error("notify retiro error",j);}catch(e){console.error("notify retiro error",e);emailNote=" · ⚠️ email falló (ver consola)";}
+      setSel({});flash(`✅ Operación ${newCode} creada · LISTA PARA RETIRAR · ${ids.length} carga${ids.length>1?"s":""} sale${ids.length>1?"n":""} del depósito${emailNote}`);
+      await load();
+    }catch(e){console.error(e);alertDialog(`Error: ${e.message}`);}
+    finally{setCreatingOp(false);busyRef.current=false;}
+  };
+  // Al arribar: UNA op por cliente con las cargas sin operar. Copiado tal cual; el único cambio es que
+  // un POST fallido avisa con toast en vez de `continue` silencioso.
+  const createOpsForContainer=async(c)=>{
+    const conShips=shipsRef.current.filter(s=>s.container_id===c.id&&!s.operation_id);
+    const byClient={};conShips.forEach(s=>{if(s.client_id)(byClient[s.client_id]=byClient[s.client_id]||[]).push(s);});
+    const clientIds=Object.keys(byClient);if(clientIds.length===0)return{msg:"",ops:[]};
+    const [tariffsR,cfgR]=await Promise.all([dq("tariffs",{token,filters:"?select=*"}),dq("calc_config",{token,filters:"?select=*"})]);
+    const tariffs=Array.isArray(tariffsR)?tariffsR:[];const config={};(Array.isArray(cfgR)?cfgR:[]).forEach(r=>{config[r.key]=Number(r.value);});
+    const deliveryEta=mtEntregaEst(c);
+    let created=0;const createdOps=[];
+    for(const cid of clientIds){
+      const ships=byClient[cid];const ids=ships.map(s=>s.id);const client=clientOf(cid)||{};const origin=ships[0].origin==="usa"?"USA":"China";
+      const [itR,pkR,ovR]=await Promise.all([dq("maritime_items",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=*&order=shipment_id.asc,sort_order.asc`}),dq("maritime_packages",{token,filters:`?shipment_id=in.(${ids.join(",")})&select=*&order=shipment_id.asc,bulto_number.asc`}),dq("client_tariff_overrides",{token,filters:`?client_id=eq.${cid}&select=*`})]);
+      const mItems=Array.isArray(itR)?itR:[];const mPkgs=Array.isArray(pkR)?pkR:[];const overrides=Array.isArray(ovR)?ovR:[];
+      const desc=ships.map(s=>s.product_description).filter(Boolean).join(" · ");
+      const calcItems=mItems.map(it=>({unit_price_usd:Number(it.unit_price_usd||0),quantity:Number(it.quantity||1),import_duty_rate:0,statistics_rate:0,iva_rate:21}));
+      const calcPkgs=mPkgs.map(p=>({quantity:Number(p.quantity||1),gross_weight_kg:0,length_cm:Number(p.length_cm||0),width_cm:Number(p.width_cm||0),height_cm:Number(p.height_cm||0)}));
+      const opLike={channel:"maritimo_negro",origin,shipping_to_door:false,shipping_cost:0,has_battery:false,has_phones:false};
+      let bud={flete:0,seguro:0,surcharge:0,totalTax:0,totalAbonar:0};
+      try{bud=calcOpBudget(opLike,calcItems,calcPkgs,tariffs,config,overrides,{tax_condition:client.tax_condition||"consumidor_final"});}catch(e){console.error("budget calc op cont",e);}
+      const newCode=await dq("rpc/next_operation_code",{method:"POST",token,body:{}});
+      const costoOp=Math.round(ships.reduce((a,x)=>a+Number(x.cost_estimado||0),0)*100)/100;
+      const opBody={operation_code:newCode,client_id:cid,channel:"maritimo_negro",status:"entregada",closed_at:new Date().toISOString(),origin,description:desc||null,eta:deliveryEta||null,budget_mode:"auto",budget_total:Number(bud.totalAbonar||0),budget_flete:Number(bud.flete||0),budget_surcharge:Number(bud.surcharge||0),budget_seguro:Number(bud.seguro||0),budget_taxes:Number(bud.totalTax||0),...(costoOp>0?{cost_flete:costoOp,cost_flete_currency:"USD"}:{})};
+      const r=await dq("operations",{method:"POST",token,body:opBody,headers:{Prefer:"return=representation"}});
+      const op=Array.isArray(r)?r[0]:r;
+      if(!op?.id){toast(`No se pudo crear la op de ${client.client_code||cid}: ${mtErr(r,"error")}`,"error");continue;}
+      for(const id of ids)await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{operation_id:op.id}});
+      const trackByShipment={};ships.forEach(s=>{trackByShipment[s.id]=s.tracking_number||null;});
+      let pkgNum=0;
+      for(const p of mPkgs){pkgNum++;await dq("operation_packages",{method:"POST",token,body:{operation_id:op.id,package_number:pkgNum,quantity:Number(p.quantity||1),length_cm:p.length_cm||null,width_cm:p.width_cm||null,height_cm:p.height_cm||null,national_tracking:trackByShipment[p.shipment_id]||null}});}
+      for(const it of mItems)await dq("operation_items",{method:"POST",token,body:{operation_id:op.id,description:it.description||null,quantity:Number(it.quantity||0),unit_price_usd:Number(it.unit_price_usd||0),notes:it.notes||null}});
+      try{await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:op.id,trigger:"retiro"})});}catch(e){console.error("notify retiro auto",e);}
+      const cbmOp=mPkgs.reduce((a,p)=>{const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0),q=Number(p.quantity||1);return a+(l&&w&&h?(l*w*h/1000000)*q:0);},0);
+      createdOps.push({id:op.id,code:newCode,clientName:`${client.first_name||""} ${client.last_name||""}`.trim()||ships[0].client_name_snapshot||"",budget:Number(bud.totalAbonar||0),cost_flete:costoOp>0?costoOp:null,cbm:Math.round(cbmOp*10000)/10000});
+      created++;
+    }
+    return{msg:created>0?` · ✅ ${created} operación${created>1?"es":""} creada${created>1?"s":""} · LISTA${created>1?"S":""} PARA RETIRAR · mail enviado`:"",ops:createdOps};
+  };
+  const openCostModalForContainer=async(c,{silent=false}={})=>{
+    const shR=await dq("maritime_shipments",{token,filters:`?container_id=eq.${c.id}&operation_id=not.is.null&select=id,operation_id`});
+    const conShips=Array.isArray(shR)?shR:[];const opIds=[...new Set(conShips.map(s=>s.operation_id))];
+    if(opIds.length===0){if(!silent)alertDialog("Este contenedor no tiene operaciones creadas.");return;}
+    const [ops,pks]=await Promise.all([dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,budget_total,cost_flete,clients(first_name,last_name)&order=operation_code.asc`}),dq("maritime_packages",{token,filters:`?shipment_id=in.(${conShips.map(s=>s.id).join(",")})&select=shipment_id,quantity,length_cm,width_cm,height_cm`})]);
+    const opByShip={};conShips.forEach(s=>{opByShip[s.id]=s.operation_id;});
+    const cbmByOp={};(Array.isArray(pks)?pks:[]).forEach(p=>{const oid=opByShip[p.shipment_id];if(!oid)return;const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0),q=Number(p.quantity||1);cbmByOp[oid]=(cbmByOp[oid]||0)+(l&&w&&h?(l*w*h/1000000)*q:0);});
+    const list=(Array.isArray(ops)?ops:[]).map(o=>({id:o.id,code:o.operation_code,clientName:o.clients?`${o.clients.first_name||""} ${o.clients.last_name||""}`.trim():"",budget:Number(o.budget_total||0),cost_flete:Number(o.cost_flete||0),cbm:Math.round((cbmByOp[o.id]||0)*10000)/10000}));
+    setCostModal({code:c.code,ops:list});
+  };
+  // Arribó: confirm con N ops + clientes; si la ETA todavía no llegó (> hoy+3) pregunta de más.
+  const setContainerStatus=async(c,status)=>{
+    if(creatingOp)return;
+    if(status==="arribado"){
+      const pend=shipsRef.current.filter(x=>x.container_id===c.id&&!x.operation_id&&x.client_id);
+      const clis=[...new Set(pend.map(x=>x.client_id))];const nCli=clis.length;
+      const eta=mtEffEta(c);const adelantado=eta&&diasDesde(eta)< -3;
+      const nombres=clis.map(id=>clientOf(id)?.client_code||"").filter(Boolean).slice(0,6).join(", ");
+      if(!await confirmDialog(`¿Marcar "${c.code}" como ARRIBADO?${nCli>0?`\n\nSe crean ${nCli} operación${nCli>1?"es":""} (una por cliente, con ${pend.length} carga${pend.length>1?"s":""}), nacen LISTAS PARA RETIRAR y se les manda el mail de retiro${nombres?` a ${nombres}`:""}. Tarda unos segundos — no cierres la pantalla.`:""}${adelantado?`\n\n⚠ La ETA es ${mtFmtD(eta)}, ¿seguro que ya arribó?`:""}`))return;
+    }
+    setCreatingOp(true);busyRef.current=true;
+    try{
+      const body={status};if(status==="arribado")body.arrived_at=mtHoy();if(status==="en_transito")body.arrived_at=null;
+      const ok=await patchCont(c.id,body);if(!ok)return;
+      let extra="";
+      if(status==="arribado"){try{const r=await createOpsForContainer(c);extra=r.msg;}catch(e){console.error("auto-ops arribo",e);extra=" · ⚠️ error creando ops (ver consola)";}}
+      flash(`Contenedor ${c.code} → ${status==="en_transito"?"en tránsito":"arribado"}${extra}`);
+      await load();
+      if(status==="arribado"&&plata)await openCostModalForContainer(c,{silent:true});
+    }finally{setCreatingOp(false);busyRef.current=false;}
+  };
+  const delContainer=async(c)=>{
+    const inCont=shipsRef.current.filter(s=>s.container_id===c.id);
+    if(!await confirmDialog(`¿Eliminar el contenedor "${c.code}"?${inCont.length>0?`\n\nLas ${inCont.length} carga${inCont.length>1?"s":""} asignada${inCont.length>1?"s":""} vuelven a "En depósito" (no se borran).`:""}`))return;
+    if(inCont.length){const ok=await patchShips(inCont.map(s=>s.id),{container_id:null,status:"en_deposito",shipped_to_ar_at:null});if(!ok)return;}
+    const r=await dq("maritime_containers",{method:"DELETE",token,filters:`?id=eq.${c.id}`});
+    if(r&&r.message){toast(mtErr(r,"No se pudo eliminar el contenedor"),"error");load();return;}
+    setContainers(cur=>cur.filter(x=>x.id!==c.id));flash(`Contenedor ${c.code} eliminado`);
+  };
+  const archiveWh=async(w,archived)=>{const prev=whs;setWhs(prev.map(x=>x.id===w.id?{...x,archived}:x));const r=await dq("maritime_warehouses",{method:"PATCH",token,filters:`?id=eq.${w.id}`,body:{archived}});if(!Array.isArray(r)){setWhs(prev);toast(mtErr(r,"No se pudo archivar"),"error");}else flash(archived?`${w.name} archivado`:`${w.name} restaurado`);};
+  // PDF con alcance: depósito completo / un contenedor / sin contenedor; placeholders solo si se pide.
+  const downloadPdf=(warehouse,{lang="es",scope="all",withValues=false,includeWaiting=false}={})=>{
+    const arrivedIds=new Set(containers.filter(c=>c.status==="arribado").map(c=>c.id));
+    const w=whByName[warehouse];const origin=w?.origin||"china";
+    let list=shipments.filter(s=>!s.operation_id&&s.warehouse===warehouse&&!(s.container_id&&arrivedIds.has(s.container_id)));
+    if(scope==="none")list=list.filter(s=>!s.container_id);else if(scope!=="all")list=list.filter(s=>s.container_id===scope);
+    if(!includeWaiting)list=list.filter(s=>!esPlaceholder(s));
+    const wsShipments=list.map(s=>({...s,packages:pkgByShip[s.id]||[],items:itemsByShip[s.id]||[]})).sort((a,b)=>{const ra=a.received_at?new Date(a.received_at).getTime():null;const rb=b.received_at?new Date(b.received_at).getTime():null;if(ra!==null&&rb!==null)return ra-rb;if(ra!==null)return -1;if(rb!==null)return 1;return new Date(a.created_at||0).getTime()-new Date(b.created_at||0).getTime();});
+    if(wsShipments.length===0){toast("No hay cargas para ese alcance","warn");return;}
+    const rotulo=w?.rotulo||`MARÍTIMO ${warehouse.toUpperCase()} (código cliente)`;
+    const whContainers=containers.filter(c=>c.warehouse===warehouse&&c.status==="en_transito"&&(scope==="all"||c.id===scope));
+    try{printMaritimePdf({warehouse,origin,shipments:wsShipments,rotulo,lang,withValues:plata&&withValues,containers:whContainers});}catch(e){console.error(e);toast("No se pudo abrir el PDF (¿popup bloqueado?)","error");}
+  };
+
+  // ── Navegación: abrir + scroll + flash ─────────────────────────────────────
+  const reg=(key,el)=>{if(el)refs.current[key]=el;else delete refs.current[key];};
+  const scrollFlash=(key)=>{setTimeout(()=>{refs.current[key]?.scrollIntoView({behavior:"smooth",block:"center"});setFlashId(key);setTimeout(()=>setFlashId(f=>f===key?null:f),1600);},120);};
+  const openContainer=(id)=>{
+    const c=contById[id];if(!c)return;
+    if(c.status==="arribado"){setTab("historial");return;}
+    if(whFilter!=="all"&&whFilter!==c.warehouse)setWhFilter("all");
+    setTab("tablero");setStageFocus(null);setOpenCont(s=>new Set([...s,id]));setClosedCont(s=>{const n=new Set(s);n.delete(id);return n;});
+    scrollFlash(`c:${id}`);
+  };
+  const trayKeyOf=(sh)=>{if(sh.container_id)return null;if(esPlaceholder(sh))return`esp:${sh.warehouse}`;if(sh.status==="proveedor")return`cam:${sh.warehouse}`;return`dep:${sh.warehouse}`;};
+  const openDrawer=(id,listIds,section)=>setDrawer({id,listIds:listIds||null,section:section||null});
+  const goToShip=(id)=>{
+    const sh=shipments.find(s=>s.id===id);if(!sh)return;
+    if(whFilter!=="all"&&whFilter!==sh.warehouse)setWhFilter("all");
+    setTab("tablero");setStageFocus(null);
+    if(sh.container_id){setOpenCont(s=>new Set([...s,sh.container_id]));setClosedCont(s=>{const n=new Set(s);n.delete(sh.container_id);return n;});}
+    else{const k=trayKeyOf(sh);setOpenTrays(s=>new Set([...s,k]));setClosedTrays(s=>{const n=new Set(s);n.delete(k);return n;});}
+    scrollFlash(`sh:${id}`);openDrawer(id,null);
+  };
+  const isContOpen=(id,n)=>openCont.has(id)||(!closedCont.has(id)&&n<=12);
+  const toggleCont=(id,n)=>{const o=isContOpen(id,n);if(o){setClosedCont(s=>new Set([...s,id]));setOpenCont(s=>{const x=new Set(s);x.delete(id);return x;});}else{setOpenCont(s=>new Set([...s,id]));setClosedCont(s=>{const x=new Set(s);x.delete(id);return x;});}};
+  // Esperando (esp:) arranca cerrada; depósito y camino arrancan abiertas.
+  const trayOpen=(k)=>k.startsWith("esp:")?openTrays.has(k):!closedTrays.has(k);
+  const toggleTray=(k)=>{if(k.startsWith("esp:"))setOpenTrays(s=>mtToggleSet(s,k));else setClosedTrays(s=>mtToggleSet(s,k));};
+  const editShip=(sh)=>setShowNew({editing:sh});
+  const newShip=(prefill={})=>setShowNew({editing:{warehouse:whFilter!=="all"?whFilter:undefined,...prefill}});
+  const editContainer=(c)=>setEditingContainer(c);
+  const setSelFor=(k,s)=>setSel(cur=>({...cur,[k]:s}));
+
+  // API que reciben las piezas (P)
+  const act={patchShips,recibir,recibirMasivo,subirA,nuevoContConCargas,bajar,volverACamino,noDespacho,llegoTracking,reclamar,delShipment,savePackages,saveShipCost,saveShipRevenue,createOperationFromShipments,createOpsForContainer,setContainerStatus,delContainer,archiveWh,openCostModal:(c)=>openCostModalForContainer(c),linkOperated:(c)=>setLinking(c),reload:()=>load()};
+  const P={token,plata,isMobile,allClients,whs,shipments,containers,contById,pkgByShip,itemsByShip,money,clientOf,cliLabel,flashId,reg,openDrawer,goToShip,openContainer,editShip,newShip,editContainer,downloadPdf,copy,flash,busy:creatingOp,sel,setSelFor,act};
+
+  // ── Depósitos visibles, stats y alertas ────────────────────────────────────
+  const active=useMemo(()=>shipments.filter(s=>!s.operation_id),[shipments]);
+  const arrivedIds=useMemo(()=>new Set(containers.filter(c=>c.status==="arribado").map(c=>c.id)),[containers]);
+  const whList=useMemo(()=>{
+    const actBy={};active.forEach(s=>{if(!esPlaceholder(s)&&!(s.container_id&&arrivedIds.has(s.container_id)))actBy[s.warehouse]=(actBy[s.warehouse]||0)+1;});
+    const trBy={};containers.forEach(c=>{if(c.status==="en_transito")trBy[c.warehouse]=(trBy[c.warehouse]||0)+1;});
+    const names=new Set(whs.filter(w=>!w.archived).map(w=>w.name));active.forEach(s=>{if(s.warehouse&&!whByName[s.warehouse])names.add(s.warehouse);});
+    return [...names].map(n=>({name:n,w:whByName[n]||{name:n,origin:active.find(s=>s.warehouse===n)?.origin||"china"},act:actBy[n]||0,tr:trBy[n]||0})).sort((a,b)=>{const sa=a.w.sort_order??999,sb=b.w.sort_order??999;if(sa!==sb)return sa-sb;return (b.act+b.tr*3)-(a.act+a.tr*3);});
+  },[whs,active,containers,arrivedIds,whByName]);
+  const inFilter=(wh)=>whFilter==="all"||whFilter===wh;
+  const fShips=useMemo(()=>active.filter(s=>inFilter(s.warehouse)),[active,whFilter]);
+  const fConts=useMemo(()=>containers.filter(c=>inFilter(c.warehouse)),[containers,whFilter]);
+  const stats=useMemo(()=>{
+    const esp=fShips.filter(esPlaceholder);const espD=esp.map(s=>diasDesde(s.created_at)||0);
+    const cam=fShips.filter(s=>!esPlaceholder(s)&&s.status==="proveedor"&&!s.container_id);
+    const dep=fShips.filter(s=>!s.container_id&&(s.status==="en_deposito"||s.status==="en_camino_ar"));
+    const trC=fConts.filter(c=>c.status==="en_transito");const trIds=new Set(trC.map(c=>c.id));const tr=fShips.filter(s=>trIds.has(s.container_id));
+    const mes=mtHoy().slice(0,7);const arrMes=fConts.filter(c=>c.status==="arribado"&&String(c.arrived_at||"").startsWith(mes));
+    const sinOperar=fShips.filter(s=>s.container_id&&arrivedIds.has(s.container_id));
+    const next=trC.map(c=>({c,s:semaforoCont(c)})).filter(x=>x.s.estado==="ok"||x.s.estado==="pronto").sort((a,b)=>a.s.dias-b.s.dias)[0];
+    let importe=null,gan=null;if(plata){let any=false,imp=0,cost=0;trC.forEach(c=>{const l=tr.filter(s=>s.container_id===c.id);const v=money.importeContainer(l);if(v!=null){any=true;imp+=v;cost+=money.costContainer(l);}});if(any){importe=imp;gan=imp-cost;}}
+    // Ganancia real del mes = Σ (budget_total − cost_flete) por op distinta de los arribados este mes.
+    let ganMes=null;if(plata){const ops={};shipments.forEach(s=>{if(s.operation_id&&s.operations&&arrMes.some(c=>c.id===s.container_id))ops[s.operation_id]=s.operations;});const v=Object.values(ops);if(v.length)ganMes=v.reduce((g,o)=>g+Number(o.budget_total||0)-Number(o.cost_flete||0),0);}
+    const cbmOfList=(l)=>l.reduce((s,x)=>s+money.cbmOf(x.id),0);
+    const depCbm=cbmOfList(dep),trCbm=cbmOfList(tr),arrCbm=cbmOfList(sinOperar);
+    return{esp:{n:esp.length,prom:espD.length?Math.round(espD.reduce((a,b)=>a+b,0)/espD.length):0,viejos:espD.filter(d=>d>14).length,oldest:esp.slice().sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at))).slice(0,3).map(s=>`${s.product_description||"—"} (${diasDesde(s.created_at)} d)`).join(" · ")},
+      cam:{n:cam.length,viejos:cam.filter(s=>diasDesde(s.created_at)>20).length},
+      dep:{n:dep.length,cbm:depCbm,sinMedir:dep.filter(s=>money.cbmOf(s.id)===0).length},
+      tr:{conts:trC.length,n:tr.length,cbm:trCbm,next:next?{id:next.c.id,code:next.c.code,dias:next.s.dias}:null,importe,gan},
+      arr:{mes:arrMes.length,sinOperar:sinOperar.length,ganMes,cbm:arrCbm},totCbm:depCbm+trCbm+arrCbm};
+  },[fShips,fConts,arrivedIds,money,plata,shipments]);
+  const mute=(id)=>setMuted(m=>({...m,[id]:Date.now()}));
+  const alerts=useMemo(()=>{
+    const out=[];const now=Date.now();const ok=(id)=>!(muted[id]&&now-muted[id]<864e5);
+    fConts.filter(c=>c.status==="en_transito").forEach(c=>{const s=semaforoCont(c);
+      if(s.estado==="vencido"&&ok(`venc:${c.id}`))out.push({id:`venc:${c.id}`,dot:"🔴",col:MT_RO,text:`${c.code}${c.shipping_line?` · ${c.shipping_line}`:""} vencido hace ${s.dias} d`,go:()=>openContainer(c.id),acts:[{label:"Arribó",col:MT_VE,disabled:creatingOp,onClick:()=>setContainerStatus(c,"arribado")},{label:"Corregir ETA",col:MT_AZ,onClick:()=>editContainer(c)}]});
+      else if(s.estado==="pronto"&&ok(`pronto:${c.id}`))out.push({id:`pronto:${c.id}`,dot:"🟠",col:MT_AM,text:`${c.code} llega en ${s.dias} d`,go:()=>openContainer(c.id)});
+      if(!c.shipping_line&&ok(`nav:${c.id}`))out.push({id:`nav:${c.id}`,dot:"⚪",col:MT_GR,text:`${c.code} sin naviera`,go:()=>editContainer(c),acts:[{label:"Cargar",col:MT_AZ,onClick:()=>editContainer(c)}]});
+    });
+    whList.filter(w=>inFilter(w.name)).forEach(w=>{
+      const sinMedir=fShips.filter(s=>s.warehouse===w.name&&!s.container_id&&s.status!=="proveedor"&&money.cbmOf(s.id)===0).length;
+      if(sinMedir&&ok(`medir:${w.name}`))out.push({id:`medir:${w.name}`,dot:"🟡",col:MT_AM,text:`${sinMedir} ${mtPlural(sinMedir,"carga sin medir","cargas sin medir")} en ${w.name}`,go:()=>{setStageFocus("deposito");setClosedTrays(s=>{const n=new Set(s);n.delete(`dep:${w.name}`);return n;});}});
+      const avisos=fShips.filter(s=>s.warehouse===w.name&&esPlaceholder(s)&&diasDesde(s.created_at)>14).length;
+      if(avisos&&ok(`avisos:${w.name}`))out.push({id:`avisos:${w.name}`,dot:"🟣",col:MT_VI,text:`${avisos} ${mtPlural(avisos,"aviso","avisos")} con +14 d sin tracking en ${w.name}`,go:()=>{setStageFocus("esperando");setOpenTrays(s=>new Set([...s,`esp:${w.name}`]));}});
+      if(plata&&w.w.id&&!w.w.default_cost_per_cbm&&ok(`tarifa:${w.name}`))out.push({id:`tarifa:${w.name}`,dot:"⚪",col:MT_GR,text:`${w.name} sin tarifa de costo`,go:()=>setEditingWh(w.w)});
+    });
+    fConts.filter(c=>c.status==="arribado").forEach(c=>{const n=fShips.filter(s=>s.container_id===c.id).length;if(n&&ok(`sinop:${c.id}`))out.push({id:`sinop:${c.id}`,dot:"🔴",col:MT_RO,text:`${c.code} arribado con ${n} ${mtPlural(n,"carga sin operar","cargas sin operar")}${plata?"":" · esperando a Bautista"}`,go:()=>setTab("historial"),acts:plata?[{label:"Crear ops",col:MT_VE,disabled:creatingOp,onClick:async()=>{setCreatingOp(true);busyRef.current=true;try{const r=await createOpsForContainer(c);flash(r.msg||"Sin ops para crear");await load();}finally{setCreatingOp(false);busyRef.current=false;}}}]:[]});});
+    return out;
+  },[fConts,fShips,whList,muted,money,plata,creatingOp]);
+
+  // ctx para los tabs Calendario / Historial / Análisis (los escribe otro agente).
+  const ctx=useMemo(()=>({token,verPlata:plata,isMobile,allClients,whs,whFilter,shipments,packages,items,containers,tariffs:mtTariffs,config:mtConfig,overrides:mtOverrides,
+    cbmOf:money.cbmOf,bultosOf:money.bultosOf,effEta:mtEffEta,entregaEst:mtEntregaEst,diasDesde,importeContainer:money.importeContainer,costContainer:money.costContainer,importeOfShip:money.importeOfShip,costOfShip:money.costOfShip,whEnTransito:money.whEnTransito,fmtD:mtFmtD,usd:mtUsd,
+    clientOf:(id)=>{const c=clientOf(id);return c?{client_code:c.client_code,first_name:c.first_name,last_name:c.last_name}:null;},
+    actions:{openContainer,editContainer,setContainerStatus,openCostModal:(c)=>openCostModalForContainer(c),createOpsForContainer,linkOperated:(c)=>setLinking(c),flash,reload:()=>load()}}),
+    [token,plata,isMobile,allClients,whs,whFilter,shipments,packages,items,containers,mtTariffs,mtConfig,mtOverrides,money,creatingOp]);
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const chip=(on,label,onClick,extra)=><button onClick={onClick} style={{padding:"5px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,border:`1px solid ${on?"rgba(184,149,106,0.6)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(184,149,106,0.18)":"rgba(255,255,255,0.03)",color:on?GOLD_LIGHT:"rgba(255,255,255,0.65)",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit",position:"relative",flexShrink:0,...extra}}>{label}</button>;
+  const alertsByWh=(name)=>alerts.filter(a=>a.text.includes(name)||(a.id.split(":")[1]&&contById[a.id.split(":")[1]]?.warehouse===name)).length;
+  const totalAct=whList.reduce((s,w)=>s+w.act,0);
+  const drawerSh=drawer?shipments.find(s=>s.id===drawer.id):null;
+  const emptyGlobal=loadedOnce.current&&active.length===0&&containers.length===0;
+
+  const renderWh=(w)=>{
+    const name=w.name;const wsList=active.filter(s=>s.warehouse===name&&!(s.container_id&&arrivedIds.has(s.container_id)));
+    const trConts=containers.filter(c=>c.warehouse===name&&c.status==="en_transito").map(c=>({c,s:semaforoCont(c)})).sort((a,b)=>{if(a.s.estado==="vencido"&&b.s.estado!=="vencido")return -1;if(b.s.estado==="vencido"&&a.s.estado!=="vencido")return 1;return String(mtEffEta(a.c)||"9999").localeCompare(String(mtEffEta(b.c)||"9999"));});
+    const esp=wsList.filter(esPlaceholder).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
+    const cam=wsList.filter(s=>!esPlaceholder(s)&&s.status==="proveedor"&&!s.container_id).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
+    const dep=wsList.filter(s=>!s.container_id&&(s.status==="en_deposito"||s.status==="en_camino_ar")).sort((a,b)=>String(a.received_at||"9").localeCompare(String(b.received_at||"9")));
+    const real=wsList.filter(s=>!esPlaceholder(s));const cbm=real.reduce((s,x)=>s+money.cbmOf(x.id),0);const sinMedir=real.filter(x=>money.cbmOf(x.id)===0).length;
+    const tot=plata?money.whEnTransito(name):null;const rot=w.w.rotulo;
+    const show=(k)=>!stageFocus||stageFocus===k;
+    return <div key={name} style={{marginBottom:18}}>
+      <div style={{position:"sticky",top:isMobile?96:52,zIndex:4,background:"#0A1628",padding:"8px 0 6px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderBottom:"1px solid rgba(255,255,255,0.06)",marginBottom:8}}>
+        <span style={{fontSize:14,fontWeight:800,color:MT_AZ}}>{name} {w.w.origin==="usa"?"🇺🇸":"🇨🇳"}</span>
+        {rot&&<span style={{fontSize:11,color:mtDim(0.45),fontStyle:"italic",display:"inline-flex",gap:5,alignItems:"center",maxWidth:isMobile?"100%":320,overflow:"hidden"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>Rótulo: <span style={{color:IC,fontWeight:600}}>{rot}</span></span><span onClick={()=>copy(rot,"Rótulo copiado")} title="Copiar rótulo" style={{cursor:"pointer"}}>📋</span></span>}
+        <span style={{fontSize:11,color:mtDim(0.6)}}>{trConts.length} {mtPlural(trConts.length,"contenedor","contenedores")} · {real.length} {mtPlural(real.length,"carga")} · {mtM3(cbm)} m³{sinMedir?<span style={{color:MT_AM}}> (+{sinMedir} sin medir)</span>:null}{esp.length?<span style={{color:MT_VI}}> · +{esp.length} esperando al proveedor</span>:null}</span>
+        {tot&&tot.importe>0&&<span title={`A cobrar ${mtUsd(tot.importe)} · Costo ${mtUsd(tot.costo)}`} style={mtChipS(tot.ganancia>=0?"#4ade80":MT_RO)}>gan. est. en viaje {mtUsd(tot.ganancia)}</span>}
+        <div style={{marginLeft:"auto",display:"flex",gap:5,flexWrap:"wrap"}}>
+          <MtDrop label="PDF ▾" col={GOLD_LIGHT} right width={260}>{(close)=><MtPdfPop P={P} wh={name} close={close}/>}</MtDrop>
+          <MtB col={MT_AZ} onClick={()=>setEditingContainer({warehouse:name})}>+ Contenedor</MtB>
+          {plata&&w.w.id&&<MtB col={MT_GR} onClick={()=>setEditingWh(w.w)} title="Editar depósito">✎</MtB>}
+        </div>
+      </div>
+      {show("transito")&&trConts.map(({c})=>{const list=wsList.filter(s=>s.container_id===c.id);return <MtContCard key={c.id} P={P} c={c} list={list} open={isContOpen(c.id,list.length)} onToggle={()=>toggleCont(c.id,list.length)} showWh={false}/>;})}
+      {show("transito")&&stageFocus==="transito"&&trConts.length===0&&<p style={{fontSize:11.5,color:mtDim(0.4),fontStyle:"italic",margin:"4px 0 10px"}}>Sin contenedores en tránsito.</p>}
+      {show("deposito")&&<MtTrayDeposito P={P} wh={name} list={dep} open={trayOpen(`dep:${name}`)} onToggle={()=>toggleTray(`dep:${name}`)} focus={stageFocus==="deposito"}/>}
+      {show("camino")&&<MtTrayCamino P={P} wh={name} list={cam} open={trayOpen(`cam:${name}`)} onToggle={()=>toggleTray(`cam:${name}`)} focus={stageFocus==="camino"}/>}
+      {show("esperando")&&<MtTrayEsperando P={P} wh={name} list={esp} open={trayOpen(`esp:${name}`)} onToggle={()=>toggleTray(`esp:${name}`)}/>}
+      {!stageFocus&&<button onClick={()=>setEditingContainer({warehouse:name})} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1.5px dashed rgba(96,165,250,0.4)",background:"transparent",color:MT_AZ,cursor:"pointer",fontFamily:"inherit"}}>+ Contenedor en {name}</button>}
+    </div>;
+  };
+  const visibles=whList.filter(w=>inFilter(w.name));
+  const conActividad=visibles.filter(w=>w.act>0||w.tr>0||active.some(s=>s.warehouse===w.name));
+  const vacios=visibles.filter(w=>!conActividad.includes(w));
+
+  return <div style={{position:"relative"}}>
+    <style>{`@keyframes mtFlashK{0%{box-shadow:0 0 0 0 rgba(232,208,152,0.9);background:rgba(232,208,152,0.25)}100%{box-shadow:0 0 0 12px rgba(232,208,152,0);background:transparent}}.mtFlash{animation:mtFlashK 1.5s ease-out}@keyframes mtSlideK{from{transform:translateX(40px);opacity:0}to{transform:none;opacity:1}}.mtSlideIn{animation:mtSlideK 180ms ease-out}@keyframes mtPulseK{0%,100%{opacity:.35}50%{opacity:.7}}.mtSkel{animation:mtPulseK 1.4s infinite;background:rgba(255,255,255,0.06);border-radius:10px}`}</style>
+    {/* NIVEL 0 · barra superior sticky */}
+    <div style={{position:"sticky",top:0,zIndex:5,background:"#0A1628",padding:"6px 0 8px",marginBottom:10,display:"flex",flexDirection:isMobile?"column":"row",gap:8,alignItems:isMobile?"stretch":"center"}}>
+      <MtSearch P={P} inputRef={searchRef}/>
+      <div style={{display:"flex",gap:6,overflowX:"auto",flex:isMobile?"1 1 auto":"0 1 auto",paddingBottom:2}}>
+        {chip(whFilter==="all",`Todos · ${totalAct}`,()=>setWhFilter("all"))}
+        {whList.map(w=>{const n=alertsByWh(w.name);const dim=w.act===0&&w.tr===0;return <Fragment key={w.name}>{chip(whFilter===w.name,<span style={{opacity:dim?0.5:1}}>{w.name}{w.w.origin==="usa"?" 🇺🇸":""} · {w.act}{w.tr?` · ${w.tr}🚢`:""}{n>0&&<span style={{position:"absolute",top:-5,right:-5,background:MT_RO,color:"#fff",fontSize:9,fontWeight:800,borderRadius:8,padding:"0 5px",lineHeight:"14px"}}>{n}</span>}{plata&&(()=>{const t=money.whEnTransito(w.name);return t&&t.ganancia?<span style={{display:"block",fontSize:9,color:"#4ade80",fontWeight:700,lineHeight:1.2}}>gan. est. {mtUsd(t.ganancia)}</span>:null;})()}</span>,()=>setWhFilter(w.name))}</Fragment>;})}
+      </div>
+      <div style={{display:"flex",gap:6,marginLeft:isMobile?0:"auto",flexShrink:0}}>
+        <MtB col={GOLD_LIGHT} solid onClick={()=>newShip()}>+ Pedido</MtB>
+        <MtB col={MT_AZ} onClick={async()=>{let wh=whFilter!=="all"?whFilter:null;if(!wh){const opts=whList.map(w=>w.name);wh=await promptDialog(`¿En qué depósito? (${opts.join(" / ")})`,opts[0]||"");if(!wh||!opts.includes(wh.trim())){if(wh)toast("Depósito no encontrado","warn");return;}wh=wh.trim();}setEditingContainer({warehouse:wh});}}>+ Contenedor</MtB>
+        {plata&&<MtB col={MT_GR} onClick={()=>setShowDepositos(true)} title="Depósitos">⚙</MtB>}
+      </div>
+    </div>
+    {lo&&!loadedOnce.current?<div>{[0,1,2].map(i=><div key={i} className="mtSkel" style={{height:i===0?90:140,marginBottom:12}}/>)}</div>:<>
+      {/* NIVEL 1 · pipeline + HOY */}
+      <MtPipeline P={P} stats={stats} alerts={alerts} stageFocus={stageFocus} setStageFocus={setStageFocus} mute={mute}/>
+      {/* NIVEL 2 · tabs */}
+      <div style={{display:"flex",gap:4,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:12,overflowX:"auto"}}>
+        {[["tablero","Tablero"],["calendario","Calendario"],["historial","Historial"],...(plata?[["analisis","Análisis"]]:[])].map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{padding:"8px 14px",fontSize:12.5,fontWeight:700,border:"none",borderBottom:`2px solid ${tab===k?GOLD_LIGHT:"transparent"}`,background:"transparent",color:tab===k?GOLD_LIGHT:mtDim(0.55),cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>)}
+      </div>
+      {tab==="tablero"&&(emptyGlobal?<div style={{textAlign:"center",padding:"40px 0",color:mtDim(0.5),fontSize:13}}>Todavía no hay pedidos marítimos activos<div style={{display:"flex",gap:8,justifyContent:"center",marginTop:12}}><MtB col={GOLD_LIGHT} solid onClick={()=>newShip()}>+ Pedido</MtB><MtB col={MT_AZ} onClick={()=>setEditingContainer({warehouse:whList[0]?.name||""})}>+ Contenedor</MtB></div></div>
+      :<>
+        {stageFocus&&<p style={{fontSize:11.5,color:GOLD_LIGHT,margin:"0 0 8px"}}>Modo foco: {({esperando:"Esperando al proveedor",camino:"En camino al depósito",deposito:"En depósito",transito:"En tránsito",arribados:"Arribados"})[stageFocus]} · <span onClick={()=>setStageFocus(null)} style={{cursor:"pointer",textDecoration:"underline"}}>ver todo</span></p>}
+        {stageFocus==="arribados"?<p style={{fontSize:12,color:mtDim(0.5)}}>Los contenedores arribados viven en la pestaña <span onClick={()=>setTab("historial")} style={{color:MT_AZ,cursor:"pointer"}}>Historial</span>.</p>:conActividad.map(renderWh)}
+        {(showEmpty?vacios:[]).map(w=><div key={w.name} style={{padding:"8px 12px",marginBottom:8,fontSize:12,color:mtDim(0.45),borderRadius:10,border:"1px dashed rgba(255,255,255,0.1)",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><span style={{fontWeight:700,color:mtDim(0.6)}}>{w.name} {w.w.origin==="usa"?"🇺🇸":"🇨🇳"}</span> Sin actividad <MtB col={GOLD_LIGHT} onClick={()=>newShip({warehouse:w.name})}>+ Pedido</MtB><MtB col={MT_AZ} onClick={()=>setEditingContainer({warehouse:w.name})}>+ Contenedor</MtB></div>)}
+        {vacios.length>0&&<button onClick={()=>setShowEmpty(s=>!s)} style={{background:"transparent",border:"none",color:mtDim(0.4),fontSize:11.5,cursor:"pointer",textDecoration:"underline dotted",fontFamily:"inherit",padding:"4px 0"}}>{showEmpty?"ocultar":"mostrar"} {vacios.length} {mtPlural(vacios.length,"depósito vacío","depósitos vacíos")}</button>}
+      </>)}
+      {tab==="calendario"&&<MtCalendario ctx={ctx}/>}
+      {tab==="historial"&&<MtHistorial ctx={ctx}/>}
+      {tab==="analisis"&&plata&&<MtAnalisis ctx={ctx}/>}
+    </>}
+
+    {/* Overlays */}
+    {drawerSh&&<MtDrawer P={P} sh={drawerSh} listIds={drawer.listIds} section={drawer.section} onClose={()=>setDrawer(null)}/>}
+    {showNew&&<div onClick={()=>setShowNew(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:isMobile?"12px 8px":"40px 20px",overflowY:"auto"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:920,background:"#0F1F3A",border:"1px solid rgba(255,255,255,0.12)",borderRadius:14,padding:isMobile?"16px 14px":"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)",margin:"auto"}}>
+        <MaritimeForm token={token} editing={showNew.editing||null} packages={showNew.editing?.id?pkgByShip[showNew.editing.id]||[]:[]} items={showNew.editing?.id?itemsByShip[showNew.editing.id]||[]:[]} allClients={allClients} warehouses={whs.filter(w=>!w.archived)} shipments={shipments} containers={containers} onCreateWarehouse={()=>setEditingWh({})} onSave={()=>{setShowNew(null);load();}} onCancel={()=>setShowNew(null)}/>
+      </div>
+    </div>}
+    {editingContainer&&<ContainerForm token={token} editing={editingContainer.id?editingContainer:null} warehouse={editingContainer.warehouse} warehouses={whs} onSave={async()=>{
+      const after=editingContainer.afterCreate;setEditingContainer(null);
+      if(!after){load();return;}
+      // "+ Nuevo contenedor con estas cargas": buscamos el contenedor recién creado y asignamos.
+      const ct=await dq("maritime_containers",{token,filters:"?select=*&order=created_at.asc"});
+      if(!Array.isArray(ct)){load();return;}
+      setContainers(ct);
+      const nuevo=ct.filter(c=>!after.prevIds.has(c.id)&&c.warehouse===editingContainer.warehouse).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)))[0];
+      if(!nuevo){toast("Se creó el contenedor pero no se pudo asignar: subí las cargas a mano","warn");load();return;}
+      // patch directo (subirA usa contById del render anterior, que todavía no tiene el nuevo).
+      const objs=shipsRef.current.filter(s=>after.ids.includes(s.id));const hoy=mtHoy();const base={container_id:nuevo.id,status:"en_camino_ar",shipped_to_ar_at:hoy,awaiting_supplier:false};
+      const con=objs.filter(s=>s.received_at).map(s=>s.id),sin=objs.filter(s=>!s.received_at).map(s=>s.id);
+      let ok=true;if(con.length)ok=await patchShips(con,base);if(ok&&sin.length)ok=await patchShips(sin,{...base,received_at:hoy});
+      if(ok){flash(`🚢 ${nuevo.code} creado con ${after.ids.length} ${mtPlural(after.ids.length,"carga")}`);setOpenCont(s=>new Set([...s,nuevo.id]));setSel({});}
+    }} onCancel={()=>setEditingContainer(null)}/>}
+    {editingWh&&<WarehouseForm token={token} editing={editingWh.id?editingWh:null} onSave={()=>{setEditingWh(null);load();}} onCancel={()=>setEditingWh(null)}/>}
+    {showDepositos&&plata&&<MtDepositosModal P={P} onClose={()=>setShowDepositos(false)}/>}
+    {linking&&<MtLinkModal P={P} c={linking} onClose={()=>setLinking(null)}/>}
+    {costModal&&plata&&<MaritimeCostModal data={costModal} token={token} onClose={()=>setCostModal(null)} onSaved={()=>{setCostModal(null);load();flash("✅ Costos guardados");}}/>}
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// MUELLE · tabs secundarios del panel Marítimos: Calendario · Historial · Análisis.
+// Se pegan DENTRO de app/admin/page.js: usan dq, toast, Btn, IC, formatDateShort, etc. del módulo.
+// Todo helper propio va prefijado mtx/Mtx para no chocar con el resto del panel.
+// ═══════════════════════════════════════════════════════════════════════════════════════
+
+const MTX={blue:"#60a5fa",green:"#22c55e",amber:"#fbbf24",red:"#f87171",violet:"#a78bfa",orange:"#fb923c",dim:"rgba(255,255,255,0.5)",dim2:"rgba(255,255,255,0.32)",line:"rgba(255,255,255,0.08)",mono:"ui-monospace,Menlo,Consolas,monospace"};
+const MTX_PAGE=50; // filas por página del historial (Range de PostgREST)
+const MTX_LOTE=60; // ids por request en los in.(…) — uuids de 36 chars: 60 ids ≈ 2,2 KB de URL, lejos del tope
+const MTX_MESES=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+// Colores por depósito para las barras apiladas (se asignan por orden de aparición).
+const MTX_WH_COLORS=["#60a5fa","#E8D098","#22c55e","#a78bfa","#fb923c","#f472b6","#2dd4bf","#f87171"];
+
+// ── Fechas (todo en ISO YYYY-MM-DD, a mediodía local para esquivar el corrimiento por zona horaria) ──
+const mtxDate=(iso)=>{if(!iso)return null;const s=String(iso).slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return null;const [y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d,12);};
+const mtxIso=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const mtxToday=()=>mtxIso(new Date());
+const mtxAdd=(iso,n)=>{const d=mtxDate(iso);if(!d)return null;d.setDate(d.getDate()+n);return mtxIso(d);};
+// Días de a → b (positivo si b es posterior). null si falta alguna fecha.
+const mtxDays=(a,b)=>{const da=mtxDate(a),db=mtxDate(b);if(!da||!db)return null;return Math.round((db-da)/86400000);};
+const mtxMonthKey=(iso)=>{const s=iso?String(iso).slice(0,7):null;return s&&/^\d{4}-\d{2}$/.test(s)?s:null;};
+const mtxMonthLabel=(key)=>{const [y,m]=key.split("-");return `${MTX_MESES[Number(m)-1]} ${y.slice(2)}`;};
+// Últimos N meses (claves YYYY-MM) terminando en el mes actual, de más viejo a más nuevo.
+const mtxLastMonths=(n)=>{const out=[];const d=new Date();d.setDate(1);for(let i=n-1;i>=0;i--){const x=new Date(d.getFullYear(),d.getMonth()-i,1);out.push(`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}`);}return out;};
+
+// ── Números ──
+const mtxN=(v,dec=2)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:dec,maximumFractionDigits:dec});
+const mtxAvg=(arr)=>{const v=arr.filter(x=>x!=null&&isFinite(x));return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
+const mtxMedian=(arr)=>{const v=arr.filter(x=>x!=null&&isFinite(x)).sort((a,b)=>a-b);if(!v.length)return null;const m=Math.floor(v.length/2);return v.length%2?v[m]:(v[m-1]+v[m])/2;};
+const mtxSigned=(n,suf=" d")=>n==null?"—":`${n>0?"+":n<0?"−":""}${mtxN(Math.abs(n),0)}${suf}`;
+const mtxPct=(v)=>v==null||!isFinite(v)?"—":`${mtxN(v*100,0)} %`;
+const mtxChunk=(arr,n)=>{const out=[];for(let i=0;i<arr.length;i+=n)out.push(arr.slice(i,i+n));return out;};
+const mtxUniq=(arr)=>[...new Set(arr.filter(Boolean))];
+// Misma regla que esPlaceholder del panel: la columna manda, la regex es red de seguridad.
+const mtxEsPlaceholder=(sh)=>sh?.awaiting_supplier===true||(sh?.status==="proveedor"&&!sh?.container_id&&(!sh?.tracking_number||/^SEA[A-Z]*$/i.test(String(sh.tracking_number).trim())));
+
+// ── Tarifas: copia PURA de fleteRateForCbm / surchargeForValue / clientImportes / importeOfShip del panel.
+// Existe porque las cargas de contenedores ARRIBADOS no están en el estado del panel (packages/items se
+// cargan aparte en el historial) y hace falta valuar "cuánto se estimó" para compararlo con lo real.
+const mtxRates=(tariffs)=>({
+  rates:(tariffs||[]).filter(t=>t.service_key==="maritimo_b"&&t.type==="rate").map(t=>({id:t.id,min:Number(t.min_qty||0),max:t.max_qty!=null?Number(t.max_qty):Infinity,rate:Number(t.rate||0)})).sort((a,b)=>a.min-b.min),
+  surch:(tariffs||[]).filter(t=>t.service_key==="maritimo_b"&&t.type==="surcharge").map(t=>({min:Number(t.min_qty||0),rate:Number(t.rate||0)})).sort((a,b)=>b.min-a.min),
+});
+const mtxFleteRate=(R,cbm,overrides)=>{for(const r of R.rates){if(cbm>=r.min&&cbm<r.max){const ov=(overrides||[]).find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):r.rate;}}const last=R.rates[R.rates.length-1];return last?last.rate:0;};
+const mtxSurcharge=(R,fob,cbm)=>{if(!(fob>0&&cbm>0))return 0;const vpu=fob/cbm;for(const s of R.surch){if(vpu>=s.min)return Math.round(fob*(s.rate/100)*100)/100;}return 0;};
+// Importe estimado por carga de una lista (mapa id → USD). Por cliente: CBM combinado × tarifa del rango
+// + recargo por FOB, prorrateado por CBM; revenue_manual pisa la parte de esa carga.
+const mtxImporteEstPorCarga=(list,{tariffs,overrides,cbmOf,fobOf})=>{
+  const out={};if(!list.length||!(tariffs||[]).length)return out;
+  const R=mtxRates(tariffs);const byCli={};
+  list.forEach(sh=>{if(sh.client_id)(byCli[sh.client_id]=byCli[sh.client_id]||[]).push(sh);});
+  Object.entries(byCli).forEach(([cid,ships])=>{
+    const cbm=ships.reduce((s,sh)=>s+cbmOf(sh.id),0);
+    const fob=ships.reduce((s,sh)=>s+fobOf(sh.id),0);
+    const imp=cbm*mtxFleteRate(R,cbm,(overrides||{})[cid]||[])+mtxSurcharge(R,fob,cbm);
+    ships.forEach(sh=>{out[sh.id]=sh.revenue_manual!=null?(Number(sh.revenue_manual)||0):(cbm>0?imp*(cbmOf(sh.id)/cbm):imp/ships.length);});
+  });
+  return out;
+};
+// Ops distintas de una lista de cargas (el embed operations viene repetido por carga → se cuenta una vez por op).
+const mtxOpsOf=(ships)=>{const byOp={};(ships||[]).forEach(s=>{if(s.operation_id&&s.operations&&!byOp[s.operation_id])byOp[s.operation_id]=s.operations;});return byOp;};
+// Ganancia REAL de un contenedor arribado = Σ budget_total − Σ cost_flete, una vez por op distinta.
+const mtxReal=(ships)=>{const ops=Object.values(mtxOpsOf(ships));const aCobrar=ops.reduce((a,o)=>a+Number(o.budget_total||0),0);const costo=ops.reduce((a,o)=>a+Number(o.cost_flete||0),0);return {aCobrar,costo,gan:aCobrar-costo,nOps:ops.length,codes:mtxUniq(ops.map(o=>o.operation_code))};};
+
+// Guardar costo / a cobrar de una carga (misma semántica que saveShipCost/saveShipRevenue del panel):
+// vacío = volver al automático. Devuelven los campos frescos o null si la base rechazó (dq no lanza).
+const mtxSaveShipCost=async(token,sh,val)=>{
+  const v=String(val??"").trim();const r=v===""?null:Number(v.replace(",","."));
+  if(r!=null&&!isFinite(r))return null;
+  const body=r==null?{cost_estimado:null,cost_manual:false}:{cost_estimado:r,cost_manual:true};
+  const p=await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body});
+  if(!Array.isArray(p)){toast(`No se pudo guardar el costo: ${p?.message||"error"}`,"error");return null;}
+  // El automático lo calcula un trigger en la base → se relee en vez de adivinarlo acá.
+  const fresh=await dq("maritime_shipments",{token,filters:`?id=eq.${sh.id}&select=cost_estimado,cost_per_cbm,cost_manual`});
+  return Array.isArray(fresh)&&fresh[0]?fresh[0]:body;
+};
+const mtxSaveShipRevenue=async(token,sh,val)=>{
+  const v=String(val??"").trim();const r=v===""?null:Number(v.replace(",","."));
+  if(r!=null&&!isFinite(r))return null;
+  const p=await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{revenue_manual:r}});
+  if(!Array.isArray(p)){toast(`No se pudo guardar el a cobrar: ${p?.message||"error"}`,"error");return null;}
+  return {revenue_manual:r};
+};
+
+// ── Estilos compartidos (inline, paleta del admin) ──
+const mtxS={
+  chip:(on,color=IC)=>({padding:"5px 11px",borderRadius:999,fontSize:11.5,fontWeight:700,cursor:"pointer",border:`1px solid ${on?color:"rgba(255,255,255,0.14)"}`,background:on?`${color}22`:"rgba(255,255,255,0.03)",color:on?color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",transition:"all 150ms"}),
+  th:{padding:"8px 10px",fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.06em",color:"rgba(255,255,255,0.45)",textAlign:"left",whiteSpace:"nowrap",borderBottom:"1px solid rgba(255,255,255,0.1)",background:"rgba(15,26,45,0.95)",position:"sticky",top:0,zIndex:1},
+  td:{padding:"8px 10px",fontSize:12,color:"rgba(255,255,255,0.85)",borderBottom:"1px solid rgba(255,255,255,0.05)",whiteSpace:"nowrap",verticalAlign:"middle"},
+  box:{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px 16px",marginBottom:14},
+  h:{fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.55)",margin:"0 0 10px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"},
+  miniBtn:(color,disabled)=>({padding:"4px 9px",fontSize:10.5,fontWeight:700,borderRadius:6,border:`1px solid ${color}66`,background:`${color}14`,color,cursor:disabled?"wait":"pointer",opacity:disabled?0.5:1,whiteSpace:"nowrap"}),
+  scroll:{overflowX:"auto",WebkitOverflowScrolling:"touch",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"},
+  input:{width:92,padding:"4px 7px",fontSize:11.5,borderRadius:6,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none",textAlign:"right"},
+};
+function MtxChip({on,onClick,children,color,title}){return <button title={title} onClick={onClick} style={mtxS.chip(on,color)}>{children}</button>;}
+function MtxBtn({onClick,color=MTX.blue,children,title,disabled}){return <button title={title} disabled={disabled} onClick={e=>{e.stopPropagation();if(!disabled)onClick?.(e);}} style={mtxS.miniBtn(color,disabled)}>{children}</button>;}
+function MtxEmpty({children}){return <div style={{padding:"28px 16px",textAlign:"center",color:MTX.dim,fontSize:13,fontStyle:"italic"}}>{children}</div>;}
+function MtxGan({v,bold}){const ok=Number(v||0)>=0;return <span style={{color:ok?"#4ade80":MTX.red,fontWeight:bold?800:700}}>{Number(v||0)<0?"−":""}USD {mtxN(Math.abs(v||0))}</span>;}
+// Barra horizontal CSS (sin librerías): pct 0–100, opcionalmente apilada con segmentos [{pct,color,title}].
+function MtxBar({pct,color=IC,segments,height=10}){
+  return <div style={{height,borderRadius:height,background:"rgba(255,255,255,0.06)",overflow:"hidden",display:"flex",width:"100%"}}>
+    {segments?segments.map((s,i)=><div key={i} title={s.title} style={{width:`${Math.max(0,Math.min(100,s.pct))}%`,background:s.color,height:"100%"}}/>):<div style={{width:`${Math.max(0,Math.min(100,pct||0))}%`,background:color,height:"100%",borderRadius:height,transition:"width 300ms"}}/>}
+  </div>;
+}
+
+// ── Hook: contenedores ARRIBADOS bajo demanda (Range + "Cargar más") con sus cargas, bultos e items.
+// Lo comparten Historial y Análisis. El embed operations(...) solo se pide si verPlata: el empleado no
+// debe recibir budget_total/cost_flete ni por RLS ni por red. `dep` fuerza un refresh (ej. cambió la
+// cantidad de arribados en el panel porque alguien marcó Arribó / volvió a tránsito).
+function mtxUseArribados({token,verPlata,dep}){
+  const [st,setSt]=useState({rows:[],ships:[],pkgs:[],items:[],loading:false,loaded:false,hasMore:false,error:null});
+  const busy=useRef(false);
+  const fetchPage=useCallback(async(offset)=>{
+    if(busy.current)return;busy.current=true;
+    setSt(p=>({...p,loading:true,error:null}));
+    const conts=await dq("maritime_containers",{token,filters:`?status=eq.arribado&select=*&order=arrived_at.desc,id.asc&limit=${MTX_PAGE}&offset=${offset}`});
+    if(!Array.isArray(conts)){busy.current=false;setSt(p=>({...p,loading:false,loaded:true,error:conts?.message||"No se pudo cargar el historial"}));toast("No se pudo cargar el historial","error");return;}
+    const ids=conts.map(c=>c.id);
+    const ships=[];
+    for(const lote of mtxChunk(ids,MTX_LOTE)){
+      // delivered_at se pide para medir arribó→entrega en Análisis (la columna existe en operations).
+      const r=await dq("maritime_shipments",{token,filters:`?container_id=in.(${lote.join(",")})&select=*${verPlata?",operations(operation_code,budget_total,cost_flete,delivered_at)":""}&order=created_at.asc`});
+      if(Array.isArray(r))ships.push(...r);else toast(`Cargas del historial: ${r?.message||"error"}`,"error");
+    }
+    const sids=ships.map(s=>s.id);const pkgs=[];const items=[];
+    for(const lote of mtxChunk(sids,MTX_LOTE)){
+      const r=await dq("maritime_packages",{token,filters:`?shipment_id=in.(${lote.join(",")})&select=shipment_id,quantity,cbm`});
+      if(Array.isArray(r))pkgs.push(...r);
+      if(verPlata){const it=await dq("maritime_items",{token,filters:`?shipment_id=in.(${lote.join(",")})&select=shipment_id,quantity,unit_price_usd`});if(Array.isArray(it))items.push(...it);}
+    }
+    setSt(p=>{const reset=offset===0;return {rows:reset?conts:[...p.rows,...conts],ships:reset?ships:[...p.ships,...ships],pkgs:reset?pkgs:[...p.pkgs,...pkgs],items:reset?items:[...p.items,...items],loading:false,loaded:true,hasMore:conts.length===MTX_PAGE,error:null};});
+    busy.current=false;
+  },[token,verPlata]);
+  useEffect(()=>{fetchPage(0);},[fetchPage,dep]);
+  const cbmMap=useMemo(()=>{const m={};st.pkgs.forEach(p=>{m[p.shipment_id]=(m[p.shipment_id]||0)+Number(p.cbm||0);});return m;},[st.pkgs]);
+  const bultosMap=useMemo(()=>{const m={};st.pkgs.forEach(p=>{m[p.shipment_id]=(m[p.shipment_id]||0)+Number(p.quantity||1);});return m;},[st.pkgs]);
+  const fobMap=useMemo(()=>{const m={};st.items.forEach(it=>{m[it.shipment_id]=(m[it.shipment_id]||0)+Number(it.unit_price_usd||0)*Number(it.quantity||1);});return m;},[st.items]);
+  const loadMore=()=>fetchPage(st.rows.length);
+  const refresh=()=>fetchPage(0);
+  const patchShip=(id,fields)=>setSt(p=>({...p,ships:p.ships.map(s=>s.id===id?{...s,...fields}:s)}));
+  return {...st,cbmMap,bultosMap,fobMap,loadMore,refresh,patchShip};
+}
+
+// Registro calculado de un contenedor arribado (lo usan Historial y Análisis).
+const mtxRecArribado=(c,ships,{cbmMap,effEta,verPlata})=>{
+  const cbm=ships.reduce((a,s)=>a+(cbmMap[s.id]||0),0);
+  const pe=effEta(c);
+  const real=verPlata?mtxReal(ships):null;
+  const sinOperar=ships.filter(s=>!s.operation_id).length;
+  return {c,ships,n:ships.length,cbm,viaje:mtxDays(c.departed_at,c.arrived_at),desv:pe?mtxDays(pe,c.arrived_at):null,puertoEst:pe,
+    nOps:verPlata?real.nOps:mtxUniq(ships.map(s=>s.operation_id)).length,codes:verPlata?real.codes:[],sinOperar,
+    aCobrar:real?real.aCobrar:null,costo:real?real.costo:null,gan:real?real.gan:null,margen:real&&real.aCobrar>0?real.gan/real.aCobrar:null};
+};
+// Nombre corto de cliente: "CLI-023 · Fernández" (clientOf del panel) o el snapshot guardado.
+const mtxCliLabel=(sh,clientOf)=>{const c=sh.client_id?clientOf(sh.client_id):null;if(c)return `${c.client_code||"—"} · ${[c.first_name,c.last_name].filter(Boolean).join(" ")||sh.client_name_snapshot||""}`.trim();return sh.client_name_snapshot||"—";};
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// CALENDARIO DE LLEGADAS · semanas −2 … +12 con pastillas de eventos por contenedor en tránsito.
+// ═══════════════════════════════════════════════════════════════════════════════════════
+function MtCalendario({ctx}){
+  const {containers,shipments,whFilter,isMobile,cbmOf,effEta,entregaEst,fmtD,actions}=ctx;
+  const fd=(d)=>d?fmtD(d):"—"; // fmtD del panel, blindado contra null
+  const [soloPuerto,setSoloPuerto]=useState(false);
+  const [busyId,setBusyId]=useState(null);
+  const hoyRef=useRef(null);
+  const hoy=mtxToday();
+  const conts=useMemo(()=>containers.filter(c=>c.status==="en_transito"&&(whFilter==="all"||c.warehouse===whFilter)),[containers,whFilter]);
+  // Cargas y m³ por contenedor (solo activas: las que están en el estado del panel).
+  const info=useMemo(()=>{const m={};conts.forEach(c=>{const sh=shipments.filter(s=>s.container_id===c.id);m[c.id]={n:sh.length,cbm:sh.reduce((a,s)=>a+cbmOf(s.id),0)};});return m;},[conts,shipments,cbmOf]);
+  const events=useMemo(()=>{
+    const ev=[];
+    conts.forEach(c=>{
+      const pe=effEta(c);
+      if(c.departed_at)ev.push({k:"zarpo",date:String(c.departed_at).slice(0,10),c});
+      // El transbordo se ubica en la ETA nominal: desde ahí corren los días extra hasta la ETA efectiva.
+      if(Number(c.transbordo_dias||0)>0&&c.eta)ev.push({k:"transbordo",date:String(c.eta).slice(0,10),c});
+      if(pe)ev.push({k:"puerto",date:pe,c,vencido:pe<hoy});
+      const en=entregaEst(c);if(en)ev.push({k:"entrega",date:en,c});
+    });
+    return ev.filter(e=>!soloPuerto||e.k==="puerto").sort((a,b)=>a.date.localeCompare(b.date)||String(a.c.code).localeCompare(String(b.c.code)));
+  },[conts,effEta,entregaEst,soloPuerto,hoy]);
+  // Semanas: lunes de la semana actual, 2 hacia atrás y 12 hacia adelante.
+  const semanas=useMemo(()=>{
+    const d=new Date();const dow=(d.getDay()+6)%7;const lunes=mtxAdd(mtxIso(d),-dow);
+    return Array.from({length:15},(_,i)=>{const from=mtxAdd(lunes,(i-2)*7);const to=mtxAdd(from,6);const a=mtxDate(from),b=mtxDate(to);
+      const label=a.getMonth()===b.getMonth()?`${a.getDate()}–${b.getDate()} ${MTX_MESES[a.getMonth()]}`:`${a.getDate()} ${MTX_MESES[a.getMonth()]} – ${b.getDate()} ${MTX_MESES[b.getMonth()]}`;
+      return {from,to,label,actual:from<=hoy&&hoy<=to,pasada:to<hoy};});
+  },[hoy]);
+  const vencidos=useMemo(()=>conts.filter(c=>{const pe=effEta(c);return pe&&pe<hoy;}).sort((a,b)=>effEta(a).localeCompare(effEta(b))),[conts,effEta,hoy]);
+  const actual=semanas.find(s=>s.actual);
+  const enSemana=(s)=>events.filter(e=>e.date>=s.from&&e.date<=s.to);
+  const evActual=actual?events.filter(e=>e.date>=actual.from&&e.date<=actual.to):[];
+  // Mini resumen: 4 meses desde el actual, contenedores que llegan a puerto (effEta) y sus m³.
+  const meses=useMemo(()=>{const d=new Date();return Array.from({length:4},(_,i)=>{const x=new Date(d.getFullYear(),d.getMonth()+i,1);const key=`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}`;const cs=conts.filter(c=>mtxMonthKey(effEta(c))===key);return {key,n:cs.length,cbm:cs.reduce((a,c)=>a+(info[c.id]?.cbm||0),0)};});},[conts,effEta,info]);
+  const maxCbm=Math.max(1,...meses.map(m=>m.cbm));const maxN=Math.max(1,...meses.map(m=>m.n));
+  const runArribo=async(c)=>{setBusyId(c.id);try{await actions.setContainerStatus(c,"arribado");}finally{setBusyId(null);}};
+  const KIND={zarpo:{ic:"🚢",l:"Zarpó",col:MTX.blue},transbordo:{ic:"⇄",l:"Transbordo",col:MTX.orange},puerto:{ic:"⚓",l:"Puerto BA",col:MTX.green},entrega:{ic:"📦",l:"Entrega est.",col:IC}};
+
+  const Pastilla=({e})=>{const k=KIND[e.k];const col=e.vencido?MTX.red:k.col;const i=info[e.c.id]||{};const busy=busyId===e.c.id;
+    return <div onClick={()=>actions.openContainer(e.c.id)} title={`${k.l} · ${e.c.code} · ${fd(e.date)}`} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 9px",borderRadius:8,border:`1px solid ${col}55`,background:`${col}14`,cursor:"pointer",maxWidth:"100%",flexWrap:"wrap"}}>
+      <span style={{fontSize:11,color:col,fontWeight:800}}>{k.ic} {e.vencido?"VENCIDO":k.l}</span>
+      <span style={{fontSize:11.5,fontWeight:800,color:"#fff",fontFamily:MTX.mono}}>{e.c.code}</span>
+      {e.k==="transbordo"&&<span style={{fontSize:10.5,color:MTX.dim}}>{e.c.transbordo_lugar||"—"} +{e.c.transbordo_dias} d</span>}
+      <span style={{fontSize:10.5,color:MTX.dim}}>{fd(e.date)}{whFilter==="all"&&e.c.warehouse?` · ${e.c.warehouse}`:""} · {mtxN(i.cbm||0)} m³</span>
+      {e.vencido&&<span style={{display:"inline-flex",gap:4}}><MtxBtn color={MTX.amber} onClick={()=>actions.editContainer(e.c)}>Corregir ETA</MtxBtn><MtxBtn color={MTX.green} disabled={busy} onClick={()=>runArribo(e.c)}>{busy?"⏳":"⚓ Arribó"}</MtxBtn></span>}
+    </div>;};
+
+  if(conts.length===0)return <MtxEmpty>Sin contenedores en tránsito{whFilter!=="all"?` en ${whFilter}`:""}. <button onClick={()=>actions.editContainer({warehouse:whFilter!=="all"?whFilter:undefined})} style={{...mtxS.miniBtn(IC),marginLeft:8}}>+ Contenedor</button></MtxEmpty>;
+
+  return <div>
+    {/* Cabecera: resumen de la semana + controles */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
+      <p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.8)"}}><strong style={{color:"#fff"}}>Esta semana:</strong> {evActual.filter(e=>e.k==="puerto").length} llegada{evActual.filter(e=>e.k==="puerto").length!==1?"s":""} a puerto · {evActual.filter(e=>e.k==="entrega").length} entrega{evActual.filter(e=>e.k==="entrega").length!==1?"s":""} est. · <span style={{color:vencidos.length?MTX.red:MTX.green,fontWeight:700}}>{vencidos.length} vencido{vencidos.length!==1?"s":""}</span></p>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        <MtxChip on={soloPuerto} color={MTX.green} onClick={()=>setSoloPuerto(v=>!v)}>⚓ solo Puerto BA</MtxChip>
+        <MtxChip on={false} onClick={()=>hoyRef.current?.scrollIntoView({behavior:"smooth",block:"center"})}>Hoy</MtxChip>
+      </div>
+    </div>
+    {/* Vencidos: siempre arriba, aunque queden fuera de la ventana de −2 semanas */}
+    {vencidos.length>0&&<div style={{...mtxS.box,borderColor:`${MTX.red}55`,background:`${MTX.red}0d`}}>
+      <p style={{...mtxS.h,color:MTX.red}}>🔴 ETA vencida · siguen en tránsito</p>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {vencidos.map(c=>{const d=mtxDays(effEta(c),hoy);const busy=busyId===c.id;return <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:12}}>
+          <span onClick={()=>actions.openContainer(c.id)} style={{fontFamily:MTX.mono,fontWeight:800,color:"#fff",cursor:"pointer"}}>{c.code}</span>
+          <span style={{color:MTX.dim}}>{c.warehouse} · Puerto BA {fd(effEta(c))} · <span style={{color:MTX.red,fontWeight:700}}>vencido hace {d} d</span></span>
+          <MtxBtn color={MTX.amber} onClick={()=>actions.editContainer(c)}>Corregir ETA</MtxBtn>
+          <MtxBtn color={MTX.green} disabled={busy} onClick={()=>runArribo(c)}>{busy?"⏳ Creando ops…":"⚓ Arribó"}</MtxBtn>
+        </div>;})}
+      </div>
+    </div>}
+    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 250px",gap:14,alignItems:"start"}}>
+      {/* Semanas */}
+      <div style={{...mtxS.box,padding:0,overflow:"hidden"}}>
+        {semanas.map(s=>{const ev=enSemana(s);return <div key={s.from} ref={s.actual?hoyRef:null} style={{display:"flex",gap:10,padding:"9px 12px",borderBottom:`1px solid ${MTX.line}`,background:s.actual?"rgba(232,208,152,0.07)":"transparent",opacity:s.pasada?0.6:1,flexDirection:isMobile?"column":"row"}}>
+          <div style={{width:isMobile?"auto":96,flexShrink:0,paddingTop:2}}>
+            <p style={{margin:0,fontSize:11.5,fontWeight:800,color:s.actual?IC:"rgba(255,255,255,0.75)",whiteSpace:"nowrap"}}>{s.label}</p>
+            {s.actual&&<p style={{margin:0,fontSize:9.5,fontWeight:800,color:IC,letterSpacing:"0.08em"}}>ESTA SEMANA</p>}
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",flex:1,minWidth:0}}>
+            {ev.length===0?<span style={{fontSize:11,color:MTX.dim2,paddingTop:4}}>—</span>:ev.map((e,i)=><Pastilla key={`${e.c.id}-${e.k}-${i}`} e={e}/>)}
+          </div>
+        </div>;})}
+      </div>
+      {/* Mini resumen mensual */}
+      <div style={mtxS.box}>
+        <p style={mtxS.h}>Próximos 4 meses · llegadas a puerto</p>
+        {meses.map(m=><div key={m.key} style={{marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,marginBottom:3}}><span style={{color:"#fff",fontWeight:700,textTransform:"capitalize"}}>{mtxMonthLabel(m.key)}</span><span style={{color:MTX.dim}}>{m.n} cont. · {mtxN(m.cbm,1)} m³</span></div>
+          <MtxBar pct={m.n/maxN*100} color={MTX.blue} height={6}/>
+          <div style={{height:3}}/>
+          <MtxBar pct={m.cbm/maxCbm*100} color={IC} height={6}/>
+        </div>)}
+        <p style={{margin:"6px 0 0",fontSize:10,color:MTX.dim2}}><span style={{color:MTX.blue}}>■</span> contenedores · <span style={{color:IC}}>■</span> m³</p>
+      </div>
+    </div>
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// HISTORIAL DE CONTENEDORES ARRIBADOS · paginado, con chips de año/depósito y fila expandible.
+// ═══════════════════════════════════════════════════════════════════════════════════════
+function MtHistorial({ctx}){
+  const {token,verPlata,isMobile,whFilter,containers,effEta,fmtD,usd,clientOf,actions}=ctx;
+  const nArr=containers.filter(c=>c.status==="arribado").length;
+  const hist=mtxUseArribados({token,verPlata,dep:nArr});
+  const fd=(d)=>d?fmtD(d):"—"; // fmtD del panel, blindado contra null
+  const [year,setYear]=useState("all");
+  const [wh,setWh]=useState(whFilter);
+  useEffect(()=>{setWh(whFilter);},[whFilter]); // el chip global de depósito manda; acá se puede afinar
+  const [open,setOpen]=useState(new Set());
+  const [busy,setBusy]=useState(null); // `${id}:${accion}` en curso
+  // Si el panel editó un contenedor arribado (ETA, naviera…) su copia en ctx.containers está más fresca.
+  const rows=useMemo(()=>hist.rows.map(r=>containers.find(c=>c.id===r.id&&c.status==="arribado")||r),[hist.rows,containers]);
+  const years=useMemo(()=>mtxUniq(rows.map(r=>String(r.arrived_at||"").slice(0,4))).filter(y=>/^\d{4}$/.test(y)).sort(),[rows]);
+  const whNames=useMemo(()=>mtxUniq(rows.map(r=>r.warehouse)).sort(),[rows]);
+  const recs=useMemo(()=>rows.filter(c=>(year==="all"||String(c.arrived_at||"").startsWith(year))&&(wh==="all"||c.warehouse===wh))
+    .map(c=>mtxRecArribado(c,hist.ships.filter(s=>s.container_id===c.id),{cbmMap:hist.cbmMap,effEta,verPlata})),[rows,year,wh,hist.ships,hist.cbmMap,effEta,verPlata]);
+  const tot=useMemo(()=>{const cbm=recs.reduce((a,r)=>a+r.cbm,0);const aCobrar=recs.reduce((a,r)=>a+(r.aCobrar||0),0);const costo=recs.reduce((a,r)=>a+(r.costo||0),0);
+    return {n:recs.length,cbm,viaje:mtxAvg(recs.map(r=>r.viaje)),desv:mtxAvg(recs.map(r=>r.desv)),sinOperar:recs.reduce((a,r)=>a+r.sinOperar,0),aCobrar,costo,gan:aCobrar-costo,usdM3:cbm>0?aCobrar/cbm:null,costM3:cbm>0?costo/cbm:null};},[recs]);
+  const toggle=(id)=>setOpen(p=>{const n=new Set(p);if(n.has(id))n.delete(id);else n.add(id);return n;});
+  const run=async(key,fn)=>{if(busy)return;setBusy(key);try{await fn();}catch(e){console.error(e);toast(`Error: ${e?.message||e}`,"error");}finally{setBusy(null);}};
+  const crearOps=(c)=>run(`${c.id}:ops`,async()=>{const r=await actions.createOpsForContainer(c);if(r?.msg)actions.flash(`✅ ${c.code}${r.msg}`);await Promise.resolve(actions.reload());hist.refresh();});
+  const volver=(c)=>run(`${c.id}:volver`,async()=>{await actions.setContainerStatus(c,"en_transito");hist.refresh();});
+  const th=(t,extra)=><th style={{...mtxS.th,...(extra||{})}}>{t}</th>;
+
+  return <div>
+    {/* Filtros */}
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:10}}>
+      <MtxChip on={year==="all"} onClick={()=>setYear("all")}>Todos los años</MtxChip>
+      {years.map(y=><MtxChip key={y} on={year===y} onClick={()=>setYear(y)}>{y}</MtxChip>)}
+      {whNames.length>1&&<span style={{width:1,height:18,background:"rgba(255,255,255,0.12)",margin:"0 4px"}}/>}
+      {whNames.length>1&&<MtxChip on={wh==="all"} color={MTX.blue} onClick={()=>setWh("all")}>Todos los depósitos</MtxChip>}
+      {whNames.length>1&&whNames.map(w=><MtxChip key={w} on={wh===w} color={MTX.blue} onClick={()=>setWh(w)}>{w}</MtxChip>)}
+    </div>
+    {/* Línea resumen */}
+    {recs.length>0&&<p style={{margin:"0 0 10px",fontSize:12,color:"rgba(255,255,255,0.75)",lineHeight:1.6}}>
+      <strong style={{color:"#fff"}}>{year==="all"?"Todo":year}{wh!=="all"?` · ${wh}`:""}</strong> · {tot.n} contenedor{tot.n!==1?"es":""} · {mtxN(tot.cbm)} m³ · viaje prom. {tot.viaje==null?"—":`${mtxN(tot.viaje,0)} d`} · desvío ETA prom. <span style={{color:tot.desv>0?MTX.red:MTX.green}}>{mtxSigned(tot.desv)}</span> · <span style={{color:tot.sinOperar>0?MTX.red:MTX.dim}}>{tot.sinOperar} carga{tot.sinOperar!==1?"s":""} sin operar</span>
+      {verPlata&&<span> · ganancia real <MtxGan v={tot.gan}/> · USD/m³ cobrado {tot.usdM3==null?"—":mtxN(tot.usdM3,0)} · USD/m³ costo {tot.costM3==null?"—":mtxN(tot.costM3,0)}</span>}
+      <span style={{color:MTX.dim2}}> · sobre {rows.length} cargados</span>
+    </p>}
+    {hist.error&&<div style={{padding:"10px 14px",borderRadius:8,background:`${MTX.red}14`,border:`1px solid ${MTX.red}55`,color:MTX.red,fontSize:12,marginBottom:10,display:"flex",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}><span>{hist.error}</span><MtxBtn color={MTX.red} onClick={hist.refresh}>Reintentar</MtxBtn></div>}
+    {!hist.loaded&&hist.loading&&<MtxEmpty>Cargando historial…</MtxEmpty>}
+    {hist.loaded&&recs.length===0&&!hist.loading&&<MtxEmpty>{rows.length===0?"Todavía no arribó ningún contenedor":`Sin arribos${year!=="all"?` en ${year}`:""}${wh!=="all"?` para ${wh}`:""}`}</MtxEmpty>}
+    {recs.length>0&&<div style={mtxS.scroll}>
+      <table style={{borderCollapse:"collapse",width:"100%",minWidth:verPlata?1180:860}}>
+        <thead><tr>
+          {th("Código")}{th("Depósito")}{th("Naviera")}{th("Zarpó → Puerto est. → Arribó")}{th("Desvío")}{th("Cargas",{textAlign:"right"})}{th("m³",{textAlign:"right"})}{th("Ops")}{th("Sin operar",{textAlign:"right"})}
+          {verPlata&&<Fragment>{th("A cobrar real",{textAlign:"right"})}{th("Costo real",{textAlign:"right"})}{th("Ganancia",{textAlign:"right"})}{th("Margen",{textAlign:"right"})}</Fragment>}
+          {th("")}
+        </tr></thead>
+        <tbody>
+          {recs.map(r=>{const c=r.c;const isOpen=open.has(c.id);const b=(k)=>busy===`${c.id}:${k}`;
+            return <Fragment key={c.id}>
+              <tr onClick={()=>toggle(c.id)} style={{cursor:"pointer",background:isOpen?"rgba(255,255,255,0.03)":"transparent"}}>
+                <td style={mtxS.td}><span style={{color:MTX.dim2,marginRight:6,display:"inline-block",transition:"transform 150ms",transform:isOpen?"rotate(90deg)":"none"}}>▶</span><span style={{fontFamily:MTX.mono,fontWeight:800,color:"#fff"}}>{c.code}</span></td>
+                <td style={mtxS.td}>{c.warehouse||"—"}</td>
+                <td style={mtxS.td}>{c.shipping_line?<span style={{fontSize:10.5,fontWeight:700,padding:"2px 7px",borderRadius:4,background:`${MTX.blue}1f`,color:"#93c5fd"}}>⚓ {c.shipping_line}</span>:<span style={{color:MTX.dim2}}>sin naviera</span>}</td>
+                <td style={mtxS.td}><span style={{color:MTX.blue}}>{fd(c.departed_at)}</span> → <span style={{color:MTX.dim}} title={Number(c.transbordo_dias||0)>0?`ETA ${fd(c.eta)} + ${c.transbordo_dias} d de transbordo`:"ETA a puerto"}>{r.puertoEst?fd(r.puertoEst):"—"}</span> → <span style={{color:MTX.green,fontWeight:700}}>{fd(c.arrived_at)}</span>{r.viaje!=null&&<span style={{color:MTX.dim2}}> ({r.viaje} d)</span>}</td>
+                <td style={{...mtxS.td,color:r.desv==null?MTX.dim2:r.desv>0?MTX.red:MTX.green,fontWeight:700}}>{mtxSigned(r.desv)}</td>
+                <td style={{...mtxS.td,textAlign:"right"}}>{r.n}</td>
+                <td style={{...mtxS.td,textAlign:"right",fontWeight:700}}>{mtxN(r.cbm)}</td>
+                <td style={mtxS.td}>{verPlata?(r.codes.length?<span style={{display:"inline-flex",gap:4,flexWrap:"wrap"}}>{r.codes.map(oc=><span key={oc} style={{fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,fontFamily:MTX.mono}}>{oc}</span>)}</span>:<span style={{color:MTX.dim2}}>—</span>):<span style={{color:MTX.dim}}>{r.nOps} op{r.nOps!==1?"s":""}</span>}</td>
+                <td style={{...mtxS.td,textAlign:"right",color:r.sinOperar>0?MTX.red:MTX.dim2,fontWeight:r.sinOperar>0?800:400}}>{r.sinOperar}</td>
+                {verPlata&&<Fragment>
+                  <td style={{...mtxS.td,textAlign:"right"}}>{usd(r.aCobrar)}</td>
+                  <td style={{...mtxS.td,textAlign:"right"}}>{usd(r.costo)}</td>
+                  <td style={{...mtxS.td,textAlign:"right"}}><MtxGan v={r.gan} bold/></td>
+                  <td style={{...mtxS.td,textAlign:"right",color:r.margen==null?MTX.dim2:r.margen>=0.3?MTX.green:r.margen>=0?MTX.amber:MTX.red}}>{mtxPct(r.margen)}</td>
+                </Fragment>}
+                <td style={mtxS.td} onClick={e=>e.stopPropagation()}>
+                  <div style={{display:"flex",gap:4,flexWrap:"nowrap"}}>
+                    {r.sinOperar>0&&(verPlata?<MtxBtn color={MTX.green} disabled={b("ops")} onClick={()=>crearOps(c)} title="Crear las operaciones de las cargas sin operar">{b("ops")?"⏳":"Crear ops"}</MtxBtn>:<span style={{fontSize:10.5,color:MTX.amber,fontStyle:"italic",alignSelf:"center"}}>esperando a Bautista</span>)}
+                    <MtxBtn color={IC} onClick={()=>actions.linkOperated(c)} title="Vincular cargas ya operadas (sin contenedor) a este contenedor">🔗</MtxBtn>
+                    {verPlata&&<MtxBtn color={MTX.green} onClick={()=>actions.openCostModal(c)} title="Cargar el costo de cada operación">💲</MtxBtn>}
+                    <MtxBtn color="#9ca3af" disabled={b("volver")} onClick={()=>volver(c)} title="Volver a en tránsito">↶</MtxBtn>
+                    <MtxBtn color={MTX.blue} onClick={()=>actions.editContainer(c)} title="Editar contenedor">✎</MtxBtn>
+                  </div>
+                </td>
+              </tr>
+              {isOpen&&<tr><td colSpan={verPlata?14:10} style={{...mtxS.td,whiteSpace:"normal",padding:"6px 14px 12px 30px",background:"rgba(255,255,255,0.02)"}}>
+                {r.ships.length===0?<span style={{color:MTX.dim2,fontStyle:"italic"}}>Sin cargas vinculadas · usá 🔗 para vincular cargas operadas</span>:
+                <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"minmax(180px,1.2fr) minmax(200px,2fr) 70px 80px 110px",gap:"4px 12px",fontSize:11.5}}>
+                  {r.ships.map(s=><Fragment key={s.id}>
+                    <span style={{color:"#fff",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis"}}>{mtxCliLabel(s,clientOf)}</span>
+                    <span style={{color:"rgba(255,255,255,0.7)",overflow:"hidden",textOverflow:"ellipsis"}}>{s.product_description||"—"}{s.tracking_number&&!mtxEsPlaceholder(s)&&<span style={{color:MTX.dim2,fontFamily:MTX.mono,marginLeft:6}}>{s.tracking_number}</span>}</span>
+                    <span style={{color:MTX.dim,textAlign:isMobile?"left":"right"}}>{mtxN(hist.cbmMap[s.id]||0)} m³</span>
+                    <span style={{color:MTX.dim}}>{hist.bultosMap[s.id]||0} bulto{(hist.bultosMap[s.id]||0)!==1?"s":""}</span>
+                    <span>{s.operation_id?(s.operations?.operation_code?<span style={{color:IC,fontFamily:MTX.mono,fontWeight:800}}>{s.operations.operation_code}</span>:<span style={{color:MTX.green}}>operada</span>):<span style={{color:MTX.amber,fontStyle:"italic"}}>sin operar</span>}</span>
+                    {isMobile&&<span style={{height:1,background:MTX.line}}/>}
+                  </Fragment>)}
+                </div>}
+                {c.notes&&<p style={{margin:"8px 0 0",fontSize:11,color:MTX.dim,fontStyle:"italic"}}>{c.notes}</p>}
+              </td></tr>}
+            </Fragment>;})}
+        </tbody>
+      </table>
+    </div>}
+    {hist.hasMore&&<div style={{textAlign:"center",marginTop:12}}><Btn variant="secondary" small onClick={hist.loadMore} disabled={hist.loading}>{hist.loading?"Cargando…":`Cargar más (${rows.length} de los últimos)`}</Btn></div>}
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════
+// ANÁLISIS (solo admin) · KPIs, barras por mes, tabla por contenedor, tiempos, clientes, calidad.
+// No se renderiza ni calcula si !verPlata: el guard está en la primera línea del componente.
+// ═══════════════════════════════════════════════════════════════════════════════════════
+function MtAnalisis({ctx}){
+  if(!ctx.verPlata)return null;
+  return <MtxAnalisisInner ctx={ctx}/>;
+}
+function MtxAnalisisInner({ctx}){
+  const {token,isMobile,whs,whFilter,shipments,items,containers,tariffs,overrides,cbmOf,effEta,importeContainer,costContainer,importeOfShip,costOfShip,usd,clientOf,actions}=ctx;
+  const nArr=containers.filter(c=>c.status==="arribado").length;
+  const hist=mtxUseArribados({token,verPlata:true,dep:nArr});
+  const [periodo,setPeriodo]=useState("12m");
+  const [wh,setWh]=useState(whFilter);
+  useEffect(()=>{setWh(whFilter);},[whFilter]);
+  const [mesSel,setMesSel]=useState(null); // clic en barra mensual → filtra la tabla
+  const [sort,setSort]=useState({k:"ref",dir:"desc"});
+  const [open,setOpen]=useState(new Set());
+  const [saving,setSaving]=useState(null);
+  const hoy=mtxToday();
+  const desde=useMemo(()=>{const d=new Date();if(periodo==="todo")return null;if(periodo==="anio")return `${d.getFullYear()}-01-01`;const n=Number(periodo.replace("m",""));d.setMonth(d.getMonth()-n);return mtxIso(d);},[periodo]);
+  // CBM/FOB unificados: primero lo cargado por el historial, si no, lo que tiene el panel en memoria.
+  const cbmAny=useCallback((id)=>hist.cbmMap[id]!=null?hist.cbmMap[id]:cbmOf(id),[hist.cbmMap,cbmOf]);
+  const fobActive=useMemo(()=>{const m={};(items||[]).forEach(it=>{m[it.shipment_id]=(m[it.shipment_id]||0)+Number(it.unit_price_usd||0)*Number(it.quantity||1);});return m;},[items]);
+  const fobAny=useCallback((id)=>hist.fobMap[id]!=null?hist.fobMap[id]:(fobActive[id]||0),[hist.fobMap,fobActive]);
+  const activeIds=useMemo(()=>new Set(shipments.map(s=>s.id)),[shipments]);
+
+  // ── Registros por contenedor (activos + arribados) ──
+  const recsAll=useMemo(()=>{
+    const out=[];
+    containers.filter(c=>c.status==="en_transito").forEach(c=>{
+      const list=shipments.filter(s=>s.container_id===c.id);
+      const cbm=list.reduce((a,s)=>a+cbmOf(s.id),0);
+      const imp=importeContainer(list);const costo=costContainer(list);
+      const estPorCarga={};list.forEach(s=>{estPorCarga[s.id]={imp:importeOfShip(s,list),cost:costOfShip(s)};});
+      out.push({id:c.id,c,kind:"activo",code:c.code,wh:c.warehouse||"—",naviera:c.shipping_line||"",ref:c.departed_at||c.created_at,mes:mtxMonthKey(c.departed_at),mesArr:null,
+        cbm,cap:c.capacity_cbm?Number(c.capacity_cbm):null,llenado:c.capacity_cbm?cbm/Number(c.capacity_cbm):null,clientes:mtxUniq(list.map(s=>s.client_id)).length,cargas:list.length,
+        aCobrar:imp,costo,gan:imp!=null?imp-costo:null,margen:imp>0?(imp-costo)/imp:null,usdM3:imp!=null&&cbm>0?imp/cbm:null,esReal:false,estGan:imp!=null?imp-costo:null,desvEst:null,desvEstPct:null,
+        viaje:null,desvEta:null,entrega:null,nEntrega:0,sinOperar:0,ships:list,estPorCarga});
+    });
+    hist.rows.forEach(c0=>{
+      const c=containers.find(x=>x.id===c0.id&&x.status==="arribado")||c0;
+      const list=hist.ships.filter(s=>s.container_id===c.id);
+      const r=mtxRecArribado(c,list,{cbmMap:hist.cbmMap,effEta,verPlata:true});
+      const estMap=mtxImporteEstPorCarga(list,{tariffs,overrides,cbmOf:cbmAny,fobOf:fobAny});
+      const estImp=(tariffs||[]).length&&list.length?list.reduce((a,s)=>a+(estMap[s.id]||0),0):null;
+      const estCosto=list.reduce((a,s)=>a+Number(s.cost_estimado||0),0);
+      const estGan=estImp!=null?estImp-estCosto:null;
+      const desvEst=estGan!=null&&r.nOps>0?r.gan-estGan:null;
+      // arribó → entrega: promedio sobre las ops del contenedor que ya tienen delivered_at.
+      const ent=Object.values(mtxOpsOf(list)).map(o=>o.delivered_at?mtxDays(c.arrived_at,o.delivered_at):null).filter(x=>x!=null);
+      const estPorCarga={};list.forEach(s=>{estPorCarga[s.id]={imp:estMap[s.id]||0,cost:Number(s.cost_estimado||0)};});
+      out.push({id:c.id,c,kind:"arribado",code:c.code,wh:c.warehouse||"—",naviera:c.shipping_line||"",ref:c.departed_at||c.arrived_at||c.created_at,mes:mtxMonthKey(c.departed_at),mesArr:mtxMonthKey(c.arrived_at),
+        cbm:r.cbm,cap:c.capacity_cbm?Number(c.capacity_cbm):null,llenado:c.capacity_cbm?r.cbm/Number(c.capacity_cbm):null,clientes:mtxUniq(list.map(s=>s.client_id)).length,cargas:list.length,
+        aCobrar:r.nOps>0?r.aCobrar:null,costo:r.nOps>0?r.costo:null,gan:r.nOps>0?r.gan:null,margen:r.margen,usdM3:r.nOps>0&&r.cbm>0?r.aCobrar/r.cbm:null,esReal:true,estGan,desvEst,desvEstPct:desvEst!=null&&estGan>0?desvEst/estGan:null,
+        viaje:r.viaje,desvEta:r.desv,entrega:ent.length?mtxAvg(ent):null,nEntrega:ent.length,sinOperar:r.sinOperar,ships:list,estPorCarga});
+    });
+    return out;
+  },[containers,shipments,hist.rows,hist.ships,hist.cbmMap,cbmOf,cbmAny,fobAny,effEta,importeContainer,costContainer,importeOfShip,costOfShip,tariffs,overrides]);
+  const recs=useMemo(()=>recsAll.filter(r=>(wh==="all"||r.wh===wh)&&(!desde||String(r.ref||"").slice(0,10)>=desde)),[recsAll,wh,desde]);
+  const whList=useMemo(()=>mtxUniq([...whs.map(w=>w.name),...recsAll.map(r=>r.wh)]).filter(w=>w!=="—"),[whs,recsAll]);
+  const whColor=useCallback((w)=>MTX_WH_COLORS[Math.max(0,whList.indexOf(w))%MTX_WH_COLORS.length],[whList]);
+
+  // ── KPIs ──
+  const kpi=useMemo(()=>{
+    const arr=recs.filter(r=>r.esReal),act=recs.filter(r=>!r.esReal);
+    const zarp=recs.filter(r=>r.c.departed_at);
+    const conOps=arr.filter(r=>r.aCobrar!=null);
+    const aC=conOps.reduce((a,r)=>a+r.aCobrar,0),co=conOps.reduce((a,r)=>a+r.costo,0),cbmOps=conOps.reduce((a,r)=>a+r.cbm,0);
+    return {m3:zarp.reduce((a,r)=>a+r.cbm,0),n:recs.length,cargas:recs.reduce((a,r)=>a+r.cargas,0),ganReal:aC-co,ganEst:act.reduce((a,r)=>a+(r.gan||0),0),margen:aC>0?(aC-co)/aC:null,usdM3:cbmOps>0?aC/cbmOps:null,costM3:cbmOps>0?co/cbmOps:null,
+      viaje:mtxAvg(arr.map(r=>r.viaje)),desv:mtxAvg(arr.map(r=>r.desvEta)),llenado:mtxAvg(zarp.map(r=>r.llenado))};
+  },[recs]);
+
+  // ── Barras por mes ──
+  const mesesN=periodo==="todo"?12:periodo==="anio"?12:Number(periodo.replace("m",""));
+  const meses=useMemo(()=>mtxLastMonths(Math.max(3,Math.min(12,mesesN))),[mesesN]);
+  const m3PorMes=useMemo(()=>meses.map(k=>{const rs=recsAll.filter(r=>r.mes===k&&(wh==="all"||r.wh===wh)&&r.c.departed_at);const byWh={};rs.forEach(r=>{byWh[r.wh]=(byWh[r.wh]||0)+r.cbm;});return {k,total:rs.reduce((a,r)=>a+r.cbm,0),n:rs.length,byWh};}),[meses,recsAll,wh]);
+  const maxM3=Math.max(1,...m3PorMes.map(m=>m.total));
+  const ganPorMes=useMemo(()=>meses.map(k=>{const rs=recsAll.filter(r=>r.esReal&&r.mesArr===k&&(wh==="all"||r.wh===wh));return {k,real:rs.reduce((a,r)=>a+(r.gan||0),0),est:rs.reduce((a,r)=>a+(r.estGan||0),0),n:rs.length};}),[meses,recsAll,wh]);
+  const maxGan=Math.max(1,...ganPorMes.flatMap(m=>[Math.abs(m.real),Math.abs(m.est)]));
+
+  // ── Tabla ordenable ──
+  const tabla=useMemo(()=>{const rs=recs.filter(r=>!mesSel||r.mes===mesSel);const {k,dir}=sort;const s=dir==="asc"?1:-1;
+    return [...rs].sort((a,b)=>{const va=a[k],vb=b[k];if(va==null&&vb==null)return 0;if(va==null)return 1;if(vb==null)return -1;return (typeof va==="string"?va.localeCompare(vb):va-vb)*s;});},[recs,mesSel,sort]);
+  const sortBy=(k)=>setSort(p=>({k,dir:p.k===k&&p.dir==="desc"?"asc":"desc"}));
+  const toggle=(id)=>setOpen(p=>{const n=new Set(p);if(n.has(id))n.delete(id);else n.add(id);return n;});
+  const guardar=async(sh,campo,val)=>{
+    setSaving(`${sh.id}:${campo}`);
+    const f=campo==="cost"?await mtxSaveShipCost(token,sh,val):await mtxSaveShipRevenue(token,sh,val);
+    setSaving(null);if(!f)return;
+    hist.patchShip(sh.id,f);
+    if(activeIds.has(sh.id))actions.reload(); // la carga vive en el estado del panel → que lo relea él
+    toast("Guardado","success");
+  };
+
+  // ── Tiempos ──
+  const tiempos=useMemo(()=>{
+    const all=[...shipments,...hist.ships];
+    const contById={};containers.forEach(c=>{contById[c.id]=c;});hist.rows.forEach(c=>{if(!contById[c.id])contById[c.id]=c;});
+    const provDep=mtxAvg(all.filter(s=>s.received_at&&s.created_at&&!mtxEsPlaceholder(s)).map(s=>mtxDays(s.created_at,s.received_at)));
+    const depZarpo=mtxAvg(all.filter(s=>s.received_at&&contById[s.container_id]?.departed_at).map(s=>mtxDays(s.received_at,contById[s.container_id].departed_at)));
+    const arr=recsAll.filter(r=>r.esReal&&r.viaje!=null&&(wh==="all"||r.wh===wh));
+    const conTb=arr.filter(r=>Number(r.c.transbordo_dias||0)>0),sinTb=arr.filter(r=>!(Number(r.c.transbordo_dias||0)>0));
+    const byNav={};recsAll.filter(r=>r.esReal&&r.desvEta!=null).forEach(r=>{const k=r.naviera||"sin naviera";(byNav[k]=byNav[k]||[]).push(r.desvEta);});
+    const navieras=Object.entries(byNav).map(([k,v])=>({k,n:v.length,avg:mtxAvg(v),ok:v.filter(x=>Math.abs(x)<=3).length/v.length})).sort((a,b)=>b.n-a.n);
+    const entregas=recsAll.filter(r=>r.esReal&&r.entrega!=null);
+    const entregaAvg=entregas.length?entregas.reduce((a,r)=>a+r.entrega*r.nEntrega,0)/entregas.reduce((a,r)=>a+r.nEntrega,0):null;
+    const nEnt=entregas.reduce((a,r)=>a+r.nEntrega,0);
+    const ph=shipments.filter(mtxEsPlaceholder).map(s=>mtxDays(s.created_at,hoy)).filter(x=>x!=null);
+    return {provDep,depZarpo,viajeCon:mtxAvg(conTb.map(r=>r.viaje)),viajeSin:mtxAvg(sinTb.map(r=>r.viaje)),medCon:mtxMedian(conTb.map(r=>r.viaje)),medSin:mtxMedian(sinTb.map(r=>r.viaje)),nCon:conTb.length,nSin:sinTb.length,navieras,entregaAvg,nEnt,ph:{n:ph.length,avg:mtxAvg(ph),max:ph.length?Math.max(...ph):null}};
+  },[shipments,hist.ships,hist.rows,containers,recsAll,wh,hoy]);
+
+  // ── Clientes ──
+  const clientes=useMemo(()=>{
+    const m={};
+    const add=(s,f)=>{const k=s.client_id||`snap:${s.client_name_snapshot||"?"}`;const o=m[k]||(m[k]={id:s.client_id,label:mtxCliLabel(s,clientOf),envios:0,cbm:0,gan:0,aCobrar:0,meses:new Set(),manual:false});o.envios++;o.cbm+=f.cbm;o.gan+=f.gan;o.aCobrar+=f.aCobrar;if(f.mes)o.meses.add(f.mes);if(s.revenue_manual!=null)o.manual=true;};
+    recs.forEach(r=>{
+      if(!r.esReal){r.ships.forEach(s=>{const e=r.estPorCarga[s.id]||{imp:0,cost:0};add(s,{cbm:cbmAny(s.id),gan:e.imp-e.cost,aCobrar:e.imp,mes:r.mes});});return;}
+      // Arribado: la ganancia real de cada op se reparte entre sus cargas por CBM (o en partes iguales si no hay medidas).
+      const byOp={};r.ships.forEach(s=>{if(s.operation_id)(byOp[s.operation_id]=byOp[s.operation_id]||[]).push(s);});
+      Object.values(byOp).forEach(ss=>{const o=ss[0].operations||{};const gan=Number(o.budget_total||0)-Number(o.cost_flete||0),imp=Number(o.budget_total||0);const cbmT=ss.reduce((a,s)=>a+cbmAny(s.id),0);
+        ss.forEach(s=>{const w=cbmT>0?cbmAny(s.id)/cbmT:1/ss.length;add(s,{cbm:cbmAny(s.id),gan:gan*w,aCobrar:imp*w,mes:r.mes});});});
+      r.ships.filter(s=>!s.operation_id).forEach(s=>add(s,{cbm:cbmAny(s.id),gan:0,aCobrar:0,mes:r.mes}));
+    });
+    const list=Object.values(m).map(o=>({...o,usdM3:o.cbm>0?o.aCobrar/o.cbm:null,meses:o.meses.size}));
+    const esperando={};shipments.filter(s=>s.status==="proveedor"&&!s.container_id&&(mtxDays(s.created_at,hoy)||0)>30).forEach(s=>{const k=mtxCliLabel(s,clientOf);esperando[k]=(esperando[k]||0)+1;});
+    const conOverride=list.filter(o=>o.id&&(overrides||{})[o.id]?.length).map(o=>o.label);
+    return {porM3:[...list].sort((a,b)=>b.cbm-a.cbm).slice(0,10),porGan:[...list].sort((a,b)=>b.gan-a.gan).slice(0,10),esperando:Object.entries(esperando).sort((a,b)=>b[1]-a[1]),manual:list.filter(o=>o.manual).map(o=>o.label),conOverride};
+  },[recs,shipments,cbmAny,clientOf,overrides,hoy]);
+
+  // ── Calidad de datos ──
+  const calidad=useMemo(()=>{
+    const ships=recs.flatMap(r=>r.ships);
+    const n=ships.length||1;
+    return {pctManual:ships.filter(s=>s.cost_manual).length/n,sinCost:ships.filter(s=>!(Number(s.cost_estimado)>0)).length,
+      sinNav:recs.filter(r=>!r.naviera).length,sinEta:recs.filter(r=>!r.c.eta).length,sinCap:recs.filter(r=>!r.cap).length,arrSinOp:recs.filter(r=>r.esReal&&r.sinOperar>0).length,
+      transSinCont:shipments.filter(s=>s.status==="en_camino_ar"&&!s.container_id).length,whSinTarifa:whs.filter(w=>!w.archived&&w.default_cost_per_cbm==null).map(w=>w.name)};
+  },[recs,shipments,whs]);
+
+  // ── Exportar CSV: separador ";" y coma decimal, que es lo que abre bien el Excel en es-AR ──
+  const exportCsv=()=>{
+    const q=(v)=>`"${String(v??"").replace(/"/g,'""')}"`;const num=(v,d=2)=>v==null?"":mtxN(v,d);
+    const head=["Código","Estado","Depósito","Naviera","Zarpó","Puerto est.","Arribó","m³","Capacidad","Llenado %","Clientes","Cargas","A cobrar","Costo","Ganancia","Margen %","USD/m³","Real/Est.","Desvío vs est. USD","Viaje d","Desvío ETA d","Arribó→entrega d","Sin operar"];
+    const lines=tabla.map(r=>[r.code,r.kind,r.wh,r.naviera,r.c.departed_at||"",effEta(r.c)||"",r.c.arrived_at||"",num(r.cbm),num(r.cap,0),num(r.llenado!=null?r.llenado*100:null,0),r.clientes,r.cargas,num(r.aCobrar),num(r.costo),num(r.gan),num(r.margen!=null?r.margen*100:null,0),num(r.usdM3,0),r.esReal?"real":"estimado",num(r.desvEst),num(r.viaje,0),num(r.desvEta,0),num(r.entrega,0),r.sinOperar].map(q).join(";"));
+    const csv="﻿"+[head.map(q).join(";"),...lines].join("\n"); // BOM para que Excel detecte UTF-8
+    const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download=`analisis-maritimo-${hoy}.csv`;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(url),1500);
+    toast(`CSV exportado (${tabla.length} contenedores)`,"success");
+  };
+
+  const Kpi=({l,v,sub,color})=><div style={{background:"rgba(255,255,255,0.03)",border:`1px solid ${MTX.line}`,borderRadius:12,padding:"10px 12px",minWidth:0}}>
+    <p style={{margin:0,fontSize:9.5,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",color:MTX.dim}}>{l}</p>
+    <p style={{margin:"3px 0 0",fontSize:18,fontWeight:800,color:color||"#fff",lineHeight:1.15,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</p>
+    {sub&&<p style={{margin:"2px 0 0",fontSize:10,color:MTX.dim2}}>{sub}</p>}
+  </div>;
+  const TH=({k,children,right})=><th onClick={k?()=>sortBy(k):undefined} style={{...mtxS.th,cursor:k?"pointer":"default",textAlign:right?"right":"left",color:sort.k===k?IC:mtxS.th.color}}>{children}{sort.k===k&&<span style={{marginLeft:3}}>{sort.dir==="asc"?"▲":"▼"}</span>}</th>;
+  const Lista=({title,rows,render})=><div style={{flex:1,minWidth:isMobile?"100%":260}}><p style={{...mtxS.h,marginBottom:6}}>{title}</p>{rows.length===0?<p style={{margin:0,fontSize:11.5,color:MTX.dim2,fontStyle:"italic"}}>—</p>:rows.map((r,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11.5,padding:"3px 0",borderBottom:`1px solid ${MTX.line}`}}>{render(r,i)}</div>)}</div>;
+  const vacio=recs.length===0&&hist.loaded;
+
+  return <div>
+    <style>{`@keyframes mtxPulse{0%,100%{opacity:.45}50%{opacity:1}}`}</style>
+    {/* Filtros */}
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
+      {[["3m","3 m"],["6m","6 m"],["12m","12 m"],["anio","año"],["todo","todo"]].map(([k,l])=><MtxChip key={k} on={periodo===k} onClick={()=>{setPeriodo(k);setMesSel(null);}}>{l}</MtxChip>)}
+      <span style={{width:1,height:18,background:"rgba(255,255,255,0.12)",margin:"0 4px"}}/>
+      <MtxChip on={wh==="all"} color={MTX.blue} onClick={()=>setWh("all")}>Todos</MtxChip>
+      {whList.map(w=><MtxChip key={w} on={wh===w} color={MTX.blue} onClick={()=>setWh(w)}>{w}</MtxChip>)}
+      <span style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}>
+        {hist.loading&&<span style={{fontSize:11,color:MTX.dim,animation:"mtxPulse 1.2s infinite"}}>cargando arribados…</span>}
+        <span style={{fontSize:10.5,color:MTX.dim2}}>sobre {hist.rows.length} arribados cargados{hist.hasMore?" (hay más)":""}</span>
+        {hist.hasMore&&<MtxBtn color={IC} disabled={hist.loading} onClick={hist.loadMore}>Cargar más</MtxBtn>}
+        <MtxBtn color={MTX.green} onClick={exportCsv} disabled={tabla.length===0}>⬇ Exportar CSV</MtxBtn>
+      </span>
+    </div>
+    {vacio&&<MtxEmpty>Sin datos en el período</MtxEmpty>}
+    {!vacio&&<Fragment>
+      {/* A · KPIs */}
+      <div style={{display:"grid",gridTemplateColumns:`repeat(auto-fill,minmax(${isMobile?140:165}px,1fr))`,gap:8,marginBottom:14}}>
+        <Kpi l="m³ zarpados" v={`${mtxN(kpi.m3,1)} m³`}/>
+        <Kpi l="Contenedores" v={kpi.n} sub={`${kpi.cargas} cargas`}/>
+        <Kpi l="Ganancia real" v={<MtxGan v={kpi.ganReal} bold/>} sub="arribados con ops"/>
+        <Kpi l="Ganancia est. en tránsito" v={usd(kpi.ganEst)} color={IC}/>
+        <Kpi l="Margen medio" v={mtxPct(kpi.margen)} color={kpi.margen==null?MTX.dim2:kpi.margen>=0.3?MTX.green:MTX.amber}/>
+        <Kpi l="USD/m³ cobrado" v={kpi.usdM3==null?"—":mtxN(kpi.usdM3,0)} sub={kpi.costM3==null?"":`costo ${mtxN(kpi.costM3,0)} USD/m³`}/>
+        <Kpi l="Viaje promedio" v={kpi.viaje==null?"—":`${mtxN(kpi.viaje,0)} d`} sub="zarpó → arribó"/>
+        <Kpi l="Desvío ETA prom." v={mtxSigned(kpi.desv)} color={kpi.desv==null?MTX.dim2:kpi.desv>3?MTX.red:MTX.green}/>
+        <Kpi l="Llenado promedio" v={mtxPct(kpi.llenado)} sub="solo con capacidad cargada"/>
+      </div>
+      {/* B · Barras por mes */}
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:14}}>
+        <div style={mtxS.box}>
+          <p style={mtxS.h}>m³ por mes de zarpe · por depósito {mesSel&&<MtxBtn color={IC} onClick={()=>setMesSel(null)}>× {mtxMonthLabel(mesSel)}</MtxBtn>}</p>
+          {m3PorMes.map(m=><div key={m.k} onClick={()=>setMesSel(p=>p===m.k?null:m.k)} title="Clic: filtrar la tabla a este mes" style={{display:"grid",gridTemplateColumns:"52px 1fr 92px",gap:8,alignItems:"center",padding:"3px 0",cursor:"pointer",opacity:mesSel&&mesSel!==m.k?0.45:1}}>
+            <span style={{fontSize:11,fontWeight:700,color:mesSel===m.k?IC:"rgba(255,255,255,0.7)",textTransform:"capitalize"}}>{mtxMonthLabel(m.k)}</span>
+            <MtxBar height={12} segments={Object.entries(m.byWh).map(([w,v])=>({pct:v/maxM3*100,color:whColor(w),title:`${w}: ${mtxN(v,1)} m³`}))}/>
+            <span style={{fontSize:11,color:MTX.dim,textAlign:"right"}}>{mtxN(m.total,1)} m³ · {m.n}</span>
+          </div>)}
+          <p style={{margin:"8px 0 0",fontSize:10,color:MTX.dim2,display:"flex",gap:10,flexWrap:"wrap"}}>{whList.map(w=><span key={w}><span style={{color:whColor(w)}}>■</span> {w}</span>)}</p>
+        </div>
+        <div style={mtxS.box}>
+          <p style={mtxS.h}>Ganancia real vs estimada · por mes de arribo</p>
+          {ganPorMes.map(m=><div key={m.k} style={{display:"grid",gridTemplateColumns:"52px 1fr 130px",gap:8,alignItems:"center",padding:"3px 0"}}>
+            <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",textTransform:"capitalize"}}>{mtxMonthLabel(m.k)}</span>
+            <div><MtxBar height={6} pct={Math.abs(m.real)/maxGan*100} color={m.real>=0?MTX.green:MTX.red}/><div style={{height:2}}/><MtxBar height={6} pct={Math.abs(m.est)/maxGan*100} color={MTX.amber}/></div>
+            <span style={{fontSize:10.5,textAlign:"right",whiteSpace:"nowrap"}}><MtxGan v={m.real}/> <span style={{color:MTX.amber}}>/ {mtxN(m.est,0)}</span></span>
+          </div>)}
+          <p style={{margin:"8px 0 0",fontSize:10,color:MTX.dim2}}><span style={{color:MTX.green}}>■</span> real (Σ budget − cost_flete) · <span style={{color:MTX.amber}}>■</span> estimada (importe est. − cost_estimado)</p>
+        </div>
+      </div>
+      {/* C · Tabla por contenedor */}
+      <div style={{...mtxS.box,padding:0,overflow:"hidden"}}>
+        <p style={{...mtxS.h,padding:"12px 16px 0"}}>Por contenedor · {tabla.length}{mesSel?` · zarpe ${mtxMonthLabel(mesSel)}`:""} <span style={{fontWeight:400,textTransform:"none",letterSpacing:0,color:MTX.dim2}}>(clic en el encabezado ordena · ▶ abre las cargas · clic en el código abre el contenedor)</span></p>
+        <div style={{...mtxS.scroll,border:"none",borderRadius:0}}>
+          <table style={{borderCollapse:"collapse",width:"100%",minWidth:1280}}>
+            <thead><tr>
+              <TH k="code">Código</TH><TH k="wh">Depósito</TH><TH k="naviera">Naviera</TH><TH k="cbm" right>m³</TH><TH k="llenado" right>Llenado</TH><TH k="clientes" right>Clientes</TH>
+              <TH k="aCobrar" right>A cobrar</TH><TH k="costo" right>Costo</TH><TH k="gan" right>Ganancia</TH><TH k="margen" right>Margen</TH><TH k="usdM3" right>USD/m³</TH><TH k="desvEst" right>vs est.</TH>
+              <TH k="viaje" right>Viaje</TH><TH k="desvEta" right>Desvío ETA</TH><TH k="entrega" right>Arribó→entrega</TH>
+            </tr></thead>
+            <tbody>{tabla.map(r=>{const isOpen=open.has(r.id);const bad=r.desvEstPct!=null&&r.desvEstPct<-0.15;
+              return <Fragment key={r.id}>
+                <tr style={{background:isOpen?"rgba(255,255,255,0.03)":"transparent"}}>
+                  <td style={mtxS.td}><span onClick={()=>toggle(r.id)} style={{color:MTX.dim2,marginRight:6,cursor:"pointer",display:"inline-block",transition:"transform 150ms",transform:isOpen?"rotate(90deg)":"none"}}>▶</span><span onClick={()=>actions.openContainer(r.id)} style={{fontFamily:MTX.mono,fontWeight:800,color:"#fff",cursor:"pointer"}}>{r.code}</span> <span style={{fontSize:9.5,fontWeight:800,padding:"1px 5px",borderRadius:4,background:r.esReal?`${MTX.green}1f`:`${MTX.blue}1f`,color:r.esReal?MTX.green:MTX.blue}}>{r.esReal?"REAL":"EST."}</span></td>
+                  <td style={mtxS.td}>{r.wh}</td>
+                  <td style={mtxS.td}>{r.naviera||<span style={{color:MTX.dim2}}>—</span>}</td>
+                  <td style={{...mtxS.td,textAlign:"right",fontWeight:700}}>{mtxN(r.cbm)}</td>
+                  <td style={{...mtxS.td,textAlign:"right",color:r.llenado==null?MTX.dim2:r.llenado>1?MTX.red:r.llenado>=0.7?MTX.green:MTX.amber}}>{r.llenado==null?"sin tamaño":mtxPct(r.llenado)}</td>
+                  <td style={{...mtxS.td,textAlign:"right"}}>{r.clientes}</td>
+                  <td style={{...mtxS.td,textAlign:"right"}}>{r.aCobrar==null?<span style={{color:MTX.dim2}}>—</span>:usd(r.aCobrar)}</td>
+                  <td style={{...mtxS.td,textAlign:"right"}}>{r.costo==null?<span style={{color:MTX.dim2}}>—</span>:usd(r.costo)}</td>
+                  <td style={{...mtxS.td,textAlign:"right"}}>{r.gan==null?<span style={{color:MTX.dim2}}>—</span>:<MtxGan v={r.gan} bold/>}</td>
+                  <td style={{...mtxS.td,textAlign:"right",color:r.margen==null?MTX.dim2:r.margen>=0.3?MTX.green:r.margen>=0?MTX.amber:MTX.red}}>{mtxPct(r.margen)}</td>
+                  <td style={{...mtxS.td,textAlign:"right"}}>{r.usdM3==null?"—":mtxN(r.usdM3,0)}</td>
+                  <td style={{...mtxS.td,textAlign:"right",color:r.desvEst==null?MTX.dim2:bad?MTX.red:r.desvEst>=0?MTX.green:MTX.amber,fontWeight:bad?800:400}} title={r.desvEst==null?"Solo arribados con ops":`Ganancia real − estimada (${mtxPct(r.desvEstPct)})`}>{r.desvEst==null?"—":`${r.desvEst<0?"−":"+"}${mtxN(Math.abs(r.desvEst),0)}`}</td>
+                  <td style={{...mtxS.td,textAlign:"right"}}>{r.viaje==null?"—":`${r.viaje} d`}</td>
+                  <td style={{...mtxS.td,textAlign:"right",color:r.desvEta==null?MTX.dim2:r.desvEta>3?MTX.red:MTX.green}}>{mtxSigned(r.desvEta)}</td>
+                  <td style={{...mtxS.td,textAlign:"right"}}>{r.entrega==null?<span style={{color:MTX.dim2}}>—</span>:<span>{mtxN(r.entrega,0)} d <span style={{color:MTX.dim2}}>(n={r.nEntrega})</span></span>}</td>
+                </tr>
+                {isOpen&&<tr><td colSpan={15} style={{...mtxS.td,whiteSpace:"normal",padding:"6px 14px 12px 30px",background:"rgba(255,255,255,0.02)"}}>
+                  {r.ships.length===0?<span style={{color:MTX.dim2,fontStyle:"italic"}}>Sin cargas</span>:
+                  <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"minmax(170px,1.2fr) minmax(180px,2fr) 70px 110px 110px 110px 90px",gap:"4px 10px",fontSize:11.5,alignItems:"center"}}>
+                    {!isMobile&&<Fragment><span style={{color:MTX.dim2,fontSize:9.5,fontWeight:800}}>CLIENTE</span><span style={{color:MTX.dim2,fontSize:9.5,fontWeight:800}}>PRODUCTO</span><span style={{color:MTX.dim2,fontSize:9.5,fontWeight:800,textAlign:"right"}}>m³</span><span style={{color:MTX.dim2,fontSize:9.5,fontWeight:800,textAlign:"right"}}>COSTO EST.</span><span style={{color:MTX.dim2,fontSize:9.5,fontWeight:800,textAlign:"right"}}>A COBRAR EST.</span><span style={{color:MTX.dim2,fontSize:9.5,fontWeight:800,textAlign:"right"}}>GAN. EST.</span><span style={{color:MTX.dim2,fontSize:9.5,fontWeight:800}}>OP</span></Fragment>}
+                    {r.ships.map(s=>{const e=r.estPorCarga[s.id]||{imp:0,cost:0};const g=e.imp-e.cost;const sv=(k)=>saving===`${s.id}:${k}`;
+                      return <Fragment key={s.id}>
+                        <span style={{color:"#fff",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis"}}>{mtxCliLabel(s,clientOf)}</span>
+                        <span style={{color:"rgba(255,255,255,0.7)",overflow:"hidden",textOverflow:"ellipsis"}}>{s.product_description||"—"}</span>
+                        <span style={{color:MTX.dim,textAlign:isMobile?"left":"right"}}>{mtxN(cbmAny(s.id))} m³</span>
+                        <span style={{textAlign:"right"}} title={s.cost_manual?"Costo cargado a mano":`Automático: CBM × ${s.cost_per_cbm||"tarifa del depósito"}`}><input key={`c${s.id}${s.cost_estimado}`} defaultValue={s.cost_estimado??""} placeholder="auto" disabled={sv("cost")} onBlur={ev=>{if(String(ev.target.value)!==String(s.cost_estimado??""))guardar(s,"cost",ev.target.value);}} onKeyDown={ev=>{if(ev.key==="Enter")ev.currentTarget.blur();}} style={{...mtxS.input,borderColor:s.cost_manual?`${MTX.amber}88`:mtxS.input.border.split(" ")[2]}}/></span>
+                        <span style={{textAlign:"right"}} title={s.revenue_manual!=null?"A cobrar cargado a mano":"Automático: tarifa × CBM (prorrateado por cliente)"}><input key={`r${s.id}${s.revenue_manual}`} defaultValue={s.revenue_manual??""} placeholder={mtxN(e.imp,0)} disabled={sv("rev")} onBlur={ev=>{if(String(ev.target.value)!==String(s.revenue_manual??""))guardar(s,"rev",ev.target.value);}} onKeyDown={ev=>{if(ev.key==="Enter")ev.currentTarget.blur();}} style={{...mtxS.input,borderColor:s.revenue_manual!=null?`${MTX.amber}88`:mtxS.input.border.split(" ")[2]}}/></span>
+                        <span style={{textAlign:isMobile?"left":"right"}}><MtxGan v={g}/></span>
+                        <span>{s.operation_id?(s.operations?.operation_code?<span style={{color:IC,fontFamily:MTX.mono,fontWeight:800}}>{s.operations.operation_code}</span>:<span style={{color:MTX.green}}>operada</span>):<span style={{color:MTX.amber,fontStyle:"italic"}}>sin operar</span>}</span>
+                        {isMobile&&<span style={{height:1,background:MTX.line}}/>}
+                      </Fragment>;})}
+                  </div>}
+                  <p style={{margin:"8px 0 0",fontSize:10,color:MTX.dim2}}>Costo y a cobrar estimados por carga (vacío = automático). El costo real de una op (cost_flete) se edita desde 💲 Costos en el Historial; budget_total no se toca desde acá.</p>
+                </td></tr>}
+              </Fragment>;})}</tbody>
+          </table>
+        </div>
+      </div>
+      {/* D · Tiempos */}
+      <div style={mtxS.box}>
+        <p style={mtxS.h}>Tiempos</p>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(auto-fill,minmax(${isMobile?140:180}px,1fr))`,gap:8,marginBottom:12}}>
+          <Kpi l="Proveedor → depósito" v={tiempos.provDep==null?"—":`${mtxN(tiempos.provDep,0)} d`} sub="created_at → received_at"/>
+          <Kpi l="Depósito → zarpó" v={tiempos.depZarpo==null?"—":`${mtxN(tiempos.depZarpo,0)} d`} sub="received_at → departed_at"/>
+          <Kpi l="Viaje sin transbordo" v={tiempos.viajeSin==null?"—":`${mtxN(tiempos.viajeSin,0)} d`} sub={tiempos.nSin?`mediana ${mtxN(tiempos.medSin,0)} d · n=${tiempos.nSin}`:"sin muestra"}/>
+          <Kpi l="Viaje con transbordo" v={tiempos.viajeCon==null?"—":`${mtxN(tiempos.viajeCon,0)} d`} sub={tiempos.nCon?`mediana ${mtxN(tiempos.medCon,0)} d · n=${tiempos.nCon}`:"sin muestra"}/>
+          <Kpi l="Arribó → entrega" v={tiempos.entregaAvg==null?"—":`${mtxN(tiempos.entregaAvg,0)} d`} color={tiempos.entregaAvg==null?MTX.dim2:Math.abs(tiempos.entregaAvg-14)>3?MTX.amber:MTX.green} sub={tiempos.nEnt?`vs 14 d asumidos · n=${tiempos.nEnt} · sugerido: ${mtxN(Math.round(tiempos.entregaAvg),0)} d`:"sin ops con delivered_at todavía"}/>
+          <Kpi l="Esperando al proveedor" v={tiempos.ph.n} color={tiempos.ph.max>14?MTX.red:"#fff"} sub={tiempos.ph.n?`prom. ${mtxN(tiempos.ph.avg,0)} d · máx. ${tiempos.ph.max} d`:"ninguno"}/>
+        </div>
+        <p style={{...mtxS.h,marginBottom:6}}>Precisión de ETA por naviera <span style={{fontWeight:400,textTransform:"none",letterSpacing:0,color:MTX.dim2}}>(% de arribos dentro de ±3 d de la ETA efectiva)</span></p>
+        {tiempos.navieras.length===0?<p style={{margin:0,fontSize:11.5,color:MTX.dim2,fontStyle:"italic"}}>Sin arribados con ETA y fecha de arribo</p>:tiempos.navieras.map(n=><div key={n.k} style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"160px 1fr 150px",gap:8,alignItems:"center",padding:"3px 0",fontSize:11.5}}>
+          <span style={{color:"#fff",fontWeight:700}}>{n.k} <span style={{color:MTX.dim2,fontWeight:400}}>n={n.n}</span></span>
+          {!isMobile&&<MtxBar pct={n.ok*100} color={n.ok>=0.7?MTX.green:n.ok>=0.4?MTX.amber:MTX.red} height={8}/>}
+          <span style={{textAlign:"right",color:MTX.dim}}>{mtxPct(n.ok)} en fecha · desvío <span style={{color:n.avg>3?MTX.red:MTX.green}}>{mtxSigned(n.avg)}</span></span>
+        </div>)}
+      </div>
+      {/* E · Clientes */}
+      <div style={mtxS.box}>
+        <p style={mtxS.h}>Clientes · período</p>
+        <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
+          <Lista title="Top 10 por m³" rows={clientes.porM3} render={(o,i)=><Fragment><span style={{color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i+1}. {o.label}</span><span style={{color:MTX.dim,whiteSpace:"nowrap"}}>{mtxN(o.cbm)} m³ · {o.envios} env. · {o.usdM3==null?"—":`${mtxN(o.usdM3,0)} USD/m³`} · {o.meses} mes{o.meses!==1?"es":""}</span></Fragment>}/>
+          <Lista title="Top 10 por ganancia" rows={clientes.porGan} render={(o,i)=><Fragment><span style={{color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i+1}. {o.label}</span><span style={{whiteSpace:"nowrap"}}><MtxGan v={o.gan}/> <span style={{color:MTX.dim2}}>· {o.envios} env.</span></span></Fragment>}/>
+        </div>
+        <div style={{display:"flex",gap:18,flexWrap:"wrap",marginTop:12}}>
+          <Lista title="Esperando +30 d (proveedor)" rows={clientes.esperando} render={([k,n])=><Fragment><span style={{color:MTX.amber}}>{k}</span><span style={{color:MTX.dim}}>{n} carga{n!==1?"s":""}</span></Fragment>}/>
+          <Lista title="Con a cobrar manual" rows={clientes.manual} render={(k)=><span style={{color:"rgba(255,255,255,0.8)"}}>{k}</span>}/>
+          <Lista title="Con override de tarifa" rows={clientes.conOverride} render={(k)=><span style={{color:"rgba(255,255,255,0.8)"}}>{k}</span>}/>
+        </div>
+      </div>
+      {/* F · Calidad de datos */}
+      <div style={mtxS.box}>
+        <p style={mtxS.h}>Calidad de datos</p>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(auto-fill,minmax(${isMobile?140:180}px,1fr))`,gap:8}}>
+          <Kpi l="Cargas con costo manual" v={mtxPct(calidad.pctManual)}/>
+          <Kpi l="Cargas sin cost_estimado" v={calidad.sinCost} color={calidad.sinCost>0?MTX.amber:MTX.green} sub="ganancia sobreestimada"/>
+          <Kpi l="Sin naviera" v={calidad.sinNav} color={calidad.sinNav>0?MTX.amber:MTX.green}/>
+          <Kpi l="Sin ETA" v={calidad.sinEta} color={calidad.sinEta>0?MTX.red:MTX.green}/>
+          <Kpi l="Sin tamaño (capacity)" v={calidad.sinCap} color={calidad.sinCap>0?MTX.amber:MTX.green} sub="llenado no se calcula"/>
+          <Kpi l="Arribados con sin operar" v={calidad.arrSinOp} color={calidad.arrSinOp>0?MTX.red:MTX.green}/>
+          <Kpi l="En tránsito sin contenedor" v={calidad.transSinCont} color={calidad.transSinCont>0?MTX.red:MTX.green} sub="deuda de estado"/>
+          <Kpi l="Depósitos sin tarifa" v={calidad.whSinTarifa.length} color={calidad.whSinTarifa.length?MTX.amber:MTX.green} sub={calidad.whSinTarifa.join(", ")||"todos con default_cost_per_cbm"}/>
+        </div>
+      </div>
+    </Fragment>}
+  </div>;
+}
+
 function MaritimeCostModal({data,token,onClose,onSaved}){
   const today=new Date().toISOString().slice(0,10);
   const [rows,setRows]=useState(()=>(data.ops||[]).map(o=>({...o,amount:o.cost_flete?String(o.cost_flete):"",cur:"USD",tc:"",fecha:today,guia:""})));
@@ -14406,9 +16194,15 @@ function MaritimeCostModal({data,token,onClose,onSaved}){
   </div>;
 }
 function ContainerForm({token,editing,warehouse,warehouses=[],onSave,onCancel}){
+  const isEdit=!!editing?.id;
   const [code,setCode]=useState(editing?.code||"");
-  // Sin estado "armándose": el contenedor se crea cuando YA salió → nace en tránsito.
-  const [status,setStatus]=useState(editing?.status||"en_transito");
+  // Sin select de estado: el contenedor nace en tránsito y el arribo se marca con ⚓ Arribó en el
+  // tablero (ese botón crea las ops, avisa a los clientes y abre los costos; si se pudiera arribar
+  // desde acá se saltearía todo eso). Al editar uno ya arribado se muestra como texto.
+  const status=editing?.status||"en_transito";
+  // Depósito: viene prellenado por prop; si el tablero abre el form desde "Todos" (sin depósito)
+  // se elige acá mismo en vez de fallar el insert con warehouse null.
+  const [whName,setWhName]=useState(editing?.warehouse||warehouse||"");
   const [shippingLine,setShippingLine]=useState(editing?.shipping_line||"");
   const [departedAt,setDepartedAt]=useState(editing?.departed_at||new Date().toISOString().slice(0,10));
   const [eta,setEta]=useState(editing?.eta||"");
@@ -14416,39 +16210,58 @@ function ContainerForm({token,editing,warehouse,warehouses=[],onSave,onCancel}){
   const [transbordo,setTransbordo]=useState((editing?.transbordo_dias||0)>0);
   const [tbDias,setTbDias]=useState(editing?.transbordo_dias?String(editing.transbordo_dias):"15");
   const [tbLugar,setTbLugar]=useState(editing?.transbordo_lugar||"Brasil");
+  // Tamaño → capacity_cbm (alimenta el llenado y la sugerencia "subir a…" del tablero). Presets
+  // estándar + "otro" libre + "sin definir" (null). Default 40' al crear porque es el que más se usa.
+  const CAPS=[{k:"20",l:"20'",cbm:28},{k:"40",l:"40'",cbm:58},{k:"40hc",l:"40' HC",cbm:68}];
+  const capInit=!isEdit?"40":editing.capacity_cbm==null?"":(CAPS.find(p=>p.cbm===Number(editing.capacity_cbm))?.k||"otro");
+  const [capKind,setCapKind]=useState(capInit);
+  const [capOther,setCapOther]=useState(capInit==="otro"?String(editing.capacity_cbm):"");
+  const capacityCbm=capKind===""?null:capKind==="otro"?(Number(String(capOther).replace(",","."))||null):CAPS.find(p=>p.k===capKind).cbm;
   const [saving,setSaving]=useState(false);
-  // Entrega estimada = ETA a puerto + demora por transbordo + 2 semanas (calculado, no editable).
+  const [err,setErr]=useState("");
+  const LBL={display:"block",fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"};
+  // Entrega estimada = ETA a puerto + demora por transbordo + 14 días (misma regla que entregaEst() del tablero).
   const tbAdd=transbordo?(Number(tbDias)||0):0;
-  const delEta=eta?(()=>{const d=new Date(eta+"T12:00:00");d.setDate(d.getDate()+14+tbAdd);return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});})():null;
+  const delEta=eta?(()=>{const d=new Date(eta+"T12:00:00");d.setDate(d.getDate()+14+tbAdd);return d.toISOString().slice(0,10);})():null;
   const save=async()=>{
-    if(!code.trim()){alertDialog("Cargá el código del contenedor (ej: MSKU1234567 o Contenedor 1)");return;}
-    setSaving(true);
-    const body={code:code.trim(),status,shipping_line:shippingLine.trim()||null,departed_at:departedAt||null,eta:eta||null,notes:notes.trim()||null,transbordo_dias:transbordo?(Number(tbDias)||0):0,transbordo_lugar:transbordo?(tbLugar.trim()||"Brasil"):null};
+    if(!code.trim()){setErr("Cargá el código del contenedor (ej: MSKU1234567 o Contenedor 1)");return;}
+    if(!isEdit&&!whName){setErr("Elegí el depósito del contenedor");return;}
+    if(capKind==="otro"&&!capacityCbm){setErr("Cargá la capacidad en m³ o elegí un tamaño estándar");return;}
+    setSaving(true);setErr("");
+    const body={code:code.trim(),shipping_line:shippingLine.trim()||null,departed_at:departedAt||null,eta:eta||null,notes:notes.trim()||null,transbordo_dias:transbordo?(Number(tbDias)||0):0,transbordo_lugar:transbordo?(tbLugar.trim()||"Brasil"):null,capacity_cbm:capacityCbm};
     try{
-      if(editing?.id)await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
-      else await dq("maritime_containers",{method:"POST",token,body:{...body,warehouse,warehouse_id:warehouses.find(w=>w.name===warehouse)?.id||null}});
+      // dq no lanza en 4xx: devuelve el objeto de error (o [] si RLS filtró la fila). Por eso se mira
+      // la respuesta antes de cerrar; antes el form cerraba como si hubiera guardado.
+      const r=isEdit
+        ?await dq("maritime_containers",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body})
+        :await dq("maritime_containers",{method:"POST",token,body:{...body,status:"en_transito",warehouse:whName,warehouse_id:warehouses.find(w=>w.name===whName)?.id||null}});
+      if(!Array.isArray(r)||r.length===0){setErr("No se pudo guardar: "+(r?.message||r?.hint||"la base rechazó el cambio (¿permisos?)"));setSaving(false);return;}
+      toast(isEdit?"Contenedor actualizado":"Contenedor creado","success");
       onSave();
-    }catch(e){alertDialog("Error: "+e.message);setSaving(false);}
+    }catch(e){setErr("Error: "+(e?.message||"sin conexión"));setSaving(false);}
   };
-  return <div onClick={onCancel} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:480,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(96,165,250,0.35)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)"}}>
+  return <div onClick={onCancel} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(6px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <style>{`.mt-cf-2col{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}@media(max-width:767px){.mt-cf-2col{grid-template-columns:1fr}}`}</style>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:480,maxHeight:"92vh",overflowY:"auto",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(96,165,250,0.35)",borderRadius:14,padding:"22px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.6)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-        <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>🚢 {editing?"Editar":"Nuevo"} contenedor <span style={{color:"#60a5fa",fontSize:13}}>· {editing?.warehouse||warehouse}</span></h3>
+        <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:0}}>🚢 {isEdit?"Editar":"Nuevo"} contenedor {whName&&<span style={{color:"#60a5fa",fontSize:13}}>· {whName}</span>}</h3>
         <button onClick={onCancel} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0,lineHeight:1}}>×</button>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+      {!isEdit&&!warehouse&&<Sel label="Depósito" value={whName} onChange={setWhName} options={[{value:"",label:"— Elegí un depósito —"},...warehouses.filter(w=>!w.archived).map(w=>({value:w.name,label:`${w.origin==="usa"?"🇺🇸":"🇨🇳"} ${w.name}`}))]}/>}
+      <div className="mt-cf-2col">
         <Inp label="Código / N° contenedor" value={code} onChange={setCode} placeholder="Ej: MSKU1234567"/>
         <Inp label="Naviera" value={shippingLine} onChange={setShippingLine} placeholder="Ej: Maersk, MSC, COSCO…"/>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+      <div className="mt-cf-2col">
         <Inp label="Fecha de salida" type="date" value={departedAt} onChange={setDepartedAt}/>
         <Inp label="ETA Puerto Buenos Aires" type="date" value={eta} onChange={setEta}/>
       </div>
+      {!eta&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-6px 0 10px",fontStyle:"italic"}}>⚠ Sin ETA el contenedor no tiene semáforo ni entrega estimada en el tablero. Cargala apenas la tengas.</p>}
       <div style={{margin:"-4px 0 12px",padding:"9px 12px",background:delEta?"rgba(34,197,94,0.07)":"rgba(255,255,255,0.03)",border:`1px solid ${delEta?"rgba(34,197,94,0.22)":"rgba(255,255,255,0.08)"}`,borderRadius:8,display:"flex",alignItems:"center",gap:8}}>
         <span style={{fontSize:16}}>📦</span>
         <div>
-          <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:0,textTransform:"uppercase",letterSpacing:"0.05em"}}>Entrega estimada de la mercadería</p>
-          <p style={{fontSize:13.5,fontWeight:700,color:delEta?"#4ade80":"rgba(255,255,255,0.4)",margin:"1px 0 0"}}>{delEta||"— (cargá el arribo a puerto)"}<span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.35)",marginLeft:6}}>{delEta?"· 2 semanas después del puerto":""}</span></p>
+          <p style={{...LBL,fontSize:10,marginBottom:0,color:"rgba(255,255,255,0.45)"}}>Entrega estimada de la mercadería</p>
+          <p style={{fontSize:13.5,fontWeight:700,color:delEta?"#4ade80":"rgba(255,255,255,0.4)",margin:"1px 0 0"}}>{delEta?formatDateShort(delEta):"— (cargá el arribo a puerto)"}{delEta&&<span style={{fontSize:10,fontWeight:600,color:"rgba(255,255,255,0.35)",marginLeft:6}}>· puerto{tbAdd?` + ${tbAdd} d transbordo`:""} + 14 días</span>}</p>
         </div>
       </div>
       <div style={{marginBottom:12,padding:"10px 12px",background:transbordo?"rgba(251,146,60,0.07)":"rgba(255,255,255,0.03)",border:`1px solid ${transbordo?"rgba(251,146,60,0.28)":"rgba(255,255,255,0.08)"}`,borderRadius:8}}>
@@ -14462,31 +16275,62 @@ function ContainerForm({token,editing,warehouse,warehouses=[],onSave,onCancel}){
         </div>}
         {transbordo&&<p style={{fontSize:10.5,color:"#fb923c",margin:"6px 0 0",fontStyle:"italic"}}>La ETA y la entrega se corren {Number(tbDias)||0} días. El cliente ve la fecha actualizada y un aviso de demora en su portal.</p>}
       </div>
+      {/* Tamaño → capacity_cbm */}
       <div style={{marginBottom:12}}>
-        <label style={{display:"block",fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.5)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Estado</label>
-        <div style={{display:"flex",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:8,border:"1px solid rgba(255,255,255,0.08)"}}>
-          {[{k:"en_transito",l:"🚢 En tránsito"},{k:"arribado",l:"⚓ Arribado"}].map(o=><button key={o.k} onClick={()=>setStatus(o.k)} style={{flex:1,padding:"7px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",background:status===o.k?"rgba(96,165,250,0.25)":"transparent",color:status===o.k?"#60a5fa":"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
+        <label style={LBL}>Tamaño del contenedor</label>
+        <div style={{display:"flex",flexWrap:"wrap",gap:4,padding:3,background:"rgba(255,255,255,0.04)",borderRadius:8,border:"1px solid rgba(255,255,255,0.08)"}}>
+          {[...CAPS.map(p=>({k:p.k,l:`${p.l} · ${p.cbm} m³`})),{k:"otro",l:"Otro"},{k:"",l:"Sin definir"}].map(o=><button key={o.k||"none"} type="button" onClick={()=>setCapKind(o.k)} style={{flex:"1 1 auto",padding:"7px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"none",cursor:"pointer",whiteSpace:"nowrap",background:capKind===o.k?"rgba(232,208,152,0.18)":"transparent",color:capKind===o.k?IC:"rgba(255,255,255,0.5)"}}>{o.l}</button>)}
         </div>
+        {capKind==="otro"&&<div style={{marginTop:8}}><Inp label="Capacidad (m³)" type="number" value={capOther} onChange={setCapOther} placeholder="Ej: 33" small/></div>}
+        <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"6px 0 0",fontStyle:"italic"}}>{capacityCbm?`El tablero muestra el llenado (m³ cargados / ${capacityCbm} m³) y sugiere a dónde subir cargas.`:"Sin tamaño el tablero no puede calcular el llenado ni sugerir a dónde subir cargas."}</p>
+      </div>
+      {/* Estado: solo lectura. El arribo se marca desde el tablero. */}
+      <div style={{marginBottom:12,padding:"9px 12px",background:status==="arribado"?"rgba(34,197,94,0.06)":"rgba(96,165,250,0.06)",border:`1px solid ${status==="arribado"?"rgba(34,197,94,0.2)":"rgba(96,165,250,0.2)"}`,borderRadius:8}}>
+        <p style={{...LBL,marginBottom:2}}>Estado</p>
+        {status==="arribado"
+          ?<p style={{fontSize:13,fontWeight:700,color:"#22c55e",margin:0}}>⚓ Arribado{editing?.arrived_at?` el ${formatDateShort(editing.arrived_at)}`:""}</p>
+          :<Fragment>
+            <p style={{fontSize:13,fontWeight:700,color:"#60a5fa",margin:0}}>🚢 En tránsito</p>
+            <p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"3px 0 0",fontStyle:"italic"}}>Para marcar el arribo usá ⚓ Arribó en el tablero (crea las operaciones y avisa a los clientes).</p>
+          </Fragment>}
       </div>
       <Inp label="Notas (opcional)" value={notes} onChange={setNotes} placeholder="Booking, observaciones…"/>
+      {err&&<p style={{fontSize:12,color:"#f87171",background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"8px 10px",margin:"0 0 10px"}}>✕ {err}</p>}
       <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
         <Btn variant="secondary" small onClick={onCancel} disabled={saving}>Cancelar</Btn>
-        <Btn small onClick={save} disabled={saving}>{saving?"Guardando…":(editing?"Guardar":"+ Crear contenedor")}</Btn>
+        <Btn small onClick={save} disabled={saving}>{saving?"Guardando…":(isEdit?"Guardar":"+ Crear contenedor")}</Btn>
       </div>
     </div>
   </div>;
 }
 
 function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehouses=[],shipments=[],containers=[],onCreateWarehouse,onSave,onCancel}){
-  // Sin deposito predeterminado: se elige siempre a mano (pedido 02/08). Editando, el suyo.
-  const defaultWh=editing?warehouses.find(w=>w.name===editing.warehouse):null;
+  // editing con id = edición real; editing sin id = solo prellenado (depósito del chip activo,
+  // tracking del buscador). Así el tablero prellena sin cambiar la firma del componente.
+  // createdId: si el POST del pedido salió pero fallaron bultos/items, el reintento hace PATCH
+  // sobre ese id en vez de crear un pedido duplicado.
+  const [createdId,setCreatedId]=useState(null);
+  const editId=editing?.id||createdId;
+  const isEdit=!!editId;
+  const defaultWh=editing?warehouses.find(w=>(editing.warehouse_id&&w.id===editing.warehouse_id)||(editing.warehouse&&w.name===editing.warehouse)):null;
   const [warehouseId,setWarehouseId]=useState(defaultWh?.id||"");
-  const [trackingNumber,setTrackingNumber]=useState(editing?.tracking_number||"");
+  const [awaiting,setAwaiting]=useState(!!editing?.awaiting_supplier);
+  // El "SEA…" inventado es una clave interna: nunca se muestra en el input (spec MUELLE).
+  const trackingEsPlaceholder=/^SEA[A-Z]*$/i.test((editing?.tracking_number||"").trim());
+  const [trackingNumber,setTrackingNumber]=useState(editing?.awaiting_supplier&&trackingEsPlaceholder?"":(editing?.tracking_number||""));
   const [receivedAt,setReceivedAt]=useState(editing?.received_at||"");
   const [clientId,setClientId]=useState(editing?.client_id||"");
   const [clientName,setClientName]=useState(editing?.client_name_snapshot||"");
   const [containerId,setContainerId]=useState(editing?.container_id||"");
   const [costEst,setCostEst]=useState(editing?.cost_estimado!=null?String(editing.cost_estimado):"");
+  // Campos que existían en la tabla pero no tenían input.
+  const [fragile,setFragile]=useState(!!editing?.is_fragile);
+  const [repack,setRepack]=useState(!!editing?.is_repack);
+  const [notes,setNotes]=useState(editing?.notes||"");
+  // Mientras está "esperando al proveedor" no puede estar recibida ni en contenedor; si ya está
+  // subida u operada el toggle no se ofrece (evita bajarla del contenedor sin querer desde acá).
+  const puedeAwaiting=!editing?.container_id&&!editing?.operation_id;
+  const verPrecios=!esEmpleado();
   const [pkgs,setPkgs]=useState(packages.length>0?packages.map(p=>({...p,length_cm:p.length_cm||"",width_cm:p.width_cm||"",height_cm:p.height_cm||"",quantity:p.quantity||1})):[{quantity:1,length_cm:"",width_cm:"",height_cm:""}]);
   // Mercaderia unificada (pedido 02/08): una sola grilla desc/cant/USD c/u. La descripcion
   // general del pedido se arma sola con las descripciones. Al editar un pedido viejo sin
@@ -14495,20 +16339,24 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     ?items.map(i=>({...i,quantity:i.quantity||"",unit_price_usd:i.unit_price_usd||""}))
     :[{description:editing?.product_description||"",quantity:1,unit_price_usd:""}]);
   const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState("");
   // Buscador de clientes propio (como MyBox): input de busqueda + lista codigo - nombre.
   const [cliOpen,setCliOpen]=useState(false);
   const [cliQ,setCliQ]=useState("");
   const cliSel=allClients.find(c=>c.id===clientId);
   const cliFiltrados=(()=>{const q=cliQ.trim().toLowerCase();if(!q)return allClients;return allClients.filter(c=>`${c.client_code||""} ${c.first_name||""} ${c.last_name||""}`.toLowerCase().includes(q));})();
+  const LBL={display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"};
+  const CHK={display:"flex",alignItems:"center",gap:7,cursor:"pointer",fontSize:12.5,fontWeight:600,color:"rgba(255,255,255,0.85)"};
 
   const selectedWh=warehouses.find(w=>w.id===warehouseId);
   const cbmLive=(p)=>{const l=Number(p.length_cm),w=Number(p.width_cm),h=Number(p.height_cm),q=Number(p.quantity||1);return l&&w&&h?((l*w*h)/1000000)*q:0;};
   const cbmTotal=pkgs.reduce((s,p)=>s+cbmLive(p),0);
 
   const save=async()=>{
-    if(!selectedWh){alertDialog("Elegí un depósito");return;}
+    if(!selectedWh){setErr("Elegí un depósito");return;}
     const itsValidos=its.filter(it=>it.description?.trim());
-    if(itsValidos.length===0){alertDialog("Cargá al menos un producto en Mercadería");return;}
+    if(itsValidos.length===0){setErr("Cargá al menos un producto en Mercadería");return;}
+    setErr("");
     // La descripcion general del pedido se arma con las descripciones de los items.
     const productDescription=itsValidos.map(it=>it.description.trim()).join(" · ");
     setSaving(true);
@@ -14517,18 +16365,20 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     // - Si es edición y cambió de depósito: renumerar al siguiente del nuevo depósito
     // - Si es edición y se mantiene el depósito: conservar el código
     let code=editing?.shipment_code||null;
-    const changedWh=editing&&editing.warehouse!==selectedWh.name;
-    if(!editing||changedWh){
-      const existingInWh=shipments.filter(s=>s.warehouse===selectedWh.name&&s.id!==editing?.id).length;
+    const changedWh=isEdit&&editing?.warehouse!==selectedWh.name;
+    if(!isEdit||changedWh){
+      const existingInWh=shipments.filter(s=>s.warehouse===selectedWh.name&&s.id!==editId).length;
       code=`#${existingInWh+1}`;
     }
-    // Contenedor: solo válido si pertenece al depósito elegido (sino se descarta).
-    const newCont=containers.some(c=>c.id===containerId&&c.warehouse===selectedWh.name)?containerId:null;
+    const hoy=new Date().toISOString().slice(0,10);
+    // Contenedor: solo válido si pertenece al depósito elegido y la carga no está esperando al proveedor.
+    const newCont=!awaiting&&containers.some(c=>c.id===containerId&&c.warehouse===selectedWh.name)?containerId:null;
     const prevCont=editing?.container_id||null;
     const body={
       shipment_code:code,
-      tracking_number:trackingNumber.trim()||null,
-      received_at:receivedAt||null,
+      // Si sigue esperando y el input quedó vacío se conserva la clave interna (SEA…) que ya tenía.
+      tracking_number:trackingNumber.trim()||(awaiting?(editing?.tracking_number||null):null),
+      received_at:awaiting?null:(receivedAt||null),
       product_description:productDescription,
       origin:selectedWh.origin||"china",
       warehouse_id:selectedWh.id,
@@ -14536,44 +16386,68 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       client_id:clientId||null,
       client_name_snapshot:clientName.trim()||null,
       container_id:newCont,
-      // Vacio = automatico (lo calcula el trigger con la tarifa del deposito).
-      cost_estimado:costEst.trim()===""?null:Number(costEst.replace(",",".")),
-      cost_manual:costEst.trim()!=="",
+      awaiting_supplier:awaiting,
+      is_fragile:fragile,
+      is_repack:repack,
+      notes:notes.trim()||null,
       updated_at:new Date().toISOString(),
     };
-    // Sincronizar estado con la asignación de contenedor (igual que el selector de la barra):
-    // asignar contenedor → 'en tránsito'; quitarlo → vuelve a 'en depósito'.
-    if(newCont&&newCont!==prevCont)body.status="en_camino_ar";
+    // Costo: solo lo manda el admin. El empleado no ve el campo y si lo mandara vacío pisaría con
+    // null un costo manual cargado por Bautista.
+    if(verPrecios){
+      // Vacio = automatico (lo calcula el trigger con la tarifa del deposito).
+      body.cost_estimado=costEst.trim()===""?null:Number(costEst.replace(",","."));
+      body.cost_manual=costEst.trim()!=="";
+    }
+    // Regla única de estado: proveedor (esperando / en camino) → en_deposito (con received_at)
+    // → en_camino_ar (⇔ contenedor). Al crear se manda siempre el status; al editar solo cuando
+    // el form cambia algo que lo determina.
+    if(!isEdit)body.status=awaiting?"proveedor":(receivedAt?"en_deposito":"proveedor");
+    else if(awaiting)body.status="proveedor";
+    else if(editing?.status==="proveedor"&&receivedAt)body.status="en_deposito";
+    // Sincronizar estado con la asignación de contenedor (igual que el picker del tablero):
+    // asignar contenedor → 'en tránsito' (con fecha de subida y recibida hoy si no lo estaba);
+    // quitarlo → vuelve a 'en depósito'.
+    if(newCont&&newCont!==prevCont){body.status="en_camino_ar";body.shipped_to_ar_at=editing?.shipped_to_ar_at||hoy;body.received_at=body.received_at||hoy;}
     else if(!newCont&&prevCont)body.status="en_deposito";
-    let shId=editing?.id;
-    if(editing){
-      await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
-      await dq("maritime_packages",{method:"DELETE",token,filters:`?shipment_id=eq.${editing.id}`});
-      await dq("maritime_items",{method:"DELETE",token,filters:`?shipment_id=eq.${editing.id}`});
-    } else {
-      const res=await dq("maritime_shipments",{method:"POST",token,body,headers:{Prefer:"return=representation"}});
-      shId=(Array.isArray(res)?res[0]:res)?.id;
-    }
-    if(shId){
+    // dq no lanza en 4xx: devuelve el objeto de error (o [] si RLS filtró la fila).
+    const fallo=(r)=>!Array.isArray(r)||r.length===0;
+    const motivo=(r)=>r?.message||r?.hint||"la base rechazó el cambio (¿permisos?)";
+    try{
+      let shId=editId;
+      if(isEdit){
+        const r=await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${editId}`,body});
+        if(fallo(r)){setErr("No se pudo guardar el pedido: "+motivo(r));setSaving(false);return;}
+        // DELETE+POST de bultos/items no es atómico: si el POST de abajo falla el form queda abierto
+        // con el error para reintentar y no perder lo medido.
+        await dq("maritime_packages",{method:"DELETE",token,filters:`?shipment_id=eq.${editId}`});
+        await dq("maritime_items",{method:"DELETE",token,filters:`?shipment_id=eq.${editId}`});
+      } else {
+        const r=await dq("maritime_shipments",{method:"POST",token,body});
+        if(fallo(r)){setErr("No se pudo crear el pedido: "+motivo(r));setSaving(false);return;}
+        shId=r[0].id;setCreatedId(shId);
+      }
       const validPkgs=pkgs.filter(p=>p.length_cm&&p.width_cm&&p.height_cm).map((p,i)=>({shipment_id:shId,bulto_number:i+1,quantity:Math.max(1,Number(p.quantity)||1),length_cm:Number(p.length_cm),width_cm:Number(p.width_cm),height_cm:Number(p.height_cm)}));
-      if(validPkgs.length>0)await dq("maritime_packages",{method:"POST",token,body:validPkgs});
+      if(validPkgs.length>0){const r=await dq("maritime_packages",{method:"POST",token,body:validPkgs});if(fallo(r)){setErr("El pedido se guardó pero los bultos no: "+motivo(r)+". Tocá Guardar de nuevo.");setSaving(false);return;}}
       const validItems=its.filter(it=>it.description?.trim()).map((it,i)=>({shipment_id:shId,description:it.description.trim(),quantity:Number(it.quantity||1),unit_price_usd:Number(it.unit_price_usd||0),notes:it.notes||null,sort_order:i}));
-      if(validItems.length>0)await dq("maritime_items",{method:"POST",token,body:validItems});
-    }
-    setSaving(false);
-    onSave();
+      if(validItems.length>0){const r=await dq("maritime_items",{method:"POST",token,body:validItems});if(fallo(r)){setErr("El pedido se guardó pero la mercadería no: "+motivo(r)+". Tocá Guardar de nuevo.");setSaving(false);return;}}
+      toast(isEdit?"Pedido actualizado":"Pedido creado","success");
+      setSaving(false);
+      onSave();
+    }catch(e){setErr("Error: "+(e?.message||"sin conexión"));setSaving(false);}
   };
 
   return <div style={{marginBottom:20,padding:18,background:"rgba(96,165,250,0.04)",border:"1.5px solid rgba(96,165,250,0.25)",borderRadius:12}}>
-    <h3 style={{fontSize:14,fontWeight:700,color:"#60a5fa",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{editing?"✎ Editar pedido marítimo":"+ Nuevo pedido marítimo"}</h3>
-    {/* 1. Deposito (sin boton de crear: los depositos se crean desde el panel) */}
-    <Sel label="Depósito" value={warehouseId} onChange={v=>{setWarehouseId(v);const wh=warehouses.find(w=>w.id===v);const c=containers.find(x=>x.id===containerId);if(containerId&&(!c||c.warehouse!==wh?.name))setContainerId("");}} options={[{value:"",label:"— Elegí un depósito —"},...warehouses.map(w=>({value:w.id,label:`${w.origin==="usa"?"🇺🇸":"🇨🇳"} ${w.name}`}))]}/>
+    <style>{`.mt-mf-2col{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}.mt-mf-it{display:grid;grid-template-columns:2.5fr 0.8fr 1fr auto;gap:8px;margin-bottom:6px;align-items:end}.mt-mf-it.sinprecio{grid-template-columns:2.5fr 0.8fr auto}.mt-mf-pk{display:grid;grid-template-columns:0.7fr 1fr 1fr 1fr 0.9fr auto;gap:8px;margin-bottom:6px;align-items:end}@media(max-width:767px){.mt-mf-2col{grid-template-columns:1fr}.mt-mf-it,.mt-mf-it.sinprecio{grid-template-columns:1fr 1fr auto}.mt-mf-desc{grid-column:1/-1}.mt-mf-pk{grid-template-columns:1fr 1fr 1fr}}`}</style>
+    <h3 style={{fontSize:14,fontWeight:700,color:"#60a5fa",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{isEdit?"✎ Editar pedido marítimo":"+ Nuevo pedido marítimo"}</h3>
+    {/* 1. Deposito (sin boton de crear: los depositos se crean desde el panel). Prellenado si viene en editing. */}
+    <Sel label="Depósito" value={warehouseId} onChange={v=>{setWarehouseId(v);const wh=warehouses.find(w=>w.id===v);const c=containers.find(x=>x.id===containerId);if(containerId&&(!c||c.warehouse!==wh?.name))setContainerId("");}} options={[{value:"",label:"— Elegí un depósito —"},...warehouses.filter(w=>!w.archived||w.id===warehouseId).map(w=>({value:w.id,label:`${w.origin==="usa"?"🇺🇸":"🇨🇳"} ${w.name}`}))]}/>
     {selectedWh?.rotulo&&<p style={{fontSize:11,color:"rgba(255,255,255,0.5)",margin:"-6px 0 12px",fontStyle:"italic"}}>Rótulo del depósito: <span style={{color:IC,fontWeight:600}}>{selectedWh.rotulo}</span></p>}
 
     {/* 2. Cliente — buscador interno (codigo + nombre), no el selector nativo */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+    <div className="mt-mf-2col">
       <div style={{marginBottom:12,position:"relative"}}>
-        <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>Cliente</label>
+        <label style={LBL}>Cliente</label>
         <button type="button" onClick={()=>{setCliOpen(o=>!o);setCliQ("");}} style={{width:"100%",padding:"9px 12px",fontSize:13,textAlign:"left",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:cliSel?"#fff":"rgba(255,255,255,0.4)",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
           <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cliSel?`${cliSel.client_code||""} - ${cliSel.first_name||""} ${cliSel.last_name||""}`.trim():"Cliente..."}</span>
           <span style={{color:"rgba(255,255,255,0.4)",flexShrink:0}}>▾</span>
@@ -14592,39 +16466,59 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       <Inp label="Nombre cliente (override)" value={clientName} onChange={setClientName} placeholder="Si no está cargado el cliente"/>
     </div>
 
-    {/* 3. Seguimiento + recepcion */}
-    <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr",gap:"0 14px"}}>
-      <Inp label="Código de seguimiento" value={trackingNumber} onChange={setTrackingNumber} placeholder="SF... / KY..."/>
-      <Inp label="Fecha de recepción en depósito" type="date" value={receivedAt} onChange={setReceivedAt}/>
+    {/* 3. Esperando al proveedor (awaiting_supplier): etapa propia del tablero, sin tracking todavía */}
+    {puedeAwaiting&&<label style={{...CHK,padding:"9px 12px",marginBottom:12,borderRadius:8,background:awaiting?"rgba(168,85,247,0.08)":"rgba(255,255,255,0.03)",border:`1px solid ${awaiting?"rgba(168,85,247,0.35)":"rgba(255,255,255,0.08)"}`}}>
+      <input type="checkbox" checked={awaiting} onChange={e=>{setAwaiting(e.target.checked);if(e.target.checked){setReceivedAt("");setContainerId("");}}} style={{accentColor:"#a855f7",width:16,height:16,cursor:"pointer",flexShrink:0}}/>
+      <span>⏳ Todavía no despachó el proveedor <span style={{fontSize:10.5,fontWeight:500,color:"rgba(255,255,255,0.45)"}}>· queda en "Esperando al proveedor" hasta que llegue el tracking</span></span>
+    </label>}
+
+    {/* 4. Seguimiento + recepcion */}
+    <div className="mt-mf-2col">
+      <div>
+        <Inp label={awaiting?"Código de seguimiento (opcional)":"Código de seguimiento"} value={trackingNumber} onChange={setTrackingNumber} placeholder={awaiting?"opcional hasta que el proveedor despache":"SF... / KY..."}/>
+        {!awaiting&&!trackingNumber.trim()&&<p style={{fontSize:10.5,color:"#fbbf24",margin:"-6px 0 10px",fontStyle:"italic"}}>⚠ Sin tracking no se puede seguir la carga. Si el proveedor todavía no despachó, marcá la casilla de arriba.</p>}
+      </div>
+      {!awaiting&&<Inp label="Fecha de recepción en depósito" type="date" value={receivedAt} onChange={setReceivedAt}/>}
+    </div>
+    {!isEdit&&<p style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",margin:"-6px 0 12px",fontStyle:"italic"}}>Estado inicial: {awaiting?"⏳ Esperando al proveedor":containerId?"🚢 En tránsito (por el contenedor elegido)":receivedAt?"📦 En depósito":"🚚 En camino al depósito"}</p>}
+
+    {/* 5. Frágil / reenvío / notas */}
+    <div style={{display:"flex",gap:16,flexWrap:"wrap",marginBottom:12}}>
+      <label style={CHK}><input type="checkbox" checked={fragile} onChange={e=>setFragile(e.target.checked)} style={{accentColor:"#fbbf24",width:16,height:16,cursor:"pointer"}}/>⚠️ Frágil</label>
+      <label style={CHK}><input type="checkbox" checked={repack} onChange={e=>setRepack(e.target.checked)} style={{accentColor:"#60a5fa",width:16,height:16,cursor:"pointer"}}/>🔁 Reenvío / reempaque</label>
+    </div>
+    <div style={{marginBottom:12}}>
+      <label style={LBL}>Notas</label>
+      <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={2} placeholder="Reclamos al proveedor, observaciones internas…" style={{width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:13,border:"1px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
     </div>
 
-    {/* 4. Mercaderia unificada: desc + detalle comercial en una sola grilla */}
+    {/* 6. Mercaderia unificada: desc + detalle comercial en una sola grilla (USD c/u solo admin) */}
     <div style={{marginTop:2,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>🧾 Mercadería</p>
         <button onClick={()=>setIts(p=>[...p,{description:"",quantity:1,unit_price_usd:""}])} style={{padding:"4px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"transparent",color:IC,cursor:"pointer"}}>+ Item</button>
       </div>
-      {its.map((it,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"2.5fr 0.8fr 1fr auto",gap:8,marginBottom:6,alignItems:"end"}}>
-        <Inp label={i===0?"Descripción":""} value={it.description} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,description:v}:x))} small/>
+      {its.map((it,i)=><div key={i} className={"mt-mf-it"+(verPrecios?"":" sinprecio")}>
+        <div className="mt-mf-desc"><Inp label={i===0?"Descripción":""} value={it.description} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,description:v}:x))} small/></div>
         <Inp label={i===0?"Cant.":""} type="number" value={it.quantity} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x))} small/>
-        <Inp label={i===0?"USD c/u":""} type="number" value={it.unit_price_usd} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,unit_price_usd:v}:x))} small/>
-        <button onClick={()=>setIts(arr=>arr.length>1?arr.filter((_,j)=>j!==i):arr)} style={{padding:"7px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff6b6b",cursor:"pointer",height:36}}>×</button>
+        {verPrecios&&<Inp label={i===0?"USD c/u":""} type="number" value={it.unit_price_usd} onChange={v=>setIts(arr=>arr.map((x,j)=>j===i?{...x,unit_price_usd:v}:x))} small/>}
+        <button onClick={()=>setIts(arr=>arr.length>1?arr.filter((_,j)=>j!==i):arr)} style={{padding:"7px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff6b6b",cursor:"pointer",height:36,marginBottom:12}}>×</button>
       </div>)}
     </div>
 
-    {/* 5. Bultos */}
+    {/* 7. Bultos */}
     <div style={{marginTop:12,padding:"10px 14px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <p style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.06em"}}>📦 Bultos</p>
         <button onClick={()=>setPkgs(p=>[...p,{quantity:1,length_cm:"",width_cm:"",height_cm:""}])} style={{padding:"4px 10px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(184,149,106,0.3)",background:"transparent",color:IC,cursor:"pointer"}}>+ Bulto</button>
       </div>
-      {pkgs.map((p,i)=>{const c=cbmLive(p);return <div key={i} style={{display:"grid",gridTemplateColumns:"0.7fr 1fr 1fr 1fr 0.9fr auto",gap:8,marginBottom:6,alignItems:"end"}}>
+      {pkgs.map((p,i)=>{const c=cbmLive(p);return <div key={i} className="mt-mf-pk">
         <Inp label={i===0?"Cantidad":""} type="number" value={p.quantity} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,quantity:v}:x))} placeholder="1" small/>
         <Inp label={i===0?"Largo (cm)":""} type="number" value={p.length_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,length_cm:v}:x))} small/>
         <Inp label={i===0?"Ancho (cm)":""} type="number" value={p.width_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,width_cm:v}:x))} small/>
         <Inp label={i===0?"Alto (cm)":""} type="number" value={p.height_cm} onChange={v=>setPkgs(arr=>arr.map((x,j)=>j===i?{...x,height_cm:v}:x))} small/>
         <div style={{marginBottom:12}}>
-          {i===0&&<label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>CBM</label>}
+          {i===0&&<label style={LBL}>CBM</label>}
           <div style={{padding:"8px 10px",fontSize:13,fontWeight:700,borderRadius:10,background:"rgba(0,0,0,0.25)",border:"1px solid rgba(255,255,255,0.08)",color:c>0?GOLD_LIGHT:"rgba(255,255,255,0.3)",textAlign:"center",fontFeatureSettings:'"tnum"'}}>{c>0?c.toLocaleString("es-AR",{minimumFractionDigits:4,maximumFractionDigits:4}):"—"}</div>
         </div>
         <button onClick={()=>setPkgs(arr=>arr.filter((_,j)=>j!==i))} style={{padding:"7px 10px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,80,80,0.3)",background:"transparent",color:"#ff6b6b",cursor:"pointer",height:36,marginBottom:12}}>×</button>
@@ -14635,9 +16529,9 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
       </div>
     </div>
 
-    {/* 6. Contenedor */}
+    {/* 8. Contenedor (no aplica mientras espera al proveedor) */}
     <div style={{marginTop:12}}>
-    {selectedWh&&(()=>{
+    {selectedWh&&!awaiting&&(()=>{
       const whConts=containers.filter(c=>c.warehouse===selectedWh.name&&c.status!=="arribado");
       return <div>
         <Sel label="Contenedor" value={containerId} onChange={setContainerId} options={[{value:"",label:"— Sin contenedor (queda en depósito) —"},...whConts.map(c=>({value:c.id,label:`🚢 ${c.code}${c.shipping_line?` · ${c.shipping_line}`:""}`}))]}/>
@@ -14646,46 +16540,74 @@ function MaritimeForm({token,editing,packages=[],items=[],allClients=[],warehous
     })()}
     </div>
 
-    {/* 7. Costo (no lo ve el empleado; vacio = automatico CBM x tarifa del deposito) */}
-    {!esEmpleado()&&<Inp label="Costo estimado de la operación (USD)" type="number" value={costEst} onChange={setCostEst} placeholder="Vacío = automático (CBM × tarifa del depósito)"/>}
+    {/* 9. Costo (no lo ve el empleado; vacio = automatico CBM x tarifa del deposito) */}
+    {verPrecios&&<Inp label="Costo estimado de la operación (USD)" type="number" value={costEst} onChange={setCostEst} placeholder="Vacío = automático (CBM × tarifa del depósito)"/>}
 
+    {err&&<p style={{fontSize:12,color:"#f87171",background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"8px 10px",margin:"0 0 6px"}}>✕ {err}</p>}
     <div style={{display:"flex",gap:10,marginTop:14,justifyContent:"flex-end"}}>
       <Btn variant="secondary" onClick={onCancel}>Cancelar</Btn>
-      <Btn onClick={save} disabled={saving}>{saving?"Guardando...":(editing?"Guardar cambios":"Crear pedido")}</Btn>
+      <Btn onClick={save} disabled={saving}>{saving?"Guardando...":(isEdit?"Guardar cambios":"Crear pedido")}</Btn>
     </div>
   </div>;
 }
 
 function WarehouseForm({token,editing,onSave,onCancel}){
+  const isEdit=!!editing?.id;
   const [name,setName]=useState(editing?.name||"");
   const [rotulo,setRotulo]=useState(editing?.rotulo||"");
   const [origin,setOrigin]=useState(editing?.origin||"china");
+  const [costCbm,setCostCbm]=useState(editing?.default_cost_per_cbm!=null?String(editing.default_cost_per_cbm):"");
+  const [sortOrder,setSortOrder]=useState(editing?.sort_order!=null?String(editing.sort_order):"");
+  const [archived,setArchived]=useState(!!editing?.archived);
   const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState("");
+  const LBL={display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"};
   const save=async()=>{
-    if(!name.trim()){alertDialog("Cargá el nombre del depósito");return;}
-    setSaving(true);
-    const newName=name.trim();
-    const body={name:newName,rotulo:rotulo.trim()||null,origin};
-    if(editing?.id){
-      await dq("maritime_warehouses",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body});
+    if(!name.trim()){setErr("Cargá el nombre del depósito");return;}
+    setSaving(true);setErr("");
+    const body={name:name.trim(),rotulo:rotulo.trim()||null,origin,archived};
+    // Orden vacío = no se manda (conserva el actual / default de la tabla).
+    if(sortOrder.trim()!=="")body.sort_order=Number(sortOrder);
+    // La tarifa es plata: el empleado no la ve ni la manda (si la mandara vacía pisaría con null la
+    // que cargó Bautista). Editarla dispara el recálculo de cost_estimado por trigger.
+    if(!esEmpleado())body.default_cost_per_cbm=costCbm.trim()===""?null:Number(costCbm.replace(",","."));
+    try{
+      // dq no lanza en 4xx: si RLS rechaza devuelve el objeto de error (o []). Antes el form
+      // cerraba como si hubiera guardado.
+      const r=isEdit
+        ?await dq("maritime_warehouses",{method:"PATCH",token,filters:`?id=eq.${editing.id}`,body})
+        :await dq("maritime_warehouses",{method:"POST",token,body});
       // Renombrar no requiere cascada manual: cargas y contenedores cuelgan del depósito por
       // warehouse_id, y el trigger sync_warehouse_name_on_rename actualiza el nombre espejado.
-    } else {
-      await dq("maritime_warehouses",{method:"POST",token,body});
-    }
-    setSaving(false);
-    onSave();
+      if(!Array.isArray(r)||r.length===0){setErr("No se pudo guardar: "+(r?.message||r?.hint||"la base rechazó el cambio (¿permisos?)"));setSaving(false);return;}
+      toast(isEdit?"Depósito actualizado":"Depósito creado","success");
+      setSaving(false);
+      onSave();
+    }catch(e){setErr("Error: "+(e?.message||"sin conexión"));setSaving(false);}
   };
   return <div style={{marginBottom:20,padding:18,background:"rgba(96,165,250,0.06)",border:"1.5px solid rgba(96,165,250,0.35)",borderRadius:12}}>
-    <h3 style={{fontSize:14,fontWeight:700,color:"#60a5fa",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{editing?.id?"✎ Editar depósito":"+ Nuevo depósito"}</h3>
-    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:"0 14px"}}>
+    <style>{`.mt-wf-grid{display:grid;grid-template-columns:2fr 1fr;gap:0 14px}.mt-wf-grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}@media(max-width:767px){.mt-wf-grid,.mt-wf-grid2{grid-template-columns:1fr}}`}</style>
+    <h3 style={{fontSize:14,fontWeight:700,color:"#60a5fa",margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{isEdit?"✎ Editar depósito":"+ Nuevo depósito"}</h3>
+    <div className="mt-wf-grid">
       <Inp label="Nombre del depósito" value={name} onChange={setName} placeholder="Ej: Mr. Shi / Miss Huang (Viejo)"/>
       <Sel label="Origen" value={origin} onChange={setOrigin} options={[{value:"china",label:"🇨🇳 China"},{value:"usa",label:"🇺🇸 USA"}]}/>
     </div>
     <Inp label="Rótulo de llegada (se imprime en el PDF del consolidado)" value={rotulo} onChange={setRotulo} placeholder="Ej: MARÍTIMO MR. SHI / MISS HUANG (código cliente)"/>
+    <div className="mt-wf-grid2">
+      {!esEmpleado()&&<div>
+        <Inp label="Tarifa de costo (USD / m³)" type="number" step="0.01" value={costCbm} onChange={setCostCbm} placeholder="Ej: 2100"/>
+        <p style={{fontSize:10.5,color:costCbm.trim()===""?"#fbbf24":"rgba(255,255,255,0.4)",margin:"-6px 0 12px",fontStyle:"italic"}}>{costCbm.trim()===""?"⚠ Sin tarifa el costo estimado de las cargas queda en 0 (ganancia sobreestimada).":"Cambiarla recalcula el costo estimado de las cargas con costo automático."}</p>
+      </div>}
+      <Inp label="Orden en el tablero" type="number" value={sortOrder} onChange={setSortOrder} placeholder="1, 2, 3… (menor = más arriba)"/>
+    </div>
+    {isEdit&&<label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",padding:"9px 12px",marginBottom:12,borderRadius:8,fontSize:12.5,fontWeight:600,color:"rgba(255,255,255,0.85)",background:archived?"rgba(248,113,113,0.07)":"rgba(255,255,255,0.03)",border:`1px solid ${archived?"rgba(248,113,113,0.3)":"rgba(255,255,255,0.08)"}`}}>
+      <input type="checkbox" checked={archived} onChange={e=>setArchived(e.target.checked)} style={{accentColor:"#f87171",width:16,height:16,cursor:"pointer",flexShrink:0}}/>
+      <span>🗄 Archivado <span style={{fontSize:10.5,fontWeight:500,color:"rgba(255,255,255,0.45)"}}>· sale de los chips y del tablero; sigue en historial y análisis</span></span>
+    </label>}
+    {err&&<p style={{fontSize:12,color:"#f87171",background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"8px 10px",margin:"0 0 6px"}}>✕ {err}</p>}
     <div style={{display:"flex",gap:10,marginTop:14,justifyContent:"flex-end"}}>
       <Btn variant="secondary" onClick={onCancel}>Cancelar</Btn>
-      <Btn onClick={save} disabled={saving}>{saving?"Guardando...":(editing?.id?"Guardar cambios":"Crear depósito")}</Btn>
+      <Btn onClick={save} disabled={saving}>{saving?"Guardando...":(isEdit?"Guardar cambios":"Crear depósito")}</Btn>
     </div>
   </div>;
 }
