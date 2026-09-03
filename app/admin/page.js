@@ -7092,6 +7092,10 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
     // (sobre todo uno ya recibido) trae los suyos por su cuenta.
     const pks=await dq("operation_packages",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=*&order=package_number.asc`}).catch(()=>null);
     if(Array.isArray(pks))setFePkgs(pks);
+    // Intervenciones guardadas al clasificar (createFlight/editor de op): el banner aparece
+    // apenas se abre el vuelo, sin re-consultar a la IA.
+    const ivItems=await dq("operation_items",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=operation_id,description,ncm_code,intervention&intervention->>required=eq.true`}).catch(()=>null);
+    if(Array.isArray(ivItems)&&ivItems.length>0)setInterventionWarnings(ivItems.map(i=>({id:i.operation_id,description:i.description,ncm:i.ncm_code,types:i.intervention?.types||[],reason:i.intervention?.reason||null})));
   })();},[flightOps.map(fo=>fo.operation_id).sort().join(","),token,pkgsV]);
   const opsUnique=flightOpsData.length>0?flightOpsData:Array.from(new Map([...depositOps,...allOps].filter(o=>flightOps.some(fo=>fo.operation_id===o.id)).map(o=>[o.id,o])).values());
   const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
@@ -7146,6 +7150,23 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
   const loadAddrs=async()=>{const r=await dq("shipping_addresses",{token,filters:"?select=*&order=is_default.desc,created_at.desc"});setSavedAddrs(Array.isArray(r)?r:[]);};
   useEffect(()=>{loadAddrs();},[]);
   const applyAddr=(a)=>{const body={dest_name:a.name||"",dest_tax_id:a.tax_id||"",dest_address:a.address||"",dest_postal_code:a.postal_code||"",dest_phone:a.phone||"",dest_email:a.email||"",destination_address:[a.name,a.address,a.postal_code].filter(Boolean).join(", ")};setDest({dest_name:body.dest_name,dest_tax_id:body.dest_tax_id,dest_address:body.dest_address,dest_postal_code:body.dest_postal_code,dest_phone:body.dest_phone,dest_email:body.dest_email});updateFlight(body);};
+  // Cliente RI del vuelo (si hay uno solo con datos): el autofill corre una vez y solo sobre
+  // campos vacíos — si pisaste algo por accidente, este botón lo vuelve a aplicar a demanda.
+  const riClientForDest=(()=>{
+    const ris=flightOpsData.map(o=>o.clients).filter(c=>c?.tax_condition==="responsable_inscripto"&&(c.company_name||c.cuit));
+    const uniq=Array.from(new Map(ris.map(c=>[c.cuit||c.company_name,c])).values());
+    return uniq.length===1?uniq[0]:null;
+  })();
+  const applyRiData=()=>{
+    const c=riClientForDest;if(!c)return;
+    const addr=[c.street,c.floor_apt,c.city,c.province].map(x=>(x||"").trim()).filter(Boolean).join(", ");
+    const body={dest_name:c.company_name||`${c.first_name||""} ${c.last_name||""}`.trim(),dest_tax_id:c.cuit||""};
+    if(addr){body.dest_address=addr;body.destination_address=addr;}
+    if(c.postal_code)body.dest_postal_code=c.postal_code;
+    setDest(prev=>({...prev,dest_name:body.dest_name,dest_tax_id:body.dest_tax_id,...(addr?{dest_address:addr}:{}),...(c.postal_code?{dest_postal_code:c.postal_code}:{})}));
+    updateFlight(body);
+    onFlash(`Datos del RI aplicados (${body.dest_name})`);
+  };
   const saveNewAddr=async()=>{if(!newAddr.label||!newAddr.address){onFlash("Falta etiqueta o dirección");return;}await dq("shipping_addresses",{method:"POST",token,body:newAddr});setNewAddr({label:"",name:"",tax_id:"",address:"",postal_code:"",phone:"",email:""});setShowNewAddr(false);loadAddrs();onFlash("Dirección guardada");};
   const delAddr=async(id)=>{if(!await confirmDialog("¿Eliminar dirección?"))return;await dq("shipping_addresses",{method:"DELETE",token,filters:`?id=eq.${id}`});loadAddrs();};
   const [items,setItems]=useState(invoiceItems);const [presentando,setPresentando]=useState(false);
@@ -7350,6 +7371,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
             if(d.import_duty_rate!=null)opItemBody.import_duty_rate=Number(d.import_duty_rate);
             if(d.statistics_rate!=null)opItemBody.statistics_rate=Number(d.statistics_rate);
             if(d.iva_rate!=null)opItemBody.iva_rate=Number(d.iva_rate);
+            if(d.intervention)opItemBody.intervention=d.intervention;
             await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.source_item_id}`,body:opItemBody});
           }
           ok++;
@@ -7673,6 +7695,7 @@ function FlightEditor({token,flight,signups,flightOps,depositOps,allOps,invoiceI
               <option value="" style={{background:"#142038"}}>Cargar dirección guardada…</option>
               {savedAddrs.map(a=><option key={a.id} value={a.id} style={{background:"#142038"}}>{a.label}{a.is_default?" ⭐":""}</option>)}
             </select>}
+            {riClientForDest&&<button onClick={applyRiData} title={`Volver a cargar los datos del cliente RI: ${riClientForDest.company_name||""} · CUIT ${riClientForDest.cuit||"—"}`} style={{padding:"6px 10px",fontSize:11,fontWeight:700,border:"1px solid rgba(96,165,250,0.4)",borderRadius:6,background:"rgba(96,165,250,0.1)",color:"#60a5fa",cursor:"pointer"}}>🏢 Usar datos del RI</button>}
             <button onClick={()=>setShowNewAddr(!showNewAddr)} style={{padding:"6px 10px",fontSize:11,fontWeight:600,border:"1px solid rgba(184,149,106,0.25)",borderRadius:6,background:"rgba(184,149,106,0.1)",color:IC,cursor:"pointer"}}>{showNewAddr?"✕":"+ Guardar como predeterminada"}</button>
           </div>
         </div>
@@ -8333,7 +8356,7 @@ function AgentsPanel({token}){
           const r=await fetch("/api/ncm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({description:it.description})});
           const d=await r.json();
           if(d?.ncm_code){
-            const patch={ncm_code:d.ncm_code,import_duty_rate:Number(d.import_duty_rate??35),statistics_rate:Number(d.statistics_rate??3),iva_rate:Number(d.iva_rate??21)};
+            const patch={ncm_code:d.ncm_code,import_duty_rate:Number(d.import_duty_rate??35),statistics_rate:Number(d.statistics_rate??3),iva_rate:Number(d.iva_rate??21),...(d.intervention?{intervention:d.intervention}:{})};
             await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body:patch});
             Object.assign(it,patch);
           }
@@ -8545,6 +8568,10 @@ function AgentsPanel({token}){
     const agentId=agentIds[0];
     if(!agentId){alertDialog("Las ops seleccionadas no tienen agente asignado");return;}
     let progresoActual="preparando el vuelo";
+    // Items con intervención de organismo (ANMAT/INAL/ENACOM/SENASA): se juntan durante la
+    // clasificación y se avisan DESPUÉS de crear el vuelo — una carga con ANMAT sin coordinar
+    // puede quedar retenida en aduana.
+    const intervs=[];
     try{
     // ── PRE-VUELO (aéreo A): auto-clasificar con IA los operation_items pendientes ANTES de crear el vuelo.
     // Antes solo bloqueaba; ahora intenta resolver automáticamente con /api/ncm para que el admin no
@@ -8553,10 +8580,12 @@ function AgentsPanel({token}){
     const opsBlanco=ops.filter(o=>o.channel?.includes("blanco")&&!o.channel?.includes("maritimo"));
     if(opsBlanco.length>0){
       const opIds=opsBlanco.map(o=>o.id);
-      const checkItems=await dq("operation_items",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=id,operation_id,description,ncm_code,import_duty_rate,statistics_rate,iva_rate`});
+      const checkItems=await dq("operation_items",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=id,operation_id,description,ncm_code,import_duty_rate,statistics_rate,iva_rate,intervention`});
       const codeOf=Object.fromEntries(opsBlanco.map(o=>[o.id,o.operation_code]));
       const pending=(Array.isArray(checkItems)?checkItems:[]).filter(i=>i.description&&i.description.trim()&&needsClassification(i));
       const unresolved=[];
+      // Intervenciones ya guardadas de clasificaciones previas (las nuevas se suman en el loop).
+      (Array.isArray(checkItems)?checkItems:[]).forEach(i=>{if(i.intervention?.required)intervs.push({op:codeOf[i.operation_id]||"—",desc:i.description,types:i.intervention.types||[],reason:i.intervention.reason||null});});
       if(pending.length>0){
         let ci=0;
         for(const it of pending){
@@ -8570,6 +8599,8 @@ function AgentsPanel({token}){
               if(d.import_duty_rate!=null)body.import_duty_rate=Number(d.import_duty_rate);
               if(d.statistics_rate!=null)body.statistics_rate=Number(d.statistics_rate);
               if(d.iva_rate!=null)body.iva_rate=Number(d.iva_rate);
+              if(d.intervention)body.intervention=d.intervention;
+              if(d.intervention?.required)intervs.push({op:codeOf[it.operation_id]||"—",desc:it.description,types:d.intervention.types||[],reason:d.intervention.reason||null});
               await dq("operation_items",{method:"PATCH",token,filters:`?id=eq.${it.id}`,body});
               // Validar que quedaron todos los campos. Si la IA no devolvió derechos/IVA, marcar como no resuelto.
               if(body.import_duty_rate==null||body.statistics_rate==null||body.iva_rate==null){unresolved.push(it);}
@@ -8647,6 +8678,10 @@ function AgentsPanel({token}){
       }
     }catch(e){console.error("notif clients error",e);}
     setSelectedOps([]);load();flash(`Vuelo ${newCode} creado con factura base. Clientes y agente notificados.`);setTab("flights");setSelFlight(created.id);
+    if(intervs.length>0){
+      setFlightProgress(null);
+      alertDialog(`⚠ ATENCIÓN: ${intervs.length} producto${intervs.length>1?"s":""} de este vuelo requiere${intervs.length>1?"n":""} intervención de organismo:\n\n${intervs.map(v=>`• ${v.op} — ${String(v.desc||"").slice(0,50)}: ${v.types.join(" / ")}${v.reason?`\n   ${v.reason}`:""}`).join("\n")}\n\nCoordiná antes de despachar — una carga con intervención sin aviso puede quedar retenida en aduana.`);
+    }
     }catch(e){
       console.error("createFlight",e);
       alertDialog(`❌ El proceso falló mientras estaba ${progresoActual}.\n\n${e.message||e}\n\nRevisá el vuelo en la lista: puede haber quedado creado a medias (con algunas ops ya asignadas).`);
@@ -8807,6 +8842,8 @@ function AgentsPanel({token}){
               const itemsForOp=isAereoA?depositItems.filter(i=>i.operation_id===o.id):[];
               const zeroDieItems=isAereoA?itemsForOp.filter(i=>i.description&&i.description.trim()&&i.ncm_code&&i.ncm_code.trim()&&Number(i.import_duty_rate)===0):[];
               const hasZeroDie=zeroDieItems.length>0;
+              const ivItems=itemsForOp.filter(i=>i.intervention?.required);
+              const ivTypes=[...new Set(ivItems.flatMap(i=>i.intervention?.types||[]))];
               return <Fragment key={o.id}>
               {showSep&&<tr><td colSpan={9} style={{padding:"5px 12px",fontSize:9,fontWeight:800,letterSpacing:"0.09em",color:scMeta.c,background:`${scMeta.c}0D`,borderBottom:"1px solid rgba(255,255,255,0.04)"}}>{scMeta.l}</td></tr>}
               <tr style={{borderBottom:isExpanded?"none":"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:inFlight?0.5:0.7,cursor:"pointer",background:isExpanded?"rgba(184,149,106,0.06)":"transparent",transition:"background 150ms"}} onClick={(e)=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button"))return;setExpandedOp(isExpanded?null:o.id);}} onMouseEnter={e=>{if(!isExpanded)e.currentTarget.style.background="rgba(255,255,255,0.03)";}} onMouseLeave={e=>{if(!isExpanded)e.currentTarget.style.background="transparent";}}>
@@ -8816,7 +8853,7 @@ function AgentsPanel({token}){
                     {isChecked&&<svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#0A1628" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                   </span>
                 </label>;})():lockedByAgent?<span title="Un vuelo agrupa ops de UN solo agente — ya tildaste ops de otro agente" style={{display:"inline-flex",width:18,height:18,borderRadius:5,border:"1.5px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.02)",opacity:0.35,cursor:"not-allowed"}}/>:<span title={inFlight?"Ya está en un vuelo":o.consolidation_confirmed?"Faltan los documentos del cliente (mercadería y valores)":"Falta confirmar la consolidación"} style={{color:"rgba(255,255,255,0.3)",fontSize:14,cursor:"help"}}>{isExpanded?"▾":"▸"}</span>}</td>
-                <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12}}>{o.operation_code}{hasZeroDie&&<span title={`${zeroDieItems.length} producto(s) con DIE 0% — revisá manualmente que sea correcto:\n${zeroDieItems.map(i=>`• ${i.description} (NCM ${i.ncm_code})`).join("\n")}`} style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.18)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.4)",letterSpacing:"0.05em",marginLeft:6,cursor:"help"}}>⚠ DIE 0%</span>}</td>
+                <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:600,color:"#fff",fontSize:12}}>{o.operation_code}{hasZeroDie&&<span title={`${zeroDieItems.length} producto(s) con DIE 0% — revisá manualmente que sea correcto:\n${zeroDieItems.map(i=>`• ${i.description} (NCM ${i.ncm_code})`).join("\n")}`} style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.18)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.4)",letterSpacing:"0.05em",marginLeft:6,cursor:"help"}}>⚠ DIE 0%</span>}{ivItems.length>0&&<span title={`Requiere intervención de organismo:\n${ivItems.map(i=>`• ${i.description}: ${(i.intervention.types||[]).join(" / ")}${i.intervention.reason?` — ${i.intervention.reason}`:""}`).join("\n")}\n\nCoordinar ANTES de subirla a un vuelo.`} style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(248,113,113,0.16)",color:"#f87171",border:"1px solid rgba(248,113,113,0.45)",letterSpacing:"0.05em",marginLeft:6,cursor:"help"}}>⚠ {ivTypes.join("/")||"INTERV."}</span>}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{o.clients?<>{`${o.clients.client_code} - ${o.clients.first_name||""}${o.clients.last_name?` ${o.clients.last_name}`:""}`}{o.clients.tax_condition==="responsable_inscripto"&&<span title="Cliente Responsable Inscripto" style={{fontSize:9,fontWeight:800,padding:"2px 6px",borderRadius:4,background:"rgba(96,165,250,0.18)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.4)",letterSpacing:"0.05em",marginLeft:6,display:"inline-block",verticalAlign:"middle"}}>RI</span>}</>:"—"}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.5)",maxWidth:240}}>{(()=>{
                   // Si la op tiene description manual, usala. Si no, usar items declarados por el cliente.
