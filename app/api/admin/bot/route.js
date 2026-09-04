@@ -40,69 +40,40 @@ async function isAdmin(req) {
 }
 
 const digits = (s) => String(s || "").replace(/\D/g, "");
-function matchClient(clients, phone) {
-  const d = digits(phone);
-  if (d.length < 8) return null;
-  return clients.find((c) => {
-    const cd = digits(c.whatsapp);
-    return cd.length >= 8 && (cd.endsWith(d.slice(-10)) || d.endsWith(cd.slice(-10)));
-  }) || null;
-}
 const H24 = 24 * 3600 * 1000;
 const windowOpen = (lastUserAt) => !!lastUserAt && Date.now() - new Date(lastUserAt).getTime() < H24;
+
+const rowToConv = (r) => ({
+  phone: r.phone,
+  client: r.client_id ? { id: r.client_id, nombre: r.client_nombre || r.client_codigo || "", codigo: r.client_codigo } : (r.label ? { id: null, nombre: r.label, codigo: null } : null),
+  human_mode: !!r.human_mode,
+  last_user_at: r.last_user_at,
+  admin_seen_at: r.admin_seen_at,
+  last_at: r.last_at || r.updated_at,
+  last: r.last_role ? { role: r.last_role, content: r.last_media_type ? `📎 ${r.last_media_type === "document" ? "documento" : "imagen"}${r.last_content ? ` · ${r.last_content}` : ""}` : r.last_content } : null,
+  unread: !!r.last_user_at && (!r.admin_seen_at || new Date(r.last_user_at) > new Date(r.admin_seen_at)),
+  window_open: windowOpen(r.last_user_at),
+});
 
 export async function GET(req) {
   if (!(await isAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ error: "Server config missing" }, { status: 500 });
   const phone = digits(new URL(req.url).searchParams.get("phone"));
-  // PostgREST corta en 1000 filas y ya hay más clientes que eso: se pagina.
-  const clients = [];
-  for (let off = 0; off < 20000; off += 1000) {
-    const r = await sb(`/clients?whatsapp=not.is.null&select=id,first_name,last_name,client_code,whatsapp&offset=${off}&limit=1000`);
-    const rows = Array.isArray(r.body) ? r.body : [];
-    clients.push(...rows);
-    if (rows.length < 1000) break;
-  }
 
   if (phone) {
     const [conv, msgs] = await Promise.all([
-      sb(`/bot_conversations?phone=eq.${phone}&select=phone,label,human_mode,last_user_at,admin_seen_at,updated_at&limit=1`),
+      sb(`/rpc/bot_conversations_list`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ p_phone: phone }) }),
       sb(`/bot_messages?phone=eq.${phone}&select=id,role,content,media_url,media_type,wamid,delivered_at,read_at,failed_at,error,created_at&order=created_at.asc&limit=500`),
     ]);
-    const c = Array.isArray(conv.body) && conv.body[0] ? conv.body[0] : { phone, human_mode: false, last_user_at: null };
-    await sb(`/bot_conversations?on_conflict=phone`, { method: "POST", body: JSON.stringify({ phone, admin_seen_at: new Date().toISOString() }) });
-    const cli = matchClient(clients, phone);
-    return Response.json({
-      phone,
-      human_mode: !!c.human_mode,
-      last_user_at: c.last_user_at,
-      window_open: windowOpen(c.last_user_at),
-      client: cli ? { id: cli.id, nombre: `${cli.first_name || ""} ${cli.last_name || ""}`.trim(), codigo: cli.client_code } : (c.label ? { id: null, nombre: c.label, codigo: null } : null),
-      messages: Array.isArray(msgs.body) ? msgs.body : [],
-    });
+    const row = Array.isArray(conv.body) && conv.body[0] ? conv.body[0] : { phone, human_mode: false, last_user_at: null };
+    // Marcar visto sin bloquear la respuesta.
+    sb(`/bot_conversations?on_conflict=phone`, { method: "POST", body: JSON.stringify({ phone, admin_seen_at: new Date().toISOString() }) }).catch(() => {});
+    const c = rowToConv(row);
+    return Response.json({ phone, human_mode: c.human_mode, last_user_at: c.last_user_at, window_open: c.window_open, client: c.client, messages: Array.isArray(msgs.body) ? msgs.body : [] });
   }
 
-  const [convs, last] = await Promise.all([
-    sb(`/bot_conversations?select=phone,label,human_mode,last_user_at,admin_seen_at,updated_at&order=updated_at.desc&limit=300`),
-    sb(`/bot_messages?select=phone,role,content,media_type,created_at&order=created_at.desc&limit=600`),
-  ]);
-  const lastByPhone = {};
-  for (const m of Array.isArray(last.body) ? last.body : []) if (!lastByPhone[m.phone]) lastByPhone[m.phone] = m;
-  const list = (Array.isArray(convs.body) ? convs.body : []).map((c) => {
-    const cli = matchClient(clients, c.phone);
-    const lm = lastByPhone[c.phone] || null;
-    const unread = !!c.last_user_at && (!c.admin_seen_at || new Date(c.last_user_at) > new Date(c.admin_seen_at));
-    return {
-      phone: c.phone,
-      client: cli ? { id: cli.id, nombre: `${cli.first_name || ""} ${cli.last_name || ""}`.trim(), codigo: cli.client_code } : (c.label ? { id: null, nombre: c.label, codigo: null } : null),
-      human_mode: !!c.human_mode,
-      last_user_at: c.last_user_at,
-      last_at: lm?.created_at || c.updated_at,
-      last: lm ? { role: lm.role, content: lm.media_type ? `📎 ${lm.media_type === "document" ? "documento" : "imagen"}${lm.content ? ` · ${lm.content}` : ""}` : lm.content } : null,
-      unread,
-      window_open: windowOpen(c.last_user_at),
-    };
-  }).sort((a, b) => new Date(b.last_at) - new Date(a.last_at));
+  const r = await sb(`/rpc/bot_conversations_list`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({}) });
+  const list = (Array.isArray(r.body) ? r.body : []).map(rowToConv);
   return Response.json({ conversations: list });
 }
 
