@@ -10570,7 +10570,7 @@ function FacturasPanel({token}){
   // Precarga completa desde la op: cliente + documento + conceptos del presupuesto + TC del cobro.
   const traerOp=async(codeArg)=>{
     setErr("");const code=String(codeArg||opCode).trim().toUpperCase();if(!code)return;
-    const r=await dq("operations",{token,filters:`?operation_code=eq.${encodeURIComponent(code)}&select=id,operation_code,description,client_id,budget_flete,budget_seguro,budget_taxes,budget_total,ri_argencargo_collects_taxes,clients(first_name,last_name,client_code,dni,cuit,company_name,tax_condition,street,floor_apt,city,province)&limit=1`});
+    const r=await dq("operations",{token,filters:`?operation_code=eq.${encodeURIComponent(code)}&select=id,operation_code,description,client_id,budget_flete,budget_seguro,budget_taxes,budget_total,delivery_cost_usd,delivery_choice,ri_argencargo_collects_taxes,clients(first_name,last_name,client_code,dni,cuit,company_name,tax_condition,street,floor_apt,city,province)&limit=1`});
     const op=Array.isArray(r)?r[0]:null;
     if(!op){setErr(`No existe la operación ${code}`);setOpInfo(null);return;}
     const c=op.clients||{};
@@ -10596,7 +10596,12 @@ function FacturasPanel({token}){
     if(fl>0)ls.push({key:"flete",label:"Flete internacional",usd:String(fl),on:true});
     if(seg>0)ls.push({key:"seguro",label:"Seguro de carga",usd:String(seg),on:true});
     if(tax>0)ls.push({key:"taxes",label:"Impuestos y gestión aduanera",usd:String(tax),on:taxBilled});
-    if(otros>0.01)ls.push({key:"otros",label:"Otros cargos del servicio",usd:String(otros),on:true});
+    // El envío a domicilio (flete local elegido en el link) va como concepto propio; lo que
+    // sobre después de eso queda como "Otros cargos del servicio". Las etiquetas se pueden editar.
+    const envio=r2(Math.min(otros,Number(op.delivery_cost_usd||0)));
+    if(envio>0.01)ls.push({key:"envio",label:"Envío a domicilio",usd:String(envio),on:true});
+    const resto=r2(otros-envio);
+    if(resto>0.01)ls.push({key:"otros",label:"Otros cargos del servicio",usd:String(resto),on:true});
     setLineas(ls);
     // TC del último cobro registrado en la op (el real al que se cobró); si no hay, queda el blue.
     const cp=await dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&exchange_rate=not.is.null&select=exchange_rate&order=payment_date.desc&limit=1`});
@@ -10700,7 +10705,7 @@ function FacturasPanel({token}){
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
             {lineas.map((l,i)=><div key={l.key} style={{display:"grid",gridTemplateColumns:"22px 1fr 110px 120px",gap:8,alignItems:"center",padding:"8px 10px",background:l.on?"rgba(184,149,106,0.07)":"rgba(255,255,255,0.02)",border:`1px solid ${l.on?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:9}}>
               <input type="checkbox" checked={l.on} onChange={e=>setLineas(p=>p.map((x,j)=>j===i?{...x,on:e.target.checked}:x))} style={{accentColor:"#B8956A"}}/>
-              <span style={{fontSize:12.5,fontWeight:600,color:l.on?"#fff":"rgba(255,255,255,0.4)"}}>{l.label}</span>
+              <input value={l.label} onChange={e=>setLineas(p=>p.map((x,j)=>j===i?{...x,label:e.target.value}:x))} disabled={!l.on} placeholder="Concepto" title="Podés editar el nombre del concepto" style={{...inp,padding:"7px 8px",fontSize:12.5,fontWeight:600,background:"transparent",border:"1px solid transparent",color:l.on?"#fff":"rgba(255,255,255,0.4)"}} onFocus={e=>{e.target.style.border="1px solid rgba(184,149,106,0.5)";e.target.style.background="rgba(255,255,255,0.05)";}} onBlur={e=>{e.target.style.border="1px solid transparent";e.target.style.background="transparent";}}/>
               <div style={{position:"relative"}}>
                 <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)"}}>USD</span>
                 <input value={l.usd} onChange={e=>setLineas(p=>p.map((x,j)=>j===i?{...x,usd:e.target.value.replace(/[^0-9.,]/g,"").replace(",",".")}:x))} inputMode="decimal" disabled={!l.on} style={{...inp,padding:"7px 8px 7px 38px",fontSize:12.5,textAlign:"right"}}/>
