@@ -10543,6 +10543,17 @@ function FacturasPanel({token}){
   const [tc,setTc]=useState("");
   const [importe,setImporte]=useState("");const [detalle,setDetalle]=useState("Servicios logísticos");
   const [buscandoPadron,setBuscandoPadron]=useState(false);
+  // Ops listas para entregar / entregadas que todavía no tienen factura emitida: se eligen de acá
+  // sin tener que entrar a cada op.
+  const [facturables,setFacturables]=useState([]);
+  const loadFacturables=async()=>{
+    try{
+      const ops=await dq("operations",{token,filters:"?status=eq.entregada&select=id,operation_code,budget_total,delivery_completed_at,office_received_at,clients(first_name,last_name,client_code)&order=office_received_at.desc.nullslast&limit=200"});
+      const conFactura=new Set(rows.filter(f=>f.status==="emitida"&&f.operation_id).map(f=>f.operation_id));
+      setFacturables((Array.isArray(ops)?ops:[]).filter(o=>!conFactura.has(o.id)&&Number(o.budget_total)>0));
+    }catch{setFacturables([]);}
+  };
+  useEffect(()=>{if(modal)loadFacturables();},[modal]);
   const COND={1:"IVA Responsable Inscripto",4:"IVA Sujeto Exento",5:"Consumidor Final",6:"Responsable Monotributo",7:"Sujeto No Categorizado",13:"Monotributista Social"};
   const load=async()=>{setLo(true);try{const r=await fetch("/api/facturas",{headers:{Authorization:`Bearer ${token}`}}).then(x=>x.json());setRows(r.facturas||[]);setConfigured(r.configured!==false);}catch{}setLo(false);};
   useEffect(()=>{load();},[token]);
@@ -10675,6 +10686,18 @@ function FacturasPanel({token}){
           <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>🧾 Nueva Factura C</h3>
           <button onClick={cerrar} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0}}>×</button>
         </div>
+        {!opInfo&&facturables.length>0&&<div style={{marginBottom:12}}>
+          <label style={lb}>Listas para facturar · {facturables.length}</label>
+          <div style={{maxHeight:210,overflowY:"auto",border:"1px solid rgba(255,255,255,0.08)",borderRadius:9,background:"rgba(255,255,255,0.02)"}}>
+            {facturables.map(o=>{const c=o.clients||{};const nom=`${c.first_name||""} ${c.last_name||""}`.trim();return <button key={o.id} onClick={()=>{setOpCode(o.operation_code);traerOp(o.operation_code);}} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"8px 11px",background:"transparent",border:"none",borderBottom:"1px solid rgba(255,255,255,0.05)",cursor:"pointer",textAlign:"left",color:"#fff"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(184,149,106,0.08)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <span style={{fontFamily:"monospace",fontSize:11.5,color:"#E8C99B",fontWeight:700,flexShrink:0}}>{o.operation_code}</span>
+              <span style={{flex:1,fontSize:12.5,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nom||"—"} <span style={{fontSize:10,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{c.client_code||""}</span></span>
+              <span style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",flexShrink:0}}>{o.delivery_completed_at?"entregada":"lista"}</span>
+              <span style={{fontSize:12,fontWeight:800,flexShrink:0,fontFeatureSettings:'"tnum"'}}>USD {Number(o.budget_total).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+            </button>;})}
+          </div>
+          <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"5px 0 0"}}>Tocá una para cargar sus datos. O escribí el código abajo.</p>
+        </div>}
         <label style={lb}>Operación</label>
         <div style={{display:"flex",gap:8}}>
           <input value={opCode} onChange={e=>setOpCode(e.target.value)} placeholder="AC-0123" style={{...inp,flex:1,fontFamily:"monospace"}} onKeyDown={e=>e.key==="Enter"&&traerOp()}/>
@@ -13595,6 +13618,9 @@ function AdminDashboard({session,onLogout}){
   // Backward-compat: si en algún lado se referencia 'nav' como flat list
   const nav=navSections.flatMap(s=>s.items);
   const [pendingTasks,setPendingTasks]=useState(0);
+  // Globo del bot: conversaciones con mensajes del cliente sin ver (se refresca cada 30 s).
+  const [botUnread,setBotUnread]=useState(0);
+  useEffect(()=>{let mounted=true;const load=async()=>{try{const r=await fetch("/api/admin/bot?count=1",{headers:{Authorization:`Bearer ${token}`}});const b=await r.json().catch(()=>({}));if(mounted&&r.ok)setBotUnread(Number(b.unread||0));}catch{}};load();const iv=setInterval(load,30000);return()=>{mounted=false;clearInterval(iv);};},[token,page]);
   useEffect(()=>{let mounted=true;const load=async()=>{const r=await dq("admin_tasks",{token,filters:"?select=id&done=eq.false"});if(mounted&&Array.isArray(r))setPendingTasks(r.length);};load();const iv=setInterval(load,30000);return()=>{mounted=false;clearInterval(iv);};},[token,page]);
   // Listener para "+ Nueva operación" desde el HOY dashboard (custom event)
   useEffect(()=>{const h=()=>{setPage("operations");setSelOp(null);setSelClient(null);setNewOp(true);};window.addEventListener("ac_new_op",h);return()=>window.removeEventListener("ac_new_op",h);},[]);
@@ -13607,7 +13633,7 @@ function AdminDashboard({session,onLogout}){
     {/* Sidebar nav agrupado por secciones — sentence case, tipografía Inter limpia */}
     <nav style={{flex:1,padding:"10px 10px 14px",overflowY:"auto"}}>{navSections.map(sec=><div key={sec.section} style={{marginTop:16}}>
       <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.32)",margin:"0 0 6px",padding:"0 14px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{sec.section}</p>
-      {sec.items.map(item=>{const active=page===item.key;return <button key={item.key} onClick={()=>{if(item.href){window.open(item.href,"_blank");return;}setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"8px 14px",marginBottom:1,borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:active?700:500,letterSpacing:"-0.005em",background:active?"linear-gradient(90deg, rgba(184,149,106,0.10), rgba(184,149,106,0.02))":"transparent",color:active?"#fff":"rgba(255,255,255,0.55)",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="rgba(255,255,255,0.9)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}}>{active&&<span style={{position:"absolute",left:-10,top:6,bottom:6,width:3,background:GOLD_GRADIENT,borderRadius:"0 3px 3px 0"}}/>}<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={active?GOLD_LIGHT:"rgba(255,255,255,0.5)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.9}}>{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left"}}>{item.label}</span>{item.key==="tasks"&&pendingTasks>0&&<span style={{background:GOLD_GRADIENT,color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,border:`1px solid ${GOLD_DEEP}`}}>{pendingTasks}</span>}</button>;})}
+      {sec.items.map(item=>{const active=page===item.key;return <button key={item.key} onClick={()=>{if(item.href){window.open(item.href,"_blank");return;}setPage(item.key);setSelOp(null);setSelClient(null);setNewOp(false);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"8px 14px",marginBottom:1,borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:active?700:500,letterSpacing:"-0.005em",background:active?"linear-gradient(90deg, rgba(184,149,106,0.10), rgba(184,149,106,0.02))":"transparent",color:active?"#fff":"rgba(255,255,255,0.55)",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="rgba(255,255,255,0.9)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}}>{active&&<span style={{position:"absolute",left:-10,top:6,bottom:6,width:3,background:GOLD_GRADIENT,borderRadius:"0 3px 3px 0"}}/>}<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={active?GOLD_LIGHT:"rgba(255,255,255,0.5)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.9}}>{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left"}}>{item.label}</span>{item.key==="tasks"&&pendingTasks>0&&<span style={{background:GOLD_GRADIENT,color:"#0A1628",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0,border:`1px solid ${GOLD_DEEP}`}}>{pendingTasks}</span>}{item.key==="bot"&&botUnread>0&&<span title={`${botUnread} conversación${botUnread>1?"es":""} sin leer`} style={{background:"#ef4444",color:"#fff",fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:8,minWidth:18,textAlign:"center",letterSpacing:0}}>{botUnread}</span>}</button>;})}
     </div>)}</nav>
     <div style={{padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.06)"}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}><div style={{width:34,height:34,borderRadius:"50%",background:"linear-gradient(135deg, rgba(184,149,106,0.22), rgba(184,149,106,0.08))",border:"1px solid rgba(184,149,106,0.25)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12,color:GOLD_LIGHT,letterSpacing:"0.03em"}}>AD</div><div style={{flex:1,minWidth:0}}><p style={{fontSize:12.5,fontWeight:600,color:"#fff",margin:0}}>Admin</p><p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"1px 0 0",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{session.user.email}</p></div></div><button onClick={onLogout} style={{width:"100%",padding:"8px 10px",fontSize:11.5,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:600,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";e.currentTarget.style.color=GOLD_LIGHT;}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>Cerrar sesión</button></div>
   </>;

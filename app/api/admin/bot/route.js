@@ -107,7 +107,15 @@ const rowToConv = (r) => ({
 export async function GET(req) {
   if (!(await isAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ error: "Server config missing" }, { status: 500 });
-  const phone = digits(new URL(req.url).searchParams.get("phone"));
+  const url = new URL(req.url);
+  const phone = digits(url.searchParams.get("phone"));
+
+  // Globo del menú: cuántas conversaciones tienen mensajes del cliente sin ver.
+  if (url.searchParams.get("count") === "1") {
+    const r = await sb(`/bot_conversations?select=phone,last_user_at,admin_seen_at&last_user_at=not.is.null`);
+    const n = (Array.isArray(r.body) ? r.body : []).filter((c) => !c.admin_seen_at || new Date(c.last_user_at) > new Date(c.admin_seen_at)).length;
+    return Response.json({ unread: n });
+  }
 
   if (phone) {
     const [conv, msgs] = await Promise.all([
