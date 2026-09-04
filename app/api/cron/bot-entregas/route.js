@@ -7,6 +7,13 @@
 //      necesitamos el pago; sin pago rige USD 0,5 diarios por kg" — después de este,
 //      pasa a GESTIÓN HUMANA (notificación al admin) y no se manda nada más.
 //
+// AVISO DE RETIRO AUTOMÁTICO: toda op que llega a la oficina (status entregada, sin
+// delivery_ready_at, no RI con entrega directa) recibe sola el aviso de "carga lista"
+// (mail + plantilla carga_lista) vía /api/notify — ya no hace falta tocar "Avisar".
+//
+// Todo sale solo en horario comercial (9 a 20 h Argentina); fuera de eso el cron no manda
+// nada y lo retoma en la próxima pasada.
+//
 // Sin credenciales de Meta todo es no-op. ?dry=1 devuelve qué mandaría sin mandar.
 
 import { sendWaTemplate, waConfigured, waNumber } from "../../../../lib/wa";
@@ -46,9 +53,44 @@ export async function GET(req) {
   if (!SB_SERVICE) return Response.json({ error: "Server config missing" }, { status: 500 });
   const dry = new URL(req.url).searchParams.get("dry") === "1";
   const now = Date.now();
+  // Horario comercial Argentina (UTC-3): 9 a 20 h.
+  const horaAr = (new Date(now).getUTCHours() + 24 - 3) % 24;
+  const enHorario = horaAr >= 9 && horaAr < 21;
+  if (!enHorario && !dry) return Response.json({ skipped: "fuera_de_horario", hora_ar: horaAr });
+
+  // ── Avisos de retiro automáticos ──
+  const out = { avisos: [], avisos_enviados: 0, recordatorios: [], enviados: 0, wa: waConfigured(), hora_ar: horaAr };
+  const r0 = await sb(`/operations?status=eq.entregada&delivery_ready_at=is.null&delivery_completed_at=is.null&ri_entrega_directa=not.is.true&select=id,operation_code,description,delivery_public_token,sent_notifications,office_received_at,ri_entrega_directa,clients(first_name,client_code,email,whatsapp,tax_condition)`);
+  for (const op of Array.isArray(r0.body) ? r0.body : []) {
+    const c = op.clients || {};
+    const riDir = op.ri_entrega_directa !== false && (op.ri_entrega_directa === true || c.tax_condition === "responsable_inscripto");
+    if (riDir) continue;
+    if (!c.email && !waNumber(c.whatsapp)) continue;
+    out.avisos.push(`${op.operation_code} → carga_lista`);
+    if (dry) continue;
+    try {
+      const r = await fetch(`${BASE_URL}/api/notify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` },
+        body: JSON.stringify({ op_id: op.id, trigger: "retiro" }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (j?.ok || j?.skipped === "already_sent") { out.avisos_enviados++; continue; }
+      if (j?.error === "cliente sin email" && waNumber(c.whatsapp) && op.delivery_public_token) {
+        // Sin mail: sale solo el WhatsApp y se marca lista igual (mismo efecto que /api/notify).
+        const carga = op.description ? `${op.description} (${op.operation_code})` : op.operation_code;
+        const w = await sendWaTemplate(c.whatsapp, "carga_lista", [c.first_name || "Hola", carga, `${BASE_URL}/retiro/${op.delivery_public_token}`]);
+        if (w?.ok) {
+          out.avisos_enviados++;
+          await sb(`/operations?id=eq.${op.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ delivery_ready_at: new Date().toISOString(), sent_notifications: { ...(op.sent_notifications || {}), wa_retiro: new Date().toISOString() } }) });
+          continue;
+        }
+      }
+      console.error("[bot-entregas] aviso falló", op.operation_code, j?.error || r.status);
+    } catch (e) { console.error("[bot-entregas] aviso", op.operation_code, e.message); }
+  }
 
   const r1 = await sb(`/operations?delivery_ready_at=not.is.null&delivery_confirmed_at=is.null&delivery_completed_at=is.null&bot_coord_reminder_count=lt.2&select=id,operation_code,description,delivery_public_token,delivery_ready_at,bot_coord_reminder_at,bot_coord_reminder_count,clients(first_name,last_name,client_code,whatsapp)`);
-  const out = { recordatorios: [], enviados: 0, wa: waConfigured() };
 
   for (const op of Array.isArray(r1.body) ? r1.body : []) {
     const base = new Date(op.bot_coord_reminder_at || op.delivery_ready_at).getTime();
