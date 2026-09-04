@@ -91,7 +91,7 @@ function saldoOf(op, pagosUsd) {
   ) * 100) / 100;
 }
 
-const OP_SEL = "id,operation_code,status,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_ready_at,delivery_public_token,delivery_contact,carrier_mode,delivery_group_id,client_id,clients(first_name,last_name,client_code,whatsapp,email,street,floor_apt,city,province,postal_code)";
+const OP_SEL = "id,operation_code,link_opened_at,link_last_opened_at,link_open_count,status,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_ready_at,delivery_public_token,delivery_contact,carrier_mode,delivery_group_id,client_id,clients(first_name,last_name,client_code,whatsapp,email,street,floor_apt,city,province,postal_code)";
 
 async function opView(op) {
   const [pagosRes, pkRes] = await Promise.all([
@@ -124,6 +124,7 @@ async function opView(op) {
       split: op.payment_split,
       llega_con: op.cash_arrival_amount ? { monto: Number(op.cash_arrival_amount), moneda: op.cash_arrival_currency } : null,
     },
+    link_abierto: op.link_opened_at ? { veces: Number(op.link_open_count || 0), primera: op.link_opened_at, ultima: op.link_last_opened_at } : { veces: 0 },
     link: op.delivery_public_token ? `https://argencargo.com.ar/retiro/${op.delivery_public_token}` : null,
     franjas_validas: op.delivery_choice === "propio" ? FRANJAS.propio : FRANJAS.oficina,
     // Si se cambia la modalidad, las franjas válidas pasan a ser las de la nueva.

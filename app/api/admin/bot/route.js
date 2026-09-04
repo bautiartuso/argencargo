@@ -67,7 +67,7 @@ export async function GET(req) {
   if (phone) {
     const [conv, msgs] = await Promise.all([
       sb(`/bot_conversations?phone=eq.${phone}&select=phone,label,human_mode,last_user_at,admin_seen_at,updated_at&limit=1`),
-      sb(`/bot_messages?phone=eq.${phone}&select=id,role,content,media_url,media_type,created_at&order=created_at.asc&limit=500`),
+      sb(`/bot_messages?phone=eq.${phone}&select=id,role,content,media_url,media_type,wamid,delivered_at,read_at,failed_at,error,created_at&order=created_at.asc&limit=500`),
     ]);
     const c = Array.isArray(conv.body) && conv.body[0] ? conv.body[0] : { phone, human_mode: false, last_user_at: null };
     await sb(`/bot_conversations?on_conflict=phone`, { method: "POST", body: JSON.stringify({ phone, admin_seen_at: new Date().toISOString() }) });

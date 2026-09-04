@@ -112,6 +112,8 @@ export async function GET(req, { params }) {
 
   const op = await loadOpData(token);
   if (!op) return Response.json({ error: "No encontramos esta operación o el link expiró" }, { status: 404 });
+  // Registro de apertura del link (primera vez, última vez, cantidad) — lo ven Entregas y Argy.
+  sbFetch(`/rpc/link_opened`, { method: "POST", body: JSON.stringify({ p_token: token }) }).catch(() => {});
 
   const [pkgsRes, settingsRes, itemsRes, { cfg, localities }, hermanas, pagosOp, factRes] = await Promise.all([
     sbFetch(`/operation_packages?operation_id=eq.${op.id}&select=package_number,quantity,gross_weight_kg,length_cm,width_cm,height_cm,national_tracking&order=package_number.asc`),

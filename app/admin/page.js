@@ -4456,7 +4456,11 @@ function BotPanel({token}){
                 ?<a href={m.media_url} target="_blank" rel="noreferrer"><img src={m.media_url} alt="adjunto" style={{maxWidth:"100%",maxHeight:260,borderRadius:8,display:"block",marginBottom:6}}/></a>
                 :<a href={m.media_url} target="_blank" rel="noreferrer" style={{display:"block",fontSize:12,color:"#60a5fa",marginBottom:6}}>📄 Abrir documento</a>)}
               <span style={{fontSize:13,color:"#fff",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{m.content}</span>
-              <span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)",marginTop:4,textAlign:"right"}}>{fmtHora(m.created_at)}</span>
+              <span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)",marginTop:4,textAlign:"right"}}>{fmtHora(m.created_at)}{m.role!=="user"&&(m.failed_at
+                ?<span title={m.error||"No entregado"} style={{marginLeft:6,color:"#f87171",fontWeight:800}}>⚠ no entregado</span>
+                :m.read_at?<span title={`Leído ${fmtHora(m.read_at)}`} style={{marginLeft:6,color:"#53bdeb",fontWeight:800}}>✓✓</span>
+                :m.delivered_at?<span title={`Entregado ${fmtHora(m.delivered_at)}`} style={{marginLeft:6,color:"rgba(255,255,255,0.55)",fontWeight:800}}>✓✓</span>
+                :m.wamid?<span title="Enviado" style={{marginLeft:6,color:"rgba(255,255,255,0.45)"}}>✓</span>:null)}</span>
             </div>;})}
           <div ref={endRef}/>
         </div>
@@ -4729,6 +4733,7 @@ function EntregasPanel({token,onOpenOp}){
   // Empleado: coordina la entrega pero no ve montos — solo el estado (cobrada o no).
   const sinMontos=false; // el empleado ve los montos del cliente (no ve costos ni ganancia)
   const [rows,setRows]=useState([]);
+  const [waByOp,setWaByOp]=useState({}); // op → último WhatsApp del bot (con leído/entregado)
   const [bultosByOp,setBultosByOp]=useState({});const [cobrosByOp,setCobrosByOp]=useState({});
   const [lo,setLo]=useState(true);
   const [q,setQ]=useState("");
@@ -4746,7 +4751,7 @@ function EntregasPanel({token,onOpenOp}){
   //      pierden de vista al marcarlas entregadas, como pasaba antes.
   const load=async()=>{
     setLo(true);
-    const sel="id,operation_code,channel,office_received_at,closed_at,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code)";
+    const sel="id,operation_code,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code)";
     const [pend,entr,done]=await Promise.all([
       dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${sel}&order=eta.desc`}),
       dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.false&select=${sel}&order=delivery_completed_at.desc&limit=200`}).catch(()=>[]),
@@ -4756,6 +4761,12 @@ function EntregasPanel({token,onOpenOp}){
     setHechas(doneList);
     const list=[...(Array.isArray(pend)?pend:[]),...(Array.isArray(entr)?entr:[])];
     setRows(list);
+    // Estado del último WhatsApp del bot por op (enviado / entregado / leído): "¿vio el aviso?"
+    dq("bot_messages",{token,filters:"?select=content,wamid,delivered_at,read_at,failed_at,created_at&role=in.(assistant,human)&order=created_at.desc&limit=1500"}).then(ms=>{
+      if(!Array.isArray(ms))return;const m={};
+      for(const o of list){const hit=ms.find(x=>String(x.content||"").includes(o.operation_code));if(hit)m[o.operation_code]=hit;}
+      setWaByOp(m);
+    }).catch(()=>{});
     const idsBultos=[...list,...doneList].map(o=>o.id);
     if(idsBultos.length>0){
       // Sin esto el panel ignoraba los cobros parciales y mostraba el presupuesto entero como deuda.
@@ -5058,6 +5069,10 @@ function EntregasPanel({token,onOpenOp}){
           <span style={{fontFamily:"monospace",color:"#E8C99B",fontWeight:700}}>{o.operation_code}</span> · {bultos||"?"} bulto{bultos!==1?"s":""}
           {contexto==="aviso"&&<span> · lista hace <b style={{color:dias>3?"#fbbf24":"inherit"}}>{dias} d</b></span>}
           {contexto==="esperando"&&<span> · avisada hace <b style={{color:dias>2?"#fbbf24":"inherit"}}>{dias} d</b> sin respuesta</span>}
+          {contexto==="esperando"&&(()=>{const w=waByOp[o.operation_code];const hh=(d)=>new Date(d).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+            const wa=!w?<span style={{color:"rgba(255,255,255,0.35)"}}>sin WhatsApp</span>:w.failed_at?<span style={{color:"#f87171"}} title={w.error||""}>⚠ WA no entregado</span>:w.read_at?<span style={{color:"#53bdeb",fontWeight:700}} title={`Leído ${hh(w.read_at)}`}>✓✓ leyó el WA</span>:w.delivered_at?<span style={{color:"rgba(255,255,255,0.6)"}} title={`Entregado ${hh(w.delivered_at)}`}>✓✓ WA entregado, sin leer</span>:<span style={{color:"rgba(255,255,255,0.45)"}}>✓ WA enviado</span>;
+            const lk=o.link_opened_at?<span style={{color:"#4ade80",fontWeight:700}} title={`Primera vez ${hh(o.link_opened_at)}`}>🔗 abrió el link{Number(o.link_open_count)>1?` ×${o.link_open_count}`:""} · {hh(o.link_last_opened_at||o.link_opened_at)}</span>:<span style={{color:"#fbbf24"}}>🔗 no abrió el link</span>;
+            return <span style={{marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>{wa}{lk}</span>;})()}
           {contexto==="acobrar"&&<span> · entregada hace <b style={{color:dias>3?"#f87171":"inherit"}}>{dias} d</b></span>}
           {contexto==="hecha"&&o.delivery_completed_at&&<span> · entregada el {new Date(o.delivery_completed_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}</span>}
           {esEnvio&&o.delivery_address&&(contexto==="porentregar")&&<span style={{display:"block",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>📍 {o.delivery_address}{dc.telefono?` · 📞 ${dc.telefono}`:""}</span>}
