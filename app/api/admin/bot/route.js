@@ -35,7 +35,7 @@ async function isAdmin(req) {
   try {
     const payload = JSON.parse(Buffer.from(auth.slice(7).split(".")[1], "base64").toString());
     const p = await sb(`/profiles?select=role&id=eq.${payload.sub}`);
-    return Array.isArray(p.body) && p.body[0]?.role === "admin";
+    return Array.isArray(p.body) && ["admin","empleado"].includes(p.body[0]?.role);
   } catch { return false; }
 }
 

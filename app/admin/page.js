@@ -1274,7 +1274,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     {k:"entrega",l:"Entrega"},
     // Sin solapa Comunicaciones en ningun canal no-GI (pedido 02/08: ocupaba lugar sin aportar).
     ...(["aereo_blanco","maritimo_negro","maritimo_blanco"].includes(initOp.channel)?[]:[{k:"comms",l:"Comunicaciones"}])
-  ].filter(t=>!esEmpleado()||["general","packages","entrega","tracking"].includes(t.k));
+  ];
   const chOp=f=>v=>setOp(p=>({...p,[f]:v}));
   // Checklist de cierre — modal cuando se intenta cerrar la op
   const [showCloseChecklist,setShowCloseChecklist]=useState(false);
@@ -2299,6 +2299,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         await dq("operation_supplier_payments",{method:"PATCH",token,filters:`?id=eq.${p.id}`,body:{is_paid:newPaid,paid_at:newPaid?new Date().toISOString():null}});
         load();
       };
+      if(esEmpleado())return null; // costos = margen: no los ve el empleado
       return <Card title="Costos de la operación">
         {/* Resumen */}
         <div style={{display:"flex",gap:20,marginBottom:16,flexWrap:"wrap",padding:"14px 18px",background:"rgba(0,0,0,0.2)",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
@@ -4726,7 +4727,7 @@ function CoordinarModal({op,token,onClose,onSaved}){
 
 function EntregasPanel({token,onOpenOp}){
   // Empleado: coordina la entrega pero no ve montos — solo el estado (cobrada o no).
-  const sinMontos=esEmpleado();
+  const sinMontos=false; // el empleado ve los montos del cliente (no ve costos ni ganancia)
   const [rows,setRows]=useState([]);
   const [bultosByOp,setBultosByOp]=useState({});const [cobrosByOp,setCobrosByOp]=useState({});
   const [lo,setLo]=useState(true);
@@ -8072,6 +8073,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
         </tr>;
       };
       const th={padding:"8px",fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",textAlign:"right",whiteSpace:"nowrap"};
+      if(esEmpleado())return null;
       return <Card title="Detalle financiero del vuelo">
         <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>
           Suma de las {opsUnique.length} operacion{opsUnique.length!==1?"es":""} del vuelo. Lo cobrado es <strong style={{color:"rgba(255,255,255,0.75)"}}>neto</strong>, ya descontada la comisión de cada transferencia. Es solo informativo — estos números ya los aporta cada op, así que no se suman en Finanzas.{finK>0&&<> El costo del flete incluye la <strong style={{color:"#fb923c"}}>comisión financiera del {(finK*100).toFixed(2).replace(".",",")}%</strong> de los anticipos.</>}
@@ -8129,13 +8131,13 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
             {tile("✈️","Carrier",flight.international_carrier||"—")}
             {tile("🔎","Tracking",<span style={{fontFamily:"monospace"}}>{flight.international_tracking||"—"}</span>)}
             {tile("⚖️","Peso total",flight.total_weight_kg?`${Number(flight.total_weight_kg).toLocaleString("es-AR",{maximumFractionDigits:2})} kg`:"—",totalFactKg>0?`${totalFactKg.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg facturable`:null)}
-            {tile("💵",finK>0?"Costo agente":"Costo total",<span style={{color:"#4ade80"}}>{usd(flight.total_cost_usd||0)}</span>,finK>0?`Efectivo ${usd((flight.total_cost_usd||0)*(1+finK))} con comisión ${(finK*100).toFixed(2).replace(".",",")}%${totalFactKg>0?` · ${usd((flight.total_cost_usd||0)*(1+finK)/totalFactKg)}/kg`:""}`:(totalFactKg>0?`${usd((flight.total_cost_usd||0)/totalFactKg)}/kg facturable`:null))}
+            {!esEmpleado()&&tile("💵",finK>0?"Costo agente":"Costo total",<span style={{color:"#4ade80"}}>{usd(flight.total_cost_usd||0)}</span>,finK>0?`Efectivo ${usd((flight.total_cost_usd||0)*(1+finK))} con comisión ${(finK*100).toFixed(2).replace(".",",")}%${totalFactKg>0?` · ${usd((flight.total_cost_usd||0)*(1+finK)/totalFactKg)}/kg`:""}`:(totalFactKg>0?`${usd((flight.total_cost_usd||0)/totalFactKg)}/kg facturable`:null))}
             {tile("💳","Pago",pagoLbl)}
             {tile("📅","Despachado",formatDate(flight.dispatched_at))}
           </div>;
         })()}
         {/* Desglose del costo cargado por el agente (control de tarifas): USD/kg + recargos */}
-        {Number(flight.cost_per_kg_usd||0)>0&&(()=>{
+        {!esEmpleado()&&Number(flight.cost_per_kg_usd||0)>0&&(()=>{
           const kg=Number(flight.total_weight_kg||0);const rate=Number(flight.cost_per_kg_usd);
           const base=Math.round(kg*rate*100)/100;
           const brand=flight.cost_brand?Math.round(0.7*kg*100)/100:0;
@@ -8186,7 +8188,7 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
           <p style={{fontSize:11,color:"#fbbf24",margin:0,fontWeight:600}}>⚠ Editar redistribuye el costo entre las {flightOps.length} operaciones del vuelo proporcional al peso de cada una. Se actualiza <code>cost_flete</code> en cada op.</p>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
-          <Inp label="Costo total (USD)" type="number" step="0.01" value={costForm.total_cost_usd} onChange={v=>setCostForm(p=>({...p,total_cost_usd:v}))}/>
+          {!esEmpleado()&&<Inp label="Costo total (USD)" type="number" step="0.01" value={costForm.total_cost_usd} onChange={v=>setCostForm(p=>({...p,total_cost_usd:v}))}/>}
           <Inp label="Peso total (kg)" type="number" step="0.01" value={costForm.total_weight_kg} onChange={v=>setCostForm(p=>({...p,total_weight_kg:v}))}/>
           <Inp label="Carrier" value={costForm.international_carrier} onChange={v=>setCostForm(p=>({...p,international_carrier:v}))}/>
           <Inp label="Tracking" value={costForm.international_tracking} onChange={v=>setCostForm(p=>({...p,international_tracking:v}))}/>
@@ -8886,7 +8888,7 @@ function AgentsPanel({token}){
   return <div>
     {msg&&<p style={{fontSize:12,color:"#22c55e",fontWeight:600,marginBottom:12,animation:"ac_fade_in 200ms"}}>✓ {msg}</p>}
     <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
-      {[{k:"deposito",l:"Depósito",n:depositOps.length},{k:"flights",l:"Vuelos",n:flights.length},{k:"accounts",l:"CC Agentes",n:approvedAgents.length},{k:"signups",l:"Solicitudes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"10px 16px",fontSize:12,fontWeight:active?700:600,border:"none",background:"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",display:"inline-flex",alignItems:"center",gap:6}} onMouseEnter={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.8)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{tb.l}{tb.n!==undefined&&<span style={{fontSize:10,fontWeight:700,color:active?GOLD_LIGHT:"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
+      {[{k:"deposito",l:"Depósito",n:depositOps.length},{k:"flights",l:"Vuelos",n:flights.length},...(esEmpleado()?[]:[{k:"accounts",l:"CC Agentes",n:approvedAgents.length}]),{k:"signups",l:"Solicitudes",n:signups.filter(s=>s.status==="pending").length},{k:"orphans",l:"Huérfanos",n:unassigned.length}].map(tb=>{const active=tab===tb.k;return <button key={tb.k} onClick={()=>{setTab(tb.k);setSelFlight(null);}} style={{padding:"10px 16px",fontSize:12,fontWeight:active?700:600,border:"none",background:"transparent",color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",cursor:"pointer",letterSpacing:"0.06em",textTransform:"uppercase",borderBottom:`2px solid ${active?GOLD:"transparent"}`,marginBottom:-1,transition:"all 150ms",display:"inline-flex",alignItems:"center",gap:6}} onMouseEnter={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.8)";}} onMouseLeave={e=>{if(!active)e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{tb.l}{tb.n!==undefined&&<span style={{fontSize:10,fontWeight:700,color:active?GOLD_LIGHT:"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{tb.n}</span>}</button>;})}
     </div>
 
     {tab==="deposito"&&(()=>{
@@ -9213,7 +9215,7 @@ function AgentsPanel({token}){
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",textAlign:"center",fontVariantNumeric:"tabular-nums"}}>{bultos||"—"}</td>
             <td style={{padding:"10px 8px",color:pierdo?"#ff5252":gano?"#4ade80":"rgba(255,255,255,0.6)",fontWeight:(pierdo||gano)?800:400,textShadow:pierdo?"0 0 10px rgba(255,82,82,0.55)":"none",whiteSpace:"nowrap",textAlign:"center"}} title={pierdo?`El agente declaró ${kgVuelo.toLocaleString("es-AR",{maximumFractionDigits:2})} kg y el sistema factura ${pesoFact.toLocaleString("es-AR",{maximumFractionDigits:2})} kg — estás pagando más kg de los que cobrás`:gano?"El facturable supera el kg declarado por el agente":""}>{pesoFact>0?`${pesoFact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}}>{kgVuelo>0?`${kgVuelo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
-            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}} title={f.total_cost_usd?(finR>0?`Costo agente ${usd(f.total_cost_usd)} + comisión financiera ${(finR*100).toFixed(2).replace(".",",")}% (${usd(costoEf-Number(f.total_cost_usd))}) = ${usd(costoEf)} efectivo`:`Costo total: ${usd(f.total_cost_usd)}`):""}>{costoKg!=null?`${usd(costoKg)}/kg`:"—"}</td>
+            <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}} title={esEmpleado()?"":f.total_cost_usd?(finR>0?`Costo agente ${usd(f.total_cost_usd)} + comisión financiera ${(finR*100).toFixed(2).replace(".",",")}% (${usd(costoEf-Number(f.total_cost_usd))}) = ${usd(costoEf)} efectivo`:`Costo total: ${usd(f.total_cost_usd)}`):""}>{esEmpleado()?"—":costoKg!=null?`${usd(costoKg)}/kg`:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.35,textAlign:"center"}}>{f.international_tracking?<><span style={{fontFamily:"monospace"}}>{f.international_tracking}</span>{f.international_carrier&&<><br/><span style={{fontSize:9,fontWeight:700,color:IC,letterSpacing:"0.04em",textTransform:"uppercase"}}>{f.international_carrier}</span></>}</>:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:12,color:f.invoice_presented_at?"rgba(255,255,255,0.6)":"rgba(255,255,255,0.3)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}} title={f.invoice_presented_at?`Factura cerrada el ${formatDate(f.invoice_presented_at)} — el agente ya puede despachar`:"Factura todavía sin cerrar"}>{f.invoice_presented_at?`${String(new Date(f.invoice_presented_at).getDate()).padStart(2,"0")}/${String(new Date(f.invoice_presented_at).getMonth()+1).padStart(2,"0")}`:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:13,fontWeight:700,color:demoraInfo.color,whiteSpace:"nowrap",textAlign:"center"}} title={demoraInfo.title||(f.dispatched_at?`Dispatched: ${formatDate(f.dispatched_at)}${f.carrier_pickup_at?` · Pickup: ${formatDate(f.carrier_pickup_at)}`:""}`:"")}>{demoraInfo.txt}</td>
@@ -13486,8 +13488,10 @@ function AdminDashboard({session,onLogout}){
   // OJO: isEmpleado se declara ANTES del useEffect que lo usa — const no tiene hoisting y
   // meterlo despues tiro ReferenceError en el render (paso el 02/08, pantalla blanca).
   const isEmpleado=session?.profile?.role==="empleado";
-  // El empleado solo tiene Maritimos y Entregas: cualquier otra pagina lo devuelve ahi.
-  useEffect(()=>{if(isEmpleado&&!["maritime","entregas"].includes(page)&&!selOp)setPage("maritime");},[isEmpleado,page,selOp]);
+  // El empleado tiene Operativa + Comercial + Ajustes (sin Finanzas ni GI): cualquier otra
+  // pagina lo devuelve a Operaciones. Lo que muestra ganancia se tapa dentro de cada pantalla.
+  const EMP_PAGES=["operations","agents","maritime","agp","calc","entregas","bot","quotes","comms","clients","settings"];
+  useEffect(()=>{if(isEmpleado&&!EMP_PAGES.includes(page)&&!selOp)setPage("operations");},[isEmpleado,page,selOp]);
   // Paginado con Range: PostgREST corta en 1000 filas por request y ya hay mas clientes que eso.
   useEffect(()=>{(async()=>{
     const todos=[];
@@ -13502,12 +13506,7 @@ function AdminDashboard({session,onLogout}){
   // Nav agrupado por secciones (estilo Linear/Notion). Cada item: {key, label, p (svg paths)}
   // Estructura definida por el usuario. Inteligencia / Tareas / Tickets quedan como rutas
   // accesibles vía URL pero NO aparecen en sidebar.
-  const navSections=isEmpleado?[
-    {section:"Operativa",items:[
-      {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
-      {key:"entregas",label:"Entregas",p:["M3 9l9-6 9 6-9 6-9-6z","M3 9v6l9 6 9-6V9"]},
-    ]},
-  ]:[
+  const navSectionsAll=[
     {section:"Operativa",items:[
       {key:"operations",label:"Operaciones",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},
       {key:"agents",label:"Agentes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},
@@ -13536,6 +13535,7 @@ function AdminDashboard({session,onLogout}){
       {key:"settings",label:"Ajustes",p:["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z","M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"]},
     ]},
   ];
+  const navSections=isEmpleado?navSectionsAll.filter(s=>!["Finanzas","Gestión Integral"].includes(s.section)):navSectionsAll;
   // Backward-compat: si en algún lado se referencia 'nav' como flat list
   const nav=navSections.flatMap(s=>s.items);
   const [pendingTasks,setPendingTasks]=useState(0);
