@@ -36,7 +36,9 @@ async function enviarArchivo({ phone, buffer, mime, filename, caption, nombreCli
   }
   if (!r?.ok) return { error: r?.error || "Meta rechazó el envío", url: fileUrl };
   if (via === "libre") {
-    await sb(`/bot_messages`, { method: "POST", body: JSON.stringify({ phone, role: "human", content: caption || null, media_url: fileUrl, media_type: kind, wamid: r.id || null }) });
+    // lib/wa ya dejó la fila del envío (con wamid): se completa con el adjunto en vez de duplicarla.
+    const upd = await sb(`/bot_messages?wamid=eq.${encodeURIComponent(r.id || "")}`, { method: "PATCH", body: JSON.stringify({ role: "human", content: caption || null, media_url: fileUrl, media_type: kind }) });
+    if (!(Array.isArray(upd.body) && upd.body.length)) await sb(`/bot_messages`, { method: "POST", body: JSON.stringify({ phone, role: "human", content: caption || null, media_url: fileUrl, media_type: kind, wamid: r.id || null }) });
   } else {
     // La plantilla ya quedó logueada por lib/wa (texto); se agrega la URL del adjunto.
     await sb(`/bot_messages?wamid=eq.${encodeURIComponent(r.id || "")}`, { method: "PATCH", body: JSON.stringify({ media_url: fileUrl, media_type: kind }) }).catch(() => {});
