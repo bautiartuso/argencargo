@@ -102,7 +102,7 @@ const LECTURA_SCHEMA = {
     remitente: { anyOf: [{ type: "string" }, { type: "null" }], description: "Nombre de quien ENVÍA el dinero" },
     banco: { anyOf: [{ type: "string" }, { type: "null" }], description: "Banco o billetera desde la que se hizo" },
     referencia: { anyOf: [{ type: "string" }, { type: "null" }], description: "Número de operación / comprobante / referencia" },
-    observaciones: { type: "string", description: "Cualquier cosa rara: comprobante editado, borroso, pendiente, rechazado, etc. Vacío si nada." },
+    observaciones: { type: "string", description: "SOLO anomalías: comprobante editado, borroso, en estado pendiente o rechazado, fecha vieja, datos tapados. NO incluyas códigos de identificación ni datos normales del comprobante. Vacío si no hay nada raro." },
   },
   required: ["es_comprobante", "monto", "moneda", "fecha", "destinatario", "remitente", "banco", "referencia", "observaciones"],
   additionalProperties: false,
