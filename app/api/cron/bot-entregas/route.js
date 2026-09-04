@@ -61,12 +61,27 @@ export async function GET(req) {
 
   // ── Avisos de retiro automáticos ──
   const out = { avisos: [], avisos_enviados: 0, recordatorios: [], enviados: 0, wa: waConfigured(), hora_ar: horaAr };
-  const r0 = await sb(`/operations?status=eq.entregada&delivery_ready_at=is.null&delivery_completed_at=is.null&ri_entrega_directa=not.is.true&select=id,operation_code,description,delivery_public_token,sent_notifications,office_received_at,ri_entrega_directa,clients(first_name,client_code,email,whatsapp,tax_condition)`);
-  for (const op of Array.isArray(r0.body) ? r0.body : []) {
+  const r0 = await sb(`/operations?status=eq.entregada&delivery_ready_at=is.null&delivery_completed_at=is.null&ri_entrega_directa=not.is.true&select=id,operation_code,description,budget_total,delivery_public_token,sent_notifications,office_received_at,ri_entrega_directa,clients(first_name,client_code,email,whatsapp,tax_condition)`);
+  const cand = Array.isArray(r0.body) ? r0.body : [];
+  // Sin NCM en algún producto, el presupuesto está incompleto (derechos 0 %): NO se avisa —
+  // el cliente pagaría de menos (AC-0128, 04/09). Se avisa al admin una vez por día.
+  const itemsRes = cand.length ? await sb(`/operation_items?operation_id=in.(${cand.map((o) => o.id).join(",")})&select=operation_id,ncm_code`) : { body: [] };
+  const sinNcm = new Set((Array.isArray(itemsRes.body) ? itemsRes.body : []).filter((i) => !String(i.ncm_code || "").trim()).map((i) => i.operation_id));
+  for (const op of cand) {
     const c = op.clients || {};
     const riDir = op.ri_entrega_directa !== false && (op.ri_entrega_directa === true || c.tax_condition === "responsable_inscripto");
     if (riDir) continue;
     if (!c.email && !waNumber(c.whatsapp)) continue;
+    const bloqueo = sinNcm.has(op.id) ? "productos sin NCM (presupuesto incompleto)" : !(Number(op.budget_total) > 0) ? "presupuesto en cero" : "";
+    if (bloqueo) {
+      out.bloqueados = [...(out.bloqueados || []), `${op.operation_code}: ${bloqueo}`];
+      const last = op.sent_notifications?.aviso_bloqueado_at ? new Date(op.sent_notifications.aviso_bloqueado_at).getTime() : 0;
+      if (!dry && now - last > 24 * 3600 * 1000) {
+        await notifyAdmins("⛔ Aviso de carga lista frenado", `${op.operation_code} (${c.first_name || ""} ${c.client_code || ""}): ${bloqueo}. Completá la op y el aviso sale solo.`);
+        await sb(`/operations?id=eq.${op.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ sent_notifications: { ...(op.sent_notifications || {}), aviso_bloqueado_at: new Date().toISOString() } }) });
+      }
+      continue;
+    }
     out.avisos.push(`${op.operation_code} → carga_lista`);
     if (dry) continue;
     try {

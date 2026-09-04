@@ -179,10 +179,79 @@ export async function GET(req) {
   return Response.json({ error: "Falta ?op= o ?whatsapp=" }, { status: 400 });
 }
 
+// ── Acreditación automática de una transferencia (comprobante leído por el bot) ──
+// Replica exactamente el flujo de "💰 Cobrar" del admin: operation_client_payments +
+// movimiento en la CC de la financiera (SolFin, comisión 2,5 %) + collected_amount en la op.
+// Cierra el cobro si lo pagado alcanza el saldo (tolerancia USD 1 o 0,5 %); si es parcial,
+// deja el cobro abierto y devuelve lo que falta para que el bot se lo diga al cliente.
+async function acreditar(body) {
+  const op = await findOp(body.op);
+  if (!op) return { error: `Operación ${body.op} no encontrada`, status: 404 };
+  const monto = Number(body.monto_ars); const tc = Number(body.tc);
+  if (!(monto > 0) || !(tc > 0)) return { error: "monto_ars y tc tienen que ser > 0", status: 400 };
+  const ref = String(body.referencia || "").replace(/[^A-Za-z0-9-]/g, "").trim();
+  if (ref) {
+    const dup = await sb(`/operation_client_payments?operation_id=eq.${op.id}&notes=ilike.*ref%20${ref}*&select=id,amount_usd`);
+    if (Array.isArray(dup.body) && dup.body.length) return { duplicado: true, ref };
+  }
+  const pagosRes = await sb(`/operation_client_payments?operation_id=eq.${op.id}&select=amount_usd`);
+  let prev = (Array.isArray(pagosRes.body) ? pagosRes.body : []).reduce((a, x) => a + Number(x.amount_usd || 0), 0);
+  const hoy = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+  // Cobro legacy (registrado antes de que existiera la tabla de pagos): se preserva como fila.
+  const legacyRaw = Number(op.collected_amount || 0); const legacyRate = Number(op.collection_exchange_rate || 0);
+  const legacy = op.collection_currency === "ARS" && legacyRate > 0 ? legacyRaw / legacyRate : legacyRaw;
+  if (prev <= 0.01 && op.is_collected === false && legacy > 0.01) {
+    const lb = { operation_id: op.id, payment_date: hoy, amount_usd: legacy, currency: op.collection_currency || "USD", payment_method: op.collection_method || "transferencia", notes: "Cobro previo (migrado del registro anterior)" };
+    if (op.collection_currency === "ARS" && legacyRate > 0) { lb.amount_ars = legacyRaw; lb.exchange_rate = legacyRate; }
+    const insL = await sb(`/operation_client_payments`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(lb) });
+    if (!(Array.isArray(insL.body) && insL.body[0]?.id)) return { error: "No se pudo preservar el cobro previo", status: 500 };
+    prev = legacy;
+  }
+  const saldoAntes = saldoOf(op, prev);
+  const usd = Math.round((monto / tc) * 100) / 100;
+  const com = 2.5;
+  const comArs = Math.round(monto * com) / 100;
+  const ins = await sb(`/operation_client_payments`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({
+    operation_id: op.id, payment_date: hoy, amount_usd: usd, amount_ars: monto, exchange_rate: tc, currency: "ARS", payment_method: "transferencia",
+    receipt_url: body.receipt_url || null, ars_destination: "financiera", commission_pct: com,
+    notes: `Acreditado automáticamente por Argy (comprobante por WhatsApp${body.fecha ? ` del ${body.fecha}` : ""}${ref ? ` · ref ${ref}` : ""})`,
+  }) });
+  const pago = Array.isArray(ins.body) ? ins.body[0] : null;
+  if (!pago?.id) return { error: ins.body?.message || "El cobro no se pudo guardar", status: 500 };
+  try {
+    await sb(`/cc_solfin_movements`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({
+      date: hoy, type: "ingreso", currency: "ARS", amount: monto, commission_pct: com, commission_amount: comArs, net_amount: monto - comArs, provisional_rate: tc,
+      description: `Cobro ${op.operation_code}${op.clients?.client_code ? ` · ${op.clients.client_code}` : ""}`, image_url: body.receipt_url || null,
+      operation_id: op.id, client_payment_id: pago.id, auto_generated: true,
+    }) });
+  } catch (e) { console.error("[bot/entrega] cc solfin", e.message); }
+  const newTotal = Math.round((prev + usd) * 100) / 100;
+  // Lo cotizado al coordinar (payment_split) es lo que el cliente vio y pagó. Si el presupuesto
+  // cambió después, el cliente NO tiene la culpa: se acredita contra lo cotizado y la diferencia
+  // queda marcada para el admin (diferencia_presupuesto).
+  const cotizado = Array.isArray(op.payment_split) ? op.payment_split.reduce((a, p) => a + Number(p.amount || 0), 0) : 0;
+  const esperado = cotizado > 0 ? Math.max(0, Math.round((cotizado - prev) * 100) / 100) : saldoAntes;
+  const tol = (x) => Math.max(1, x * 0.005);
+  const restante = Math.round((esperado - usd) * 100) / 100;
+  const cierra = restante <= tol(esperado);
+  const restanteReal = Math.round((saldoAntes - usd) * 100) / 100;
+  const cierraReal = restanteReal <= tol(saldoAntes);
+  const diferenciaPresupuesto = cierra && !cierraReal ? restanteReal : 0;
+  const upd = { collected_amount: newTotal, collection_method: "transferencia", collection_currency: "USD", collection_date: hoy };
+  if (cierraReal) upd.is_collected = true;
+  await sb(`/operations?id=eq.${op.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(upd) });
+  await sb(`/op_communications`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ operation_id: op.id, type: "note", direction: "in", content: `✅ Cobro acreditado automáticamente por Argy: ARS ${monto.toLocaleString("es-AR")} (USD ${usd.toLocaleString("es-AR", { minimumFractionDigits: 2 })} al TC ${tc})${cierraReal ? " — cobro cerrado" : diferenciaPresupuesto > 0 ? ` — ⚠️ pagó lo cotizado (USD ${cotizado.toLocaleString("es-AR", { minimumFractionDigits: 2 })}) pero el presupuesto actual es mayor: diferencia USD ${diferenciaPresupuesto.toLocaleString("es-AR", { minimumFractionDigits: 2 })}` : ` — queda saldo USD ${Math.max(0, restante).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}` }) });
+  return { ok: true, op: op.operation_code, usd, monto_ars: monto, tc, saldo_antes: saldoAntes, cotizado, restante: cierra ? 0 : Math.max(0, restante), excedente: restante < 0 ? Math.round(-restante * 100) / 100 : 0, cierra, cobro_cerrado: cierraReal, diferencia_presupuesto: diferenciaPresupuesto, entrega: { dia: op.delivery_day, franja: op.delivery_slot, modalidad: op.delivery_choice, confirmada: !!op.delivery_confirmed_at } };
+}
+
 export async function POST(req) {
   if (!authOk(req)) return Response.json({ error: "No autorizado" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ error: "Server config missing" }, { status: 500 });
   let body = null; try { body = await req.json(); } catch {}
+  if (body?.accion === "acreditar") {
+    const r = await acreditar(body);
+    return Response.json(r, { status: r.status || 200 });
+  }
   // Una op ("op") o varias ("ops") — con varias, el mismo cambio se aplica a todas y quedan
   // agrupadas para entregarse en la misma visita (delivery_group_id compartido).
   const codes = Array.isArray(body?.ops) ? body.ops : body?.op ? [body.op] : [];

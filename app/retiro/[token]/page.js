@@ -99,8 +99,11 @@ export default function EntregaPublica({ params }) {
           if (metodos2.length) setPayMethods([metodos2[0]]);
           const efSplit = split2 ? split2.find((p) => p.method === "efectivo") : null;
           if (efSplit?.currency) setCashCurrencyMode(efSplit.currency);
+          // Lo COTIZADO al coordinar (split guardado) manda: es lo que el cliente vio y paga. Si el
+          // presupuesto cambió después, el link no muestra dos números distintos — lo resuelve el admin.
+          const cotizado2 = split2 ? split2.reduce((a, p) => a + Number(p.amount || 0), 0) : 0;
           setConfirmed({
-            total: Math.round(saldo2 * 100) / 100,
+            total: Math.round((cotizado2 > 0 && !delGrupo.length ? cotizado2 : saldo2) * 100) / 100,
             ops_incluidas: [d.op.operation_code, ...delGrupo.map((h) => h.operation_code)],
             delivery_choice: d.op.delivery_choice,
             delivery_zone: d.op.delivery_zone,

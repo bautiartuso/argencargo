@@ -1086,7 +1086,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         dq("tariffs",{token,filters:"?select=*"}),
         op.client_id?dq("client_tariff_overrides",{token,filters:`?client_id=eq.${op.client_id}&select=*`}):Promise.resolve([]),
         op.client_id?dq("clients",{token,filters:`?id=eq.${op.client_id}&select=tax_condition`}):Promise.resolve([]),
-        dq("operations",{token,filters:`?id=eq.${op.id}&select=channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status,budget_mode,service_type,despacho_die_usd,despacho_estadistica_usd,despacho_desaduanaje_usd,despacho_iva_usd,ri_argencargo_collects_taxes`}),
+        dq("operations",{token,filters:`?id=eq.${op.id}&select=delivery_confirmed_at,payment_split,channel,origin,has_phones,has_battery,shipping_to_door,shipping_cost,status,budget_mode,service_type,despacho_die_usd,despacho_estadistica_usd,despacho_desaduanaje_usd,despacho_iva_usd,ri_argencargo_collects_taxes`}),
         dq("flight_invoice_items",{token,filters:`?operation_id=eq.${op.id}&select=quantity,unit_price_declared_usd`})
       ]);
       // Declarados FRESCOS (no el state declaredItems, que puede estar vacío por closure stale en el sync de montaje).
@@ -1099,6 +1099,10 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       // el editor con una op parcial SIN budget_mode, y la guarda de arriba no lo veía — el sync
       // de montaje pisaba presupuestos manuales (AC-0253/AC-0333, 09/08). El candado real es este.
       if(!force && opForCalc.budget_mode==="manual")return;
+      // Cliente ya coordinó (y vio/pagó un total): el presupuesto queda CONGELADO. Caso AC-0128
+      // (04/09): se avisó sin NCM, el cliente pagó lo cotizado y al abrir la op el sync lo subió
+      // USD 206. Para cambiarlo, el admin usa "Editar presupuesto" (force).
+      if(!force && opForCalc.delivery_confirmed_at)return;
       // Gestión Integral (AUTO): el total que ve el cliente es la suma de productos × cantidad
       // ("puesto en Argentina" acordado), NO el motor genérico de flete+impuestos. Lo manejamos
       // acá para que cualquier CRUD de items recalcule el total correcto.
