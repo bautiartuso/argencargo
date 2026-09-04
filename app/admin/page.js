@@ -4380,6 +4380,27 @@ function BotPanel({token}){
   const [lo,setLo]=useState(true);
   const isMobile=typeof window!=="undefined"&&window.innerWidth<760;
   const endRef=useRef(null);
+  const fileRef=useRef(null);
+  // Adjuntar un archivo (PDF, imagen…): sale por el número del bot con el texto escrito como pie.
+  const sendFile=async(file)=>{
+    if(!file||!sel)return;
+    if(file.size>20*1024*1024){toast("Máximo 20 MB","error");return;}
+    setSending(true);
+    try{
+      const fd=new FormData();fd.append("phone",sel);fd.append("caption",txt.trim());fd.append("file",file,file.name);
+      const r=await fetch("/api/admin/bot",{method:"POST",headers:{Authorization:`Bearer ${token}`},body:fd});
+      const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);
+      setTxt("");toast(b.via==="plantilla"?"Archivo enviado por plantilla (ventana cerrada)":"Archivo enviado","success");await loadThread(sel);
+    }catch(e){toast(e.message,"error");}
+    finally{setSending(false);if(fileRef.current)fileRef.current.value="";}
+  };
+  const sendFactura=async(f)=>{
+    if(!await confirmDialog(`¿Mandar la factura C ${f.numero} por WhatsApp a ${thread?.client?.nombre||fmtTel(sel)}? Se genera el PDF y sale por el número del bot.`))return;
+    setSending(true);
+    try{await api("",{method:"POST",body:JSON.stringify({action:"factura",invoice_id:f.id,phone:sel})});toast("Factura enviada","success");await loadThread(sel);}
+    catch(e){toast(e.message,"error");}
+    finally{setSending(false);}
+  };
   const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/bot${qs}`,{...opts,headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`,...(opts.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
   const loadList=async()=>{try{const b=await api("");setConvs(b.conversations||[]);}catch(e){console.error(e);}finally{setLo(false);}};
   const loadThread=async(phone)=>{try{const b=await api(`?phone=${phone}`);setThread(b);setConvs(p=>p.map(c=>c.phone===phone?{...c,unread:false}:c));}catch(e){toast(e.message,"error");}};
@@ -4466,7 +4487,14 @@ function BotPanel({token}){
         </div>
         <div style={{padding:"10px 12px",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
           {!thread?.human_mode&&<p style={{margin:"0 0 6px",fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>Argy está respondiendo. Si escribís vos, el mensaje sale igual por el número del bot (Argy sigue activo salvo que tomes la conversación).</p>}
+          {Array.isArray(thread?.facturas_pendientes)&&thread.facturas_pendientes.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+            {thread.facturas_pendientes.map(f=><button key={f.id} onClick={()=>sendFactura(f)} disabled={sending} title="Factura emitida y todavía no enviada por WhatsApp" style={{display:"inline-flex",alignItems:"center",gap:8,padding:"7px 11px",borderRadius:9,border:"1px solid rgba(232,201,155,0.4)",background:"rgba(232,201,155,0.1)",color:"#E8C99B",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              📄 Factura C {f.numero}{f.op?` · ${f.op}`:""} · $ {Number(f.importe).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}<span style={{fontSize:11,fontWeight:800,padding:"2px 8px",borderRadius:6,background:"#E8C99B",color:"#0A1628"}}>Enviar por el bot</span>
+            </button>)}
+          </div>}
           <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+            <input ref={fileRef} type="file" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx" style={{display:"none"}} onChange={e=>sendFile(e.target.files?.[0])}/>
+            <button onClick={()=>fileRef.current?.click()} disabled={sending} title="Adjuntar archivo (PDF, imagen, Word, Excel)" style={{width:40,height:40,borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.05)",color:"#fff",fontSize:20,cursor:"pointer",flexShrink:0}}>+</button>
             <textarea value={txt} onChange={e=>setTxt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}} placeholder={thread?.window_open?"Escribí como Argencargo…":"Ventana cerrada: el cliente tiene que escribir primero"} rows={2} style={{flex:1,resize:"none",padding:"9px 11px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
             <Btn onClick={send} disabled={sending||!txt.trim()}>{sending?"…":"Enviar"}</Btn>
           </div>
@@ -10596,6 +10624,11 @@ function FacturasPanel({token}){
       if(r.error){setErr(r.error);setEmitiendo(false);load();return;}
       window.open(`/factura/${r.public_token}`,"_blank");
       cerrar();setEmitiendo(false);load();
+      // Recién emitida: ofrecer mandarla por el bot al WhatsApp del cliente.
+      if(r.id&&await confirmDialog("Factura emitida. ¿Se la mando por WhatsApp al cliente con el bot? Se genera el PDF y sale por el número de Argy.")){
+        try{const x=await fetch("/api/admin/bot",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"factura",invoice_id:r.id})});const j=await x.json().catch(()=>({}));if(!x.ok)throw new Error(j?.error||`HTTP ${x.status}`);toast("Factura enviada por WhatsApp","success");load();}
+        catch(e){toast("No se pudo enviar: "+e.message,"error");}
+      }
     }catch(e){setErr("Error: "+e.message);setEmitiendo(false);}
   };
   const inp={width:"100%",padding:"9px 11px",fontSize:13.5,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:9,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"};
@@ -10625,6 +10658,9 @@ function FacturasPanel({token}){
         <span style={{fontSize:10.5,fontWeight:800,padding:"3px 9px",borderRadius:6,background:f.status==="emitida"?"rgba(34,197,94,0.12)":f.status==="error"?"rgba(248,113,113,0.12)":"rgba(255,255,255,0.06)",color:f.status==="emitida"?"#4ade80":f.status==="error"?"#f87171":"rgba(255,255,255,0.5)",border:"1px solid rgba(255,255,255,0.1)"}} title={f.error_detalle||""}>{f.status.toUpperCase()}</span>
         {f.status==="emitida"&&<Btn small variant="secondary" onClick={()=>window.open(`/factura/${f.public_token}`,"_blank")}>Ver</Btn>}
         {f.status==="emitida"&&<Btn small variant="secondary" onClick={()=>{navigator.clipboard.writeText(`${window.location.origin}/factura/${f.public_token}`);toast("Link copiado","success");}}>📋</Btn>}
+        {f.status==="emitida"&&(f.wa_sent_at
+          ?<span title={`Enviada por WhatsApp el ${new Date(f.wa_sent_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}`} style={{fontSize:10.5,fontWeight:800,color:"#4ade80",whiteSpace:"nowrap"}}>✓ WA</span>
+          :<Btn small onClick={async()=>{if(!await confirmDialog(`¿Mandar la factura ${String(f.punto_venta).padStart(5,"0")}-${String(f.numero).padStart(8,"0")} por WhatsApp al cliente con el bot?`))return;try{const x=await fetch("/api/admin/bot",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"factura",invoice_id:f.id})});const j=await x.json().catch(()=>({}));if(!x.ok)throw new Error(j?.error||`HTTP ${x.status}`);toast("Factura enviada por WhatsApp","success");load();}catch(e){toast("No se pudo enviar: "+e.message,"error");}}}>📲 WhatsApp</Btn>)}
       </div>)}
     </div>}
 

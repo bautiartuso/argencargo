@@ -352,7 +352,9 @@ async function sendWhatsApp(to, text) {
     headers: { Authorization: `Bearer ${process.env.WA_TOKEN}`, "Content-Type": "application/json" },
     body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: text } }),
   });
-  if (!r.ok) console.error("[bot/whatsapp] send failed", r.status, (await r.text()).slice(0, 300));
+  if (!r.ok) { console.error("[bot/whatsapp] send failed", r.status, (await r.text()).slice(0, 300)); return null; }
+  const b = await r.json().catch(() => null);
+  return b?.messages?.[0]?.id || null;
 }
 
 export async function GET(req) {
@@ -526,8 +528,8 @@ export async function POST(req) {
     const history = await loadHistory(phone);
     const { reply, newHistory } = await runAgent(phone, text, history);
     await saveHistory(phone, newHistory);
-    await sendWhatsApp(phone, reply);
-    await logMsg(phone, "assistant", reply);
+    const wamid = await sendWhatsApp(phone, reply);
+    await logMsg(phone, "assistant", reply, { wamid });
   } catch (e) {
     console.error("[bot/whatsapp]", e.message);
   }

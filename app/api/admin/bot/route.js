@@ -10,7 +10,56 @@
 //
 // Todo con service role: bot_messages no tiene policies, así que el cliente nunca la toca.
 
-import { sendWaText } from "../../../../lib/wa";
+import { sendWaText, uploadWaMedia, forwardWaMedia, sendWaMediaTemplate } from "../../../../lib/wa";
+
+export const maxDuration = 60;
+export const runtime = "nodejs";
+const BASE_URL = process.env.PUBLIC_BASE_URL || "https://www.argencargo.com.ar";
+
+// ── Envío de un archivo por el número del bot ───────────────────────────────
+// Sube a storage (bot-adjuntos) + a Meta; primero mensaje libre (gratis, con ventana de
+// 24 h); si Meta lo rechaza, plantilla con adjunto (documento_adjunto / imagen_adjunta).
+async function enviarArchivo({ phone, buffer, mime, filename, caption, nombreCliente, descripcion }) {
+  const safe = String(filename || "archivo").replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 80);
+  const path = `${Date.now()}_${safe}`;
+  const up = await fetch(`${SB_URL}/storage/v1/object/bot-adjuntos/${path}`, { method: "POST", headers: { Authorization: `Bearer ${SB_SERVICE}`, apikey: SB_SERVICE, "Content-Type": mime }, body: buffer });
+  if (!up.ok) return { error: `No se pudo guardar el archivo (${up.status})` };
+  const fileUrl = `${SB_URL}/storage/v1/object/public/bot-adjuntos/${path}`;
+  const kind = /^image\//.test(mime) ? "image" : "document";
+  const mediaId = await uploadWaMedia(buffer, mime, safe);
+  if (!mediaId) return { error: "WhatsApp no aceptó el archivo (¿formato o tamaño?)" };
+  let r = await forwardWaMedia(phone, mediaId, kind, caption || "", safe);
+  let via = "libre";
+  if (!r?.ok) {
+    r = await sendWaMediaTemplate(phone, kind === "document" ? "documento_adjunto" : "imagen_adjunta", { kind, mediaId, filename: safe }, [nombreCliente || "Hola", descripcion || (caption ? caption : "un archivo")]);
+    via = "plantilla";
+  }
+  if (!r?.ok) return { error: r?.error || "Meta rechazó el envío", url: fileUrl };
+  if (via === "libre") {
+    await sb(`/bot_messages`, { method: "POST", body: JSON.stringify({ phone, role: "human", content: caption || null, media_url: fileUrl, media_type: kind, wamid: r.id || null }) });
+  } else {
+    // La plantilla ya quedó logueada por lib/wa (texto); se agrega la URL del adjunto.
+    await sb(`/bot_messages?wamid=eq.${encodeURIComponent(r.id || "")}`, { method: "PATCH", body: JSON.stringify({ media_url: fileUrl, media_type: kind }) }).catch(() => {});
+  }
+  await sb(`/bot_conversations?on_conflict=phone`, { method: "POST", body: JSON.stringify({ phone, admin_seen_at: new Date().toISOString(), updated_at: new Date().toISOString() }) });
+  return { ok: true, url: fileUrl, via };
+}
+
+// PDF de la factura pública (misma página que ve el cliente) con Chromium en el servidor.
+async function facturaPdf(token) {
+  const chromium = (await import("@sparticuz/chromium")).default;
+  const puppeteer = (await import("puppeteer-core")).default;
+  const browser = await puppeteer.launch({ args: chromium.args, executablePath: await chromium.executablePath(), headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`${BASE_URL}/factura/${token}`, { waitUntil: "networkidle0", timeout: 40000 });
+    const pdf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "8mm", bottom: "8mm", left: "8mm", right: "8mm" } });
+    return Buffer.from(pdf);
+  } finally { await browser.close().catch(() => {}); }
+}
+
+const fmtNum = (pv, n) => `${String(pv).padStart(5, "0")}-${String(n).padStart(8, "0")}`;
+
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -69,7 +118,13 @@ export async function GET(req) {
     // Marcar visto sin bloquear la respuesta.
     sb(`/bot_conversations?on_conflict=phone`, { method: "POST", body: JSON.stringify({ phone, admin_seen_at: new Date().toISOString() }) }).catch(() => {});
     const c = rowToConv(row);
-    return Response.json({ phone, human_mode: c.human_mode, last_user_at: c.last_user_at, window_open: c.window_open, client: c.client, messages: Array.isArray(msgs.body) ? msgs.body : [] });
+    // Facturas emitidas del cliente que todavía no se mandaron por el bot (chips en el chat).
+    let facturas = [];
+    if (c.client?.id) {
+      const f = await sb(`/invoices?client_id=eq.${c.client.id}&status=eq.emitida&wa_sent_at=is.null&select=id,punto_venta,numero,importe,fecha,operations(operation_code)&order=created_at.desc&limit=5`);
+      facturas = (Array.isArray(f.body) ? f.body : []).map((x) => ({ id: x.id, numero: fmtNum(x.punto_venta, x.numero), importe: Number(x.importe || 0), fecha: x.fecha, op: x.operations?.operation_code || null }));
+    }
+    return Response.json({ phone, human_mode: c.human_mode, last_user_at: c.last_user_at, window_open: c.window_open, client: c.client, messages: Array.isArray(msgs.body) ? msgs.body : [], facturas_pendientes: facturas });
   }
 
   const r = await sb(`/rpc/bot_conversations_list`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({}) });
@@ -80,7 +135,49 @@ export async function GET(req) {
 export async function POST(req) {
   if (!(await isAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ error: "Server config missing" }, { status: 500 });
+
+  // Adjunto desde el chat (multipart: phone, caption, file).
+  if ((req.headers.get("content-type") || "").includes("multipart/form-data")) {
+    const fd = await req.formData();
+    const phone = digits(fd.get("phone"));
+    const file = fd.get("file");
+    if (!phone || !file || typeof file === "string") return Response.json({ error: "Falta phone o file" }, { status: 400 });
+    if (file.size > 20 * 1024 * 1024) return Response.json({ error: "Máximo 20 MB" }, { status: 400 });
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const conv = await sb(`/rpc/bot_conversations_list`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ p_phone: phone }) });
+    const nombre = Array.isArray(conv.body) && conv.body[0]?.client_nombre ? conv.body[0].client_nombre.split(" ")[0] : "Hola";
+    const r = await enviarArchivo({ phone, buffer, mime: file.type || "application/octet-stream", filename: file.name, caption: String(fd.get("caption") || "").trim(), nombreCliente: nombre, descripcion: String(fd.get("caption") || "").trim() || "un archivo" });
+    return Response.json(r, { status: r.ok ? 200 : 400 });
+  }
+
   const body = await req.json().catch(() => ({}));
+
+  // Factura emitida → PDF → WhatsApp del cliente por el bot.
+  if (body.action === "factura") {
+    const inv = await sb(`/invoices?id=eq.${encodeURIComponent(body.invoice_id || "")}&select=id,public_token,punto_venta,numero,importe,client_id,operation_id,wa_sent_at,operations(operation_code,client_id),clients(first_name,whatsapp)&limit=1`);
+    const f = Array.isArray(inv.body) && inv.body[0];
+    if (!f) return Response.json({ error: "Factura no encontrada" }, { status: 404 });
+    let cli = f.clients || null;
+    if (!cli?.whatsapp && f.operations?.client_id) {
+      const c2 = await sb(`/clients?id=eq.${f.operations.client_id}&select=first_name,whatsapp&limit=1`);
+      cli = Array.isArray(c2.body) && c2.body[0] ? c2.body[0] : cli;
+    }
+    const phone = digits(body.phone) || digits(cli?.whatsapp);
+    if (!phone) return Response.json({ error: "El cliente no tiene WhatsApp cargado" }, { status: 400 });
+    const numero = fmtNum(f.punto_venta, f.numero);
+    const opCode = f.operations?.operation_code || null;
+    let buffer;
+    try { buffer = await facturaPdf(f.public_token); }
+    catch (e) { console.error("[admin/bot] pdf", e.message); return Response.json({ error: `No se pudo generar el PDF: ${e.message}` }, { status: 500 }); }
+    const r = await enviarArchivo({
+      phone, buffer, mime: "application/pdf", filename: `Factura-C-${numero}.pdf`,
+      caption: `Factura C ${numero}${opCode ? ` · ${opCode}` : ""}`,
+      nombreCliente: cli?.first_name || "Hola", descripcion: `la factura C ${numero}${opCode ? ` de tu operación ${opCode}` : ""}`,
+    });
+    if (r.ok) await sb(`/invoices?id=eq.${f.id}`, { method: "PATCH", body: JSON.stringify({ wa_sent_at: new Date().toISOString() }) });
+    return Response.json(r, { status: r.ok ? 200 : 400 });
+  }
+
   const phone = digits(body.phone);
   if (!phone) return Response.json({ error: "Falta phone" }, { status: 400 });
 
