@@ -1,5 +1,5 @@
 // GET /api/cron/bot-entregas — recordatorios automáticos del bot de entregas.
-// Corre cada hora (vercel.json). Plantillas fijas de WhatsApp — cero IA, costo cero.
+// Corre cada 5 minutos (vercel.json): el aviso de carga lista sale casi al instante. Plantillas fijas de WhatsApp — cero IA, costo cero.
 //
 // Escalera para cargas LISTAS SIN COORDINAR, cada 60 h reloj, tope 2:
 //   1º recordatorio_coordinar  → "tu carga sigue pendiente de coordinar" (simple)
@@ -11,8 +11,8 @@
 // delivery_ready_at, no RI con entrega directa) recibe sola el aviso de "carga lista"
 // (mail + plantilla carga_lista) vía /api/notify — ya no hace falta tocar "Avisar".
 //
-// Todo sale solo en horario comercial (9 a 20 h Argentina); fuera de eso el cron no manda
-// nada y lo retoma en la próxima pasada.
+// Los avisos salen a cualquier hora (ni bien la carga está lista). Los recordatorios solo
+// en horario comercial (9 a 20 h Argentina).
 //
 // Sin credenciales de Meta todo es no-op. ?dry=1 devuelve qué mandaría sin mandar.
 
@@ -55,8 +55,9 @@ export async function GET(req) {
   const now = Date.now();
   // Horario comercial Argentina (UTC-3): 9 a 20 h.
   const horaAr = (new Date(now).getUTCHours() + 24 - 3) % 24;
+  // Los AVISOS de carga lista salen siempre (ni bien la carga está para entregar). Los
+  // RECORDATORIOS a clientes que no confirmaron, solo en horario comercial.
   const enHorario = horaAr >= 9 && horaAr < 21;
-  if (!enHorario && !dry) return Response.json({ skipped: "fuera_de_horario", hora_ar: horaAr });
 
   // ── Avisos de retiro automáticos ──
   const out = { avisos: [], avisos_enviados: 0, recordatorios: [], enviados: 0, wa: waConfigured(), hora_ar: horaAr };
@@ -93,6 +94,7 @@ export async function GET(req) {
   const r1 = await sb(`/operations?delivery_ready_at=not.is.null&delivery_confirmed_at=is.null&delivery_completed_at=is.null&bot_coord_reminder_count=lt.2&select=id,operation_code,description,delivery_public_token,delivery_ready_at,bot_coord_reminder_at,bot_coord_reminder_count,clients(first_name,last_name,client_code,whatsapp)`);
 
   for (const op of Array.isArray(r1.body) ? r1.body : []) {
+    if (!enHorario && !dry) { out.recordatorios_fuera_de_horario = true; break; }
     const base = new Date(op.bot_coord_reminder_at || op.delivery_ready_at).getTime();
     if (now - base < H60) continue;
     const num = waNumber(op.clients?.whatsapp);
