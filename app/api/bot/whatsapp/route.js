@@ -118,7 +118,7 @@ async function leerComprobante(media) {
   const res = await client.messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 800,
-    system: "Extraés datos de comprobantes de transferencia bancaria o billetera virtual argentinos (Mercado Pago, bancos, Ualá, etc.). Respondé solo con el JSON pedido. Si no es un comprobante de pago, es_comprobante=false y el resto null.",
+    system: `Extraés datos de comprobantes de transferencia bancaria o billetera virtual argentinos (Mercado Pago, bancos, Ualá, etc.). HOY es ${new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10)}: las fechas de este año son normales, NO las marques como anomalía (la validez de la fecha la chequea el sistema). Respondé solo con el JSON pedido. Si no es un comprobante de pago, es_comprobante=false y el resto null.`,
     messages: [{ role: "user", content: [block, { type: "text", text: "Leé este archivo y extraé los datos del comprobante." }] }],
     output_config: { format: { type: "json_schema", schema: LECTURA_SCHEMA } },
   });
@@ -471,9 +471,14 @@ export async function POST(req) {
             const kind = media.mime.includes("pdf") ? "document" : "image";
             const newId = await uploadWaMedia(media.buffer, media.mime, kind === "document" ? "comprobante.pdf" : "comprobante.jpg");
             const opTxt = opDest ? `${opDest.op}${esperadoArs ? ` (esperado ARS ${esperadoArs.toLocaleString("es-AR")})` : ` (saldo USD ${opDest.saldo_usd})`}` : "sin operación identificada";
+            // Pedido 04/09: a los internos les llega SOLO la imagen/PDF. Primero reenvío libre (sin
+            // texto; llega si esa persona le escribió al bot en 24 h); si no, plantilla mínima con el
+            // adjunto; y si esa todavía no está aprobada, la plantilla con detalle.
+            const quienCorto = `${mias.cliente?.nombre || phone}${mias.cliente?.codigo ? ` (${mias.cliente.codigo})` : ""}`;
             for (const d of destinos) {
-              let r = newId ? await sendWaMediaTemplate(d, kind === "document" ? "aviso_comprobante_pdf" : "aviso_comprobante_img", { kind, mediaId: newId }, [opTxt, quien, resumen]) : { error: "sin media" };
-              if (!r?.ok) r = await forwardWaMedia(d, mediaId, msg.type, `🧾 Comprobante de ${quien} · ${opTxt} · ${resumen}`);
+              let r = await forwardWaMedia(d, mediaId, msg.type, "");
+              if (!r?.ok && newId) r = await sendWaMediaTemplate(d, kind === "document" ? "comprobante_pdf_min" : "comprobante_img_min", { kind, mediaId: newId }, [quienCorto, opDest?.op || "sin identificar"]);
+              if (!r?.ok && newId) r = await sendWaMediaTemplate(d, kind === "document" ? "aviso_comprobante_pdf" : "aviso_comprobante_img", { kind, mediaId: newId }, [opTxt, quien, resumen]);
               if (!r?.ok) console.error("[bot/whatsapp] reenvío falló", d, r?.error);
             }
           }

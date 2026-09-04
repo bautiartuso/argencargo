@@ -554,9 +554,36 @@ export async function POST(req, { params }) {
       }
       // Una sola carga → con su descripción ("Mazos de cartas (AC-0121)"); grupo → los códigos.
       const cargaTxt = opsIncluidas.length === 1 && op.description ? `${op.description} (${op.operation_code})` : opsIncluidas.join(" + ");
-      await sendWaTemplate(client.whatsapp, "coordinacion_confirmada", [
-        client.first_name || "Hola", cargaTxt, cuando, totalTxt, pagoTxt,
-      ]);
+      // Formato nuevo (pedido 04/09): párrafos separados, fecha DD/MM, franja "de 14 a 16 hs", total SOLO
+      // en la moneda elegida, y los datos de pago cada uno en su línea. Una plantilla por método;
+      // si la nueva todavía no está aprobada (o el split es mixto), cae en la genérica.
+      const dd = delivery_day ? `${delivery_day.slice(8, 10)}/${delivery_day.slice(5, 7)}` : "";
+      const diaSem = delivery_day ? new Date(delivery_day + "T12:00:00Z").toLocaleDateString("es-AR", { weekday: "long", timeZone: "UTC" }) : "";
+      const franja = String(delivery_slot || "").replace(/:00/g, "").replace(/\s*a\s*/, " a ").trim();
+      const cuando2 = (delivery_choice === "carrier")
+        ? "Va por transportista: te avisamos apenas se despache"
+        : `${delivery_choice === "oficina" ? "Te esperamos" : "Te la llevamos"} el ${diaSem} ${dd}${franja ? ` de ${franja} hs` : ""}`;
+      const totalSolo = enPesos && tcV > 0 ? `ARS ${Math.round(combinedTot * tcV).toLocaleString("es-AR")}` : fmtU(combinedTot);
+      const nombre = client.first_name || "Hola";
+      let r2 = { ok: false };
+      const soloUnMetodo = !splitFinal || splitFinal.length === 1;
+      if (soloUnMetodo && payment_method === "transferencia") {
+        const stg2 = Array.isArray(settingsRes.body) && settingsRes.body[0] ? settingsRes.body[0] : {};
+        const partes = String(stg2.payment_alias || "").split(/\s*[·|,]\s*/).map((x) => x.trim()).filter(Boolean);
+        const lineas = [...partes, stg2.payment_titular ? `Titular: ${stg2.payment_titular}` : ""].filter(Boolean);
+        while (lineas.length < 3) lineas.push("Argencargo");
+        r2 = await sendWaTemplate(client.whatsapp, "coordinacion_transferencia", [nombre, cuando2, totalSolo, lineas[0], lineas[1], lineas[2]]);
+      } else if (soloUnMetodo && payment_method === "crypto") {
+        const stg3 = Array.isArray(settingsRes.body) && settingsRes.body[0] ? settingsRes.body[0] : {};
+        r2 = await sendWaTemplate(client.whatsapp, "coordinacion_cripto", [nombre, cuando2, totalSolo, stg3.payment_crypto_wallet || "la tenés en el link de tu carga"]);
+      } else if (soloUnMetodo && payment_method === "efectivo") {
+        const cur = splitFinal?.[0]?.currency;
+        const det = `${cur === "ARS" ? "en pesos" : cur === "mixto" ? "(USD + ARS)" : "en dólares"} al momento de la entrega${usaEfectivo && Number(cash_amount) > 0 ? `. Te esperamos con el cambio para ${cash_currency === "ARS" ? "ARS" : "USD"} ${Number(cash_amount).toLocaleString("es-AR")}` : ""}${cur === "ARS" ? ". El monto en pesos se ajusta al valor del día" : ""}`;
+        r2 = await sendWaTemplate(client.whatsapp, "coordinacion_efectivo", [nombre, cuando2, totalSolo, det]);
+      }
+      if (!r2?.ok) {
+        await sendWaTemplate(client.whatsapp, "coordinacion_confirmada", [nombre, cargaTxt, cuando, totalTxt, pagoTxt]);
+      }
     }
   } catch (e) { console.error("[POST entrega] wa confirm failed", e.message); }
   // Para el resumen del cliente: con grupo, el split que se muestra lleva el total COMBINADO

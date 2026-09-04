@@ -55,12 +55,18 @@ export async function GET(req) {
   if (!(await isAdmin(req))) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ error: "Server config missing" }, { status: 500 });
   const phone = digits(new URL(req.url).searchParams.get("phone"));
-  const clientsRes = await sb(`/clients?whatsapp=not.is.null&select=id,first_name,last_name,client_code,whatsapp`);
-  const clients = Array.isArray(clientsRes.body) ? clientsRes.body : [];
+  // PostgREST corta en 1000 filas y ya hay más clientes que eso: se pagina.
+  const clients = [];
+  for (let off = 0; off < 20000; off += 1000) {
+    const r = await sb(`/clients?whatsapp=not.is.null&select=id,first_name,last_name,client_code,whatsapp&offset=${off}&limit=1000`);
+    const rows = Array.isArray(r.body) ? r.body : [];
+    clients.push(...rows);
+    if (rows.length < 1000) break;
+  }
 
   if (phone) {
     const [conv, msgs] = await Promise.all([
-      sb(`/bot_conversations?phone=eq.${phone}&select=phone,human_mode,last_user_at,admin_seen_at,updated_at&limit=1`),
+      sb(`/bot_conversations?phone=eq.${phone}&select=phone,label,human_mode,last_user_at,admin_seen_at,updated_at&limit=1`),
       sb(`/bot_messages?phone=eq.${phone}&select=id,role,content,media_url,media_type,created_at&order=created_at.asc&limit=500`),
     ]);
     const c = Array.isArray(conv.body) && conv.body[0] ? conv.body[0] : { phone, human_mode: false, last_user_at: null };
@@ -71,13 +77,13 @@ export async function GET(req) {
       human_mode: !!c.human_mode,
       last_user_at: c.last_user_at,
       window_open: windowOpen(c.last_user_at),
-      client: cli ? { id: cli.id, nombre: `${cli.first_name || ""} ${cli.last_name || ""}`.trim(), codigo: cli.client_code } : null,
+      client: cli ? { id: cli.id, nombre: `${cli.first_name || ""} ${cli.last_name || ""}`.trim(), codigo: cli.client_code } : (c.label ? { id: null, nombre: c.label, codigo: null } : null),
       messages: Array.isArray(msgs.body) ? msgs.body : [],
     });
   }
 
   const [convs, last] = await Promise.all([
-    sb(`/bot_conversations?select=phone,human_mode,last_user_at,admin_seen_at,updated_at&order=updated_at.desc&limit=300`),
+    sb(`/bot_conversations?select=phone,label,human_mode,last_user_at,admin_seen_at,updated_at&order=updated_at.desc&limit=300`),
     sb(`/bot_messages?select=phone,role,content,media_type,created_at&order=created_at.desc&limit=600`),
   ]);
   const lastByPhone = {};
@@ -88,7 +94,7 @@ export async function GET(req) {
     const unread = !!c.last_user_at && (!c.admin_seen_at || new Date(c.last_user_at) > new Date(c.admin_seen_at));
     return {
       phone: c.phone,
-      client: cli ? { id: cli.id, nombre: `${cli.first_name || ""} ${cli.last_name || ""}`.trim(), codigo: cli.client_code } : null,
+      client: cli ? { id: cli.id, nombre: `${cli.first_name || ""} ${cli.last_name || ""}`.trim(), codigo: cli.client_code } : (c.label ? { id: null, nombre: c.label, codigo: null } : null),
       human_mode: !!c.human_mode,
       last_user_at: c.last_user_at,
       last_at: lm?.created_at || c.updated_at,
