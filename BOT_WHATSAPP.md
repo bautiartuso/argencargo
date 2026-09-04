@@ -99,6 +99,13 @@ cargada y la aclaración de la red TRC-20.
 
 La aprobación de Meta suele tardar de minutos a horas.
 
+## Solapa Bot (admin → Bot WhatsApp)
+
+- Historial completo de cada conversación (tabla `bot_messages`; `bot_conversations` sigue guardando solo la ventana de 24 h que usa la IA).
+- **✋ Tomar la conversación**: pone `human_mode` en el número; Argy deja de responder y cada mensaje del cliente llega como notificación al admin. **↩ Devolver a Argy** lo saca de pausa.
+- Responder desde el panel sale por el número del bot como texto libre: solo llega con la ventana de 24 h abierta (el cliente escribió hace menos de 24 h). Si está cerrada, hay que mandar una plantilla desde Entregas.
+- Tolerancia entre el monto leído del comprobante y el saldo esperado: 0,5 % (centavos/redondeo).
+
 ## Paso 3 — Probar
 
 Escribile al número desde tu WhatsApp personal. Marcá una carga como lista en el

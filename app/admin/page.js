@@ -4360,6 +4360,113 @@ const usdCollected=(o)=>{
 // Antes flete propio y transportista estaban fundidos en "domicilio", pero se operan distinto
 // (uno es hoja de ruta, el otro son etiquetas de despacho) así que van separados.
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BOT WHATSAPP · bandeja de conversaciones de Argy (historial completo, tomar la
+// charla y responder como humano). Datos vía /api/admin/bot (service role).
+// ═══════════════════════════════════════════════════════════════════════════
+function BotPanel({token}){
+  const [convs,setConvs]=useState([]);
+  const [sel,setSel]=useState(null);       // phone seleccionado
+  const [thread,setThread]=useState(null); // {phone,client,messages,human_mode,window_open,last_user_at}
+  const [txt,setTxt]=useState("");
+  const [sending,setSending]=useState(false);
+  const [q,setQ]=useState("");
+  const [lo,setLo]=useState(true);
+  const isMobile=typeof window!=="undefined"&&window.innerWidth<760;
+  const endRef=useRef(null);
+  const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/bot${qs}`,{...opts,headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`,...(opts.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
+  const loadList=async()=>{try{const b=await api("");setConvs(b.conversations||[]);}catch(e){console.error(e);}finally{setLo(false);}};
+  const loadThread=async(phone)=>{try{const b=await api(`?phone=${phone}`);setThread(b);setConvs(p=>p.map(c=>c.phone===phone?{...c,unread:false}:c));}catch(e){toast(e.message,"error");}};
+  useEffect(()=>{loadList();const id=setInterval(loadList,15000);return()=>clearInterval(id);},[token]);
+  useEffect(()=>{if(!sel)return;loadThread(sel);const id=setInterval(()=>loadThread(sel),8000);return()=>clearInterval(id);},[sel]);
+  useEffect(()=>{endRef.current?.scrollIntoView({block:"end"});},[thread?.messages?.length]);
+  const send=async()=>{
+    const t=txt.trim();if(!t||!sel)return;
+    setSending(true);
+    try{await api("",{method:"POST",body:JSON.stringify({phone:sel,action:"reply",text:t})});setTxt("");await loadThread(sel);}
+    catch(e){toast(e.message,"error");}
+    finally{setSending(false);}
+  };
+  const toggleHuman=async()=>{
+    if(!thread)return;
+    const on=!thread.human_mode;
+    if(on&&!await confirmDialog("¿Tomar la conversación? Argy deja de responderle a este número hasta que la devuelvas. Lo que escriba el cliente te llega como notificación."))return;
+    try{await api("",{method:"POST",body:JSON.stringify({phone:sel,action:"human",on})});await loadThread(sel);await loadList();toast(on?"Conversación tomada · Argy en pausa":"Devuelta a Argy","success");}
+    catch(e){toast(e.message,"error");}
+  };
+  const fmtHora=(d)=>{if(!d)return"";const x=new Date(d);const hoy=new Date();const mismo=x.toDateString()===hoy.toDateString();return mismo?x.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}):x.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})+" "+x.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});};
+  const fmtTel=(p)=>{const d=String(p||"");return d.startsWith("549")?`+54 9 ${d.slice(3,5)} ${d.slice(5,9)}-${d.slice(9)}`:`+${d}`;};
+  const ventanaTxt=(t)=>{if(!t?.last_user_at)return"Sin mensajes del cliente";const fin=new Date(new Date(t.last_user_at).getTime()+24*3600*1000);return t.window_open?`Ventana abierta hasta ${fmtHora(fin)}`:"Ventana de 24 h cerrada · solo plantillas";};
+  const filtered=convs.filter(c=>{if(!q)return true;const s=q.toLowerCase();return c.phone.includes(s)||(c.client?.nombre||"").toLowerCase().includes(s)||(c.client?.codigo||"").toLowerCase().includes(s);});
+  const unreadN=convs.filter(c=>c.unread).length;
+  const showList=!isMobile||!sel;
+  const showThread=!isMobile||!!sel;
+  const roleStyle=(r)=>r==="user"?{align:"flex-start",bg:"rgba(255,255,255,0.07)",bd:"rgba(255,255,255,0.1)",tag:null}
+    :r==="human"?{align:"flex-end",bg:"rgba(251,191,36,0.14)",bd:"rgba(251,191,36,0.35)",tag:"Vos"}
+    :r==="system"?{align:"center",bg:"transparent",bd:"transparent",tag:null}
+    :{align:"flex-end",bg:"rgba(96,165,250,0.14)",bd:"rgba(96,165,250,0.3)",tag:"Argy"};
+  return <div style={{display:"flex",gap:14,height:"calc(100vh - 120px)",minHeight:480}}>
+    {showList&&<div style={{width:isMobile?"100%":320,flexShrink:0,display:"flex",flexDirection:"column",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,overflow:"hidden"}}>
+      <div style={{padding:"12px 12px 8px",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <span style={{fontSize:13,fontWeight:800,color:"#fff"}}>Conversaciones {unreadN>0&&<span style={{marginLeft:6,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:99,background:"#ef4444",color:"#fff"}}>{unreadN}</span>}</span>
+          <span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{convs.length}</span>
+        </div>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar cliente o número" style={{width:"100%",boxSizing:"border-box",padding:"8px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:12.5,outline:"none"}}/>
+      </div>
+      <div style={{flex:1,overflowY:"auto"}}>
+        {lo&&<p style={{padding:14,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Cargando…</p>}
+        {!lo&&filtered.length===0&&<p style={{padding:14,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Todavía no escribió nadie.</p>}
+        {filtered.map(c=><div key={c.phone} onClick={()=>setSel(c.phone)} style={{padding:"10px 12px",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.05)",background:sel===c.phone?"rgba(96,165,250,0.1)":"transparent"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+            <span style={{fontSize:13,fontWeight:c.unread?800:600,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.unread&&<span style={{display:"inline-block",width:7,height:7,borderRadius:99,background:"#ef4444",marginRight:6,verticalAlign:"middle"}}/>}{c.client?.nombre||fmtTel(c.phone)}</span>
+            <span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",flexShrink:0}}>{fmtHora(c.last_at)}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginTop:2}}>
+            <span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.last?(c.last.role==="user"?"":c.last.role==="human"?"Vos: ":"Argy: ")+(c.last.content||""):"—"}</span>
+            <span style={{fontSize:9.5,fontWeight:800,padding:"2px 6px",borderRadius:6,flexShrink:0,background:c.human_mode?"rgba(251,191,36,0.15)":"rgba(96,165,250,0.12)",color:c.human_mode?"#fbbf24":"#60a5fa",border:`1px solid ${c.human_mode?"rgba(251,191,36,0.35)":"rgba(96,165,250,0.3)"}`}}>{c.human_mode?"VOS":"ARGY"}</span>
+          </div>
+          {c.client?.codigo&&<span style={{fontSize:10,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{c.client.codigo} · {fmtTel(c.phone)}</span>}
+        </div>)}
+      </div>
+    </div>}
+    {showThread&&<div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,overflow:"hidden"}}>
+      {!sel&&<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,0.35)",fontSize:13}}>Elegí una conversación</div>}
+      {sel&&<>
+        <div style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.07)",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          {isMobile&&<button onClick={()=>{setSel(null);setThread(null);}} style={{background:"none",border:"none",color:"#fff",fontSize:18,cursor:"pointer",padding:0}}>‹</button>}
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{margin:0,fontSize:14,fontWeight:800,color:"#fff"}}>{thread?.client?.nombre||fmtTel(sel)} {thread?.client?.codigo&&<span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",fontFamily:"monospace",marginLeft:6}}>{thread.client.codigo}</span>}</p>
+            <p style={{margin:"2px 0 0",fontSize:11,color:thread?.window_open?"#4ade80":"rgba(255,255,255,0.45)"}}>{fmtTel(sel)} · {ventanaTxt(thread)}</p>
+          </div>
+          <Btn small variant={thread?.human_mode?"primary":"secondary"} onClick={toggleHuman}>{thread?.human_mode?"↩ Devolver a Argy":"✋ Tomar la conversación"}</Btn>
+        </div>
+        <div style={{flex:1,overflowY:"auto",padding:"14px 14px 6px",display:"flex",flexDirection:"column",gap:8}}>
+          {(thread?.messages||[]).map(m=>{const st=roleStyle(m.role);
+            if(m.role==="system")return <div key={m.id} style={{alignSelf:"center",fontSize:10.5,color:"rgba(255,255,255,0.4)",padding:"2px 8px"}}>— {m.content} · {fmtHora(m.created_at)} —</div>;
+            return <div key={m.id} style={{alignSelf:st.align,maxWidth:"78%",background:st.bg,border:`1px solid ${st.bd}`,borderRadius:12,padding:"8px 11px"}}>
+              {st.tag&&<span style={{display:"block",fontSize:9.5,fontWeight:800,letterSpacing:"0.06em",color:m.role==="human"?"#fbbf24":"#60a5fa",marginBottom:3}}>{st.tag}</span>}
+              {m.media_url&&(m.media_type==="image"
+                ?<a href={m.media_url} target="_blank" rel="noreferrer"><img src={m.media_url} alt="adjunto" style={{maxWidth:"100%",maxHeight:260,borderRadius:8,display:"block",marginBottom:6}}/></a>
+                :<a href={m.media_url} target="_blank" rel="noreferrer" style={{display:"block",fontSize:12,color:"#60a5fa",marginBottom:6}}>📄 Abrir documento</a>)}
+              <span style={{fontSize:13,color:"#fff",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{m.content}</span>
+              <span style={{display:"block",fontSize:9.5,color:"rgba(255,255,255,0.35)",marginTop:4,textAlign:"right"}}>{fmtHora(m.created_at)}</span>
+            </div>;})}
+          <div ref={endRef}/>
+        </div>
+        <div style={{padding:"10px 12px",borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+          {!thread?.human_mode&&<p style={{margin:"0 0 6px",fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>Argy está respondiendo. Si escribís vos, el mensaje sale igual por el número del bot (Argy sigue activo salvo que tomes la conversación).</p>}
+          <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+            <textarea value={txt} onChange={e=>setTxt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}} placeholder={thread?.window_open?"Escribí como Argencargo…":"Ventana cerrada: el cliente tiene que escribir primero"} rows={2} style={{flex:1,resize:"none",padding:"9px 11px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+            <Btn onClick={send} disabled={sending||!txt.trim()}>{sending?"…":"Enviar"}</Btn>
+          </div>
+        </div>
+      </>}
+    </div>}
+  </div>;
+}
+
 // Modal del panel de Entregas: cobrar y marcar entregada en un solo paso.
 // Replica el flujo de cobro del editor de op (operation_client_payments + movimiento automatico
 // en la CC de SOLFIN si es transferencia a la financiera + comprobante al bucket) para que el
@@ -4882,7 +4989,7 @@ function EntregasPanel({token,onOpenOp}){
     try{
       const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:o.id,trigger:"retiro"})});
       if(!r.ok)throw new Error("notify "+r.status);
-      toast("📨 Aviso enviado por mail","success");
+      toast("📨 Aviso enviado por mail y WhatsApp","success");
       setRows(p=>p.map(x=>x.id===o.id?{...x,delivery_ready_at:new Date().toISOString()}:x));
     }catch(e){toast("No se pudo enviar el aviso: "+e.message,"error");}
   };
@@ -4961,7 +5068,7 @@ function EntregasPanel({token,onOpenOp}){
       </div>
       <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
         {contexto==="aviso"&&<>
-          <Btn small onClick={()=>enviarAviso(o)}>📨 Avisar por mail</Btn>
+          <Btn small onClick={()=>enviarAviso(o)}>📨 Avisar (mail + WA)</Btn>
           <Btn small variant="secondary" onClick={()=>waAviso(o)}>WA</Btn>
           <Btn small variant="secondary" onClick={()=>copyLink(o)}>📋</Btn>
         </>}
@@ -13400,6 +13507,7 @@ function AdminDashboard({session,onLogout}){
     {section:"Operativa",items:[
       {key:"operations",label:"Operaciones",p:["M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"]},
       {key:"entregas",label:"Entregas",p:["M3 9l9-6 9 6-9 6-9-6z","M3 9v6l9 6 9-6V9"]},
+      {key:"bot",label:"Bot WhatsApp",p:["M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"]},
       {key:"agents",label:"Agentes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M22 11l-3-3","M22 8l-3 3"]},
       {key:"maritime",label:"Marítimos",p:["M2 20a2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1 2.4 2.4 0 0 1 2-1 2.4 2.4 0 0 1 2 1 2.4 2.4 0 0 0 2 1 2.4 2.4 0 0 0 2-1","M21.99 9.74A1 1 0 0 0 21 9H3a1 1 0 0 0-.99 1.13l.93 7A1 1 0 0 0 3.94 18h16.12a1 1 0 0 0 .99-.87z","M5 9V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6"]},
       {key:"tasks",label:"Tareas",p:["M9 11l3 3L22 4","M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"]},
@@ -13509,6 +13617,7 @@ function AdminDashboard({session,onLogout}){
       {page==="dashboard"&&<FinanceDashboard token={token}/>}
       {page==="entregas"&&!selOp&&<EntregasPanel token={token} onOpenOp={(op)=>{setSelOp(op);setSelOpTab("entrega");}}/>}
       {page==="entregas"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}
+      {page==="bot"&&<BotPanel token={token}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="maritime"&&(mtLegacyOn()?<MaritimePanel token={token} allClients={allClients}/>:<MaritimePanel2 token={token} allClients={allClients}/>)}
       {page==="agp"&&<AgpPanel token={token} allClients={allClients}/>}

@@ -63,8 +63,19 @@ async function loadHistory(phone) {
 async function saveHistory(phone, messages) {
   await sb(`/bot_conversations?on_conflict=phone`, {
     method: "POST",
-    body: JSON.stringify({ phone, messages: messages.slice(-20), updated_at: new Date().toISOString() }),
+    body: JSON.stringify({ phone, messages: messages.slice(-20), updated_at: new Date().toISOString(), last_user_at: new Date().toISOString() }),
   });
+}
+
+// ── Historial completo (tabla bot_messages: lo ve el admin en la solapa Bot) ─
+async function logMsg(phone, role, content, extra = {}) {
+  try {
+    await sb(`/bot_messages`, { method: "POST", body: JSON.stringify({ phone, role, content: content ? String(content).slice(0, 4000) : null, ...extra }) });
+  } catch (e) { console.error("[bot/whatsapp] logMsg", e.message); }
+}
+async function convState(phone) {
+  const r = await sb(`/bot_conversations?phone=eq.${encodeURIComponent(phone)}&select=human_mode&limit=1`);
+  return Array.isArray(r.body) && r.body[0] ? r.body[0] : { human_mode: false };
 }
 
 // ── Aviso interno a los admins ───────────────────────────────────────────────
@@ -78,6 +89,8 @@ async function notifyAdmins(title, body) {
 }
 
 // ── Lectura de comprobantes (Claude con visión / PDF) ────────────────────────
+// Tolerancia entre monto leído y saldo esperado: solo centavos/redondeo (0,5 %).
+const TOL_COMPROBANTE = 0.005;
 const LECTURA_SCHEMA = {
   type: "object",
   properties: {
@@ -125,7 +138,8 @@ function resumirLectura(l, esperadoArs) {
   if (l.referencia) partes.push(`ref ${l.referencia}`);
   if (esperadoArs && l.monto != null && (l.moneda || "ARS") === "ARS") {
     const diff = Math.abs(Number(l.monto) - esperadoArs) / esperadoArs;
-    partes.push(diff <= 0.03 ? "✅ coincide con el saldo" : `⚠️ esperado ≈ ARS ${esperadoArs.toLocaleString("es-AR")}`);
+    const difAbs = Math.round(Math.abs(Number(l.monto) - esperadoArs));
+    partes.push(diff <= TOL_COMPROBANTE ? `✅ coincide con el saldo (ARS ${esperadoArs.toLocaleString("es-AR")})` : `⚠️ esperado ARS ${esperadoArs.toLocaleString("es-AR")} · diferencia ARS ${difAbs.toLocaleString("es-AR")}`);
   }
   if (l.observaciones) partes.push(`⚠️ ${l.observaciones}`);
   return partes.join(" · ") || "comprobante sin datos legibles";
@@ -370,7 +384,9 @@ export async function POST(req) {
     }
     const phone = String(msg.from || "").replace(/\D/g, "");
     let text = null;
-    if (msg.type === "text") text = String(msg.text?.body || "").slice(0, 2000);
+    let logContent = null;   // lo que se guarda en el historial visible para el admin
+    let logExtra = {};
+    if (msg.type === "text") { text = String(msg.text?.body || "").slice(0, 2000); logContent = text; }
     else if (msg.type === "image" || msg.type === "document") {
       // Comprobante: se descarga de Meta, Claude lo LEE (monto, fecha, destino, referencia),
       // se guarda en el bucket, queda como nota en la op con la lectura, se reenvía por
@@ -439,17 +455,28 @@ export async function POST(req) {
         }
       } catch (e) { console.error("[bot/whatsapp] media", e.message); }
       const resumen = resumirLectura(lectura, esperadoArs);
+      logContent = resumen;
+      logExtra = { media_url: guardado ? guardado.split(" · ")[0] : null, media_type: msg.type === "document" ? "document" : "image" };
       await notifyAdmins("🧾 Comprobante por WhatsApp", `${phone} envió ${msg.type === "image" ? "una imagen" : "un documento"}${opDest ? ` · ${opDest.op}` : ""} — ${resumen}${guardado ? ` — guardado` : ""}. Verificar y registrar el cobro.`);
-      const coincide = lectura?.es_comprobante && lectura.monto != null && esperadoArs && (lectura.moneda || "ARS") === "ARS" ? (Math.abs(Number(lectura.monto) - esperadoArs) / esperadoArs <= 0.03 ? "coincide con el saldo" : `NO coincide con el saldo esperado (≈ ARS ${esperadoArs.toLocaleString("es-AR")})`) : "";
+      const coincide = lectura?.es_comprobante && lectura.monto != null && esperadoArs && (lectura.moneda || "ARS") === "ARS" ? (Math.abs(Number(lectura.monto) - esperadoArs) / esperadoArs <= TOL_COMPROBANTE ? "coincide con el saldo" : `NO coincide con el saldo esperado (≈ ARS ${esperadoArs.toLocaleString("es-AR")})`) : "";
       text = lectura?.es_comprobante
         ? `[El cliente envió un comprobante de pago. Lectura automática: ${resumen}${coincide ? ` — ${coincide}` : ""}. ${guardado ? "Quedó guardado y adjunto a su operación, y el equipo ya fue notificado." : "El equipo ya fue notificado."} Confirmale qué recibiste (monto y fecha, en *negrita*), y que el equipo lo verifica antes de acreditarlo. Si NO coincide con el saldo, decíselo con suavidad y que el equipo lo revisa. Nunca des el pago por acreditado.]`
         : `[El cliente envió ${msg.type === "image" ? "una imagen" : "un documento"} que no parece un comprobante de pago (${resumen}). El equipo fue notificado. Preguntale de qué se trata, sin asumir que es un pago.]`;
     } else return Response.json({ ok: true });
     if (!phone || !text) return Response.json({ ok: true });
+    await logMsg(phone, "user", logContent, { ...logExtra, wamid: msg.id || null });
+    const estado = await convState(phone);
+    if (estado.human_mode) {
+      // Un humano tomó la conversación desde el admin: Argy no responde, solo avisa.
+      await sb(`/bot_conversations?on_conflict=phone`, { method: "POST", body: JSON.stringify({ phone, last_user_at: new Date().toISOString() }) });
+      await notifyAdmins("💬 WhatsApp (modo humano)", `${phone}: ${String(logContent || "").slice(0, 180)}`);
+      return Response.json({ ok: true });
+    }
     const history = await loadHistory(phone);
     const { reply, newHistory } = await runAgent(phone, text, history);
     await saveHistory(phone, newHistory);
     await sendWhatsApp(phone, reply);
+    await logMsg(phone, "assistant", reply);
   } catch (e) {
     console.error("[bot/whatsapp]", e.message);
   }
