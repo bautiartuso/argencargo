@@ -226,19 +226,17 @@ async function acreditar(body) {
     }) });
   } catch (e) { console.error("[bot/entrega] cc solfin", e.message); }
   const newTotal = Math.round((prev + usd) * 100) / 100;
-  // Lo cotizado al coordinar (payment_split) es lo que el cliente vio y pagó. Si el presupuesto
-  // cambió después, el cliente NO tiene la culpa: se acredita contra lo cotizado y la diferencia
-  // queda marcada para el admin (diferencia_presupuesto).
+  // Regla: el saldo en DÓLARES del sistema es el que manda. Lo pagado en pesos se convierte al TC
+  // del día del pago; si el cliente transfirió los pesos que le dijimos otro día y el TC subió,
+  // queda un saldo chico "por diferencia de tipo de cambio" — el bot se lo explica.
+  const tol = Math.max(1, saldoAntes * 0.005);
+  const restante = Math.round((saldoAntes - usd) * 100) / 100;
+  const cierra = restante <= tol;
+  const cierraReal = cierra;
   const cotizado = Array.isArray(op.payment_split) ? op.payment_split.reduce((a, p) => a + Number(p.amount || 0), 0) : 0;
-  const esperado = cotizado > 0 ? Math.max(0, Math.round((cotizado - prev) * 100) / 100) : saldoAntes;
-  const tol = (x) => Math.max(1, x * 0.005);
-  const restante = Math.round((esperado - usd) * 100) / 100;
-  const cierra = restante <= tol(esperado);
-  const restanteReal = Math.round((saldoAntes - usd) * 100) / 100;
-  const cierraReal = restanteReal <= tol(saldoAntes);
-  const diferenciaPresupuesto = cierra && !cierraReal ? restanteReal : 0;
+  const diferenciaPresupuesto = 0;
   const upd = { collected_amount: newTotal, collection_method: "transferencia", collection_currency: "USD", collection_date: hoy };
-  if (cierraReal) upd.is_collected = true;
+  if (cierra) upd.is_collected = true;
   await sb(`/operations?id=eq.${op.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(upd) });
   await sb(`/op_communications`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ operation_id: op.id, type: "note", direction: "in", content: `✅ Cobro acreditado automáticamente por Argy: ARS ${monto.toLocaleString("es-AR")} (USD ${usd.toLocaleString("es-AR", { minimumFractionDigits: 2 })} al TC ${tc})${cierraReal ? " — cobro cerrado" : diferenciaPresupuesto > 0 ? ` — ⚠️ pagó lo cotizado (USD ${cotizado.toLocaleString("es-AR", { minimumFractionDigits: 2 })}) pero el presupuesto actual es mayor: diferencia USD ${diferenciaPresupuesto.toLocaleString("es-AR", { minimumFractionDigits: 2 })}` : ` — queda saldo USD ${Math.max(0, restante).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`}` }) });
   return { ok: true, op: op.operation_code, usd, monto_ars: monto, tc, saldo_antes: saldoAntes, cotizado, restante: cierra ? 0 : Math.max(0, restante), excedente: restante < 0 ? Math.round(-restante * 100) / 100 : 0, cierra, cobro_cerrado: cierraReal, diferencia_presupuesto: diferenciaPresupuesto, entrega: { dia: op.delivery_day, franja: op.delivery_slot, modalidad: op.delivery_choice, confirmada: !!op.delivery_confirmed_at } };
