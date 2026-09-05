@@ -13,7 +13,14 @@ REGLA: nunca se nombra a un competidor en una pieza pública. Esto es solo para 
 | 7 | Fast Track · instagram.com/fasttrackarg | |
 | 8 | Magforce · instagram.com/magforce_argentina | La que más le gusta cómo lleva el feed. Referencia de ESTILO (no de contenido). Ver 05-referencias. |
 | 9 | Jetbox · instagram.com/courierjetbox | |
+| 10 | Aduanex · instagram.com/aduanex_ | Agregado el 05/09/2026. Pendiente de mirar en detalle. |
 
-Qué mirar cada día cuando esté el radar (Business Discovery de Meta): temas que repiten, formato
-(carrusel / foto / reel), ganchos de titular, cuánto interactúan. Sacar ideas de tema, nunca copiar
-texto ni diseño.
+## Radar automático (desde 05/09/2026)
+Todos los días a las 10 (AR) el sistema baja los últimos 12 posts de cada cuenta (Business Discovery
+de Meta, con un token de Facebook cargado en Content Studio → Conexión → Radar de competencia) y
+Claude mira las imágenes de cada post y anota: formato, tema, gancho, concepto visual, cuánto texto,
+por qué funciona y una idea PROPIA para Argencargo. El analista del runner lee ese radar al proponer
+ideas. Se ve en Content Studio → Marca → Radar de competencia (con botón "Adaptar" por post).
+Las HISTORIAS de otras cuentas no se pueden leer por API: esas se miran a mano y, si gustan, se suben
+como referencia en Marca. Regla de siempre: sacar ideas de tema y formato, nunca copiar texto ni
+diseño, nunca nombrarlos.

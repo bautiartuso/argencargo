@@ -36,3 +36,4 @@ Landing actual: azul `#3B7DD8`, navy `#0A1628`, blanco.
 7. Fast Track — https://www.instagram.com/fasttrackarg/
 8. Magforce — https://www.instagram.com/magforce_argentina/
 9. Jetbox — https://www.instagram.com/courierjetbox/
+10. Aduanex — https://www.instagram.com/aduanex_/ (agregado 05/09/2026)

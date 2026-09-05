@@ -37,10 +37,6 @@
       "schedule": "0 11 * * *"
     },
     {
-      "path": "/api/cron/mkt-generate-month",
-      "schedule": "0 10 1 * *"
-    },
-    {
       "path": "/api/cron/cinabrio-habits",
       "schedule": "* * * * *"
     },
@@ -51,6 +47,10 @@
     {
       "path": "/api/cron/studio-publisher",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/competitor-radar",
+      "schedule": "0 13 * * *"
     }
   ]
 }

@@ -13,7 +13,7 @@
 // POST {action:"instagram", ig_user_id, access_token} / {action:"instagram_test"}
 // POST multipart {action:"asset", kind, file}       → sube logo o posteo de referencia
 
-import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind } from "../../../../lib/studio";
+import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername } from "../../../../lib/studio";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -36,8 +36,13 @@ export async function GET(req) {
   const url = new URL(req.url);
   const view = url.searchParams.get("view") || "pieces";
   if (view === "memory") {
-    const [memory, assets, runs, ig] = await Promise.all([loadMemory(), loadAssets(), sb(`/cs_runs?select=id,kind,requested,created,log,started_at,finished_at&order=started_at.desc&limit=30`), igSettings()]);
-    return Response.json({ memory, assets, runs: Array.isArray(runs.body) ? runs.body : [], instagram: { ig_user_id: ig.ig_user_id || "", connected: !!(ig.ig_user_id && ig.access_token), username: ig.username || null } });
+    const [memory, assets, runs, ig, disc, competitors] = await Promise.all([loadMemory(), loadAssets(), sb(`/cs_runs?select=id,kind,requested,created,log,started_at,finished_at&order=started_at.desc&limit=30`), igSettings(), igDiscoverySettings(), loadCompetitors()]);
+    return Response.json({ memory, assets, runs: Array.isArray(runs.body) ? runs.body : [], instagram: { ig_user_id: ig.ig_user_id || "", connected: !!(ig.ig_user_id && ig.access_token), username: ig.username || null },
+      discovery: { connected: !!(disc.ig_user_id && disc.access_token), username: disc.username || null, page_name: disc.page_name || null, connected_at: disc.connected_at || null }, competitors });
+  }
+  if (view === "competencia") {
+    const r = await sb(`/cs_competitor_posts?select=id,username,ig_media_id,media_type,caption,media_url,thumbnail_url,permalink,children,like_count,comments_count,posted_at,analysis,analyzed_at&order=posted_at.desc.nullslast&limit=80`);
+    return Response.json({ posts: Array.isArray(r.body) ? r.body : [] });
   }
   const r = await sb(`/cs_pieces?select=${SEL}&order=created_at.desc&limit=400`);
   return Response.json({ pieces: Array.isArray(r.body) ? r.body : [] });
@@ -147,5 +152,26 @@ export async function POST(req) {
     try { return Response.json({ ok: true, info: await igTest(cfg) }); } catch (e) { return Response.json({ error: e.message }, { status: 400 }); }
   }
   if (a === "instagram_disconnect") { await sb(`/cs_settings?key=eq.instagram`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); return Response.json({ ok: true }); }
+  // Radar de competencia: segundo token (Facebook) solo para mirar otras cuentas.
+  if (a === "discovery_connect") {
+    const token = String(body.access_token || "").trim();
+    if (!token) return Response.json({ error: "Pegá el token" }, { status: 400 });
+    let cfg; try { cfg = await igConnect(token); } catch (e) { return Response.json({ error: e.message }, { status: 400 }); }
+    if (cfg.mode !== "fb") return Response.json({ error: "Ese es un token de Instagram (sirve para publicar). Para mirar a la competencia hace falta un token de FACEBOOK con la página vinculada: seguí el instructivo de abajo." }, { status: 400 });
+    try { const bd = await discoverAccount(cfg, "magforce_argentina"); if (!bd?.id) throw new Error("no devolvió datos"); }
+    catch (e) { return Response.json({ error: `El token conecta pero Business Discovery falla: ${e.message}. Revisá los permisos instagram_basic, pages_show_list y pages_read_engagement.` }, { status: 400 }); }
+    await sb(`/cs_settings?on_conflict=key`, { method: "POST", body: JSON.stringify({ key: "instagram_discovery", value: cfg, updated_at: now }) });
+    return Response.json({ ok: true, info: { username: cfg.username, page_name: cfg.page_name } });
+  }
+  if (a === "discovery_disconnect") { await sb(`/cs_settings?key=eq.instagram_discovery`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); return Response.json({ ok: true }); }
+  if (a === "competitor_add") {
+    const u = normUsername(body.username);
+    if (!/^[a-z0-9._]{1,30}$/.test(u)) return Response.json({ error: "Usuario inválido" }, { status: 400 });
+    await sb(`/cs_competitors?on_conflict=username`, { method: "POST", body: JSON.stringify({ username: u, active: true, note: String(body.note || "") || null }) });
+    return Response.json({ ok: true });
+  }
+  if (a === "competitor_toggle") { await sb(`/cs_competitors?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ active: !!body.active }) }); return Response.json({ ok: true }); }
+  if (a === "competitor_delete") { await sb(`/cs_competitors?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); return Response.json({ ok: true }); }
+  if (a === "competencia_scan") { const r = await radarCompetencia({ analizar: 8 }); return Response.json({ ok: true, ...r }); }
   return Response.json({ error: "Acción desconocida" }, { status: 400 });
 }

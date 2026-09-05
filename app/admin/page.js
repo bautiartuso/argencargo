@@ -4519,7 +4519,10 @@ function StudioPanel({token}){
   const [calSel,setCalSel]=useState(null);   // pieza abierta desde el calendario
   const [cambio,setCambio]=useState(null);   // {p, texto}: modal de "pedir cambio" con la imagen a la vista
   const [pieces,setPieces]=useState([]);const [lo,setLo]=useState(true);
-  const [meta,setMeta]=useState({memory:[],assets:[],runs:[],instagram:{}});
+  const [meta,setMeta]=useState({memory:[],assets:[],runs:[],instagram:{},discovery:{},competitors:[]});
+  const [igDisc,setIgDisc]=useState("");              // token de Facebook para el radar de competencia
+  const [comp,setComp]=useState({posts:[],lo:false});  // posts de la competencia con análisis
+  const [compUser,setCompUser]=useState("");
   const [busy,setBusy]=useState("");
   const [filtro,setFiltro]=useState("todos"); // todos | feed | story
   const [preview,setPreview]=useState(null);
@@ -4532,8 +4535,10 @@ function StudioPanel({token}){
   const isMobile=typeof window!=="undefined"&&window.innerWidth<760;
   const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/studio${qs}`,{...opts,headers:{...(opts.body instanceof FormData?{}:{"Content-Type":"application/json"}),Authorization:`Bearer ${token}`,...(opts.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
   const load=async()=>{try{const b=await api("?view=pieces");setPieces(b.pieces||[]);}catch(e){console.error(e);}finally{setLo(false);}};
-  const loadMeta=async()=>{try{const b=await api("?view=memory");setMeta({memory:b.memory||[],assets:b.assets||[],runs:b.runs||[],instagram:b.instagram||{}});}catch(e){toast(e.message,"error");}};
+  const loadMeta=async()=>{try{const b=await api("?view=memory");setMeta({memory:b.memory||[],assets:b.assets||[],runs:b.runs||[],instagram:b.instagram||{},discovery:b.discovery||{},competitors:b.competitors||[]});}catch(e){toast(e.message,"error");}};
+  const loadComp=async()=>{setComp(c=>({...c,lo:true}));try{const b=await api("?view=competencia");setComp({posts:b.posts||[],lo:false});}catch(e){setComp(c=>({...c,lo:false}));}};
   useEffect(()=>{load();loadMeta();},[token]);
+  useEffect(()=>{if(tab==="marca")loadComp();},[tab]);
   const generando=pieces.filter(p=>p.status==="generating").length;
   useEffect(()=>{if(!generando)return;const id=setInterval(load,20000);return()=>clearInterval(id);},[generando>0]);
   const act=async(action,extra={},msg)=>{
@@ -4789,6 +4794,41 @@ function StudioPanel({token}){
           {meta.assets.filter(a=>a.kind==="reference").map(a=><div key={a.id} style={{position:"relative",borderRadius:10,overflow:"hidden",background:"#0b1220"}}><img src={a.url} alt="" style={{width:"100%",aspectRatio:"4/5",objectFit:"cover",display:"block"}}/><button onClick={async()=>{if(await confirmDialog("¿Quitar esta referencia?"))act("asset_delete",{id:a.id},"Quitada").then(loadMeta);}} style={{position:"absolute",top:4,right:4,background:"rgba(0,0,0,0.6)",border:"none",color:"#fff",borderRadius:6,cursor:"pointer",fontSize:12,padding:"2px 6px"}}>×</button></div>)}
         </div>
       </div>
+      <div style={box}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6,flexWrap:"wrap"}}>
+          <p style={{margin:0,fontSize:13,fontWeight:800,color:"#fff"}}>Radar de competencia</p>
+          {meta.discovery?.connected?<span style={{fontSize:11,color:"#4ade80"}}>· mira {meta.competitors.filter(c=>c.active!==false).length} cuentas todos los días a las 10</span>:<span style={{fontSize:11,color:"#fbbf24"}}>· sin conectar: cargá el token de Facebook en Conexión</span>}
+          <span style={{marginLeft:"auto",display:"flex",gap:6}}>
+            <Btn small variant="secondary" onClick={loadComp} disabled={comp.lo}>↻</Btn>
+            {meta.discovery?.connected&&<Btn small onClick={async()=>{await act("competencia_scan",{},x=>`${x.cuentas} cuentas · ${x.nuevos} posts nuevos · ${x.analizados} analizados${x.errores?.length?` · ${x.errores.length} con error`:""}`);loadMeta();loadComp();}} disabled={!!busy}>{busy==="competencia_scan"?"Escaneando…":"Escanear ahora"}</Btn>}
+          </span>
+        </div>
+        <p style={{margin:"0 0 10px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Baja los últimos posts de cada cuenta y Claude mira cada imagen: formato, gancho, concepto visual y una idea propia para Argencargo. El analista del Runner lo lee al proponer. Las historias de otras cuentas no se pueden leer por API: esas las mirás vos y, si te gustan, las subís como referencia arriba.</p>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
+          {meta.competitors.map(c=><span key={c.id} title={c.error?`Error: ${c.error}`:c.last_checked_at?`Revisada ${fmt(c.last_checked_at)}`:"Todavía no revisada"} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11.5,padding:"4px 8px",borderRadius:8,border:`1px solid ${c.error?"rgba(248,113,113,0.5)":c.active===false?"rgba(255,255,255,0.1)":"rgba(96,165,250,0.4)"}`,background:c.active===false?"transparent":"rgba(96,165,250,0.1)",color:c.active===false?"rgba(255,255,255,0.4)":"#fff",textDecoration:c.active===false?"line-through":"none"}}>
+            <span onClick={()=>act("competitor_toggle",{id:c.id,active:c.active===false}).then(loadMeta)} style={{cursor:"pointer"}} title="Tocá para pausar / reanudar">@{c.username}{c.followers_count?<span style={{color:"rgba(255,255,255,0.45)"}}> · {c.followers_count.toLocaleString("es-AR")}</span>:null}{c.error?" ⚠":""}</span>
+            <button onClick={async()=>{if(await confirmDialog(`¿Quitar @${c.username} del radar?`))act("competitor_delete",{id:c.id},"Quitada").then(loadMeta);}} style={{background:"none",border:"none",color:"rgba(255,255,255,0.4)",cursor:"pointer",padding:0,fontSize:13}}>×</button>
+          </span>)}
+          <input value={compUser} onChange={e=>setCompUser(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&compUser.trim()){act("competitor_add",{username:compUser},"Agregada").then(()=>{setCompUser("");loadMeta();});}}} placeholder="@cuenta o link" style={{...inp,width:180,padding:"6px 10px",fontSize:12}}/>
+          <Btn small variant="secondary" onClick={()=>act("competitor_add",{username:compUser},"Agregada").then(()=>{setCompUser("");loadMeta();})} disabled={!!busy||!compUser.trim()}>+ Agregar</Btn>
+        </div>
+        {comp.lo&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Cargando…</p>}
+        {!comp.lo&&comp.posts.length===0&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Todavía no hay posts bajados.{meta.discovery?.connected?" Tocá Escanear ahora.":""}</p>}
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(230px,1fr))",gap:10}}>
+          {comp.posts.map(p=>{const a=p.analysis&&!p.analysis.error?p.analysis:null;const img=(p.media_type==="CAROUSEL_ALBUM"&&Array.isArray(p.children)&&p.children.find(c=>c.media_url&&c.media_type!=="VIDEO")?.media_url)||(p.media_type==="VIDEO"?p.thumbnail_url:p.media_url);return <div key={p.id} style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+            <a href={p.permalink||"#"} target="_blank" rel="noreferrer" style={{display:"block",background:"#0b1220",aspectRatio:"4/5"}}>{img&&<img src={img} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} onError={e=>{e.currentTarget.style.display="none";}}/>}</a>
+            <div style={{padding:"8px 10px",display:"flex",flexDirection:"column",gap:4,flex:1}}>
+              <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}><span style={{fontSize:11.5,fontWeight:800,color:"#60a5fa"}}>@{p.username}</span>{chip(a?.formato||(p.media_type==="CAROUSEL_ALBUM"?"carrusel":p.media_type==="VIDEO"?"reel":"posteo"),"#a78bfa")}<span style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",marginLeft:"auto"}}>♥ {p.like_count??"?"} · {p.posted_at?new Date(p.posted_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span></div>
+              {a?<>
+                <p style={{margin:0,fontSize:12,fontWeight:700,color:"#fff"}}>{a.gancho||a.tema}</p>
+                <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.55)"}}>{a.concepto_visual}</p>
+                <p style={{margin:0,fontSize:11.5,color:"#E8C99B"}}><b>Idea propia:</b> {a.idea_argencargo}</p>
+                <div style={{marginTop:"auto",paddingTop:6}}><Btn small onClick={async()=>{const b=await act("generate",{brief:`${a.idea_argencargo}\n\nÁngulo inspirado en algo que funcionó en el rubro: hacé NUESTRA versión con otro texto y otro diseño. Jamás nombrar ni aludir a otras empresas.`,kind:a.formato_sugerido||"feed",title:(a.tema||"Idea del radar").slice(0,60),pillar:"educativo",direct:true},"A la cola: tu Mac la diseña");if(b)setTab("contenido");}} disabled={!!busy}>🎨 Adaptar</Btn></div>
+              </>:<p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.4)"}}>{p.analysis?.error?`Sin análisis: ${p.analysis.error}`:"Todavía sin analizar"}</p>}
+            </div>
+          </div>;})}
+        </div>
+      </div>
       {(()=>{const bk=meta.memory.find(m=>m.key==="brand-kit");const rs=meta.memory.find(m=>m.key==="referencias-estilo");return [bk,rs].filter(Boolean).map(m=><div key={m.key} style={box}>
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:13,fontWeight:800,color:"#fff"}}>{m.title}</span><span style={{marginLeft:"auto"}}><Btn small onClick={async()=>{await act("memory",{key:m.key,title:m.title,content:memEdit[m.key]??m.content},"Guardado");loadMeta();}} disabled={!!busy||memEdit[m.key]===undefined||memEdit[m.key]===m.content}>Guardar</Btn></span></div>
         <textarea value={memEdit[m.key]??m.content} onChange={e=>setMemEdit(x=>({...x,[m.key]:e.target.value}))} rows={12} style={{...inp,fontSize:12,lineHeight:1.5,fontFamily:"ui-monospace,Menlo,monospace",background:"rgba(0,0,0,0.25)",resize:"vertical"}}/>
@@ -4817,6 +4857,22 @@ function StudioPanel({token}){
           <li><b>Pegalo arriba y tocá Conectar.</b></li>
         </ol>
         <p style={{margin:"8px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)"}}>También sirve un token de usuario de Facebook con página vinculada (Graph API Explorer): el sistema detecta solo cuál es.</p>
+      </div>
+      <div style={{...box,marginTop:12}}>
+        <p style={{margin:"0 0 4px",fontSize:13,fontWeight:800,color:"#fff"}}>Radar de competencia {meta.discovery?.connected?<span style={{color:"#4ade80"}}>· conectado{meta.discovery.page_name?` (página ${meta.discovery.page_name})`:""}</span>:<span style={{color:"#fbbf24"}}>· sin conectar</span>}</p>
+        <p style={{margin:"0 0 12px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Para mirar otras cuentas, Meta exige un token de <b>Facebook</b> con una página vinculada a tu Instagram (la conexión de arriba no alcanza: lo probé y esa API no lo permite). Es un segundo token: no toca la publicación.</p>
+        {meta.discovery?.connected?<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Desconectar el radar de competencia?")){await act("discovery_disconnect",{},"Desconectado");loadMeta();}}} disabled={!!busy}>Desconectar</Btn>
+        </div>:<div style={{display:"grid",gap:8}}>
+          <input value={igDisc} onChange={e=>setIgDisc(e.target.value)} placeholder="Pegá acá el token de Facebook (empieza con EAA…)" style={inp} type="password"/>
+          <div><Btn onClick={async()=>{const b=await act("discovery_connect",{access_token:igDisc},x=>`Radar conectado (página ${x.info?.page_name||"?"})`);if(b){setIgDisc("");loadMeta();}}} disabled={!!busy||!igDisc}>Conectar radar</Btn></div>
+        </div>}
+        <ol style={{margin:"12px 0 0",paddingLeft:18,fontSize:12,color:"rgba(255,255,255,0.7)",lineHeight:1.8}}>
+          <li><b>Página de Facebook vinculada.</b> Si no tenés una, creala en <a href="https://www.facebook.com/pages/create" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>facebook.com/pages/create</a> (nombre Argencargo, 2 minutos). Después, en la app de Instagram: perfil → ☰ → Configuración → Centro de cuentas → Cuentas → Agregar cuentas → Facebook, y vinculá esa página.</li>
+          <li><b>Caso de uso en la app de Meta.</b> En <a href="https://developers.facebook.com/apps/1090204430113984/use_cases/" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>Casos de uso</a> agregá el que incluye "Inicio de sesión con Facebook" y sumá los permisos <code>instagram_basic</code>, <code>pages_show_list</code> y <code>pages_read_engagement</code>.</li>
+          <li><b>Generar el token.</b> En el <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>Explorador de la API Graph</a>: elegí la app Argencargo, dejá "Token de usuario", agregá esos tres permisos y tocá <b>Generar token de acceso</b>. Entrá con tu Facebook y marcá la página y la cuenta de Instagram.</li>
+          <li><b>Pegalo arriba y tocá Conectar radar.</b> El sistema lo convierte en un token de página (no vence) y prueba leyendo una cuenta.</li>
+        </ol>
       </div>
     </div>}
 
