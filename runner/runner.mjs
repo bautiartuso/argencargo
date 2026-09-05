@@ -123,7 +123,7 @@ const max = Number(cfg.maxPieces || 4);
 for (let i = 0; i < max; i++) {
   const r = await api("/next".replace("/next", ""), {});
   if (r.status === 204) { if (i === 0) log("cola vacía"); break; }
-  if (!r.ok) { log("error pidiendo pieza", r.status, await r.text()); break; }
+  if (!r.ok) { log("error pidiendo pieza", r.status, (await r.text()).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 160)); break; }
   const data = await r.json();
   try { await procesar(data); }
   catch (e) {
