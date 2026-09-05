@@ -4504,6 +4504,144 @@ function BotPanel({token}){
   </div>;
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONTENT STUDIO · generá, aprobá y programá contenido de Instagram (estilo Minificando).
+// Datos vía /api/admin/studio (service role). Mobile-first: se aprueba desde el celu.
+// ═══════════════════════════════════════════════════════════════════════════
+function StudioPanel({token}){
+  const [tab,setTab]=useState("aprobacion"); // aprobacion | generar | calendario | marca
+  const [pieces,setPieces]=useState([]);
+  const [lo,setLo]=useState(true);
+  const [fotos,setFotos]=useState(false);
+  const [brief,setBrief]=useState("");const [kind,setKind]=useState("auto");const [count,setCount]=useState(1);
+  const [busy,setBusy]=useState("");
+  const [memory,setMemory]=useState([]);const [memEdit,setMemEdit]=useState({});
+  const [preview,setPreview]=useState(null);
+  const isMobile=typeof window!=="undefined"&&window.innerWidth<760;
+  const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/studio${qs}`,{...opts,headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`,...(opts.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
+  const load=async()=>{try{const b=await api("?view=pieces");setPieces(b.pieces||[]);setFotos(!!b.fotos);}catch(e){console.error(e);}finally{setLo(false);}};
+  const loadMem=async()=>{try{const b=await api("?view=memory");setMemory(b.memory||[]);setFotos(!!b.fotos);}catch(e){toast(e.message,"error");}};
+  // La cola: mientras haya piezas generándose, se empuja el procesamiento y se refresca.
+  const pendientes=pieces.filter(p=>p.status==="generating").length;
+  useEffect(()=>{load();},[token]);
+  useEffect(()=>{if(tab==="marca"&&memory.length===0)loadMem();},[tab]);
+  useEffect(()=>{
+    if(!pendientes)return;
+    let alive=true;
+    const tick=async()=>{try{await api("",{method:"POST",body:JSON.stringify({action:"process"})});}catch{} if(alive)await load();};
+    tick();const id=setInterval(tick,20000);
+    return()=>{alive=false;clearInterval(id);};
+  },[pendientes>0]);
+  const act=async(action,extra={},msg)=>{
+    setBusy(action+(extra.id||""));
+    try{const b=await api("",{method:"POST",body:JSON.stringify({action,...extra})});if(msg)toast(typeof msg==="function"?msg(b):msg,"success");await load();return b;}
+    catch(e){toast(e.message,"error");}
+    finally{setBusy("");}
+  };
+  const pedirCambio=async(p)=>{const fb=await promptDialog("¿Qué cambiamos? Escribilo como se lo dirías a un diseñador.",{placeholder:"Ej: titular más corto, fondo claro, sacá el subtítulo"});if(!fb)return;await act("feedback",{id:p.id,feedback:fb},"Va de vuelta al diseñador");};
+  const programar=async(p)=>{const d=await promptDialog("¿Para cuándo? (AAAA-MM-DD HH:MM, hora Argentina)",{defaultValue:new Date(Date.now()+86400000).toISOString().slice(0,10)+" 10:00"});if(!d)return;const iso=new Date(d.replace(" ","T")+":00-03:00");if(isNaN(iso)){toast("Fecha inválida","error");return;}await act("schedule",{id:p.id,scheduled_at:iso.toISOString()},"Programada");};
+  const copiar=async(p)=>{try{await navigator.clipboard.writeText(`${p.caption||""}\n\n${p.hashtags||""}`.trim());toast("Texto copiado","success");}catch{toast("No se pudo copiar","error");}};
+  const fmt=(d)=>d?new Date(d).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
+  const KIND={feed:"Feed 4:5",story:"Historia 9:16",carousel:"Carrusel"};
+  const chip=(txt,col)=><span style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:`${col}22`,color:col,border:`1px solid ${col}55`,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span>;
+  const Card=({p,children})=><div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+    <div onClick={()=>p.image_url&&setPreview(p)} style={{position:"relative",background:"#0b1220",aspectRatio:p.kind==="story"?"9/16":"4/5",cursor:p.image_url?"zoom-in":"default",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      {p.image_url?<img src={p.image_url} alt={p.title||""} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:p.status==="generating"?<div style={{textAlign:"center",color:"rgba(255,255,255,0.5)",fontSize:12,padding:20}}><div style={{fontSize:26,marginBottom:6}}>🎨</div>Diseñando…<div style={{fontSize:10.5,marginTop:4,color:"rgba(255,255,255,0.35)"}}>{p.title}</div></div>:<div style={{color:"#f87171",fontSize:12,padding:16,textAlign:"center"}}>⚠ {p.error||"Sin imagen"}</div>}
+      <div style={{position:"absolute",top:8,left:8,display:"flex",gap:5}}>{chip(KIND[p.kind]||p.kind,"#60a5fa")}{p.pillar&&chip(p.pillar,"#E8C99B")}{p.source==="runner"&&chip("runner","#a78bfa")}</div>
+    </div>
+    <div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:6,flex:1}}>
+      <p style={{margin:0,fontSize:13,fontWeight:800,color:"#fff"}}>{p.headline||p.title||"—"}</p>
+      {p.subheadline&&<p style={{margin:0,fontSize:11.5,color:"rgba(255,255,255,0.6)"}}>{p.subheadline}</p>}
+      {p.caption&&<p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.5)",whiteSpace:"pre-wrap",maxHeight:110,overflow:"hidden"}}>{p.caption}</p>}
+      {p.feedback&&p.status==="generating"&&<p style={{margin:0,fontSize:10.5,color:"#fbbf24"}}>✎ Cambio pedido: {p.feedback}</p>}
+      <div style={{marginTop:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>{children}</div>
+    </div>
+  </div>;
+  const review=pieces.filter(p=>["review","generating","error"].includes(p.status));
+  const cal=pieces.filter(p=>["approved","scheduled","published"].includes(p.status)).sort((a,b)=>new Date(a.scheduled_at||a.approved_at||a.created_at)-new Date(b.scheduled_at||b.approved_at||b.created_at));
+  const grid={display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(260px,1fr))",gap:12};
+  const tabs=[{k:"aprobacion",l:"Aprobación",n:review.filter(p=>p.status==="review").length},{k:"generar",l:"Generar"},{k:"calendario",l:"Calendario",n:cal.filter(p=>p.status!=="published").length},{k:"marca",l:"Marca"}];
+  return <div>
+    <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
+      <div>
+        <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#fff"}}>Content Studio</h2>
+        <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>Generá, aprobá y programá el Instagram de Argencargo. {fotos?"Fotos con IA activas.":"Sin fotos IA todavía (falta la clave de Gemini): las piezas salen con tipografía y color."}</p>
+      </div>
+      <div style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
+        {tabs.map(x=><button key={x.k} onClick={()=>setTab(x.k)} style={{padding:"7px 12px",fontSize:12,fontWeight:700,borderRadius:9,cursor:"pointer",border:`1px solid ${tab===x.k?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.1)"}`,background:tab===x.k?"rgba(184,149,106,0.16)":"rgba(255,255,255,0.03)",color:tab===x.k?"#E8C99B":"rgba(255,255,255,0.6)"}}>{x.l}{x.n>0&&<span style={{marginLeft:6,fontSize:10,padding:"1px 6px",borderRadius:99,background:"#ef4444",color:"#fff"}}>{x.n}</span>}</button>)}
+      </div>
+    </div>
+
+    {tab==="aprobacion"&&<div>
+      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
+        <Btn small onClick={()=>act("runner",{count:4},b=>`El analista propuso ${b.created} piezas`)} disabled={!!busy}>✨ Proponé 4 piezas (1 post + 3 historias)</Btn>
+        {pendientes>0&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>🎨 {pendientes} en la cola: cada una tarda alrededor de un minuto.</span>}
+        <span style={{marginLeft:"auto",fontSize:11,color:"rgba(255,255,255,0.35)"}}>Tocá la imagen para verla grande</span>
+      </div>
+      {lo&&<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>}
+      {!lo&&review.length===0&&<div style={{padding:30,textAlign:"center",color:"rgba(255,255,255,0.45)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:14}}>Nada para aprobar. Pedile al analista que proponga piezas, o escribí un brief en Generar.</div>}
+      <div style={grid}>
+        {review.map(p=><Card key={p.id} p={p}>
+          {p.status==="review"&&<>
+            <Btn small onClick={()=>act("approve",{id:p.id},"Aprobada ✅")} disabled={!!busy}>✓ Aprobar</Btn>
+            <Btn small variant="secondary" onClick={()=>pedirCambio(p)} disabled={!!busy}>✎ Pedir cambio</Btn>
+            <Btn small variant="secondary" onClick={()=>act("regenerate",{id:p.id},"Regenerando")} disabled={!!busy}>↻</Btn>
+            <Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Rechazar esta pieza?"))act("reject",{id:p.id},"Rechazada");}} disabled={!!busy}>✕</Btn>
+          </>}
+          {p.status==="error"&&<Btn small variant="secondary" onClick={()=>act("regenerate",{id:p.id},"Reintentando")} disabled={!!busy}>↻ Reintentar</Btn>}
+        </Card>)}
+      </div>
+    </div>}
+
+    {tab==="generar"&&<div style={{maxWidth:720}}>
+      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",margin:"0 0 10px"}}>Contale al estratega qué querés comunicar. Conoce el tono, la audiencia y las reglas de la marca, y arma la pieza. Podés pedir una o varias.</p>
+      <textarea value={brief} onChange={e=>setBrief(e.target.value)} rows={4} placeholder="Ej: post sobre el vuelo que salió hoy de Shenzhen con 480 kg · historia explicando qué es el peso volumétrico · post con el dato de cargas entregadas esta semana" style={{width:"100%",boxSizing:"border-box",padding:"11px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit",resize:"vertical"}}/>
+      <div style={{display:"flex",gap:10,alignItems:"center",marginTop:10,flexWrap:"wrap"}}>
+        <select value={kind} onChange={e=>setKind(e.target.value)} style={{padding:"9px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"#142038",color:"#fff",fontSize:12.5}}>
+          <option value="auto">Formato: que decida el estratega</option><option value="feed">Post de feed (4:5)</option><option value="story">Historia (9:16)</option>
+        </select>
+        <select value={count} onChange={e=>setCount(Number(e.target.value))} style={{padding:"9px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"#142038",color:"#fff",fontSize:12.5}}>
+          {[1,2,3,4,6].map(n=><option key={n} value={n}>{n} pieza{n>1?"s":""}</option>)}
+        </select>
+        <Btn onClick={async()=>{const b=await act("generate",{brief,kind,count},x=>`${x.created} en la cola`);if(b){setBrief("");setTab("aprobacion");}}} disabled={!!busy||!brief.trim()}>{busy==="generate"?"…":"Generar"}</Btn>
+      </div>
+      <div style={{marginTop:22,padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)"}}>
+        <p style={{margin:"0 0 6px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Runner automático</p>
+        <p style={{margin:0,fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Todos los días a las 7 el analista lee la marca, el radar de noticias y los datos reales del sistema, y deja 1 post y 3 historias en Aprobación. Nunca publica solo.</p>
+      </div>
+    </div>}
+
+    {tab==="calendario"&&<div>
+      {cal.length===0&&<div style={{padding:30,textAlign:"center",color:"rgba(255,255,255,0.45)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:14}}>Todavía no hay piezas aprobadas.</div>}
+      <div style={grid}>
+        {cal.map(p=><Card key={p.id} p={p}>
+          <span style={{width:"100%",fontSize:10.5,color:p.status==="published"?"#4ade80":p.status==="scheduled"?"#60a5fa":"rgba(255,255,255,0.5)",fontWeight:700}}>{p.status==="published"?`✓ Publicada ${fmt(p.published_at)}`:p.status==="scheduled"?`📅 Programada ${fmt(p.scheduled_at)}`:"Aprobada · sin fecha"}</span>
+          {p.image_url&&<a href={p.image_url} download target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><Btn small>⬇ Descargar</Btn></a>}
+          <Btn small variant="secondary" onClick={()=>copiar(p)}>📋 Copiar texto</Btn>
+          {p.status!=="published"&&<Btn small variant="secondary" onClick={()=>programar(p)} disabled={!!busy}>📅</Btn>}
+          {p.status!=="published"&&<Btn small variant="secondary" onClick={()=>act("published",{id:p.id},"Marcada como publicada")} disabled={!!busy}>✓ Publicada</Btn>}
+        </Card>)}
+      </div>
+    </div>}
+
+    {tab==="marca"&&<div style={{display:"grid",gap:14}}>
+      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",margin:0}}>La memoria que lee el diseñador antes de cada pieza. Editá y guardá; aplica desde la próxima generación.</p>
+      {memory.map(m=><div key={m.key} style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+          <span style={{fontSize:13,fontWeight:800,color:"#fff"}}>{m.title}</span><span style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{m.key}</span>
+          <span style={{marginLeft:"auto"}}><Btn small onClick={async()=>{await act("memory",{key:m.key,title:m.title,content:memEdit[m.key]??m.content},"Guardado");loadMem();}} disabled={!!busy||memEdit[m.key]===undefined||memEdit[m.key]===m.content}>Guardar</Btn></span>
+        </div>
+        <textarea value={memEdit[m.key]??m.content} onChange={e=>setMemEdit(x=>({...x,[m.key]:e.target.value}))} rows={m.key==="historial"?8:14} style={{width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:12,lineHeight:1.5,outline:"none",fontFamily:"ui-monospace,Menlo,monospace",resize:"vertical"}}/>
+      </div>)}
+    </div>}
+
+    {preview&&<div onClick={()=>setPreview(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <img src={preview.image_url} alt="" style={{maxWidth:"100%",maxHeight:"92vh",borderRadius:10,boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}/>
+    </div>}
+  </div>;
+}
+
 // Modal del panel de Entregas: cobrar y marcar entregada en un solo paso.
 // Replica el flujo de cobro del editor de op (operation_client_payments + movimiento automatico
 // en la CC de SOLFIN si es transferencia a la financiera + comprobante al bucket) para que el
@@ -13569,7 +13707,7 @@ function AdminDashboard({session,onLogout}){
   const isEmpleado=session?.profile?.role==="empleado";
   // El empleado tiene Operativa + Comercial + Ajustes (sin Finanzas ni GI): cualquier otra
   // pagina lo devuelve a Operaciones. Lo que muestra ganancia se tapa dentro de cada pantalla.
-  const EMP_PAGES=["operations","agents","maritime","agp","calc","entregas","bot","quotes","comms","clients","settings"];
+  const EMP_PAGES=["operations","agents","maritime","agp","calc","entregas","bot","studio","quotes","comms","clients","settings"];
   useEffect(()=>{if(isEmpleado&&!EMP_PAGES.includes(page)&&!selOp)setPage("operations");},[isEmpleado,page,selOp]);
   // Paginado con Range: PostgREST corta en 1000 filas por request y ya hay mas clientes que eso.
   useEffect(()=>{(async()=>{
@@ -13596,6 +13734,7 @@ function AdminDashboard({session,onLogout}){
     {section:"Comercial",items:[
       {key:"entregas",label:"Entregas",p:["M3 9l9-6 9 6-9 6-9-6z","M3 9v6l9 6 9-6V9"]},
       {key:"bot",label:"Bot WhatsApp",p:["M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"]},
+      {key:"studio",label:"Content Studio",p:["M4 4h16v12H4z","M8 20h8","M12 16v4","M8 8l3 3 2-2 3 3"]},
       {key:"quotes",label:"Cotizaciones",p:["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8","M16 17H8"]},
       {key:"comms",label:"Comunicaciones",p:["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"]},
       {key:"clients",label:"Clientes",p:["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2","M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z","M23 21v-2a4 4 0 0 0-3-3.87","M16 3.13a4 4 0 0 1 0 7.75"]},
@@ -13703,6 +13842,7 @@ function AdminDashboard({session,onLogout}){
       {page==="entregas"&&!selOp&&<EntregasPanel token={token} onOpenOp={(op)=>{setSelOp(op);setSelOpTab("entrega");}}/>}
       {page==="entregas"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}
       {page==="bot"&&<BotPanel token={token}/>}
+      {page==="studio"&&<StudioPanel token={token}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="maritime"&&(mtLegacyOn()?<MaritimePanel token={token} allClients={allClients}/>:<MaritimePanel2 token={token} allClients={allClients}/>)}
       {page==="agp"&&<AgpPanel token={token} allClients={allClients}/>}

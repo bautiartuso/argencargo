@@ -49,22 +49,8 @@ async function enviarArchivo({ phone, buffer, mime, filename, caption, nombreCli
 
 // PDF de la factura pública (misma página que ve el cliente) con Chromium en el servidor.
 async function facturaPdf(token) {
-  // @sparticuz/chromium decide qué libs de sistema descomprimir (AL2 vs AL2023) leyendo
-  // AWS_EXECUTION_ENV / AWS_LAMBDA_JS_RUNTIME, que Vercel no setea → no extraía ninguna y
-  // Chromium moría por libnss3. Se le indica el runtime según la versión de Node que corre.
-  if (!process.env.AWS_EXECUTION_ENV && !process.env.AWS_LAMBDA_JS_RUNTIME) {
-    const major = Number(process.versions.node.split(".")[0]);
-    process.env.AWS_LAMBDA_JS_RUNTIME = major >= 22 ? "nodejs22.x" : major >= 20 ? "nodejs20.x" : "nodejs18.x";
-  }
-  const chromium = (await import("@sparticuz/chromium")).default;
-  const puppeteer = (await import("puppeteer-core")).default;
-  const browser = await puppeteer.launch({ args: chromium.args, executablePath: await chromium.executablePath(), headless: true });
-  try {
-    const page = await browser.newPage();
-    await page.goto(`${BASE_URL}/factura/${token}`, { waitUntil: "networkidle0", timeout: 40000 });
-    const pdf = await page.pdf({ format: "A4", printBackground: true, margin: { top: "8mm", bottom: "8mm", left: "8mm", right: "8mm" } });
-    return Buffer.from(pdf);
-  } finally { await browser.close().catch(() => {}); }
+  const { urlToPdf } = await import("../../../../lib/chromium");
+  return urlToPdf(`${BASE_URL}/factura/${token}`);
 }
 
 const fmtNum = (pv, n) => `${String(pv).padStart(5, "0")}-${String(n).padStart(8, "0")}`;
