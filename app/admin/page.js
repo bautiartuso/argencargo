@@ -4506,85 +4506,124 @@ function BotPanel({token}){
 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CONTENT STUDIO · generá, aprobá y programá contenido de Instagram (estilo Minificando).
-// Datos vía /api/admin/studio (service role). Mobile-first: se aprueba desde el celu.
+// CONTENT STUDIO v2 · calcado del sistema de Minificando: Generar, Aprobación, Calendario,
+// Runner, Chatbot, Marca, Conexión, Knowledge. El diseño lo hace la Mac (runner local con
+// Claude Code); la web es la cola, la aprobación, el calendario y el vigilante de Instagram.
 // ═══════════════════════════════════════════════════════════════════════════
 function StudioPanel({token}){
-  const [tab,setTab]=useState("aprobacion"); // aprobacion | generar | calendario | marca
-  const [pieces,setPieces]=useState([]);
-  const [lo,setLo]=useState(true);
-  const [fotos,setFotos]=useState(false);
-  const [brief,setBrief]=useState("");const [kind,setKind]=useState("auto");const [count,setCount]=useState(1);
+  const [tab,setTab]=useState("aprobacion");
+  const [pieces,setPieces]=useState([]);const [lo,setLo]=useState(true);
+  const [meta,setMeta]=useState({memory:[],assets:[],runs:[],instagram:{}});
   const [busy,setBusy]=useState("");
-  const [memory,setMemory]=useState([]);const [memEdit,setMemEdit]=useState({});
+  const [filtro,setFiltro]=useState("todos"); // todos | feed | story
   const [preview,setPreview]=useState(null);
+  const [brief,setBrief]=useState("");const [kind,setKind]=useState("auto");const [count,setCount]=useState(1);
+  const [runN,setRunN]=useState(3);
+  const [chat,setChat]=useState([]);const [chatTxt,setChatTxt]=useState("");const [chatImgs,setChatImgs]=useState([]);const [chatListo,setChatListo]=useState(null);
+  const [memEdit,setMemEdit]=useState({});
+  const [ig,setIg]=useState({ig_user_id:"",access_token:""});
+  const [sched,setSched]=useState(null); // {p, date, hour}
+  const [dictando,setDictando]=useState("");
   const isMobile=typeof window!=="undefined"&&window.innerWidth<760;
-  const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/studio${qs}`,{...opts,headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`,...(opts.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
-  const load=async()=>{try{const b=await api("?view=pieces");setPieces(b.pieces||[]);setFotos(!!b.fotos);}catch(e){console.error(e);}finally{setLo(false);}};
-  const loadMem=async()=>{try{const b=await api("?view=memory");setMemory(b.memory||[]);setFotos(!!b.fotos);}catch(e){toast(e.message,"error");}};
-  // La cola: mientras haya piezas generándose, se empuja el procesamiento y se refresca.
-  const pendientes=pieces.filter(p=>p.status==="generating").length;
-  useEffect(()=>{load();},[token]);
-  useEffect(()=>{if(tab==="marca"&&memory.length===0)loadMem();},[tab]);
-  useEffect(()=>{
-    if(!pendientes)return;
-    let alive=true;
-    const tick=async()=>{try{await api("",{method:"POST",body:JSON.stringify({action:"process"})});}catch{} if(alive)await load();};
-    tick();const id=setInterval(tick,20000);
-    return()=>{alive=false;clearInterval(id);};
-  },[pendientes>0]);
+  const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/studio${qs}`,{...opts,headers:{...(opts.body instanceof FormData?{}:{"Content-Type":"application/json"}),Authorization:`Bearer ${token}`,...(opts.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
+  const load=async()=>{try{const b=await api("?view=pieces");setPieces(b.pieces||[]);}catch(e){console.error(e);}finally{setLo(false);}};
+  const loadMeta=async()=>{try{const b=await api("?view=memory");setMeta({memory:b.memory||[],assets:b.assets||[],runs:b.runs||[],instagram:b.instagram||{}});}catch(e){toast(e.message,"error");}};
+  useEffect(()=>{load();loadMeta();},[token]);
+  const generando=pieces.filter(p=>p.status==="generating").length;
+  useEffect(()=>{if(!generando)return;const id=setInterval(load,20000);return()=>clearInterval(id);},[generando>0]);
   const act=async(action,extra={},msg)=>{
     setBusy(action+(extra.id||""));
     try{const b=await api("",{method:"POST",body:JSON.stringify({action,...extra})});if(msg)toast(typeof msg==="function"?msg(b):msg,"success");await load();return b;}
     catch(e){toast(e.message,"error");}
     finally{setBusy("");}
   };
-  const pedirCambio=async(p)=>{const fb=await promptDialog("¿Qué cambiamos? Escribilo como se lo dirías a un diseñador.",{placeholder:"Ej: titular más corto, fondo claro, sacá el subtítulo"});if(!fb)return;await act("feedback",{id:p.id,feedback:fb},"Va de vuelta al diseñador");};
-  const programar=async(p)=>{const d=await promptDialog("¿Para cuándo? (AAAA-MM-DD HH:MM, hora Argentina)",{defaultValue:new Date(Date.now()+86400000).toISOString().slice(0,10)+" 10:00"});if(!d)return;const iso=new Date(d.replace(" ","T")+":00-03:00");if(isNaN(iso)){toast("Fecha inválida","error");return;}await act("schedule",{id:p.id,scheduled_at:iso.toISOString()},"Programada");};
-  const copiar=async(p)=>{try{await navigator.clipboard.writeText(`${p.caption||""}\n\n${p.hashtags||""}`.trim());toast("Texto copiado","success");}catch{toast("No se pudo copiar","error");}};
+  // Dictado por voz (reconocimiento del navegador: gratis, funciona en Chrome y Safari).
+  const dictar=(setter,key)=>{
+    const SR=typeof window!=="undefined"&&(window.SpeechRecognition||window.webkitSpeechRecognition);
+    if(!SR){toast("Tu navegador no tiene dictado. Probá con Chrome.","error");return;}
+    if(dictando){setDictando("");window.__acgRec?.stop();return;}
+    const rec=new SR();rec.lang="es-AR";rec.continuous=true;rec.interimResults=true;
+    let base="";rec.onstart=()=>setDictando(key);
+    rec.onresult=e=>{let txt="";for(let i=0;i<e.results.length;i++)txt+=e.results[i][0].transcript;setter(prev=>(base||prev)+(base?"":(prev?" ":""))+txt);};
+    rec.onerror=()=>setDictando("");rec.onend=()=>setDictando("");
+    window.__acgRec=rec;rec.start();
+  };
   const fmt=(d)=>d?new Date(d).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
-  const KIND={feed:"Feed 4:5",story:"Historia 9:16",carousel:"Carrusel"};
+  const fmtDia=(d)=>d?new Date(d).toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"}):"";
+  const KIND={feed:"Posteo 4:5",story:"Historia 9:16",carousel:"Carrusel"};
   const chip=(txt,col)=><span style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:`${col}22`,color:col,border:`1px solid ${col}55`,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span>;
+  const pedirCambio=async(p)=>{const fb=await promptDialog("¿Qué cambiamos? Escribilo como se lo dirías a un diseñador.",{placeholder:"Ej: titular más corto, fondo claro, sacá el subtítulo"});if(!fb)return;await act("feedback",{id:p.id,feedback:fb},"Va de vuelta al diseñador (lo hace tu Mac)");};
+  const copiar=async(p)=>{try{await navigator.clipboard.writeText(`${p.caption||""}\n\n${p.hashtags||""}`.trim());toast("Texto copiado","success");}catch{toast("No se pudo copiar","error");}};
   const Card=({p,children})=><div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
     <div onClick={()=>p.image_url&&setPreview(p)} style={{position:"relative",background:"#0b1220",aspectRatio:p.kind==="story"?"9/16":"4/5",cursor:p.image_url?"zoom-in":"default",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      {p.image_url?<img src={p.image_url} alt={p.title||""} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:p.status==="generating"?<div style={{textAlign:"center",color:"rgba(255,255,255,0.5)",fontSize:12,padding:20}}><div style={{fontSize:26,marginBottom:6}}>🎨</div>Diseñando…<div style={{fontSize:10.5,marginTop:4,color:"rgba(255,255,255,0.35)"}}>{p.title}</div></div>:<div style={{color:"#f87171",fontSize:12,padding:16,textAlign:"center"}}>⚠ {p.error||"Sin imagen"}</div>}
-      <div style={{position:"absolute",top:8,left:8,display:"flex",gap:5}}>{chip(KIND[p.kind]||p.kind,"#60a5fa")}{p.pillar&&chip(p.pillar,"#E8C99B")}{p.source==="runner"&&chip("runner","#a78bfa")}</div>
+      {p.image_url?<img src={p.image_url} alt={p.title||""} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:p.status==="generating"?<div style={{textAlign:"center",color:"rgba(255,255,255,0.5)",fontSize:12,padding:20}}><div style={{fontSize:26,marginBottom:6}}>🎨</div>{p.locked_at?"Diseñando en tu Mac…":"En la cola (espera a tu Mac)"}<div style={{fontSize:10.5,marginTop:4,color:"rgba(255,255,255,0.35)"}}>{p.title}</div></div>:<div style={{color:"#f87171",fontSize:12,padding:16,textAlign:"center"}}>⚠ {p.error||"Sin imagen"}</div>}
+      <div style={{position:"absolute",top:8,left:8,display:"flex",gap:5,flexWrap:"wrap"}}>{chip(KIND[p.kind]||p.kind,"#60a5fa")}{p.pillar&&chip(p.pillar,"#E8C99B")}{p.source==="runner"&&chip("runner","#a78bfa")}{p.source==="chatbot"&&chip("chatbot","#34d399")}</div>
     </div>
     <div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:6,flex:1}}>
       <p style={{margin:0,fontSize:13,fontWeight:800,color:"#fff"}}>{p.headline||p.title||"—"}</p>
       {p.subheadline&&<p style={{margin:0,fontSize:11.5,color:"rgba(255,255,255,0.6)"}}>{p.subheadline}</p>}
-      {p.caption&&<p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.5)",whiteSpace:"pre-wrap",maxHeight:110,overflow:"hidden"}}>{p.caption}</p>}
+      {p.caption&&<p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.5)",whiteSpace:"pre-wrap",maxHeight:96,overflow:"hidden"}}>{p.caption}</p>}
       {p.feedback&&p.status==="generating"&&<p style={{margin:0,fontSize:10.5,color:"#fbbf24"}}>✎ Cambio pedido: {p.feedback}</p>}
+      {p.publish_error&&<p style={{margin:0,fontSize:10.5,color:"#f87171"}}>Instagram: {p.publish_error}</p>}
       <div style={{marginTop:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>{children}</div>
     </div>
   </div>;
-  const review=pieces.filter(p=>["review","generating","error"].includes(p.status));
+  const porFiltro=(l)=>l.filter(p=>filtro==="todos"||p.kind===filtro);
+  const review=porFiltro(pieces.filter(p=>["review","generating","error"].includes(p.status)));
   const cal=pieces.filter(p=>["approved","scheduled","published"].includes(p.status)).sort((a,b)=>new Date(a.scheduled_at||a.approved_at||a.created_at)-new Date(b.scheduled_at||b.approved_at||b.created_at));
-  const grid={display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(260px,1fr))",gap:12};
-  const tabs=[{k:"aprobacion",l:"Aprobación",n:review.filter(p=>p.status==="review").length},{k:"generar",l:"Generar"},{k:"calendario",l:"Calendario",n:cal.filter(p=>p.status!=="published").length},{k:"marca",l:"Marca"}];
+  const grid={display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(250px,1fr))",gap:12};
+  const igOk=!!meta.instagram?.connected;
+  const tabs=[{k:"generar",l:"Generar"},{k:"aprobacion",l:"Aprobación",n:pieces.filter(p=>p.status==="review").length},{k:"calendario",l:"Calendario",n:cal.filter(p=>p.status!=="published").length},{k:"runner",l:"Runner"},{k:"chatbot",l:"Chatbot"},{k:"marca",l:"Marca"},{k:"conexion",l:"Conexión",dot:igOk?"#4ade80":"#f87171"},{k:"knowledge",l:"Knowledge"}];
+  const inp={width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit"};
+  const sel={padding:"9px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"#142038",color:"#fff",fontSize:12.5};
+  const box={background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:14};
+  const micBtn=(setter,key)=><button onClick={()=>dictar(setter,key)} title="Dictar por voz" style={{width:40,height:40,borderRadius:10,border:`1px solid ${dictando===key?"#ef4444":"rgba(255,255,255,0.12)"}`,background:dictando===key?"rgba(239,68,68,0.2)":"rgba(255,255,255,0.05)",color:"#fff",fontSize:18,cursor:"pointer",flexShrink:0}}>{dictando===key?"■":"🎤"}</button>;
+  const subirAsset=async(kindA,file)=>{if(!file)return;const fd=new FormData();fd.append("kind",kindA);fd.append("file",file,file.name);setBusy("asset");try{await api("",{method:"POST",body:fd});toast("Subido","success");await loadMeta();}catch(e){toast(e.message,"error");}finally{setBusy("");}};
+  const enviarChat=async()=>{
+    const txt=chatTxt.trim();if(!txt&&chatImgs.length===0)return;
+    const msgs=[...chat,{role:"user",content:txt||"(imagen adjunta)"}];setChat(msgs);setChatTxt("");setBusy("chat");
+    try{const b=await api("",{method:"POST",body:JSON.stringify({action:"chat",messages:msgs,images:chatImgs})});setChat([...msgs,{role:"assistant",content:b.reply}]);setChatListo(b.listo?b:null);setChatImgs([]);}
+    catch(e){toast(e.message,"error");}finally{setBusy("");}
+  };
+  const adjuntarChat=(file)=>{if(!file)return;const rd=new FileReader();rd.onload=()=>{const s=String(rd.result||"");const m=s.match(/^data:([^;]+);base64,(.*)$/);if(m)setChatImgs(x=>[...x,{mime:m[1],b64:m[2],name:file.name}].slice(0,4));};rd.readAsDataURL(file);};
+  const programar=async()=>{if(!sched?.date)return;const iso=new Date(`${sched.date}T${String(sched.hour).padStart(2,"0")}:${String(sched.min).padStart(2,"0")}:00-03:00`);if(isNaN(iso)){toast("Fecha inválida","error");return;}await act("schedule",{id:sched.p.id,scheduled_at:iso.toISOString()},igOk?"Programada: el vigilante la publica a esa hora":"Programada (sin Instagram conectado: la subís vos)");setSched(null);};
+
   return <div>
     <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
       <div>
         <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#fff"}}>Content Studio</h2>
-        <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>Generá, aprobá y programá el Instagram de Argencargo. {fotos?"Fotos con IA activas.":"Sin fotos IA todavía (falta la clave de Gemini): las piezas salen con tipografía y color."}</p>
+        <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>Generá, aprobá y programá contenido de Instagram. El diseño lo hace tu Mac con Claude; acá se aprueba y se publica.</p>
       </div>
       <div style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
-        {tabs.map(x=><button key={x.k} onClick={()=>setTab(x.k)} style={{padding:"7px 12px",fontSize:12,fontWeight:700,borderRadius:9,cursor:"pointer",border:`1px solid ${tab===x.k?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.1)"}`,background:tab===x.k?"rgba(184,149,106,0.16)":"rgba(255,255,255,0.03)",color:tab===x.k?"#E8C99B":"rgba(255,255,255,0.6)"}}>{x.l}{x.n>0&&<span style={{marginLeft:6,fontSize:10,padding:"1px 6px",borderRadius:99,background:"#ef4444",color:"#fff"}}>{x.n}</span>}</button>)}
+        {tabs.map(x=><button key={x.k} onClick={()=>setTab(x.k)} style={{padding:"7px 12px",fontSize:12,fontWeight:700,borderRadius:9,cursor:"pointer",border:`1px solid ${tab===x.k?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.1)"}`,background:tab===x.k?"rgba(184,149,106,0.16)":"rgba(255,255,255,0.03)",color:tab===x.k?"#E8C99B":"rgba(255,255,255,0.6)"}}>{x.l}{x.n>0&&<span style={{marginLeft:6,fontSize:10,padding:"1px 6px",borderRadius:99,background:"#ef4444",color:"#fff"}}>{x.n}</span>}{x.dot&&<span style={{display:"inline-block",width:7,height:7,borderRadius:99,background:x.dot,marginLeft:6}}/>}</button>)}
       </div>
     </div>
 
+    {tab==="generar"&&<div style={{maxWidth:760}}>
+      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",margin:"0 0 10px"}}>Contale al estratega qué querés comunicar. Conoce el tono, la audiencia y las reglas de la marca, y arma el brief para el diseñador. Podés escribir o dictar.</p>
+      <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+        <textarea value={brief} onChange={e=>setBrief(e.target.value)} rows={5} placeholder="Ej: post sobre por qué el peso volumétrico encarece las cajas grandes · historia con los kilos en el aire esta semana · post explicando qué es un consolidado" style={{...inp,resize:"vertical"}}/>
+        {micBtn(setBrief,"brief")}
+      </div>
+      <div style={{display:"flex",gap:10,alignItems:"center",marginTop:10,flexWrap:"wrap"}}>
+        <select value={kind} onChange={e=>setKind(e.target.value)} style={sel}><option value="auto">Formato: que decida el estratega</option><option value="feed">Posteo de feed (4:5)</option><option value="story">Historia (9:16)</option></select>
+        <select value={count} onChange={e=>setCount(Number(e.target.value))} style={sel}>{[1,2,3,4,6].map(n=><option key={n} value={n}>{n} pieza{n>1?"s":""}</option>)}</select>
+        <Btn onClick={async()=>{const b=await act("generate",{brief,kind,count},x=>`${x.created} en la cola`);if(b){setBrief("");setTab("aprobacion");}}} disabled={!!busy||!brief.trim()}>{busy==="generate"?"…":"Generar"}</Btn>
+      </div>
+    </div>}
+
     {tab==="aprobacion"&&<div>
       <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
-        <Btn small onClick={()=>act("runner",{count:4},b=>`El analista propuso ${b.created} piezas`)} disabled={!!busy}>✨ Proponé 4 piezas (1 post + 3 historias)</Btn>
-        {pendientes>0&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>🎨 {pendientes} en la cola: cada una tarda alrededor de un minuto.</span>}
+        {[["todos","Todos"],["feed","Posteos"],["story","Historias"]].map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={{padding:"6px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${filtro===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:filtro===k?"rgba(96,165,250,0.15)":"transparent",color:filtro===k?"#60a5fa":"rgba(255,255,255,0.55)"}}>{l}</button>)}
+        {generando>0&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>🎨 {generando} en la cola · tu Mac las diseña de a una (5 a 8 min cada una) mientras esté prendida.</span>}
         <span style={{marginLeft:"auto",fontSize:11,color:"rgba(255,255,255,0.35)"}}>Tocá la imagen para verla grande</span>
       </div>
       {lo&&<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>}
-      {!lo&&review.length===0&&<div style={{padding:30,textAlign:"center",color:"rgba(255,255,255,0.45)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:14}}>Nada para aprobar. Pedile al analista que proponga piezas, o escribí un brief en Generar.</div>}
+      {!lo&&review.length===0&&<div style={{padding:30,textAlign:"center",color:"rgba(255,255,255,0.45)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:14}}>Nada para aprobar. Pedile ideas al Runner, escribí un brief en Generar o charlá con el Chatbot.</div>}
       <div style={grid}>
         {review.map(p=><Card key={p.id} p={p}>
           {p.status==="review"&&<>
-            <Btn small onClick={()=>act("approve",{id:p.id},"Aprobada ✅")} disabled={!!busy}>✓ Aprobar</Btn>
+            <Btn small onClick={()=>act("approve",{id:p.id},"Aprobada ✅ · guardada como referencia")} disabled={!!busy}>✓ Aprobar</Btn>
             <Btn small variant="secondary" onClick={()=>pedirCambio(p)} disabled={!!busy}>✎ Pedir cambio</Btn>
             <Btn small variant="secondary" onClick={()=>act("regenerate",{id:p.id},"Regenerando")} disabled={!!busy}>↻</Btn>
             <Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Rechazar esta pieza?"))act("reject",{id:p.id},"Rechazada");}} disabled={!!busy}>✕</Btn>
@@ -4594,46 +4633,125 @@ function StudioPanel({token}){
       </div>
     </div>}
 
-    {tab==="generar"&&<div style={{maxWidth:720}}>
-      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",margin:"0 0 10px"}}>Contale al estratega qué querés comunicar. Conoce el tono, la audiencia y las reglas de la marca, y arma la pieza. Podés pedir una o varias.</p>
-      <textarea value={brief} onChange={e=>setBrief(e.target.value)} rows={4} placeholder="Ej: post sobre el vuelo que salió hoy de Shenzhen con 480 kg · historia explicando qué es el peso volumétrico · post con el dato de cargas entregadas esta semana" style={{width:"100%",boxSizing:"border-box",padding:"11px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit",resize:"vertical"}}/>
-      <div style={{display:"flex",gap:10,alignItems:"center",marginTop:10,flexWrap:"wrap"}}>
-        <select value={kind} onChange={e=>setKind(e.target.value)} style={{padding:"9px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"#142038",color:"#fff",fontSize:12.5}}>
-          <option value="auto">Formato: que decida el estratega</option><option value="feed">Post de feed (4:5)</option><option value="story">Historia (9:16)</option>
-        </select>
-        <select value={count} onChange={e=>setCount(Number(e.target.value))} style={{padding:"9px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"#142038",color:"#fff",fontSize:12.5}}>
-          {[1,2,3,4,6].map(n=><option key={n} value={n}>{n} pieza{n>1?"s":""}</option>)}
-        </select>
-        <Btn onClick={async()=>{const b=await act("generate",{brief,kind,count},x=>`${x.created} en la cola`);if(b){setBrief("");setTab("aprobacion");}}} disabled={!!busy||!brief.trim()}>{busy==="generate"?"…":"Generar"}</Btn>
+    {tab==="calendario"&&<div>
+      {!igOk&&<p style={{fontSize:11.5,color:"#fbbf24",margin:"0 0 10px"}}>Instagram no está conectado: lo programado no se publica solo. Conectalo en la solapa Conexión, o descargá y subí a mano.</p>}
+      {cal.length===0&&<div style={{padding:30,textAlign:"center",color:"rgba(255,255,255,0.45)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:14}}>Todavía no hay piezas aprobadas.</div>}
+      {(()=>{const grupos={};cal.forEach(p=>{const k=p.status==="approved"?"Sin fecha":fmtDia(p.scheduled_at||p.published_at);(grupos[k]=grupos[k]||[]).push(p);});return Object.entries(grupos).map(([dia,list])=><div key={dia} style={{marginBottom:18}}>
+        <p style={{margin:"0 0 8px",fontSize:12,fontWeight:800,color:"#E8C99B",textTransform:"capitalize"}}>{dia}</p>
+        <div style={grid}>{list.map(p=><Card key={p.id} p={p}>
+          <span style={{width:"100%",fontSize:10.5,color:p.status==="published"?"#4ade80":p.status==="scheduled"?"#60a5fa":"rgba(255,255,255,0.5)",fontWeight:700}}>{p.status==="published"?`✓ Publicada ${fmt(p.published_at)}${p.ig_media_id?" · en Instagram":""}`:p.status==="scheduled"?`📅 ${fmt(p.scheduled_at)}${igOk?" · se publica sola":""}`:"Aprobada · sin fecha"}</span>
+          {p.status!=="published"&&<Btn small onClick={()=>setSched({p,date:new Date(Date.now()+86400000).toISOString().slice(0,10),hour:10,min:0})} disabled={!!busy}>📅 Programar</Btn>}
+          {p.status!=="published"&&igOk&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?"))act("publish_now",{id:p.id},"Publicada en Instagram");}} disabled={!!busy}>⬆ Subir ahora</Btn>}
+          {p.image_url&&<a href={p.image_url} download target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><Btn small variant="secondary">⬇</Btn></a>}
+          <Btn small variant="secondary" onClick={()=>copiar(p)}>📋</Btn>
+          {p.status!=="published"&&<Btn small variant="secondary" onClick={()=>act("published",{id:p.id},"Marcada como publicada")} disabled={!!busy} title="Ya la subí a mano">✓</Btn>}
+        </Card>)}</div>
+      </div>);})()}
+    </div>}
+
+    {tab==="runner"&&<div style={{maxWidth:760}}>
+      <div style={box}>
+        <p style={{margin:"0 0 6px",fontSize:13,fontWeight:800,color:"#fff"}}>El analista</p>
+        <p style={{margin:"0 0 12px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Lee la marca (knowledge + historial), el radar de noticias y los datos reales del sistema, y propone posteos. Caen en Aprobación: nunca publica solo. Se dispara a mano.</p>
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:"rgba(255,255,255,0.6)"}}>Cantidad</span>
+          <select value={runN} onChange={e=>setRunN(Number(e.target.value))} style={sel}>{[1,3,5,10,20].map(n=><option key={n} value={n}>{n}</option>)}</select>
+          <Btn onClick={async()=>{const b=await act("runner",{count:runN},x=>`${x.created} ideas propuestas`);if(b){loadMeta();setTab("aprobacion");}}} disabled={!!busy}>{busy==="runner"?"Pensando…":"Proponer posts"}</Btn>
+        </div>
       </div>
-      <div style={{marginTop:22,padding:"12px 14px",borderRadius:12,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)"}}>
-        <p style={{margin:"0 0 6px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Runner automático</p>
-        <p style={{margin:0,fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Todos los días a las 7 el analista lee la marca, el radar de noticias y los datos reales del sistema, y deja 1 post y 3 historias en Aprobación. Nunca publica solo.</p>
+      <div style={{...box,marginTop:12}}>
+        <p style={{margin:"0 0 8px",fontSize:13,fontWeight:800,color:"#fff"}}>Corridas</p>
+        {meta.runs.length===0&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Todavía no corrió.</p>}
+        {meta.runs.map(r=><div key={r.id} style={{padding:"8px 0",borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+          <p style={{margin:0,fontSize:12,color:"#fff"}}>{fmt(r.started_at)} · <span style={{color:"rgba(255,255,255,0.5)"}}>{r.kind}</span> · {r.created} de {r.requested} propuestas</p>
+          {r.log&&<pre style={{margin:"4px 0 0",fontSize:11,color:"rgba(255,255,255,0.5)",whiteSpace:"pre-wrap",fontFamily:"inherit"}}>{r.log}</pre>}
+        </div>)}
       </div>
     </div>}
 
-    {tab==="calendario"&&<div>
-      {cal.length===0&&<div style={{padding:30,textAlign:"center",color:"rgba(255,255,255,0.45)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:14}}>Todavía no hay piezas aprobadas.</div>}
-      <div style={grid}>
-        {cal.map(p=><Card key={p.id} p={p}>
-          <span style={{width:"100%",fontSize:10.5,color:p.status==="published"?"#4ade80":p.status==="scheduled"?"#60a5fa":"rgba(255,255,255,0.5)",fontWeight:700}}>{p.status==="published"?`✓ Publicada ${fmt(p.published_at)}`:p.status==="scheduled"?`📅 Programada ${fmt(p.scheduled_at)}`:"Aprobada · sin fecha"}</span>
-          {p.image_url&&<a href={p.image_url} download target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><Btn small>⬇ Descargar</Btn></a>}
-          <Btn small variant="secondary" onClick={()=>copiar(p)}>📋 Copiar texto</Btn>
-          {p.status!=="published"&&<Btn small variant="secondary" onClick={()=>programar(p)} disabled={!!busy}>📅</Btn>}
-          {p.status!=="published"&&<Btn small variant="secondary" onClick={()=>act("published",{id:p.id},"Marcada como publicada")} disabled={!!busy}>✓ Publicada</Btn>}
-        </Card>)}
+    {tab==="chatbot"&&<div style={{maxWidth:760}}>
+      <div style={{...box,minHeight:300,display:"flex",flexDirection:"column",gap:8}}>
+        {chat.length===0&&<p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>Contale una idea suelta, adjuntá una captura o dictá un audio. El estratega la va armando con vos y, cuando está lista, la manda a diseñar.</p>}
+        {chat.map((m,i)=><div key={i} style={{alignSelf:m.role==="assistant"?"flex-start":"flex-end",maxWidth:"85%",background:m.role==="assistant"?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.07)",border:`1px solid ${m.role==="assistant"?"rgba(96,165,250,0.3)":"rgba(255,255,255,0.1)"}`,borderRadius:12,padding:"8px 11px",fontSize:13,color:"#fff",whiteSpace:"pre-wrap"}}>{m.content}</div>)}
+        {chatListo&&<div style={{alignSelf:"flex-start",background:"rgba(52,211,153,0.12)",border:"1px solid rgba(52,211,153,0.35)",borderRadius:12,padding:"10px 12px"}}>
+          <p style={{margin:"0 0 4px",fontSize:12,fontWeight:800,color:"#34d399"}}>Idea lista · {chatListo.kind==="story"?"historia":"posteo"} · {chatListo.title}</p>
+          <p style={{margin:"0 0 8px",fontSize:11.5,color:"rgba(255,255,255,0.7)",whiteSpace:"pre-wrap"}}>{chatListo.brief}</p>
+          <Btn small onClick={async()=>{const b=await act("generate",{brief:chatListo.brief,kind:chatListo.kind,title:chatListo.title,pillar:chatListo.pillar,direct:true},"A la cola: tu Mac la diseña");if(b){setChat([]);setChatListo(null);setTab("aprobacion");}}} disabled={!!busy}>🎨 Generar esta pieza</Btn>
+        </div>}
+      </div>
+      {chatImgs.length>0&&<div style={{display:"flex",gap:6,marginTop:8}}>{chatImgs.map((im,i)=><span key={i} style={{fontSize:10.5,padding:"3px 8px",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.7)"}}>📎 {im.name} <button onClick={()=>setChatImgs(x=>x.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer"}}>×</button></span>)}</div>}
+      <div style={{display:"flex",gap:8,alignItems:"flex-end",marginTop:8}}>
+        <input type="file" accept="image/*" id="cs-chat-file" style={{display:"none"}} onChange={e=>{adjuntarChat(e.target.files?.[0]);e.target.value="";}}/>
+        <button onClick={()=>document.getElementById("cs-chat-file")?.click()} title="Adjuntar imagen" style={{width:40,height:40,borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.05)",color:"#fff",fontSize:20,cursor:"pointer",flexShrink:0}}>+</button>
+        {micBtn(setChatTxt,"chat")}
+        <textarea value={chatTxt} onChange={e=>setChatTxt(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();enviarChat();}}} rows={2} placeholder="Escribí o dictá tu idea…" style={{...inp,resize:"none"}}/>
+        <Btn onClick={enviarChat} disabled={busy==="chat"||(!chatTxt.trim()&&chatImgs.length===0)}>{busy==="chat"?"…":"Enviar"}</Btn>
       </div>
     </div>}
 
     {tab==="marca"&&<div style={{display:"grid",gap:14}}>
-      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",margin:0}}>La memoria que lee el diseñador antes de cada pieza. Editá y guardá; aplica desde la próxima generación.</p>
-      {memory.map(m=><div key={m.key} style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:12}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-          <span style={{fontSize:13,fontWeight:800,color:"#fff"}}>{m.title}</span><span style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{m.key}</span>
-          <span style={{marginLeft:"auto"}}><Btn small onClick={async()=>{await act("memory",{key:m.key,title:m.title,content:memEdit[m.key]??m.content},"Guardado");loadMem();}} disabled={!!busy||memEdit[m.key]===undefined||memEdit[m.key]===m.content}>Guardar</Btn></span>
+      <div style={box}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><p style={{margin:0,fontSize:13,fontWeight:800,color:"#fff"}}>Brand kit</p><span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Logos que el diseñador puede usar en el HTML</span><label style={{marginLeft:"auto"}}><input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{subirAsset("logo",e.target.files?.[0]);e.target.value="";}}/><span style={{fontSize:12,fontWeight:700,padding:"6px 11px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",cursor:"pointer",color:"#fff"}}>Subir logo</span></label></div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:10}}>
+          {meta.assets.filter(a=>a.kind==="logo").map(a=><div key={a.id} style={{background:"#fff",borderRadius:10,padding:8,textAlign:"center"}}><img src={a.url} alt={a.name||""} style={{width:"100%",height:70,objectFit:"contain"}}/><p style={{margin:"4px 0 0",fontSize:10,color:"#334155",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name||"logo"}</p><button onClick={async()=>{if(await confirmDialog("¿Quitar este logo?"))act("asset_delete",{id:a.id},"Quitado").then(loadMeta);}} style={{background:"none",border:"none",color:"#ef4444",fontSize:10.5,cursor:"pointer"}}>quitar</button></div>)}
         </div>
-        <textarea value={memEdit[m.key]??m.content} onChange={e=>setMemEdit(x=>({...x,[m.key]:e.target.value}))} rows={m.key==="historial"?8:14} style={{width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(0,0,0,0.25)",color:"#fff",fontSize:12,lineHeight:1.5,outline:"none",fontFamily:"ui-monospace,Menlo,monospace",resize:"vertical"}}/>
+      </div>
+      <div style={box}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><p style={{margin:0,fontSize:13,fontWeight:800,color:"#fff"}}>Posteos de referencia</p><span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Capturas de posts que te gustan (tuyos o ajenos): el diseñador los estudia para mantener el estilo</span><label style={{marginLeft:"auto"}}><input type="file" accept="image/*" multiple style={{display:"none"}} onChange={async e=>{for(const f of Array.from(e.target.files||[]))await subirAsset("reference",f);e.target.value="";}}/><span style={{fontSize:12,fontWeight:700,padding:"6px 11px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",cursor:"pointer",color:"#fff"}}>Subir capturas</span></label></div>
+        {meta.assets.filter(a=>a.kind==="reference").length===0&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Todavía no hay referencias. Subí 10 a 20 capturas de posts que te gusten (las de Magforce, por ejemplo).</p>}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:10}}>
+          {meta.assets.filter(a=>a.kind==="reference").map(a=><div key={a.id} style={{position:"relative",borderRadius:10,overflow:"hidden",background:"#0b1220"}}><img src={a.url} alt="" style={{width:"100%",aspectRatio:"4/5",objectFit:"cover",display:"block"}}/><button onClick={async()=>{if(await confirmDialog("¿Quitar esta referencia?"))act("asset_delete",{id:a.id},"Quitada").then(loadMeta);}} style={{position:"absolute",top:4,right:4,background:"rgba(0,0,0,0.6)",border:"none",color:"#fff",borderRadius:6,cursor:"pointer",fontSize:12,padding:"2px 6px"}}>×</button></div>)}
+        </div>
+      </div>
+      {(()=>{const bk=meta.memory.find(m=>m.key==="brand-kit");const rs=meta.memory.find(m=>m.key==="referencias-estilo");return [bk,rs].filter(Boolean).map(m=><div key={m.key} style={box}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:13,fontWeight:800,color:"#fff"}}>{m.title}</span><span style={{marginLeft:"auto"}}><Btn small onClick={async()=>{await act("memory",{key:m.key,title:m.title,content:memEdit[m.key]??m.content},"Guardado");loadMeta();}} disabled={!!busy||memEdit[m.key]===undefined||memEdit[m.key]===m.content}>Guardar</Btn></span></div>
+        <textarea value={memEdit[m.key]??m.content} onChange={e=>setMemEdit(x=>({...x,[m.key]:e.target.value}))} rows={12} style={{...inp,fontSize:12,lineHeight:1.5,fontFamily:"ui-monospace,Menlo,monospace",background:"rgba(0,0,0,0.25)",resize:"vertical"}}/>
+      </div>);})()}
+    </div>}
+
+    {tab==="conexion"&&<div style={{maxWidth:720}}>
+      <div style={box}>
+        <p style={{margin:"0 0 4px",fontSize:13,fontWeight:800,color:"#fff"}}>Instagram {igOk?<span style={{color:"#4ade80"}}>· conectado{meta.instagram.username?` (@${meta.instagram.username})`:""}</span>:<span style={{color:"#f87171"}}>· sin conectar</span>}</p>
+        <p style={{margin:"0 0 12px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Con la conexión, el vigilante revisa el calendario cada minuto y publica solo lo programado (posteos e historias). Sin conexión, descargás y subís a mano.</p>
+        {igOk?<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <Btn small variant="secondary" onClick={()=>act("instagram_test",{},b=>`OK: @${b.info?.username} · ${b.info?.followers_count} seguidores`)} disabled={!!busy}>Probar conexión</Btn>
+          <Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Desconectar Instagram?")){await act("instagram_disconnect",{},"Desconectado");loadMeta();}}} disabled={!!busy}>Desconectar</Btn>
+        </div>:<div style={{display:"grid",gap:8}}>
+          <input value={ig.ig_user_id} onChange={e=>setIg(x=>({...x,ig_user_id:e.target.value}))} placeholder="ID de la cuenta profesional de Instagram (número largo)" style={inp}/>
+          <input value={ig.access_token} onChange={e=>setIg(x=>({...x,access_token:e.target.value}))} placeholder="Token de acceso (Graph API)" style={inp} type="password"/>
+          <div><Btn onClick={async()=>{const b=await act("instagram",ig,x=>`Conectado como @${x.info?.username}`);if(b){setIg({ig_user_id:"",access_token:""});loadMeta();}}} disabled={!!busy||!ig.ig_user_id||!ig.access_token}>Conectar</Btn></div>
+        </div>}
+      </div>
+      <div style={{...box,marginTop:12}}>
+        <p style={{margin:"0 0 6px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Cómo conseguir el ID y el token</p>
+        <ol style={{margin:0,paddingLeft:18,fontSize:12,color:"rgba(255,255,255,0.65)",lineHeight:1.7}}>
+          <li>La cuenta de Instagram tiene que ser <b>profesional</b> (Empresa) y estar vinculada a una página de Facebook (Instagram → Configuración → Centro de cuentas).</li>
+          <li>Entrá a <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>Graph API Explorer</a>, elegí la app de Argencargo, y en permisos agregá <code>instagram_basic</code>, <code>instagram_content_publish</code>, <code>pages_show_list</code>, <code>pages_read_engagement</code>. Generá el token.</li>
+          <li>En la misma herramienta pedí <code>me/accounts?fields=instagram_business_account</code>: el número que aparece en <code>instagram_business_account.id</code> es el ID de la cuenta.</li>
+          <li>Pegá ID y token acá y tocá Conectar. Si el token vence (60 días), repetís los pasos.</li>
+        </ol>
+      </div>
+    </div>}
+
+    {tab==="knowledge"&&<div style={{display:"grid",gap:14}}>
+      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",margin:0}}>La memoria que lee el analista, el chatbot y el diseñador. Editá y guardá; aplica desde la próxima pieza. El historial se escribe solo con cada aprobación.</p>
+      {meta.memory.filter(m=>!["brand-kit","referencias-estilo"].includes(m.key)).map(m=><div key={m.key} style={box}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:13,fontWeight:800,color:"#fff"}}>{m.title}</span><span style={{fontSize:10.5,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>{m.key}.md</span><span style={{marginLeft:"auto"}}><Btn small onClick={async()=>{await act("memory",{key:m.key,title:m.title,content:memEdit[m.key]??m.content},"Guardado");loadMeta();}} disabled={!!busy||memEdit[m.key]===undefined||memEdit[m.key]===m.content}>Guardar</Btn></span></div>
+        <textarea value={memEdit[m.key]??m.content} onChange={e=>setMemEdit(x=>({...x,[m.key]:e.target.value}))} rows={m.key==="historial"?8:12} style={{...inp,fontSize:12,lineHeight:1.5,fontFamily:"ui-monospace,Menlo,monospace",background:"rgba(0,0,0,0.25)",resize:"vertical"}}/>
       </div>)}
+    </div>}
+
+    {sched&&<div onClick={()=>setSched(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:14,padding:20,width:"100%",maxWidth:380}}>
+        <h3 style={{margin:"0 0 10px",fontSize:15,color:"#fff"}}>📅 Programar · {sched.p.headline||sched.p.title}</h3>
+        <Inp label="Día" type="date" value={sched.date} onChange={v=>setSched(s=>({...s,date:v}))}/>
+        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:14}}>
+          <span style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",textTransform:"uppercase"}}>Hora</span>
+          <select value={sched.hour} onChange={e=>setSched(s=>({...s,hour:Number(e.target.value)}))} style={sel}>{Array.from({length:24},(_,h)=><option key={h} value={h}>{String(h).padStart(2,"0")}</option>)}</select>
+          <select value={sched.min} onChange={e=>setSched(s=>({...s,min:Number(e.target.value)}))} style={sel}>{[0,15,30,45].map(m=><option key={m} value={m}>{String(m).padStart(2,"0")}</option>)}</select>
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn variant="secondary" onClick={()=>setSched(null)}>Cancelar</Btn><Btn onClick={programar} disabled={!!busy}>Programar</Btn></div>
+      </div>
     </div>}
 
     {preview&&<div onClick={()=>setPreview(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>

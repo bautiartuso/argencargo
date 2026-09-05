@@ -10,6 +10,7 @@ const nextConfig = {
       '/api/cron/studio-queue': ['./node_modules/@sparticuz/chromium/bin/**', './docs/marca/**'],
       '/api/cron/studio-runner': ['./docs/marca/**'],
       '/api/studio/runner': ['./docs/marca/**'],
+      '/api/cron/studio-publisher': ['./docs/marca/**'],
     },
   },
   images: {

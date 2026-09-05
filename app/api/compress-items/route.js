@@ -3,7 +3,7 @@
 // Devuelve: { ok, groups: [{description, quantity, unit_price_usd, hs_code, source_indices: []}] }
 // Comprime listas largas de items en N grupos para cumplir limitación aduanera (RG 5608: max 8 items/factura).
 
-import { callClaudeText } from "../../../lib/anthropic";
+import { callClaudeText, HAIKU_MODEL } from "../../../lib/anthropic";
 
 export const maxDuration = 60;
 
@@ -90,7 +90,7 @@ export async function POST(req) {
     // clase de error "invalid JSON from model" que antes solo se podía resolver reintentando a mano.
     let text;
     try {
-      text = await callClaudeText({
+      text = await callClaudeText({ model: HAIKU_MODEL,
         system: SYSTEM_PROMPT,
         user: userMsg,
         max_tokens: 4000,
@@ -98,7 +98,7 @@ export async function POST(req) {
       });
     } catch (e) {
       // Si el fallback a OpenAI entra en juego, json_schema no aplica ahí — reintentamos una vez sin schema.
-      text = await callClaudeText({ system: SYSTEM_PROMPT, user: userMsg, max_tokens: 4000 });
+      text = await callClaudeText({ model: HAIKU_MODEL, system: SYSTEM_PROMPT, user: userMsg, max_tokens: 4000 });
     }
 
     let parsed;

@@ -3,7 +3,7 @@
 // Devuelve: { ok, items: [{description, quantity, unit_price_usd, hs_code}], count }
 // Usa Claude Vision (claude-opus-4-7) para extraer items de facturas comerciales chinas/USA.
 
-import { callClaudeVision } from "../../../lib/anthropic";
+import { callClaudeVision, HAIKU_MODEL } from "../../../lib/anthropic";
 
 export const maxDuration = 60;
 
@@ -46,7 +46,7 @@ export async function POST(req) {
     }
 
     const prompt = `Analizá ${images.length === 1 ? "esta factura" : `estas ${images.length} páginas de factura`} y extraé todos los items en JSON.`;
-    const text = await callClaudeVision({
+    const text = await callClaudeVision({ model: HAIKU_MODEL,
       system: SYSTEM_PROMPT,
       prompt,
       images,

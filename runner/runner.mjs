@@ -1,17 +1,15 @@
 #!/usr/bin/env node
-// Runner local del Content Studio — corre en la Mac de Bautista.
+// Runner local del Content Studio — corre en la Mac de Bautista (launchd cada 10 min).
 //
-// Cada vez que arranca (launchd lo dispara cada 10 min mientras la Mac está prendida):
-//   1. Pide a la web la siguiente pieza de la cola (/api/studio/runner/next).
-//   2. Arma una carpeta de trabajo con la memoria de marca y el brief.
-//   3. Corre Claude Code (`claude -p`, con la suscripción Max, sin API) como DISEÑADOR: escribe
-//      post.html + meta.json.
-//   4. Saca la foto del HTML con Chrome en modo invisible → post.png.
-//   5. Corre Claude Code como DIRECTOR DE ARTE: mira post.png, corrige post.html si hace falta
-//      (hasta 2 pasadas), se vuelve a fotografiar.
-//   6. Sube la pieza terminada a la web → queda en Aprobación.
+//   1. Pide a la web la siguiente pieza de la cola (+ memoria, brand kit, referencias, aprobadas).
+//   2. Arma una carpeta de trabajo: memoria/*.md, brand/ (logos), referencias/ (posteos que gustan),
+//      aprobados/ (últimas piezas aprobadas: html + png) y brief.md.
+//   3. Claude Code (`claude -p`, Opus, con la suscripción, sin API) como DISEÑADOR → post.html + meta.json.
+//   4. Chrome invisible fotografía el HTML en tamaño exacto → post.png.
+//   5. Claude Code como DIRECTOR DE ARTE mira post.png y corrige (hasta 2 pasadas).
+//   6. Sube la pieza → Aprobación.
 //
-// Config: ~/.argencargo-runner.json  { base, secret, chrome, claude, model, maxPieces }
+// Config: ~/.argencargo-runner.json { base, secret, chrome, claude, model, maxPieces }
 
 import fs from "fs/promises";
 import path from "path";
@@ -19,14 +17,12 @@ import os from "os";
 import { execFile } from "child_process";
 import puppeteer from "puppeteer-core";
 
-const CFG_PATH = path.join(os.homedir(), ".argencargo-runner.json");
-const cfg = JSON.parse(await fs.readFile(CFG_PATH, "utf8"));
+const cfg = JSON.parse(await fs.readFile(path.join(os.homedir(), ".argencargo-runner.json"), "utf8"));
 const WORK = path.join(os.homedir(), "argencargo-runner");
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
-
 const api = (p, o = {}) => fetch(`${cfg.base}/api/studio/runner${p}`, { ...o, headers: { "x-runner-secret": cfg.secret, ...(o.headers || {}) } });
 
-function claude(prompt, { cwd, tools = ["Read", "Write"], model = cfg.model || "opus", timeoutMs = 15 * 60000 } = {}) {
+function claude(prompt, { cwd, tools = ["Read", "Write", "Glob"], model = cfg.model || "opus", timeoutMs = 15 * 60000 } = {}) {
   return new Promise((resolve, reject) => {
     const bin = cfg.claude || "claude";
     const args = ["-p", prompt, "--output-format", "json", "--model", model, "--allowedTools", ...tools];
@@ -52,32 +48,35 @@ async function render(htmlPath, pngPath, { width, height }) {
   } finally { await browser.close().catch(() => {}); }
 }
 
-const BASE_ASSETS = "https://www.argencargo.com.ar";
+async function bajar(url, dest) {
+  try { const r = await fetch(url); if (!r.ok) return false; await fs.writeFile(dest, Buffer.from(await r.arrayBuffer())); return true; } catch { return false; }
+}
 
-function promptDisenador(p, photoUrl) {
+function promptDisenador(p, ctx) {
   const W = p.width, H = p.height;
-  return `Sos el diseñador y redactor de Argencargo. En esta carpeta tenés la memoria de la marca (memoria/*.md: leelos TODOS antes de empezar) y el pedido (brief.md).
+  return `Sos el diseñador y redactor de Argencargo. Antes de empezar leé TODA la memoria de la marca en memoria/*.md (identidad, tono, audiencia, productos, dos-and-donts, campanas, historial, brand-kit, referencias-estilo) y el pedido en brief.md.
+${ctx.referencias ? `Mirá también referencias/ (posteos que a Bautista le gustan: son la vara de calidad y estilo; no los copies, aprendé la lógica) ` : ""}${ctx.aprobados ? `y aprobados/ (las últimas piezas nuestras aprobadas, html + png: mantené continuidad de estilo con ellas).` : ""}
 
-Creá UNA pieza de Instagram: ${p.kind === "story" ? "HISTORIA de 1080×1920" : "POST DE FEED de 1080×1350"} px.
+Creá UNA pieza de Instagram: ${p.kind === "story" ? "HISTORIA de 1080×1920" : "POST DE FEED de 1080×1350 (4:5)"} px.
 
 Escribí dos archivos en esta carpeta:
-1) post.html — documento HTML autocontenido (sin JavaScript) que se va a fotografiar en ${W}×${H} px exactos: html y body con margin 0, width ${W}px, height ${H}px, overflow hidden.
-   - Fuentes: <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">. Titulares en 'Bebas Neue' (TODO el titular, incluida la palabra resaltada), textos en 'Inter' o 'Nunito'.
-   - Imágenes permitidas: SOLO ${BASE_ASSETS}/brand/logo-completo.png, ${BASE_ASSETS}/brand/isotipo.png, ${BASE_ASSETS}/brand/logotipo-texto.png${photoUrl ? ` y la FOTO DE FONDO ${photoUrl} (a pantalla completa, object-fit cover, con un degradé oscuro o azul encima para que el texto se lea)` : ""}. Nada más. Los logos son azules: sobre fondo oscuro van en una cápsula blanca o el isotipo sobre bloque blanco.
-   - Titular en mayúsculas, grande (Bebas Neue 120–190 px en feed, 130–210 px en historia), 2 a 4 líneas, con 1 o 2 palabras resaltadas en un bloque #1E8BFF o #0A3D91 con texto blanco. Subtítulo Inter 44–56 px. Márgenes internos mínimos 80 px. En historias, nada importante en los 250 px de arriba ni de abajo. Logo siempre presente y chico.
+1) post.html — documento HTML autocontenido (sin JavaScript) que se fotografía en ${W}×${H} px exactos: html y body con margin 0, width ${W}px, height ${H}px, overflow hidden.
+   - Fuentes: <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">. Titular en 'Bebas Neue' (TODO el titular, incluida la palabra resaltada); textos en 'Inter' o 'Nunito'.
+   - Imágenes: SOLO los logos de la carpeta brand/ (usalos con ruta relativa, ej. src="brand/isotipo.png"). Ninguna imagen externa, ninguna foto. Todo lo demás se dibuja con CSS: degradés, franjas diagonales como las barras del logo, tarjetas, círculos, patrones, iconografía simple en SVG inline. Los logos son azules: sobre fondo oscuro van en cápsula blanca o el isotipo sobre bloque blanco.
+   - Titular en mayúsculas, grande, 2 a 4 líneas, con 1 o 2 palabras resaltadas en un bloque #1E8BFF o #0A3D91 con texto blanco. Subtítulo 44–56 px. Márgenes internos mínimos 80 px. En historias, nada importante en los 250 px de arriba ni de abajo. Logo siempre presente y chico.
    - Sin emojis en el HTML, sin lorem ipsum, sin datos inventados (solo lo que dice el brief), sin llamados a la acción agresivos.
-   - Nivel: pieza de campaña profesional, como la referencia de estilo. Formas, franjas diagonales como las barras del logo, tarjetas y bloques de color con CSS son bienvenidos. HTML compacto y limpio.
+   - Nivel: campaña profesional. Composición con aire y jerarquía. HTML compacto y limpio.
 2) meta.json — {"headline": "...", "subheadline": "...", "caption": "texto del post, 3 a 8 líneas con saltos, sin hashtags", "hashtags": "8 a 15 hashtags separados por espacio"}
 
-Cuando termines los dos archivos, respondé solo: LISTO.`;
+Cuando termines, respondé solo: LISTO.`;
 }
 
 function promptDirector(p, pass) {
-  return `Sos el director de arte de Argencargo. En esta carpeta está la pieza YA RENDERIZADA: post.png (mirala con Read) y su código post.html, más la memoria de marca en memoria/*.md (brand kit y referencia de estilo).
+  return `Sos el director de arte de Argencargo. En esta carpeta está la pieza YA RENDERIZADA: post.png (mirala con Read) y su código post.html; la memoria en memoria/*.md; ${"referencias/ y aprobados/ como vara de estilo."}
 
-Revisá post.png con ojo de director de arte (pasada ${pass} de 2): texto cortado, tapado o fuera del lienzo; tipografía equivocada (el titular completo debe ser 'Bebas Neue'); jerarquía floja; poco aire; logo tapando algo; contraste; composición desequilibrada; que se vea amateur o genérica. Tiene que estar al nivel de una campaña profesional.
+Revisá post.png (pasada ${pass} de 2): texto cortado, tapado o fuera del lienzo; tipografía equivocada (el titular completo debe ser 'Bebas Neue'); jerarquía floja; poco aire; logo tapando algo; contraste; composición desequilibrada; que se vea amateur o genérica. Compará con referencias/ y aprobados/: tiene que estar a ese nivel.
 
-Si hay algo que mejorar: corregí post.html (reescribilo completo) y respondé "CORREGIDO: " y en una línea qué cambiaste.
+Si hay algo que mejorar: corregí post.html (reescribilo completo, respetando que los logos van con ruta relativa brand/...) y respondé "CORREGIDO: " y en una línea qué cambiaste.
 Si está impecable: no toques nada y respondé "APROBADO".`;
 }
 
@@ -85,15 +84,32 @@ async function procesar(data) {
   const p = data.piece;
   const dir = path.join(WORK, "work", p.id);
   await fs.rm(dir, { recursive: true, force: true });
-  await fs.mkdir(path.join(dir, "memoria"), { recursive: true });
+  for (const d of ["memoria", "brand", "referencias", "aprobados"]) await fs.mkdir(path.join(dir, d), { recursive: true });
   for (const [k, v] of Object.entries(data.memory || {})) await fs.writeFile(path.join(dir, "memoria", `${k}.md`), v || "");
-  const brief = `# Pieza a crear\n\n- Formato: ${p.kind === "story" ? "historia 1080×1920" : "post de feed 1080×1350"}\n- Pilar: ${p.pillar || "(libre)"}\n- Título interno: ${p.title || ""}\n\n## Brief\n${p.brief || "(libre)"}\n${p.feedback ? `\n## CAMBIOS PEDIDOS POR BAUTISTA sobre la versión anterior (aplicalos todos)\n${p.feedback}\n\nVersión anterior: ${p.headline || ""} / ${p.subheadline || ""}\n` : ""}${p.photo_url ? `\n## Foto de fondo disponible\n${p.photo_url}\n` : ""}`;
+  // Logos y posteos de referencia (imágenes) para que Claude los mire y use.
+  const ctx = { referencias: 0, aprobados: 0 };
+  for (const a of data.assets || []) {
+    const ext = (a.url.split("?")[0].match(/\.(png|jpe?g|webp|svg)$/i) || [".png"])[0];
+    if (a.kind === "logo") {
+      const name = a.url.split("/").pop().split("?")[0];
+      await bajar(a.url, path.join(dir, "brand", name));
+    } else {
+      ctx.referencias++;
+      await bajar(a.url, path.join(dir, "referencias", `ref-${ctx.referencias}${ext}`));
+      if (a.note) await fs.writeFile(path.join(dir, "referencias", `ref-${ctx.referencias}.md`), a.note);
+    }
+  }
+  for (const ap of data.aprobados || []) {
+    ctx.aprobados++;
+    if (ap.html) await fs.writeFile(path.join(dir, "aprobados", `ok-${ctx.aprobados}.html`), ap.html);
+    if (ap.image_url) await bajar(ap.image_url, path.join(dir, "aprobados", `ok-${ctx.aprobados}.png`));
+  }
+  const brief = `# Pieza a crear\n\n- Formato: ${p.kind === "story" ? "historia 1080×1920" : "post de feed 1080×1350 (4:5)"}\n- Pilar: ${p.pillar || "(libre)"}\n- Título interno: ${p.title || ""}\n\n## Brief\n${p.brief || "(libre)"}\n${p.feedback ? `\n## CAMBIOS PEDIDOS POR BAUTISTA sobre la versión anterior (aplicalos todos)\n${p.feedback}\n\nVersión anterior: ${p.headline || ""} / ${p.subheadline || ""}\n` : ""}`;
   await fs.writeFile(path.join(dir, "brief.md"), brief);
-  // Archivo de instrucciones que Claude Code lee solo al arrancar en la carpeta.
-  await fs.writeFile(path.join(dir, "CLAUDE.md"), "Trabajás dentro de esta carpeta. Leé memoria/*.md y brief.md. Escribí únicamente post.html y meta.json (y corregí post.html cuando se te pida). No crees otros archivos.");
+  await fs.writeFile(path.join(dir, "CLAUDE.md"), "Trabajás dentro de esta carpeta. Leé memoria/*.md y brief.md; mirá brand/, referencias/ y aprobados/. Escribí únicamente post.html y meta.json (y corregí post.html cuando se te pida). No crees otros archivos ni salgas de la carpeta.");
 
   log(`🎨 ${p.kind} · ${p.title}`);
-  await claude(promptDisenador(p, p.photo_url), { cwd: dir });
+  await claude(promptDisenador(p, ctx), { cwd: dir });
   const htmlPath = path.join(dir, "post.html"), pngPath = path.join(dir, "post.png");
   await fs.access(htmlPath);
   await render(htmlPath, pngPath, { width: p.width, height: p.height });
@@ -108,20 +124,21 @@ async function procesar(data) {
     await render(htmlPath, pngPath, { width: p.width, height: p.height });
   }
 
-  const html = await fs.readFile(htmlPath, "utf8");
+  // El HTML que se guarda lleva los logos con URL absoluta (para re-renderizar en la web si hace falta).
+  const html = (await fs.readFile(htmlPath, "utf8")).replace(/(src|url\()=?["']?brand\//g, (m) => m.replace("brand/", `${cfg.base}/brand/`));
   let meta = {}; try { meta = JSON.parse(await fs.readFile(path.join(dir, "meta.json"), "utf8")); } catch {}
   const fd = new FormData();
   fd.append("id", p.id); fd.append("html", html);
   for (const k of ["headline", "subheadline", "caption", "hashtags"]) fd.append(k, String(meta[k] || ""));
   fd.append("png", new Blob([await fs.readFile(pngPath)], { type: "image/png" }), "post.png");
   const up = await api("?op=done", { method: "POST", body: fd });
-  if (!up.ok) throw new Error(`subida ${up.status}: ${await up.text()}`);
+  if (!up.ok) throw new Error(`subida ${up.status}: ${(await up.text()).slice(0, 200)}`);
   log(`   ✅ lista para aprobar`);
 }
 
 const max = Number(cfg.maxPieces || 4);
 for (let i = 0; i < max; i++) {
-  const r = await api("/next".replace("/next", ""), {});
+  const r = await api("", {});
   if (r.status === 204) { if (i === 0) log("cola vacía"); break; }
   if (!r.ok) { log("error pidiendo pieza", r.status, (await r.text()).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 160)); break; }
   const data = await r.json();

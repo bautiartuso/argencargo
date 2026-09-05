@@ -1,29 +1,18 @@
-// /api/studio/runner — puerta para el RUNNER LOCAL del Content Studio (la Mac de Bautista con
-// Claude Code y su suscripción Max: el diseño no cuesta API).
+// /api/studio/runner — puerta para el RUNNER LOCAL (la Mac con Claude Code y la suscripción Max).
 //
-// GET  /next          → toma la pieza más vieja de la cola (lock 15 min), genera la foto de fondo
-//                       en el servidor si hay proveedor de imágenes, y devuelve pieza + memoria.
-//                       204 si no hay nada.
-// POST /done  (multipart: id, html, headline, subheadline, caption, hashtags, png) → storage + review.
-// POST /error (json: id, error) → suma intento; al 2º queda en 'error'.
+// GET             → toma la pieza más vieja de la cola (lock 15 min) y devuelve pieza + memoria +
+//                   assets (logos, posteos de referencia) + últimas piezas aprobadas (estilo vivo).
+//                   204 si no hay nada.
+// POST ?op=done   (multipart: id, html, headline, subheadline, caption, hashtags, png) → review.
+// POST ?op=error  (json: id, error) → suma intento; al 2º queda en 'error'.
 // Auth: header x-runner-secret = RUNNER_SECRET.
 
-import { sb, loadMemory } from "../../../../lib/studio";
-import { generatePhoto, geminiConfigured } from "../../../../lib/gemini-image";
+import { sb, loadMemory, loadAssets, ejemplosAprobados, uploadStorage } from "../../../../lib/studio";
 
-export const maxDuration = 120;
+export const maxDuration = 60;
 export const runtime = "nodejs";
 
-const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
-const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
-
 const okAuth = (req) => !!process.env.RUNNER_SECRET && req.headers.get("x-runner-secret") === process.env.RUNNER_SECRET;
-
-async function upload(pathname, buffer, mime) {
-  const up = await fetch(`${SB_URL}/storage/v1/object/content-studio/${pathname}`, { method: "POST", headers: { Authorization: `Bearer ${SB_SERVICE}`, apikey: SB_SERVICE, "Content-Type": mime, "x-upsert": "true" }, body: buffer });
-  if (!up.ok) throw new Error(`storage ${up.status}`);
-  return `${SB_URL}/storage/v1/object/public/content-studio/${pathname}`;
-}
 
 export async function GET(req) {
   if (!okAuth(req)) return Response.json({ error: "unauthorized" }, { status: 401 });
@@ -33,28 +22,19 @@ export async function GET(req) {
   if (!piece) return new Response(null, { status: 204 });
   const lock = await sb(`/cs_pieces?id=eq.${piece.id}&status=eq.generating&or=(locked_at.is.null,locked_at.lt.${stale})`, { method: "PATCH", body: JSON.stringify({ locked_at: new Date().toISOString() }) });
   if (!(Array.isArray(lock.body) && lock.body.length)) return new Response(null, { status: 204 });
-
-  // Foto de fondo (paga, la hace el servidor para que el runner no necesite claves de imágenes).
-  let photo_url = piece.photo_url || null;
-  if (!photo_url && piece.photo_prompt && geminiConfigured()) {
-    try {
-      const img = await generatePhoto(`${piece.photo_prompt}. Contexto: empresa argentina de logística internacional e importación desde China.`, { aspect: piece.kind === "story" ? "9:16" : "4:5" });
-      if (img) {
-        photo_url = await upload(`fotos/${piece.id}-${Date.now()}.${img.mime.includes("jpeg") ? "jpg" : "png"}`, img.buffer, img.mime);
-        await sb(`/cs_pieces?id=eq.${piece.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ photo_url }) });
-      }
-    } catch (e) { console.error("[studio/runner] foto", e.message); }
-  }
-  const memory = await loadMemory();
-  return Response.json({ piece: { ...piece, photo_url }, memory: Object.fromEntries(memory.map((m) => [m.key, m.content])) });
+  const [memory, assets, aprobados] = await Promise.all([loadMemory(), loadAssets(), ejemplosAprobados(6)]);
+  return Response.json({
+    piece,
+    memory: Object.fromEntries(memory.map((m) => [m.key, m.content])),
+    assets,
+    aprobados: aprobados.filter((p) => p.id !== piece.id).map((p) => ({ id: p.id, kind: p.kind, title: p.title, headline: p.headline, html: p.html, image_url: p.image_url })),
+  });
 }
 
 export async function POST(req) {
   if (!okAuth(req)) return Response.json({ error: "unauthorized" }, { status: 401 });
-  const url = new URL(req.url);
-  const op = url.searchParams.get("op") || "done";
+  const op = new URL(req.url).searchParams.get("op") || "done";
   const now = new Date().toISOString();
-
   if (op === "error") {
     const b = await req.json().catch(() => ({}));
     const cur = await sb(`/cs_pieces?id=eq.${encodeURIComponent(b.id || "")}&select=attempts`);
@@ -62,17 +42,15 @@ export async function POST(req) {
     await sb(`/cs_pieces?id=eq.${encodeURIComponent(b.id || "")}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: attempts >= 2 ? "error" : "generating", error: String(b.error || "error").slice(0, 500), attempts, locked_at: null, updated_at: now }) });
     return Response.json({ ok: true });
   }
-
   const fd = await req.formData();
   const id = String(fd.get("id") || "");
   const png = fd.get("png");
   if (!id || !png || typeof png === "string") return Response.json({ error: "Faltan id o png" }, { status: 400 });
-  const image_url = await upload(`piezas/${id}-${Date.now()}.png`, Buffer.from(await png.arrayBuffer()), "image/png");
-  const body = {
+  const image_url = await uploadStorage(`piezas/${id}-${Date.now()}.png`, Buffer.from(await png.arrayBuffer()), "image/png");
+  await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({
     status: "review", image_url, error: null, locked_at: null, feedback: null, updated_at: now,
     html: String(fd.get("html") || ""), headline: String(fd.get("headline") || ""), subheadline: String(fd.get("subheadline") || ""),
     caption: String(fd.get("caption") || ""), hashtags: String(fd.get("hashtags") || ""),
-  };
-  await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(body) });
+  }) });
   return Response.json({ ok: true, image_url });
 }

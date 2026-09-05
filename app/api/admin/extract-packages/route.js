@@ -5,7 +5,7 @@
 //
 // Body: { flight_id }  →  { bultos: [{peso_kg, largo_cm, ancho_cm, alto_cm}], total_kg }
 
-import { callClaudeVision } from "../../../../lib/anthropic";
+import { callClaudeVision, HAIKU_MODEL } from "../../../../lib/anthropic";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -42,7 +42,7 @@ export async function POST(req) {
   const b64 = Buffer.from(await imgRes.arrayBuffer()).toString("base64");
 
   try {
-    const raw = await callClaudeVision({
+    const raw = await callClaudeVision({ model: HAIKU_MODEL,
       system: "Extraés datos de capturas de sistemas de couriers chinos (tablas de bultos). Devolvés SOLO el JSON pedido, sin comentarios.",
       prompt: `La imagen es una tabla de bultos de un sistema de courier (columnas típicas en chino: 序号=nro, 实重=peso real kg, 长/宽/高=largo/ancho/alto cm, 材重=peso volumétrico, 收费重=peso facturable, 体积=volumen).
 Extraé UNA fila por bulto con: peso real en kg (实重), largo, ancho y alto en cm (长, 宽, 高). Ignorá totales del pie y columnas que no pido. Si un valor no se lee, poné null.`,

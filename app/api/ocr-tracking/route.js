@@ -3,7 +3,7 @@
 // Devuelve: { ok, tracking, raw } — código de tracking detectado y texto crudo.
 // Usa Claude Vision (claude-opus-4-7) para extraer el código.
 
-import { callClaudeVision } from "../../../lib/anthropic";
+import { callClaudeVision, HAIKU_MODEL } from "../../../lib/anthropic";
 
 export const maxDuration = 30;
 
@@ -14,7 +14,7 @@ export async function POST(req) {
     const { image_base64 } = await req.json();
     if (!image_base64) return Response.json({ ok: false, error: "missing image" }, { status: 400 });
 
-    const text = await callClaudeVision({
+    const text = await callClaudeVision({ model: HAIKU_MODEL,
       system: SYSTEM,
       prompt: "Extraé el código de tracking de esta etiqueta:",
       images: [image_base64],
