@@ -15,7 +15,7 @@
 import { sb, loadMemory, runner, crearPiezas, processNext, appendHistorial } from "../../../../lib/studio";
 import { geminiConfigured } from "../../../../lib/gemini-image";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 export const runtime = "nodejs";
 
 async function isStaff(req) {

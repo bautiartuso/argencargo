@@ -5,7 +5,7 @@
 
 import { processNext } from "../../../../lib/studio";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 export const runtime = "nodejs";
 
 export async function GET(req) {
