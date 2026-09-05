@@ -5,7 +5,7 @@
 //   2. Arma una carpeta de trabajo: memoria/*.md, brand/ (logos), referencias/ (posteos que gustan),
 //      aprobados/ (últimas piezas aprobadas: html + png) y brief.md.
 //   3. Claude Code (`claude -p`, Opus, con la suscripción, sin API) como DISEÑADOR → slide-1.html..slide-N.html + meta.json
-//      (posteo = 1 imagen; carrusel = 3 a 6; historia suelta = 1; secuencia de historias = 2 a 4).
+//      (posteo = 1 imagen; carrusel = 2 a 6; historia suelta = 1; secuencia de historias = 2 a 4).
 //   4. Chrome invisible fotografía cada HTML en tamaño exacto → slide-N.png.
 //   5. Claude Code como DIRECTOR DE ARTE mira los PNG y corrige (hasta 2 pasadas).
 //   6. Sube la pieza → Aprobación.
@@ -89,13 +89,13 @@ function reglasFormato(p) {
   const n = nSlides(p);
   if (p.kind === "carousel") return `REGLAS DEL CARRUSEL:
    - slide-1 es la PORTADA: el gancho grande (titular de 2 a 4 líneas con palabra resaltada) + un "Deslizá →" chico y discreto abajo a la derecha. Nada más.
-   - slide-2 a slide-${n - 1}: UNA idea por imagen. Poco texto: un título corto + 1 a 3 líneas o una lista de máximo 3 ítems. El texto se reparte entre las imágenes, nunca se amontona. Número de imagen chico (ej. "2/${n}") en una esquina.
-   - slide-${n} es el CIERRE: resumen en una línea + logo completo. Sin "seguinos", sin pedidos agresivos; a lo sumo "Cualquier duda, escribinos".
+${n === 2 ? `   - slide-2 es el DESARROLLO y el cierre a la vez: el contenido completo, ordenado y con poco texto (título corto + hasta 4 líneas o una lista de máximo 4 ítems), y abajo el logo completo. Sin pedidos agresivos; a lo sumo "Cualquier duda, escribinos".` : `   - slide-2 a slide-${n - 1}: UNA idea por imagen. Poco texto: un título corto + 1 a 3 líneas o una lista de máximo 3 ítems. El texto se reparte entre las imágenes, nunca se amontona. Número de imagen chico (ej. "2/${n}") en una esquina.
+   - slide-${n} es el CIERRE: resumen en una línea + logo completo. Sin "seguinos", sin pedidos agresivos; a lo sumo "Cualquier duda, escribinos".`}
    - Misma paleta, mismo fondo y misma tipografía en todas: tiene que verse como una sola pieza. Seguí slides_plan del brief al pie de la letra.`;
   if (p.kind === "story" && n > 1) return `REGLAS DE LA SECUENCIA DE HISTORIAS:
    - slide-1: el gancho, dice de qué se trata en una frase concreta (no "cambió algo": QUÉ cambió).
-   - slide-2 a slide-${n - 1}: el desarrollo, con lo concreto (qué cambió exactamente, a quién alcanza, desde cuándo, qué conviene hacer). Una idea por historia, se lee en 5 segundos.
-   - slide-${n}: el cierre (una línea + logo). Indicador chico "1/${n}", "2/${n}"… en una esquina. Misma paleta en todas.`;
+${n === 2 ? `   - slide-2: el desarrollo con lo concreto (qué cambió exactamente, a quién alcanza, desde cuándo, qué conviene hacer) y el logo al pie como cierre.` : `   - slide-2 a slide-${n - 1}: el desarrollo, con lo concreto (qué cambió exactamente, a quién alcanza, desde cuándo, qué conviene hacer). Una idea por historia, se lee en 5 segundos.
+   - slide-${n}: el cierre (una línea + logo).`} Indicador chico "1/${n}", "2/${n}"… en una esquina. Misma paleta en todas.`;
   if (p.kind === "story") return `REGLAS DE LA HISTORIA SUELTA: una sola idea, liviana, se lee en 3 segundos. Nada de "deslizá" ni "seguí leyendo".`;
   return `REGLAS DEL POSTEO SIMPLE: es UNA sola imagen. La idea cierra ahí. PROHIBIDO "Deslizá", "seguí leyendo", "ver más", flechas de continuar o numeración.`;
 }

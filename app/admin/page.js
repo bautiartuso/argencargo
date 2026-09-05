@@ -4729,7 +4729,7 @@ function StudioPanel({token}){
         <p style={{margin:"0 0 6px",fontSize:13,fontWeight:800,color:"#fff"}}>El analista</p>
         <p style={{margin:"0 0 12px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Lee la marca (knowledge + historial), el radar de noticias (lee los artículos) y los datos reales del sistema, y propone piezas en el formato que le corresponde a cada idea. Caen en Contenido: nunca publica solo. Se dispara a mano.</p>
         <div style={{display:"flex",gap:14,alignItems:"flex-end",flexWrap:"wrap"}}>
-          {[["feed","Posteos","una imagen, una idea que cierra sola"],["carousel","Carruseles","3 a 6 imágenes, lo educativo en partes"],["story","Historias","sueltas o secuencias de 2 a 4; lo decide el analista"]].map(([k,l,h])=><div key={k}>
+          {[["feed","Posteos","una imagen, una idea que cierra sola"],["carousel","Carruseles","2 a 6 imágenes, lo educativo en partes"],["story","Historias","sueltas o secuencias de 2 a 4; lo decide el analista"]].map(([k,l,h])=><div key={k}>
             <p style={{margin:"0 0 4px",fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{l}</p>
             <select value={runMix[k]} onChange={e=>setRunMix(m=>({...m,[k]:Number(e.target.value)}))} style={sel}>{[0,1,2,3,4,5,6,8,10].map(n=><option key={n} value={n}>{n}</option>)}</select>
             <p style={{margin:"4px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.4)",maxWidth:170}}>{h}</p>

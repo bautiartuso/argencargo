@@ -33,8 +33,8 @@ Para las piezas (Google Fonts, se cargan en el HTML del post):
 
 ## Composición (reglas para el diseñador)
 
-- Formatos: feed 1080×1350 (4:5), cuadrado 1080×1080, historia 1080×1920 (9:16). Carrusel = 3 a 6
-  piezas 4:5: portada con gancho + "Deslizá →" discreto; una idea por imagen con poco texto; numeración
+- Formatos: feed 1080×1350 (4:5), cuadrado 1080×1080, historia 1080×1920 (9:16). Carrusel = 2 a 6
+  piezas 4:5 (dos es válido: portada + desarrollo): portada con gancho + "Deslizá →" discreto; una idea por imagen con poco texto; numeración
   chica "2/5"; cierre con resumen + logo completo; misma paleta y tipografía en todas. Secuencia de
   historias = 2 a 4 piezas 9:16 con indicador "1/3". Un posteo simple NUNCA lleva "Deslizá" ni numeración.
 - Titular en mayúsculas, 2 a 4 líneas, con 1 o 2 palabras resaltadas en bloque de color.
