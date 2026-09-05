@@ -4515,6 +4515,7 @@ function StudioPanel({token}){
   const [chatKind,setChatKind]=useState("auto"); // formato pedido en el chatbot
   const [calMes,setCalMes]=useState(()=>{const d=new Date();return {feed:{y:d.getFullYear(),m:d.getMonth()},story:{y:d.getFullYear(),m:d.getMonth()}};}); // un mes por calendario
   const [calSel,setCalSel]=useState(null);   // pieza abierta desde el calendario
+  const [cambio,setCambio]=useState(null);   // {p, texto}: modal de "pedir cambio" con la imagen a la vista
   const [pieces,setPieces]=useState([]);const [lo,setLo]=useState(true);
   const [meta,setMeta]=useState({memory:[],assets:[],runs:[],instagram:{}});
   const [busy,setBusy]=useState("");
@@ -4555,7 +4556,8 @@ function StudioPanel({token}){
   const fmtDia=(d)=>d?new Date(d).toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"}):"";
   const KIND={feed:"Posteo 4:5",story:"Historia 9:16",carousel:"Carrusel"};
   const chip=(txt,col)=><span style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:`${col}22`,color:col,border:`1px solid ${col}55`,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span>;
-  const pedirCambio=async(p)=>{const fb=await promptDialog("¿Qué cambiamos? Escribilo como se lo dirías a un diseñador.",{placeholder:"Ej: titular más corto, fondo claro, sacá el subtítulo"});if(!fb)return;await act("feedback",{id:p.id,feedback:fb},"Va de vuelta al diseñador (lo hace tu Mac)");};
+  const pedirCambio=(p)=>setCambio({p,texto:""});
+  const enviarCambio=async()=>{const fb=(cambio?.texto||"").trim();if(!fb)return;const p=cambio.p;setCambio(null);await act("feedback",{id:p.id,feedback:fb},"Va de vuelta al diseñador (lo hace tu Mac)");};
   const copiar=async(p)=>{try{await navigator.clipboard.writeText(`${p.caption||""}\n\n${p.hashtags||""}`.trim());toast("Texto copiado","success");}catch{toast("No se pudo copiar","error");}};
   const Card=({p,children,compact})=><div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
     <div onClick={()=>p.image_url&&setPreview(p)} style={{position:"relative",background:"#0b1220",aspectRatio:p.kind==="story"?"9/16":"4/5",cursor:p.image_url?"zoom-in":"default",display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -4574,7 +4576,7 @@ function StudioPanel({token}){
   const porFiltro=(l)=>l.filter(p=>filtro==="todos"||p.kind===filtro);
   const review=porFiltro(pieces.filter(p=>["review","generating","error"].includes(p.status)));
   const cal=pieces.filter(p=>["approved","scheduled","published"].includes(p.status)).sort((a,b)=>new Date(a.scheduled_at||a.approved_at||a.created_at)-new Date(b.scheduled_at||b.approved_at||b.created_at));
-  const grid={display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(250px,1fr))",gap:12};
+  const grid={display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(250px,1fr))",gap:12,alignItems:"start"};
   const igOk=!!meta.instagram?.connected;
   const tabs=[{k:"aprobacion",l:"Aprobación",n:pieces.filter(p=>p.status==="review").length},{k:"calendario",l:"Calendario",n:cal.filter(p=>p.status!=="published").length},{k:"runner",l:"Runner"},{k:"chatbot",l:"Chatbot"},{k:"marca",l:"Marca"},{k:"conexion",l:"Conexión",dot:igOk?"#4ade80":"#f87171"},{k:"knowledge",l:"Knowledge"}];
   const inp={width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit"};
@@ -4612,7 +4614,6 @@ function StudioPanel({token}){
             {[
               {ic:"✓",col:"#22c55e",tit:"Aprobar",fn:()=>act("approve",{id:p.id},"Aprobada ✅ · guardada como referencia")},
               {ic:"✎",col:"#fbbf24",tit:"Pedir cambio",fn:()=>pedirCambio(p)},
-              {ic:"↻",col:"rgba(255,255,255,0.7)",tit:"Regenerar",fn:()=>act("regenerate",{id:p.id},"Regenerando")},
               {ic:"✕",col:"#ef4444",tit:"Rechazar",fn:async()=>{if(await confirmDialog("¿Rechazar esta pieza?"))act("reject",{id:p.id},"Rechazada");}},
             ].map(b=><button key={b.tit} title={b.tit} onClick={b.fn} disabled={!!busy} style={{flex:1,height:38,borderRadius:9,border:`1px solid ${b.col}55`,background:`${b.col}1f`,color:b.col,fontSize:17,fontWeight:900,cursor:"pointer"}}>{b.ic}</button>)}
           </div>}
@@ -4820,6 +4821,18 @@ function StudioPanel({token}){
       </div>
     </div>}
 
+    {cambio&&<div onClick={()=>setCambio(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16,gap:16,flexWrap:isMobile?"wrap":"nowrap",overflowY:"auto"}}>
+      {cambio.p.image_url&&<img src={cambio.p.image_url} alt="" onClick={e=>e.stopPropagation()} style={{maxWidth:isMobile?"100%":"55%",maxHeight:isMobile?"45vh":"92vh",borderRadius:10,boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}/>}
+      <div onClick={e=>e.stopPropagation()} style={{width:isMobile?"100%":380,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(251,191,36,0.4)",borderRadius:12,padding:16}}>
+        <p style={{margin:"0 0 4px",fontSize:14,fontWeight:800,color:"#fff"}}>✎ ¿Qué cambiamos?</p>
+        <p style={{margin:"0 0 10px",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Escribilo o dictalo como se lo dirías a un diseñador. Vuelve a la cola y tu Mac la rehace con estos cambios.</p>
+        <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+          <textarea autoFocus value={cambio.texto} onChange={e=>setCambio(c=>({...c,texto:e.target.value}))} rows={6} placeholder="Ej: fondo claro, titular más corto, sacá el bloque de abajo, logo más chico arriba a la derecha" style={{...inp,resize:"vertical"}}/>
+          {micBtn((fn)=>setCambio(c=>({...c,texto:typeof fn==="function"?fn(c.texto):fn})),"cambio")}
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:10}}><Btn variant="secondary" onClick={()=>setCambio(null)}>Cancelar</Btn><Btn onClick={enviarCambio} disabled={!!busy||!(cambio.texto||"").trim()}>Enviar al diseñador</Btn></div>
+      </div>
+    </div>}
     {preview&&<div onClick={()=>setPreview(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16,gap:16,flexWrap:isMobile?"wrap":"nowrap",overflowY:"auto"}}>
       <img src={preview.image_url} alt="" style={{maxWidth:isMobile?"100%":"60%",maxHeight:"92vh",borderRadius:10,boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}/>
       {preview.kind!=="story"&&<div onClick={e=>e.stopPropagation()} style={{width:isMobile?"100%":340,maxHeight:"92vh",overflowY:"auto",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:14}}>
