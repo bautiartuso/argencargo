@@ -4513,8 +4513,7 @@ function BotPanel({token}){
 function StudioPanel({token}){
   const [tab,setTab]=useState("aprobacion");
   const [chatKind,setChatKind]=useState("auto"); // formato pedido en el chatbot
-  const [calMes,setCalMes]=useState(()=>{const d=new Date();return {y:d.getFullYear(),m:d.getMonth()};});
-  const [calCat,setCalCat]=useState("todo"); // todo | feed | story
+  const [calMes,setCalMes]=useState(()=>{const d=new Date();return {feed:{y:d.getFullYear(),m:d.getMonth()},story:{y:d.getFullYear(),m:d.getMonth()}};}); // un mes por calendario
   const [calSel,setCalSel]=useState(null);   // pieza abierta desde el calendario
   const [pieces,setPieces]=useState([]);const [lo,setLo]=useState(true);
   const [meta,setMeta]=useState({memory:[],assets:[],runs:[],instagram:{}});
@@ -4622,26 +4621,56 @@ function StudioPanel({token}){
 
     {tab==="calendario"&&(()=>{
       const sinFecha=pieces.filter(p=>p.status==="approved");
-      const prog=pieces.filter(p=>["scheduled","published"].includes(p.status)&&(calCat==="todo"||p.kind===calCat));
-      const {y,m}=calMes;
-      const first=new Date(y,m,1);const dow=(first.getDay()+6)%7; // lunes=0
-      const dias=new Date(y,m+1,0).getDate();
-      const celdas=[];for(let i=0;i<dow;i++)celdas.push(null);for(let d=1;d<=dias;d++)celdas.push(d);while(celdas.length%7)celdas.push(null);
       const key=(dt)=>{const x=new Date(dt);return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;};
-      const porDia={};prog.forEach(p=>{const k=key(p.scheduled_at||p.published_at);(porDia[k]=porDia[k]||[]).push(p);});
-      Object.values(porDia).forEach(l=>l.sort((a,b)=>new Date(a.scheduled_at||a.published_at)-new Date(b.scheduled_at||b.published_at)));
       const hoyK=key(new Date());
-      const mesLabel=new Date(y,m,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"});
       const hora=(p)=>new Date(p.scheduled_at||p.published_at).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
-      const Mini=({p})=><button onClick={()=>setCalSel(p)} title={`${p.kind==="story"?"Historia":"Posteo"} · ${hora(p)} · ${p.headline||p.title||""}`} style={{position:"relative",border:"none",padding:0,background:"transparent",cursor:"pointer",width:"100%",textAlign:"left"}}>
+      const Mini=({p})=><button onClick={()=>setCalSel(p)} title={`${hora(p)} · ${p.headline||p.title||""}`} style={{border:"none",padding:0,background:"transparent",cursor:"pointer",width:"100%",textAlign:"left"}}>
         <div style={{display:"flex",gap:6,alignItems:"center",padding:"3px 4px",borderRadius:7,background:p.status==="published"?"rgba(74,222,128,0.1)":"rgba(96,165,250,0.12)",border:`1px solid ${p.status==="published"?"rgba(74,222,128,0.35)":"rgba(96,165,250,0.35)"}`}}>
           <div style={{width:26,height:p.kind==="story"?40:32,borderRadius:4,overflow:"hidden",background:"#0b1220",flexShrink:0}}>{p.image_url&&<img src={p.image_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>}</div>
-          <div style={{minWidth:0}}><div style={{fontSize:10,fontWeight:800,color:p.status==="published"?"#4ade80":"#60a5fa"}}>{hora(p)} {p.status==="published"?"✓":""}{p.publish_error?" ⚠":""}</div><div style={{fontSize:9.5,color:"rgba(255,255,255,0.6)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.kind==="story"?"Historia":"Posteo"}</div></div>
+          <div style={{minWidth:0}}><div style={{fontSize:10,fontWeight:800,color:p.status==="published"?"#4ade80":"#60a5fa"}}>{hora(p)} {p.status==="published"?"✓":""}{p.publish_error?" ⚠":""}</div><div style={{fontSize:9.5,color:"rgba(255,255,255,0.6)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.headline||p.title||""}</div></div>
         </div>
       </button>;
+      // Un calendario mensual por formato (posteos e historias), cada uno con su navegación de mes.
+      const Calendario=({kind,titulo})=>{
+        const {y,m}=calMes[kind];
+        const setMes=(f)=>setCalMes(c=>({...c,[kind]:f(c[kind])}));
+        const prog=pieces.filter(p=>["scheduled","published"].includes(p.status)&&p.kind===kind);
+        const first=new Date(y,m,1);const dow=(first.getDay()+6)%7;
+        const dias=new Date(y,m+1,0).getDate();
+        const celdas=[];for(let i=0;i<dow;i++)celdas.push(null);for(let d=1;d<=dias;d++)celdas.push(d);while(celdas.length%7)celdas.push(null);
+        const porDia={};prog.forEach(p=>{const k=key(p.scheduled_at||p.published_at);(porDia[k]=porDia[k]||[]).push(p);});
+        Object.values(porDia).forEach(l=>l.sort((a,b)=>new Date(a.scheduled_at||a.published_at)-new Date(b.scheduled_at||b.published_at)));
+        const enMes=prog.filter(p=>{const x=new Date(p.scheduled_at||p.published_at);return x.getFullYear()===y&&x.getMonth()===m;}).length;
+        const mesLabel=new Date(y,m,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"});
+        return <div style={{marginBottom:22}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+            <span style={{fontSize:14,fontWeight:800,color:"#E8C99B"}}>{titulo}</span>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>· {enMes} este mes</span>
+            <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
+              <button onClick={()=>setMes(c=>({y:c.m===0?c.y-1:c.y,m:c.m===0?11:c.m-1}))} style={{...sel,cursor:"pointer",padding:"5px 10px"}}>‹</button>
+              <span style={{fontSize:12.5,fontWeight:800,color:"#fff",textTransform:"capitalize",minWidth:140,textAlign:"center"}}>{mesLabel}</span>
+              <button onClick={()=>setMes(c=>({y:c.m===11?c.y+1:c.y,m:c.m===11?0:c.m+1}))} style={{...sel,cursor:"pointer",padding:"5px 10px"}}>›</button>
+            </div>
+          </div>
+          {isMobile
+            ?<div style={{display:"grid",gap:8}}>
+              {celdas.filter(Boolean).map(d=>{const k=`${y}-${m}-${d}`;const l=porDia[k]||[];if(!l.length)return null;return <div key={d} style={{...box,padding:10}}><p style={{margin:"0 0 6px",fontSize:12,fontWeight:800,color:k===hoyK?"#E8C99B":"#fff"}}>{new Date(y,m,d).toLocaleDateString("es-AR",{weekday:"long",day:"numeric"})}</p><div style={{display:"grid",gap:4}}>{l.map(p=><Mini key={p.id} p={p}/>)}</div></div>;})}
+              {enMes===0&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>Nada programado este mes.</p>}
+            </div>
+            :<div style={{border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,overflow:"hidden"}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",background:"rgba(255,255,255,0.03)"}}>{["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(d=><div key={d} style={{padding:"6px 8px",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em",textAlign:"center"}}>{d}</div>)}</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)"}}>
+                {celdas.map((d,i)=>{const k=d?`${y}-${m}-${d}`:null;const l=k?(porDia[k]||[]):[];const esHoy=k===hoyK;return <div key={i} style={{minHeight:kind==="story"?96:88,padding:6,borderTop:"1px solid rgba(255,255,255,0.06)",borderLeft:i%7?"1px solid rgba(255,255,255,0.06)":"none",background:esHoy?"rgba(184,149,106,0.07)":d?"transparent":"rgba(0,0,0,0.15)"}}>
+                  {d&&<div style={{fontSize:11,fontWeight:800,color:esHoy?"#E8C99B":"rgba(255,255,255,0.55)",marginBottom:4}}>{d}</div>}
+                  <div style={{display:"grid",gap:3}}>{l.map(p=><Mini key={p.id} p={p}/>)}</div>
+                </div>;})}
+              </div>
+            </div>}
+        </div>;
+      };
       return <div>
         {!igOk&&<p style={{fontSize:11.5,color:"#fbbf24",margin:"0 0 10px"}}>Instagram no está conectado: lo programado no se publica solo.</p>}
-        <div style={{...box,marginBottom:14}}>
+        <div style={{...box,marginBottom:18}}>
           <p style={{margin:"0 0 8px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Sin programar <span style={{fontSize:11,color:"rgba(255,255,255,0.45)",fontWeight:600}}>· aprobadas que todavía no tienen día y hora</span></p>
           {sinFecha.length===0&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Nada pendiente. Lo que aprobás en Aprobación aparece acá.</p>}
           <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:4}}>
@@ -4658,28 +4687,8 @@ function StudioPanel({token}){
             </div>)}
           </div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
-          <button onClick={()=>setCalMes(c=>({y:c.m===0?c.y-1:c.y,m:c.m===0?11:c.m-1}))} style={{...sel,cursor:"pointer",padding:"6px 10px"}}>‹</button>
-          <span style={{fontSize:14,fontWeight:800,color:"#fff",textTransform:"capitalize",minWidth:150,textAlign:"center"}}>{mesLabel}</span>
-          <button onClick={()=>setCalMes(c=>({y:c.m===11?c.y+1:c.y,m:c.m===11?0:c.m+1}))} style={{...sel,cursor:"pointer",padding:"6px 10px"}}>›</button>
-          <div style={{marginLeft:"auto",display:"flex",gap:6}}>
-            {[["todo","Todo"],["feed","Posteos"],["story","Historias"]].map(([k,l])=><button key={k} onClick={()=>setCalCat(k)} style={{padding:"6px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${calCat===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:calCat===k?"rgba(96,165,250,0.15)":"transparent",color:calCat===k?"#60a5fa":"rgba(255,255,255,0.55)"}}>{l}</button>)}
-          </div>
-        </div>
-        {isMobile
-          ?<div style={{display:"grid",gap:8}}>
-            {celdas.filter(Boolean).map(d=>{const k=`${y}-${m}-${d}`;const l=porDia[k]||[];if(!l.length)return null;return <div key={d} style={{...box,padding:10}}><p style={{margin:"0 0 6px",fontSize:12,fontWeight:800,color:k===hoyK?"#E8C99B":"#fff"}}>{new Date(y,m,d).toLocaleDateString("es-AR",{weekday:"long",day:"numeric"})}</p><div style={{display:"grid",gap:4}}>{l.map(p=><Mini key={p.id} p={p}/>)}</div></div>;})}
-            {prog.length===0&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Nada programado este mes.</p>}
-          </div>
-          :<div style={{border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,overflow:"hidden"}}>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",background:"rgba(255,255,255,0.03)"}}>{["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(d=><div key={d} style={{padding:"7px 8px",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em",textAlign:"center"}}>{d}</div>)}</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)"}}>
-              {celdas.map((d,i)=>{const k=d?`${y}-${m}-${d}`:null;const l=k?(porDia[k]||[]):[];const esHoy=k===hoyK;return <div key={i} style={{minHeight:104,padding:6,borderTop:"1px solid rgba(255,255,255,0.06)",borderLeft:i%7?"1px solid rgba(255,255,255,0.06)":"none",background:esHoy?"rgba(184,149,106,0.07)":d?"transparent":"rgba(0,0,0,0.15)"}}>
-                {d&&<div style={{fontSize:11,fontWeight:800,color:esHoy?"#E8C99B":"rgba(255,255,255,0.55)",marginBottom:4}}>{d}</div>}
-                <div style={{display:"grid",gap:3}}>{l.map(p=><Mini key={p.id} p={p}/>)}</div>
-              </div>;})}
-            </div>
-          </div>}
+        <Calendario kind="feed" titulo="Posteos"/>
+        <Calendario kind="story" titulo="Historias"/>
         {calSel&&<div onClick={()=>setCalSel(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:14,padding:16,width:"100%",maxWidth:420,maxHeight:"92vh",overflowY:"auto"}}>
             <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:8}}>{chip(calSel.kind==="story"?"Historia":"Posteo","#60a5fa")}<span style={{fontSize:12,fontWeight:700,color:calSel.status==="published"?"#4ade80":"#60a5fa"}}>{calSel.status==="published"?`✓ Publicada ${fmt(calSel.published_at)}${calSel.ig_media_id?" · en Instagram":""}`:`📅 ${fmt(calSel.scheduled_at)}`}</span><button onClick={()=>setCalSel(null)} style={{marginLeft:"auto",background:"none",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer"}}>×</button></div>
