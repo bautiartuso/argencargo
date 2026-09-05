@@ -4713,19 +4713,21 @@ function StudioPanel({token}){
           <Btn small variant="secondary" onClick={()=>act("instagram_test",{},b=>`OK: @${b.info?.username} · ${b.info?.followers_count} seguidores`)} disabled={!!busy}>Probar conexión</Btn>
           <Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Desconectar Instagram?")){await act("instagram_disconnect",{},"Desconectado");loadMeta();}}} disabled={!!busy}>Desconectar</Btn>
         </div>:<div style={{display:"grid",gap:8}}>
-          <input value={ig.ig_user_id} onChange={e=>setIg(x=>({...x,ig_user_id:e.target.value}))} placeholder="ID de la cuenta profesional de Instagram (número largo)" style={inp}/>
-          <input value={ig.access_token} onChange={e=>setIg(x=>({...x,access_token:e.target.value}))} placeholder="Token de acceso (Graph API)" style={inp} type="password"/>
-          <div><Btn onClick={async()=>{const b=await act("instagram",ig,x=>`Conectado como @${x.info?.username}`);if(b){setIg({ig_user_id:"",access_token:""});loadMeta();}}} disabled={!!busy||!ig.ig_user_id||!ig.access_token}>Conectar</Btn></div>
+          <input value={ig.access_token} onChange={e=>setIg(x=>({...x,access_token:e.target.value}))} placeholder="Pegá acá el token (empieza con EAA…)" style={inp} type="password"/>
+          <div><Btn onClick={async()=>{const b=await act("instagram",{access_token:ig.access_token},x=>`Conectado: @${x.info?.username}${x.info?.page_name?` (página ${x.info.page_name})`:""}`);if(b){setIg({ig_user_id:"",access_token:""});loadMeta();}}} disabled={!!busy||!ig.access_token}>Conectar</Btn></div>
         </div>}
       </div>
       <div style={{...box,marginTop:12}}>
-        <p style={{margin:"0 0 6px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Cómo conseguir el ID y el token</p>
-        <ol style={{margin:0,paddingLeft:18,fontSize:12,color:"rgba(255,255,255,0.65)",lineHeight:1.7}}>
-          <li>La cuenta de Instagram tiene que ser <b>profesional</b> (Empresa) y estar vinculada a una página de Facebook (Instagram → Configuración → Centro de cuentas).</li>
-          <li>Entrá a <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>Graph API Explorer</a>, elegí la app de Argencargo, y en permisos agregá <code>instagram_basic</code>, <code>instagram_content_publish</code>, <code>pages_show_list</code>, <code>pages_read_engagement</code>. Generá el token.</li>
-          <li>En la misma herramienta pedí <code>me/accounts?fields=instagram_business_account</code>: el número que aparece en <code>instagram_business_account.id</code> es el ID de la cuenta.</li>
-          <li>Pegá ID y token acá y tocá Conectar. Si el token vence (60 días), repetís los pasos.</li>
+        <p style={{margin:"0 0 6px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Paso a paso para conseguir el token</p>
+        <ol style={{margin:0,paddingLeft:18,fontSize:12,color:"rgba(255,255,255,0.7)",lineHeight:1.8}}>
+          <li><b>Instagram profesional.</b> En la app de Instagram: tu perfil → ☰ → Configuración y privacidad → Tipo de cuenta y herramientas → Cambiar a cuenta profesional → Empresa. Si ya lo es, seguí.</li>
+          <li><b>Página de Facebook.</b> Hace falta una página de Facebook de Argencargo (aunque no la uses). Si no tenés: <a href="https://www.facebook.com/pages/create" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>facebook.com/pages/create</a>, nombre "Argencargo", categoría Transporte y logística.</li>
+          <li><b>Vincular Instagram con la página.</b> En Instagram: ☰ → Configuración → Centro de cuentas → Cuentas → Agregar cuentas → Facebook → entrá con el Facebook que administra la página. Después en la página (facebook.com → tu página → Configuración → Cuentas vinculadas → Instagram) tiene que figurar tu cuenta.</li>
+          <li><b>Generar el token.</b> Abrí <a href="https://developers.facebook.com/tools/explorer/?app_id=1090204430113984" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>Graph API Explorer</a>. A la derecha: "Aplicación de Meta" = la app de Argencargo (ya viene elegida por el link). En "Permisos" agregá uno por uno: <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>instagram_basic</code>, <code>instagram_content_publish</code>, <code>business_management</code>. Tocá <b>Generar token de acceso</b>: se abre Facebook, marcá la página de Argencargo y la cuenta de Instagram, y aceptá todo.</li>
+          <li><b>Hacerlo de larga duración.</b> Copiá el token (empieza con EAA) y pegalo en <a href="https://developers.facebook.com/tools/debug/accesstoken/" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>Depurador de tokens</a> → Depurar → abajo, botón <b>Extender token de acceso</b>. Copiá el token nuevo que aparece.</li>
+          <li><b>Pegalo arriba y tocá Conectar.</b> El sistema busca tu página, la cuenta de Instagram vinculada y guarda el token de página, que no vence.</li>
         </ol>
+        <p style={{margin:"8px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)"}}>Si en el paso 4 no aparece tu página al aceptar, es que Instagram no quedó vinculado (paso 3). Si "Conectar" dice que no ve páginas, faltó marcar pages_show_list.</p>
       </div>
     </div>}
 
