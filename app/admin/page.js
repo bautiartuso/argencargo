@@ -4590,11 +4590,7 @@ function StudioPanel({token}){
 
   return <div>
     <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
-      <div>
-        <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#fff"}}>Content Studio</h2>
-        <p style={{margin:"2px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>Generá, aprobá y programá contenido de Instagram. El diseño lo hace tu Mac con Claude; acá se aprueba y se publica.</p>
-      </div>
-      <div style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
         {tabs.map(x=><button key={x.k} onClick={()=>setTab(x.k)} style={{padding:"7px 12px",fontSize:12,fontWeight:700,borderRadius:9,cursor:"pointer",border:`1px solid ${tab===x.k?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.1)"}`,background:tab===x.k?"rgba(184,149,106,0.16)":"rgba(255,255,255,0.03)",color:tab===x.k?"#E8C99B":"rgba(255,255,255,0.6)"}}>{x.l}{x.n>0&&<span style={{marginLeft:6,fontSize:10,padding:"1px 6px",borderRadius:99,background:"#ef4444",color:"#fff"}}>{x.n}</span>}{x.dot&&<span style={{display:"inline-block",width:7,height:7,borderRadius:99,background:x.dot,marginLeft:6}}/>}</button>)}
       </div>
     </div>
