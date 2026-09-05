@@ -4511,8 +4511,10 @@ function BotPanel({token}){
 // Claude Code); la web es la cola, la aprobación, el calendario y el vigilante de Instagram.
 // ═══════════════════════════════════════════════════════════════════════════
 function StudioPanel({token}){
-  const [tab,setTab]=useState("aprobacion");
-  const [chatKind,setChatKind]=useState("auto"); // formato pedido en el chatbot
+  const [tab,setTab]=useState("calendario");
+  const [chatKind,setChatKind]=useState("auto"); // formato pedido en el chatbot: auto | feed | carousel | story
+  const [slideIdx,setSlideIdx]=useState(0);      // imagen visible en la vista grande (carruseles / secuencias)
+  const [runMix,setRunMix]=useState({feed:1,carousel:1,story:3}); // cuántas piezas de cada formato pide el runner
   const [calMes,setCalMes]=useState(()=>{const d=new Date();return {feed:{y:d.getFullYear(),m:d.getMonth()},story:{y:d.getFullYear(),m:d.getMonth()}};}); // un mes por calendario
   const [calSel,setCalSel]=useState(null);   // pieza abierta desde el calendario
   const [cambio,setCambio]=useState(null);   // {p, texto}: modal de "pedir cambio" con la imagen a la vista
@@ -4522,7 +4524,6 @@ function StudioPanel({token}){
   const [filtro,setFiltro]=useState("todos"); // todos | feed | story
   const [preview,setPreview]=useState(null);
   const [brief,setBrief]=useState("");const [kind,setKind]=useState("auto");const [count,setCount]=useState(1);
-  const [runN,setRunN]=useState(3);
   const [chat,setChat]=useState([]);const [chatTxt,setChatTxt]=useState("");const [chatImgs,setChatImgs]=useState([]);const [chatListo,setChatListo]=useState(null);
   const [memEdit,setMemEdit]=useState({});
   const [ig,setIg]=useState({ig_user_id:"",access_token:""});
@@ -4554,7 +4555,18 @@ function StudioPanel({token}){
   };
   const fmt=(d)=>d?new Date(d).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
   const fmtDia=(d)=>d?new Date(d).toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"}):"";
-  const KIND={feed:"Posteo 4:5",story:"Historia 9:16",carousel:"Carrusel"};
+  const slidesOf=(p)=>Array.isArray(p?.images)&&p.images.length?p.images.map(x=>typeof x==="string"?x:x?.url).filter(Boolean):(p?.image_url?[p.image_url]:[]);
+  const nSlides=(p)=>Math.max(slidesOf(p).length,Number(p?.slides)||1);
+  const kindLabel=(p)=>p.kind==="carousel"?`Carrusel · ${nSlides(p)}`:p.kind==="story"?(nSlides(p)>1?`Historias · ${nSlides(p)}`:"Historia"):"Posteo";
+  useEffect(()=>{setSlideIdx(0);},[preview?.id,cambio?.p?.id]);
+  // Vista de una pieza con sus imágenes (carrusel o secuencia): flechas, contador y miniaturas.
+  const slidesView=(p,{maxW,maxH}={})=>{const urls=slidesOf(p);const i=Math.min(slideIdx,Math.max(0,urls.length-1));const nav=(side)=>({position:"absolute",top:"50%",[side]:8,transform:"translateY(-50%)",width:36,height:36,borderRadius:99,border:"none",background:"rgba(0,0,0,0.55)",color:"#fff",fontSize:22,cursor:"pointer",lineHeight:"36px",padding:0});return <div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,maxWidth:maxW||"100%"}}>
+    <div style={{position:"relative"}}>
+      {urls[i]&&<img src={urls[i]} alt="" style={{maxWidth:"100%",maxHeight:maxH||(urls.length>1?"76vh":"92vh"),borderRadius:10,boxShadow:"0 20px 60px rgba(0,0,0,0.6)",display:"block"}}/>}
+      {urls.length>1&&<><button onClick={()=>setSlideIdx(x=>(x-1+urls.length)%urls.length)} style={nav("left")}>‹</button><button onClick={()=>setSlideIdx(x=>(x+1)%urls.length)} style={nav("right")}>›</button><span style={{position:"absolute",top:10,right:10,fontSize:11,fontWeight:800,padding:"3px 8px",borderRadius:99,background:"rgba(0,0,0,0.6)",color:"#fff"}}>{i+1}/{urls.length}</span></>}
+    </div>
+    {urls.length>1&&<div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"center"}}>{urls.map((u,j)=><img key={j} src={u} alt="" onClick={()=>setSlideIdx(j)} style={{height:p.kind==="story"?64:52,borderRadius:5,cursor:"pointer",border:`2px solid ${j===i?"#E8C99B":"transparent"}`,opacity:j===i?1:0.55}}/>)}</div>}
+  </div>;};
   const chip=(txt,col)=><span style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:`${col}22`,color:col,border:`1px solid ${col}55`,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span>;
   const pedirCambio=(p)=>setCambio({p,texto:""});
   const enviarCambio=async()=>{const fb=(cambio?.texto||"").trim();if(!fb)return;const p=cambio.p;setCambio(null);await act("feedback",{id:p.id,feedback:fb},"Va de vuelta al diseñador (lo hace tu Mac)");};
@@ -4562,7 +4574,8 @@ function StudioPanel({token}){
   const Card=({p,children,compact})=><div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
     <div onClick={()=>p.image_url&&setPreview(p)} style={{position:"relative",background:"#0b1220",aspectRatio:p.kind==="story"?"9/16":"4/5",cursor:p.image_url?"zoom-in":"default",display:"flex",alignItems:"center",justifyContent:"center"}}>
       {p.image_url?<img src={p.image_url} alt={p.title||""} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:p.status==="generating"?<div style={{textAlign:"center",color:"rgba(255,255,255,0.5)",fontSize:12,padding:20}}><div style={{fontSize:26,marginBottom:6}}>🎨</div>{p.locked_at?"Diseñando en tu Mac…":"En la cola (espera a tu Mac)"}<div style={{fontSize:10.5,marginTop:4,color:"rgba(255,255,255,0.35)"}}>{p.title}</div></div>:<div style={{color:"#f87171",fontSize:12,padding:16,textAlign:"center"}}>⚠ {p.error||"Sin imagen"}</div>}
-      <div style={{position:"absolute",top:8,left:8,display:"flex",gap:5,flexWrap:"wrap"}}>{chip(KIND[p.kind]||p.kind,"#60a5fa")}{p.pillar&&chip(p.pillar,"#E8C99B")}{p.source==="runner"&&chip("runner","#a78bfa")}{p.source==="chatbot"&&chip("chatbot","#34d399")}</div>
+      <div style={{position:"absolute",top:8,left:8,display:"flex",gap:5,flexWrap:"wrap"}}>{chip(kindLabel(p),"#60a5fa")}{p.pillar&&chip(p.pillar,"#E8C99B")}{p.source==="runner"&&chip("runner","#a78bfa")}{p.source==="chatbot"&&chip("chatbot","#34d399")}</div>
+      {slidesOf(p).length>1&&<div style={{position:"absolute",bottom:8,left:0,right:0,display:"flex",justifyContent:"center",gap:4}}>{slidesOf(p).map((_,j)=><span key={j} style={{width:6,height:6,borderRadius:99,background:j===0?"#fff":"rgba(255,255,255,0.45)"}}/>)}</div>}
     </div>
     <div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:6,flex:1}}>
       <p style={{margin:0,fontSize:13,fontWeight:800,color:"#fff"}}>{p.headline||p.title||"—"}</p>
@@ -4578,7 +4591,7 @@ function StudioPanel({token}){
   const cal=pieces.filter(p=>["approved","scheduled","published"].includes(p.status)).sort((a,b)=>new Date(a.scheduled_at||a.approved_at||a.created_at)-new Date(b.scheduled_at||b.approved_at||b.created_at));
   const grid={display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(250px,1fr))",gap:12,alignItems:"start"};
   const igOk=!!meta.instagram?.connected;
-  const tabs=[{k:"aprobacion",l:"Aprobación",n:pieces.filter(p=>p.status==="review").length},{k:"calendario",l:"Calendario",n:cal.filter(p=>p.status!=="published").length},{k:"runner",l:"Runner"},{k:"chatbot",l:"Chatbot"},{k:"marca",l:"Marca"},{k:"conexion",l:"Conexión",dot:igOk?"#4ade80":"#f87171"},{k:"knowledge",l:"Knowledge"}];
+  const tabs=[{k:"calendario",l:"Calendario",n:cal.filter(p=>p.status!=="published").length},{k:"contenido",l:"Contenido",n:pieces.filter(p=>p.status==="review").length},{k:"runner",l:"Runner"},{k:"chatbot",l:"Chatbot"},{k:"marca",l:"Marca"},{k:"knowledge",l:"Knowledge"},{k:"conexion",l:"Conexión",dot:igOk?"#4ade80":"#f87171"}];
   const inp={width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit"};
   const sel={padding:"9px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"#142038",color:"#fff",fontSize:12.5};
   const box={background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:14};
@@ -4600,14 +4613,14 @@ function StudioPanel({token}){
       </div>
     </div>
 
-    {tab==="aprobacion"&&<div>
+    {tab==="contenido"&&<div>
       <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
-        {[["todos","Todos"],["feed","Posteos"],["story","Historias"]].map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={{padding:"6px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${filtro===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:filtro===k?"rgba(96,165,250,0.15)":"transparent",color:filtro===k?"#60a5fa":"rgba(255,255,255,0.55)"}}>{l}</button>)}
+        {[["todos","Todos"],["feed","Posteos"],["carousel","Carruseles"],["story","Historias"]].map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={{padding:"6px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${filtro===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:filtro===k?"rgba(96,165,250,0.15)":"transparent",color:filtro===k?"#60a5fa":"rgba(255,255,255,0.55)"}}>{l}</button>)}
         {generando>0&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>🎨 {generando} en la cola · tu Mac las diseña de a una (5 a 8 min cada una) mientras esté prendida.</span>}
         <span style={{marginLeft:"auto",fontSize:11,color:"rgba(255,255,255,0.35)"}}>Tocá la imagen para verla grande</span>
       </div>
       {lo&&<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>}
-      {!lo&&review.length===0&&<div style={{padding:30,textAlign:"center",color:"rgba(255,255,255,0.45)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:14}}>Nada para aprobar. Pedile ideas al Runner, escribí un brief en Generar o charlá con el Chatbot.</div>}
+      {!lo&&review.length===0&&<div style={{padding:30,textAlign:"center",color:"rgba(255,255,255,0.45)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:14}}>Nada para aprobar. Pedile ideas al Runner o charlá con el Chatbot.</div>}
       <div style={grid}>
         {review.map(p=><Card key={p.id} p={p} compact>
           {p.status==="review"&&<div style={{display:"flex",gap:6,width:"100%"}}>
@@ -4630,14 +4643,14 @@ function StudioPanel({token}){
       const Mini=({p})=><button onClick={()=>setCalSel(p)} title={`${hora(p)} · ${p.headline||p.title||""}`} style={{border:"none",padding:0,background:"transparent",cursor:"pointer",width:"100%",textAlign:"left"}}>
         <div style={{display:"flex",gap:6,alignItems:"center",padding:"3px 4px",borderRadius:7,background:p.status==="published"?"rgba(74,222,128,0.1)":"rgba(96,165,250,0.12)",border:`1px solid ${p.status==="published"?"rgba(74,222,128,0.35)":"rgba(96,165,250,0.35)"}`}}>
           <div style={{width:26,height:p.kind==="story"?40:32,borderRadius:4,overflow:"hidden",background:"#0b1220",flexShrink:0}}>{p.image_url&&<img src={p.image_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>}</div>
-          <div style={{minWidth:0}}><div style={{fontSize:10,fontWeight:800,color:p.status==="published"?"#4ade80":"#60a5fa"}}>{hora(p)} {p.status==="published"?"✓":""}{p.publish_error?" ⚠":""}</div><div style={{fontSize:9.5,color:"rgba(255,255,255,0.6)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.headline||p.title||""}</div></div>
+          <div style={{minWidth:0}}><div style={{fontSize:10,fontWeight:800,color:p.status==="published"?"#4ade80":"#60a5fa"}}>{hora(p)}{nSlides(p)>1?` ×${nSlides(p)}`:""} {p.status==="published"?"✓":""}{p.publish_error?" ⚠":""}</div><div style={{fontSize:9.5,color:"rgba(255,255,255,0.6)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.headline||p.title||""}</div></div>
         </div>
       </button>;
       // Un calendario mensual por formato (posteos e historias), cada uno con su navegación de mes.
       const Calendario=({kind,titulo})=>{
         const {y,m}=calMes[kind];
         const setMes=(f)=>setCalMes(c=>({...c,[kind]:f(c[kind])}));
-        const prog=pieces.filter(p=>["scheduled","published"].includes(p.status)&&p.kind===kind);
+        const prog=pieces.filter(p=>["scheduled","published"].includes(p.status)&&(kind==="story"?p.kind==="story":p.kind!=="story"));
         const first=new Date(y,m,1);const dow=(first.getDay()+6)%7;
         const dias=new Date(y,m+1,0).getDate();
         const celdas=[];for(let i=0;i<dow;i++)celdas.push(null);for(let d=1;d<=dias;d++)celdas.push(d);while(celdas.length%7)celdas.push(null);
@@ -4675,11 +4688,11 @@ function StudioPanel({token}){
         {!igOk&&<p style={{fontSize:11.5,color:"#fbbf24",margin:"0 0 10px"}}>Instagram no está conectado: lo programado no se publica solo.</p>}
         <div style={{...box,marginBottom:18}}>
           <p style={{margin:"0 0 8px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Sin programar <span style={{fontSize:11,color:"rgba(255,255,255,0.45)",fontWeight:600}}>· aprobadas que todavía no tienen día y hora</span></p>
-          {sinFecha.length===0&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Nada pendiente. Lo que aprobás en Aprobación aparece acá.</p>}
+          {sinFecha.length===0&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Nada pendiente. Lo que aprobás en Contenido aparece acá.</p>}
           <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:4}}>
             {sinFecha.map(p=><div key={p.id} style={{flex:"0 0 auto",width:170,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:8}}>
               <div onClick={()=>setPreview(p)} style={{height:110,borderRadius:7,overflow:"hidden",background:"#0b1220",cursor:"zoom-in",marginBottom:6,display:"flex",justifyContent:"center"}}>{p.image_url&&<img src={p.image_url} alt="" style={{height:"100%",objectFit:"contain"}}/>}</div>
-              <div style={{display:"flex",gap:4,marginBottom:6}}>{chip(p.kind==="story"?"Historia":"Posteo","#60a5fa")}</div>
+              <div style={{display:"flex",gap:4,marginBottom:6}}>{chip(kindLabel(p),"#60a5fa")}</div>
               <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.headline||p.title||""}>{p.headline||p.title||"—"}</p>
               <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
                 <Btn small onClick={()=>setSched({p,date:new Date(Date.now()+86400000).toISOString().slice(0,10),hour:10,min:0})} disabled={!!busy}>📅</Btn>
@@ -4690,11 +4703,11 @@ function StudioPanel({token}){
             </div>)}
           </div>
         </div>
-        <Calendario kind="feed" titulo="Posteos"/>
+        <Calendario kind="feed" titulo="Posteos y carruseles"/>
         <Calendario kind="story" titulo="Historias"/>
         {calSel&&<div onClick={()=>setCalSel(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:14,padding:16,width:"100%",maxWidth:420,maxHeight:"92vh",overflowY:"auto"}}>
-            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:8}}>{chip(calSel.kind==="story"?"Historia":"Posteo","#60a5fa")}<span style={{fontSize:12,fontWeight:700,color:calSel.status==="published"?"#4ade80":"#60a5fa"}}>{calSel.status==="published"?`✓ Publicada ${fmt(calSel.published_at)}${calSel.ig_media_id?" · en Instagram":""}`:`📅 ${fmt(calSel.scheduled_at)}`}</span><button onClick={()=>setCalSel(null)} style={{marginLeft:"auto",background:"none",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer"}}>×</button></div>
+            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:8}}>{chip(kindLabel(calSel),"#60a5fa")}<span style={{fontSize:12,fontWeight:700,color:calSel.status==="published"?"#4ade80":"#60a5fa"}}>{calSel.status==="published"?`✓ Publicada ${fmt(calSel.published_at)}${calSel.ig_media_id?" · en Instagram":""}`:`📅 ${fmt(calSel.scheduled_at)}`}</span><button onClick={()=>setCalSel(null)} style={{marginLeft:"auto",background:"none",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer"}}>×</button></div>
             {calSel.image_url&&<img src={calSel.image_url} alt="" onClick={()=>setPreview(calSel)} style={{width:"100%",maxHeight:380,objectFit:"contain",borderRadius:8,background:"#0b1220",cursor:"zoom-in"}}/>}
             <p style={{margin:"8px 0 2px",fontSize:13,fontWeight:800,color:"#fff"}}>{calSel.headline||calSel.title}</p>
             {calSel.caption&&<p style={{margin:"0 0 8px",fontSize:11.5,color:"rgba(255,255,255,0.55)",whiteSpace:"pre-wrap",maxHeight:120,overflow:"auto"}}>{calSel.caption}</p>}
@@ -4714,11 +4727,17 @@ function StudioPanel({token}){
     {tab==="runner"&&<div style={{maxWidth:760}}>
       <div style={box}>
         <p style={{margin:"0 0 6px",fontSize:13,fontWeight:800,color:"#fff"}}>El analista</p>
-        <p style={{margin:"0 0 12px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Lee la marca (knowledge + historial), el radar de noticias y los datos reales del sistema, y propone posteos. Caen en Aprobación: nunca publica solo. Se dispara a mano.</p>
-        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-          <span style={{fontSize:12,color:"rgba(255,255,255,0.6)"}}>Cantidad</span>
-          <select value={runN} onChange={e=>setRunN(Number(e.target.value))} style={sel}>{[1,3,5,10,20].map(n=><option key={n} value={n}>{n}</option>)}</select>
-          <Btn onClick={async()=>{const b=await act("runner",{count:runN},x=>`${x.created} ideas propuestas`);if(b){loadMeta();setTab("aprobacion");}}} disabled={!!busy}>{busy==="runner"?"Pensando…":"Proponer posts"}</Btn>
+        <p style={{margin:"0 0 12px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Lee la marca (knowledge + historial), el radar de noticias (lee los artículos) y los datos reales del sistema, y propone piezas en el formato que le corresponde a cada idea. Caen en Contenido: nunca publica solo. Se dispara a mano.</p>
+        <div style={{display:"flex",gap:14,alignItems:"flex-end",flexWrap:"wrap"}}>
+          {[["feed","Posteos","una imagen, una idea que cierra sola"],["carousel","Carruseles","3 a 6 imágenes, lo educativo en partes"],["story","Historias","sueltas o secuencias de 2 a 4; lo decide el analista"]].map(([k,l,h])=><div key={k}>
+            <p style={{margin:"0 0 4px",fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{l}</p>
+            <select value={runMix[k]} onChange={e=>setRunMix(m=>({...m,[k]:Number(e.target.value)}))} style={sel}>{[0,1,2,3,4,5,6,8,10].map(n=><option key={n} value={n}>{n}</option>)}</select>
+            <p style={{margin:"4px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.4)",maxWidth:170}}>{h}</p>
+          </div>)}
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Total: {runMix.feed+runMix.carousel+runMix.story} pieza{runMix.feed+runMix.carousel+runMix.story===1?"":"s"}</span>
+            <Btn onClick={async()=>{const b=await act("runner",{mix:runMix},x=>`${x.created} ideas propuestas`);if(b){loadMeta();setTab("contenido");}}} disabled={!!busy||!(runMix.feed+runMix.carousel+runMix.story)}>{busy==="runner"?"Pensando…":"Proponer"}</Btn>
+          </div>
         </div>
       </div>
       <div style={{...box,marginTop:12}}>
@@ -4735,14 +4754,15 @@ function StudioPanel({token}){
       <div style={{...box,minHeight:300,display:"flex",flexDirection:"column",gap:8}}>
         <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:11,color:"rgba(255,255,255,0.45)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em"}}>Formato</span>
-          {[["auto","Que decida"],["feed","Posteo 4:5"],["story","Historia 9:16"]].map(([k,l])=><button key={k} onClick={()=>setChatKind(k)} style={{padding:"5px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${chatKind===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:chatKind===k?"rgba(96,165,250,0.15)":"transparent",color:chatKind===k?"#60a5fa":"rgba(255,255,255,0.55)"}}>{l}</button>)}
+          {[["auto","Que decida"],["feed","Posteo"],["carousel","Carrusel"],["story","Historia"]].map(([k,l])=><button key={k} onClick={()=>setChatKind(k)} style={{padding:"5px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${chatKind===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:chatKind===k?"rgba(96,165,250,0.15)":"transparent",color:chatKind===k?"#60a5fa":"rgba(255,255,255,0.55)"}}>{l}</button>)}
         </div>
         {chat.length===0&&<p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>Contale una idea suelta, adjuntá una captura o dictá un audio. El estratega la va armando con vos y, cuando está lista, la manda a diseñar.</p>}
         {chat.map((m,i)=><div key={i} style={{alignSelf:m.role==="assistant"?"flex-start":"flex-end",maxWidth:"85%",background:m.role==="assistant"?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.07)",border:`1px solid ${m.role==="assistant"?"rgba(96,165,250,0.3)":"rgba(255,255,255,0.1)"}`,borderRadius:12,padding:"8px 11px",fontSize:13,color:"#fff",whiteSpace:"pre-wrap"}}>{m.content}</div>)}
         {chatListo&&<div style={{alignSelf:"flex-start",background:"rgba(52,211,153,0.12)",border:"1px solid rgba(52,211,153,0.35)",borderRadius:12,padding:"10px 12px"}}>
-          <p style={{margin:"0 0 4px",fontSize:12,fontWeight:800,color:"#34d399"}}>Idea lista · {(chatKind!=="auto"?chatKind:chatListo.kind)==="story"?"historia":"posteo"} · {chatListo.title}</p>
+          <p style={{margin:"0 0 4px",fontSize:12,fontWeight:800,color:"#34d399"}}>Idea lista · {({feed:"posteo",carousel:"carrusel",story:"historia"})[chatKind!=="auto"?chatKind:chatListo.kind]||"posteo"}{Number(chatListo.slides)>1?` ×${chatListo.slides}`:""} · {chatListo.title}</p>
           <p style={{margin:"0 0 8px",fontSize:11.5,color:"rgba(255,255,255,0.7)",whiteSpace:"pre-wrap"}}>{chatListo.brief}</p>
-          <Btn small onClick={async()=>{const b=await act("generate",{brief:chatListo.brief,kind:chatKind!=="auto"?chatKind:chatListo.kind,title:chatListo.title,pillar:chatListo.pillar,direct:true},"A la cola: tu Mac la diseña");if(b){setChat([]);setChatListo(null);setTab("aprobacion");}}} disabled={!!busy}>🎨 Generar esta pieza</Btn>
+          {Array.isArray(chatListo.slides_plan)&&chatListo.slides_plan.length>0&&<ol style={{margin:"0 0 8px",paddingLeft:18,fontSize:11.5,color:"rgba(255,255,255,0.65)"}}>{chatListo.slides_plan.map((s,i)=><li key={i}>{s}</li>)}</ol>}
+          <Btn small onClick={async()=>{const b=await act("generate",{brief:chatListo.brief,kind:chatKind!=="auto"?chatKind:chatListo.kind,slides:chatListo.slides,slides_plan:chatListo.slides_plan,title:chatListo.title,pillar:chatListo.pillar,direct:true},"A la cola: tu Mac la diseña");if(b){setChat([]);setChatListo(null);setTab("contenido");}}} disabled={!!busy}>🎨 Generar esta pieza</Btn>
         </div>}
       </div>
       {chatImgs.length>0&&<div style={{display:"flex",gap:6,marginTop:8}}>{chatImgs.map((im,i)=><span key={i} style={{fontSize:10.5,padding:"3px 8px",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.7)"}}>📎 {im.name} <button onClick={()=>setChatImgs(x=>x.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer"}}>×</button></span>)}</div>}
@@ -4822,7 +4842,7 @@ function StudioPanel({token}){
     </div>}
 
     {cambio&&<div onClick={()=>setCambio(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16,gap:16,flexWrap:isMobile?"wrap":"nowrap",overflowY:"auto"}}>
-      {cambio.p.image_url&&<img src={cambio.p.image_url} alt="" onClick={e=>e.stopPropagation()} style={{maxWidth:isMobile?"100%":"55%",maxHeight:isMobile?"45vh":"92vh",borderRadius:10,boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}/>}
+      {slidesView(cambio.p,{maxW:isMobile?"100%":"55%",maxH:isMobile?"42vh":(slidesOf(cambio.p).length>1?"74vh":"92vh")})}
       <div onClick={e=>e.stopPropagation()} style={{width:isMobile?"100%":380,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(251,191,36,0.4)",borderRadius:12,padding:16}}>
         <p style={{margin:"0 0 4px",fontSize:14,fontWeight:800,color:"#fff"}}>✎ ¿Qué cambiamos?</p>
         <p style={{margin:"0 0 10px",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Escribilo o dictalo como se lo dirías a un diseñador. Vuelve a la cola y tu Mac la rehace con estos cambios.</p>
@@ -4834,7 +4854,7 @@ function StudioPanel({token}){
       </div>
     </div>}
     {preview&&<div onClick={()=>setPreview(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16,gap:16,flexWrap:isMobile?"wrap":"nowrap",overflowY:"auto"}}>
-      <img src={preview.image_url} alt="" style={{maxWidth:isMobile?"100%":"60%",maxHeight:"92vh",borderRadius:10,boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}/>
+      {slidesView(preview,{maxW:isMobile?"100%":"60%"})}
       {preview.kind!=="story"&&<div onClick={e=>e.stopPropagation()} style={{width:isMobile?"100%":340,maxHeight:"92vh",overflowY:"auto",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:14}}>
         <p style={{margin:"0 0 6px",fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Texto del posteo</p>
         <p style={{margin:"0 0 10px",fontSize:13,color:"#fff",whiteSpace:"pre-wrap",lineHeight:1.45}}>{preview.caption||"(sin texto)"}</p>

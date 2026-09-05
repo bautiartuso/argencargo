@@ -3,7 +3,8 @@
 // GET             → toma la pieza más vieja de la cola (lock 15 min) y devuelve pieza + memoria +
 //                   assets (logos, posteos de referencia) + últimas piezas aprobadas (estilo vivo).
 //                   204 si no hay nada.
-// POST ?op=done   (multipart: id, html, headline, subheadline, caption, hashtags, png) → review.
+// POST ?op=done   (multipart: id, headline, subheadline, caption, hashtags, y por imagen png_1..png_N + html_1..html_N;
+//                  compat: png + html para una sola imagen) → review. images = [{url, html}], image_url = portada.
 // POST ?op=error  (json: id, error) → suma intento; al 2º queda en 'error'.
 // Auth: header x-runner-secret = RUNNER_SECRET.
 
@@ -44,13 +45,22 @@ export async function POST(req) {
   }
   const fd = await req.formData();
   const id = String(fd.get("id") || "");
-  const png = fd.get("png");
-  if (!id || !png || typeof png === "string") return Response.json({ error: "Faltan id o png" }, { status: 400 });
-  const image_url = await uploadStorage(`piezas/${id}-${Date.now()}.png`, Buffer.from(await png.arrayBuffer()), "image/png");
+  if (!id) return Response.json({ error: "Falta id" }, { status: 400 });
+  // Imágenes en orden: png_1..png_N (o png para una sola).
+  const files = [];
+  for (let i = 1; i <= 10; i++) { const f = fd.get(`png_${i}`); if (f && typeof f !== "string") files.push({ f, html: String(fd.get(`html_${i}`) || "") }); else break; }
+  if (!files.length) { const f = fd.get("png"); if (f && typeof f !== "string") files.push({ f, html: String(fd.get("html") || "") }); }
+  if (!files.length) return Response.json({ error: "Faltan imágenes" }, { status: 400 });
+  const stamp = Date.now();
+  const images = [];
+  for (let i = 0; i < files.length; i++) {
+    const url = await uploadStorage(`piezas/${id}-${stamp}${files.length > 1 ? `-${i + 1}` : ""}.png`, Buffer.from(await files[i].f.arrayBuffer()), "image/png");
+    images.push({ url, html: files[i].html });
+  }
   await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({
-    status: "review", image_url, error: null, locked_at: null, feedback: null, updated_at: now,
-    html: String(fd.get("html") || ""), headline: String(fd.get("headline") || ""), subheadline: String(fd.get("subheadline") || ""),
+    status: "review", image_url: images[0].url, images, slides: images.length, error: null, locked_at: null, feedback: null, updated_at: now,
+    html: images[0].html, headline: String(fd.get("headline") || ""), subheadline: String(fd.get("subheadline") || ""),
     caption: String(fd.get("caption") || ""), hashtags: String(fd.get("hashtags") || ""),
   }) });
-  return Response.json({ ok: true, image_url });
+  return Response.json({ ok: true, image_url: images[0].url, images: images.length });
 }

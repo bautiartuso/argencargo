@@ -3,7 +3,7 @@
 // GET ?view=pieces        → todas las piezas (Aprobación/Calendario filtran en el cliente)
 // GET ?view=memory        → knowledge + brand kit (cs_memory) + assets (logos, referencias) + runs + instagram
 // POST {action:"generate", brief, kind, count}      → piezas a la cola (el analista arma los briefs)
-// POST {action:"runner", count}                     → el analista propone N (manual)
+// POST {action:"runner", mix:{feed,carousel,story}} → el analista propone esa mezcla (manual); count = total si no hay mix
 // POST {action:"chat", messages, images}            → chatbot estratega (devuelve reply y, si está listo, el brief)
 // POST {action:"approve"|"reject"|"regenerate"|"published"|"publish_now", id}
 // POST {action:"feedback", id, feedback}            → pedir cambio (vuelve a la cola)
@@ -13,7 +13,7 @@
 // POST {action:"instagram", ig_user_id, access_token} / {action:"instagram_test"}
 // POST multipart {action:"asset", kind, file}       → sube logo o posteo de referencia
 
-import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect } from "../../../../lib/studio";
+import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind } from "../../../../lib/studio";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -28,7 +28,7 @@ async function isStaff(req) {
   } catch { return false; }
 }
 
-const SEL = "id,brand,kind,status,source,pillar,title,brief,headline,subheadline,caption,hashtags,image_url,width,height,feedback,error,publish_error,ig_media_id,scheduled_at,published_at,approved_at,locked_at,created_at,updated_at";
+const SEL = "id,brand,kind,slides,slides_plan,status,source,pillar,title,brief,headline,subheadline,caption,hashtags,image_url,images,width,height,feedback,error,publish_error,ig_media_id,scheduled_at,published_at,approved_at,locked_at,created_at,updated_at";
 
 export async function GET(req) {
   const who = await isStaff(req);
@@ -71,23 +71,26 @@ export async function POST(req) {
     if (!brief) return Response.json({ error: "Contame qué querés comunicar" }, { status: 400 });
     if (body.direct) {
       // Brief ya definido (por el chatbot): va directo a la cola sin pasar por el analista.
-      const created = await crearPiezas([{ kind: body.kind === "story" ? "story" : "feed", pillar: body.pillar || null, title: body.title || brief.slice(0, 60), brief }], { source: "chatbot" });
+      const created = await crearPiezas([{ kind: normKind(body.kind), slides: body.slides, slides_plan: body.slides_plan, pillar: body.pillar || null, title: body.title || brief.slice(0, 60), brief }], { source: "chatbot" });
       return Response.json({ ok: true, created: created.length });
     }
-    const kinds = body.kind === "story" ? Array(count).fill("story") : body.kind === "feed" ? Array(count).fill("feed") : null;
+    const kinds = ["story", "feed", "carousel"].includes(body.kind) ? Array(count).fill(body.kind) : null;
     const created = await runner({ count, brief, kinds, source: "manual" });
     return Response.json({ ok: true, created: created.length });
   }
   if (a === "runner") {
-    const count = Math.min(20, Math.max(1, Number(body.count) || 3));
-    const created = await runner({ count, source: "runner" });
+    const mix = body.mix && typeof body.mix === "object" ? { feed: Number(body.mix.feed) || 0, carousel: Number(body.mix.carousel) || 0, story: Number(body.mix.story) || 0 } : null;
+    const total = mix ? mix.feed + mix.carousel + mix.story : Math.min(20, Math.max(1, Number(body.count) || 3));
+    if (!total) return Response.json({ error: "Elegí al menos una pieza" }, { status: 400 });
+    if (total > 20) return Response.json({ error: "Máximo 20 piezas por corrida" }, { status: 400 });
+    const created = await runner(mix ? { mix, source: "runner" } : { count: total, source: "runner" });
     return Response.json({ ok: true, created: created.length, titulos: created.map((c) => c.title) });
   }
   if (a === "chat") {
     const messages = Array.isArray(body.messages) ? body.messages.slice(-20) : [];
     const images = Array.isArray(body.images) ? body.images.slice(0, 4) : [];
     if (!messages.length) return Response.json({ error: "Sin mensajes" }, { status: 400 });
-    const out = await chatIdea({ messages, images, kindPref: ["feed", "story"].includes(body.kind_pref) ? body.kind_pref : "auto" });
+    const out = await chatIdea({ messages, images, kindPref: ["feed", "carousel", "story"].includes(body.kind_pref) ? body.kind_pref : "auto" });
     return Response.json(out);
   }
   if (a === "approve") {
@@ -117,7 +120,7 @@ export async function POST(req) {
     if (!cfg.ig_user_id || !cfg.access_token) return Response.json({ error: "Instagram no está conectado (solapa Conexión)" }, { status: 400 });
     const r = await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}&select=*&limit=1`);
     const piece = Array.isArray(r.body) && r.body[0];
-    if (!piece?.image_url) return Response.json({ error: "La pieza no tiene imagen" }, { status: 400 });
+    if (!piece?.image_url && !(Array.isArray(piece?.images) && piece.images.length)) return Response.json({ error: "La pieza no tiene imagen" }, { status: 400 });
     try {
       const mid = await igPublish(piece, cfg);
       await patch(id, { status: "published", published_at: now, ig_media_id: mid, publish_error: null });

@@ -22,8 +22,13 @@
 - 11.11 y Black Friday: picos de compra.
 - Cierres de aduana y feriados argentinos.
 
-## Formatos
-- Feed: 1080×1350 (4:5). Historia: 1080×1920 (9:16). Carrusel: varias piezas 4:5, la primera es la portada con "Deslizá →".
+## Formatos y criterio (cada idea nace en el formato que le corresponde)
+- **Posteo** (una imagen 1080×1350): UNA idea fuerte que cierra en una sola imagen. Jamás dice "deslizá", "seguí leyendo" ni "ver más".
+- **Carrusel** (3 a 6 imágenes 1080×1350): una idea en partes: lista, pasos, comparativa, checklist, "5 errores", noticia explicada. Portada = gancho + "Deslizá →"; cada imagen dice UNA cosa con poco texto (el texto se reparte, no se amontona); la última cierra con resumen + logo. Es el formato preferido para lo educativo. Estilo Magforce: portada fuerte + imágenes de desarrollo sobre fondo claro con texto.
+- **Historia suelta** (1080×1920): momentánea y liviana, se lee en 3 segundos: buena semana, buen finde, dato rápido, pregunta, recordatorio de fecha.
+- **Secuencia de historias** (2 a 4): cuando hay que contar algo con sustancia en historias (una noticia, un consejo con pasos): la 1 es el gancho y dice de qué se trata; las del medio desarrollan lo concreto (QUÉ cambió exactamente, a quién alcanza, desde cuándo, qué conviene hacer); la última cierra. Prohibido "cambió algo" sin decir qué.
+- **Noticias**: solo con el detalle leído del artículo. Un título sin detalle no alcanza para una pieza.
+- Más adelante: carruseles con foto real (foto real + imagen de texto, o dos fotos reales), cuando tengamos las fotos.
 
 ## Banco de ángulos (elegir distintos cada tanda; no repetir en 30 días)
 1. El error más caro que comete un primer importador.

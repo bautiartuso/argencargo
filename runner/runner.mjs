@@ -4,9 +4,10 @@
 //   1. Pide a la web la siguiente pieza de la cola (+ memoria, brand kit, referencias, aprobadas).
 //   2. Arma una carpeta de trabajo: memoria/*.md, brand/ (logos), referencias/ (posteos que gustan),
 //      aprobados/ (últimas piezas aprobadas: html + png) y brief.md.
-//   3. Claude Code (`claude -p`, Opus, con la suscripción, sin API) como DISEÑADOR → post.html + meta.json.
-//   4. Chrome invisible fotografía el HTML en tamaño exacto → post.png.
-//   5. Claude Code como DIRECTOR DE ARTE mira post.png y corrige (hasta 2 pasadas).
+//   3. Claude Code (`claude -p`, Opus, con la suscripción, sin API) como DISEÑADOR → slide-1.html..slide-N.html + meta.json
+//      (posteo = 1 imagen; carrusel = 3 a 6; historia suelta = 1; secuencia de historias = 2 a 4).
+//   4. Chrome invisible fotografía cada HTML en tamaño exacto → slide-N.png.
+//   5. Claude Code como DIRECTOR DE ARTE mira los PNG y corrige (hasta 2 pasadas).
 //   6. Sube la pieza → Aprobación.
 //
 // Config: ~/.argencargo-runner.json { base, secret, chrome, claude, model, maxPieces }
@@ -77,15 +78,39 @@ async function bajar(url, dest) {
   try { const r = await fetch(url); if (!r.ok) return false; await fs.writeFile(dest, Buffer.from(await r.arrayBuffer())); return true; } catch { return false; }
 }
 
+const nSlides = (p) => Math.max(1, Number(p.slides) || 1);
+function formatoLabel(p) {
+  const n = nSlides(p);
+  if (p.kind === "carousel") return `CARRUSEL de ${n} imágenes de 1080×1350 (4:5)`;
+  if (p.kind === "story") return n > 1 ? `SECUENCIA de ${n} HISTORIAS de 1080×1920 (se publican seguidas, en orden)` : "HISTORIA suelta de 1080×1920";
+  return "POSTEO DE FEED de UNA sola imagen de 1080×1350 (4:5)";
+}
+function reglasFormato(p) {
+  const n = nSlides(p);
+  if (p.kind === "carousel") return `REGLAS DEL CARRUSEL:
+   - slide-1 es la PORTADA: el gancho grande (titular de 2 a 4 líneas con palabra resaltada) + un "Deslizá →" chico y discreto abajo a la derecha. Nada más.
+   - slide-2 a slide-${n - 1}: UNA idea por imagen. Poco texto: un título corto + 1 a 3 líneas o una lista de máximo 3 ítems. El texto se reparte entre las imágenes, nunca se amontona. Número de imagen chico (ej. "2/${n}") en una esquina.
+   - slide-${n} es el CIERRE: resumen en una línea + logo completo. Sin "seguinos", sin pedidos agresivos; a lo sumo "Cualquier duda, escribinos".
+   - Misma paleta, mismo fondo y misma tipografía en todas: tiene que verse como una sola pieza. Seguí slides_plan del brief al pie de la letra.`;
+  if (p.kind === "story" && n > 1) return `REGLAS DE LA SECUENCIA DE HISTORIAS:
+   - slide-1: el gancho, dice de qué se trata en una frase concreta (no "cambió algo": QUÉ cambió).
+   - slide-2 a slide-${n - 1}: el desarrollo, con lo concreto (qué cambió exactamente, a quién alcanza, desde cuándo, qué conviene hacer). Una idea por historia, se lee en 5 segundos.
+   - slide-${n}: el cierre (una línea + logo). Indicador chico "1/${n}", "2/${n}"… en una esquina. Misma paleta en todas.`;
+  if (p.kind === "story") return `REGLAS DE LA HISTORIA SUELTA: una sola idea, liviana, se lee en 3 segundos. Nada de "deslizá" ni "seguí leyendo".`;
+  return `REGLAS DEL POSTEO SIMPLE: es UNA sola imagen. La idea cierra ahí. PROHIBIDO "Deslizá", "seguí leyendo", "ver más", flechas de continuar o numeración.`;
+}
+
 function promptDisenador(p, ctx) {
   const W = p.width, H = p.height;
+  const n = nSlides(p);
   return `Sos el diseñador y redactor de Argencargo. Antes de empezar leé TODA la memoria de la marca en memoria/*.md (identidad, tono, audiencia, productos, dos-and-donts, campanas, historial, brand-kit, referencias-estilo) y el pedido en brief.md.
 ${ctx.referencias ? `Mirá también referencias/ (posteos que a Bautista le gustan: son la vara de calidad y estilo; no los copies, aprendé la lógica) ` : ""}${ctx.aprobados ? `y aprobados/ (las últimas piezas nuestras aprobadas, html + png: mantené continuidad de estilo con ellas).` : ""}
 
-Creá UNA pieza de Instagram: ${p.kind === "story" ? "HISTORIA de 1080×1920" : "POST DE FEED de 1080×1350 (4:5)"} px.
+Creá UNA pieza de Instagram: ${formatoLabel(p)}.
+${reglasFormato(p)}
 
-Escribí dos archivos en esta carpeta:
-1) post.html — documento HTML autocontenido (sin JavaScript) que se fotografía en ${W}×${H} px exactos: html y body con margin 0, width ${W}px, height ${H}px, overflow hidden.
+Escribí estos archivos en esta carpeta:
+1) ${n > 1 ? `slide-1.html … slide-${n}.html (uno por imagen, en orden)` : "slide-1.html"} — cada uno un documento HTML autocontenido (sin JavaScript) que se fotografía en ${W}×${H} px exactos: html y body con margin 0, width ${W}px, height ${H}px, overflow hidden.
    - Fuentes: <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">. Titular en 'Bebas Neue' (TODO el titular, incluida la palabra resaltada); textos en 'Inter' o 'Nunito'.
    - Imágenes: SOLO los logos de la carpeta brand/ (PNG con fondo TRANSPARENTE, ruta relativa, ej. src="brand/isotipo.png"). NUNCA los pongas dentro de un recuadro ni cápsula blanca. Sobre fondo oscuro, hacelos blancos con CSS: style="filter:brightness(0) invert(1)". Sobre fondo claro, van en su azul original. Ninguna imagen externa, ninguna foto. Todo lo demás se dibuja con CSS: degradés, franjas diagonales como las barras del logo, tarjetas, círculos, patrones, iconografía simple en SVG inline.
    - FONDO: respetá lo que dice el brief ("Fondo: claro" = blanco #FFFFFF o gris muy claro con textos en #0A3D91/#0A1628; "Fondo: oscuro" = navy #0A1628 o degradé azul con textos blancos). Si el brief no lo dice, elegí claro. La marca vive en blanco y azul; no todo es oscuro.
@@ -94,18 +119,21 @@ Escribí dos archivos en esta carpeta:
    - Sin emojis en el HTML, sin lorem ipsum, sin datos inventados (solo lo que dice el brief), sin llamados a la acción agresivos.
    - Nivel: campaña profesional. Composición con aire y jerarquía. HTML compacto y limpio.
 2) meta.json — {"headline": "...", "subheadline": "...", "caption": "...", "hashtags": "..."}
-   - caption (solo para POSTEOS; en historias dejalo vacío): el texto que se publica junto a la imagen, 4 a 10 líneas con saltos, tono de la marca (tono.md), una idea por línea, que amplíe lo que dice la imagen (no lo repita), sin hashtags, sin llamado a la acción agresivo; puede cerrar con "Cualquier duda, escribinos".
-   - hashtags (solo POSTEOS): SIEMPRE incluí estos fijos: #argencargo #importardesdechina #importaciones #comercioexterior #courier #logisticainternacional, y sumá 5 a 8 específicos del tema del post (en español, sin espacios). Separados por espacio. En historias, vacío.
+   - caption (solo para POSTEOS y CARRUSELES; en historias dejalo vacío): el texto que se publica junto a la imagen, 4 a 10 líneas con saltos, tono de la marca (tono.md), una idea por línea, que amplíe lo que dicen las imágenes (no lo repita), sin hashtags, sin llamado a la acción agresivo; puede cerrar con "Cualquier duda, escribinos". En un carrusel puede arrancar con una pregunta y contar lo que el carrusel resume.
+   - hashtags (solo POSTEOS y CARRUSELES): SIEMPRE incluí estos fijos: #argencargo #importardesdechina #importaciones #comercioexterior #courier #logisticainternacional, y sumá 5 a 8 específicos del tema (en español, sin espacios). Separados por espacio. En historias, vacío.
 
 Cuando termines, respondé solo: LISTO.`;
 }
 
 function promptDirector(p, pass, defectos) {
-  return `Sos el director de arte de Argencargo. En esta carpeta está la pieza YA RENDERIZADA: post.png (mirala con Read) y su código post.html; la memoria en memoria/*.md; referencias/ y aprobados/ como vara de estilo.
+  const n = nSlides(p);
+  const pngs = n > 1 ? `slide-1.png … slide-${n}.png (miralos TODOS con Read, en orden)` : "slide-1.png (miralo con Read)";
+  const htmls = n > 1 ? "slide-N.html correspondiente" : "slide-1.html";
+  return `Sos el director de arte de Argencargo. En esta carpeta está la pieza YA RENDERIZADA: ${pngs} y su código ${n > 1 ? "slide-N.html" : "slide-1.html"}; la memoria en memoria/*.md; referencias/ y aprobados/ como vara de estilo. Formato: ${formatoLabel(p)}.
 ${defectos.length ? `\nDEFECTOS MEDIDOS AUTOMÁTICAMENTE EN EL RENDER (corregilos sí o sí):\n${defectos.map((d) => `- ${d}`).join("\n")}\n` : ""}
-Revisá post.png (pasada ${pass} de 2): texto cortado, tapado o fuera del lienzo; textos encimados; tipografía equivocada (el titular completo debe ser 'Bebas Neue'); jerarquía floja; poco aire; logo dentro de un recuadro blanco (prohibido: el logo va transparente, blanco con filter:brightness(0) invert(1) sobre fondo oscuro); fondo que no respeta el brief (claro/oscuro); composición desequilibrada; que se vea amateur o genérica. Compará con referencias/ y aprobados/: tiene que estar a ese nivel.
+Revisá (pasada ${pass} de 2): texto cortado, tapado o fuera del lienzo; textos encimados; tipografía equivocada (el titular completo debe ser 'Bebas Neue'); jerarquía floja; poco aire; logo dentro de un recuadro blanco (prohibido: el logo va transparente, blanco con filter:brightness(0) invert(1) sobre fondo oscuro); fondo que no respeta el brief (claro/oscuro); composición desequilibrada; que se vea amateur o genérica.${n > 1 ? " En carruseles y secuencias: continuidad (misma paleta y tipografía en todas), poco texto por imagen, portada con gancho, cierre con logo, numeración discreta." : p.kind === "feed" ? ' Si aparece "Deslizá", flechas de continuar o numeración en un posteo de una sola imagen, sacalo.' : ""} Compará con referencias/ y aprobados/: tiene que estar a ese nivel.
 
-Si hay algo que mejorar: corregí post.html (reescribilo completo, respetando que los logos van con ruta relativa brand/...) y respondé "CORREGIDO: " y en una línea qué cambiaste.
+Si hay algo que mejorar: corregí el ${htmls} (reescribilo completo, respetando que los logos van con ruta relativa brand/...) y respondé "CORREGIDO: " y en una línea qué cambiaste.
 Si está impecable: no toques nada y respondé "APROBADO".`;
 }
 
@@ -133,38 +161,49 @@ async function procesar(data) {
     if (ap.html) await fs.writeFile(path.join(dir, "aprobados", `ok-${ctx.aprobados}.html`), ap.html);
     if (ap.image_url) await bajar(ap.image_url, path.join(dir, "aprobados", `ok-${ctx.aprobados}.png`));
   }
-  const brief = `# Pieza a crear\n\n- Formato: ${p.kind === "story" ? "historia 1080×1920" : "post de feed 1080×1350 (4:5)"}\n- Pilar: ${p.pillar || "(libre)"}\n- Título interno: ${p.title || ""}\n\n## Brief\n${p.brief || "(libre)"}\n${p.feedback ? `\n## CAMBIOS PEDIDOS POR BAUTISTA sobre la versión anterior (aplicalos todos)\n${p.feedback}\n\nVersión anterior: ${p.headline || ""} / ${p.subheadline || ""}\n` : ""}`;
+  const n = nSlides(p);
+  const plan = Array.isArray(p.slides_plan) && p.slides_plan.length ? `\n## Plan de imágenes (una línea por imagen, en orden; respetalo)\n${p.slides_plan.map((s, i) => `${i + 1}. ${s}`).join("\n")}\n` : "";
+  const brief = `# Pieza a crear\n\n- Formato: ${formatoLabel(p)}\n- Pilar: ${p.pillar || "(libre)"}\n- Título interno: ${p.title || ""}\n\n## Brief\n${p.brief || "(libre)"}\n${plan}${p.feedback ? `\n## CAMBIOS PEDIDOS POR BAUTISTA sobre la versión anterior (aplicalos todos)\n${p.feedback}\n\nVersión anterior: ${p.headline || ""} / ${p.subheadline || ""}\n` : ""}`;
   await fs.writeFile(path.join(dir, "brief.md"), brief);
-  await fs.writeFile(path.join(dir, "CLAUDE.md"), "Trabajás dentro de esta carpeta. Leé memoria/*.md y brief.md; mirá brand/, referencias/ y aprobados/. Escribí únicamente post.html y meta.json (y corregí post.html cuando se te pida). No crees otros archivos ni salgas de la carpeta.");
+  await fs.writeFile(path.join(dir, "CLAUDE.md"), `Trabajás dentro de esta carpeta. Leé memoria/*.md y brief.md; mirá brand/, referencias/ y aprobados/. Escribí únicamente ${n > 1 ? `slide-1.html … slide-${n}.html` : "slide-1.html"} y meta.json (y corregilos cuando se te pida). No crees otros archivos ni salgas de la carpeta.`);
 
-  log(`🎨 ${p.kind} · ${p.title}`);
+  log(`🎨 ${p.kind}${n > 1 ? ` ×${n}` : ""} · ${p.title}`);
   await claude(promptDisenador(p, ctx), { cwd: dir });
-  const htmlPath = path.join(dir, "post.html"), pngPath = path.join(dir, "post.png");
-  await fs.access(htmlPath);
-  let defectos = await render(htmlPath, pngPath, { width: p.width, height: p.height });
+  const slides = Array.from({ length: n }, (_, i) => ({ html: path.join(dir, `slide-${i + 1}.html`), png: path.join(dir, `slide-${i + 1}.png`) }));
+  for (const s of slides) await fs.access(s.html);
+  const renderAll = async () => {
+    const out = [];
+    for (let i = 0; i < slides.length; i++) { const d = await render(slides[i].html, slides[i].png, { width: p.width, height: p.height }); out.push(...d.map((x) => (n > 1 ? `[slide-${i + 1}] ${x}` : x))); }
+    return out;
+  };
+  let defectos = await renderAll();
   if (defectos.length) log(`   📐 medición: ${defectos.length} defecto(s)`);
+  const leerTodo = async () => (await Promise.all(slides.map((s) => fs.readFile(s.html, "utf8")))).join("\n<!--slide-->\n");
 
   for (let pass = 1; pass <= 2; pass++) {
-    const before = await fs.readFile(htmlPath, "utf8");
+    const before = await leerTodo();
     const r = await claude(promptDirector(p, pass, defectos), { cwd: dir });
-    const after = await fs.readFile(htmlPath, "utf8");
+    const after = await leerTodo();
     const txt = String(r.result || "");
     log(`   🧐 pasada ${pass}: ${txt.slice(0, 120).replace(/\n/g, " ")}`);
     if (after === before || (/^APROBADO/i.test(txt.trim()) && !defectos.length)) break;
-    defectos = await render(htmlPath, pngPath, { width: p.width, height: p.height });
+    defectos = await renderAll();
     if (defectos.length) log(`   📐 medición: ${defectos.length} defecto(s)`); else break;
   }
 
   // El HTML que se guarda lleva los logos con URL absoluta (para re-renderizar en la web si hace falta).
-  const html = (await fs.readFile(htmlPath, "utf8")).replace(/(src|url\()=?["']?brand\//g, (m) => m.replace("brand/", `${cfg.base}/brand/`));
+  const absoluto = (h) => h.replace(/(src|url\()=?["']?brand\//g, (m) => m.replace("brand/", `${cfg.base}/brand/`));
   let meta = {}; try { meta = JSON.parse(await fs.readFile(path.join(dir, "meta.json"), "utf8")); } catch {}
   const fd = new FormData();
-  fd.append("id", p.id); fd.append("html", html);
+  fd.append("id", p.id);
   for (const k of ["headline", "subheadline", "caption", "hashtags"]) fd.append(k, String(meta[k] || ""));
-  fd.append("png", new Blob([await fs.readFile(pngPath)], { type: "image/png" }), "post.png");
+  for (let i = 0; i < slides.length; i++) {
+    fd.append(`html_${i + 1}`, absoluto(await fs.readFile(slides[i].html, "utf8")));
+    fd.append(`png_${i + 1}`, new Blob([await fs.readFile(slides[i].png)], { type: "image/png" }), `slide-${i + 1}.png`);
+  }
   const up = await api("?op=done", { method: "POST", body: fd });
   if (!up.ok) throw new Error(`subida ${up.status}: ${(await up.text()).slice(0, 200)}`);
-  log(`   ✅ lista para aprobar`);
+  log(`   ✅ lista para aprobar${n > 1 ? ` (${n} imágenes)` : ""}`);
 }
 
 const max = Number(cfg.maxPieces || 4);
