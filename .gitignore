@@ -47,3 +47,5 @@ next-env.d.ts
 # Lock files (opcional — comenta si querés trackear package-lock)
 package-lock.json
 .env*
+# runner local
+argencargo-runner/
