@@ -4512,6 +4512,10 @@ function BotPanel({token}){
 // ═══════════════════════════════════════════════════════════════════════════
 function StudioPanel({token}){
   const [tab,setTab]=useState("aprobacion");
+  const [chatKind,setChatKind]=useState("auto"); // formato pedido en el chatbot
+  const [calMes,setCalMes]=useState(()=>{const d=new Date();return {y:d.getFullYear(),m:d.getMonth()};});
+  const [calCat,setCalCat]=useState("todo"); // todo | feed | story
+  const [calSel,setCalSel]=useState(null);   // pieza abierta desde el calendario
   const [pieces,setPieces]=useState([]);const [lo,setLo]=useState(true);
   const [meta,setMeta]=useState({memory:[],assets:[],runs:[],instagram:{}});
   const [busy,setBusy]=useState("");
@@ -4573,7 +4577,7 @@ function StudioPanel({token}){
   const cal=pieces.filter(p=>["approved","scheduled","published"].includes(p.status)).sort((a,b)=>new Date(a.scheduled_at||a.approved_at||a.created_at)-new Date(b.scheduled_at||b.approved_at||b.created_at));
   const grid={display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(250px,1fr))",gap:12};
   const igOk=!!meta.instagram?.connected;
-  const tabs=[{k:"generar",l:"Generar"},{k:"aprobacion",l:"Aprobación",n:pieces.filter(p=>p.status==="review").length},{k:"calendario",l:"Calendario",n:cal.filter(p=>p.status!=="published").length},{k:"runner",l:"Runner"},{k:"chatbot",l:"Chatbot"},{k:"marca",l:"Marca"},{k:"conexion",l:"Conexión",dot:igOk?"#4ade80":"#f87171"},{k:"knowledge",l:"Knowledge"}];
+  const tabs=[{k:"aprobacion",l:"Aprobación",n:pieces.filter(p=>p.status==="review").length},{k:"calendario",l:"Calendario",n:cal.filter(p=>p.status!=="published").length},{k:"runner",l:"Runner"},{k:"chatbot",l:"Chatbot"},{k:"marca",l:"Marca"},{k:"conexion",l:"Conexión",dot:igOk?"#4ade80":"#f87171"},{k:"knowledge",l:"Knowledge"}];
   const inp={width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit"};
   const sel={padding:"9px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"#142038",color:"#fff",fontSize:12.5};
   const box={background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:14};
@@ -4582,7 +4586,7 @@ function StudioPanel({token}){
   const enviarChat=async()=>{
     const txt=chatTxt.trim();if(!txt&&chatImgs.length===0)return;
     const msgs=[...chat,{role:"user",content:txt||"(imagen adjunta)"}];setChat(msgs);setChatTxt("");setBusy("chat");
-    try{const b=await api("",{method:"POST",body:JSON.stringify({action:"chat",messages:msgs,images:chatImgs})});setChat([...msgs,{role:"assistant",content:b.reply}]);setChatListo(b.listo?b:null);setChatImgs([]);}
+    try{const b=await api("",{method:"POST",body:JSON.stringify({action:"chat",messages:msgs,images:chatImgs,kind_pref:chatKind})});setChat([...msgs,{role:"assistant",content:b.reply}]);setChatListo(b.listo?b:null);setChatImgs([]);}
     catch(e){toast(e.message,"error");}finally{setBusy("");}
   };
   const adjuntarChat=(file)=>{if(!file)return;const rd=new FileReader();rd.onload=()=>{const s=String(rd.result||"");const m=s.match(/^data:([^;]+);base64,(.*)$/);if(m)setChatImgs(x=>[...x,{mime:m[1],b64:m[2],name:file.name}].slice(0,4));};rd.readAsDataURL(file);};
@@ -4594,19 +4598,6 @@ function StudioPanel({token}){
         {tabs.map(x=><button key={x.k} onClick={()=>setTab(x.k)} style={{padding:"7px 12px",fontSize:12,fontWeight:700,borderRadius:9,cursor:"pointer",border:`1px solid ${tab===x.k?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.1)"}`,background:tab===x.k?"rgba(184,149,106,0.16)":"rgba(255,255,255,0.03)",color:tab===x.k?"#E8C99B":"rgba(255,255,255,0.6)"}}>{x.l}{x.n>0&&<span style={{marginLeft:6,fontSize:10,padding:"1px 6px",borderRadius:99,background:"#ef4444",color:"#fff"}}>{x.n}</span>}{x.dot&&<span style={{display:"inline-block",width:7,height:7,borderRadius:99,background:x.dot,marginLeft:6}}/>}</button>)}
       </div>
     </div>
-
-    {tab==="generar"&&<div style={{maxWidth:760}}>
-      <p style={{fontSize:12.5,color:"rgba(255,255,255,0.6)",margin:"0 0 10px"}}>Contale al estratega qué querés comunicar. Conoce el tono, la audiencia y las reglas de la marca, y arma el brief para el diseñador. Podés escribir o dictar.</p>
-      <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-        <textarea value={brief} onChange={e=>setBrief(e.target.value)} rows={5} placeholder="Ej: post sobre por qué el peso volumétrico encarece las cajas grandes · historia con los kilos en el aire esta semana · post explicando qué es un consolidado" style={{...inp,resize:"vertical"}}/>
-        {micBtn(setBrief,"brief")}
-      </div>
-      <div style={{display:"flex",gap:10,alignItems:"center",marginTop:10,flexWrap:"wrap"}}>
-        <select value={kind} onChange={e=>setKind(e.target.value)} style={sel}><option value="auto">Formato: que decida el estratega</option><option value="feed">Posteo de feed (4:5)</option><option value="story">Historia (9:16)</option></select>
-        <select value={count} onChange={e=>setCount(Number(e.target.value))} style={sel}>{[1,2,3,4,6].map(n=><option key={n} value={n}>{n} pieza{n>1?"s":""}</option>)}</select>
-        <Btn onClick={async()=>{const b=await act("generate",{brief,kind,count},x=>`${x.created} en la cola`);if(b){setBrief("");setTab("aprobacion");}}} disabled={!!busy||!brief.trim()}>{busy==="generate"?"…":"Generar"}</Btn>
-      </div>
-    </div>}
 
     {tab==="aprobacion"&&<div>
       <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
@@ -4629,21 +4620,84 @@ function StudioPanel({token}){
       </div>
     </div>}
 
-    {tab==="calendario"&&<div>
-      {!igOk&&<p style={{fontSize:11.5,color:"#fbbf24",margin:"0 0 10px"}}>Instagram no está conectado: lo programado no se publica solo. Conectalo en la solapa Conexión, o descargá y subí a mano.</p>}
-      {cal.length===0&&<div style={{padding:30,textAlign:"center",color:"rgba(255,255,255,0.45)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:14}}>Todavía no hay piezas aprobadas.</div>}
-      {(()=>{const grupos={};cal.forEach(p=>{const k=p.status==="approved"?"Sin fecha":fmtDia(p.scheduled_at||p.published_at);(grupos[k]=grupos[k]||[]).push(p);});return Object.entries(grupos).map(([dia,list])=><div key={dia} style={{marginBottom:18}}>
-        <p style={{margin:"0 0 8px",fontSize:12,fontWeight:800,color:"#E8C99B",textTransform:"capitalize"}}>{dia}</p>
-        <div style={grid}>{list.map(p=><Card key={p.id} p={p}>
-          <span style={{width:"100%",fontSize:10.5,color:p.status==="published"?"#4ade80":p.status==="scheduled"?"#60a5fa":"rgba(255,255,255,0.5)",fontWeight:700}}>{p.status==="published"?`✓ Publicada ${fmt(p.published_at)}${p.ig_media_id?" · en Instagram":""}`:p.status==="scheduled"?`📅 ${fmt(p.scheduled_at)}${igOk?" · se publica sola":""}`:"Aprobada · sin fecha"}</span>
-          {p.status!=="published"&&<Btn small onClick={()=>setSched({p,date:new Date(Date.now()+86400000).toISOString().slice(0,10),hour:10,min:0})} disabled={!!busy}>📅 Programar</Btn>}
-          {p.status!=="published"&&igOk&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?"))act("publish_now",{id:p.id},"Publicada en Instagram");}} disabled={!!busy}>⬆ Subir ahora</Btn>}
-          {p.image_url&&<a href={p.image_url} download target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><Btn small variant="secondary">⬇</Btn></a>}
-          <Btn small variant="secondary" onClick={()=>copiar(p)}>📋</Btn>
-          {p.status!=="published"&&<Btn small variant="secondary" onClick={()=>act("published",{id:p.id},"Marcada como publicada")} disabled={!!busy} title="Ya la subí a mano">✓</Btn>}
-        </Card>)}</div>
-      </div>);})()}
-    </div>}
+    {tab==="calendario"&&(()=>{
+      const sinFecha=pieces.filter(p=>p.status==="approved");
+      const prog=pieces.filter(p=>["scheduled","published"].includes(p.status)&&(calCat==="todo"||p.kind===calCat));
+      const {y,m}=calMes;
+      const first=new Date(y,m,1);const dow=(first.getDay()+6)%7; // lunes=0
+      const dias=new Date(y,m+1,0).getDate();
+      const celdas=[];for(let i=0;i<dow;i++)celdas.push(null);for(let d=1;d<=dias;d++)celdas.push(d);while(celdas.length%7)celdas.push(null);
+      const key=(dt)=>{const x=new Date(dt);return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;};
+      const porDia={};prog.forEach(p=>{const k=key(p.scheduled_at||p.published_at);(porDia[k]=porDia[k]||[]).push(p);});
+      Object.values(porDia).forEach(l=>l.sort((a,b)=>new Date(a.scheduled_at||a.published_at)-new Date(b.scheduled_at||b.published_at)));
+      const hoyK=key(new Date());
+      const mesLabel=new Date(y,m,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"});
+      const hora=(p)=>new Date(p.scheduled_at||p.published_at).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
+      const Mini=({p})=><button onClick={()=>setCalSel(p)} title={`${p.kind==="story"?"Historia":"Posteo"} · ${hora(p)} · ${p.headline||p.title||""}`} style={{position:"relative",border:"none",padding:0,background:"transparent",cursor:"pointer",width:"100%",textAlign:"left"}}>
+        <div style={{display:"flex",gap:6,alignItems:"center",padding:"3px 4px",borderRadius:7,background:p.status==="published"?"rgba(74,222,128,0.1)":"rgba(96,165,250,0.12)",border:`1px solid ${p.status==="published"?"rgba(74,222,128,0.35)":"rgba(96,165,250,0.35)"}`}}>
+          <div style={{width:26,height:p.kind==="story"?40:32,borderRadius:4,overflow:"hidden",background:"#0b1220",flexShrink:0}}>{p.image_url&&<img src={p.image_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>}</div>
+          <div style={{minWidth:0}}><div style={{fontSize:10,fontWeight:800,color:p.status==="published"?"#4ade80":"#60a5fa"}}>{hora(p)} {p.status==="published"?"✓":""}{p.publish_error?" ⚠":""}</div><div style={{fontSize:9.5,color:"rgba(255,255,255,0.6)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.kind==="story"?"Historia":"Posteo"}</div></div>
+        </div>
+      </button>;
+      return <div>
+        {!igOk&&<p style={{fontSize:11.5,color:"#fbbf24",margin:"0 0 10px"}}>Instagram no está conectado: lo programado no se publica solo.</p>}
+        <div style={{...box,marginBottom:14}}>
+          <p style={{margin:"0 0 8px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Sin programar <span style={{fontSize:11,color:"rgba(255,255,255,0.45)",fontWeight:600}}>· aprobadas que todavía no tienen día y hora</span></p>
+          {sinFecha.length===0&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Nada pendiente. Lo que aprobás en Aprobación aparece acá.</p>}
+          <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:4}}>
+            {sinFecha.map(p=><div key={p.id} style={{flex:"0 0 auto",width:170,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:8}}>
+              <div onClick={()=>setPreview(p)} style={{height:110,borderRadius:7,overflow:"hidden",background:"#0b1220",cursor:"zoom-in",marginBottom:6,display:"flex",justifyContent:"center"}}>{p.image_url&&<img src={p.image_url} alt="" style={{height:"100%",objectFit:"contain"}}/>}</div>
+              <div style={{display:"flex",gap:4,marginBottom:6}}>{chip(p.kind==="story"?"Historia":"Posteo","#60a5fa")}</div>
+              <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.headline||p.title||""}>{p.headline||p.title||"—"}</p>
+              <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                <Btn small onClick={()=>setSched({p,date:new Date(Date.now()+86400000).toISOString().slice(0,10),hour:10,min:0})} disabled={!!busy}>📅</Btn>
+                {igOk&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?"))act("publish_now",{id:p.id},"Publicada en Instagram");}} disabled={!!busy}>⬆</Btn>}
+                {p.image_url&&<a href={p.image_url} download target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><Btn small variant="secondary">⬇</Btn></a>}
+                <Btn small variant="secondary" onClick={()=>copiar(p)}>📋</Btn>
+              </div>
+            </div>)}
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+          <button onClick={()=>setCalMes(c=>({y:c.m===0?c.y-1:c.y,m:c.m===0?11:c.m-1}))} style={{...sel,cursor:"pointer",padding:"6px 10px"}}>‹</button>
+          <span style={{fontSize:14,fontWeight:800,color:"#fff",textTransform:"capitalize",minWidth:150,textAlign:"center"}}>{mesLabel}</span>
+          <button onClick={()=>setCalMes(c=>({y:c.m===11?c.y+1:c.y,m:c.m===11?0:c.m+1}))} style={{...sel,cursor:"pointer",padding:"6px 10px"}}>›</button>
+          <div style={{marginLeft:"auto",display:"flex",gap:6}}>
+            {[["todo","Todo"],["feed","Posteos"],["story","Historias"]].map(([k,l])=><button key={k} onClick={()=>setCalCat(k)} style={{padding:"6px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${calCat===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:calCat===k?"rgba(96,165,250,0.15)":"transparent",color:calCat===k?"#60a5fa":"rgba(255,255,255,0.55)"}}>{l}</button>)}
+          </div>
+        </div>
+        {isMobile
+          ?<div style={{display:"grid",gap:8}}>
+            {celdas.filter(Boolean).map(d=>{const k=`${y}-${m}-${d}`;const l=porDia[k]||[];if(!l.length)return null;return <div key={d} style={{...box,padding:10}}><p style={{margin:"0 0 6px",fontSize:12,fontWeight:800,color:k===hoyK?"#E8C99B":"#fff"}}>{new Date(y,m,d).toLocaleDateString("es-AR",{weekday:"long",day:"numeric"})}</p><div style={{display:"grid",gap:4}}>{l.map(p=><Mini key={p.id} p={p}/>)}</div></div>;})}
+            {prog.length===0&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Nada programado este mes.</p>}
+          </div>
+          :<div style={{border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,overflow:"hidden"}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",background:"rgba(255,255,255,0.03)"}}>{["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(d=><div key={d} style={{padding:"7px 8px",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em",textAlign:"center"}}>{d}</div>)}</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)"}}>
+              {celdas.map((d,i)=>{const k=d?`${y}-${m}-${d}`:null;const l=k?(porDia[k]||[]):[];const esHoy=k===hoyK;return <div key={i} style={{minHeight:104,padding:6,borderTop:"1px solid rgba(255,255,255,0.06)",borderLeft:i%7?"1px solid rgba(255,255,255,0.06)":"none",background:esHoy?"rgba(184,149,106,0.07)":d?"transparent":"rgba(0,0,0,0.15)"}}>
+                {d&&<div style={{fontSize:11,fontWeight:800,color:esHoy?"#E8C99B":"rgba(255,255,255,0.55)",marginBottom:4}}>{d}</div>}
+                <div style={{display:"grid",gap:3}}>{l.map(p=><Mini key={p.id} p={p}/>)}</div>
+              </div>;})}
+            </div>
+          </div>}
+        {calSel&&<div onClick={()=>setCalSel(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:14,padding:16,width:"100%",maxWidth:420,maxHeight:"92vh",overflowY:"auto"}}>
+            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:8}}>{chip(calSel.kind==="story"?"Historia":"Posteo","#60a5fa")}<span style={{fontSize:12,fontWeight:700,color:calSel.status==="published"?"#4ade80":"#60a5fa"}}>{calSel.status==="published"?`✓ Publicada ${fmt(calSel.published_at)}${calSel.ig_media_id?" · en Instagram":""}`:`📅 ${fmt(calSel.scheduled_at)}`}</span><button onClick={()=>setCalSel(null)} style={{marginLeft:"auto",background:"none",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer"}}>×</button></div>
+            {calSel.image_url&&<img src={calSel.image_url} alt="" onClick={()=>setPreview(calSel)} style={{width:"100%",maxHeight:380,objectFit:"contain",borderRadius:8,background:"#0b1220",cursor:"zoom-in"}}/>}
+            <p style={{margin:"8px 0 2px",fontSize:13,fontWeight:800,color:"#fff"}}>{calSel.headline||calSel.title}</p>
+            {calSel.caption&&<p style={{margin:"0 0 8px",fontSize:11.5,color:"rgba(255,255,255,0.55)",whiteSpace:"pre-wrap",maxHeight:120,overflow:"auto"}}>{calSel.caption}</p>}
+            {calSel.publish_error&&<p style={{margin:"0 0 8px",fontSize:11,color:"#f87171"}}>Instagram: {calSel.publish_error}</p>}
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {calSel.status!=="published"&&<Btn small onClick={()=>{setSched({p:calSel,date:new Date(calSel.scheduled_at).toISOString().slice(0,10),hour:new Date(calSel.scheduled_at).getHours(),min:Math.round(new Date(calSel.scheduled_at).getMinutes()/15)*15%60});setCalSel(null);}} disabled={!!busy}>📅 Cambiar fecha</Btn>}
+              {calSel.status!=="published"&&igOk&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?")){await act("publish_now",{id:calSel.id},"Publicada en Instagram");setCalSel(null);}}} disabled={!!busy}>⬆ Subir ahora</Btn>}
+              {calSel.status!=="published"&&<Btn small variant="secondary" onClick={async()=>{await act("unschedule",{id:calSel.id},"Vuelve a Sin programar");setCalSel(null);}} disabled={!!busy}>Quitar del calendario</Btn>}
+              {calSel.image_url&&<a href={calSel.image_url} download target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><Btn small variant="secondary">⬇</Btn></a>}
+              <Btn small variant="secondary" onClick={()=>copiar(calSel)}>📋</Btn>
+              {calSel.status!=="published"&&<Btn small variant="secondary" onClick={async()=>{await act("published",{id:calSel.id},"Marcada como publicada");setCalSel(null);}} disabled={!!busy} title="La subí a mano">✓</Btn>}
+            </div>
+          </div>
+        </div>}
+      </div>;})()}
 
     {tab==="runner"&&<div style={{maxWidth:760}}>
       <div style={box}>
@@ -4667,12 +4721,16 @@ function StudioPanel({token}){
 
     {tab==="chatbot"&&<div style={{maxWidth:760}}>
       <div style={{...box,minHeight:300,display:"flex",flexDirection:"column",gap:8}}>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.45)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em"}}>Formato</span>
+          {[["auto","Que decida"],["feed","Posteo 4:5"],["story","Historia 9:16"]].map(([k,l])=><button key={k} onClick={()=>setChatKind(k)} style={{padding:"5px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${chatKind===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:chatKind===k?"rgba(96,165,250,0.15)":"transparent",color:chatKind===k?"#60a5fa":"rgba(255,255,255,0.55)"}}>{l}</button>)}
+        </div>
         {chat.length===0&&<p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>Contale una idea suelta, adjuntá una captura o dictá un audio. El estratega la va armando con vos y, cuando está lista, la manda a diseñar.</p>}
         {chat.map((m,i)=><div key={i} style={{alignSelf:m.role==="assistant"?"flex-start":"flex-end",maxWidth:"85%",background:m.role==="assistant"?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.07)",border:`1px solid ${m.role==="assistant"?"rgba(96,165,250,0.3)":"rgba(255,255,255,0.1)"}`,borderRadius:12,padding:"8px 11px",fontSize:13,color:"#fff",whiteSpace:"pre-wrap"}}>{m.content}</div>)}
         {chatListo&&<div style={{alignSelf:"flex-start",background:"rgba(52,211,153,0.12)",border:"1px solid rgba(52,211,153,0.35)",borderRadius:12,padding:"10px 12px"}}>
-          <p style={{margin:"0 0 4px",fontSize:12,fontWeight:800,color:"#34d399"}}>Idea lista · {chatListo.kind==="story"?"historia":"posteo"} · {chatListo.title}</p>
+          <p style={{margin:"0 0 4px",fontSize:12,fontWeight:800,color:"#34d399"}}>Idea lista · {(chatKind!=="auto"?chatKind:chatListo.kind)==="story"?"historia":"posteo"} · {chatListo.title}</p>
           <p style={{margin:"0 0 8px",fontSize:11.5,color:"rgba(255,255,255,0.7)",whiteSpace:"pre-wrap"}}>{chatListo.brief}</p>
-          <Btn small onClick={async()=>{const b=await act("generate",{brief:chatListo.brief,kind:chatListo.kind,title:chatListo.title,pillar:chatListo.pillar,direct:true},"A la cola: tu Mac la diseña");if(b){setChat([]);setChatListo(null);setTab("aprobacion");}}} disabled={!!busy}>🎨 Generar esta pieza</Btn>
+          <Btn small onClick={async()=>{const b=await act("generate",{brief:chatListo.brief,kind:chatKind!=="auto"?chatKind:chatListo.kind,title:chatListo.title,pillar:chatListo.pillar,direct:true},"A la cola: tu Mac la diseña");if(b){setChat([]);setChatListo(null);setTab("aprobacion");}}} disabled={!!busy}>🎨 Generar esta pieza</Btn>
         </div>}
       </div>
       {chatImgs.length>0&&<div style={{display:"flex",gap:6,marginTop:8}}>{chatImgs.map((im,i)=><span key={i} style={{fontSize:10.5,padding:"3px 8px",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.7)"}}>📎 {im.name} <button onClick={()=>setChatImgs(x=>x.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer"}}>×</button></span>)}</div>}

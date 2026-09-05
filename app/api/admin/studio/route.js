@@ -87,7 +87,7 @@ export async function POST(req) {
     const messages = Array.isArray(body.messages) ? body.messages.slice(-20) : [];
     const images = Array.isArray(body.images) ? body.images.slice(0, 4) : [];
     if (!messages.length) return Response.json({ error: "Sin mensajes" }, { status: 400 });
-    const out = await chatIdea({ messages, images });
+    const out = await chatIdea({ messages, images, kindPref: ["feed", "story"].includes(body.kind_pref) ? body.kind_pref : "auto" });
     return Response.json(out);
   }
   if (a === "approve") {
@@ -110,6 +110,7 @@ export async function POST(req) {
     await patch(id, { status: "scheduled", scheduled_at: when.toISOString(), publish_error: null });
     return Response.json({ ok: true });
   }
+  if (a === "unschedule") { await patch(id, { status: "approved", scheduled_at: null, publish_error: null }); return Response.json({ ok: true }); }
   if (a === "published") { await patch(id, { status: "published", published_at: now }); return Response.json({ ok: true }); }
   if (a === "publish_now") {
     const cfg = await igSettings();
