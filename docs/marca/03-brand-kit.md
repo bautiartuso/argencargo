@@ -40,9 +40,8 @@ Para las piezas (Google Fonts, se cargan en el HTML del post):
 - Logo o isotipo siempre presente (esquina o cierre), nunca gigante.
 - Zonas seguras de Instagram: 250 px arriba y abajo en historias libres de texto importante.
 - Fondo claro y oscuro alternados en el feed; nunca tres oscuros seguidos.
-- Fotos: realistas, escenas de operación (depósito, bultos, avión, oficina, cliente recibiendo),
-  con la marca insertada en cajas, remeras, carteles. Sin stock genérico, sin banderas de China
-  como recurso fácil, sin contenedores random.
+- Sin fotos ni imágenes externas: todo se construye con tipografía, color, formas, patrones y SVG
+  inline. La riqueza visual sale de la composición, no de una foto de stock.
 - Datos reales del sistema en grande cuando el post es de números.
 
 ## Uso de los logos (regla dura)
