@@ -13,7 +13,7 @@
 // POST {action:"instagram", ig_user_id, access_token} / {action:"instagram_test"}
 // POST multipart {action:"asset", kind, file}       → sube logo o posteo de referencia
 
-import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, chatIdea, uploadStorage, igSettings, igTest, igPublish } from "../../../../lib/studio";
+import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect } from "../../../../lib/studio";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -130,26 +130,12 @@ export async function POST(req) {
   }
   if (a === "asset_delete") { await sb(`/cs_assets?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); return Response.json({ ok: true }); }
   if (a === "instagram") {
-    // Con el token de usuario alcanza: se buscan las páginas de Facebook del usuario, la que tiene
-    // Instagram vinculado, y se guarda el token de PÁGINA (no vence si el de usuario era de larga duración).
-    const userToken = String(body.access_token || "").trim();
-    if (!userToken) return Response.json({ error: "Pegá el token" }, { status: 400 });
-    let cfg = { ig_user_id: String(body.ig_user_id || "").trim(), access_token: userToken, page_name: null };
-    try {
-      const r = await fetch(`https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&limit=50&access_token=${encodeURIComponent(userToken)}`);
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j?.error?.message || `HTTP ${r.status}`);
-      const pages = Array.isArray(j.data) ? j.data : [];
-      const conIg = pages.filter((pg) => pg.instagram_business_account?.id);
-      if (!conIg.length) return Response.json({ error: pages.length ? `Tu usuario administra ${pages.length} página(s) de Facebook pero ninguna tiene una cuenta de Instagram profesional vinculada. Vinculá Instagram a la página y volvé a generar el token.` : "El token no ve ninguna página de Facebook. Al generar el token en el Explorer tenés que marcar los permisos pages_show_list e instagram_basic y elegir la página." }, { status: 400 });
-      const pg = (cfg.ig_user_id && conIg.find((x) => x.instagram_business_account.id === cfg.ig_user_id)) || conIg[0];
-      cfg = { ig_user_id: pg.instagram_business_account.id, access_token: pg.access_token || userToken, page_name: pg.name, username: pg.instagram_business_account.username || null };
-    } catch (e) {
-      if (!cfg.ig_user_id) return Response.json({ error: `No pude leer tus páginas con ese token: ${e.message}` }, { status: 400 });
-    }
+    const token = String(body.access_token || "").trim();
+    if (!token) return Response.json({ error: "Pegá el token" }, { status: 400 });
+    let cfg; try { cfg = await igConnect(token, String(body.ig_user_id || "").trim()); } catch (e) { return Response.json({ error: e.message }, { status: 400 }); }
     let info; try { info = await igTest(cfg); } catch (e) { return Response.json({ error: `Instagram rechazó la conexión: ${e.message}` }, { status: 400 }); }
-    await sb(`/cs_settings?on_conflict=key`, { method: "POST", body: JSON.stringify({ key: "instagram", value: { ...cfg, username: info.username || cfg.username || null, connected_at: now }, updated_at: now }) });
-    return Response.json({ ok: true, info: { ...info, page_name: cfg.page_name } });
+    await sb(`/cs_settings?on_conflict=key`, { method: "POST", body: JSON.stringify({ key: "instagram", value: { ...cfg, username: info.username || cfg.username || null }, updated_at: now }) });
+    return Response.json({ ok: true, info: { ...info, page_name: cfg.page_name || null, mode: cfg.mode } });
   }
   if (a === "instagram_test") {
     const cfg = await igSettings();

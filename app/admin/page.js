@@ -4718,16 +4718,15 @@ function StudioPanel({token}){
         </div>}
       </div>
       <div style={{...box,marginTop:12}}>
-        <p style={{margin:"0 0 6px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Paso a paso para conseguir el token</p>
+        <p style={{margin:"0 0 6px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Paso a paso para conseguir el token (API de Instagram con inicio de sesión de Instagram)</p>
         <ol style={{margin:0,paddingLeft:18,fontSize:12,color:"rgba(255,255,255,0.7)",lineHeight:1.8}}>
-          <li><b>Instagram profesional.</b> En la app de Instagram: tu perfil → ☰ → Configuración y privacidad → Tipo de cuenta y herramientas → Cambiar a cuenta profesional → Empresa. Si ya lo es, seguí.</li>
-          <li><b>Página de Facebook.</b> Hace falta una página de Facebook de Argencargo (aunque no la uses). Si no tenés: <a href="https://www.facebook.com/pages/create" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>facebook.com/pages/create</a>, nombre "Argencargo", categoría Transporte y logística.</li>
-          <li><b>Vincular Instagram con la página.</b> En Instagram: ☰ → Configuración → Centro de cuentas → Cuentas → Agregar cuentas → Facebook → entrá con el Facebook que administra la página. Después en la página (facebook.com → tu página → Configuración → Cuentas vinculadas → Instagram) tiene que figurar tu cuenta.</li>
-          <li><b>Generar el token.</b> Abrí <a href="https://developers.facebook.com/tools/explorer/?app_id=1090204430113984" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>Graph API Explorer</a>. A la derecha: "Aplicación de Meta" = la app de Argencargo (ya viene elegida por el link). En "Permisos" agregá uno por uno: <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>instagram_basic</code>, <code>instagram_content_publish</code>, <code>business_management</code>. Tocá <b>Generar token de acceso</b>: se abre Facebook, marcá la página de Argencargo y la cuenta de Instagram, y aceptá todo.</li>
-          <li><b>Hacerlo de larga duración.</b> Copiá el token (empieza con EAA) y pegalo en <a href="https://developers.facebook.com/tools/debug/accesstoken/" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>Depurador de tokens</a> → Depurar → abajo, botón <b>Extender token de acceso</b>. Copiá el token nuevo que aparece.</li>
-          <li><b>Pegalo arriba y tocá Conectar.</b> El sistema busca tu página, la cuenta de Instagram vinculada y guarda el token de página, que no vence.</li>
+          <li><b>Instagram profesional.</b> En la app: perfil → ☰ → Configuración y privacidad → Tipo de cuenta y herramientas → Cambiar a cuenta profesional → Empresa (o Creador).</li>
+          <li><b>Caso de uso en la app de Meta.</b> En <a href="https://developers.facebook.com/apps/1090204430113984/use_cases/" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>Casos de uso</a> tiene que estar "Administrar mensajes y contenido en Instagram". Entrá con <b>Personalizar</b>.</li>
+          <li><b>Permisos.</b> Dentro del caso de uso, sección Permisos: tocá <b>Agregar</b> en <code>instagram_business_basic</code> y <code>instagram_business_content_publish</code>.</li>
+          <li><b>Generar el token.</b> En la misma pantalla, sección <b>Generar tokens de acceso</b> (o "Generador de tokens"): <b>Agregar cuenta</b> → se abre Instagram → entrá con la cuenta de Argencargo y aceptá. Después tocá <b>Generar token</b> al lado de la cuenta y copialo (empieza con IGAA…, dura 60 días y el sistema lo renueva solo).</li>
+          <li><b>Pegalo arriba y tocá Conectar.</b></li>
         </ol>
-        <p style={{margin:"8px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)"}}>Si en el paso 4 no aparece tu página al aceptar, es que Instagram no quedó vinculado (paso 3). Si "Conectar" dice que no ve páginas, faltó marcar pages_show_list.</p>
+        <p style={{margin:"8px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)"}}>También sirve un token de usuario de Facebook con página vinculada (Graph API Explorer): el sistema detecta solo cuál es.</p>
       </div>
     </div>}
 
