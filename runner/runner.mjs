@@ -93,7 +93,9 @@ Escribí dos archivos en esta carpeta:
    - LAYOUT: pensá la pieza como una grilla vertical de máximo 3 bloques (cabecera con logo chico, bloque principal, pie). Usá flex/grid, NUNCA position:absolute para texto (solo para formas decorativas de fondo). Cada bloque con su espacio; nada se superpone, nada se corta. Titular en mayúsculas, grande, 2 a 4 líneas, con 1 o 2 palabras resaltadas en un bloque #1E8BFF o #0A3D91 con texto blanco. Subtítulo 44–56 px, line-height 1.25. Márgenes internos mínimos 80 px. En historias, nada importante en los 250 px de arriba ni de abajo. Logo siempre presente y chico (isotipo 90–120 px o logo completo 260–320 px).
    - Sin emojis en el HTML, sin lorem ipsum, sin datos inventados (solo lo que dice el brief), sin llamados a la acción agresivos.
    - Nivel: campaña profesional. Composición con aire y jerarquía. HTML compacto y limpio.
-2) meta.json — {"headline": "...", "subheadline": "...", "caption": "texto del post, 3 a 8 líneas con saltos, sin hashtags", "hashtags": "8 a 15 hashtags separados por espacio"}
+2) meta.json — {"headline": "...", "subheadline": "...", "caption": "...", "hashtags": "..."}
+   - caption (solo para POSTEOS; en historias dejalo vacío): el texto que se publica junto a la imagen, 4 a 10 líneas con saltos, tono de la marca (tono.md), una idea por línea, que amplíe lo que dice la imagen (no lo repita), sin hashtags, sin llamado a la acción agresivo; puede cerrar con "Cualquier duda, escribinos".
+   - hashtags (solo POSTEOS): SIEMPRE incluí estos fijos: #argencargo #importardesdechina #importaciones #comercioexterior #courier #logisticainternacional, y sumá 5 a 8 específicos del tema del post (en español, sin espacios). Separados por espacio. En historias, vacío.
 
 Cuando termines, respondé solo: LISTO.`;
 }

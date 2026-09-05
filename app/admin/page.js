@@ -4557,15 +4557,15 @@ function StudioPanel({token}){
   const chip=(txt,col)=><span style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:`${col}22`,color:col,border:`1px solid ${col}55`,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span>;
   const pedirCambio=async(p)=>{const fb=await promptDialog("¿Qué cambiamos? Escribilo como se lo dirías a un diseñador.",{placeholder:"Ej: titular más corto, fondo claro, sacá el subtítulo"});if(!fb)return;await act("feedback",{id:p.id,feedback:fb},"Va de vuelta al diseñador (lo hace tu Mac)");};
   const copiar=async(p)=>{try{await navigator.clipboard.writeText(`${p.caption||""}\n\n${p.hashtags||""}`.trim());toast("Texto copiado","success");}catch{toast("No se pudo copiar","error");}};
-  const Card=({p,children})=><div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+  const Card=({p,children,compact})=><div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
     <div onClick={()=>p.image_url&&setPreview(p)} style={{position:"relative",background:"#0b1220",aspectRatio:p.kind==="story"?"9/16":"4/5",cursor:p.image_url?"zoom-in":"default",display:"flex",alignItems:"center",justifyContent:"center"}}>
       {p.image_url?<img src={p.image_url} alt={p.title||""} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:p.status==="generating"?<div style={{textAlign:"center",color:"rgba(255,255,255,0.5)",fontSize:12,padding:20}}><div style={{fontSize:26,marginBottom:6}}>🎨</div>{p.locked_at?"Diseñando en tu Mac…":"En la cola (espera a tu Mac)"}<div style={{fontSize:10.5,marginTop:4,color:"rgba(255,255,255,0.35)"}}>{p.title}</div></div>:<div style={{color:"#f87171",fontSize:12,padding:16,textAlign:"center"}}>⚠ {p.error||"Sin imagen"}</div>}
       <div style={{position:"absolute",top:8,left:8,display:"flex",gap:5,flexWrap:"wrap"}}>{chip(KIND[p.kind]||p.kind,"#60a5fa")}{p.pillar&&chip(p.pillar,"#E8C99B")}{p.source==="runner"&&chip("runner","#a78bfa")}{p.source==="chatbot"&&chip("chatbot","#34d399")}</div>
     </div>
     <div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:6,flex:1}}>
       <p style={{margin:0,fontSize:13,fontWeight:800,color:"#fff"}}>{p.headline||p.title||"—"}</p>
-      {p.subheadline&&<p style={{margin:0,fontSize:11.5,color:"rgba(255,255,255,0.6)"}}>{p.subheadline}</p>}
-      {p.caption&&<p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.5)",whiteSpace:"pre-wrap",maxHeight:96,overflow:"hidden"}}>{p.caption}</p>}
+      {!compact&&p.subheadline&&<p style={{margin:0,fontSize:11.5,color:"rgba(255,255,255,0.6)"}}>{p.subheadline}</p>}
+      {!compact&&p.caption&&<p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.5)",whiteSpace:"pre-wrap",maxHeight:96,overflow:"hidden"}}>{p.caption}</p>}
       {p.feedback&&p.status==="generating"&&<p style={{margin:0,fontSize:10.5,color:"#fbbf24"}}>✎ Cambio pedido: {p.feedback}</p>}
       {p.publish_error&&<p style={{margin:0,fontSize:10.5,color:"#f87171"}}>Instagram: {p.publish_error}</p>}
       <div style={{marginTop:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>{children}</div>
@@ -4607,13 +4607,15 @@ function StudioPanel({token}){
       {lo&&<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>}
       {!lo&&review.length===0&&<div style={{padding:30,textAlign:"center",color:"rgba(255,255,255,0.45)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:14}}>Nada para aprobar. Pedile ideas al Runner, escribí un brief en Generar o charlá con el Chatbot.</div>}
       <div style={grid}>
-        {review.map(p=><Card key={p.id} p={p}>
-          {p.status==="review"&&<>
-            <Btn small onClick={()=>act("approve",{id:p.id},"Aprobada ✅ · guardada como referencia")} disabled={!!busy}>✓ Aprobar</Btn>
-            <Btn small variant="secondary" onClick={()=>pedirCambio(p)} disabled={!!busy}>✎ Pedir cambio</Btn>
-            <Btn small variant="secondary" onClick={()=>act("regenerate",{id:p.id},"Regenerando")} disabled={!!busy}>↻</Btn>
-            <Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Rechazar esta pieza?"))act("reject",{id:p.id},"Rechazada");}} disabled={!!busy}>✕</Btn>
-          </>}
+        {review.map(p=><Card key={p.id} p={p} compact>
+          {p.status==="review"&&<div style={{display:"flex",gap:6,width:"100%"}}>
+            {[
+              {ic:"✓",col:"#22c55e",tit:"Aprobar",fn:()=>act("approve",{id:p.id},"Aprobada ✅ · guardada como referencia")},
+              {ic:"✎",col:"#fbbf24",tit:"Pedir cambio",fn:()=>pedirCambio(p)},
+              {ic:"↻",col:"rgba(255,255,255,0.7)",tit:"Regenerar",fn:()=>act("regenerate",{id:p.id},"Regenerando")},
+              {ic:"✕",col:"#ef4444",tit:"Rechazar",fn:async()=>{if(await confirmDialog("¿Rechazar esta pieza?"))act("reject",{id:p.id},"Rechazada");}},
+            ].map(b=><button key={b.tit} title={b.tit} onClick={b.fn} disabled={!!busy} style={{flex:1,height:38,borderRadius:9,border:`1px solid ${b.col}55`,background:`${b.col}1f`,color:b.col,fontSize:17,fontWeight:900,cursor:"pointer"}}>{b.ic}</button>)}
+          </div>}
           {p.status==="error"&&<Btn small variant="secondary" onClick={()=>act("regenerate",{id:p.id},"Reintentando")} disabled={!!busy}>↻ Reintentar</Btn>}
         </Card>)}
       </div>
@@ -4818,8 +4820,14 @@ function StudioPanel({token}){
       </div>
     </div>}
 
-    {preview&&<div onClick={()=>setPreview(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-      <img src={preview.image_url} alt="" style={{maxWidth:"100%",maxHeight:"92vh",borderRadius:10,boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}/>
+    {preview&&<div onClick={()=>setPreview(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16,gap:16,flexWrap:isMobile?"wrap":"nowrap",overflowY:"auto"}}>
+      <img src={preview.image_url} alt="" style={{maxWidth:isMobile?"100%":"60%",maxHeight:"92vh",borderRadius:10,boxShadow:"0 20px 60px rgba(0,0,0,0.6)"}}/>
+      {preview.kind!=="story"&&<div onClick={e=>e.stopPropagation()} style={{width:isMobile?"100%":340,maxHeight:"92vh",overflowY:"auto",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:14}}>
+        <p style={{margin:"0 0 6px",fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Texto del posteo</p>
+        <p style={{margin:"0 0 10px",fontSize:13,color:"#fff",whiteSpace:"pre-wrap",lineHeight:1.45}}>{preview.caption||"(sin texto)"}</p>
+        <p style={{margin:"0 0 10px",fontSize:12,color:"#60a5fa",whiteSpace:"pre-wrap"}}>{preview.hashtags||""}</p>
+        <Btn small variant="secondary" onClick={()=>copiar(preview)}>📋 Copiar texto</Btn>
+      </div>}
     </div>}
   </div>;
 }
