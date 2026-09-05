@@ -24,3 +24,35 @@
 
 ## Formatos
 - Feed: 1080×1350 (4:5). Historia: 1080×1920 (9:16). Carrusel: varias piezas 4:5, la primera es la portada con "Deslizá →".
+
+## Banco de ángulos (elegir distintos cada tanda; no repetir en 30 días)
+1. El error más caro que comete un primer importador.
+2. Mito vs realidad: "importar es solo para empresas".
+3. ¿Por qué dos cajas iguales pagan distinto? (peso volumétrico).
+4. Qué pasa exactamente cuando la aduana abre tu carga.
+5. Checklist antes de pagarle a un proveedor chino.
+6. Sabías que: el precio FOB no incluye nada después del puerto.
+7. Cronología real: de la fábrica en Shenzhen a tu puerta (3 pasos).
+8. Golden Week / Año Nuevo Chino: qué pasa con tu pedido si lo mandás tarde.
+9. Aéreo vs marítimo en una sola imagen.
+10. Cuánto tarda de verdad (rangos honestos, sin prometer).
+11. Los 5 productos que más se importan este mes (sin datos inventados: usar categorías generales).
+12. Qué es un consolidado y por qué abarata.
+13. ANMAT, INAL, seguridad eléctrica: qué requiere intervención.
+14. La pregunta de las 2 de la mañana: "¿y si me la retienen?" (respuesta honesta).
+15. Cómo leer una cotización: FOB, flete, seguro, impuestos, gestión.
+16. Monotributista: sí podés importar (cómo).
+17. Una operación real contada en 3 líneas (sin nombres).
+18. Frase del rubro: "lo barato sale caro" aplicado a proveedores.
+19. Qué documentos vas a necesitar (y cuáles no).
+20. Antes / después: cliente que se mandó solo vs cliente asesorado.
+21. Noticia de la semana explicada en una línea (del radar).
+22. Ticket / recibo ficticio explicando cada renglón de costo.
+23. "Buena semana" del lunes con un dato útil del rubro.
+24. "Buen finde" del viernes con humor liviano.
+25. Ruta: China → Miami → Buenos Aires, por qué esa escala.
+26. Sello tipográfico: una sola frase potente de la marca.
+27. Encuesta o pregunta abierta para historias ("¿qué te frena para importar?").
+28. Detrás de escena: cómo se consolida una carga en el depósito de China.
+29. Qué NO hacemos (y por qué eso te conviene): sin canal gris, sin promesas.
+30. Calendario de fechas clave del comercio exterior.

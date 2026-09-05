@@ -45,6 +45,31 @@ async function render(htmlPath, pngPath, { width, height }) {
     await page.evaluate(async () => { if (document.fonts) { try { await document.fonts.ready; } catch {} } });
     await new Promise((r) => setTimeout(r, 500));
     await page.screenshot({ path: pngPath, type: "png", clip: { x: 0, y: 0, width, height } });
+    // Medición: textos encimados, textos fuera del lienzo, texto en zona no segura de historias.
+    return await page.evaluate((W, H) => {
+      const out = [];
+      const els = [...document.querySelectorAll("body *")].filter((el) => {
+        const cs = getComputedStyle(el);
+        if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) return false;
+        const t = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join("");
+        return t.length >= 2;
+      });
+      const boxes = els.map((el) => ({ el, r: el.getBoundingClientRect(), t: el.textContent.trim().slice(0, 40) })).filter((b) => b.r.width > 0 && b.r.height > 0);
+      for (const b of boxes) {
+        if (b.r.left < -1 || b.r.top < -1 || b.r.right > W + 1 || b.r.bottom > H + 1) out.push(`Texto fuera del lienzo: "${b.t}" (${Math.round(b.r.left)},${Math.round(b.r.top)}→${Math.round(b.r.right)},${Math.round(b.r.bottom)})`);
+        if (H >= 1900 && (b.r.top < 250 || b.r.bottom > H - 250)) out.push(`Texto en zona no segura de historia (250 px arriba/abajo): "${b.t}"`);
+      }
+      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i], b = boxes[j];
+        if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+        const ix = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
+        const iy = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+        if (ix > 8 && iy > 8) out.push(`Textos encimados: "${a.t}" y "${b.t}"`);
+      }
+      const imgs = [...document.images].filter((im) => /brand\//.test(im.getAttribute("src") || ""));
+      for (const im of imgs) { const r = im.getBoundingClientRect(); if (r.width > 380) out.push(`Logo demasiado grande (${Math.round(r.width)} px de ancho)`); }
+      return [...new Set(out)].slice(0, 12);
+    }, width, height);
   } finally { await browser.close().catch(() => {}); }
 }
 
@@ -62,8 +87,10 @@ Creá UNA pieza de Instagram: ${p.kind === "story" ? "HISTORIA de 1080×1920" : 
 Escribí dos archivos en esta carpeta:
 1) post.html — documento HTML autocontenido (sin JavaScript) que se fotografía en ${W}×${H} px exactos: html y body con margin 0, width ${W}px, height ${H}px, overflow hidden.
    - Fuentes: <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">. Titular en 'Bebas Neue' (TODO el titular, incluida la palabra resaltada); textos en 'Inter' o 'Nunito'.
-   - Imágenes: SOLO los logos de la carpeta brand/ (usalos con ruta relativa, ej. src="brand/isotipo.png"). Ninguna imagen externa, ninguna foto. Todo lo demás se dibuja con CSS: degradés, franjas diagonales como las barras del logo, tarjetas, círculos, patrones, iconografía simple en SVG inline. Los logos son azules: sobre fondo oscuro van en cápsula blanca o el isotipo sobre bloque blanco.
-   - Titular en mayúsculas, grande, 2 a 4 líneas, con 1 o 2 palabras resaltadas en un bloque #1E8BFF o #0A3D91 con texto blanco. Subtítulo 44–56 px. Márgenes internos mínimos 80 px. En historias, nada importante en los 250 px de arriba ni de abajo. Logo siempre presente y chico.
+   - Imágenes: SOLO los logos de la carpeta brand/ (PNG con fondo TRANSPARENTE, ruta relativa, ej. src="brand/isotipo.png"). NUNCA los pongas dentro de un recuadro ni cápsula blanca. Sobre fondo oscuro, hacelos blancos con CSS: style="filter:brightness(0) invert(1)". Sobre fondo claro, van en su azul original. Ninguna imagen externa, ninguna foto. Todo lo demás se dibuja con CSS: degradés, franjas diagonales como las barras del logo, tarjetas, círculos, patrones, iconografía simple en SVG inline.
+   - FONDO: respetá lo que dice el brief ("Fondo: claro" = blanco #FFFFFF o gris muy claro con textos en #0A3D91/#0A1628; "Fondo: oscuro" = navy #0A1628 o degradé azul con textos blancos). Si el brief no lo dice, elegí claro. La marca vive en blanco y azul; no todo es oscuro.
+   - CONCEPTO VISUAL: respetá el "Concepto visual" del brief (número gigante, comparativa, checklist, mito vs realidad, etc.). Que la pieza se vea distinta a las anteriores en aprobados/.
+   - LAYOUT: pensá la pieza como una grilla vertical de máximo 3 bloques (cabecera con logo chico, bloque principal, pie). Usá flex/grid, NUNCA position:absolute para texto (solo para formas decorativas de fondo). Cada bloque con su espacio; nada se superpone, nada se corta. Titular en mayúsculas, grande, 2 a 4 líneas, con 1 o 2 palabras resaltadas en un bloque #1E8BFF o #0A3D91 con texto blanco. Subtítulo 44–56 px, line-height 1.25. Márgenes internos mínimos 80 px. En historias, nada importante en los 250 px de arriba ni de abajo. Logo siempre presente y chico (isotipo 90–120 px o logo completo 260–320 px).
    - Sin emojis en el HTML, sin lorem ipsum, sin datos inventados (solo lo que dice el brief), sin llamados a la acción agresivos.
    - Nivel: campaña profesional. Composición con aire y jerarquía. HTML compacto y limpio.
 2) meta.json — {"headline": "...", "subheadline": "...", "caption": "texto del post, 3 a 8 líneas con saltos, sin hashtags", "hashtags": "8 a 15 hashtags separados por espacio"}
@@ -71,10 +98,10 @@ Escribí dos archivos en esta carpeta:
 Cuando termines, respondé solo: LISTO.`;
 }
 
-function promptDirector(p, pass) {
-  return `Sos el director de arte de Argencargo. En esta carpeta está la pieza YA RENDERIZADA: post.png (mirala con Read) y su código post.html; la memoria en memoria/*.md; ${"referencias/ y aprobados/ como vara de estilo."}
-
-Revisá post.png (pasada ${pass} de 2): texto cortado, tapado o fuera del lienzo; tipografía equivocada (el titular completo debe ser 'Bebas Neue'); jerarquía floja; poco aire; logo tapando algo; contraste; composición desequilibrada; que se vea amateur o genérica. Compará con referencias/ y aprobados/: tiene que estar a ese nivel.
+function promptDirector(p, pass, defectos) {
+  return `Sos el director de arte de Argencargo. En esta carpeta está la pieza YA RENDERIZADA: post.png (mirala con Read) y su código post.html; la memoria en memoria/*.md; referencias/ y aprobados/ como vara de estilo.
+${defectos.length ? `\nDEFECTOS MEDIDOS AUTOMÁTICAMENTE EN EL RENDER (corregilos sí o sí):\n${defectos.map((d) => `- ${d}`).join("\n")}\n` : ""}
+Revisá post.png (pasada ${pass} de 2): texto cortado, tapado o fuera del lienzo; textos encimados; tipografía equivocada (el titular completo debe ser 'Bebas Neue'); jerarquía floja; poco aire; logo dentro de un recuadro blanco (prohibido: el logo va transparente, blanco con filter:brightness(0) invert(1) sobre fondo oscuro); fondo que no respeta el brief (claro/oscuro); composición desequilibrada; que se vea amateur o genérica. Compará con referencias/ y aprobados/: tiene que estar a ese nivel.
 
 Si hay algo que mejorar: corregí post.html (reescribilo completo, respetando que los logos van con ruta relativa brand/...) y respondé "CORREGIDO: " y en una línea qué cambiaste.
 Si está impecable: no toques nada y respondé "APROBADO".`;
@@ -112,16 +139,18 @@ async function procesar(data) {
   await claude(promptDisenador(p, ctx), { cwd: dir });
   const htmlPath = path.join(dir, "post.html"), pngPath = path.join(dir, "post.png");
   await fs.access(htmlPath);
-  await render(htmlPath, pngPath, { width: p.width, height: p.height });
+  let defectos = await render(htmlPath, pngPath, { width: p.width, height: p.height });
+  if (defectos.length) log(`   📐 medición: ${defectos.length} defecto(s)`);
 
   for (let pass = 1; pass <= 2; pass++) {
     const before = await fs.readFile(htmlPath, "utf8");
-    const r = await claude(promptDirector(p, pass), { cwd: dir });
+    const r = await claude(promptDirector(p, pass, defectos), { cwd: dir });
     const after = await fs.readFile(htmlPath, "utf8");
     const txt = String(r.result || "");
     log(`   🧐 pasada ${pass}: ${txt.slice(0, 120).replace(/\n/g, " ")}`);
-    if (after === before || /^APROBADO/i.test(txt.trim())) break;
-    await render(htmlPath, pngPath, { width: p.width, height: p.height });
+    if (after === before || (/^APROBADO/i.test(txt.trim()) && !defectos.length)) break;
+    defectos = await render(htmlPath, pngPath, { width: p.width, height: p.height });
+    if (defectos.length) log(`   📐 medición: ${defectos.length} defecto(s)`); else break;
   }
 
   // El HTML que se guarda lleva los logos con URL absoluta (para re-renderizar en la web si hace falta).

@@ -44,3 +44,9 @@ Para las piezas (Google Fonts, se cargan en el HTML del post):
   con la marca insertada en cajas, remeras, carteles. Sin stock genérico, sin banderas de China
   como recurso fácil, sin contenedores random.
 - Datos reales del sistema en grande cuando el post es de números.
+
+## Uso de los logos (regla dura)
+- Siempre las versiones PNG con fondo TRANSPARENTE. Nunca dentro de un recuadro, cápsula ni fondo blanco.
+- Sobre fondo oscuro, el logo se pasa a blanco con CSS: `filter: brightness(0) invert(1)`.
+- Sobre fondo claro, va en su azul original.
+- Fondos: la marca vive en blanco y azul. Alternar piezas claras (blanco) y oscuras (navy), mitad y mitad.
