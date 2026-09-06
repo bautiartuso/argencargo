@@ -83,6 +83,7 @@ const nSlides = (p) => Math.max(1, Number(p.slides) || 1);
 function formatoLabel(p) {
   const n = nSlides(p);
   if (p.kind === "blog") return "NOTA DE BLOG (nota.md + portada 1200×630)";
+  if (p.kind === "linkedin") return "POST DE LINKEDIN (post.md + imagen opcional de 1200×1200)";
   if (p.kind === "carousel") return `CARRUSEL de ${n} imágenes de 1080×1350 (4:5)`;
   if (p.kind === "story") return n > 1 ? `SECUENCIA de ${n} HISTORIAS de 1080×1920 (se publican seguidas, en orden)` : "HISTORIA suelta de 1080×1920";
   return "POSTEO DE FEED de UNA sola imagen de 1080×1350 (4:5)";
@@ -121,8 +122,28 @@ Escribí tres archivos en esta carpeta:
 Cuando termines, respondé solo: LISTO.`;
 }
 
+function promptRedactorLinkedin(p) {
+  return `Sos quien escribe los posts de LinkedIn de Bautista Artuso, fundador de Argencargo, en su perfil personal (y a veces en la página de la empresa). Antes de empezar leé TODA la memoria en memoria/*.md (identidad, tono —sección LinkedIn—, audiencia, productos, dos-and-donts, campanas, historial, aprendizajes) y el pedido en brief.md, que dice el TIPO de post y trae el MATERIAL (datos reales del sistema, una noticia leída de su fuente, una nota del blog, o un tema).
+
+Escribí en esta carpeta:
+1) post.md — el texto del post, listo para publicar, en primera persona (Bautista), 600 a 1.300 caracteres, español rioplatense, tono LinkedIn de tono.md: profesional y cercano, sin humor forzado, sin vender.
+   - Primera línea: un gancho concreto de una frase (es lo único que se ve antes de "ver más"). Nada de "Hola red" ni preguntas vacías.
+   - Párrafos cortos (1 a 3 líneas) separados por una línea en blanco. Sin viñetas con emojis; 0 a 2 emojis en todo el post, o ninguno.
+   - Sustancia: explicá algo útil, contá cómo operamos o qué pasó esta semana con los datos reales del material. Nada inventado: si un dato no está en el material, no lo afirmes. Nada de "cotizá", "escribinos ahora" ni links en el texto.
+   - Reglas duras de dos-and-donts.md: jamás "aduana B" ni canales; jamás competidores; nada de promesas de plazos ni "no queda retenida"; nada de facturación A/C; precios solo "desde".
+   - La primera vez que nombrás a la empresa escribí exactamente {{PAGINA}} (el sistema lo convierte en la mención a la página de Argencargo). Después "Argencargo" normal.
+   - Cerrá con 3 a 5 hashtags en la última línea: #Argencargo #ComercioExterior #ImportarDesdeChina más 1 o 2 del tema, en CamelCase sin acentos.
+   - Si el material trae LINK (una nota del blog), el post invita a leerla sin pegar el link (el sistema adjunta la nota como tarjeta) y NO lleva imagen.
+2) meta.json — {"headline": "título interno de 4 a 8 palabras", "subheadline": "una línea que resume el post", "imagen": true|false}
+   - imagen: true solo si una imagen de marca suma de verdad (un dato grande, una lista corta, "la semana en números"). false para reflexiones, noticias con LINK y posts de texto puro. En la duda, false: en LinkedIn el texto manda.
+3) Solo si imagen es true: slide-1.html — una imagen de 1200×1200 px exactos (html y body con margin 0, width 1200px, height 1200px, overflow hidden), sin JavaScript, sobria y corporativa (más seria que Instagram): fondo blanco o navy #0A1628, titular en 'Bebas Neue' con una palabra resaltada en bloque #1E8BFF, textos en 'Inter', el logo de brand/ con ruta relativa (transparente; blanco con filter:brightness(0) invert(1) sobre navy; nunca dentro de un recuadro blanco), márgenes de 90 px, máximo 3 bloques, nada se corta ni se encima, sin emojis, sin hashtags, sin fotos externas. Fuentes: <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">.
+
+Cuando termines, respondé solo: LISTO.`;
+}
+
 function promptDisenador(p, ctx) {
   if (p.kind === "blog") return promptRedactorBlog(p);
+  if (p.kind === "linkedin") return promptRedactorLinkedin(p);
   const W = p.width, H = p.height;
   const n = nSlides(p);
   return `Sos el diseñador y redactor de Argencargo. Antes de empezar leé TODA la memoria de la marca en memoria/*.md (identidad, tono, audiencia, productos, dos-and-donts, campanas, historial, brand-kit, referencias-estilo, aprendizajes) y el pedido en brief.md. memoria/aprendizajes.md son correcciones de Bautista a piezas anteriores: son ley, no repitas ninguno de esos errores. Tono: posteos y carruseles formales y serios; historias más descontracturadas sin exagerar (ver tono.md).
@@ -190,7 +211,7 @@ async function procesar(data) {
   const material = p.material ? `\n## MATERIAL (base para la nota; no copiar frases)\n${p.material}\n` : "";
   const brief = `# Pieza a crear\n\n- Formato: ${formatoLabel(p)}\n- Pilar: ${p.pillar || "(libre)"}\n- Título interno: ${p.title || ""}\n\n## Brief\n${p.brief || "(libre)"}\n${plan}${material}${p.feedback ? `\n## CAMBIOS PEDIDOS POR BAUTISTA sobre la versión anterior (aplicalos todos)\n${p.feedback}\n\nVersión anterior: ${p.headline || ""} / ${p.subheadline || ""}\n` : ""}`;
   await fs.writeFile(path.join(dir, "brief.md"), brief);
-  await fs.writeFile(path.join(dir, "CLAUDE.md"), `Trabajás dentro de esta carpeta. Leé memoria/*.md y brief.md; mirá brand/, referencias/ y aprobados/. Escribí únicamente ${p.kind === "blog" ? "nota.md, meta.json, slide-1.html (portada 1200×630) y slide-2.html (historia 1080×1920)" : `${n > 1 ? `slide-1.html … slide-${n}.html` : "slide-1.html"} y meta.json`} (y corregilos cuando se te pida). No crees otros archivos ni salgas de la carpeta.`);
+  await fs.writeFile(path.join(dir, "CLAUDE.md"), `Trabajás dentro de esta carpeta. Leé memoria/*.md y brief.md; mirá brand/, referencias/ y aprobados/. Escribí únicamente ${p.kind === "blog" ? "nota.md, meta.json, slide-1.html (portada 1200×630) y slide-2.html (historia 1080×1920)" : p.kind === "linkedin" ? "post.md, meta.json y, solo si la imagen suma, slide-1.html (1200×1200)" : `${n > 1 ? `slide-1.html … slide-${n}.html` : "slide-1.html"} y meta.json`} (y corregilos cuando se te pida). No crees otros archivos ni salgas de la carpeta.`);
 
   // Foto real: la genera la web (fal.ai) y se baja a fotos/foto.jpg. Si ya existe (rehacer diseño), se reutiliza.
   const pedirFoto = async (nota) => {
@@ -207,9 +228,15 @@ async function procesar(data) {
 
   log(`🎨 ${p.kind}${n > 1 ? ` ×${n}` : ""}${ctx.foto ? " 📷" : ""} · ${p.title}`);
   await claude(promptDisenador(p, ctx), { cwd: dir });
-  // Blog: portada 1200×630 + historia 1080×1920. Resto: N slides del tamaño de la pieza.
+  // LinkedIn: el redactor decide en meta.json si el post lleva imagen.
+  let metaLi = null;
+  if (p.kind === "linkedin") { try { metaLi = JSON.parse(await fs.readFile(path.join(dir, "meta.json"), "utf8")); } catch {} }
+  const liConImagen = p.kind === "linkedin" && !!metaLi?.imagen && !!(await fs.stat(path.join(dir, "slide-1.html")).catch(() => null));
+  // Blog: portada 1200×630 + historia 1080×1920. LinkedIn: 0 o 1 imagen 1200×1200. Resto: N slides del tamaño de la pieza.
   const slides = p.kind === "blog"
     ? [{ html: path.join(dir, "slide-1.html"), png: path.join(dir, "slide-1.png"), w: 1200, h: 630 }, { html: path.join(dir, "slide-2.html"), png: path.join(dir, "slide-2.png"), w: 1080, h: 1920 }]
+    : p.kind === "linkedin"
+    ? (liConImagen ? [{ html: path.join(dir, "slide-1.html"), png: path.join(dir, "slide-1.png"), w: 1200, h: 1200 }] : [])
     : Array.from({ length: n }, (_, i) => ({ html: path.join(dir, `slide-${i + 1}.html`), png: path.join(dir, `slide-${i + 1}.png`), w: p.width, h: p.height }));
   for (const s of slides) await fs.access(s.html);
   const renderAll = async () => {
@@ -222,7 +249,7 @@ async function procesar(data) {
   const leerTodo = async () => (await Promise.all(slides.map((s) => fs.readFile(s.html, "utf8")))).join("\n<!--slide-->\n");
 
   let fotoRehecha = false;
-  for (let pass = 1; pass <= 2; pass++) {
+  for (let pass = 1; pass <= (slides.length ? 2 : 0); pass++) {
     const before = await leerTodo();
     const r = await claude(promptDirector(p, pass, defectos), { cwd: dir });
     const after = await leerTodo();
@@ -255,13 +282,18 @@ async function procesar(data) {
     fd.append("content_md", nota);
     for (const k of ["title", "slug", "excerpt", "tags", "seo_title", "seo_description", "relevance", "relevance_reason"]) fd.append(k, String(meta[k] || ""));
   }
+  if (p.kind === "linkedin") {
+    let post = ""; try { post = await fs.readFile(path.join(dir, "post.md"), "utf8"); } catch {}
+    if (!post.trim()) throw new Error("el redactor no escribió post.md");
+    fd.append("post_text", post.trim());
+  }
   for (let i = 0; i < slides.length; i++) {
     fd.append(`html_${i + 1}`, absoluto(await fs.readFile(slides[i].html, "utf8")));
     fd.append(`png_${i + 1}`, new Blob([await fs.readFile(slides[i].png)], { type: "image/png" }), `slide-${i + 1}.png`);
   }
   const up = await api("?op=done", { method: "POST", body: fd });
   if (!up.ok) throw new Error(`subida ${up.status}: ${(await up.text()).slice(0, 200)}`);
-  log(`   ✅ ${p.kind === "blog" ? "nota escrita, lista para publicar" : `lista para aprobar${n > 1 ? ` (${n} imágenes)` : ""}${ctx.foto ? " · con foto real" : ""}`}`);
+  log(`   ✅ ${p.kind === "blog" ? "nota escrita, lista para publicar" : p.kind === "linkedin" ? `post de LinkedIn escrito${slides.length ? " · con imagen" : ""}, listo para aprobar` : `lista para aprobar${n > 1 ? ` (${n} imágenes)` : ""}${ctx.foto ? " · con foto real" : ""}`}`);
 }
 
 // Limpieza: las carpetas de trabajo de más de 7 días se borran (cada pieza pesa unos MB).

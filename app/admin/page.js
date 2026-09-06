@@ -4515,14 +4515,16 @@ function StudioPanel({token}){
   const [an,setAn]=useState(null);const [anLo,setAnLo]=useState(false); // Análisis de Instagram
   const [chatKind,setChatKind]=useState("auto"); // formato pedido en el chatbot: auto | feed | carousel | story
   const [slideIdx,setSlideIdx]=useState(0);      // imagen visible en la vista grande (carruseles / secuencias)
-  const [runMix,setRunMix]=useState({feed:1,carousel:1,story:3}); // cuántas piezas de cada formato pide el runner
+  const [runMix,setRunMix]=useState({feed:1,carousel:1,story:3,linkedin:0}); // cuántas piezas de cada formato pide el runner
   const [calMes,setCalMes]=useState(()=>{const d=new Date();return {feed:{y:d.getFullYear(),m:d.getMonth()},story:{y:d.getFullYear(),m:d.getMonth()}};}); // un mes por calendario
   const [calSel,setCalSel]=useState(null);   // pieza abierta desde el calendario
   const [cambio,setCambio]=useState(null);   // {p, texto}: modal de "pedir cambio" con la imagen a la vista
   const [pieces,setPieces]=useState([]);const [lo,setLo]=useState(true);
-  const [meta,setMeta]=useState({memory:[],assets:[],runs:[],instagram:{},discovery:{},competitors:[],estado:null,telegram:{}});
+  const [meta,setMeta]=useState({memory:[],assets:[],runs:[],instagram:{},discovery:{},competitors:[],estado:null,telegram:{},linkedin:{}});
   const [igDisc,setIgDisc]=useState("");              // token de Facebook para el radar de competencia
   const [budgets,setBudgets]=useState(null);           // topes mensuales de gasto (Claude API / fal) para las alertas
+  const [liCfg,setLiCfg]=useState(null);               // ajustes de LinkedIn en edición (posts por semana, modo, página)
+  const [liPagina,setLiPagina]=useState(false);        // pedir permisos de la página al conectar LinkedIn
   const [comp,setComp]=useState({posts:[],lo:false});  // posts de la competencia con análisis
   const [compUser,setCompUser]=useState("");
   const [busy,setBusy]=useState("");
@@ -4537,10 +4539,12 @@ function StudioPanel({token}){
   const isMobile=typeof window!=="undefined"&&window.innerWidth<760;
   const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/studio${qs}`,{...opts,headers:{...(opts.body instanceof FormData?{}:{"Content-Type":"application/json"}),Authorization:`Bearer ${token}`,...(opts.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
   const load=async()=>{try{const b=await api("?view=pieces");setPieces(b.pieces||[]);}catch(e){console.error(e);}finally{setLo(false);}};
-  const loadMeta=async()=>{try{const b=await api("?view=memory");setMeta({memory:b.memory||[],assets:b.assets||[],runs:b.runs||[],instagram:b.instagram||{},discovery:b.discovery||{},competitors:b.competitors||[],estado:b.estado||null,telegram:b.telegram||{}});}catch(e){toast(e.message,"error");}};
+  const loadMeta=async()=>{try{const b=await api("?view=memory");setMeta({memory:b.memory||[],assets:b.assets||[],runs:b.runs||[],instagram:b.instagram||{},discovery:b.discovery||{},competitors:b.competitors||[],estado:b.estado||null,telegram:b.telegram||{},linkedin:b.linkedin||{}});}catch(e){toast(e.message,"error");}};
   const loadAn=async()=>{setAnLo(true);try{const b=await api("?view=analisis");setAn(b);}catch(e){toast(e.message,"error");}finally{setAnLo(false);}};
   const loadComp=async()=>{setComp(c=>({...c,lo:true}));try{const b=await api("?view=competencia");setComp({posts:b.posts||[],lo:false});}catch(e){setComp(c=>({...c,lo:false}));}};
   useEffect(()=>{load();loadMeta();},[token]);
+  // Vuelta del OAuth de LinkedIn (/admin?page=studio&li=ok|error&msg=…): abre Conexión y avisa.
+  useEffect(()=>{try{const q=new URLSearchParams(window.location.search);const li=q.get("li");if(!li)return;setTab("conexion");toast(li==="ok"?`LinkedIn conectado${q.get("msg")?` · ${q.get("msg")}`:""}`:`LinkedIn: ${q.get("msg")||"no se pudo conectar"}`,li==="ok"?"success":"error");window.history.replaceState({},"","/admin");}catch{}},[]);
   useEffect(()=>{if(tab==="marca")loadComp();if(tab==="analisis"&&!an)loadAn();},[tab]);
   const generando=pieces.filter(p=>p.status==="generating").length;
   useEffect(()=>{if(!generando)return;const id=setInterval(load,20000);return()=>clearInterval(id);},[generando>0]);
@@ -4567,11 +4571,12 @@ function StudioPanel({token}){
   const fmtDia=(d)=>d?new Date(d).toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"}):"";
   const slidesOf=(p)=>Array.isArray(p?.images)&&p.images.length?p.images.map(x=>typeof x==="string"?x:x?.url).filter(Boolean):(p?.image_url?[p.image_url]:[]);
   const nSlides=(p)=>Math.max(slidesOf(p).length,Number(p?.slides)||1);
-  const kindLabel=(p)=>p.kind==="blog"?"Nota de blog":p.kind==="carousel"?`Carrusel · ${nSlides(p)}`:p.kind==="story"?(nSlides(p)>1?`Historias · ${nSlides(p)}`:"Historia"):"Posteo";
+  const kindLabel=(p)=>p.kind==="linkedin"?"LinkedIn":p.kind==="blog"?"Nota de blog":p.kind==="carousel"?`Carrusel · ${nSlides(p)}`:p.kind==="story"?(nSlides(p)>1?`Historias · ${nSlides(p)}`:"Historia"):"Posteo";
   const conFoto=(p)=>!!(p?.photo_prompt);
   const IcoDescarga=()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>;
   const IcoInstagram=()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>;
   const IcoCalendario=()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></svg>;
+  const IcoLinkedin=()=><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.55V9h3.57v11.45z"/></svg>;
   useEffect(()=>{setSlideIdx(0);},[preview?.id,cambio?.p?.id]);
   // Vista de una pieza con sus imágenes (carrusel o secuencia): flechas, contador y miniaturas.
   const slidesView=(p,{maxW,maxH}={})=>{const urls=slidesOf(p);const i=Math.min(slideIdx,Math.max(0,urls.length-1));const nav=(side)=>({position:"absolute",top:"50%",[side]:8,transform:"translateY(-50%)",width:36,height:36,borderRadius:99,border:"none",background:"rgba(0,0,0,0.55)",color:"#fff",fontSize:22,cursor:"pointer",lineHeight:"36px",padding:0});return <div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,maxWidth:maxW||"100%"}}>
@@ -4588,8 +4593,8 @@ function StudioPanel({token}){
   const enviarCambio=async()=>{const fb=(cambio?.texto||"").trim();if(!fb)return;const p=cambio.p;const nueva=!!cambio.foto;setCambio(null);await act("feedback",{id:p.id,feedback:fb,new_photo:nueva},nueva?"Se rehace con foto nueva y diseño nuevo (tu Mac, 5 a 8 min)":"Se rehace el diseño con tu cambio (tu Mac, 5 a 8 min)");};
   const copiar=async(p)=>{try{await navigator.clipboard.writeText(`${p.caption||""}\n\n${p.hashtags||""}`.trim());toast("Texto copiado","success");}catch{toast("No se pudo copiar","error");}};
   const Card=({p,children,compact})=><div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-    <div onClick={()=>p.image_url&&setPreview(p)} style={{position:"relative",background:"#0b1220",aspectRatio:p.kind==="blog"?"1200/630":p.kind==="story"?"9/16":"4/5",cursor:p.image_url?"zoom-in":"default",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      {p.image_url?<img src={p.image_url} alt={p.title||""} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:p.status==="generating"?<div style={{textAlign:"center",color:"rgba(255,255,255,0.5)",fontSize:12,padding:20}}><div style={{fontSize:26,marginBottom:6}}>🎨</div>{p.locked_at?(conFoto(p)&&!p.photo_url?"Generando la foto y diseñando en tu Mac…":"Diseñando en tu Mac…"):"En la cola (espera a tu Mac)"}<div style={{fontSize:10.5,marginTop:4,color:"rgba(255,255,255,0.35)"}}>{p.title}</div></div>:<div style={{color:"#f87171",fontSize:12,padding:16,textAlign:"center"}}>⚠ {p.error||"Sin imagen"}</div>}
+    <div onClick={()=>(p.image_url||(p.kind==="linkedin"&&p.caption))&&setPreview(p)} style={{position:"relative",background:"#0b1220",aspectRatio:p.kind==="linkedin"&&!p.image_url?"auto":p.kind==="blog"?"1200/630":p.kind==="linkedin"?"1/1":p.kind==="story"?"9/16":"4/5",cursor:(p.image_url||(p.kind==="linkedin"&&p.caption))?"zoom-in":"default",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      {p.image_url?<img src={p.image_url} alt={p.title||""} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:p.status==="generating"?<div style={{textAlign:"center",color:"rgba(255,255,255,0.5)",fontSize:12,padding:20}}><div style={{fontSize:26,marginBottom:6}}>{p.kind==="linkedin"||p.kind==="blog"?"✍️":"🎨"}</div>{p.locked_at?(p.kind==="linkedin"?"Escribiendo el post en tu Mac…":p.kind==="blog"?"Escribiendo la nota en tu Mac…":conFoto(p)&&!p.photo_url?"Generando la foto y diseñando en tu Mac…":"Diseñando en tu Mac…"):"En la cola (espera a tu Mac)"}<div style={{fontSize:10.5,marginTop:4,color:"rgba(255,255,255,0.35)"}}>{p.title}</div></div>:p.kind==="linkedin"&&p.caption?<div style={{width:"100%",boxSizing:"border-box",padding:"36px 14px 14px",fontSize:12,lineHeight:1.5,color:"rgba(255,255,255,0.85)",whiteSpace:"pre-wrap",maxHeight:300,overflow:"hidden",maskImage:"linear-gradient(180deg,#000 75%,transparent)",WebkitMaskImage:"linear-gradient(180deg,#000 75%,transparent)"}}>{p.caption}</div>:<div style={{color:"#f87171",fontSize:12,padding:16,textAlign:"center"}}>⚠ {p.error||"Sin imagen"}</div>}
       <div style={{position:"absolute",top:8,left:8,display:"flex",gap:5,flexWrap:"wrap"}}>{chip(kindLabel(p),"#60a5fa")}{conFoto(p)&&chip("📷 foto","#f472b6")}{p.pillar&&chip(p.pillar,"#E8C99B")}{p.source==="runner"&&chip("runner","#a78bfa")}{p.source==="chatbot"&&chip("chatbot","#34d399")}{p.source==="radar"&&chip("radar","#fb923c")}</div>
       {slidesOf(p).length>1&&<div style={{position:"absolute",bottom:8,left:0,right:0,display:"flex",justifyContent:"center",gap:4}}>{slidesOf(p).map((_,j)=><span key={j} style={{width:6,height:6,borderRadius:99,background:j===0?"#fff":"rgba(255,255,255,0.45)"}}/>)}</div>}
     </div>
@@ -4598,7 +4603,7 @@ function StudioPanel({token}){
       {!compact&&p.subheadline&&<p style={{margin:0,fontSize:11.5,color:"rgba(255,255,255,0.6)"}}>{p.subheadline}</p>}
       {!compact&&p.caption&&<p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.5)",whiteSpace:"pre-wrap",maxHeight:96,overflow:"hidden"}}>{p.caption}</p>}
       {p.feedback&&p.status==="generating"&&<p style={{margin:0,fontSize:10.5,color:"#fbbf24"}}>✎ {p.locked_at?"Tu Mac está rehaciendo el diseño con tu cambio (5 a 8 min)":"En cola: tu Mac va a rehacer el diseño con tu cambio"}{conFoto(p)&&p.photo_url?" · misma foto":""}: {p.feedback}</p>}
-      {p.publish_error&&<p style={{margin:0,fontSize:10.5,color:"#f87171"}}>Instagram: {p.publish_error}</p>}
+      {p.publish_error&&<p style={{margin:0,fontSize:10.5,color:"#f87171"}}>{p.kind==="linkedin"?"LinkedIn":"Instagram"}: {p.publish_error}</p>}
       <div style={{marginTop:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>{children}</div>
     </div>
   </div>;
@@ -4607,6 +4612,7 @@ function StudioPanel({token}){
   const cal=pieces.filter(p=>["approved","scheduled","published"].includes(p.status)).sort((a,b)=>new Date(a.scheduled_at||a.approved_at||a.created_at)-new Date(b.scheduled_at||b.approved_at||b.created_at));
   const grid={display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(250px,1fr))",gap:12,alignItems:"start"};
   const igOk=!!meta.instagram?.connected;
+  const liOk=!!meta.linkedin?.connected&&!meta.linkedin?.vencido;
   const tabs=[{k:"analisis",l:"Análisis"},{k:"calendario",l:"Calendario",n:pieces.filter(p=>p.status==="approved").length},{k:"contenido",l:"Contenido",n:pieces.filter(p=>p.status==="review").length},{k:"runner",l:"Runner"},{k:"chatbot",l:"Chatbot"},{k:"marca",l:"Marca"},{k:"knowledge",l:"Knowledge"},{k:"conexion",l:"Conexión",dot:igOk?"#4ade80":"#f87171"}];
   const inp={width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit"};
   const sel={padding:"9px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"#142038",color:"#fff",fontSize:12.5};
@@ -4620,7 +4626,7 @@ function StudioPanel({token}){
     catch(e){toast(e.message,"error");}finally{setBusy("");}
   };
   const adjuntarChat=(file)=>{if(!file)return;const rd=new FileReader();rd.onload=()=>{const s=String(rd.result||"");const m=s.match(/^data:([^;]+);base64,(.*)$/);if(m)setChatImgs(x=>[...x,{mime:m[1],b64:m[2],name:file.name}].slice(0,4));};rd.readAsDataURL(file);};
-  const programar=async()=>{if(!sched?.date)return;const iso=new Date(`${sched.date}T${String(sched.hour).padStart(2,"0")}:${String(sched.min).padStart(2,"0")}:00-03:00`);if(isNaN(iso)){toast("Fecha inválida","error");return;}await act("schedule",{id:sched.p.id,scheduled_at:iso.toISOString()},igOk?"Programada: el vigilante la publica a esa hora":"Programada (sin Instagram conectado: la subís vos)");setSched(null);};
+  const programar=async()=>{if(!sched?.date)return;const iso=new Date(`${sched.date}T${String(sched.hour).padStart(2,"0")}:${String(sched.min).padStart(2,"0")}:00-03:00`);if(isNaN(iso)){toast("Fecha inválida","error");return;}await act("schedule",{id:sched.p.id,scheduled_at:iso.toISOString()},(sched.p.kind==="linkedin"?liOk:igOk)?"Programada: el vigilante la publica a esa hora":sched.p.kind==="linkedin"?"Programada (sin LinkedIn conectado: la publicás vos)":"Programada (sin Instagram conectado: la subís vos)");setSched(null);};
 
   return <div>
     <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:14}}>
@@ -4689,7 +4695,7 @@ function StudioPanel({token}){
 
     {tab==="contenido"&&<div>
       <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
-        {(()=>{const rev=pieces.filter(p=>p.status==="review");const cnt=(k)=>k==="todos"?rev.length:rev.filter(p=>p.kind===k).length;return [["todos","Todos"],["feed","Posteos"],["carousel","Carruseles"],["story","Historias"],["blog","Blog"]].map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={{padding:"6px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${filtro===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:filtro===k?"rgba(96,165,250,0.15)":"transparent",color:filtro===k?"#60a5fa":"rgba(255,255,255,0.55)",display:"inline-flex",alignItems:"center",gap:6}}>{l}{cnt(k)>0&&<span style={{fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:99,background:filtro===k?"rgba(96,165,250,0.35)":"rgba(255,255,255,0.1)",color:"#fff"}}>{cnt(k)}</span>}</button>);})()}
+        {(()=>{const rev=pieces.filter(p=>p.status==="review");const cnt=(k)=>k==="todos"?rev.length:rev.filter(p=>p.kind===k).length;return [["todos","Todos"],["feed","Posteos"],["carousel","Carruseles"],["story","Historias"],["linkedin","LinkedIn"],["blog","Blog"]].map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={{padding:"6px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${filtro===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:filtro===k?"rgba(96,165,250,0.15)":"transparent",color:filtro===k?"#60a5fa":"rgba(255,255,255,0.55)",display:"inline-flex",alignItems:"center",gap:6}}>{l}{cnt(k)>0&&<span style={{fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:99,background:filtro===k?"rgba(96,165,250,0.35)":"rgba(255,255,255,0.1)",color:"#fff"}}>{cnt(k)}</span>}</button>);})()}
         {generando>0&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>🎨 {generando} en la cola · tu Mac las diseña de a una (5 a 8 min cada una) mientras esté prendida.</span>}
         <span style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
           {review.filter(p=>p.status==="review").length>1&&<button onClick={async()=>{const ids=review.filter(p=>p.status==="review").map(p=>p.id);if(await confirmDialog(`¿Descartar las ${ids.length} piezas que quedan sin aprobar? Se borran sus imágenes; los temas quedan anotados para no repetirlos.`))act("reject_all",{ids},x=>`${x.rechazadas} descartadas`);}} disabled={!!busy} style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:8,cursor:"pointer",border:"1px solid rgba(239,68,68,0.4)",background:"rgba(239,68,68,0.1)",color:"#f87171"}}>✕ Descartar las restantes</button>}
@@ -4719,7 +4725,7 @@ function StudioPanel({token}){
       const hora=(p)=>new Date(p.scheduled_at||p.published_at).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
       const Mini=({p})=><button onClick={()=>setCalSel(p)} title={`${hora(p)} · ${p.headline||p.title||""}`} style={{border:"none",padding:0,background:"transparent",cursor:"pointer",width:"100%",textAlign:"left"}}>
         <div style={{display:"flex",gap:6,alignItems:"center",padding:"3px 4px",borderRadius:7,background:p.status==="published"?"rgba(74,222,128,0.1)":"rgba(96,165,250,0.12)",border:`1px solid ${p.status==="published"?"rgba(74,222,128,0.35)":"rgba(96,165,250,0.35)"}`}}>
-          <div style={{width:26,height:p.kind==="story"?40:32,borderRadius:4,overflow:"hidden",background:"#0b1220",flexShrink:0}}>{p.image_url&&<img src={p.image_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>}</div>
+          <div style={{width:26,height:p.kind==="story"?40:32,borderRadius:4,overflow:"hidden",background:"#0b1220",flexShrink:0}}>{p.image_url?<img src={p.image_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>:p.kind==="linkedin"?<span style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",fontSize:11,fontWeight:900,color:"#38bdf8"}}>in</span>:null}</div>
           <div style={{minWidth:0,overflow:"hidden"}}><div style={{fontSize:10,fontWeight:800,color:p.status==="published"?"#4ade80":"#60a5fa",whiteSpace:"nowrap"}}>{hora(p)}{nSlides(p)>1?` ×${nSlides(p)}`:""} {p.status==="published"?"✓":""}{p.publish_error?" ⚠":""}</div><div style={{fontSize:9.5,color:"rgba(255,255,255,0.6)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{String(p.headline||p.title||"").slice(0,18)}{String(p.headline||p.title||"").length>18?"…":""}</div></div>
         </div>
       </button>;
@@ -4768,31 +4774,33 @@ function StudioPanel({token}){
           {sinFecha.length===0&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Nada pendiente. Lo que aprobás en Contenido aparece acá.</p>}
           <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:4}}>
             {sinFecha.map(p=><div key={p.id} style={{flex:"0 0 auto",width:170,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:8}}>
-              <div onClick={()=>setPreview(p)} style={{height:110,borderRadius:7,overflow:"hidden",background:"#0b1220",cursor:"zoom-in",marginBottom:6,display:"flex",justifyContent:"center"}}>{p.image_url&&<img src={p.image_url} alt="" style={{height:"100%",objectFit:"contain"}}/>}</div>
+              <div onClick={()=>setPreview(p)} style={{height:110,borderRadius:7,overflow:"hidden",background:"#0b1220",cursor:"zoom-in",marginBottom:6,display:"flex",justifyContent:"center"}}>{p.image_url?<img src={p.image_url} alt="" style={{height:"100%",objectFit:"contain"}}/>:p.kind==="linkedin"?<div style={{padding:"8px 10px",fontSize:10.5,lineHeight:1.4,color:"rgba(255,255,255,0.75)",whiteSpace:"pre-wrap",overflow:"hidden",width:"100%"}}>{String(p.caption||"").slice(0,220)}</div>:null}</div>
               <div style={{display:"flex",gap:4,marginBottom:6}}>{chip(kindLabel(p),"#60a5fa")}</div>
               <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.headline||p.title||""}>{p.headline||p.title||"—"}</p>
               <div style={{display:"flex",gap:6,justifyContent:"center"}}>
                 {[
                   {t:"Programar: elegir día y hora",ic:<IcoCalendario/>,col:"#E8C99B",fn:()=>setSched({p,date:new Date(Date.now()+86400000).toISOString().slice(0,10),hour:10,min:0}),show:true},
-                  {t:"Subir ahora a Instagram",ic:<IcoInstagram/>,col:"#f472b6",fn:async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?"))act("publish_now",{id:p.id},"Publicada en Instagram");},show:igOk},
+                  {t:"Subir ahora a Instagram",ic:<IcoInstagram/>,col:"#f472b6",fn:async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?"))act("publish_now",{id:p.id},"Publicada en Instagram");},show:igOk&&p.kind!=="linkedin"},
+                  {t:"Publicar ahora en LinkedIn",ic:<IcoLinkedin/>,col:"#38bdf8",fn:async()=>{if(await confirmDialog(`¿Publicar ahora en LinkedIn como ${p.li_author==="pagina"?"la página":"vos"}?`))act("publish_now",{id:p.id},"Publicada en LinkedIn");},show:liOk&&p.kind==="linkedin"},
                   {t:"Descargar la imagen",ic:<IcoDescarga/>,col:"#60a5fa",fn:()=>{const a=document.createElement("a");a.href=p.image_url;a.download="";a.target="_blank";a.rel="noreferrer";a.click();},show:!!p.image_url},
                 ].filter(b=>b.show).map(b=><button key={b.t} title={b.t} onClick={b.fn} disabled={!!busy} style={{flex:1,maxWidth:56,height:36,borderRadius:9,border:`1px solid ${b.col}55`,background:`${b.col}1a`,color:b.col,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{b.ic}</button>)}
               </div>
             </div>)}
           </div>
         </div>
-        <Calendario kind="feed" titulo="Posteos y carruseles"/>
+        <Calendario kind="feed" titulo="Posteos, carruseles y LinkedIn"/>
         <Calendario kind="story" titulo="Historias"/>
         {calSel&&<div onClick={()=>setCalSel(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:14,padding:16,width:"100%",maxWidth:420,maxHeight:"92vh",overflowY:"auto"}}>
-            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:8}}>{chip(kindLabel(calSel),"#60a5fa")}<span style={{fontSize:12,fontWeight:700,color:calSel.status==="published"?"#4ade80":"#60a5fa"}}>{calSel.status==="published"?`✓ Publicada ${fmt(calSel.published_at)}${calSel.ig_media_id?" · en Instagram":""}`:`📅 ${fmt(calSel.scheduled_at)}`}</span><button onClick={()=>setCalSel(null)} style={{marginLeft:"auto",background:"none",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer"}}>×</button></div>
+            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:8}}>{chip(kindLabel(calSel),"#60a5fa")}<span style={{fontSize:12,fontWeight:700,color:calSel.status==="published"?"#4ade80":"#60a5fa"}}>{calSel.status==="published"?`✓ Publicada ${fmt(calSel.published_at)}${calSel.ig_media_id?" · en Instagram":calSel.li_post_urn?" · en LinkedIn":""}`:`📅 ${fmt(calSel.scheduled_at)}`}</span>{calSel.li_post_urn&&<a href={`https://www.linkedin.com/feed/update/${calSel.li_post_urn}/`} target="_blank" rel="noreferrer" style={{fontSize:11,color:"#38bdf8"}}>ver post ↗</a>}<button onClick={()=>setCalSel(null)} style={{marginLeft:"auto",background:"none",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer"}}>×</button></div>
             {calSel.image_url&&<img src={calSel.image_url} alt="" onClick={()=>setPreview(calSel)} style={{width:"100%",maxHeight:380,objectFit:"contain",borderRadius:8,background:"#0b1220",cursor:"zoom-in"}}/>}
             <p style={{margin:"8px 0 2px",fontSize:13,fontWeight:800,color:"#fff"}}>{calSel.headline||calSel.title}</p>
             {calSel.caption&&<p style={{margin:"0 0 8px",fontSize:11.5,color:"rgba(255,255,255,0.55)",whiteSpace:"pre-wrap",maxHeight:120,overflow:"auto"}}>{calSel.caption}</p>}
-            {calSel.publish_error&&<p style={{margin:"0 0 8px",fontSize:11,color:"#f87171"}}>Instagram: {calSel.publish_error}</p>}
+            {calSel.publish_error&&<p style={{margin:"0 0 8px",fontSize:11,color:"#f87171"}}>{calSel.kind==="linkedin"?"LinkedIn":"Instagram"}: {calSel.publish_error}</p>}
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               {calSel.status!=="published"&&<Btn small onClick={()=>{setSched({p:calSel,date:new Date(calSel.scheduled_at).toISOString().slice(0,10),hour:new Date(calSel.scheduled_at).getHours(),min:Math.round(new Date(calSel.scheduled_at).getMinutes()/15)*15%60});setCalSel(null);}} disabled={!!busy}>📅 Cambiar fecha</Btn>}
-              {calSel.status!=="published"&&igOk&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?")){await act("publish_now",{id:calSel.id},"Publicada en Instagram");setCalSel(null);}}} disabled={!!busy}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><IcoInstagram/> Subir ahora</span></Btn>}
+              {calSel.status!=="published"&&igOk&&calSel.kind!=="linkedin"&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?")){await act("publish_now",{id:calSel.id},"Publicada en Instagram");setCalSel(null);}}} disabled={!!busy}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><IcoInstagram/> Subir ahora</span></Btn>}
+              {calSel.status!=="published"&&liOk&&calSel.kind==="linkedin"&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Publicar ahora en LinkedIn?")){await act("publish_now",{id:calSel.id},"Publicada en LinkedIn");setCalSel(null);}}} disabled={!!busy}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><IcoLinkedin/> Publicar ahora</span></Btn>}
               {calSel.status!=="published"&&<Btn small variant="secondary" onClick={async()=>{await act("unschedule",{id:calSel.id},"Vuelve a Sin programar");setCalSel(null);}} disabled={!!busy}>Quitar del calendario</Btn>}
               {calSel.image_url&&<a href={calSel.image_url} download target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><Btn small variant="secondary" title="Descargar la imagen"><IcoDescarga/></Btn></a>}
               {calSel.status!=="published"&&<Btn small variant="secondary" onClick={async()=>{await act("published",{id:calSel.id},"Marcada como publicada");setCalSel(null);}} disabled={!!busy} title="La subí a mano">✓</Btn>}
@@ -4801,7 +4809,7 @@ function StudioPanel({token}){
         </div>}
       </div>;})()}
 
-    {tab==="runner"&&(()=>{const es=meta.estado;const tot=runMix.feed+runMix.carousel+runMix.story;
+    {tab==="runner"&&(()=>{const es=meta.estado;const tot=runMix.feed+runMix.carousel+runMix.story+(runMix.linkedin||0);
       const hace=(d)=>{if(!d)return "nunca";const m=Math.round((Date.now()-new Date(d).getTime())/60000);return m<1?"recién":m<60?`hace ${m} min`:m<1440?`hace ${Math.round(m/60)} h`:`hace ${Math.round(m/1440)} d`;};
       const macOk=!!(es?.mac?.last_seen_at&&Date.now()-new Date(es.mac.last_seen_at).getTime()<10*60000);
       const usd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
@@ -4811,9 +4819,9 @@ function StudioPanel({token}){
       <div style={{display:"grid",gap:12}}>
         <div style={box}>
           <p style={{margin:"0 0 6px",fontSize:13,fontWeight:800,color:"#fff"}}>El analista</p>
-          <p style={{margin:"0 0 12px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Lee la marca (knowledge, aprendizajes e historial), el radar de noticias (lee los artículos), lo que publicó la competencia y los datos reales del sistema, y propone piezas en el formato que le corresponde a cada idea, con o sin foto real. Caen en Contenido: nunca publica solo.</p>
+          <p style={{margin:"0 0 12px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Lee la marca (knowledge, aprendizajes e historial), el radar de noticias (lee los artículos), lo que publicó la competencia y los datos reales del sistema, y propone piezas en el formato que le corresponde a cada idea, con o sin foto real. Caen en Contenido: nunca publica solo. Los posts de LinkedIn no pasan por el analista: el tema sale de datos reales (la semana, el blog, el radar) y tu Mac los escribe.</p>
           <div style={{display:"flex",gap:16,alignItems:"flex-end",flexWrap:"wrap"}}>
-            {[["feed","Posteos","una imagen, una idea que cierra sola"],["carousel","Carruseles","2 a 6 imágenes, lo educativo en partes"],["story","Historias","sueltas o secuencias de 2 a 4; lo decide el analista"]].map(([k,l,h])=><div key={k}>
+            {[["feed","Posteos","una imagen, una idea que cierra sola"],["carousel","Carruseles","2 a 6 imágenes, lo educativo en partes"],["story","Historias","sueltas o secuencias de 2 a 4; lo decide el analista"],["linkedin","LinkedIn","texto en primera persona (a veces con imagen); lo escribe tu Mac, sin costo"]].map(([k,l,h])=><div key={k}>
               <p style={{margin:"0 0 4px",fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{l}</p>
               {numInp(k)}
               <p style={{margin:"4px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.4)",maxWidth:170}}>{h}</p>
@@ -4856,6 +4864,7 @@ function StudioPanel({token}){
           <Stat l="Descartadas" v={es?.mes?.descartadas??"—"} c="rgba(255,255,255,0.6)"/>
           <Stat l="Esperando tu visto" v={es?.mes?.en_revision??"—"} c="#fbbf24"/>
           <Stat l="Posteos / carruseles / historias" v={es?`${es.mes.posteos} / ${es.mes.carruseles} / ${es.mes.historias}`:"—"}/>
+          <Stat l="Posts de LinkedIn" v={es?.mes?.linkedin??"—"} c="#38bdf8"/>
         </div>
         <div style={box}>
           <p style={{margin:"0 0 4px",fontSize:13,fontWeight:800,color:"#fff"}}>Fotos reales (fal.ai)</p>
@@ -5026,6 +5035,36 @@ function StudioPanel({token}){
         </div>
         {!meta.telegram?.configured&&<p style={{margin:"10px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Creá el bot en @BotFather (/newbot), cargá el token en Vercel como TELEGRAM_BOT_TOKEN y mandale /start al bot.</p>}
       </div>
+      {(()=>{const li=meta.linkedin||{};const c=liCfg||{por_semana:li.por_semana??2,modo:li.modo||"manual",org_id:li.org_id||""};const dias=li.dias_restantes;const lab={margin:"0 0 4px",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.05em"};return <div style={{...box,marginTop:12}}>
+        <p style={{margin:"0 0 4px",fontSize:13,fontWeight:800,color:"#fff"}}>LinkedIn {li.connected?(li.vencido?<span style={{color:"#f87171"}}>· token vencido</span>:<span style={{color:"#4ade80"}}>· conectado{li.name?` (${li.name})`:""}</span>):li.configured?<span style={{color:"#fbbf24"}}>· sin conectar</span>:<span style={{color:"#f87171"}}>· falta crear la app</span>}</p>
+        <p style={{margin:"0 0 10px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Posts en tu perfil personal, escritos por tu Mac en primera persona (sin costo): el resumen real de la semana, las notas del blog, noticias explicadas, educativo y cómo trabajamos. Caen en Contenido y, al aprobarlos, van al calendario. La página Argencargo queda mencionada en cada post; publicar <i>como</i> la página requiere que LinkedIn apruebe la Community Management API (se pide desde la app).</p>
+        {li.connected&&<div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:10,fontSize:12}}>
+          {li.picture&&<img src={li.picture} alt="" style={{width:34,height:34,borderRadius:99}}/>}
+          <span style={{color:dias!=null&&dias<=7?"#fbbf24":"rgba(255,255,255,0.65)"}}>{li.vencido?"El token venció: tocá Reconectar.":dias!=null?`El token vence en ${dias} día${dias===1?"":"s"} (LinkedIn no lo renueva solo; te aviso por Telegram una semana antes).`:""}</span>
+          <span style={{color:li.puede_pagina?"#4ade80":"rgba(255,255,255,0.45)"}}>{li.puede_pagina?`Página: ${li.org_name||li.org_id} · puede publicar como la página`:li.org_id?`Página ${li.org_name||li.org_id}: se menciona con link (sin permiso para publicar como página)`:"Sin página cargada: se menciona “Argencargo” como texto"}</span>
+        </div>}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          {li.configured&&<Btn small onClick={async()=>{const b=await act("linkedin_auth_url",{pagina:liPagina});if(b?.url)window.location.href=b.url;}} disabled={!!busy}>{li.connected?"Reconectar":"Conectar LinkedIn"}</Btn>}
+          {li.configured&&<label style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11.5,color:"rgba(255,255,255,0.65)",cursor:"pointer"}}><input type="checkbox" checked={liPagina} onChange={e=>setLiPagina(e.target.checked)}/> pedir también los permisos de la página (solo si LinkedIn ya aprobó la Community Management API)</label>}
+          {li.connected&&<Btn small variant="secondary" onClick={()=>act("linkedin_test",{},b=>`OK: ${b.info?.name||"conectado"}`)} disabled={!!busy}>Probar</Btn>}
+          {li.connected&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Desconectar LinkedIn?")){await act("linkedin_disconnect",{},"Desconectado");loadMeta();}}} disabled={!!busy}>Desconectar</Btn>}
+          {!li.configured&&<span style={{fontSize:12,color:"#fbbf24"}}>Faltan LINKEDIN_CLIENT_ID y LINKEDIN_CLIENT_SECRET en Vercel (pasos de abajo).</span>}
+        </div>
+        <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",marginTop:12}}>
+          <div><p style={lab}>Posts por semana</p><input type="number" min={0} max={5} value={c.por_semana} onChange={e=>setLiCfg({...c,por_semana:Math.max(0,Math.min(5,Math.round(Number(e.target.value)||0)))})} style={{...inp,width:90,textAlign:"center",fontWeight:800}}/></div>
+          <div><p style={lab}>Modo</p><select value={c.modo} onChange={e=>setLiCfg({...c,modo:e.target.value})} style={sel}><option value="manual">Esperan tu ✓ en Contenido</option><option value="auto">Se programan solos (lun a vie 9:30)</option></select></div>
+          <div><p style={lab}>ID de la página</p><input value={c.org_id} onChange={e=>setLiCfg({...c,org_id:e.target.value})} placeholder="ej. 12345678" style={{...inp,width:140}}/></div>
+          <Btn small onClick={async()=>{await act("linkedin_settings",{por_semana:c.por_semana,modo:c.modo,org_id:c.org_id,org_name:"Argencargo"},"Guardado");setLiCfg(null);loadMeta();}} disabled={!!busy||!liCfg}>Guardar</Btn>
+        </div>
+        <p style={{margin:"6px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>Los lunes a las 8:45 se encolan los posts de la semana (también podés pedirlos desde Runner). El ID de la página está en la URL de su panel de administración: linkedin.com/company/<b>12345678</b>/admin/. Con él, cada post menciona a la página con link.</p>
+        <ol style={{margin:"12px 0 0",paddingLeft:18,fontSize:12,color:"rgba(255,255,255,0.7)",lineHeight:1.8}}>
+          <li><b>Crear la app.</b> En <a href="https://www.linkedin.com/developers/apps/new" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>linkedin.com/developers/apps/new</a>: nombre "Argencargo Studio", LinkedIn Page: Argencargo, un logo, y aceptá los términos. Después, en la solapa <b>Settings</b> de la app, tocá <b>Verify</b>: genera un link que abrís como administrador de la página para confirmarla.</li>
+          <li><b>Productos.</b> Solapa <b>Products</b>: pedí <b>Share on LinkedIn</b> y <b>Sign In with LinkedIn using OpenID Connect</b> (se aprueban al instante). Para publicar como la página, pedí además <b>Community Management API</b> (LinkedIn lo revisa: días o semanas; mientras tanto todo sale desde tu perfil con la página mencionada).</li>
+          <li><b>Redirect.</b> Solapa <b>Auth</b> → OAuth 2.0 settings → Authorized redirect URLs → agregá exactamente: <code>{li.redirect||"https://www.argencargo.com.ar/api/linkedin/callback"}</code></li>
+          <li><b>Claves en Vercel.</b> En la misma solapa Auth copiá <b>Client ID</b> y <b>Primary Client Secret</b> y cargalos en Vercel (Settings → Environment Variables → Production) como <code>LINKEDIN_CLIENT_ID</code> y <code>LINKEDIN_CLIENT_SECRET</code>. Redeploy.</li>
+          <li><b>Conectar.</b> Volvé acá y tocá <b>Conectar LinkedIn</b>: entrás con tu cuenta, aceptás y listo. Cada 60 días se repite solo este último paso (te aviso por Telegram).</li>
+        </ol>
+      </div>;})()}
     </div>}
 
     {tab==="knowledge"&&<div style={{display:"grid",gap:14}}>
@@ -5073,7 +5112,16 @@ function StudioPanel({token}){
         <p style={{margin:"0 0 10px",fontSize:12.5,color:"rgba(255,255,255,0.7)",lineHeight:1.45}}>{preview.subheadline||""}</p>
         <p style={{margin:0,fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>La nota completa se lee y se administra en la solapa <b>Blog</b> del menú. Con ✓ se publica en argencargo.com.ar/blog.</p>
       </div>}
-      {preview.kind!=="story"&&preview.kind!=="blog"&&<div onClick={e=>e.stopPropagation()} style={{width:isMobile?"100%":340,maxHeight:"92vh",overflowY:"auto",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:14}}>
+      {preview.kind==="linkedin"&&<div onClick={e=>e.stopPropagation()} style={{width:isMobile?"100%":420,maxHeight:"92vh",overflowY:"auto",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}><span style={{color:"#38bdf8",display:"inline-flex"}}><IcoLinkedin/></span><p style={{margin:0,fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Post de LinkedIn</p>
+          <span style={{marginLeft:"auto",display:"inline-flex",gap:4}}>{[["persona",meta.linkedin?.name?meta.linkedin.name.split(" ")[0]:"Vos"],["pagina","Página"]].map(([k,l])=><button key={k} onClick={async()=>{if(k==="pagina"&&!meta.linkedin?.puede_pagina){toast("Publicar como la página requiere la Community Management API aprobada por LinkedIn (ver Conexión)","error");return;}await act("linkedin_author",{id:preview.id,author:k});setPreview(x=>({...x,li_author:k}));}} style={{padding:"4px 9px",fontSize:11,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${(preview.li_author||"persona")===k?"rgba(56,189,248,0.6)":"rgba(255,255,255,0.12)"}`,background:(preview.li_author||"persona")===k?"rgba(56,189,248,0.18)":"transparent",color:(preview.li_author||"persona")===k?"#38bdf8":"rgba(255,255,255,0.5)"}}>{l}</button>)}</span></div>
+        <p style={{margin:"0 0 10px",fontSize:13,color:"#fff",whiteSpace:"pre-wrap",lineHeight:1.5}}>{preview.caption||"(sin texto)"}</p>
+        {preview.li_link&&<p style={{margin:"0 0 10px",fontSize:11.5,color:"#60a5fa",overflowWrap:"anywhere"}}>🔗 Va con la nota como tarjeta: {preview.li_link}</p>}
+        {preview.li_post_urn&&<p style={{margin:"0 0 10px",fontSize:11.5}}><a href={`https://www.linkedin.com/feed/update/${preview.li_post_urn}/`} target="_blank" rel="noreferrer" style={{color:"#38bdf8"}}>Ver el post publicado ↗</a></p>}
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}><Btn small variant="secondary" onClick={()=>{navigator.clipboard?.writeText(preview.caption||"");toast("Texto copiado","success");}}>📋 Copiar texto</Btn>{liOk&&["approved","scheduled"].includes(preview.status)&&<Btn small onClick={async()=>{if(await confirmDialog("¿Publicar ahora en LinkedIn?")){await act("publish_now",{id:preview.id},"Publicada en LinkedIn");setPreview(null);}}} disabled={!!busy}>Publicar ahora</Btn>}</div>
+        <p style={{margin:"10px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{"{{PAGINA}}"} se convierte en la mención a la página Argencargo al publicar.</p>
+      </div>}
+      {preview.kind!=="story"&&preview.kind!=="blog"&&preview.kind!=="linkedin"&&<div onClick={e=>e.stopPropagation()} style={{width:isMobile?"100%":340,maxHeight:"92vh",overflowY:"auto",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:14}}>
         <p style={{margin:"0 0 6px",fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Texto del posteo</p>
         <p style={{margin:"0 0 10px",fontSize:13,color:"#fff",whiteSpace:"pre-wrap",lineHeight:1.45}}>{preview.caption||"(sin texto)"}</p>
         <p style={{margin:"0 0 10px",fontSize:12,color:"#60a5fa",whiteSpace:"pre-wrap"}}>{preview.hashtags||""}</p>
@@ -14203,6 +14251,8 @@ function AdminDashboard({session,onLogout}){
   const [selOp,setSelOp]=useState(initNav.selOp||null);
   const [selOpTab,setSelOpTab]=useState(null); // solapa inicial al entrar a una op desde otro panel (ej. "Entregas")
   const [selClient,setSelClient]=useState(initNav.selClient||null);
+  // /admin?page=studio (vuelta del OAuth de LinkedIn): abre esa sección.
+  useEffect(()=>{try{const pg=new URLSearchParams(window.location.search).get("page");if(pg)setPage(pg);}catch{}},[]);
   const [newOp,setNewOp]=useState(false);
   const [allClients,setAllClients]=useState([]);
   const [mobOpen,setMobOpen]=useState(false);

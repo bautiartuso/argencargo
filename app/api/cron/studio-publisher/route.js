@@ -3,12 +3,15 @@
 import { publicarPendientes, analizarPendientesCompetencia, radarCompetencia, loadCompetitors, igDiscoverySettings, sb } from "../../../../lib/studio";
 import { tgConfigured, tgSettings, tgDiscoverChat, tgNotify } from "../../../../lib/telegram";
 import { actualizarInsights } from "../../../../lib/ig-insights";
+import { publicarPendientesLinkedin } from "../../../../lib/linkedin";
 export const maxDuration = 60;
 export async function GET(req) {
   const auth = req.headers.get("authorization") || "";
   const ok = [process.env.CRON_SECRET, process.env.BOT_TEST_SECRET].filter(Boolean).some((s) => auth === `Bearer ${s}`);
   if (!ok) return Response.json({ error: "unauthorized" }, { status: 401 });
   const pub = await publicarPendientes();
+  // LinkedIn tiene su propia conexión: se publica aunque Instagram no esté conectado.
+  let li = null; try { li = await publicarPendientesLinkedin(); } catch (e) { console.error("[studio] linkedin", e.message); }
   // De paso, analiza de a 3 los posts de la competencia que faltan (cola en segundo plano).
   let competencia = 0; try { competencia = await analizarPendientesCompetencia(3); } catch (e) { console.error("[studio] competencia", e.message); }
   // Arranque de Análisis: si hay token y la tabla diaria está vacía, se llena ahora (después, dos veces por día).
@@ -42,5 +45,5 @@ export async function GET(req) {
       }
     }
   } catch (e) { console.error("[studio] telegram", e.message); }
-  return Response.json({ ok: true, ...pub, competencia_analizados: competencia });
+  return Response.json({ ok: true, ...pub, ...(li || {}), competencia_analizados: competencia });
 }

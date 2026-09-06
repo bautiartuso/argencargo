@@ -3,7 +3,8 @@
 // GET ?view=pieces        → todas las piezas (Aprobación/Calendario filtran en el cliente)
 // GET ?view=memory        → knowledge + brand kit (cs_memory) + assets (logos, referencias) + runs + instagram
 // POST {action:"generate", brief, kind, count}      → piezas a la cola (el analista arma los briefs)
-// POST {action:"runner", mix:{feed,carousel,story}} → el analista propone esa mezcla (manual); count = total si no hay mix
+// POST {action:"runner", mix:{feed,carousel,story,linkedin}} → el analista propone esa mezcla (manual); count = total si no hay mix
+// POST {action:"linkedin_auth_url"|"linkedin_disconnect"|"linkedin_test"|"linkedin_settings"|"linkedin_author"|"linkedin_encolar"}
 // POST {action:"chat", messages, images}            → chatbot estratega (devuelve reply y, si está listo, el brief)
 // POST {action:"approve"|"reject"|"regenerate"|"published"|"publish_now", id}
 // POST {action:"feedback", id, feedback}            → pedir cambio (vuelve a la cola)
@@ -17,6 +18,7 @@ import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, appen
 import { tgConfigured, tgSettings, tgDiscoverChat, tgNotify, tgDisconnect } from "../../../../lib/telegram";
 import { analisis, actualizarInsights } from "../../../../lib/ig-insights";
 import { blogSettings, guardarBlogSettings, candidatosBlog, encolarNota, publicarNota, despublicarNota, notasPendientes } from "../../../../lib/blog";
+import { liStatus, liAuthUrl, liDisconnect, liSettings, liUserinfo, liPublish, liPostUrl, encolarLinkedin, guardarLinkedinSettings } from "../../../../lib/linkedin";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -31,7 +33,7 @@ async function isStaff(req) {
   } catch { return false; }
 }
 
-const SEL = "id,brand,kind,slides,slides_plan,status,source,pillar,title,brief,headline,subheadline,caption,hashtags,image_url,images,photo_url,photo_prompt,photo_brand,width,height,feedback,error,publish_error,ig_media_id,scheduled_at,published_at,approved_at,locked_at,created_at,updated_at";
+const SEL = "id,brand,kind,slides,slides_plan,status,source,pillar,title,brief,headline,subheadline,caption,hashtags,image_url,images,photo_url,photo_prompt,photo_brand,width,height,feedback,error,publish_error,ig_media_id,li_post_urn,li_author,li_link,scheduled_at,published_at,approved_at,locked_at,created_at,updated_at";
 
 export async function GET(req) {
   const who = await isStaff(req);
@@ -39,7 +41,7 @@ export async function GET(req) {
   const url = new URL(req.url);
   const view = url.searchParams.get("view") || "pieces";
   if (view === "memory") {
-    const [memory, assets, runs, ig, disc, competitors, estado, tgc] = await Promise.all([loadMemory(), loadAssets(), sb(`/cs_runs?select=id,kind,requested,created,log,started_at,finished_at&order=started_at.desc&limit=30`), igSettings(), igDiscoverySettings(), loadCompetitors(), estadoEstudio().catch(() => null), tgSettings().catch(() => ({}))]);
+    const [memory, assets, runs, ig, disc, competitors, estado, tgc, li] = await Promise.all([loadMemory(), loadAssets(), sb(`/cs_runs?select=id,kind,requested,created,log,started_at,finished_at&order=started_at.desc&limit=30`), igSettings(), igDiscoverySettings(), loadCompetitors(), estadoEstudio().catch(() => null), tgSettings().catch(() => ({})), liStatus().catch(() => ({}))]);
     // Por corrida: piezas, aprobadas, fotos y costo (desde cs_pieces.run_id).
     const runRows = Array.isArray(runs.body) ? runs.body : [];
     if (runRows.length) {
@@ -52,7 +54,7 @@ export async function GET(req) {
       }
       for (const r of runRows) { const b = byRun[r.id] || { piezas: 0, aprobadas: 0, descartadas: 0, fotos: 0, costo: 0 }; r.resumen = { ...b, costo: Math.round(b.costo * 100) / 100 }; }
     }
-    return Response.json({ memory, assets, runs: runRows, estado, telegram: { configured: tgConfigured(), connected: !!tgc?.chat_id, username: tgc?.username || null, first_name: tgc?.first_name || null, budgets: { claude: Number(tgc?.budgets?.claude || 40), fal: Number(tgc?.budgets?.fal || 40) } }, instagram: { ig_user_id: ig.ig_user_id || "", connected: !!(ig.ig_user_id && ig.access_token), username: ig.username || null },
+    return Response.json({ memory, assets, runs: runRows, estado, linkedin: li, telegram: { configured: tgConfigured(), connected: !!tgc?.chat_id, username: tgc?.username || null, first_name: tgc?.first_name || null, budgets: { claude: Number(tgc?.budgets?.claude || 40), fal: Number(tgc?.budgets?.fal || 40) } }, instagram: { ig_user_id: ig.ig_user_id || "", connected: !!(ig.ig_user_id && ig.access_token), username: ig.username || null },
       discovery: { connected: !!(disc.ig_user_id && disc.access_token), username: disc.username || null, page_name: disc.page_name || null, connected_at: disc.connected_at || null, facebook_publish: !!disc.facebook_publish, puede_publicar: (disc.scopes || []).includes("pages_manage_posts") }, competitors });
   }
   if (view === "analisis") { try { return Response.json(await analisis()); } catch (e) { return Response.json({ error: e.message }, { status: 500 }); } }
@@ -108,10 +110,15 @@ export async function POST(req) {
   }
   if (a === "runner") {
     const mix = body.mix && typeof body.mix === "object" ? { feed: Number(body.mix.feed) || 0, carousel: Number(body.mix.carousel) || 0, story: Number(body.mix.story) || 0 } : null;
-    const total = mix ? mix.feed + mix.carousel + mix.story : Math.min(20, Math.max(1, Number(body.count) || 3));
+    // LinkedIn no pasa por el analista (API): los temas se eligen con datos reales y la Mac escribe, sin costo.
+    const li = mix ? Math.max(0, Math.min(10, Math.round(Number(body.mix.linkedin) || 0))) : 0;
+    const totalIg = mix ? mix.feed + mix.carousel + mix.story : Math.min(20, Math.max(1, Number(body.count) || 3));
+    const total = totalIg + li;
     if (!total) return Response.json({ error: "Elegí al menos una pieza" }, { status: 400 });
     if (total > 30) return Response.json({ error: "Máximo 30 piezas por corrida" }, { status: 400 });
-    const created = await runner(mix ? { mix, source: "runner" } : { count: total, source: "runner" });
+    const created = [];
+    if (totalIg) created.push(...(await runner(mix ? { mix, source: "runner" } : { count: totalIg, source: "runner" })));
+    if (li) created.push(...(await encolarLinkedin({ n: li, source: "runner" })));
     return Response.json({ ok: true, created: created.length, titulos: created.map((c) => c.title) });
   }
   if (a === "chat") {
@@ -187,10 +194,17 @@ export async function POST(req) {
   if (a === "unschedule") { await patch(id, { status: "approved", scheduled_at: null, publish_error: null }); return Response.json({ ok: true }); }
   if (a === "published") { await patch(id, { status: "published", published_at: now }); return Response.json({ ok: true }); }
   if (a === "publish_now") {
-    const cfg = await igSettings();
-    if (!cfg.ig_user_id || !cfg.access_token) return Response.json({ error: "Instagram no está conectado (solapa Conexión)" }, { status: 400 });
     const r = await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}&select=*&limit=1`);
     const piece = Array.isArray(r.body) && r.body[0];
+    if (!piece) return Response.json({ error: "Pieza inexistente" }, { status: 404 });
+    if (piece.kind === "linkedin") {
+      const lcfg = await liSettings();
+      if (!lcfg.access_token) return Response.json({ error: "LinkedIn no está conectado (solapa Conexión)" }, { status: 400 });
+      try { const urn = await liPublish(piece, lcfg); await patch(id, { status: "published", published_at: now, li_post_urn: urn, publish_error: null }); return Response.json({ ok: true, url: liPostUrl(urn) }); }
+      catch (e) { await patch(id, { publish_error: String(e.message).slice(0, 300) }); return Response.json({ error: e.message }, { status: 400 }); }
+    }
+    const cfg = await igSettings();
+    if (!cfg.ig_user_id || !cfg.access_token) return Response.json({ error: "Instagram no está conectado (solapa Conexión)" }, { status: 400 });
     if (!piece?.image_url && !(Array.isArray(piece?.images) && piece.images.length)) return Response.json({ error: "La pieza no tiene imagen" }, { status: 400 });
     try {
       const mid = await igPublish(piece, cfg);
@@ -278,6 +292,17 @@ export async function POST(req) {
     return Response.json({ ok: true, budgets });
   }
   if (a === "ig_refresh") { const r = await actualizarInsights(); return Response.json({ ok: true, ...r }); }
+  // LinkedIn: conexión OAuth, ajustes (cadencia, modo, página) y autor por pieza.
+  if (a === "linkedin_auth_url") { try { return Response.json({ ok: true, url: await liAuthUrl({ pagina: !!body.pagina }) }); } catch (e) { return Response.json({ error: e.message }, { status: 400 }); } }
+  if (a === "linkedin_disconnect") { await liDisconnect(); return Response.json({ ok: true }); }
+  if (a === "linkedin_test") {
+    const cfg = await liSettings();
+    if (!cfg.access_token) return Response.json({ error: "Sin conexión" }, { status: 400 });
+    try { const me = await liUserinfo(cfg.access_token); return Response.json({ ok: true, info: { name: me.name || cfg.name, email: me.email || null } }); } catch (e) { return Response.json({ error: e.message }, { status: 400 }); }
+  }
+  if (a === "linkedin_settings") { const st = await guardarLinkedinSettings({ por_semana: body.por_semana, modo: body.modo, org_id: body.org_id, org_name: body.org_name }); return Response.json({ ok: true, por_semana: st.por_semana, modo: st.modo, org_id: st.org_id || null }); }
+  if (a === "linkedin_author") { await patch(id, { li_author: body.author === "pagina" ? "pagina" : "persona" }); return Response.json({ ok: true }); }
+  if (a === "linkedin_encolar") { const created = await encolarLinkedin({ n: Math.max(1, Math.min(5, Number(body.count) || 1)), tipos: body.tipo ? [String(body.tipo)] : null, source: "linkedin" }); return Response.json({ ok: true, created: created.length, titulos: created.map((c) => c.title) }); }
   if (a === "competencia_scan") { const r = await radarCompetencia({ analizar: 6 }); return Response.json({ ok: true, ...r }); }
   return Response.json({ error: "Acción desconocida" }, { status: 400 });
 }

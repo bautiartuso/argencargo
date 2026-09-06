@@ -5,12 +5,14 @@
 //                   204 si no hay nada.
 // POST ?op=done   (multipart: id, headline, subheadline, caption, hashtags, y por imagen png_1..png_N + html_1..html_N;
 //                  compat: png + html para una sola imagen) → review. images = [{url, html}], image_url = portada.
+//                  Blog: content_md + campos SEO. LinkedIn: post_text (la imagen es opcional).
 // POST ?op=error  (json: id, error) → suma intento; al 2º queda en 'error'.
 // POST ?op=photo  (json: id, nota?) → genera la foto real con fal.ai (si la pieza la pide) → {photo_url}.
 // Auth: header x-runner-secret = RUNNER_SECRET.
 
 import { sb, loadMemory, loadAssets, ejemplosAprobados, uploadStorage, borrarImagenesPieza, generarFoto } from "../../../../lib/studio";
 import { guardarNota, publicarNota, blogSettings } from "../../../../lib/blog";
+import { liSettings, proximoSlotLinkedin } from "../../../../lib/linkedin";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -63,10 +65,19 @@ export async function POST(req) {
   const files = [];
   for (let i = 1; i <= 10; i++) { const f = fd.get(`png_${i}`); if (f && typeof f !== "string") files.push({ f, html: String(fd.get(`html_${i}`) || "") }); else break; }
   if (!files.length) { const f = fd.get("png"); if (f && typeof f !== "string") files.push({ f, html: String(fd.get("html") || "") }); }
-  if (!files.length) return Response.json({ error: "Faltan imágenes" }, { status: 400 });
+  // LinkedIn puede venir sin imagen (post de texto); todo lo demás necesita al menos una.
+  const prev = await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}&select=id,kind,image_url,images`);
+  const prevRow = Array.isArray(prev.body) && prev.body[0];
+  if (!prevRow) return Response.json({ error: "pieza inexistente" }, { status: 404 });
+  const esLinkedin = prevRow.kind === "linkedin";
+  const postText = String(fd.get("post_text") || "").trim();
+  if (!files.length && !esLinkedin) return Response.json({ error: "Faltan imágenes" }, { status: 400 });
+  if (esLinkedin && !postText) {
+    await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "generating", locked_at: null, error: "el redactor no entregó post.md", updated_at: now }) });
+    return Response.json({ ok: false, error: "post.md vacío: la pieza vuelve a la cola" }, { status: 422 });
+  }
   // Si la pieza se está rehaciendo (pedido de cambio), las imágenes viejas se borran para no acumular.
-  const prev = await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}&select=id,image_url,images`);
-  if (Array.isArray(prev.body) && prev.body[0]) await borrarImagenesPieza(prev.body[0], { limpiarFila: false, incluirFoto: false });
+  await borrarImagenesPieza(prevRow, { limpiarFila: false, incluirFoto: false });
   const stamp = Date.now();
   const images = [];
   for (let i = 0; i < files.length; i++) {
@@ -74,12 +85,19 @@ export async function POST(req) {
     images.push({ url, html: files[i].html });
   }
   const upd = await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({
-    status: "review", image_url: images[0].url, images, slides: images.length, error: null, locked_at: null, feedback: null, updated_at: now,
-    html: images[0].html, headline: String(fd.get("headline") || ""), subheadline: String(fd.get("subheadline") || ""),
-    caption: String(fd.get("caption") || ""), hashtags: String(fd.get("hashtags") || ""),
+    status: "review", image_url: images[0]?.url || null, images: images.length ? images : null, slides: Math.max(1, images.length), error: null, locked_at: null, feedback: null, updated_at: now,
+    html: images[0]?.html || null, headline: String(fd.get("headline") || ""), subheadline: String(fd.get("subheadline") || ""),
+    caption: esLinkedin ? postText : String(fd.get("caption") || ""), hashtags: String(fd.get("hashtags") || ""),
   }) });
-  // Nota de blog: se guarda el artículo; en modo automático sale publicada sin pasar por Contenido.
   const piece = Array.isArray(upd.body) && upd.body[0];
+  // LinkedIn en modo automático: se programa sola en el próximo hueco hábil (9:30 AR), sin pasar por Contenido.
+  if (piece?.kind === "linkedin") {
+    try {
+      const cfg = await liSettings();
+      if (cfg.modo === "auto" && cfg.access_token) { const when = await proximoSlotLinkedin(); await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "scheduled", scheduled_at: when.toISOString(), approved_at: now, approved_by: "auto", updated_at: now }) }); }
+    } catch (e) { console.error("[runner] linkedin auto", e.message); }
+  }
+  // Nota de blog: se guarda el artículo; en modo automático sale publicada sin pasar por Contenido.
   if (piece?.kind === "blog") {
     // Sin nota.md no hay nota: la pieza vuelve a la cola (runner viejo o redactor que no escribió).
     if (!String(fd.get("content_md") || "").trim()) {
@@ -94,5 +112,5 @@ export async function POST(req) {
       if (cfg.modo === "todas" || (cfg.modo === "relevantes" && rel >= 4)) await publicarNota(piece.id);
     } catch (e) { console.error("[runner] blog", e.message); }
   }
-  return Response.json({ ok: true, image_url: images[0].url, images: images.length });
+  return Response.json({ ok: true, image_url: images[0]?.url || null, images: images.length });
 }

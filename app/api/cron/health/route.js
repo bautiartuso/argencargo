@@ -3,9 +3,11 @@
 //   · sincronización de tracking sin corrida exitosa hace más de 3 h
 //   · mensajes de WhatsApp del bot que Meta rechazó (últimos 30 min)
 //   · presupuesto mensual de Claude API y fal.ai (avisa al 80 % y al 100 %)
+//   · token de LinkedIn por vencer (7 días antes) o vencido
 // Auth: Bearer CRON_SECRET.
 import { sb } from "../../../../lib/studio";
 import { tgConfigured, tgSettings, tgAlert } from "../../../../lib/telegram";
+import { liStatus } from "../../../../lib/linkedin";
 export const maxDuration = 60;
 
 const usd = (v) => `USD ${Number(v || 0).toFixed(2)}`;
@@ -25,7 +27,7 @@ export async function GET(req) {
     // 2) Errores de publicación en Instagram
     const pe = await sb(`/cs_pieces?publish_error=not.is.null&updated_at=gte.${hace30}&select=title,publish_error`);
     const pes = Array.isArray(pe.body) ? pe.body : [];
-    if (pes.length) out.push(await tgAlert("publish_error", `⚠️ <b>Instagram rechazó ${pes.length} publicación${pes.length > 1 ? "es" : ""}</b>\n${pes.map((p) => `· ${p.title}: ${String(p.publish_error || "").slice(0, 100)}`).join("\n")}`, { cooldownHours: 3 }));
+    if (pes.length) out.push(await tgAlert("publish_error", `⚠️ <b>Instagram/LinkedIn rechazó ${pes.length} publicación${pes.length > 1 ? "es" : ""}</b>\n${pes.map((p) => `· ${p.title}: ${String(p.publish_error || "").slice(0, 100)}`).join("\n")}`, { cooldownHours: 3 }));
     // 3) Tracking sin corrida exitosa
     const ts = await sb(`/cs_settings?key=eq.tracking_sync_last_ok&select=value`);
     const lastOk = Array.isArray(ts.body) && ts.body[0] ? new Date(ts.body[0].value?.at || 0).getTime() : 0;
@@ -47,6 +49,12 @@ export async function GET(req) {
       const nombre = k === "claude" ? "Claude API" : "fal.ai (fotos)";
       if (gasto[k] >= b[k]) out.push(await tgAlert(`budget_${k}_100`, `🚨 <b>${nombre}: el gasto del mes (${usd(gasto[k])}) superó tu tope de ${usd(b[k])}.</b> ${k === "fal" ? "Cargá crédito en fal.ai o subí el tope en Conexión." : "Revisá el crédito en console.anthropic.com o subí el tope en Conexión."}`, { cooldownHours: 24 * 7 }));
       else if (gasto[k] >= b[k] * 0.8) out.push(await tgAlert(`budget_${k}_80`, `🔔 <b>${nombre}: vas por ${usd(gasto[k])} de los ${usd(b[k])} del mes (80 %).</b> Es momento de revisar el crédito.`, { cooldownHours: 24 * 7 }));
+    }
+    // 6) LinkedIn: el token dura 60 días y no se renueva solo.
+    const li = await liStatus().catch(() => null);
+    if (li?.connected) {
+      if (li.vencido) out.push(await tgAlert("linkedin_vencido", `🔗 <b>El token de LinkedIn venció.</b> Los posts programados no salen hasta que toques Reconectar en Content Studio → Conexión.`, { cooldownHours: 72 }));
+      else if (li.dias_restantes != null && li.dias_restantes <= 7) out.push(await tgAlert("linkedin_vence", `🔗 <b>El token de LinkedIn vence en ${li.dias_restantes} día${li.dias_restantes === 1 ? "" : "s"}.</b> Entrá a Content Studio → Conexión y tocá Reconectar (30 segundos).`, { cooldownHours: 48 }));
     }
     return Response.json({ ok: true, alertas: out.filter(Boolean).length, gasto });
   } catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
