@@ -79,15 +79,49 @@ nombres y cuerpos EXACTOS (las `{{n}}` las completa el sistema):
 >
 > Cualquier duda, respondé este mensaje.
 
-**`ri_entregada`** *(solo clientes RI con entrega directa por courier)*
+**`ri_entregada_pesos`** *(RI con entrega directa por courier — la crea el sistema solo en Meta, ver abajo)*
 > Hola {{1}}! 📦
 >
 > Tu carga de {{2}} ya fue entregada en tu domicilio.
 >
-> Acá tenés el detalle completo, la documentación y los datos para abonar:
-> {{3}}
+> El total a abonar por la operación es {{3}}.
 >
-> Cualquier duda, respondé este mensaje. ¡Gracias!
+> Podés transferirlo en pesos a:
+> {{4}}
+> {{5}}
+> {{6}}
+>
+> Apenas transfieras, mandanos el comprobante por acá 🙏 Cualquier duda, respondé este mensaje. ¡Gracias!
+
+**`ri_saldo_pendiente`** *(RI que ya había recibido el aviso viejo con link; también la crea el sistema)*
+> Hola {{1}}!
+>
+> Te recordamos que está pendiente de abonar tu operación {{2}}.
+>
+> El total a abonar es {{3}}.
+>
+> Podés transferirlo en pesos a:
+> {{4}}
+> {{5}}
+> {{6}}
+>
+> Apenas transfieras, mandanos el comprobante por acá 🙏 Cualquier duda, respondé este mensaje. ¡Gracias!
+
+En {{3}} va el total en pesos con su cuenta: `$ 1.465.710 (USD 951,76 × TC $ 1.540)` — saldo en
+USD por el dólar blue venta (DolarAPI) del momento del envío. {{4}}–{{6}} son las líneas de la
+cuenta cargada en Configuración (CBU, CUIT, titular).
+
+### Responsable inscripto con entrega directa (sin link)
+
+El courier entrega en el domicilio, así que no hay nada que coordinar ni elegir. Cuando el
+tracking detecta la entrega, la op pasa a "A cobrar" y el cron `bot-entregas` le manda al
+cliente el total en pesos con la cuenta, **solo en día hábil de 9 a 20 h Argentina** (una op
+entregada un sábado o domingo recibe el mensaje el lunes a la mañana). Una sola vez por op
+(`sent_notifications.wa_ri_cobro`, con el monto y el TC usados). Después no insiste solo.
+
+Estas dos plantillas las da de alta el propio sistema en Meta la primera vez que las necesita
+(`ensureWaTemplate` en `lib/wa.js`, WABA en `WA_WABA_ID`); mientras Meta las tenga pendientes,
+el cron reintenta cada 5 minutos. Si Meta las rechaza, queda en los logs de Vercel.
 
 **`coordinacion_confirmada`**
 > Hola {{1}}, quedó coordinada tu entrega de {{2}} ✅ {{3}}. Total a abonar: {{4}}. {{5}} Si necesitás cambiar el día, el horario o la forma de pago, respondé este mensaje.

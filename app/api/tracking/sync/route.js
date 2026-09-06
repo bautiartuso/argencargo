@@ -153,10 +153,10 @@ async function applyEventsToOp(op, route, d) {
   }
 
   // RI con entrega directa: el courier (DHL/FedEx/UPS) entrega en el domicilio del cliente,
-  // asi que al detectar la entrega real: (1) la op queda ENTREGADA en el sistema (pasa
-  // directo a "A cobrar" del panel — no hay nada que coordinar) y (2) el bot dispara el
-  // link con el detalle, la documentacion y los datos para abonar. Dedup por
-  // sent_notifications.wa_ri_entregada.
+  // asi que al detectar la entrega real la op queda ENTREGADA en el sistema (pasa directo a
+  // "A cobrar" del panel — no hay nada que coordinar). El mensaje al cliente (total en PESOS
+  // con la cuenta para transferir, sin link) lo manda el cron bot-entregas en día hábil de
+  // 9 a 20 h — antes salía de acá con el link, a cualquier hora (cambio 06/09).
   if (d.actualDelivery) {
     try {
       const rFull = await fetch(`${SB_URL}/rest/v1/operations?id=eq.${op.id}&select=id,operation_code,description,delivery_public_token,delivery_completed_at,ri_entrega_directa,sent_notifications,clients(first_name,tax_condition,whatsapp)`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
@@ -167,15 +167,6 @@ async function applyEventsToOp(op, route, d) {
         if (!full.delivery_completed_at) {
           const m2 = String(d.actualDelivery).match(/^(\d{4}-\d{2}-\d{2})/);
           upd.delivery_completed_at = m2 ? `${m2[1]}T12:00:00Z` : new Date().toISOString();
-        }
-        if (!full.sent_notifications?.wa_ri_entregada && full.clients?.whatsapp && full.delivery_public_token) {
-          const { sendWaTemplate, waConfigured } = await import("../../../../lib/wa");
-          if (waConfigured()) {
-            const carga = full.description ? `${full.description} (${full.operation_code})` : full.operation_code;
-            const link = `${BASE_URL}/retiro/${full.delivery_public_token}`;
-            const wres = await sendWaTemplate(full.clients.whatsapp, "ri_entregada", [full.clients.first_name || "Hola", carga, link]);
-            if (wres?.ok) upd.sent_notifications = { ...(full.sent_notifications || {}), wa_ri_entregada: new Date().toISOString() };
-          }
         }
         if (Object.keys(upd).length) {
           await fetch(`${SB_URL}/rest/v1/operations?id=eq.${op.id}`, {

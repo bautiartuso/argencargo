@@ -5416,7 +5416,7 @@ function EntregasPanel({token,onOpenOp}){
   //      pierden de vista al marcarlas entregadas, como pasaba antes.
   const load=async()=>{
     setLo(true);
-    const sel="id,operation_code,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code)";
+    const sel="id,operation_code,channel,office_received_at,closed_at,link_opened_at,link_last_opened_at,link_open_count,budget_total,credit_applied_usd,debt_applied_usd,total_anticipos,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,collection_method,delivery_group_id,ri_entrega_directa,delivery_choice,delivery_zone,delivery_address,delivery_cost_usd,payment_method_chosen,payment_split,cash_arrival_amount,cash_arrival_currency,delivery_day,delivery_slot,delivery_confirmed_at,delivery_completed_at,delivery_coordinated_at,delivery_ready_at,delivery_public_token,sent_notifications,client_id,created_at,carrier_mode,delivery_contact,clients(first_name,last_name,client_code,whatsapp,email,tax_condition,street,floor_apt,city,province,postal_code)";
     const [pend,entr,done]=await Promise.all([
       dq("operations",{token,filters:`?delivery_completed_at=is.null&or=(status.eq.entregada,delivery_ready_at.not.is.null)&select=${sel}&order=eta.desc`}),
       dq("operations",{token,filters:`?delivery_completed_at=not.is.null&is_collected=eq.false&select=${sel}&order=delivery_completed_at.desc&limit=200`}).catch(()=>[]),
@@ -5798,8 +5798,11 @@ function EntregasPanel({token,onOpenOp}){
   if(lo)return <p style={{color:"rgba(255,255,255,0.4)",textAlign:"center",padding:"2rem 0"}}>Cargando...</p>;
 
   const esRiDir=o=>o.ri_entrega_directa!==false&&(o.ri_entrega_directa===true||o.clients?.tax_condition==="responsable_inscripto");
-  const sinAviso=sinConfirmar.filter(o=>!o.delivery_ready_at&&!esRiDir(o));
-  const esperando=sinConfirmar.filter(o=>o.delivery_ready_at&&!esRiDir(o));
+  // Avisada = tiene delivery_ready_at o el aviso ya salió (mail/WA del bot): que el bot le haya
+  // escrito al cliente cuenta como avisada aunque la marca haya quedado sin setear (AC-0124).
+  const avisadaAt=o=>o.delivery_ready_at||o.sent_notifications?.wa_retiro||o.sent_notifications?.email_retiro||null;
+  const sinAviso=sinConfirmar.filter(o=>!avisadaAt(o)&&!esRiDir(o));
+  const esperando=sinConfirmar.filter(o=>avisadaAt(o)&&!esRiDir(o));
   const hechasFiltradas=hechas.filter(matchesQ);
 
   const tabBtn=(k,l,n,color)=><button onClick={()=>setTab(k)} style={{padding:"7px 14px",fontSize:12,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${tab===k?GOLD:"rgba(255,255,255,0.12)"}`,background:tab===k?"rgba(184,149,106,0.14)":"transparent",color:tab===k?GOLD_LIGHT:"rgba(255,255,255,0.55)",whiteSpace:"nowrap"}}>{l}{n>0&&<span style={{marginLeft:6,fontSize:10.5,fontWeight:800,padding:"1px 7px",borderRadius:8,background:color||"rgba(255,255,255,0.1)",color:color?"#0F1F3A":"rgba(255,255,255,0.6)"}}>{n}</span>}</button>;
@@ -5893,7 +5896,7 @@ function EntregasPanel({token,onOpenOp}){
       </Bloque>
       <Bloque titulo={<>⏳ Avisadas — esperando que el cliente complete el link <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)"}}>· {esperando.length}</span></>}>
         {esperando.length===0?<p style={{color:"rgba(255,255,255,0.35)",textAlign:"center",padding:"14px 0",fontSize:13,margin:0}}>Nadie pendiente de responder.</p>
-          :[...esperando].sort((a,b)=>new Date(a.delivery_ready_at)-new Date(b.delivery_ready_at)).map(o=><CardOp key={o.id} o={o} contexto="esperando"/>)}
+          :[...esperando].sort((a,b)=>new Date(avisadaAt(a))-new Date(avisadaAt(b))).map(o=><CardOp key={o.id} o={o} contexto="esperando"/>)}
       </Bloque>
     </>}
 

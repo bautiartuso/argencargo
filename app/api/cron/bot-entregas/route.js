@@ -14,9 +14,14 @@
 // Los avisos salen a cualquier hora (ni bien la carga está lista). Los recordatorios solo
 // en horario comercial (9 a 20 h Argentina).
 //
+// RI CON ENTREGA DIRECTA (el courier entrega en el domicilio): sin link ni nada que elegir.
+// Cuando el tracking marca la entrega, el bot manda el TOTAL EN PESOS (saldo USD × dólar blue
+// venta del momento) con la cuenta para transferir — solo en día hábil de 9 a 20 h Argentina.
+// Plantillas ri_entregada_pesos / ri_saldo_pendiente (se crean solas en Meta, ver lib/wa.js).
+//
 // Sin credenciales de Meta todo es no-op. ?dry=1 devuelve qué mandaría sin mandar.
 
-import { sendWaTemplate, waConfigured, waNumber } from "../../../../lib/wa";
+import { sendWaTemplate, waConfigured, waNumber, ensureWaTemplate } from "../../../../lib/wa";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -91,7 +96,13 @@ export async function GET(req) {
         body: JSON.stringify({ op_id: op.id, trigger: "retiro" }),
       });
       const j = await r.json().catch(() => ({}));
-      if (j?.ok || j?.skipped === "already_sent") { out.avisos_enviados++; continue; }
+      if (j?.ok || j?.skipped === "already_sent") {
+        out.avisos_enviados++;
+        // Avisada = delivery_ready_at. /api/notify ya lo setea; acá se cubre "already_sent" (mail
+        // mandado antes del fix) para que no quede en "Falta avisar" ni se reintente cada 5 min.
+        await sb(`/operations?id=eq.${op.id}&delivery_ready_at=is.null`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ delivery_ready_at: op.sent_notifications?.wa_retiro || op.sent_notifications?.email_retiro || new Date().toISOString() }) });
+        continue;
+      }
       if (j?.error === "cliente sin email" && waNumber(c.whatsapp) && op.delivery_public_token) {
         // Sin mail: sale solo el WhatsApp y se marca lista igual (mismo efecto que /api/notify).
         const carga = op.description ? `${op.description} (${op.operation_code})` : op.operation_code;
@@ -133,6 +144,70 @@ export async function GET(req) {
       }
     }
   }
+
+  // ── RI con entrega directa: cobro en pesos, sin link ──
+  // El courier entregó en el domicilio (el sync de tracking marca delivery_completed_at). No hay
+  // nada que coordinar ni elegir: se le manda el total en PESOS (saldo USD × dólar blue venta del
+  // momento) con la cuenta para transferir. Solo en día hábil de 9 a 20 h Argentina (pedido
+  // 06/09: nada un domingo a la noche). Si ya había recibido el aviso viejo con link
+  // (wa_ri_entregada), va como "saldo pendiente" en vez de "ya fue entregada". Una sola vez por
+  // op: sent_notifications.wa_ri_cobro (con el monto y el TC usados).
+  const arNow = new Date(now - 3 * 3600 * 1000);
+  const diaHabil = arNow.getUTCDay() >= 1 && arNow.getUTCDay() <= 5 && arNow.getUTCHours() >= 9 && arNow.getUTCHours() < 20;
+  out.ri_cobros = [];
+  try {
+    const desde = new Date(now - 90 * 86400000).toISOString();
+    const r2 = await sb(`/operations?delivery_completed_at=gte.${encodeURIComponent(desde)}&is_collected=eq.false&ri_entrega_directa=not.is.false&select=id,operation_code,description,budget_total,debt_applied_usd,total_anticipos,credit_applied_usd,discount_applied_usd,collected_amount,is_collected,collection_currency,collection_exchange_rate,sent_notifications,ri_entrega_directa,clients(first_name,client_code,whatsapp,tax_condition)`);
+    const riOps = (Array.isArray(r2.body) ? r2.body : []).filter((op) => {
+      const c = op.clients || {};
+      const riDir = op.ri_entrega_directa === true || c.tax_condition === "responsable_inscripto";
+      return riDir && !op.sent_notifications?.wa_ri_cobro && waNumber(c.whatsapp);
+    });
+    if (riOps.length) {
+      const pagosRes = await sb(`/operation_client_payments?operation_id=in.(${riOps.map((o) => o.id).join(",")})&select=operation_id,amount_usd`);
+      const pagosBy = {};
+      for (const pg of Array.isArray(pagosRes.body) ? pagosRes.body : []) pagosBy[pg.operation_id] = (pagosBy[pg.operation_id] || 0) + Number(pg.amount_usd || 0);
+      // Mismo criterio que el panel de Entregas: los cobros registrados pisan al legacy is_collected.
+      const saldoDe = (op) => {
+        const pag = pagosBy[op.id] || 0;
+        const legacy = !op.is_collected ? 0 : op.collection_currency === "ARS" ? (Number(op.collection_exchange_rate) > 0 ? Number(op.collected_amount || 0) / Number(op.collection_exchange_rate) : 0) : Number(op.collected_amount || 0);
+        const collected = pag > 0 ? pag : legacy;
+        return Math.round(Math.max(0, Number(op.budget_total || 0) + Number(op.debt_applied_usd || 0) - Number(op.total_anticipos || 0) - collected - Number(op.credit_applied_usd || 0) - Number(op.discount_applied_usd || 0)) * 100) / 100;
+      };
+      let tc = 0, cuenta = null;
+      for (const op of riOps) {
+        const saldo = saldoDe(op);
+        if (saldo <= 0.005) continue;
+        const plantilla = op.sent_notifications?.wa_ri_entregada ? "ri_saldo_pendiente" : "ri_entregada_pesos";
+        out.ri_cobros.push(`${op.operation_code} → ${plantilla} (USD ${saldo})${diaHabil ? "" : " · espera día hábil 9-20 h"}`);
+        if (dry) continue;
+        // La plantilla se da de alta en Meta apenas hay una op esperando (aunque sea fuera de
+        // horario), así la aprobación ya está cuando llega el día hábil.
+        const estado = await ensureWaTemplate(plantilla);
+        if (!diaHabil) continue;
+        if (estado && estado !== "APPROVED") { out.ri_plantilla = `${plantilla}: ${estado} en Meta — se reintenta en 5 min`; continue; }
+        if (!tc) {
+          const d = await fetch("https://dolarapi.com/v1/dolares/blue", { signal: AbortSignal.timeout(4000) }).then((r) => r.ok ? r.json() : null).catch(() => null);
+          tc = Number(d?.venta) > 0 ? Number(d.venta) : 0;
+          if (!tc) { out.ri_error = "sin tipo de cambio (DolarAPI) — se reintenta en 5 min"; break; }
+          const stg = await sb(`/gi_settings?select=payment_alias,payment_titular&limit=1`);
+          cuenta = Array.isArray(stg.body) && stg.body[0] ? stg.body[0] : {};
+        }
+        const ars = Math.round(saldo * tc);
+        const totalTxt = `$ ${ars.toLocaleString("es-AR")} (USD ${saldo.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} × TC $ ${tc.toLocaleString("es-AR")})`;
+        const partes = String(cuenta.payment_alias || "").split(/\s*[·|,]\s*/).map((x) => x.trim()).filter(Boolean);
+        const lineas = [...partes, cuenta.payment_titular ? `Titular: ${cuenta.payment_titular}` : ""].filter(Boolean);
+        while (lineas.length < 3) lineas.push("Argencargo");
+        const c = op.clients || {};
+        const carga = op.description ? `${op.description} (${op.operation_code})` : op.operation_code;
+        const w = await sendWaTemplate(c.whatsapp, plantilla, [c.first_name || "Hola", carga, totalTxt, lineas[0], lineas[1], lineas[2]]);
+        if (!w?.ok) { console.error("[bot-entregas] ri_cobro falló", op.operation_code, w?.error); out.ri_error = `${op.operation_code}: ${w?.error || "envío falló"}`; continue; }
+        out.ri_enviados = (out.ri_enviados || 0) + 1;
+        await sb(`/operations?id=eq.${op.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ sent_notifications: { ...(op.sent_notifications || {}), wa_ri_cobro: new Date().toISOString(), wa_ri_cobro_ars: ars, wa_ri_cobro_tc: tc } }) });
+        await sb(`/op_communications`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ operation_id: op.id, type: "whatsapp", direction: "out", content: `Argy (${plantilla}): total a abonar $ ${ars.toLocaleString("es-AR")} (USD ${saldo} × TC ${tc}) con los datos para transferir.` }) }).catch(() => {});
+      }
+    }
+  } catch (e) { console.error("[bot-entregas] ri_cobro", e.message); out.ri_error = e.message; }
 
   return Response.json(out);
 }

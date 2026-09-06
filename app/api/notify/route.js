@@ -270,10 +270,15 @@ export async function POST(req) {
         }
       } catch (e) { console.error("[notify] wa_retiro failed", e.message); }
     }
+    // El aviso de retiro (mail y/o WhatsApp) deja la op como AVISADA. Sin delivery_ready_at el
+    // panel la seguía mostrando en "Falta avisar" y el cron la reintentaba cada 5 min aunque el
+    // bot ya le había escrito al cliente (AC-0124, 06/09).
+    const patchOp = { sent_notifications: newSent };
+    if (trigger === "retiro" && !op.delivery_ready_at) patchOp.delivery_ready_at = new Date().toISOString();
     await sb(`/rest/v1/operations?id=eq.${op_id}`, {
       method: "PATCH",
       headers: { Prefer: "return=minimal" },
-      body: JSON.stringify({ sent_notifications: newSent }),
+      body: JSON.stringify(patchOp),
     });
 
     return Response.json({ ok: true, resend_id: resp.id, sent_at: new Date().toISOString() });
