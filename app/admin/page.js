@@ -4566,6 +4566,9 @@ function StudioPanel({token}){
   const nSlides=(p)=>Math.max(slidesOf(p).length,Number(p?.slides)||1);
   const kindLabel=(p)=>p.kind==="carousel"?`Carrusel · ${nSlides(p)}`:p.kind==="story"?(nSlides(p)>1?`Historias · ${nSlides(p)}`:"Historia"):"Posteo";
   const conFoto=(p)=>!!(p?.photo_prompt);
+  const IcoDescarga=()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>;
+  const IcoInstagram=()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>;
+  const IcoCalendario=()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4"/><path d="M16 3v4"/></svg>;
   useEffect(()=>{setSlideIdx(0);},[preview?.id,cambio?.p?.id]);
   // Vista de una pieza con sus imágenes (carrusel o secuencia): flechas, contador y miniaturas.
   const slidesView=(p,{maxW,maxH}={})=>{const urls=slidesOf(p);const i=Math.min(slideIdx,Math.max(0,urls.length-1));const nav=(side)=>({position:"absolute",top:"50%",[side]:8,transform:"translateY(-50%)",width:36,height:36,borderRadius:99,border:"none",background:"rgba(0,0,0,0.55)",color:"#fff",fontSize:22,cursor:"pointer",lineHeight:"36px",padding:0});return <div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,maxWidth:maxW||"100%"}}>
@@ -4707,11 +4710,12 @@ function StudioPanel({token}){
               <div onClick={()=>setPreview(p)} style={{height:110,borderRadius:7,overflow:"hidden",background:"#0b1220",cursor:"zoom-in",marginBottom:6,display:"flex",justifyContent:"center"}}>{p.image_url&&<img src={p.image_url} alt="" style={{height:"100%",objectFit:"contain"}}/>}</div>
               <div style={{display:"flex",gap:4,marginBottom:6}}>{chip(kindLabel(p),"#60a5fa")}</div>
               <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.headline||p.title||""}>{p.headline||p.title||"—"}</p>
-              <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                <Btn small title="Programar: elegir día y hora" onClick={()=>setSched({p,date:new Date(Date.now()+86400000).toISOString().slice(0,10),hour:10,min:0})} disabled={!!busy}>📅</Btn>
-                {igOk&&<Btn small variant="secondary" title="Subir ahora a Instagram" onClick={async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?"))act("publish_now",{id:p.id},"Publicada en Instagram");}} disabled={!!busy}>⬆</Btn>}
-                {p.image_url&&<a href={p.image_url} download target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><Btn small variant="secondary" title="Descargar la imagen">⬇</Btn></a>}
-                <Btn small variant="secondary" title="Copiar el texto del posteo (caption y hashtags)" onClick={()=>copiar(p)}>📋</Btn>
+              <div style={{display:"flex",gap:6,justifyContent:"center"}}>
+                {[
+                  {t:"Programar: elegir día y hora",ic:<IcoCalendario/>,col:"#E8C99B",fn:()=>setSched({p,date:new Date(Date.now()+86400000).toISOString().slice(0,10),hour:10,min:0}),show:true},
+                  {t:"Subir ahora a Instagram",ic:<IcoInstagram/>,col:"#f472b6",fn:async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?"))act("publish_now",{id:p.id},"Publicada en Instagram");},show:igOk},
+                  {t:"Descargar la imagen",ic:<IcoDescarga/>,col:"#60a5fa",fn:()=>{const a=document.createElement("a");a.href=p.image_url;a.download="";a.target="_blank";a.rel="noreferrer";a.click();},show:!!p.image_url},
+                ].filter(b=>b.show).map(b=><button key={b.t} title={b.t} onClick={b.fn} disabled={!!busy} style={{flex:1,maxWidth:56,height:36,borderRadius:9,border:`1px solid ${b.col}55`,background:`${b.col}1a`,color:b.col,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{b.ic}</button>)}
               </div>
             </div>)}
           </div>
@@ -4727,10 +4731,9 @@ function StudioPanel({token}){
             {calSel.publish_error&&<p style={{margin:"0 0 8px",fontSize:11,color:"#f87171"}}>Instagram: {calSel.publish_error}</p>}
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               {calSel.status!=="published"&&<Btn small onClick={()=>{setSched({p:calSel,date:new Date(calSel.scheduled_at).toISOString().slice(0,10),hour:new Date(calSel.scheduled_at).getHours(),min:Math.round(new Date(calSel.scheduled_at).getMinutes()/15)*15%60});setCalSel(null);}} disabled={!!busy}>📅 Cambiar fecha</Btn>}
-              {calSel.status!=="published"&&igOk&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?")){await act("publish_now",{id:calSel.id},"Publicada en Instagram");setCalSel(null);}}} disabled={!!busy}>⬆ Subir ahora</Btn>}
+              {calSel.status!=="published"&&igOk&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?")){await act("publish_now",{id:calSel.id},"Publicada en Instagram");setCalSel(null);}}} disabled={!!busy}><span style={{display:"inline-flex",alignItems:"center",gap:6}}><IcoInstagram/> Subir ahora</span></Btn>}
               {calSel.status!=="published"&&<Btn small variant="secondary" onClick={async()=>{await act("unschedule",{id:calSel.id},"Vuelve a Sin programar");setCalSel(null);}} disabled={!!busy}>Quitar del calendario</Btn>}
-              {calSel.image_url&&<a href={calSel.image_url} download target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><Btn small variant="secondary">⬇</Btn></a>}
-              <Btn small variant="secondary" onClick={()=>copiar(calSel)}>📋</Btn>
+              {calSel.image_url&&<a href={calSel.image_url} download target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><Btn small variant="secondary" title="Descargar la imagen"><IcoDescarga/></Btn></a>}
               {calSel.status!=="published"&&<Btn small variant="secondary" onClick={async()=>{await act("published",{id:calSel.id},"Marcada como publicada");setCalSel(null);}} disabled={!!busy} title="La subí a mano">✓</Btn>}
             </div>
           </div>
