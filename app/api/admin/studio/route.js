@@ -181,7 +181,7 @@ export async function POST(req) {
       cfg.expires_at = exp ? new Date(exp * 1000).toISOString() : null;
     } catch {}
     try { const bd = await discoverAccount(cfg, "magforce_argentina"); if (!bd?.id) throw new Error("no devolvió datos"); }
-    catch (e) { return Response.json({ error: `El token conecta pero Business Discovery falla: ${e.message}. Revisá los permisos instagram_basic, pages_show_list y pages_read_engagement.` }, { status: 400 }); }
+    catch (e) { return Response.json({ error: `El token conecta pero Business Discovery falla: ${e.message}. Revisá que el token tenga instagram_basic, instagram_manage_insights, pages_read_engagement, pages_show_list y ads_read.` }, { status: 400 }); }
     await sb(`/cs_settings?on_conflict=key`, { method: "POST", body: JSON.stringify({ key: "instagram_discovery", value: cfg, updated_at: now }) });
     return Response.json({ ok: true, info: { username: cfg.username, page_name: cfg.page_name } });
   }
