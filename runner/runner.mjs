@@ -113,7 +113,8 @@ Escribí tres archivos en esta carpeta:
    - Es una nota PROPIA: explicá y opiná con criterio; NUNCA copies frases ni párrafos de la fuente (es un problema legal). Nada inventado: si un dato no está en el material, no lo afirmes.
    - Reglas duras de dos-and-donts.md: jamás "aduana B" ni canales, jamás nombrar competidores, jamás prometer plazos o que no habrá retención, nada de facturación A/C, precios solo "desde".
    - Cerrá con una línea de fuente: "Fuente: [nombre](url)" si el material tiene URL. Sin llamados a la acción agresivos; a lo sumo "Cualquier duda, escribinos".
-2) meta.json — {"title": "…", "slug": "titulo-en-kebab-sin-acentos", "excerpt": "1 o 2 frases (máx. 160 caracteres) que resuman la nota", "tags": "3 a 6 etiquetas separadas por coma", "seo_title": "máx. 60 caracteres", "seo_description": "máx. 155 caracteres", "headline": "titular corto para la portada (4 a 8 palabras)", "subheadline": "una línea para la portada"}
+2) meta.json — {"title": "…", "slug": "titulo-en-kebab-sin-acentos", "excerpt": "1 o 2 frases (máx. 160 caracteres) que resuman la nota", "tags": "3 a 6 etiquetas separadas por coma", "seo_title": "máx. 60 caracteres", "seo_description": "máx. 155 caracteres", "headline": "titular corto para la portada (4 a 8 palabras)", "subheadline": "una línea para la portada", "relevance": 1-5, "relevance_reason": "una línea"}
+   - relevance: qué tan relevante es la nota para quien importa desde China. 5 = cambio concreto que lo afecta ya (norma, arancel, régimen courier, plazos, requisitos nuevos) de fuente oficial o seria; 4 = cambio o dato importante aunque no urgente; 3 = útil pero educativa/atemporal; 2 = institucional o genérica; 1 = anecdótica. Con 4 o 5 la nota sale publicada sola; con menos espera el visto de Bautista. Sé honesto: inflar la relevancia publica cosas flojas.
 3) slide-1.html — la PORTADA de la nota, 1200×630 px exactos (html y body con margin 0, width 1200px, height 630px, overflow hidden), sin JavaScript. Fuentes: <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">. Diseño editorial de marca (ver brand-kit.md): fondo claro (blanco) o navy, el headline grande en 'Bebas Neue' con una palabra resaltada en bloque #1E8BFF, el subheadline en 'Inter', una etiqueta chica "NOVEDADES · COMERCIO EXTERIOR" y el logo (brand/logo-completo.png, transparente; blanco con filter:brightness(0) invert(1) sobre navy). Sin fotos, sin imágenes externas, sin emojis. Márgenes de 70 px. Nada se corta ni se encima.
 
 Cuando termines, respondé solo: LISTO.`;
@@ -248,7 +249,7 @@ async function procesar(data) {
     let nota = ""; try { nota = await fs.readFile(path.join(dir, "nota.md"), "utf8"); } catch {}
     if (!nota.trim()) throw new Error("el redactor no escribió nota.md");
     fd.append("content_md", nota);
-    for (const k of ["title", "slug", "excerpt", "tags", "seo_title", "seo_description"]) fd.append(k, String(meta[k] || ""));
+    for (const k of ["title", "slug", "excerpt", "tags", "seo_title", "seo_description", "relevance", "relevance_reason"]) fd.append(k, String(meta[k] || ""));
   }
   for (let i = 0; i < slides.length; i++) {
     fd.append(`html_${i + 1}`, absoluto(await fs.readFile(slides[i].html, "utf8")));

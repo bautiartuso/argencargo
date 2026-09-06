@@ -16,7 +16,7 @@
 import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, appendAprendizaje, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername, borrarImagenesPieza, decidirFoto, estadoEstudio, avisarPublicada, publicarEnFacebook } from "../../../../lib/studio";
 import { tgConfigured, tgSettings, tgDiscoverChat, tgNotify, tgDisconnect } from "../../../../lib/telegram";
 import { analisis, actualizarInsights } from "../../../../lib/ig-insights";
-import { blogSettings, guardarBlogSettings, candidatosBlog, encolarNota, publicarNota, despublicarNota } from "../../../../lib/blog";
+import { blogSettings, guardarBlogSettings, candidatosBlog, encolarNota, publicarNota, despublicarNota, notasPendientes } from "../../../../lib/blog";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -56,8 +56,9 @@ export async function GET(req) {
       discovery: { connected: !!(disc.ig_user_id && disc.access_token), username: disc.username || null, page_name: disc.page_name || null, connected_at: disc.connected_at || null, facebook_publish: !!disc.facebook_publish, puede_publicar: (disc.scopes || []).includes("pages_manage_posts") }, competitors });
   }
   if (view === "analisis") { try { return Response.json(await analisis()); } catch (e) { return Response.json({ error: e.message }, { status: 500 }); } }
+  if (view === "blog_count") return Response.json({ pendientes: await notasPendientes() });
   if (view === "blog") {
-    const [cfg, notas, cands] = await Promise.all([blogSettings(), sb(`/blog_posts?select=id,slug,title,excerpt,cover_url,status,views,published_at,created_at,source_name,source_url,piece_id&order=created_at.desc&limit=100`), url.searchParams.get("candidatos") ? candidatosBlog(8) : Promise.resolve(null)]);
+    const [cfg, notas, cands] = await Promise.all([blogSettings(), sb(`/blog_posts?select=id,slug,title,excerpt,cover_url,status,views,published_at,created_at,source_name,source_url,piece_id,relevance,relevance_reason&order=created_at.desc&limit=100`), url.searchParams.get("candidatos") ? candidatosBlog(8) : Promise.resolve(null)]);
     return Response.json({ settings: cfg, notas: Array.isArray(notas.body) ? notas.body : [], candidatos: cands ? cands.map((c) => ({ title: c.title, source_name: c.source_name, url: c.url, chars: (c.detalle || "").length })) : null });
   }
   if (view === "competencia") {
@@ -128,7 +129,7 @@ export async function POST(req) {
     if (p) appendHistorial(p).catch(() => {});
     return Response.json({ ok: true });
   }
-  if (a === "blog_settings") { await guardarBlogSettings({ auto: body.auto, por_dia: body.por_dia }); return Response.json({ ok: true }); }
+  if (a === "blog_settings") { await guardarBlogSettings({ modo: body.modo, por_dia: body.por_dia }); return Response.json({ ok: true }); }
   if (a === "blog_escribir") {
     const cands = await candidatosBlog(12);
     const c = cands.find((x) => x.url === body.url);

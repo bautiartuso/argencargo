@@ -87,9 +87,11 @@ export async function POST(req) {
       return Response.json({ ok: false, error: "nota.md vacía: la pieza vuelve a la cola" }, { status: 422 });
     }
     try {
-      await guardarNota(piece, { content_md: String(fd.get("content_md") || ""), title: String(fd.get("title") || fd.get("headline") || ""), slug: String(fd.get("slug") || ""), excerpt: String(fd.get("excerpt") || ""), tags: String(fd.get("tags") || ""), seo_title: String(fd.get("seo_title") || ""), seo_description: String(fd.get("seo_description") || "") });
+      const rel = Number(fd.get("relevance")) || 3;
+      await guardarNota(piece, { content_md: String(fd.get("content_md") || ""), title: String(fd.get("title") || fd.get("headline") || ""), slug: String(fd.get("slug") || ""), excerpt: String(fd.get("excerpt") || ""), tags: String(fd.get("tags") || ""), seo_title: String(fd.get("seo_title") || ""), seo_description: String(fd.get("seo_description") || ""), relevance: rel, relevance_reason: String(fd.get("relevance_reason") || "") });
       const cfg = await blogSettings();
-      if (cfg.auto) await publicarNota(piece.id);
+      // Relevante (4 o 5) sale sola; el resto espera el ✓ de Bautista. En "todas" salen todas; en "manual" ninguna.
+      if (cfg.modo === "todas" || (cfg.modo === "relevantes" && rel >= 4)) await publicarNota(piece.id);
     } catch (e) { console.error("[runner] blog", e.message); }
   }
   return Response.json({ ok: true, image_url: images[0].url, images: images.length });
