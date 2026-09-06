@@ -4623,7 +4623,7 @@ function StudioPanel({token}){
         {[["todos","Todos"],["feed","Posteos"],["carousel","Carruseles"],["story","Historias"]].map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={{padding:"6px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${filtro===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:filtro===k?"rgba(96,165,250,0.15)":"transparent",color:filtro===k?"#60a5fa":"rgba(255,255,255,0.55)"}}>{l}</button>)}
         {generando>0&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>🎨 {generando} en la cola · tu Mac las diseña de a una (5 a 8 min cada una) mientras esté prendida.</span>}
         <span style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
-          {review.filter(p=>p.status==="review").length>1&&<button onClick={async()=>{const ids=review.filter(p=>p.status==="review").map(p=>p.id);if(await confirmDialog(`¿Rechazar las ${ids.length} piezas que quedan sin aprobar? Se borran sus imágenes.`))act("reject_all",{ids},x=>`${x.rechazadas} rechazadas`);}} disabled={!!busy} style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:8,cursor:"pointer",border:"1px solid rgba(239,68,68,0.4)",background:"rgba(239,68,68,0.1)",color:"#f87171"}}>✕ Rechazar las restantes</button>}
+          {review.filter(p=>p.status==="review").length>1&&<button onClick={async()=>{const ids=review.filter(p=>p.status==="review").map(p=>p.id);if(await confirmDialog(`¿Descartar las ${ids.length} piezas que quedan sin aprobar? Se borran sus imágenes; los temas quedan anotados para no repetirlos.`))act("reject_all",{ids},x=>`${x.rechazadas} descartadas`);}} disabled={!!busy} style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:8,cursor:"pointer",border:"1px solid rgba(239,68,68,0.4)",background:"rgba(239,68,68,0.1)",color:"#f87171"}}>✕ Descartar las restantes</button>}
           <span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>Tocá la imagen para verla grande</span>
         </span>
       </div>
@@ -4635,7 +4635,7 @@ function StudioPanel({token}){
             {[
               {ic:"✓",col:"#22c55e",tit:"Aprobar",fn:()=>act("approve",{id:p.id},"Aprobada ✅ · guardada como referencia")},
               {ic:"✎",col:"#fbbf24",tit:"Pedir cambio",fn:()=>pedirCambio(p)},
-              {ic:"✕",col:"#ef4444",tit:"Rechazar",fn:async()=>{if(await confirmDialog("¿Rechazar esta pieza?"))act("reject",{id:p.id},"Rechazada");}},
+              {ic:"✕",col:"#ef4444",tit:"Descartar",fn:async()=>{if(await confirmDialog("¿Descartar esta pieza? Se borra su imagen; el tema queda anotado para no repetirlo."))act("reject",{id:p.id},"Descartada");}},
             ].map(b=><button key={b.tit} title={b.tit} onClick={b.fn} disabled={!!busy} style={{flex:1,height:38,borderRadius:9,border:`1px solid ${b.col}55`,background:`${b.col}1f`,color:b.col,fontSize:17,fontWeight:900,cursor:"pointer"}}>{b.ic}</button>)}
           </div>}
           {p.status==="error"&&<Btn small variant="secondary" onClick={()=>act("regenerate",{id:p.id},"Reintentando")} disabled={!!busy}>↻ Reintentar</Btn>}
@@ -4803,7 +4803,7 @@ function StudioPanel({token}){
           {meta.discovery?.connected?<span style={{fontSize:11,color:"#4ade80"}}>· mira {meta.competitors.filter(c=>c.active!==false).length} cuentas los domingos a la noche (corre en la nube, no en tu Mac)</span>:<span style={{fontSize:11,color:"#fbbf24"}}>· sin conectar: cargá el token de Facebook en Conexión</span>}
           <span style={{marginLeft:"auto",display:"flex",gap:6}}>
             <Btn small variant="secondary" onClick={loadComp} disabled={comp.lo}>↻</Btn>
-            {meta.discovery?.connected&&<Btn small onClick={async()=>{await act("competencia_scan",{},x=>`${x.cuentas} cuentas · ${x.nuevos} posts nuevos · ${x.analizados} analizados${x.errores?.length?` · ${x.errores.length} con error`:""}`);loadMeta();loadComp();}} disabled={!!busy}>{busy==="competencia_scan"?"Escaneando…":"Escanear ahora"}</Btn>}
+            {meta.discovery?.connected&&<Btn small onClick={async()=>{await act("competencia_scan",{},x=>`${x.cuentas} cuentas · ${x.nuevos} posts nuevos · ${x.analizados} analizados${x.pendientes?` · ${x.pendientes} se analizan solos en la próxima hora`:""}${x.errores?.length?` · ${x.errores.length} con error`:""}`);loadMeta();loadComp();}} disabled={!!busy}>{busy==="competencia_scan"?"Escaneando…":"Escanear ahora"}</Btn>}
           </span>
         </div>
         <p style={{margin:"0 0 10px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Baja las publicaciones de cada cuenta (imágenes y carruseles completos, sin reels) y Claude mira cada imagen: formato, gancho, concepto visual y una idea propia para Argencargo. El analista del Runner lo lee al proponer. Las historias de otras cuentas no se pueden leer por API: esas las mirás vos y, si te gustan, las subís como referencia arriba.</p>

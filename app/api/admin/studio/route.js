@@ -172,6 +172,14 @@ export async function POST(req) {
     if (!token) return Response.json({ error: "Pegá el token" }, { status: 400 });
     let cfg; try { cfg = await igConnect(token); } catch (e) { return Response.json({ error: e.message }, { status: 400 }); }
     if (cfg.mode !== "fb") return Response.json({ error: "Ese es un token de Instagram (sirve para publicar). Para mirar a la competencia hace falta un token de FACEBOOK con la página vinculada: seguí el instructivo de abajo." }, { status: 400 });
+    // El token de página hereda el vencimiento del token de usuario: si es corto (no se extendió), avisar.
+    try {
+      const d = await fetch(`https://graph.facebook.com/v21.0/debug_token?input_token=${encodeURIComponent(cfg.access_token)}&access_token=${encodeURIComponent(token)}`);
+      const dj = await d.json().catch(() => ({}));
+      const exp = Number(dj?.data?.expires_at || 0);
+      if (exp && exp * 1000 - Date.now() < 3 * 86400000) return Response.json({ error: `Ese token vence en ${Math.max(1, Math.round((exp * 1000 - Date.now()) / 3600000))} h. Antes de pegarlo, extendelo en el Depurador de tokens (developers.facebook.com/tools/debug/accesstoken → Extender token de acceso) y pegá el token extendido: así el radar no se corta.` }, { status: 400 });
+      cfg.expires_at = exp ? new Date(exp * 1000).toISOString() : null;
+    } catch {}
     try { const bd = await discoverAccount(cfg, "magforce_argentina"); if (!bd?.id) throw new Error("no devolvió datos"); }
     catch (e) { return Response.json({ error: `El token conecta pero Business Discovery falla: ${e.message}. Revisá los permisos instagram_basic, pages_show_list y pages_read_engagement.` }, { status: 400 }); }
     await sb(`/cs_settings?on_conflict=key`, { method: "POST", body: JSON.stringify({ key: "instagram_discovery", value: cfg, updated_at: now }) });
@@ -186,6 +194,6 @@ export async function POST(req) {
   }
   if (a === "competitor_toggle") { await sb(`/cs_competitors?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ active: !!body.active }) }); return Response.json({ ok: true }); }
   if (a === "competitor_delete") { await sb(`/cs_competitors?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); return Response.json({ ok: true }); }
-  if (a === "competencia_scan") { const r = await radarCompetencia({ analizar: 8 }); return Response.json({ ok: true, ...r }); }
+  if (a === "competencia_scan") { const r = await radarCompetencia({ analizar: 6 }); return Response.json({ ok: true, ...r }); }
   return Response.json({ error: "Acción desconocida" }, { status: 400 });
 }

@@ -7,5 +7,5 @@ export async function GET(req) {
   const auth = req.headers.get("authorization") || "";
   const ok = [process.env.CRON_SECRET, process.env.BOT_TEST_SECRET].filter(Boolean).some((s) => auth === `Bearer ${s}`);
   if (!ok) return Response.json({ error: "unauthorized" }, { status: 401 });
-  return Response.json({ ok: true, ...(await radarCompetencia({ analizar: 30 })) });
+  return Response.json({ ok: true, ...(await radarCompetencia({ analizar: 20, minDias: 5 })) });
 }
