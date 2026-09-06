@@ -35,7 +35,9 @@ function fromIso(iso) {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
-export default function DatePicker({ value, onChange, placeholder = "Seleccionar fecha", small = false, disabled = false }) {
+export default function DatePicker({ value, onChange, placeholder = "Seleccionar fecha", small = false, disabled = false, marks = null }) {
+  // marks: fechas ISO (YYYY-MM-DD) que ya tienen algo (p. ej. contenido programado). Se muestran con un punto sutil.
+  const marked = Array.isArray(marks) && marks.length ? marks.map((m) => fromIso(String(m).slice(0, 10))).filter(Boolean) : [];
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(fromIso(value));
   const [popupPos, setPopupPos] = useState({ top: 0, left: 0, openUp: false });
@@ -124,6 +126,8 @@ export default function DatePicker({ value, onChange, placeholder = "Seleccionar
             weekStartsOn={1}
             showOutsideDays
             fixedWeeks
+            modifiers={marked.length ? { marcado: marked } : undefined}
+            modifiersClassNames={{ marcado: "dp-marcado" }}
             footer={
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, paddingTop: 8, borderTop: `1px solid ${GOLD}22` }}>
                 <button type="button" onClick={() => handleSelect(undefined)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.55)", fontSize: 11, fontWeight: 600, cursor: "pointer", padding: 0 }}>
@@ -186,6 +190,9 @@ export default function DatePicker({ value, onChange, placeholder = "Seleccionar
               border: none;
               box-shadow: 0 2px 8px rgba(184,149,106,0.35);
             }
+            .rdp-day.dp-marcado .rdp-day_button { position: relative; }
+            .rdp-day.dp-marcado .rdp-day_button::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 4px; height: 4px; margin-left: -2px; border-radius: 99px; background: ${GOLD}; opacity: 0.85; }
+            .rdp-selected.dp-marcado .rdp-day_button::after { background: #0A1628; }
             .rdp-outside .rdp-day_button {
               color: rgba(255,255,255,0.2);
             }

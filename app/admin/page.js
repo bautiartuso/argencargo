@@ -131,7 +131,7 @@ const formatDate=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.matc
 const formatDateShort=(d)=>{if(!d)return"—";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/)){const[y,m,day]=s.split("-");return `${day}/${m}/${y.slice(2)}`;}const dd=new Date(d);return `${String(dd.getDate()).padStart(2,"0")}/${String(dd.getMonth()+1).padStart(2,"0")}/${String(dd.getFullYear()).slice(2)}`;};
 const formatDateInput=(d)=>{if(!d)return"";const s=String(d).slice(0,10);if(s.match(/^\d{4}-\d{2}-\d{2}$/))return s;return new Date(d).toISOString().split("T")[0];};
 
-function Inp({label,type="text",value,onChange,placeholder,small,step}){const isNum=type==="number";const isDate=type==="date";const isMoney=isNum&&step==="0.01";const [focused,setFocused]=useState(false);if(isDate){return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label><DatePicker value={value} onChange={onChange} placeholder={placeholder||"Seleccionar fecha"} small={small}/></div>;}
+function Inp({label,type="text",value,onChange,placeholder,small,step,marks}){const isNum=type==="number";const isDate=type==="date";const isMoney=isNum&&step==="0.01";const [focused,setFocused]=useState(false);if(isDate){return <div style={{marginBottom:12}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label><DatePicker value={value} onChange={onChange} placeholder={placeholder||"Seleccionar fecha"} small={small} marks={marks}/></div>;}
   // Para inputs monetarios: cuando no está focuseado, mostrar máximo 2 decimales (la data subyacente no cambia hasta blur)
   // Mostrar siempre con coma decimal (es-AR) — internamente se guarda con punto
   const rawDisplay=(isMoney&&!focused&&value!==""&&value!=null&&!isNaN(Number(value)))?(Math.round(Number(value)*100)/100).toString():(value||"");
@@ -5039,7 +5039,8 @@ function StudioPanel({token}){
     {sched&&<div onClick={()=>setSched(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.4)",borderRadius:14,padding:20,width:"100%",maxWidth:380}}>
         <h3 style={{margin:"0 0 10px",fontSize:15,color:"#fff"}}>📅 Programar · {sched.p.headline||sched.p.title}</h3>
-        <Inp label="Día" type="date" value={sched.date} onChange={v=>setSched(s=>({...s,date:v}))}/>
+        <Inp label="Día" type="date" value={sched.date} onChange={v=>setSched(s=>({...s,date:v}))} marks={pieces.filter(p=>["scheduled","published"].includes(p.status)&&p.kind!=="blog"&&(p.scheduled_at||p.published_at)).map(p=>{const x=new Date(p.scheduled_at||p.published_at);return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;})}/>
+        <p style={{margin:"-6px 0 10px",fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>Los días con un punto ya tienen contenido preparado (podés sumar más igual).</p>
         <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:14}}>
           <span style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.55)",textTransform:"uppercase"}}>Hora</span>
           <select value={sched.hour} onChange={e=>setSched(s=>({...s,hour:Number(e.target.value)}))} style={sel}>{Array.from({length:24},(_,h)=><option key={h} value={h}>{String(h).padStart(2,"0")}</option>)}</select>

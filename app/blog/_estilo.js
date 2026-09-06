@@ -26,7 +26,7 @@ export const CSS = `
 .masthead p{margin:0;max-width:34ch;color:var(--ink2);font-size:15px;line-height:1.5}
 .lead{display:grid;grid-template-columns:1.15fr 1fr;gap:38px;align-items:center;padding:8px 0 44px;border-bottom:1px solid var(--line);margin-bottom:12px;animation:rise .9s cubic-bezier(.32,.72,0,1) both}
 .lead .cover{border-radius:22px;padding:6px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06)}
-.lead .cover img{width:100%;display:block;border-radius:17px;aspect-ratio:1200/630;object-fit:cover}
+.lead .cover img{width:100%;height:auto;display:block;border-radius:17px;aspect-ratio:1200/630;object-fit:cover}
 .dateline{display:flex;align-items:center;gap:12px;color:var(--gold);font-size:13px;letter-spacing:0.02em;margin-bottom:14px}
 .dateline:before{content:"";width:28px;height:1px;background:var(--gold2)}
 .lead h2{font-family:var(--serif);font-weight:500;font-size:clamp(28px,3.4vw,40px);line-height:1.12;margin:0 0 14px;letter-spacing:-0.015em}
@@ -44,7 +44,7 @@ export const CSS = `
 .row h3{font-family:var(--serif);font-weight:500;font-size:24px;line-height:1.2;margin:0 0 8px;letter-spacing:-0.01em}
 .row p{margin:0;color:var(--ink2);font-size:14.5px;line-height:1.55;max-width:62ch}
 .row .min{margin-top:8px;font-size:12px;color:var(--mute)}
-.row img{width:100%;aspect-ratio:1200/630;object-fit:cover;border-radius:12px;display:block}
+.row img{width:100%;height:auto;aspect-ratio:1200/630;object-fit:cover;border-radius:12px;display:block}
 .empty{padding:60px 0;color:var(--mute);font-size:15px}
 /* Nota */
 .art{max-width:720px;margin:0 auto}
@@ -52,7 +52,7 @@ export const CSS = `
 .art h1{font-family:var(--serif);font-weight:500;font-size:clamp(32px,4.6vw,48px);line-height:1.1;letter-spacing:-0.02em;margin:18px 0 16px}
 .art .std{font-size:18.5px;line-height:1.55;color:var(--ink2);margin:0 0 22px;font-family:var(--serif);font-weight:400}
 .art .cover{border-radius:20px;padding:5px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);margin:0 0 32px}
-.art .cover img{width:100%;display:block;border-radius:16px}
+.art .cover img{width:100%;height:auto;display:block;border-radius:16px}
 .nota{font-size:17px;line-height:1.75;color:rgba(244,239,230,0.9)}
 .nota h2{font-family:var(--serif);font-weight:500;font-size:27px;line-height:1.25;margin:36px 0 12px;letter-spacing:-0.01em;color:var(--ink)}
 .nota h3{font-family:var(--serif);font-weight:500;font-size:21px;margin:26px 0 8px;color:var(--ink)}
