@@ -4720,7 +4720,7 @@ function StudioPanel({token}){
       const Mini=({p})=><button onClick={()=>setCalSel(p)} title={`${hora(p)} · ${p.headline||p.title||""}`} style={{border:"none",padding:0,background:"transparent",cursor:"pointer",width:"100%",textAlign:"left"}}>
         <div style={{display:"flex",gap:6,alignItems:"center",padding:"3px 4px",borderRadius:7,background:p.status==="published"?"rgba(74,222,128,0.1)":"rgba(96,165,250,0.12)",border:`1px solid ${p.status==="published"?"rgba(74,222,128,0.35)":"rgba(96,165,250,0.35)"}`}}>
           <div style={{width:26,height:p.kind==="story"?40:32,borderRadius:4,overflow:"hidden",background:"#0b1220",flexShrink:0}}>{p.image_url&&<img src={p.image_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>}</div>
-          <div style={{minWidth:0}}><div style={{fontSize:10,fontWeight:800,color:p.status==="published"?"#4ade80":"#60a5fa"}}>{hora(p)}{nSlides(p)>1?` ×${nSlides(p)}`:""} {p.status==="published"?"✓":""}{p.publish_error?" ⚠":""}</div><div style={{fontSize:9.5,color:"rgba(255,255,255,0.6)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.headline||p.title||""}</div></div>
+          <div style={{minWidth:0,overflow:"hidden"}}><div style={{fontSize:10,fontWeight:800,color:p.status==="published"?"#4ade80":"#60a5fa",whiteSpace:"nowrap"}}>{hora(p)}{nSlides(p)>1?` ×${nSlides(p)}`:""} {p.status==="published"?"✓":""}{p.publish_error?" ⚠":""}</div><div style={{fontSize:9.5,color:"rgba(255,255,255,0.6)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{String(p.headline||p.title||"").slice(0,18)}{String(p.headline||p.title||"").length>18?"…":""}</div></div>
         </div>
       </button>;
       // Un calendario mensual por formato (posteos e historias), cada uno con su navegación de mes.
@@ -4752,8 +4752,8 @@ function StudioPanel({token}){
             </div>
             :<div style={{border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,overflow:"hidden"}}>
               <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",background:"rgba(255,255,255,0.03)"}}>{["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(d=><div key={d} style={{padding:"6px 8px",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.05em",textAlign:"center"}}>{d}</div>)}</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)"}}>
-                {celdas.map((d,i)=>{const k=d?`${y}-${m}-${d}`:null;const l=k?(porDia[k]||[]):[];const esHoy=k===hoyK;return <div key={i} style={{minHeight:kind==="story"?96:88,padding:6,borderTop:"1px solid rgba(255,255,255,0.06)",borderLeft:i%7?"1px solid rgba(255,255,255,0.06)":"none",background:esHoy?"rgba(184,149,106,0.07)":d?"transparent":"rgba(0,0,0,0.15)"}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))"}}>
+                {celdas.map((d,i)=>{const k=d?`${y}-${m}-${d}`:null;const l=k?(porDia[k]||[]):[];const esHoy=k===hoyK;return <div key={i} style={{minHeight:kind==="story"?96:88,minWidth:0,overflow:"hidden",padding:6,borderTop:"1px solid rgba(255,255,255,0.06)",borderLeft:i%7?"1px solid rgba(255,255,255,0.06)":"none",background:esHoy?"rgba(184,149,106,0.07)":d?"transparent":"rgba(0,0,0,0.15)"}}>
                   {d&&<div style={{fontSize:11,fontWeight:800,color:esHoy?"#E8C99B":"rgba(255,255,255,0.55)",marginBottom:4}}>{d}</div>}
                   <div style={{display:"grid",gap:3}}>{l.map(p=><Mini key={p.id} p={p}/>)}</div>
                 </div>;})}
