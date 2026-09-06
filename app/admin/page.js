@@ -4519,7 +4519,7 @@ function StudioPanel({token}){
   const [calSel,setCalSel]=useState(null);   // pieza abierta desde el calendario
   const [cambio,setCambio]=useState(null);   // {p, texto}: modal de "pedir cambio" con la imagen a la vista
   const [pieces,setPieces]=useState([]);const [lo,setLo]=useState(true);
-  const [meta,setMeta]=useState({memory:[],assets:[],runs:[],instagram:{},discovery:{},competitors:[]});
+  const [meta,setMeta]=useState({memory:[],assets:[],runs:[],instagram:{},discovery:{},competitors:[],estado:null});
   const [igDisc,setIgDisc]=useState("");              // token de Facebook para el radar de competencia
   const [comp,setComp]=useState({posts:[],lo:false});  // posts de la competencia con análisis
   const [compUser,setCompUser]=useState("");
@@ -4535,7 +4535,7 @@ function StudioPanel({token}){
   const isMobile=typeof window!=="undefined"&&window.innerWidth<760;
   const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/studio${qs}`,{...opts,headers:{...(opts.body instanceof FormData?{}:{"Content-Type":"application/json"}),Authorization:`Bearer ${token}`,...(opts.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
   const load=async()=>{try{const b=await api("?view=pieces");setPieces(b.pieces||[]);}catch(e){console.error(e);}finally{setLo(false);}};
-  const loadMeta=async()=>{try{const b=await api("?view=memory");setMeta({memory:b.memory||[],assets:b.assets||[],runs:b.runs||[],instagram:b.instagram||{},discovery:b.discovery||{},competitors:b.competitors||[]});}catch(e){toast(e.message,"error");}};
+  const loadMeta=async()=>{try{const b=await api("?view=memory");setMeta({memory:b.memory||[],assets:b.assets||[],runs:b.runs||[],instagram:b.instagram||{},discovery:b.discovery||{},competitors:b.competitors||[],estado:b.estado||null});}catch(e){toast(e.message,"error");}};
   const loadComp=async()=>{setComp(c=>({...c,lo:true}));try{const b=await api("?view=competencia");setComp({posts:b.posts||[],lo:false});}catch(e){setComp(c=>({...c,lo:false}));}};
   useEffect(()=>{load();loadMeta();},[token]);
   useEffect(()=>{if(tab==="marca")loadComp();},[tab]);
@@ -4740,31 +4740,78 @@ function StudioPanel({token}){
         </div>}
       </div>;})()}
 
-    {tab==="runner"&&<div style={{maxWidth:760}}>
-      <div style={box}>
-        <p style={{margin:"0 0 6px",fontSize:13,fontWeight:800,color:"#fff"}}>El analista</p>
-        <p style={{margin:"0 0 12px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Lee la marca (knowledge + historial), el radar de noticias (lee los artículos) y los datos reales del sistema, y propone piezas en el formato que le corresponde a cada idea. Caen en Contenido: nunca publica solo. Se dispara a mano.</p>
-        <div style={{display:"flex",gap:14,alignItems:"flex-end",flexWrap:"wrap"}}>
-          {[["feed","Posteos","una imagen, una idea que cierra sola"],["carousel","Carruseles","2 a 6 imágenes, lo educativo en partes"],["story","Historias","sueltas o secuencias de 2 a 4; lo decide el analista"]].map(([k,l,h])=><div key={k}>
-            <p style={{margin:"0 0 4px",fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{l}</p>
-            <select value={runMix[k]} onChange={e=>setRunMix(m=>({...m,[k]:Number(e.target.value)}))} style={sel}>{[0,1,2,3,4,5,6,8,10].map(n=><option key={n} value={n}>{n}</option>)}</select>
-            <p style={{margin:"4px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.4)",maxWidth:170}}>{h}</p>
-          </div>)}
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>Total: {runMix.feed+runMix.carousel+runMix.story} pieza{runMix.feed+runMix.carousel+runMix.story===1?"":"s"}</span>
-            <Btn onClick={async()=>{const b=await act("runner",{mix:runMix},x=>`${x.created} ideas propuestas`);if(b){loadMeta();setTab("contenido");}}} disabled={!!busy||!(runMix.feed+runMix.carousel+runMix.story)}>{busy==="runner"?"Pensando…":"Proponer"}</Btn>
+    {tab==="runner"&&(()=>{const es=meta.estado;const tot=runMix.feed+runMix.carousel+runMix.story;
+      const hace=(d)=>{if(!d)return "nunca";const m=Math.round((Date.now()-new Date(d).getTime())/60000);return m<1?"recién":m<60?`hace ${m} min`:m<1440?`hace ${Math.round(m/60)} h`:`hace ${Math.round(m/1440)} d`;};
+      const macOk=!!(es?.mac?.last_seen_at&&Date.now()-new Date(es.mac.last_seen_at).getTime()<10*60000);
+      const usd=(v)=>`USD ${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      const Stat=({l,v,c})=><div style={{display:"flex",justifyContent:"space-between",gap:8,padding:"5px 0",borderTop:"1px solid rgba(255,255,255,0.05)",fontSize:12}}><span style={{color:"rgba(255,255,255,0.55)"}}>{l}</span><span style={{fontWeight:800,color:c||"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</span></div>;
+      const numInp=(k)=><input type="number" min={0} max={30} value={runMix[k]} onChange={e=>setRunMix(m=>({...m,[k]:Math.max(0,Math.min(30,Math.round(Number(e.target.value)||0)))}))} onFocus={e=>e.target.select()} style={{...inp,width:96,textAlign:"center",fontSize:18,fontWeight:800,padding:"8px 6px"}}/>;
+      return <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"minmax(0,1fr) 300px",gap:14,alignItems:"start"}}>
+      <div style={{display:"grid",gap:12}}>
+        <div style={box}>
+          <p style={{margin:"0 0 6px",fontSize:13,fontWeight:800,color:"#fff"}}>El analista</p>
+          <p style={{margin:"0 0 12px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Lee la marca (knowledge, aprendizajes e historial), el radar de noticias (lee los artículos), lo que publicó la competencia y los datos reales del sistema, y propone piezas en el formato que le corresponde a cada idea, con o sin foto real. Caen en Contenido: nunca publica solo.</p>
+          <div style={{display:"flex",gap:16,alignItems:"flex-end",flexWrap:"wrap"}}>
+            {[["feed","Posteos","una imagen, una idea que cierra sola"],["carousel","Carruseles","2 a 6 imágenes, lo educativo en partes"],["story","Historias","sueltas o secuencias de 2 a 4; lo decide el analista"]].map(([k,l,h])=><div key={k}>
+              <p style={{margin:"0 0 4px",fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{l}</p>
+              {numInp(k)}
+              <p style={{margin:"4px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.4)",maxWidth:170}}>{h}</p>
+            </div>)}
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <span style={{fontSize:11,color:tot>30?"#f87171":"rgba(255,255,255,0.5)"}}>Total: {tot} pieza{tot===1?"":"s"}{tot>30?" (máximo 30 por corrida)":""}</span>
+              <Btn onClick={async()=>{const b=await act("runner",{mix:runMix},x=>`${x.created} ideas propuestas`);if(b){loadMeta();setTab("contenido");}}} disabled={!!busy||!tot||tot>30}>{busy==="runner"?"Pensando…":"Proponer"}</Btn>
+            </div>
           </div>
         </div>
+        <div style={box}>
+          <p style={{margin:"0 0 8px",fontSize:13,fontWeight:800,color:"#fff"}}>Corridas</p>
+          {meta.runs.length===0&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Todavía no corrió.</p>}
+          {meta.runs.map(r=>{const s=r.resumen;return <div key={r.id} style={{padding:"9px 0",borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{fontSize:12,color:"#fff",fontWeight:700}}>{fmt(r.started_at)}</span>
+              <span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{r.kind==="runner"?"analista":r.kind} · {r.created} de {r.requested} propuestas</span>
+              {s&&<span style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
+                {chip(`✓ ${s.aprobadas} aprobadas`,"#22c55e")}{s.descartadas>0&&chip(`✕ ${s.descartadas}`,"#ef4444")}
+                {chip(s.fotos?`📷 ${s.fotos} foto${s.fotos===1?"":"s"} · ${usd(s.costo)}`:"sin fotos · USD 0,00","#f472b6")}
+              </span>}
+            </div>
+            {r.log&&<pre style={{margin:"5px 0 0",fontSize:11,color:"rgba(255,255,255,0.5)",whiteSpace:"pre-wrap",fontFamily:"inherit"}}>{r.log}</pre>}
+          </div>;})}
+        </div>
       </div>
-      <div style={{...box,marginTop:12}}>
-        <p style={{margin:"0 0 8px",fontSize:13,fontWeight:800,color:"#fff"}}>Corridas</p>
-        {meta.runs.length===0&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Todavía no corrió.</p>}
-        {meta.runs.map(r=><div key={r.id} style={{padding:"8px 0",borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-          <p style={{margin:0,fontSize:12,color:"#fff"}}>{fmt(r.started_at)} · <span style={{color:"rgba(255,255,255,0.5)"}}>{r.kind}</span> · {r.created} de {r.requested} propuestas</p>
-          {r.log&&<pre style={{margin:"4px 0 0",fontSize:11,color:"rgba(255,255,255,0.5)",whiteSpace:"pre-wrap",fontFamily:"inherit"}}>{r.log}</pre>}
-        </div>)}
+      <div style={{display:"grid",gap:12}}>
+        <div style={box}>
+          <p style={{margin:"0 0 6px",fontSize:13,fontWeight:800,color:"#fff"}}>Tu Mac</p>
+          <p style={{margin:0,fontSize:12,color:macOk?"#4ade80":"#f87171"}}>{macOk?"● Conectada":"● Sin señal"} <span style={{color:"rgba(255,255,255,0.45)"}}>· último contacto {hace(es?.mac?.last_seen_at)}</span></p>
+          <p style={{margin:"4px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)"}}>Pide trabajo cada 2 minutos mientras está prendida.</p>
+          <Stat l="En la cola" v={es?.cola?.total??"—"}/>
+          <Stat l="Diseñando ahora" v={es?.cola?.en_curso??"—"}/>
+        </div>
+        <div style={box}>
+          <p style={{margin:"0 0 4px",fontSize:13,fontWeight:800,color:"#fff"}}>Este mes</p>
+          <Stat l="Propuestas" v={es?.mes?.propuestas??"—"}/>
+          <Stat l="Aprobadas" v={es?.mes?.aprobadas??"—"} c="#4ade80"/>
+          <Stat l="Publicadas" v={es?.mes?.publicadas??"—"} c="#60a5fa"/>
+          <Stat l="Descartadas" v={es?.mes?.descartadas??"—"} c="rgba(255,255,255,0.6)"/>
+          <Stat l="Esperando tu visto" v={es?.mes?.en_revision??"—"} c="#fbbf24"/>
+          <Stat l="Posteos / carruseles / historias" v={es?`${es.mes.posteos} / ${es.mes.carruseles} / ${es.mes.historias}`:"—"}/>
+        </div>
+        <div style={box}>
+          <p style={{margin:"0 0 4px",fontSize:13,fontWeight:800,color:"#fff"}}>Fotos reales (fal.ai)</p>
+          <Stat l="Fotos este mes" v={es?.mes?.fotos??"—"}/>
+          <Stat l="Costo este mes" v={es?usd(es.mes.costo_fotos_usd):"—"} c="#f472b6"/>
+          <Stat l="Promedio por foto" v={es?.mes?.fotos?usd(es.mes.costo_fotos_usd/es.mes.fotos):"—"}/>
+          <p style={{margin:"6px 0 0",fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>Estimado por tarifa: escena (Flux 2) ≈ USD 0,045 · con marca (Nano Banana Pro) ≈ USD 0,15. El diseño en tu Mac no tiene costo.</p>
+        </div>
+        <div style={box}>
+          <p style={{margin:"0 0 4px",fontSize:13,fontWeight:800,color:"#fff"}}>Radar de competencia</p>
+          <Stat l="Estado" v={es?.radar?.conectado?"conectado":"sin conectar"} c={es?.radar?.conectado?"#4ade80":"#fbbf24"}/>
+          <Stat l="Cuentas" v={es?.radar?.cuentas??"—"}/>
+          <Stat l="Último escaneo" v={hace(es?.radar?.ultimo)}/>
+          <Stat l="Próximo" v="domingo 22:00"/>
+        </div>
       </div>
-    </div>}
+    </div>;})()}
 
     {tab==="chatbot"&&<div style={{maxWidth:760}}>
       <div style={{...box,minHeight:300,display:"flex",flexDirection:"column",gap:8}}>

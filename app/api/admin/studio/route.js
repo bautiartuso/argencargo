@@ -13,7 +13,7 @@
 // POST {action:"instagram", ig_user_id, access_token} / {action:"instagram_test"}
 // POST multipart {action:"asset", kind, file}       → sube logo o posteo de referencia
 
-import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, appendAprendizaje, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername, borrarImagenesPieza, decidirFoto } from "../../../../lib/studio";
+import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, appendAprendizaje, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername, borrarImagenesPieza, decidirFoto, estadoEstudio } from "../../../../lib/studio";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -36,8 +36,20 @@ export async function GET(req) {
   const url = new URL(req.url);
   const view = url.searchParams.get("view") || "pieces";
   if (view === "memory") {
-    const [memory, assets, runs, ig, disc, competitors] = await Promise.all([loadMemory(), loadAssets(), sb(`/cs_runs?select=id,kind,requested,created,log,started_at,finished_at&order=started_at.desc&limit=30`), igSettings(), igDiscoverySettings(), loadCompetitors()]);
-    return Response.json({ memory, assets, runs: Array.isArray(runs.body) ? runs.body : [], instagram: { ig_user_id: ig.ig_user_id || "", connected: !!(ig.ig_user_id && ig.access_token), username: ig.username || null },
+    const [memory, assets, runs, ig, disc, competitors, estado] = await Promise.all([loadMemory(), loadAssets(), sb(`/cs_runs?select=id,kind,requested,created,log,started_at,finished_at&order=started_at.desc&limit=30`), igSettings(), igDiscoverySettings(), loadCompetitors(), estadoEstudio().catch(() => null)]);
+    // Por corrida: piezas, aprobadas, fotos y costo (desde cs_pieces.run_id).
+    const runRows = Array.isArray(runs.body) ? runs.body : [];
+    if (runRows.length) {
+      const pr = await sb(`/cs_pieces?run_id=in.(${runRows.map((r) => r.id).join(",")})&select=run_id,status,photos_generated,photo_cost_usd`);
+      const byRun = {};
+      for (const p of Array.isArray(pr.body) ? pr.body : []) {
+        const b = (byRun[p.run_id] = byRun[p.run_id] || { piezas: 0, aprobadas: 0, descartadas: 0, fotos: 0, costo: 0 });
+        b.piezas++; if (["approved", "scheduled", "published"].includes(p.status)) b.aprobadas++; if (p.status === "rejected") b.descartadas++;
+        b.fotos += Number(p.photos_generated || 0); b.costo += Number(p.photo_cost_usd || 0);
+      }
+      for (const r of runRows) { const b = byRun[r.id] || { piezas: 0, aprobadas: 0, descartadas: 0, fotos: 0, costo: 0 }; r.resumen = { ...b, costo: Math.round(b.costo * 100) / 100 }; }
+    }
+    return Response.json({ memory, assets, runs: runRows, estado, instagram: { ig_user_id: ig.ig_user_id || "", connected: !!(ig.ig_user_id && ig.access_token), username: ig.username || null },
       discovery: { connected: !!(disc.ig_user_id && disc.access_token), username: disc.username || null, page_name: disc.page_name || null, connected_at: disc.connected_at || null }, competitors });
   }
   if (view === "competencia") {
@@ -89,7 +101,7 @@ export async function POST(req) {
     const mix = body.mix && typeof body.mix === "object" ? { feed: Number(body.mix.feed) || 0, carousel: Number(body.mix.carousel) || 0, story: Number(body.mix.story) || 0 } : null;
     const total = mix ? mix.feed + mix.carousel + mix.story : Math.min(20, Math.max(1, Number(body.count) || 3));
     if (!total) return Response.json({ error: "Elegí al menos una pieza" }, { status: 400 });
-    if (total > 20) return Response.json({ error: "Máximo 20 piezas por corrida" }, { status: 400 });
+    if (total > 30) return Response.json({ error: "Máximo 30 piezas por corrida" }, { status: 400 });
     const created = await runner(mix ? { mix, source: "runner" } : { count: total, source: "runner" });
     return Response.json({ ok: true, created: created.length, titulos: created.map((c) => c.title) });
   }

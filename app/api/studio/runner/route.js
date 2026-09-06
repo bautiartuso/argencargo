@@ -18,6 +18,8 @@ const okAuth = (req) => !!process.env.RUNNER_SECRET && req.headers.get("x-runner
 
 export async function GET(req) {
   if (!okAuth(req)) return Response.json({ error: "unauthorized" }, { status: 401 });
+  // Latido: el panel muestra cuándo fue la última vez que la Mac pidió trabajo.
+  sb(`/cs_settings?on_conflict=key`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ key: "runner_heartbeat", value: { last_seen_at: new Date().toISOString() }, updated_at: new Date().toISOString() }) }).catch(() => {});
   const stale = new Date(Date.now() - 15 * 60000).toISOString();
   const r = await sb(`/cs_pieces?status=eq.generating&or=(locked_at.is.null,locked_at.lt.${stale})&select=*&order=created_at.asc&limit=1`);
   const piece = Array.isArray(r.body) && r.body[0];
