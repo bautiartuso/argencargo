@@ -363,6 +363,8 @@ async function runSync(req) {
   const orphanRes = orphanSettled.map((s, i) => s.status === "fulfilled" ? s.value : { op: orphans[i].operation_code, error: String(s.reason?.message || s.reason) });
 
   const results = [...grouped, ...orphanRes];
+  // Marca de corrida exitosa (el cron de salud avisa por Telegram si pasa mucho tiempo sin una).
+  try { await fetch(`${SB_URL}/rest/v1/cs_settings?on_conflict=key`, { method: "POST", headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ key: "tracking_sync_last_ok", value: { at: new Date().toISOString(), synced: results.length }, updated_at: new Date().toISOString() }) }); } catch {}
   return Response.json({ synced: results.length, groups: groups.size, results });
 }
 

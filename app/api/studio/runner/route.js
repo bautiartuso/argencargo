@@ -10,7 +10,6 @@
 // Auth: header x-runner-secret = RUNNER_SECRET.
 
 import { sb, loadMemory, loadAssets, ejemplosAprobados, uploadStorage, borrarImagenesPieza, generarFoto } from "../../../../lib/studio";
-import { tgNotify } from "../../../../lib/telegram";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -78,12 +77,5 @@ export async function POST(req) {
     html: images[0].html, headline: String(fd.get("headline") || ""), subheadline: String(fd.get("subheadline") || ""),
     caption: String(fd.get("caption") || ""), hashtags: String(fd.get("hashtags") || ""),
   }) });
-  // Aviso por Telegram (gratis): la pieza lista, con la portada, para que la mire desde el celu.
-  try {
-    const cur = await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}&select=kind,slides,title,headline,photo_url`);
-    const p = Array.isArray(cur.body) && cur.body[0] ? cur.body[0] : {};
-    const fmtK = p.kind === "carousel" ? `Carrusel ×${images.length}` : p.kind === "story" ? (images.length > 1 ? `Historias ×${images.length}` : "Historia") : "Posteo";
-    await tgNotify(`🎨 <b>Lista para aprobar</b> · ${fmtK}${p.photo_url ? " · 📷 foto real" : ""}\n${String(fd.get("headline") || p.title || "").slice(0, 120)}\n\nAprobala en Content Studio → Contenido.`, { photo: images[0].url });
-  } catch (e) { console.error("[runner] telegram", e.message); }
   return Response.json({ ok: true, image_url: images[0].url, images: images.length });
 }

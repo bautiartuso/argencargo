@@ -4521,6 +4521,7 @@ function StudioPanel({token}){
   const [pieces,setPieces]=useState([]);const [lo,setLo]=useState(true);
   const [meta,setMeta]=useState({memory:[],assets:[],runs:[],instagram:{},discovery:{},competitors:[],estado:null,telegram:{}});
   const [igDisc,setIgDisc]=useState("");              // token de Facebook para el radar de competencia
+  const [budgets,setBudgets]=useState(null);           // topes mensuales de gasto (Claude API / fal) para las alertas
   const [comp,setComp]=useState({posts:[],lo:false});  // posts de la competencia con análisis
   const [compUser,setCompUser]=useState("");
   const [busy,setBusy]=useState("");
@@ -4935,7 +4936,18 @@ function StudioPanel({token}){
       </div>
       <div style={{...box,marginTop:12}}>
         <p style={{margin:"0 0 4px",fontSize:13,fontWeight:800,color:"#fff"}}>Telegram {meta.telegram?.connected?<span style={{color:"#4ade80"}}>· conectado{meta.telegram.username?` (@${meta.telegram.username})`:meta.telegram.first_name?` (${meta.telegram.first_name})`:""}</span>:meta.telegram?.configured?<span style={{color:"#fbbf24"}}>· falta tu /start</span>:<span style={{color:"#f87171"}}>· sin token</span>}</p>
-        <p style={{margin:"0 0 12px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Avisos gratis a tu celular: cada historia publicada (con la imagen, para compartirla como estado de WhatsApp en dos toques), cada pieza lista para aprobar, y si tu Mac deja de responder con piezas en cola.</p>
+        <p style={{margin:"0 0 8px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Avisos gratis a tu celular. Te llega:</p>
+        <ul style={{margin:"0 0 12px",paddingLeft:18,fontSize:12,color:"rgba(255,255,255,0.65)",lineHeight:1.7}}>
+          <li>Cada <b>historia publicada</b> en Instagram, con las imágenes, para compartirla como estado de WhatsApp en dos toques.</li>
+          <li><b>Tu Mac sin señal</b> con piezas en cola (más de 20 min, de 9 a 23).</li>
+          <li><b>Sin crédito o clave rechazada</b> en Claude API o en fal.ai, apenas pasa.</li>
+          <li><b>Gasto del mes</b> de Claude API y de fal.ai: al 80 % y al 100 % de los topes de abajo.</li>
+          <li><b>Fallas</b>: piezas con error en tu Mac, publicaciones rechazadas por Instagram, tracking sin sincronizar hace más de 3 h, mensajes de WhatsApp rechazados por Meta.</li>
+        </ul>
+        {meta.telegram?.connected&&(()=>{const b=budgets||meta.telegram.budgets||{claude:40,fal:40};return <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",marginBottom:12}}>
+          {[["claude","Tope Claude API (USD/mes)"],["fal","Tope fal.ai fotos (USD/mes)"]].map(([k,l])=><div key={k}><p style={{margin:"0 0 4px",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{l}</p><input type="number" min={1} value={b[k]} onChange={e=>setBudgets({...b,[k]:Number(e.target.value)||0})} style={{...inp,width:120,textAlign:"center",fontWeight:800}}/></div>)}
+          <Btn small onClick={async()=>{await act("telegram_budgets",{claude:b.claude,fal:b.fal},"Topes guardados");setBudgets(null);loadMeta();}} disabled={!!busy||!budgets}>Guardar topes</Btn>
+        </div>;})()}
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           {!meta.telegram?.connected&&<Btn small onClick={async()=>{const b=await act("telegram_connect",{},x=>`Conectado con ${x.info?.first_name||x.info?.username||"tu chat"}`);if(b)loadMeta();}} disabled={!!busy||!meta.telegram?.configured}>Conectar</Btn>}
           {meta.telegram?.connected&&<Btn small variant="secondary" onClick={()=>act("telegram_test",{},"Enviado: mirá Telegram")} disabled={!!busy}>Enviar prueba</Btn>}

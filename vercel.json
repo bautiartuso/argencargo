@@ -51,6 +51,10 @@
     {
       "path": "/api/cron/competitor-radar",
       "schedule": "0 1 * * 1"
+    },
+    {
+      "path": "/api/cron/health",
+      "schedule": "*/30 * * * *"
     }
   ]
-}
+}\n

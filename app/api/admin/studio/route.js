@@ -50,7 +50,7 @@ export async function GET(req) {
       }
       for (const r of runRows) { const b = byRun[r.id] || { piezas: 0, aprobadas: 0, descartadas: 0, fotos: 0, costo: 0 }; r.resumen = { ...b, costo: Math.round(b.costo * 100) / 100 }; }
     }
-    return Response.json({ memory, assets, runs: runRows, estado, telegram: { configured: tgConfigured(), connected: !!tgc?.chat_id, username: tgc?.username || null, first_name: tgc?.first_name || null }, instagram: { ig_user_id: ig.ig_user_id || "", connected: !!(ig.ig_user_id && ig.access_token), username: ig.username || null },
+    return Response.json({ memory, assets, runs: runRows, estado, telegram: { configured: tgConfigured(), connected: !!tgc?.chat_id, username: tgc?.username || null, first_name: tgc?.first_name || null, budgets: { claude: Number(tgc?.budgets?.claude || 40), fal: Number(tgc?.budgets?.fal || 40) } }, instagram: { ig_user_id: ig.ig_user_id || "", connected: !!(ig.ig_user_id && ig.access_token), username: ig.username || null },
       discovery: { connected: !!(disc.ig_user_id && disc.access_token), username: disc.username || null, page_name: disc.page_name || null, connected_at: disc.connected_at || null }, competitors });
   }
   if (view === "competencia") {
@@ -230,6 +230,12 @@ export async function POST(req) {
   }
   if (a === "telegram_test") { const r = await tgNotify("🔔 Prueba de aviso desde Argencargo Studio."); return r?.ok ? Response.json({ ok: true }) : Response.json({ error: r?.error || r?.skipped || "no se pudo enviar" }, { status: 400 }); }
   if (a === "telegram_disconnect") { await tgDisconnect(); return Response.json({ ok: true }); }
+  if (a === "telegram_budgets") {
+    const cur = await tgSettings();
+    const budgets = { claude: Math.max(1, Number(body.claude) || 40), fal: Math.max(1, Number(body.fal) || 40) };
+    await sb(`/cs_settings?on_conflict=key`, { method: "POST", body: JSON.stringify({ key: "telegram", value: { ...cur, budgets }, updated_at: now }) });
+    return Response.json({ ok: true, budgets });
+  }
   if (a === "competencia_scan") { const r = await radarCompetencia({ analizar: 6 }); return Response.json({ ok: true, ...r }); }
   return Response.json({ error: "Acción desconocida" }, { status: 400 });
 }
