@@ -116,6 +116,7 @@ Escribí tres archivos en esta carpeta:
 2) meta.json — {"title": "…", "slug": "titulo-en-kebab-sin-acentos", "excerpt": "1 o 2 frases (máx. 160 caracteres) que resuman la nota", "tags": "3 a 6 etiquetas separadas por coma", "seo_title": "máx. 60 caracteres", "seo_description": "máx. 155 caracteres", "headline": "titular corto para la portada (4 a 8 palabras)", "subheadline": "una línea para la portada", "relevance": 1-5, "relevance_reason": "una línea"}
    - relevance: qué tan relevante es la nota para quien importa desde China. 5 = cambio concreto que lo afecta ya (norma, arancel, régimen courier, plazos, requisitos nuevos) de fuente oficial o seria; 4 = cambio o dato importante aunque no urgente; 3 = útil pero educativa/atemporal; 2 = institucional o genérica; 1 = anecdótica. Con 4 o 5 la nota sale publicada sola; con menos espera el visto de Bautista. Sé honesto: inflar la relevancia publica cosas flojas.
 3) slide-1.html — la PORTADA de la nota, 1200×630 px exactos (html y body con margin 0, width 1200px, height 630px, overflow hidden), sin JavaScript. Fuentes: <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">. Diseño editorial de marca (ver brand-kit.md): fondo claro (blanco) o navy, el headline grande en 'Bebas Neue' con una palabra resaltada en bloque #1E8BFF, el subheadline en 'Inter', una etiqueta chica "NOVEDADES · COMERCIO EXTERIOR" y el logo (brand/logo-completo.png, transparente; blanco con filter:brightness(0) invert(1) sobre navy). Sin fotos, sin imágenes externas, sin emojis. Márgenes de 70 px. Nada se corta ni se encima.
+4) slide-2.html — una HISTORIA de Instagram de 1080×1920 px exactos para avisar que salió la nota: misma familia visual que la portada, el headline grande arriba del centro, una línea "Nueva nota en el blog", el subheadline, y abajo un bloque que diga "Leela en argencargo.com.ar/blog" (Bautista le pega el sticker de link encima). Nada importante en los 250 px de arriba ni de abajo. Logo chico.
 
 Cuando termines, respondé solo: LISTO.`;
 }
@@ -149,7 +150,7 @@ Cuando termines, respondé solo: LISTO.`;
 
 function promptDirector(p, pass, defectos) {
   const n = nSlides(p);
-  const pngs = n > 1 ? `slide-1.png … slide-${n}.png (miralos TODOS con Read, en orden)` : "slide-1.png (miralo con Read)";
+  const pngs = p.kind === "blog" ? "slide-1.png (portada 1200×630) y slide-2.png (historia 1080×1920): miralos con Read" : n > 1 ? `slide-1.png … slide-${n}.png (miralos TODOS con Read, en orden)` : "slide-1.png (miralo con Read)";
   const htmls = n > 1 ? "slide-N.html correspondiente" : "slide-1.html";
   return `Sos el director de arte de Argencargo. En esta carpeta está la pieza YA RENDERIZADA: ${pngs} y su código ${n > 1 ? "slide-N.html" : "slide-1.html"}; la memoria en memoria/*.md; referencias/ y aprobados/ como vara de estilo. Formato: ${formatoLabel(p)}.
 ${defectos.length ? `\nDEFECTOS MEDIDOS AUTOMÁTICAMENTE EN EL RENDER (corregilos sí o sí):\n${defectos.map((d) => `- ${d}`).join("\n")}\n` : ""}
@@ -189,7 +190,7 @@ async function procesar(data) {
   const material = p.material ? `\n## MATERIAL (base para la nota; no copiar frases)\n${p.material}\n` : "";
   const brief = `# Pieza a crear\n\n- Formato: ${formatoLabel(p)}\n- Pilar: ${p.pillar || "(libre)"}\n- Título interno: ${p.title || ""}\n\n## Brief\n${p.brief || "(libre)"}\n${plan}${material}${p.feedback ? `\n## CAMBIOS PEDIDOS POR BAUTISTA sobre la versión anterior (aplicalos todos)\n${p.feedback}\n\nVersión anterior: ${p.headline || ""} / ${p.subheadline || ""}\n` : ""}`;
   await fs.writeFile(path.join(dir, "brief.md"), brief);
-  await fs.writeFile(path.join(dir, "CLAUDE.md"), `Trabajás dentro de esta carpeta. Leé memoria/*.md y brief.md; mirá brand/, referencias/ y aprobados/. Escribí únicamente ${p.kind === "blog" ? "nota.md, meta.json y slide-1.html" : `${n > 1 ? `slide-1.html … slide-${n}.html` : "slide-1.html"} y meta.json`} (y corregilos cuando se te pida). No crees otros archivos ni salgas de la carpeta.`);
+  await fs.writeFile(path.join(dir, "CLAUDE.md"), `Trabajás dentro de esta carpeta. Leé memoria/*.md y brief.md; mirá brand/, referencias/ y aprobados/. Escribí únicamente ${p.kind === "blog" ? "nota.md, meta.json, slide-1.html (portada 1200×630) y slide-2.html (historia 1080×1920)" : `${n > 1 ? `slide-1.html … slide-${n}.html` : "slide-1.html"} y meta.json`} (y corregilos cuando se te pida). No crees otros archivos ni salgas de la carpeta.`);
 
   // Foto real: la genera la web (fal.ai) y se baja a fotos/foto.jpg. Si ya existe (rehacer diseño), se reutiliza.
   const pedirFoto = async (nota) => {
@@ -206,11 +207,14 @@ async function procesar(data) {
 
   log(`🎨 ${p.kind}${n > 1 ? ` ×${n}` : ""}${ctx.foto ? " 📷" : ""} · ${p.title}`);
   await claude(promptDisenador(p, ctx), { cwd: dir });
-  const slides = Array.from({ length: n }, (_, i) => ({ html: path.join(dir, `slide-${i + 1}.html`), png: path.join(dir, `slide-${i + 1}.png`) }));
+  // Blog: portada 1200×630 + historia 1080×1920. Resto: N slides del tamaño de la pieza.
+  const slides = p.kind === "blog"
+    ? [{ html: path.join(dir, "slide-1.html"), png: path.join(dir, "slide-1.png"), w: 1200, h: 630 }, { html: path.join(dir, "slide-2.html"), png: path.join(dir, "slide-2.png"), w: 1080, h: 1920 }]
+    : Array.from({ length: n }, (_, i) => ({ html: path.join(dir, `slide-${i + 1}.html`), png: path.join(dir, `slide-${i + 1}.png`), w: p.width, h: p.height }));
   for (const s of slides) await fs.access(s.html);
   const renderAll = async () => {
     const out = [];
-    for (let i = 0; i < slides.length; i++) { const d = await render(slides[i].html, slides[i].png, { width: p.width, height: p.height }); out.push(...d.map((x) => (n > 1 ? `[slide-${i + 1}] ${x}` : x))); }
+    for (let i = 0; i < slides.length; i++) { const d = await render(slides[i].html, slides[i].png, { width: slides[i].w, height: slides[i].h }); out.push(...d.map((x) => (slides.length > 1 ? `[slide-${i + 1}] ${x}` : x))); }
     return out;
   };
   let defectos = await renderAll();
