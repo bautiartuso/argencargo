@@ -9,10 +9,14 @@ import {
   getUpsTracking, upsConfigured
 } from "../../../../lib/tracking/carriers";
 
-// Permitir hasta 60 segundos de ejecución (por defecto Hobby es 10s).
-export const maxDuration = 60;
+// Hasta 300 s de ejecución: con DHL en serie (1 req/s) y decenas de ops activas, 60 s no alcanzaban y
+// el cron se cortaba antes de llegar a los vuelos nuevos (los más viejos se procesaban primero).
+export const maxDuration = 300;
+// Presupuesto de tiempo propio: si se agota, lo que falta queda para la próxima corrida (cada hora).
+const TIME_BUDGET_MS = 240000;
 
-const ACTIVE_STATUSES = ["en_transito", "arribo_argentina", "en_aduana", "entregada"];
+// Solo ops que todavía viajan. Las "entregada" ya no tienen nada que sincronizar.
+const ACTIVE_STATUSES = ["en_transito", "arribo_argentina", "en_aduana"];
 
 // Internal secret for server-to-server calls to /api/notify.
 const CRON_SECRET = process.env.CRON_SECRET || "";
@@ -38,7 +42,8 @@ async function fetchActiveOps(operationId) {
     url = `${SB_URL}/rest/v1/operations?select=id,operation_code,international_tracking,international_carrier,status,created_at&id=eq.${operationId}`;
   } else {
     const statuses = ACTIVE_STATUSES.map(s => `"${s}"`).join(",");
-    url = `${SB_URL}/rest/v1/operations?select=id,operation_code,international_tracking,international_carrier,status,created_at&status=in.(${statuses})&international_tracking=not.is.null&international_carrier=not.is.null`;
+    // Más nuevas primero: lo que está viajando ahora se sincroniza siempre, aunque el tiempo no alcance para todo.
+    url = `${SB_URL}/rest/v1/operations?select=id,operation_code,international_tracking,international_carrier,status,created_at&status=in.(${statuses})&international_tracking=not.is.null&international_carrier=not.is.null&order=created_at.desc`;
   }
   const r = await fetch(url, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
   return await r.json();
@@ -282,6 +287,7 @@ async function runSync(req) {
   if (!authorized) return Response.json({ error: "unauthorized" }, { status: 401 });
   if (!SB_SERVICE) return Response.json({ error: "SUPABASE_SERVICE_ROLE no configurado" }, { status: 500 });
 
+  const startedAt = Date.now();
   const operationId = new URL(req.url).searchParams.get("operation_id");
   const ops = await fetchActiveOps(operationId);
   if (!Array.isArray(ops)) return Response.json({ error: "failed to fetch ops", detail: ops }, { status: 500 });
@@ -324,7 +330,14 @@ async function runSync(req) {
   // DHL en serie con throttle (~1100ms entre llamadas para quedar por debajo del límite).
   const DHL_THROTTLE_MS = 1100;
   const dhlResults = [];
+  // Orden: el grupo cuya op más nueva es más reciente va primero.
+  dhlGroups.sort((a, b) => Math.max(...b.ops.map(o => new Date(o.created_at).getTime())) - Math.max(...a.ops.map(o => new Date(o.created_at).getTime())));
   for (let i = 0; i < dhlGroups.length; i++) {
+    if (Date.now() - startedAt > TIME_BUDGET_MS) {
+      console.log(`[sync] presupuesto de tiempo agotado: quedan ${dhlGroups.length - i} grupos DHL para la próxima corrida`);
+      for (let j = i; j < dhlGroups.length; j++) dhlResults.push({ status: "fulfilled", value: dhlGroups[j].ops.map(o => ({ op: o.operation_code, skipped: "sin tiempo, próxima corrida" })) });
+      break;
+    }
     if (i > 0) await new Promise(r => setTimeout(r, DHL_THROTTLE_MS));
     try {
       const res = await processGroup(dhlGroups[i]);
