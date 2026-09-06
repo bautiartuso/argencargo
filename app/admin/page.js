@@ -4553,8 +4553,10 @@ function StudioPanel({token}){
     if(!SR){toast("Tu navegador no tiene dictado. Probá con Chrome.","error");return;}
     if(dictando){setDictando("");window.__acgRec?.stop();return;}
     const rec=new SR();rec.lang="es-AR";rec.continuous=true;rec.interimResults=true;
-    let base="";rec.onstart=()=>setDictando(key);
-    rec.onresult=e=>{let txt="";for(let i=0;i<e.results.length;i++)txt+=e.results[i][0].transcript;setter(prev=>(base||prev)+(base?"":(prev?" ":""))+txt);};
+    // El reconocimiento manda en cada evento TODO lo dicho desde que arrancó (final + provisorio):
+    // se guarda el texto que había antes de dictar y se reemplaza el resto, sin acumular.
+    let base=null;rec.onstart=()=>setDictando(key);
+    rec.onresult=e=>{let txt="";for(let i=0;i<e.results.length;i++)txt+=e.results[i][0].transcript;txt=txt.replace(/\s+/g," ").trim();setter(prev=>{if(base===null)base=String(prev||"").trim();return base?`${base} ${txt}`:txt;});};
     rec.onerror=()=>setDictando("");rec.onend=()=>setDictando("");
     window.__acgRec=rec;rec.start();
   };
