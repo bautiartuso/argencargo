@@ -14,6 +14,13 @@ REGLA: nunca se nombra a un competidor en una pieza pública. Esto es solo para 
 | 8 | Magforce · instagram.com/magforce_argentina | La que más le gusta cómo lleva el feed. Referencia de ESTILO (no de contenido). Ver 05-referencias. |
 | 9 | Jetbox · instagram.com/courierjetbox | |
 | 10 | Aduanex · instagram.com/aduanex_ | Agregado el 05/09/2026. Pendiente de mirar en detalle. |
+| 11 | Advance Group · instagram.com/advancegrouparg | Agregada por Bautista al radar el 05/09/2026. |
+| 12 | CC Customs Brokers · instagram.com/cccustomsbrokers | Agregada por Bautista al radar el 05/09/2026. |
+| 13 | IEY Logistics · instagram.com/ieylogistics | Agregada por Bautista al radar el 05/09/2026. |
+| 14 | Movant Connection · instagram.com/movantconnection | Agregada por Bautista al radar el 05/09/2026. |
+| 15 | NC Supplies · instagram.com/ncsupplies.oficial | Agregada por Bautista al radar el 05/09/2026. |
+| 16 | Puerto Box · instagram.com/puertobox.ok | Agregada por Bautista al radar el 05/09/2026. |
+| 17 | ZM Intertrade · instagram.com/zm.intertrade | Agregada por Bautista al radar el 05/09/2026. |
 
 ## Radar automático (desde 05/09/2026)
 Los domingos a las 22 (AR), en la nube (no en la Mac), el sistema baja las últimas publicaciones de cada cuenta (imágenes y carruseles completos; los reels no se miran) (Business Discovery
