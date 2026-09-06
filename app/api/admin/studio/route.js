@@ -13,7 +13,7 @@
 // POST {action:"instagram", ig_user_id, access_token} / {action:"instagram_test"}
 // POST multipart {action:"asset", kind, file}       → sube logo o posteo de referencia
 
-import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername, borrarImagenesPieza, decidirFoto } from "../../../../lib/studio";
+import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, appendAprendizaje, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername, borrarImagenesPieza, decidirFoto } from "../../../../lib/studio";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -108,9 +108,10 @@ export async function POST(req) {
   }
   // Rechazar borra las imágenes del storage (la fila queda para que el analista no repita el tema).
   if (a === "reject") {
-    const r = await patch(id, { status: "rejected" });
+    const note = String(body.note || "").trim();
+    const r = await patch(id, { status: "rejected", reject_note: note || null });
     const p = Array.isArray(r.body) && r.body[0];
-    if (p) await borrarImagenesPieza(p);
+    if (p) { await borrarImagenesPieza(p); if (note) appendAprendizaje(p, "descartada porque", note).catch(() => {}); }
     return Response.json({ ok: true });
   }
   if (a === "reject_all") {
@@ -133,7 +134,9 @@ export async function POST(req) {
       if (p?.photo_url) { await borrarImagenesPieza({ id: p.id, photo_url: p.photo_url }, { limpiarFila: false }); }
       extraFoto = { photo_url: null, photo_note: fb, ...(p && !p.photo_prompt ? {} : {}) };
     }
-    await patch(id, { status: "generating", locked_at: null, attempts: 0, error: null, feedback: fb, ...extraFoto });
+    const rf = await patch(id, { status: "generating", locked_at: null, attempts: 0, error: null, feedback: fb, ...extraFoto });
+    const pf = Array.isArray(rf.body) && rf.body[0];
+    if (pf) appendAprendizaje(pf, "cambio pedido", fb).catch(() => {});
     return Response.json({ ok: true });
   }
   if (a === "schedule") {

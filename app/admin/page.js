@@ -4574,7 +4574,9 @@ function StudioPanel({token}){
     {urls.length>1&&<div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"center"}}>{urls.map((u,j)=><img key={j} src={u} alt="" onClick={()=>setSlideIdx(j)} style={{height:p.kind==="story"?64:52,borderRadius:5,cursor:"pointer",border:`2px solid ${j===i?"#E8C99B":"transparent"}`,opacity:j===i?1:0.55}}/>)}</div>}
   </div>;};
   const chip=(txt,col)=><span style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:`${col}22`,color:col,border:`1px solid ${col}55`,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span>;
-  const pedirCambio=(p)=>setCambio({p,texto:""});
+  const pedirCambio=(p)=>setCambio({p,texto:"",modo:"cambio"});
+  const pedirDescarte=(p)=>setCambio({p,texto:"",modo:"descartar"});
+  const enviarDescarte=async()=>{const p=cambio.p;const note=(cambio.texto||"").trim();setCambio(null);await act("reject",{id:p.id,note},note?"Descartada · el motivo quedó anotado en Aprendizajes":"Descartada");};
   const enviarCambio=async()=>{const fb=(cambio?.texto||"").trim();if(!fb)return;const p=cambio.p;const nueva=!!cambio.foto;setCambio(null);await act("feedback",{id:p.id,feedback:fb,new_photo:nueva},nueva?"Va de vuelta: foto nueva + diseño (lo hace tu Mac)":"Va de vuelta al diseñador (lo hace tu Mac)");};
   const copiar=async(p)=>{try{await navigator.clipboard.writeText(`${p.caption||""}\n\n${p.hashtags||""}`.trim());toast("Texto copiado","success");}catch{toast("No se pudo copiar","error");}};
   const Card=({p,children,compact})=><div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
@@ -4636,7 +4638,7 @@ function StudioPanel({token}){
             {[
               {ic:"✓",col:"#22c55e",tit:"Aprobar",fn:()=>act("approve",{id:p.id},"Aprobada ✅ · guardada como referencia")},
               {ic:"✎",col:"#fbbf24",tit:"Pedir cambio",fn:()=>pedirCambio(p)},
-              {ic:"✕",col:"#ef4444",tit:"Descartar",fn:async()=>{if(await confirmDialog("¿Descartar esta pieza? Se borra su imagen; el tema queda anotado para no repetirlo."))act("reject",{id:p.id},"Descartada");}},
+              {ic:"✕",col:"#ef4444",tit:"Descartar",fn:()=>pedirDescarte(p)},
             ].map(b=><button key={b.tit} title={b.tit} onClick={b.fn} disabled={!!busy} style={{flex:1,height:38,borderRadius:9,border:`1px solid ${b.col}55`,background:`${b.col}1f`,color:b.col,fontSize:17,fontWeight:900,cursor:"pointer"}}>{b.ic}</button>)}
           </div>}
           {p.status==="error"&&<Btn small variant="secondary" onClick={()=>act("regenerate",{id:p.id},"Reintentando")} disabled={!!busy}>↻ Reintentar</Btn>}
@@ -4904,15 +4906,17 @@ function StudioPanel({token}){
 
     {cambio&&<div onClick={()=>setCambio(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16,gap:16,flexWrap:isMobile?"wrap":"nowrap",overflowY:"auto"}}>
       {slidesView(cambio.p,{maxW:isMobile?"100%":"55%",maxH:isMobile?"42vh":(slidesOf(cambio.p).length>1?"74vh":"92vh")})}
-      <div onClick={e=>e.stopPropagation()} style={{width:isMobile?"100%":380,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(251,191,36,0.4)",borderRadius:12,padding:16}}>
-        <p style={{margin:"0 0 4px",fontSize:14,fontWeight:800,color:"#fff"}}>✎ ¿Qué cambiamos?</p>
-        <p style={{margin:"0 0 10px",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Escribilo o dictalo como se lo dirías a un diseñador. Vuelve a la cola y tu Mac la rehace con estos cambios.</p>
+      <div onClick={e=>e.stopPropagation()} style={{width:isMobile?"100%":380,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1px solid ${cambio.modo==="descartar"?"rgba(239,68,68,0.45)":"rgba(251,191,36,0.4)"}`,borderRadius:12,padding:16}}>
+        <p style={{margin:"0 0 4px",fontSize:14,fontWeight:800,color:"#fff"}}>{cambio.modo==="descartar"?"✕ ¿Por qué la descartás?":"✎ ¿Qué cambiamos?"}</p>
+        <p style={{margin:"0 0 10px",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{cambio.modo==="descartar"?"Opcional, pero vale oro: lo que escribas queda en Aprendizajes y el sistema no repite ese error. Si ya conseguiste lo que buscabas y no hay nada mal, descartá sin comentario.":"Escribilo o dictalo como se lo dirías a un diseñador. Vuelve a la cola y tu Mac la rehace con estos cambios."}</p>
         <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
           <textarea autoFocus value={cambio.texto} onChange={e=>setCambio(c=>({...c,texto:e.target.value}))} rows={6} placeholder="Ej: fondo claro, titular más corto, sacá el bloque de abajo, logo más chico arriba a la derecha" style={{...inp,resize:"vertical"}}/>
           {micBtn((fn)=>setCambio(c=>({...c,texto:typeof fn==="function"?fn(c.texto):fn})),"cambio")}
         </div>
-        {conFoto(cambio.p)&&<label style={{display:"flex",alignItems:"center",gap:8,marginTop:10,fontSize:12,color:"rgba(255,255,255,0.75)",cursor:"pointer"}}><input type="checkbox" checked={!!cambio.foto} onChange={e=>setCambio(c=>({...c,foto:e.target.checked}))}/> Generar una foto nueva con este cambio (si el problema es la foto, no el diseño)</label>}
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:10}}><Btn variant="secondary" onClick={()=>setCambio(null)}>Cancelar</Btn><Btn onClick={enviarCambio} disabled={!!busy||!(cambio.texto||"").trim()}>Enviar al diseñador</Btn></div>
+        {cambio.modo!=="descartar"&&conFoto(cambio.p)&&<label style={{display:"flex",alignItems:"center",gap:8,marginTop:10,fontSize:12,color:"rgba(255,255,255,0.75)",cursor:"pointer"}}><input type="checkbox" checked={!!cambio.foto} onChange={e=>setCambio(c=>({...c,foto:e.target.checked}))}/> Generar una foto nueva con este cambio (si el problema es la foto, no el diseño)</label>}
+        {cambio.modo==="descartar"
+          ?<div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:10,flexWrap:"wrap"}}><Btn variant="secondary" onClick={()=>setCambio(null)}>Cancelar</Btn><Btn variant="secondary" onClick={()=>{setCambio(c=>({...c,texto:""}));enviarDescarte();}} disabled={!!busy}>Descartar sin comentario</Btn><Btn onClick={enviarDescarte} disabled={!!busy||!(cambio.texto||"").trim()}>Descartar y anotar</Btn></div>
+          :<div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:10}}><Btn variant="secondary" onClick={()=>setCambio(null)}>Cancelar</Btn><Btn onClick={enviarCambio} disabled={!!busy||!(cambio.texto||"").trim()}>Enviar al diseñador</Btn></div>}
       </div>
     </div>}
     {preview&&<div onClick={()=>setPreview(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16,gap:16,flexWrap:isMobile?"wrap":"nowrap",overflowY:"auto"}}>

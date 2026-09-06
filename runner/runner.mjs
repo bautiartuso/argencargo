@@ -104,7 +104,7 @@ ${n === 2 ? `   - slide-2: el desarrollo con lo concreto (qué cambió exactamen
 function promptDisenador(p, ctx) {
   const W = p.width, H = p.height;
   const n = nSlides(p);
-  return `Sos el diseñador y redactor de Argencargo. Antes de empezar leé TODA la memoria de la marca en memoria/*.md (identidad, tono, audiencia, productos, dos-and-donts, campanas, historial, brand-kit, referencias-estilo) y el pedido en brief.md.
+  return `Sos el diseñador y redactor de Argencargo. Antes de empezar leé TODA la memoria de la marca en memoria/*.md (identidad, tono, audiencia, productos, dos-and-donts, campanas, historial, brand-kit, referencias-estilo, aprendizajes) y el pedido en brief.md. memoria/aprendizajes.md son correcciones de Bautista a piezas anteriores: son ley, no repitas ninguno de esos errores. Tono: posteos y carruseles formales y serios; historias más descontracturadas sin exagerar (ver tono.md).
 ${ctx.referencias ? `Mirá también referencias/ (posteos que a Bautista le gustan: son la vara de calidad y estilo; no los copies, aprendé la lógica) ` : ""}${ctx.aprobados ? `y aprobados/ (las últimas piezas nuestras aprobadas, html + png: mantené continuidad de estilo con ellas).` : ""}
 
 Creá UNA pieza de Instagram: ${formatoLabel(p)}.
