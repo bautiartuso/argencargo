@@ -4607,7 +4607,7 @@ function StudioPanel({token}){
   const cal=pieces.filter(p=>["approved","scheduled","published"].includes(p.status)).sort((a,b)=>new Date(a.scheduled_at||a.approved_at||a.created_at)-new Date(b.scheduled_at||b.approved_at||b.created_at));
   const grid={display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(250px,1fr))",gap:12,alignItems:"start"};
   const igOk=!!meta.instagram?.connected;
-  const tabs=[{k:"analisis",l:"Análisis"},{k:"calendario",l:"Calendario",n:cal.filter(p=>p.status!=="published").length},{k:"contenido",l:"Contenido",n:pieces.filter(p=>p.status==="review").length},{k:"runner",l:"Runner"},{k:"chatbot",l:"Chatbot"},{k:"marca",l:"Marca"},{k:"knowledge",l:"Knowledge"},{k:"conexion",l:"Conexión",dot:igOk?"#4ade80":"#f87171"}];
+  const tabs=[{k:"analisis",l:"Análisis"},{k:"calendario",l:"Calendario",n:pieces.filter(p=>p.status==="approved").length},{k:"contenido",l:"Contenido",n:pieces.filter(p=>p.status==="review").length},{k:"runner",l:"Runner"},{k:"chatbot",l:"Chatbot"},{k:"marca",l:"Marca"},{k:"knowledge",l:"Knowledge"},{k:"conexion",l:"Conexión",dot:igOk?"#4ade80":"#f87171"}];
   const inp={width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit"};
   const sel={padding:"9px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"#142038",color:"#fff",fontSize:12.5};
   const box={background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:14};
