@@ -14,13 +14,15 @@ export const fechaPartes = (d) => { const x = ar(d || Date.now()); return { dia:
 export const CSS = `
 :root{--bg:#0A1628;--bg2:#0F1F3A;--ink:#F4EFE6;--ink2:#B9C2D3;--mute:#7E8AA3;--gold:#E8C99B;--gold2:#B8956A;--line:rgba(232,201,155,0.16);--serif:'Fraunces',Georgia,'Times New Roman',serif;--sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
 .bg{min-height:100vh;background:radial-gradient(1200px 600px at 80% -10%,rgba(232,201,155,0.07),transparent 60%),radial-gradient(900px 500px at -10% 100%,rgba(46,90,160,0.18),transparent 60%),var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
-.top{position:sticky;top:0;z-index:20;background:rgba(10,22,40,0.82);backdrop-filter:blur(18px);border-bottom:1px solid rgba(255,255,255,0.05)}
-.top-in{max-width:1080px;margin:0 auto;padding:14px 22px;display:flex;align-items:center;gap:18px}
-.top-in img{height:32px;display:block}
-.top-in .sec{font-family:var(--serif);font-style:italic;font-size:19px;color:var(--gold);text-decoration:none;letter-spacing:-0.01em}
-.top-in .cta{margin-left:auto;background:var(--gold);color:#0A1628;text-decoration:none;font-weight:700;font-size:13px;padding:9px 16px;border-radius:999px;transition:transform .35s cubic-bezier(.32,.72,0,1),box-shadow .35s}
-.top-in .cta:hover{transform:translateY(-1px);box-shadow:0 10px 30px rgba(232,201,155,0.25)}
-.wrap{max-width:1080px;margin:0 auto;padding:44px 22px 80px}
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:12px 0;background:rgba(10,18,35,0.92);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,0.06);font-family:'Segoe UI',system-ui,-apple-system,sans-serif}
+.nav-in{max-width:1200px;margin:0 auto;padding:0 24px;display:flex;justify-content:space-between;align-items:center}
+.nav-in img{height:34px;display:block}
+.nav-links{display:flex;align-items:center;gap:24px}
+.nav-links a{font-size:13px;font-weight:500;color:rgba(255,255,255,0.6);text-decoration:none}
+.nav-links a.on{color:#fff;font-weight:600}
+.nav-links a.login{font-weight:600;color:#3B7DD8}
+.nav-links a.cta{padding:8px 20px;font-size:12px;font-weight:700;border-radius:8px;background:linear-gradient(135deg,#3B7DD8,#152D54);color:#fff}
+.wrap{max-width:1080px;margin:0 auto;padding:100px 22px 80px}
 .masthead{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding-bottom:22px;border-bottom:1px solid var(--line);margin-bottom:34px}
 .masthead h1{font-family:var(--serif);font-weight:500;font-size:clamp(40px,6vw,64px);line-height:1;margin:0;letter-spacing:-0.02em}
 .masthead p{margin:0;max-width:34ch;color:var(--ink2);font-size:15px;line-height:1.5}
@@ -80,7 +82,7 @@ export const CSS = `
 .foot a{color:var(--ink2)}
 @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.lead{animation:none}}
-@media (max-width:820px){.lead{grid-template-columns:1fr;gap:22px}.row{grid-template-columns:64px 1fr;gap:16px}.row img{display:none}.date b{font-size:34px}.masthead{flex-direction:column;align-items:flex-start;gap:10px}.wrap{padding:30px 18px 60px}}
+@media (max-width:820px){.nav-links a:not(.on):not(.cta){display:none}.nav-links{gap:14px}.lead{grid-template-columns:1fr;gap:22px}.row{grid-template-columns:64px 1fr;gap:16px}.row img{display:none}.date b{font-size:34px}.masthead{flex-direction:column;align-items:flex-start;gap:10px}.wrap{padding:30px 18px 60px}}
 `;
 
 export function Marco({ children }) {
@@ -89,11 +91,17 @@ export function Marco({ children }) {
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400&display=swap" />
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
-      <header className="top">
-        <div className="top-in">
+      <header className="nav">
+        <div className="nav-in">
           <a href="/" aria-label="Argencargo"><img src={LOGO} alt="Argencargo" /></a>
-          <a href="/blog" className="sec">Novedades</a>
-          <a href="/#cotizar" className="cta">Cotizar</a>
+          <div className="nav-links">
+            <a href="/#servicios">Servicios</a>
+            <a href="/#como-funciona">Cómo funciona</a>
+            <a href="/portal">Calculadora</a>
+            <a href="/blog" className="on">Blog</a>
+            <a href="/portal" className="login">Iniciar sesión</a>
+            <a href="/portal" className="cta">Cotizar gratis</a>
+          </div>
         </div>
       </header>
       <main className="wrap">{children}</main>

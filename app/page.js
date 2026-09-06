@@ -39,6 +39,7 @@ export default function Landing(){
           <a onClick={()=>sc("servicios")} style={{fontSize:13,fontWeight:500,color:"rgba(255,255,255,0.6)",cursor:"pointer",textDecoration:"none"}}>Servicios</a>
           <a onClick={()=>sc("como-funciona")} style={{fontSize:13,fontWeight:500,color:"rgba(255,255,255,0.6)",cursor:"pointer",textDecoration:"none"}}>Cómo funciona</a>
           <a href="/portal" style={{fontSize:13,fontWeight:500,color:"rgba(255,255,255,0.6)",cursor:"pointer",textDecoration:"none"}}>Calculadora</a>
+          <a href="/blog" style={{fontSize:13,fontWeight:500,color:"rgba(255,255,255,0.6)",cursor:"pointer",textDecoration:"none"}}>Blog</a>
           <a href="/portal" style={{fontSize:13,fontWeight:600,color:AC,textDecoration:"none"}}>Iniciar sesión</a>
           <a href="/portal" style={{padding:"8px 20px",fontSize:12,fontWeight:700,borderRadius:8,background:`linear-gradient(135deg,${AC},${NAVY})`,color:"#fff",textDecoration:"none"}}>Cotizar gratis</a>
         </div>

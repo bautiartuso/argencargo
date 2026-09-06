@@ -4,10 +4,10 @@ import { Marco, Fecha, fechaLarga, SITE } from "./_estilo";
 
 export const revalidate = 300;
 export const metadata = {
-  title: "Novedades de comercio exterior e importación",
+  title: "Blog: novedades de comercio exterior e importación",
   description: "Cambios en aduana, régimen courier, aranceles y consejos para importar desde China, explicados en simple por Argencargo.",
   alternates: { canonical: `${SITE}/blog` },
-  openGraph: { title: "Novedades · Argencargo", description: "Comercio exterior e importación explicados en simple.", url: `${SITE}/blog`, type: "website" },
+  openGraph: { title: "Blog · Argencargo", description: "Comercio exterior e importación explicados en simple.", url: `${SITE}/blog`, type: "website" },
 };
 
 export default async function BlogIndex() {
@@ -16,7 +16,7 @@ export default async function BlogIndex() {
   return (
     <Marco>
       <div className="masthead">
-        <h1>Novedades</h1>
+        <h1>Blog</h1>
         <p>Lo que cambia en aduana, régimen courier y aranceles, explicado para quien importa desde China.</p>
       </div>
       {!lead && <p className="empty">Todavía no hay notas publicadas. La primera está en camino.</p>}

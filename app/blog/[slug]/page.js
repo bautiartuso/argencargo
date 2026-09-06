@@ -28,7 +28,7 @@ export default async function Nota({ params }) {
     <Marco>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ld) }} />
       <article className="art">
-        <a href="/blog" className="back">← Novedades</a>
+        <a href="/blog" className="back">← Blog</a>
         <h1>{n.title}</h1>
         <div className="dateline">{fechaLarga(n.published_at)}{n.reading_min ? ` — ${n.reading_min} min de lectura` : ""}</div>
         {n.excerpt && <p className="std">{n.excerpt}</p>}
@@ -43,7 +43,7 @@ export default async function Nota({ params }) {
       </article>
       {otras.length > 0 && (
         <section className="mas">
-          <h2>Más novedades</h2>
+          <h2>Más del blog</h2>
           <div className="rows">
             {otras.map((o) => (
               <article key={o.slug} className="row">
