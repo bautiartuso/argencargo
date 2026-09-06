@@ -4797,7 +4797,7 @@ function StudioPanel({token}){
       <div style={box}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6,flexWrap:"wrap"}}>
           <p style={{margin:0,fontSize:13,fontWeight:800,color:"#fff"}}>Radar de competencia</p>
-          {meta.discovery?.connected?<span style={{fontSize:11,color:"#4ade80"}}>· mira {meta.competitors.filter(c=>c.active!==false).length} cuentas los lunes a las 12 (corre en la nube, no en tu Mac)</span>:<span style={{fontSize:11,color:"#fbbf24"}}>· sin conectar: cargá el token de Facebook en Conexión</span>}
+          {meta.discovery?.connected?<span style={{fontSize:11,color:"#4ade80"}}>· mira {meta.competitors.filter(c=>c.active!==false).length} cuentas los domingos a la noche (corre en la nube, no en tu Mac)</span>:<span style={{fontSize:11,color:"#fbbf24"}}>· sin conectar: cargá el token de Facebook en Conexión</span>}
           <span style={{marginLeft:"auto",display:"flex",gap:6}}>
             <Btn small variant="secondary" onClick={loadComp} disabled={comp.lo}>↻</Btn>
             {meta.discovery?.connected&&<Btn small onClick={async()=>{await act("competencia_scan",{},x=>`${x.cuentas} cuentas · ${x.nuevos} posts nuevos · ${x.analizados} analizados${x.errores?.length?` · ${x.errores.length} con error`:""}`);loadMeta();loadComp();}} disabled={!!busy}>{busy==="competencia_scan"?"Escaneando…":"Escanear ahora"}</Btn>}

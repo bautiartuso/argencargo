@@ -1,4 +1,4 @@
-// GET /api/cron/competitor-radar — RADAR DE COMPETENCIA: los lunes a las 12 (AR) baja los últimos posts de las
+// GET /api/cron/competitor-radar — RADAR DE COMPETENCIA: los domingos a las 22 (AR) baja los últimos posts de las
 // cuentas de cs_competitors (Business Discovery, token de Facebook) y Claude anota qué aprender de
 // cada uno. El analista del runner lo lee al proponer ideas. Auth: Bearer CRON_SECRET.
 import { radarCompetencia } from "../../../../lib/studio";

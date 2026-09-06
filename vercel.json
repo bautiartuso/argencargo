@@ -50,7 +50,7 @@
     },
     {
       "path": "/api/cron/competitor-radar",
-      "schedule": "0 15 * * 1"
+      "schedule": "0 1 * * 1"
     }
   ]
 }
