@@ -16,7 +16,7 @@ REGLA: nunca se nombra a un competidor en una pieza pública. Esto es solo para 
 | 10 | Aduanex · instagram.com/aduanex_ | Agregado el 05/09/2026. Pendiente de mirar en detalle. |
 
 ## Radar automático (desde 05/09/2026)
-Todos los días a las 10 (AR) el sistema baja los últimos 12 posts de cada cuenta (Business Discovery
+Los lunes a las 12 (AR), en la nube (no en la Mac), el sistema baja las últimas publicaciones de cada cuenta (imágenes y carruseles completos; los reels no se miran) (Business Discovery
 de Meta, con un token de Facebook cargado en Content Studio → Conexión → Radar de competencia) y
 Claude mira las imágenes de cada post y anota: formato, tema, gancho, concepto visual, cuánto texto,
 por qué funciona y una idea PROPIA para Argencargo. El analista del runner lee ese radar al proponer
