@@ -20,6 +20,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { CLAUDE_MODEL } from "../../../../lib/anthropic";
+import { tgNotify } from "../../../../lib/telegram";
 
 export const maxDuration = 60;
 
@@ -80,6 +81,8 @@ async function convState(phone) {
 
 // ── Aviso interno a los admins ───────────────────────────────────────────────
 async function notifyAdmins(title, body) {
+  // Telegram (gratis): lo que Argy necesita que vea un humano, comprobantes acreditados o que no cierran, leads.
+  tgNotify(`<b>${String(title).replace(/[<>&]/g, "")}</b>\n${String(body || "").replace(/[<>&]/g, "").slice(0, 900)}`).catch(() => {});
   const admins = await sb(`/profiles?role=eq.admin&select=id`);
   const ids = (Array.isArray(admins.body) ? admins.body : []).map((a) => a.id).filter(Boolean);
   await Promise.all(ids.flatMap((id) => [
