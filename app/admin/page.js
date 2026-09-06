@@ -4519,7 +4519,7 @@ function StudioPanel({token}){
   const [calSel,setCalSel]=useState(null);   // pieza abierta desde el calendario
   const [cambio,setCambio]=useState(null);   // {p, texto}: modal de "pedir cambio" con la imagen a la vista
   const [pieces,setPieces]=useState([]);const [lo,setLo]=useState(true);
-  const [meta,setMeta]=useState({memory:[],assets:[],runs:[],instagram:{},discovery:{},competitors:[],estado:null});
+  const [meta,setMeta]=useState({memory:[],assets:[],runs:[],instagram:{},discovery:{},competitors:[],estado:null,telegram:{}});
   const [igDisc,setIgDisc]=useState("");              // token de Facebook para el radar de competencia
   const [comp,setComp]=useState({posts:[],lo:false});  // posts de la competencia con análisis
   const [compUser,setCompUser]=useState("");
@@ -4535,7 +4535,7 @@ function StudioPanel({token}){
   const isMobile=typeof window!=="undefined"&&window.innerWidth<760;
   const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/studio${qs}`,{...opts,headers:{...(opts.body instanceof FormData?{}:{"Content-Type":"application/json"}),Authorization:`Bearer ${token}`,...(opts.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
   const load=async()=>{try{const b=await api("?view=pieces");setPieces(b.pieces||[]);}catch(e){console.error(e);}finally{setLo(false);}};
-  const loadMeta=async()=>{try{const b=await api("?view=memory");setMeta({memory:b.memory||[],assets:b.assets||[],runs:b.runs||[],instagram:b.instagram||{},discovery:b.discovery||{},competitors:b.competitors||[],estado:b.estado||null});}catch(e){toast(e.message,"error");}};
+  const loadMeta=async()=>{try{const b=await api("?view=memory");setMeta({memory:b.memory||[],assets:b.assets||[],runs:b.runs||[],instagram:b.instagram||{},discovery:b.discovery||{},competitors:b.competitors||[],estado:b.estado||null,telegram:b.telegram||{}});}catch(e){toast(e.message,"error");}};
   const loadComp=async()=>{setComp(c=>({...c,lo:true}));try{const b=await api("?view=competencia");setComp({posts:b.posts||[],lo:false});}catch(e){setComp(c=>({...c,lo:false}));}};
   useEffect(()=>{load();loadMeta();},[token]);
   useEffect(()=>{if(tab==="marca")loadComp();},[tab]);
@@ -4932,6 +4932,16 @@ function StudioPanel({token}){
           <li><b>Generar el token.</b> En el <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>Explorador de la API Graph</a>: elegí la app Argencargo Radar, dejá "Token de usuario", agregá los permisos <code>instagram_basic</code>, <code>instagram_manage_insights</code>, <code>pages_show_list</code>, <code>pages_read_engagement</code> y <code>ads_read</code> (Meta los exige todos para mirar otras cuentas) y tocá <b>Generar token de acceso</b>. En la ventana, marcá la página Argencargo y la cuenta @argencargo_.</li>
           <li><b>Pegalo arriba y tocá Conectar radar.</b> El sistema lo convierte en un token de página (no vence) y prueba leyendo una cuenta.</li>
         </ol>
+      </div>
+      <div style={{...box,marginTop:12}}>
+        <p style={{margin:"0 0 4px",fontSize:13,fontWeight:800,color:"#fff"}}>Telegram {meta.telegram?.connected?<span style={{color:"#4ade80"}}>· conectado{meta.telegram.username?` (@${meta.telegram.username})`:meta.telegram.first_name?` (${meta.telegram.first_name})`:""}</span>:meta.telegram?.configured?<span style={{color:"#fbbf24"}}>· falta tu /start</span>:<span style={{color:"#f87171"}}>· sin token</span>}</p>
+        <p style={{margin:"0 0 12px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Avisos gratis a tu celular: cada historia publicada (con la imagen, para compartirla como estado de WhatsApp en dos toques), cada pieza lista para aprobar, y si tu Mac deja de responder con piezas en cola.</p>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {!meta.telegram?.connected&&<Btn small onClick={async()=>{const b=await act("telegram_connect",{},x=>`Conectado con ${x.info?.first_name||x.info?.username||"tu chat"}`);if(b)loadMeta();}} disabled={!!busy||!meta.telegram?.configured}>Conectar</Btn>}
+          {meta.telegram?.connected&&<Btn small variant="secondary" onClick={()=>act("telegram_test",{},"Enviado: mirá Telegram")} disabled={!!busy}>Enviar prueba</Btn>}
+          {meta.telegram?.connected&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Desconectar Telegram?")){await act("telegram_disconnect",{},"Desconectado");loadMeta();}}} disabled={!!busy}>Desconectar</Btn>}
+        </div>
+        {!meta.telegram?.configured&&<p style={{margin:"10px 0 0",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>Creá el bot en @BotFather (/newbot), cargá el token en Vercel como TELEGRAM_BOT_TOKEN y mandale /start al bot.</p>}
       </div>
     </div>}
 

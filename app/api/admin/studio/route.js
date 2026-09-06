@@ -13,7 +13,8 @@
 // POST {action:"instagram", ig_user_id, access_token} / {action:"instagram_test"}
 // POST multipart {action:"asset", kind, file}       → sube logo o posteo de referencia
 
-import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, appendAprendizaje, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername, borrarImagenesPieza, decidirFoto, estadoEstudio } from "../../../../lib/studio";
+import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, appendAprendizaje, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername, borrarImagenesPieza, decidirFoto, estadoEstudio, avisarPublicada } from "../../../../lib/studio";
+import { tgConfigured, tgSettings, tgDiscoverChat, tgNotify, tgDisconnect } from "../../../../lib/telegram";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -36,7 +37,7 @@ export async function GET(req) {
   const url = new URL(req.url);
   const view = url.searchParams.get("view") || "pieces";
   if (view === "memory") {
-    const [memory, assets, runs, ig, disc, competitors, estado] = await Promise.all([loadMemory(), loadAssets(), sb(`/cs_runs?select=id,kind,requested,created,log,started_at,finished_at&order=started_at.desc&limit=30`), igSettings(), igDiscoverySettings(), loadCompetitors(), estadoEstudio().catch(() => null)]);
+    const [memory, assets, runs, ig, disc, competitors, estado, tgc] = await Promise.all([loadMemory(), loadAssets(), sb(`/cs_runs?select=id,kind,requested,created,log,started_at,finished_at&order=started_at.desc&limit=30`), igSettings(), igDiscoverySettings(), loadCompetitors(), estadoEstudio().catch(() => null), tgSettings().catch(() => ({}))]);
     // Por corrida: piezas, aprobadas, fotos y costo (desde cs_pieces.run_id).
     const runRows = Array.isArray(runs.body) ? runs.body : [];
     if (runRows.length) {
@@ -49,7 +50,7 @@ export async function GET(req) {
       }
       for (const r of runRows) { const b = byRun[r.id] || { piezas: 0, aprobadas: 0, descartadas: 0, fotos: 0, costo: 0 }; r.resumen = { ...b, costo: Math.round(b.costo * 100) / 100 }; }
     }
-    return Response.json({ memory, assets, runs: runRows, estado, instagram: { ig_user_id: ig.ig_user_id || "", connected: !!(ig.ig_user_id && ig.access_token), username: ig.username || null },
+    return Response.json({ memory, assets, runs: runRows, estado, telegram: { configured: tgConfigured(), connected: !!tgc?.chat_id, username: tgc?.username || null, first_name: tgc?.first_name || null }, instagram: { ig_user_id: ig.ig_user_id || "", connected: !!(ig.ig_user_id && ig.access_token), username: ig.username || null },
       discovery: { connected: !!(disc.ig_user_id && disc.access_token), username: disc.username || null, page_name: disc.page_name || null, connected_at: disc.connected_at || null }, competitors });
   }
   if (view === "competencia") {
@@ -168,6 +169,7 @@ export async function POST(req) {
     try {
       const mid = await igPublish(piece, cfg);
       await patch(id, { status: "published", published_at: now, ig_media_id: mid, publish_error: null });
+      await avisarPublicada(piece);
       return Response.json({ ok: true });
     } catch (e) { await patch(id, { publish_error: String(e.message).slice(0, 300) }); return Response.json({ error: e.message }, { status: 400 }); }
   }
@@ -219,6 +221,15 @@ export async function POST(req) {
   }
   if (a === "competitor_toggle") { await sb(`/cs_competitors?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ active: !!body.active }) }); return Response.json({ ok: true }); }
   if (a === "competitor_delete") { await sb(`/cs_competitors?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); return Response.json({ ok: true }); }
+  if (a === "telegram_connect") {
+    if (!tgConfigured()) return Response.json({ error: "Falta TELEGRAM_BOT_TOKEN en Vercel" }, { status: 400 });
+    let cfg; try { cfg = await tgDiscoverChat(); } catch (e) { return Response.json({ error: `Telegram: ${e.message}` }, { status: 400 }); }
+    if (!cfg) return Response.json({ error: "El bot todavía no recibió tu /start. Abrí el chat con el bot en Telegram, mandale /start y volvé a tocar Conectar." }, { status: 400 });
+    await tgNotify("✅ <b>Argencargo Studio conectado.</b> Por acá te van a llegar las historias publicadas (para compartirlas como estado), las piezas listas para aprobar y los avisos del sistema.");
+    return Response.json({ ok: true, info: cfg });
+  }
+  if (a === "telegram_test") { const r = await tgNotify("🔔 Prueba de aviso desde Argencargo Studio."); return r?.ok ? Response.json({ ok: true }) : Response.json({ error: r?.error || r?.skipped || "no se pudo enviar" }, { status: 400 }); }
+  if (a === "telegram_disconnect") { await tgDisconnect(); return Response.json({ ok: true }); }
   if (a === "competencia_scan") { const r = await radarCompetencia({ analizar: 6 }); return Response.json({ ok: true, ...r }); }
   return Response.json({ error: "Acción desconocida" }, { status: 400 });
 }
