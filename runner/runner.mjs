@@ -4,6 +4,7 @@
 //   1. Pide a la web la siguiente pieza de la cola (+ memoria, brand kit, referencias, aprobadas).
 //   2. Arma una carpeta de trabajo: memoria/*.md, brand/ (logos), referencias/ (posteos que gustan),
 //      aprobados/ (últimas piezas aprobadas: html + png) y brief.md.
+//   2b. Si la pieza pide FOTO REAL, se la pide a la web (fal.ai) y la baja a fotos/foto.jpg.
 //   3. Claude Code (`claude -p`, Opus, con la suscripción, sin API) como DISEÑADOR → slide-1.html..slide-N.html + meta.json
 //      (posteo = 1 imagen; carrusel = 2 a 6; historia suelta = 1; secuencia de historias = 2 a 4).
 //   4. Chrome invisible fotografía cada HTML en tamaño exacto → slide-N.png.
@@ -112,7 +113,8 @@ ${reglasFormato(p)}
 Escribí estos archivos en esta carpeta:
 1) ${n > 1 ? `slide-1.html … slide-${n}.html (uno por imagen, en orden)` : "slide-1.html"} — cada uno un documento HTML autocontenido (sin JavaScript) que se fotografía en ${W}×${H} px exactos: html y body con margin 0, width ${W}px, height ${H}px, overflow hidden.
    - Fuentes: <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">. Titular en 'Bebas Neue' (TODO el titular, incluida la palabra resaltada); textos en 'Inter' o 'Nunito'.
-   - Imágenes: SOLO los logos de la carpeta brand/ (PNG con fondo TRANSPARENTE, ruta relativa, ej. src="brand/isotipo.png"). NUNCA los pongas dentro de un recuadro ni cápsula blanca. Sobre fondo oscuro, hacelos blancos con CSS: style="filter:brightness(0) invert(1)". Sobre fondo claro, van en su azul original. Ninguna imagen externa, ninguna foto. Todo lo demás se dibuja con CSS: degradés, franjas diagonales como las barras del logo, tarjetas, círculos, patrones, iconografía simple en SVG inline.
+   - Imágenes: SOLO los logos de la carpeta brand/ (PNG con fondo TRANSPARENTE, ruta relativa, ej. src="brand/isotipo.png")${ctx.foto ? " y la foto real fotos/foto.jpg (ver FOTO REAL abajo)" : ""}. NUNCA los pongas dentro de un recuadro ni cápsula blanca. Sobre fondo oscuro, hacelos blancos con CSS: style="filter:brightness(0) invert(1)". Sobre fondo claro, van en su azul original. Ninguna otra imagen externa. Todo lo demás se dibuja con CSS: degradés, franjas diagonales como las barras del logo, tarjetas, círculos, patrones, iconografía simple en SVG inline.${ctx.foto ? `
+   - FOTO REAL: en fotos/foto.jpg hay una fotografía generada para esta pieza. MIRALA con Read antes de diseñar. Va a pantalla completa como fondo de slide-1 (la portada): <img src="fotos/foto.jpg"> con object-fit:cover (o background-size:cover), sin deformarla. El titular va ENCIMA, del lado donde la foto tiene aire (si el sujeto está a la derecha, el texto a la izquierda; si está abajo, el texto arriba). Para que se lea siempre: degradado oscuro (linear-gradient hacia navy #0A1628 con alpha 0.85) en la zona del texto, o el titular en bloque de color de marca, estilo Magforce. Texto blanco, logo en versión blanca sobre la foto. Nada de texto sobre caras ni sobre el objeto principal. Las demás slides van SIN foto, con diseño de marca en la misma paleta. En este caso ignorá la regla de fondo claro/oscuro para la portada.` : ""}
    - FONDO: respetá lo que dice el brief ("Fondo: claro" = blanco #FFFFFF o gris muy claro con textos en #0A3D91/#0A1628; "Fondo: oscuro" = navy #0A1628 o degradé azul con textos blancos). Si el brief no lo dice, elegí claro. La marca vive en blanco y azul; no todo es oscuro.
    - CONCEPTO VISUAL: respetá el "Concepto visual" del brief (número gigante, comparativa, checklist, mito vs realidad, etc.). Que la pieza se vea distinta a las anteriores en aprobados/.
    - LAYOUT: pensá la pieza como una grilla vertical de máximo 3 bloques (cabecera con logo chico, bloque principal, pie). Usá flex/grid, NUNCA position:absolute para texto (solo para formas decorativas de fondo). Cada bloque con su espacio; nada se superpone, nada se corta. Titular en mayúsculas, grande, 2 a 4 líneas, con 1 o 2 palabras resaltadas en un bloque #1E8BFF o #0A3D91 con texto blanco. Subtítulo 44–56 px, line-height 1.25. Márgenes internos mínimos 80 px. En historias, nada importante en los 250 px de arriba ni de abajo. Logo siempre presente y chico (isotipo 90–120 px o logo completo 260–320 px).
@@ -133,7 +135,8 @@ function promptDirector(p, pass, defectos) {
 ${defectos.length ? `\nDEFECTOS MEDIDOS AUTOMÁTICAMENTE EN EL RENDER (corregilos sí o sí):\n${defectos.map((d) => `- ${d}`).join("\n")}\n` : ""}
 Revisá (pasada ${pass} de 2): texto cortado, tapado o fuera del lienzo; textos encimados; tipografía equivocada (el titular completo debe ser 'Bebas Neue'); jerarquía floja; poco aire; logo dentro de un recuadro blanco (prohibido: el logo va transparente, blanco con filter:brightness(0) invert(1) sobre fondo oscuro); fondo que no respeta el brief (claro/oscuro); composición desequilibrada; que se vea amateur o genérica.${n > 1 ? " En carruseles y secuencias: continuidad (misma paleta y tipografía en todas), poco texto por imagen, portada con gancho, cierre con logo, numeración discreta." : p.kind === "feed" ? ' Si aparece "Deslizá", flechas de continuar o numeración en un posteo de una sola imagen, sacalo.' : ""} Compará con referencias/ y aprobados/: tiene que estar a ese nivel.
 
-Si hay algo que mejorar: corregí el ${htmls} (reescribilo completo, respetando que los logos van con ruta relativa brand/...) y respondé "CORREGIDO: " y en una línea qué cambiaste.
+${p.photo_url ? `La portada usa una foto real (fotos/foto.jpg). Si la FOTO no sirve (el sujeto queda debajo del texto sin remedio, rareza de IA: manos, letras inventadas, logo deforme, look de render), NO toques el HTML y respondé exactamente "REHACER FOTO: " + qué tiene que cambiar la foto (en una línea, en español). Si la foto sirve pero el texto se lee mal, arreglalo en el HTML (degradado, posición, tamaño).
+` : ""}Si hay algo que mejorar: corregí el ${htmls} (reescribilo completo, respetando que los logos van con ruta relativa brand/...) y respondé "CORREGIDO: " y en una línea qué cambiaste.
 Si está impecable: no toques nada y respondé "APROBADO".`;
 }
 
@@ -167,7 +170,20 @@ async function procesar(data) {
   await fs.writeFile(path.join(dir, "brief.md"), brief);
   await fs.writeFile(path.join(dir, "CLAUDE.md"), `Trabajás dentro de esta carpeta. Leé memoria/*.md y brief.md; mirá brand/, referencias/ y aprobados/. Escribí únicamente ${n > 1 ? `slide-1.html … slide-${n}.html` : "slide-1.html"} y meta.json (y corregilos cuando se te pida). No crees otros archivos ni salgas de la carpeta.`);
 
-  log(`🎨 ${p.kind}${n > 1 ? ` ×${n}` : ""} · ${p.title}`);
+  // Foto real: la genera la web (fal.ai) y se baja a fotos/foto.jpg. Si ya existe (rehacer diseño), se reutiliza.
+  const pedirFoto = async (nota) => {
+    const r = await api("?op=photo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: p.id, nota: nota || "" }) });
+    if (!r.ok) throw new Error(`foto: ${(await r.text()).slice(0, 200)}`);
+    return (await r.json()).photo_url;
+  };
+  if (p.photo_prompt) {
+    await fs.mkdir(path.join(dir, "fotos"), { recursive: true });
+    if (!p.photo_url) { log("   📷 generando foto real…"); p.photo_url = await pedirFoto(""); }
+    if (!(await bajar(p.photo_url, path.join(dir, "fotos", "foto.jpg")))) throw new Error("no se pudo bajar la foto");
+    ctx.foto = true;
+  }
+
+  log(`🎨 ${p.kind}${n > 1 ? ` ×${n}` : ""}${ctx.foto ? " 📷" : ""} · ${p.title}`);
   await claude(promptDisenador(p, ctx), { cwd: dir });
   const slides = Array.from({ length: n }, (_, i) => ({ html: path.join(dir, `slide-${i + 1}.html`), png: path.join(dir, `slide-${i + 1}.png`) }));
   for (const s of slides) await fs.access(s.html);
@@ -180,19 +196,30 @@ async function procesar(data) {
   if (defectos.length) log(`   📐 medición: ${defectos.length} defecto(s)`);
   const leerTodo = async () => (await Promise.all(slides.map((s) => fs.readFile(s.html, "utf8")))).join("\n<!--slide-->\n");
 
+  let fotoRehecha = false;
   for (let pass = 1; pass <= 2; pass++) {
     const before = await leerTodo();
     const r = await claude(promptDirector(p, pass, defectos), { cwd: dir });
     const after = await leerTodo();
     const txt = String(r.result || "");
     log(`   🧐 pasada ${pass}: ${txt.slice(0, 120).replace(/\n/g, " ")}`);
+    const m = txt.trim().match(/^REHACER FOTO:\s*(.+)$/im);
+    if (m && ctx.foto && !fotoRehecha) {
+      fotoRehecha = true;
+      log(`   📷 rehaciendo la foto: ${m[1].slice(0, 100)}`);
+      p.photo_url = await pedirFoto(m[1].slice(0, 300));
+      await bajar(p.photo_url, path.join(dir, "fotos", "foto.jpg"));
+      await claude(promptDisenador(p, ctx), { cwd: dir });
+      defectos = await renderAll();
+      continue;
+    }
     if (after === before || (/^APROBADO/i.test(txt.trim()) && !defectos.length)) break;
     defectos = await renderAll();
     if (defectos.length) log(`   📐 medición: ${defectos.length} defecto(s)`); else break;
   }
 
   // El HTML que se guarda lleva los logos con URL absoluta (para re-renderizar en la web si hace falta).
-  const absoluto = (h) => h.replace(/(src|url\()=?["']?brand\//g, (m) => m.replace("brand/", `${cfg.base}/brand/`));
+  const absoluto = (h) => h.replace(/(src|url\()=?["']?brand\//g, (m) => m.replace("brand/", `${cfg.base}/brand/`)).replace(/fotos\/foto\.jpg/g, p.photo_url || "fotos/foto.jpg");
   let meta = {}; try { meta = JSON.parse(await fs.readFile(path.join(dir, "meta.json"), "utf8")); } catch {}
   const fd = new FormData();
   fd.append("id", p.id);
@@ -203,7 +230,7 @@ async function procesar(data) {
   }
   const up = await api("?op=done", { method: "POST", body: fd });
   if (!up.ok) throw new Error(`subida ${up.status}: ${(await up.text()).slice(0, 200)}`);
-  log(`   ✅ lista para aprobar${n > 1 ? ` (${n} imágenes)` : ""}`);
+  log(`   ✅ lista para aprobar${n > 1 ? ` (${n} imágenes)` : ""}${ctx.foto ? " · con foto real" : ""}`);
 }
 
 // Limpieza: las carpetas de trabajo de más de 7 días se borran (cada pieza pesa unos MB).

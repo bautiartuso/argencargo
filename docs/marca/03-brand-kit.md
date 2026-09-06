@@ -42,8 +42,10 @@ Para las piezas (Google Fonts, se cargan en el HTML del post):
 - Logo o isotipo siempre presente (esquina o cierre), nunca gigante.
 - Zonas seguras de Instagram: 250 px arriba y abajo en historias libres de texto importante.
 - Fondo claro y oscuro alternados en el feed; nunca tres oscuros seguidos.
-- Sin fotos ni imágenes externas: todo se construye con tipografía, color, formas, patrones y SVG
-  inline. La riqueza visual sale de la composición, no de una foto de stock.
+- Fotos reales: cuando el analista lo decide, el sistema genera UNA foto con IA (sin texto, sin letras) y va a
+  pantalla completa en la portada. El titular, el logo y los bloques se ponen ENCIMA en HTML, mirando la foto:
+  el texto va donde hay aire, con degradado oscuro o bloque de marca para que se lea (estilo Magforce). Las
+  demás imágenes de un carrusel van sin foto. Nunca fotos de stock ni externas; nunca texto dentro de la foto.
 - Datos reales del sistema en grande cuando el post es de números.
 
 ## Uso de los logos (regla dura)

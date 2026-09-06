@@ -6,11 +6,12 @@
 // POST ?op=done   (multipart: id, headline, subheadline, caption, hashtags, y por imagen png_1..png_N + html_1..html_N;
 //                  compat: png + html para una sola imagen) → review. images = [{url, html}], image_url = portada.
 // POST ?op=error  (json: id, error) → suma intento; al 2º queda en 'error'.
+// POST ?op=photo  (json: id, nota?) → genera la foto real con fal.ai (si la pieza la pide) → {photo_url}.
 // Auth: header x-runner-secret = RUNNER_SECRET.
 
-import { sb, loadMemory, loadAssets, ejemplosAprobados, uploadStorage, borrarImagenesPieza } from "../../../../lib/studio";
+import { sb, loadMemory, loadAssets, ejemplosAprobados, uploadStorage, borrarImagenesPieza, generarFoto } from "../../../../lib/studio";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 export const runtime = "nodejs";
 
 const okAuth = (req) => !!process.env.RUNNER_SECRET && req.headers.get("x-runner-secret") === process.env.RUNNER_SECRET;
@@ -36,6 +37,15 @@ export async function POST(req) {
   if (!okAuth(req)) return Response.json({ error: "unauthorized" }, { status: 401 });
   const op = new URL(req.url).searchParams.get("op") || "done";
   const now = new Date().toISOString();
+  if (op === "photo") {
+    const b = await req.json().catch(() => ({}));
+    const cur = await sb(`/cs_pieces?id=eq.${encodeURIComponent(b.id || "")}&select=id,kind,photo_prompt,photo_brand,photo_url,photo_note&limit=1`);
+    const piece = Array.isArray(cur.body) && cur.body[0];
+    if (!piece) return Response.json({ error: "pieza inexistente" }, { status: 404 });
+    if (!piece.photo_prompt) return Response.json({ error: "la pieza no pide foto" }, { status: 400 });
+    try { const photo_url = await generarFoto(piece, { nota: String(b.nota || piece.photo_note || "") }); return Response.json({ ok: true, photo_url }); }
+    catch (e) { return Response.json({ error: String(e.message).slice(0, 300) }, { status: 500 }); }
+  }
   if (op === "error") {
     const b = await req.json().catch(() => ({}));
     const cur = await sb(`/cs_pieces?id=eq.${encodeURIComponent(b.id || "")}&select=attempts`);
@@ -53,7 +63,7 @@ export async function POST(req) {
   if (!files.length) return Response.json({ error: "Faltan imágenes" }, { status: 400 });
   // Si la pieza se está rehaciendo (pedido de cambio), las imágenes viejas se borran para no acumular.
   const prev = await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}&select=id,image_url,images`);
-  if (Array.isArray(prev.body) && prev.body[0]) await borrarImagenesPieza(prev.body[0], { limpiarFila: false });
+  if (Array.isArray(prev.body) && prev.body[0]) await borrarImagenesPieza(prev.body[0], { limpiarFila: false, incluirFoto: false });
   const stamp = Date.now();
   const images = [];
   for (let i = 0; i < files.length; i++) {

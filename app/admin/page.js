@@ -4563,6 +4563,7 @@ function StudioPanel({token}){
   const slidesOf=(p)=>Array.isArray(p?.images)&&p.images.length?p.images.map(x=>typeof x==="string"?x:x?.url).filter(Boolean):(p?.image_url?[p.image_url]:[]);
   const nSlides=(p)=>Math.max(slidesOf(p).length,Number(p?.slides)||1);
   const kindLabel=(p)=>p.kind==="carousel"?`Carrusel · ${nSlides(p)}`:p.kind==="story"?(nSlides(p)>1?`Historias · ${nSlides(p)}`:"Historia"):"Posteo";
+  const conFoto=(p)=>!!(p?.photo_prompt);
   useEffect(()=>{setSlideIdx(0);},[preview?.id,cambio?.p?.id]);
   // Vista de una pieza con sus imágenes (carrusel o secuencia): flechas, contador y miniaturas.
   const slidesView=(p,{maxW,maxH}={})=>{const urls=slidesOf(p);const i=Math.min(slideIdx,Math.max(0,urls.length-1));const nav=(side)=>({position:"absolute",top:"50%",[side]:8,transform:"translateY(-50%)",width:36,height:36,borderRadius:99,border:"none",background:"rgba(0,0,0,0.55)",color:"#fff",fontSize:22,cursor:"pointer",lineHeight:"36px",padding:0});return <div onClick={e=>e.stopPropagation()} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,maxWidth:maxW||"100%"}}>
@@ -4574,12 +4575,12 @@ function StudioPanel({token}){
   </div>;};
   const chip=(txt,col)=><span style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:`${col}22`,color:col,border:`1px solid ${col}55`,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span>;
   const pedirCambio=(p)=>setCambio({p,texto:""});
-  const enviarCambio=async()=>{const fb=(cambio?.texto||"").trim();if(!fb)return;const p=cambio.p;setCambio(null);await act("feedback",{id:p.id,feedback:fb},"Va de vuelta al diseñador (lo hace tu Mac)");};
+  const enviarCambio=async()=>{const fb=(cambio?.texto||"").trim();if(!fb)return;const p=cambio.p;const nueva=!!cambio.foto;setCambio(null);await act("feedback",{id:p.id,feedback:fb,new_photo:nueva},nueva?"Va de vuelta: foto nueva + diseño (lo hace tu Mac)":"Va de vuelta al diseñador (lo hace tu Mac)");};
   const copiar=async(p)=>{try{await navigator.clipboard.writeText(`${p.caption||""}\n\n${p.hashtags||""}`.trim());toast("Texto copiado","success");}catch{toast("No se pudo copiar","error");}};
   const Card=({p,children,compact})=><div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
     <div onClick={()=>p.image_url&&setPreview(p)} style={{position:"relative",background:"#0b1220",aspectRatio:p.kind==="story"?"9/16":"4/5",cursor:p.image_url?"zoom-in":"default",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      {p.image_url?<img src={p.image_url} alt={p.title||""} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:p.status==="generating"?<div style={{textAlign:"center",color:"rgba(255,255,255,0.5)",fontSize:12,padding:20}}><div style={{fontSize:26,marginBottom:6}}>🎨</div>{p.locked_at?"Diseñando en tu Mac…":"En la cola (espera a tu Mac)"}<div style={{fontSize:10.5,marginTop:4,color:"rgba(255,255,255,0.35)"}}>{p.title}</div></div>:<div style={{color:"#f87171",fontSize:12,padding:16,textAlign:"center"}}>⚠ {p.error||"Sin imagen"}</div>}
-      <div style={{position:"absolute",top:8,left:8,display:"flex",gap:5,flexWrap:"wrap"}}>{chip(kindLabel(p),"#60a5fa")}{p.pillar&&chip(p.pillar,"#E8C99B")}{p.source==="runner"&&chip("runner","#a78bfa")}{p.source==="chatbot"&&chip("chatbot","#34d399")}</div>
+      {p.image_url?<img src={p.image_url} alt={p.title||""} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:p.status==="generating"?<div style={{textAlign:"center",color:"rgba(255,255,255,0.5)",fontSize:12,padding:20}}><div style={{fontSize:26,marginBottom:6}}>🎨</div>{p.locked_at?(conFoto(p)&&!p.photo_url?"Generando la foto y diseñando en tu Mac…":"Diseñando en tu Mac…"):"En la cola (espera a tu Mac)"}<div style={{fontSize:10.5,marginTop:4,color:"rgba(255,255,255,0.35)"}}>{p.title}</div></div>:<div style={{color:"#f87171",fontSize:12,padding:16,textAlign:"center"}}>⚠ {p.error||"Sin imagen"}</div>}
+      <div style={{position:"absolute",top:8,left:8,display:"flex",gap:5,flexWrap:"wrap"}}>{chip(kindLabel(p),"#60a5fa")}{conFoto(p)&&chip("📷 foto","#f472b6")}{p.pillar&&chip(p.pillar,"#E8C99B")}{p.source==="runner"&&chip("runner","#a78bfa")}{p.source==="chatbot"&&chip("chatbot","#34d399")}{p.source==="radar"&&chip("radar","#fb923c")}</div>
       {slidesOf(p).length>1&&<div style={{position:"absolute",bottom:8,left:0,right:0,display:"flex",justifyContent:"center",gap:4}}>{slidesOf(p).map((_,j)=><span key={j} style={{width:6,height:6,borderRadius:99,background:j===0?"#fff":"rgba(255,255,255,0.45)"}}/>)}</div>}
     </div>
     <div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:6,flex:1}}>
@@ -4767,10 +4768,10 @@ function StudioPanel({token}){
         {chat.length===0&&<p style={{margin:0,fontSize:12.5,color:"rgba(255,255,255,0.5)"}}>Contale una idea suelta, adjuntá una captura o dictá un audio. El estratega la va armando con vos y, cuando está lista, la manda a diseñar.</p>}
         {chat.map((m,i)=><div key={i} style={{alignSelf:m.role==="assistant"?"flex-start":"flex-end",maxWidth:"85%",background:m.role==="assistant"?"rgba(96,165,250,0.12)":"rgba(255,255,255,0.07)",border:`1px solid ${m.role==="assistant"?"rgba(96,165,250,0.3)":"rgba(255,255,255,0.1)"}`,borderRadius:12,padding:"8px 11px",fontSize:13,color:"#fff",whiteSpace:"pre-wrap"}}>{m.content}</div>)}
         {chatListo&&<div style={{alignSelf:"flex-start",background:"rgba(52,211,153,0.12)",border:"1px solid rgba(52,211,153,0.35)",borderRadius:12,padding:"10px 12px"}}>
-          <p style={{margin:"0 0 4px",fontSize:12,fontWeight:800,color:"#34d399"}}>Idea lista · {({feed:"posteo",carousel:"carrusel",story:"historia"})[chatKind!=="auto"?chatKind:chatListo.kind]||"posteo"}{Number(chatListo.slides)>1?` ×${chatListo.slides}`:""} · {chatListo.title}</p>
+          <p style={{margin:"0 0 4px",fontSize:12,fontWeight:800,color:"#34d399"}}>Idea lista · {({feed:"posteo",carousel:"carrusel",story:"historia"})[chatKind!=="auto"?chatKind:chatListo.kind]||"posteo"}{Number(chatListo.slides)>1?` ×${chatListo.slides}`:""}{chatListo.photo?" · 📷 con foto real":""} · {chatListo.title}</p>
           <p style={{margin:"0 0 8px",fontSize:11.5,color:"rgba(255,255,255,0.7)",whiteSpace:"pre-wrap"}}>{chatListo.brief}</p>
           {Array.isArray(chatListo.slides_plan)&&chatListo.slides_plan.length>0&&<ol style={{margin:"0 0 8px",paddingLeft:18,fontSize:11.5,color:"rgba(255,255,255,0.65)"}}>{chatListo.slides_plan.map((s,i)=><li key={i}>{s}</li>)}</ol>}
-          <Btn small onClick={async()=>{const b=await act("generate",{brief:chatListo.brief,kind:chatKind!=="auto"?chatKind:chatListo.kind,slides:chatListo.slides,slides_plan:chatListo.slides_plan,title:chatListo.title,pillar:chatListo.pillar,direct:true},"A la cola: tu Mac la diseña");if(b){setChat([]);setChatListo(null);setTab("contenido");}}} disabled={!!busy}>🎨 Generar esta pieza</Btn>
+          <Btn small onClick={async()=>{const b=await act("generate",{brief:chatListo.brief,kind:chatKind!=="auto"?chatKind:chatListo.kind,slides:chatListo.slides,slides_plan:chatListo.slides_plan,photo:!!chatListo.photo,photo_brand:!!chatListo.photo_brand,photo_prompt:chatListo.photo_prompt||"",title:chatListo.title,pillar:chatListo.pillar,direct:true},"A la cola: tu Mac la diseña");if(b){setChat([]);setChatListo(null);setTab("contenido");}}} disabled={!!busy}>🎨 Generar esta pieza</Btn>
         </div>}
       </div>
       {chatImgs.length>0&&<div style={{display:"flex",gap:6,marginTop:8}}>{chatImgs.map((im,i)=><span key={i} style={{fontSize:10.5,padding:"3px 8px",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.7)"}}>📎 {im.name} <button onClick={()=>setChatImgs(x=>x.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer"}}>×</button></span>)}</div>}
@@ -4827,7 +4828,7 @@ function StudioPanel({token}){
                 <p style={{margin:0,fontSize:12,fontWeight:700,color:"#fff"}}>{a.gancho||a.tema}</p>
                 <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.55)"}}>{a.concepto_visual}</p>
                 <p style={{margin:0,fontSize:11.5,color:"#E8C99B"}}><b>Idea propia:</b> {a.idea_argencargo}</p>
-                <div style={{marginTop:"auto",paddingTop:6}}><Btn small onClick={async()=>{const b=await act("generate",{brief:`${a.idea_argencargo}\n\nÁngulo inspirado en algo que funcionó en el rubro: hacé NUESTRA versión con otro texto y otro diseño. Jamás nombrar ni aludir a otras empresas.`,kind:a.formato_sugerido||"feed",title:(a.tema||"Idea del radar").slice(0,60),pillar:"educativo",direct:true},"A la cola: tu Mac la diseña");if(b)setTab("contenido");}} disabled={!!busy}>🎨 Adaptar</Btn></div>
+                <div style={{marginTop:"auto",paddingTop:6}}><Btn small onClick={async()=>{const b=await act("generate",{brief:`${a.idea_argencargo}\n\nÁngulo inspirado en algo que funcionó en el rubro: hacé NUESTRA versión con otro texto y otro diseño. Jamás nombrar ni aludir a otras empresas.`,kind:a.formato_sugerido||"feed",title:(a.tema||"Idea del radar").slice(0,60),pillar:"educativo",direct:true,source:"radar"},"A la cola: tu Mac la diseña");if(b)setTab("contenido");}} disabled={!!busy}>🎨 Adaptar</Btn></div>
               </>:<p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.4)"}}>{p.analysis?.error?`Sin análisis: ${p.analysis.error}`:"Todavía sin analizar"}</p>}
             </div>
           </div>;})}
@@ -4910,6 +4911,7 @@ function StudioPanel({token}){
           <textarea autoFocus value={cambio.texto} onChange={e=>setCambio(c=>({...c,texto:e.target.value}))} rows={6} placeholder="Ej: fondo claro, titular más corto, sacá el bloque de abajo, logo más chico arriba a la derecha" style={{...inp,resize:"vertical"}}/>
           {micBtn((fn)=>setCambio(c=>({...c,texto:typeof fn==="function"?fn(c.texto):fn})),"cambio")}
         </div>
+        {conFoto(cambio.p)&&<label style={{display:"flex",alignItems:"center",gap:8,marginTop:10,fontSize:12,color:"rgba(255,255,255,0.75)",cursor:"pointer"}}><input type="checkbox" checked={!!cambio.foto} onChange={e=>setCambio(c=>({...c,foto:e.target.checked}))}/> Generar una foto nueva con este cambio (si el problema es la foto, no el diseño)</label>}
         <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:10}}><Btn variant="secondary" onClick={()=>setCambio(null)}>Cancelar</Btn><Btn onClick={enviarCambio} disabled={!!busy||!(cambio.texto||"").trim()}>Enviar al diseñador</Btn></div>
       </div>
     </div>}

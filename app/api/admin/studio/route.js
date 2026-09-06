@@ -13,7 +13,7 @@
 // POST {action:"instagram", ig_user_id, access_token} / {action:"instagram_test"}
 // POST multipart {action:"asset", kind, file}       → sube logo o posteo de referencia
 
-import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername, borrarImagenesPieza } from "../../../../lib/studio";
+import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername, borrarImagenesPieza, decidirFoto } from "../../../../lib/studio";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -28,7 +28,7 @@ async function isStaff(req) {
   } catch { return false; }
 }
 
-const SEL = "id,brand,kind,slides,slides_plan,status,source,pillar,title,brief,headline,subheadline,caption,hashtags,image_url,images,width,height,feedback,error,publish_error,ig_media_id,scheduled_at,published_at,approved_at,locked_at,created_at,updated_at";
+const SEL = "id,brand,kind,slides,slides_plan,status,source,pillar,title,brief,headline,subheadline,caption,hashtags,image_url,images,photo_url,photo_prompt,photo_brand,width,height,feedback,error,publish_error,ig_media_id,scheduled_at,published_at,approved_at,locked_at,created_at,updated_at";
 
 export async function GET(req) {
   const who = await isStaff(req);
@@ -76,7 +76,9 @@ export async function POST(req) {
     if (!brief) return Response.json({ error: "Contame qué querés comunicar" }, { status: 400 });
     if (body.direct) {
       // Brief ya definido (por el chatbot): va directo a la cola sin pasar por el analista.
-      const created = await crearPiezas([{ kind: normKind(body.kind), slides: body.slides, slides_plan: body.slides_plan, pillar: body.pillar || null, title: body.title || brief.slice(0, 60), brief }], { source: "chatbot" });
+      // Si quien pide no decidió la foto (Adaptar del radar, chat sin datos), la decide el analista.
+      const foto = typeof body.photo === "boolean" ? { photo: body.photo, photo_brand: !!body.photo_brand, photo_prompt: String(body.photo_prompt || "") } : await decidirFoto({ brief, kind: normKind(body.kind), title: body.title });
+      const created = await crearPiezas([{ kind: normKind(body.kind), slides: body.slides, slides_plan: body.slides_plan, pillar: body.pillar || null, title: body.title || brief.slice(0, 60), brief, ...foto }], { source: body.source === "radar" ? "radar" : "chatbot" });
       return Response.json({ ok: true, created: created.length });
     }
     const kinds = ["story", "feed", "carousel"].includes(body.kind) ? Array(count).fill(body.kind) : null;
@@ -123,7 +125,15 @@ export async function POST(req) {
   if (a === "feedback") {
     const fb = String(body.feedback || "").trim();
     if (!fb) return Response.json({ error: "Decime qué cambiar" }, { status: 400 });
-    await patch(id, { status: "generating", locked_at: null, attempts: 0, error: null, feedback: fb });
+    // new_photo: se descarta la foto actual y se genera otra con el cambio pedido como nota.
+    let extraFoto = {};
+    if (body.new_photo) {
+      const cur = await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}&select=id,photo_url,photo_prompt`);
+      const p = Array.isArray(cur.body) && cur.body[0];
+      if (p?.photo_url) { await borrarImagenesPieza({ id: p.id, photo_url: p.photo_url }, { limpiarFila: false }); }
+      extraFoto = { photo_url: null, photo_note: fb, ...(p && !p.photo_prompt ? {} : {}) };
+    }
+    await patch(id, { status: "generating", locked_at: null, attempts: 0, error: null, feedback: fb, ...extraFoto });
     return Response.json({ ok: true });
   }
   if (a === "schedule") {
