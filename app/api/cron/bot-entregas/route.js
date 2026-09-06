@@ -175,16 +175,19 @@ export async function GET(req) {
         return Math.round(Math.max(0, Number(op.budget_total || 0) + Number(op.debt_applied_usd || 0) - Number(op.total_anticipos || 0) - collected - Number(op.credit_applied_usd || 0) - Number(op.discount_applied_usd || 0)) * 100) / 100;
       };
       let tc = 0, cuenta = null;
+      const estados = {};
       for (const op of riOps) {
         const saldo = saldoDe(op);
         if (saldo <= 0.005) continue;
         const plantilla = op.sent_notifications?.wa_ri_entregada ? "ri_saldo_pendiente" : "ri_entregada_pesos";
         out.ri_cobros.push(`${op.operation_code} → ${plantilla} (USD ${saldo})${diaHabil ? "" : " · espera día hábil 9-20 h"}`);
         if (dry) continue;
-        // La plantilla se da de alta en Meta apenas hay una op esperando (aunque sea fuera de
-        // horario), así la aprobación ya está cuando llega el día hábil.
-        const estado = await ensureWaTemplate(plantilla);
+        // Las plantillas se dan de alta en Meta apenas hay una op esperando (aunque sea fuera
+        // de horario), así la aprobación ya está cuando llega el día hábil. Las dos juntas.
+        if (!Object.keys(estados).length) for (const n of ["ri_entregada_pesos", "ri_saldo_pendiente"]) estados[n] = await ensureWaTemplate(n);
+        out.ri_plantillas = estados;
         if (!diaHabil) continue;
+        const estado = estados[plantilla];
         if (estado && estado !== "APPROVED") { out.ri_plantilla = `${plantilla}: ${estado} en Meta — se reintenta en 5 min`; continue; }
         if (!tc) {
           const d = await fetch("https://dolarapi.com/v1/dolares/blue", { signal: AbortSignal.timeout(4000) }).then((r) => r.ok ? r.json() : null).catch(() => null);
