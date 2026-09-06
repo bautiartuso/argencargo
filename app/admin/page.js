@@ -9097,7 +9097,7 @@ function AgentsPanel({token}){
       dq("unassigned_packages",{token,filters:"?select=*&assigned_to_op_id=is.null&order=created_at.desc"}),
       dq("operations",{token,filters:"?select=id,operation_code,description,channel,client_id,created_by_agent_id,status,consolidation_confirmed,origin,deposit_notified,deposit_notified_at,clients(client_code,first_name,last_name,whatsapp,tax_condition,company_name,cuit)&channel=eq.aereo_blanco&status=in.(en_deposito_origen,en_preparacion)&order=created_at.desc"}),
       dq("flights",{token,filters:"?select=*&order=created_at.desc"}),
-      dq("flight_operations",{token,filters:"?select=*,operations(client_id,eta,status,budget_total,budget_taxes,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(client_code),operation_packages(quantity))"}),
+      dq("flight_operations",{token,filters:"?select=*,operations(client_id,eta,status,budget_total,budget_taxes,cost_flete,cost_impuestos_reales,cost_gasto_documental,cost_seguro,cost_flete_local,cost_otros,clients(tax_condition,client_code),operation_packages(quantity))"}),
       dq("flight_invoice_items",{token,filters:"?select=*&order=sort_order.asc"}),
       dq("agent_account_movements",{token,filters:"?select=*&order=date.desc,created_at.desc"}),
       dq("repack_requests",{token,filters:"?select=*&order=requested_at.desc"})
@@ -9840,7 +9840,7 @@ function AgentsPanel({token}){
       <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-            {["Código","Estado","⚠","Clientes","Bultos","Peso","Kg vuelo","USD/kg","Tracking","Fact. cerrada","Demora","ETA"].map(h=><th key={h} style={{padding:"10px 8px",textAlign:"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
+            {["Código","Estado","⚠","Clientes","Bultos","Peso","Kg vuelo","USD/kg","Tracking","Imp","Fact. cerrada","Demora","ETA"].map(h=><th key={h} style={{padding:"10px 8px",textAlign:"center",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
           </tr></thead>
           <tbody>{shownFlights.map(f=>{const ops=flightOps.filter(fo=>fo.flight_id===f.id);const stColors={preparando:"#fbbf24",despachado:"#60a5fa",recibido:"#22c55e"};
             // Demora del agente: días entre dispatched_at y carrier_pickup_at.
@@ -9897,6 +9897,14 @@ function AgentsPanel({token}){
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}}>{kgVuelo>0?`${kgVuelo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"10px 8px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",textAlign:"center"}} title={esEmpleado()?"":f.total_cost_usd?(finR>0?`Costo agente ${usd(f.total_cost_usd)} + comisión financiera ${(finR*100).toFixed(2).replace(".",",")}% (${usd(costoEf-Number(f.total_cost_usd))}) = ${usd(costoEf)} efectivo`:`Costo total: ${usd(f.total_cost_usd)}`):""}>{esEmpleado()?"—":costoKg!=null?`${usd(costoKg)}/kg`:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:11,color:"rgba(255,255,255,0.5)",lineHeight:1.35,textAlign:"center"}}>{f.international_tracking?<><span style={{fontFamily:"monospace"}}>{f.international_tracking}</span>{f.international_carrier&&<><br/><span style={{fontSize:9,fontWeight:700,color:IC,letterSpacing:"0.04em",textTransform:"uppercase"}}>{f.international_carrier}</span></>}</>:"—"}</td>
+            {(()=>{
+              // IMP: ¿ya cargué los impuestos que pagué de este vuelo? RI = los paga el responsable inscripto.
+              const esRI=ops.some(fo=>fo.operations?.clients?.tax_condition==="responsable_inscripto");
+              const pagado=Number(f.cost_impuestos_usd||0)>0||Number(f.cost_impuestos_ars||0)>0;
+              const noAplica=f.status==="preparando";
+              const v=esRI?{t:"RI",c:"#60a5fa",tit:"Responsable inscripto: los impuestos los paga el cliente"}:noAplica?{t:"—",c:"rgba(255,255,255,0.3)",tit:"Todavía no despachó"}:pagado?{t:"Sí",c:"#4ade80",tit:`Impuestos cargados: ${f.cost_impuestos_usd?`USD ${Number(f.cost_impuestos_usd).toLocaleString("es-AR",{maximumFractionDigits:2})}`:`ARS ${Number(f.cost_impuestos_ars).toLocaleString("es-AR",{maximumFractionDigits:0})}`}`}:{t:"No",c:"#f87171",tit:"Impuestos sin cargar: todavía no se pagaron"};
+              return <td style={{padding:"10px 8px",fontSize:11,fontWeight:800,color:v.c,whiteSpace:"nowrap",textAlign:"center"}} title={v.tit}>{v.t}</td>;
+            })()}
             <td style={{padding:"10px 8px",fontSize:12,color:f.invoice_presented_at?"rgba(255,255,255,0.6)":"rgba(255,255,255,0.3)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}} title={f.invoice_presented_at?`Factura cerrada el ${formatDate(f.invoice_presented_at)} — el agente ya puede despachar`:"Factura todavía sin cerrar"}>{f.invoice_presented_at?`${String(new Date(f.invoice_presented_at).getDate()).padStart(2,"0")}/${String(new Date(f.invoice_presented_at).getMonth()+1).padStart(2,"0")}`:"—"}</td>
             <td style={{padding:"10px 8px",fontSize:13,fontWeight:700,color:demoraInfo.color,whiteSpace:"nowrap",textAlign:"center"}} title={demoraInfo.title||(f.dispatched_at?`Dispatched: ${formatDate(f.dispatched_at)}${f.carrier_pickup_at?` · Pickup: ${formatDate(f.carrier_pickup_at)}`:""}`:"")}>{demoraInfo.txt}</td>
             <td style={{padding:"10px 8px",fontSize:12,color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",textAlign:"center"}}>{etaTxt||"—"}</td>
@@ -9906,7 +9914,7 @@ function AgentsPanel({token}){
             <td style={{padding:"9px 8px",textAlign:"center",fontWeight:800,color:"#E8C99B",fontVariantNumeric:"tabular-nums"}}>{tot.bultos||"—"}</td>
             <td style={{padding:"9px 8px",textAlign:"center",fontWeight:800,color:"#E8C99B",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{tot.peso>0?`${tot.peso.toLocaleString("es-AR",{maximumFractionDigits:1})} kg`:"—"}</td>
             <td style={{padding:"9px 8px",textAlign:"center",fontWeight:800,color:"#E8C99B",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{tot.kgVuelo>0?`${tot.kgVuelo.toLocaleString("es-AR",{maximumFractionDigits:1})} kg`:"—"}</td>
-            <td colSpan={5}/>
+            <td colSpan={6}/>
           </tr></tfoot>
         </table>
       </div>}
