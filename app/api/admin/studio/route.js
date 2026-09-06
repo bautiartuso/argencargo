@@ -13,7 +13,7 @@
 // POST {action:"instagram", ig_user_id, access_token} / {action:"instagram_test"}
 // POST multipart {action:"asset", kind, file}       → sube logo o posteo de referencia
 
-import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, appendAprendizaje, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername, borrarImagenesPieza, decidirFoto, estadoEstudio, avisarPublicada } from "../../../../lib/studio";
+import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, appendAprendizaje, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername, borrarImagenesPieza, decidirFoto, estadoEstudio, avisarPublicada, publicarEnFacebook } from "../../../../lib/studio";
 import { tgConfigured, tgSettings, tgDiscoverChat, tgNotify, tgDisconnect } from "../../../../lib/telegram";
 
 export const maxDuration = 120;
@@ -51,7 +51,7 @@ export async function GET(req) {
       for (const r of runRows) { const b = byRun[r.id] || { piezas: 0, aprobadas: 0, descartadas: 0, fotos: 0, costo: 0 }; r.resumen = { ...b, costo: Math.round(b.costo * 100) / 100 }; }
     }
     return Response.json({ memory, assets, runs: runRows, estado, telegram: { configured: tgConfigured(), connected: !!tgc?.chat_id, username: tgc?.username || null, first_name: tgc?.first_name || null, budgets: { claude: Number(tgc?.budgets?.claude || 40), fal: Number(tgc?.budgets?.fal || 40) } }, instagram: { ig_user_id: ig.ig_user_id || "", connected: !!(ig.ig_user_id && ig.access_token), username: ig.username || null },
-      discovery: { connected: !!(disc.ig_user_id && disc.access_token), username: disc.username || null, page_name: disc.page_name || null, connected_at: disc.connected_at || null }, competitors });
+      discovery: { connected: !!(disc.ig_user_id && disc.access_token), username: disc.username || null, page_name: disc.page_name || null, connected_at: disc.connected_at || null, facebook_publish: !!disc.facebook_publish, puede_publicar: (disc.scopes || []).includes("pages_manage_posts") }, competitors });
   }
   if (view === "competencia") {
     const r = await sb(`/cs_competitor_posts?select=id,username,ig_media_id,media_type,caption,media_url,thumbnail_url,permalink,children,like_count,comments_count,posted_at,analysis,analyzed_at&order=posted_at.desc.nullslast&limit=80`);
@@ -169,6 +169,7 @@ export async function POST(req) {
     try {
       const mid = await igPublish(piece, cfg);
       await patch(id, { status: "published", published_at: now, ig_media_id: mid, publish_error: null });
+      await publicarEnFacebook(piece);
       await avisarPublicada(piece);
       return Response.json({ ok: true });
     } catch (e) { await patch(id, { publish_error: String(e.message).slice(0, 300) }); return Response.json({ error: e.message }, { status: 400 }); }
@@ -209,8 +210,22 @@ export async function POST(req) {
     } catch {}
     try { const bd = await discoverAccount(cfg, "magforce_argentina"); if (!bd?.id) throw new Error("no devolvió datos"); }
     catch (e) { return Response.json({ error: `El token conecta pero Business Discovery falla: ${e.message}. Revisá que el token tenga instagram_basic, instagram_manage_insights, pages_read_engagement, pages_show_list y ads_read.` }, { status: 400 }); }
+    try {
+      const d = await fetch(`https://graph.facebook.com/v21.0/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(token)}`);
+      const dj = await d.json().catch(() => ({}));
+      cfg.scopes = Array.isArray(dj?.data?.scopes) ? dj.data.scopes : [];
+    } catch {}
+    const prev = await igDiscoverySettings();
+    cfg.facebook_publish = !!prev.facebook_publish;
     await sb(`/cs_settings?on_conflict=key`, { method: "POST", body: JSON.stringify({ key: "instagram_discovery", value: cfg, updated_at: now }) });
-    return Response.json({ ok: true, info: { username: cfg.username, page_name: cfg.page_name } });
+    return Response.json({ ok: true, info: { username: cfg.username, page_name: cfg.page_name, puede_publicar: (cfg.scopes || []).includes("pages_manage_posts") } });
+  }
+  if (a === "facebook_toggle") {
+    const cur = await igDiscoverySettings();
+    if (!cur.page_id) return Response.json({ error: "Primero conectá el token de Facebook (Radar de competencia)" }, { status: 400 });
+    if (body.enabled && !(cur.scopes || []).includes("pages_manage_posts")) return Response.json({ error: "El token actual no tiene el permiso pages_manage_posts. Generá uno nuevo en el explorador con ese permiso sumado a los cinco anteriores, extendelo y pegalo en Radar de competencia." }, { status: 400 });
+    await sb(`/cs_settings?on_conflict=key`, { method: "POST", body: JSON.stringify({ key: "instagram_discovery", value: { ...cur, facebook_publish: !!body.enabled }, updated_at: now }) });
+    return Response.json({ ok: true, enabled: !!body.enabled });
   }
   if (a === "discovery_disconnect") { await sb(`/cs_settings?key=eq.instagram_discovery`, { method: "DELETE", headers: { Prefer: "return=minimal" } }); return Response.json({ ok: true }); }
   if (a === "competitor_add") {
