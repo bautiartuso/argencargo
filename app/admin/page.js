@@ -4579,7 +4579,7 @@ function StudioPanel({token}){
   const pedirCambio=(p)=>setCambio({p,texto:"",modo:"cambio"});
   const pedirDescarte=(p)=>setCambio({p,texto:"",modo:"descartar"});
   const enviarDescarte=async()=>{const p=cambio.p;const note=(cambio.texto||"").trim();setCambio(null);await act("reject",{id:p.id,note},note?"Descartada · el motivo quedó anotado en Aprendizajes":"Descartada");};
-  const enviarCambio=async()=>{const fb=(cambio?.texto||"").trim();if(!fb)return;const p=cambio.p;const nueva=!!cambio.foto;setCambio(null);await act("feedback",{id:p.id,feedback:fb,new_photo:nueva},nueva?"Va de vuelta: foto nueva + diseño (lo hace tu Mac)":"Va de vuelta al diseñador (lo hace tu Mac)");};
+  const enviarCambio=async()=>{const fb=(cambio?.texto||"").trim();if(!fb)return;const p=cambio.p;const nueva=!!cambio.foto;setCambio(null);await act("feedback",{id:p.id,feedback:fb,new_photo:nueva},nueva?"Se rehace con foto nueva y diseño nuevo (tu Mac, 5 a 8 min)":"Se rehace el diseño con tu cambio (tu Mac, 5 a 8 min)");};
   const copiar=async(p)=>{try{await navigator.clipboard.writeText(`${p.caption||""}\n\n${p.hashtags||""}`.trim());toast("Texto copiado","success");}catch{toast("No se pudo copiar","error");}};
   const Card=({p,children,compact})=><div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
     <div onClick={()=>p.image_url&&setPreview(p)} style={{position:"relative",background:"#0b1220",aspectRatio:p.kind==="story"?"9/16":"4/5",cursor:p.image_url?"zoom-in":"default",display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -4591,7 +4591,7 @@ function StudioPanel({token}){
       <p style={{margin:0,fontSize:13,fontWeight:800,color:"#fff"}}>{p.headline||p.title||"—"}</p>
       {!compact&&p.subheadline&&<p style={{margin:0,fontSize:11.5,color:"rgba(255,255,255,0.6)"}}>{p.subheadline}</p>}
       {!compact&&p.caption&&<p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.5)",whiteSpace:"pre-wrap",maxHeight:96,overflow:"hidden"}}>{p.caption}</p>}
-      {p.feedback&&p.status==="generating"&&<p style={{margin:0,fontSize:10.5,color:"#fbbf24"}}>✎ Cambio pedido: {p.feedback}</p>}
+      {p.feedback&&p.status==="generating"&&<p style={{margin:0,fontSize:10.5,color:"#fbbf24"}}>✎ {p.locked_at?"Tu Mac está rehaciendo el diseño con tu cambio (5 a 8 min)":"En cola: tu Mac va a rehacer el diseño con tu cambio"}{conFoto(p)&&p.photo_url?" · misma foto":""}: {p.feedback}</p>}
       {p.publish_error&&<p style={{margin:0,fontSize:10.5,color:"#f87171"}}>Instagram: {p.publish_error}</p>}
       <div style={{marginTop:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>{children}</div>
     </div>
@@ -4910,7 +4910,7 @@ function StudioPanel({token}){
       {slidesView(cambio.p,{maxW:isMobile?"100%":"55%",maxH:isMobile?"42vh":(slidesOf(cambio.p).length>1?"74vh":"92vh")})}
       <div onClick={e=>e.stopPropagation()} style={{width:isMobile?"100%":380,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:`1px solid ${cambio.modo==="descartar"?"rgba(239,68,68,0.45)":"rgba(251,191,36,0.4)"}`,borderRadius:12,padding:16}}>
         <p style={{margin:"0 0 4px",fontSize:14,fontWeight:800,color:"#fff"}}>{cambio.modo==="descartar"?"✕ ¿Por qué la descartás?":"✎ ¿Qué cambiamos?"}</p>
-        <p style={{margin:"0 0 10px",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{cambio.modo==="descartar"?"Opcional, pero vale oro: lo que escribas queda en Aprendizajes y el sistema no repite ese error. Si ya conseguiste lo que buscabas y no hay nada mal, descartá sin comentario.":"Escribilo o dictalo como se lo dirías a un diseñador. Vuelve a la cola y tu Mac la rehace con estos cambios."}</p>
+        <p style={{margin:"0 0 10px",fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>{cambio.modo==="descartar"?"Opcional, pero vale oro: lo que escribas queda en Aprendizajes y el sistema no repite ese error. Si ya conseguiste lo que buscabas y no hay nada mal, descartá sin comentario.":"Escribilo o dictalo. Tu Mac (Claude) rehace el diseño con estos cambios, conservando la foto; tarda 5 a 8 minutos."}</p>
         <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
           <textarea autoFocus value={cambio.texto} onChange={e=>setCambio(c=>({...c,texto:e.target.value}))} rows={6} placeholder="Ej: fondo claro, titular más corto, sacá el bloque de abajo, logo más chico arriba a la derecha" style={{...inp,resize:"vertical"}}/>
           {micBtn((fn)=>setCambio(c=>({...c,texto:typeof fn==="function"?fn(c.texto):fn})),"cambio")}
