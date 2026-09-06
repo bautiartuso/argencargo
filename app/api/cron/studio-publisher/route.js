@@ -2,6 +2,7 @@
 // Instagram Graph API lo que está programado y cuya hora ya pasó. Auth: Bearer CRON_SECRET.
 import { publicarPendientes, analizarPendientesCompetencia, radarCompetencia, loadCompetitors, igDiscoverySettings, sb } from "../../../../lib/studio";
 import { tgConfigured, tgSettings, tgDiscoverChat, tgNotify } from "../../../../lib/telegram";
+import { actualizarInsights } from "../../../../lib/ig-insights";
 export const maxDuration = 60;
 export async function GET(req) {
   const auth = req.headers.get("authorization") || "";
@@ -10,6 +11,11 @@ export async function GET(req) {
   const pub = await publicarPendientes();
   // De paso, analiza de a 3 los posts de la competencia que faltan (cola en segundo plano).
   let competencia = 0; try { competencia = await analizarPendientesCompetencia(3); } catch (e) { console.error("[studio] competencia", e.message); }
+  // Arranque de Análisis: si hay token y la tabla diaria está vacía, se llena ahora (después, dos veces por día).
+  try {
+    const disc0 = await igDiscoverySettings();
+    if (disc0.ig_user_id && disc0.access_token) { const d = await sb(`/cs_ig_daily?select=day&limit=1`); if (Array.isArray(d.body) && !d.body.length) await actualizarInsights(); }
+  } catch (e) { console.error("[studio] insights inicial", e.message); }
   // Arranque: si el radar está conectado y nunca corrió, baja la primera tanda sin esperar al domingo.
   try {
     const disc = await igDiscoverySettings();

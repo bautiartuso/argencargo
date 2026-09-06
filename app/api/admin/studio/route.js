@@ -15,6 +15,7 @@
 
 import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, appendAprendizaje, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername, borrarImagenesPieza, decidirFoto, estadoEstudio, avisarPublicada, publicarEnFacebook } from "../../../../lib/studio";
 import { tgConfigured, tgSettings, tgDiscoverChat, tgNotify, tgDisconnect } from "../../../../lib/telegram";
+import { analisis, actualizarInsights } from "../../../../lib/ig-insights";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -53,6 +54,7 @@ export async function GET(req) {
     return Response.json({ memory, assets, runs: runRows, estado, telegram: { configured: tgConfigured(), connected: !!tgc?.chat_id, username: tgc?.username || null, first_name: tgc?.first_name || null, budgets: { claude: Number(tgc?.budgets?.claude || 40), fal: Number(tgc?.budgets?.fal || 40) } }, instagram: { ig_user_id: ig.ig_user_id || "", connected: !!(ig.ig_user_id && ig.access_token), username: ig.username || null },
       discovery: { connected: !!(disc.ig_user_id && disc.access_token), username: disc.username || null, page_name: disc.page_name || null, connected_at: disc.connected_at || null, facebook_publish: !!disc.facebook_publish, puede_publicar: (disc.scopes || []).includes("pages_manage_posts") }, competitors });
   }
+  if (view === "analisis") { try { return Response.json(await analisis()); } catch (e) { return Response.json({ error: e.message }, { status: 500 }); } }
   if (view === "competencia") {
     const r = await sb(`/cs_competitor_posts?select=id,username,ig_media_id,media_type,caption,media_url,thumbnail_url,permalink,children,like_count,comments_count,posted_at,analysis,analyzed_at&order=posted_at.desc.nullslast&limit=80`);
     return Response.json({ posts: Array.isArray(r.body) ? r.body : [] });
@@ -251,6 +253,7 @@ export async function POST(req) {
     await sb(`/cs_settings?on_conflict=key`, { method: "POST", body: JSON.stringify({ key: "telegram", value: { ...cur, budgets }, updated_at: now }) });
     return Response.json({ ok: true, budgets });
   }
+  if (a === "ig_refresh") { const r = await actualizarInsights(); return Response.json({ ok: true, ...r }); }
   if (a === "competencia_scan") { const r = await radarCompetencia({ analizar: 6 }); return Response.json({ ok: true, ...r }); }
   return Response.json({ error: "Acción desconocida" }, { status: 400 });
 }

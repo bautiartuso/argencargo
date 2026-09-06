@@ -4511,7 +4511,8 @@ function BotPanel({token}){
 // Claude Code); la web es la cola, la aprobación, el calendario y el vigilante de Instagram.
 // ═══════════════════════════════════════════════════════════════════════════
 function StudioPanel({token}){
-  const [tab,setTab]=useState("calendario");
+  const [tab,setTab]=useState("analisis");
+  const [an,setAn]=useState(null);const [anLo,setAnLo]=useState(false); // Análisis de Instagram
   const [chatKind,setChatKind]=useState("auto"); // formato pedido en el chatbot: auto | feed | carousel | story
   const [slideIdx,setSlideIdx]=useState(0);      // imagen visible en la vista grande (carruseles / secuencias)
   const [runMix,setRunMix]=useState({feed:1,carousel:1,story:3}); // cuántas piezas de cada formato pide el runner
@@ -4537,9 +4538,10 @@ function StudioPanel({token}){
   const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/studio${qs}`,{...opts,headers:{...(opts.body instanceof FormData?{}:{"Content-Type":"application/json"}),Authorization:`Bearer ${token}`,...(opts.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
   const load=async()=>{try{const b=await api("?view=pieces");setPieces(b.pieces||[]);}catch(e){console.error(e);}finally{setLo(false);}};
   const loadMeta=async()=>{try{const b=await api("?view=memory");setMeta({memory:b.memory||[],assets:b.assets||[],runs:b.runs||[],instagram:b.instagram||{},discovery:b.discovery||{},competitors:b.competitors||[],estado:b.estado||null,telegram:b.telegram||{}});}catch(e){toast(e.message,"error");}};
+  const loadAn=async()=>{setAnLo(true);try{const b=await api("?view=analisis");setAn(b);}catch(e){toast(e.message,"error");}finally{setAnLo(false);}};
   const loadComp=async()=>{setComp(c=>({...c,lo:true}));try{const b=await api("?view=competencia");setComp({posts:b.posts||[],lo:false});}catch(e){setComp(c=>({...c,lo:false}));}};
   useEffect(()=>{load();loadMeta();},[token]);
-  useEffect(()=>{if(tab==="marca")loadComp();},[tab]);
+  useEffect(()=>{if(tab==="marca")loadComp();if(tab==="analisis"&&!an)loadAn();},[tab]);
   const generando=pieces.filter(p=>p.status==="generating").length;
   useEffect(()=>{if(!generando)return;const id=setInterval(load,20000);return()=>clearInterval(id);},[generando>0]);
   const act=async(action,extra={},msg)=>{
@@ -4605,7 +4607,7 @@ function StudioPanel({token}){
   const cal=pieces.filter(p=>["approved","scheduled","published"].includes(p.status)).sort((a,b)=>new Date(a.scheduled_at||a.approved_at||a.created_at)-new Date(b.scheduled_at||b.approved_at||b.created_at));
   const grid={display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(250px,1fr))",gap:12,alignItems:"start"};
   const igOk=!!meta.instagram?.connected;
-  const tabs=[{k:"calendario",l:"Calendario",n:cal.filter(p=>p.status!=="published").length},{k:"contenido",l:"Contenido",n:pieces.filter(p=>p.status==="review").length},{k:"runner",l:"Runner"},{k:"chatbot",l:"Chatbot"},{k:"marca",l:"Marca"},{k:"knowledge",l:"Knowledge"},{k:"conexion",l:"Conexión",dot:igOk?"#4ade80":"#f87171"}];
+  const tabs=[{k:"analisis",l:"Análisis"},{k:"calendario",l:"Calendario",n:cal.filter(p=>p.status!=="published").length},{k:"contenido",l:"Contenido",n:pieces.filter(p=>p.status==="review").length},{k:"runner",l:"Runner"},{k:"chatbot",l:"Chatbot"},{k:"marca",l:"Marca"},{k:"knowledge",l:"Knowledge"},{k:"conexion",l:"Conexión",dot:igOk?"#4ade80":"#f87171"}];
   const inp={width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit"};
   const sel={padding:"9px 10px",borderRadius:9,border:"1px solid rgba(255,255,255,0.12)",background:"#142038",color:"#fff",fontSize:12.5};
   const box={background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:14};
@@ -4626,6 +4628,64 @@ function StudioPanel({token}){
         {tabs.map(x=><button key={x.k} onClick={()=>setTab(x.k)} style={{padding:"7px 12px",fontSize:12,fontWeight:700,borderRadius:9,cursor:"pointer",border:`1px solid ${tab===x.k?"rgba(184,149,106,0.55)":"rgba(255,255,255,0.1)"}`,background:tab===x.k?"rgba(184,149,106,0.16)":"rgba(255,255,255,0.03)",color:tab===x.k?"#E8C99B":"rgba(255,255,255,0.6)"}}>{x.l}{x.n>0&&<span style={{marginLeft:6,fontSize:10,padding:"1px 6px",borderRadius:99,background:"#ef4444",color:"#fff"}}>{x.n}</span>}{x.dot&&<span style={{display:"inline-block",width:7,height:7,borderRadius:99,background:x.dot,marginLeft:6}}/>}</button>)}
       </div>
     </div>
+
+    {tab==="analisis"&&(()=>{
+      const n=(v)=>v==null?"—":Number(v).toLocaleString("es-AR");
+      const hace=(d)=>{if(!d)return "nunca";const m=Math.round((Date.now()-new Date(d).getTime())/60000);return m<1?"recién":m<60?`hace ${m} min`:m<1440?`hace ${Math.round(m/60)} h`:`hace ${Math.round(m/1440)} d`;};
+      const daily=an?.diario||[];
+      // Serie de seguidores: donde no hay foto del total, se reconstruye hacia atrás con los nuevos por día.
+      const serie=(()=>{const arr=daily.map(r=>({day:r.day,f:r.followers,nf:Number(r.new_followers||0),reach:Number(r.reach||0)}));let f=an?.seguidores;for(let i=arr.length-1;i>=0;i--){if(arr[i].f!=null)f=arr[i].f;else arr[i].f=f;if(f!=null)f=f-arr[i].nf;}return arr;})();
+      const Chart=({data,k,color,alto=120,barras})=>{const W=600,H=alto,P=6;const vals=data.map(d=>Number(d[k]||0));const min=barras?0:Math.min(...vals),max=Math.max(...vals,min+1);const x=(i)=>P+(i*(W-2*P))/Math.max(1,data.length-1);const y=(v)=>H-P-((v-min)*(H-2*P))/(max-min);return <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:alto,display:"block"}}>
+        {barras?data.map((d,i)=><rect key={i} x={P+i*((W-2*P)/data.length)} y={y(Number(d[k]||0))} width={Math.max(2,(W-2*P)/data.length-2)} height={H-P-y(Number(d[k]||0))} fill={color} opacity={0.75} rx={2}/>)
+        :<><path d={data.map((d,i)=>`${i?"L":"M"}${x(i)},${y(Number(d[k]||0))}`).join(" ")} fill="none" stroke={color} strokeWidth={2.5}/><path d={`${data.map((d,i)=>`${i?"L":"M"}${x(i)},${y(Number(d[k]||0))}`).join(" ")} L${x(data.length-1)},${H-P} L${x(0)},${H-P} Z`} fill={color} opacity={0.12}/></>}
+        <text x={P} y={12} fontSize={11} fill="rgba(255,255,255,0.5)">{n(min)}</text><text x={P} y={H-P-2} fontSize={11} fill="rgba(255,255,255,0.5)">{data[0]?.day?.slice(5)}</text><text x={W-P} y={H-P-2} fontSize={11} fill="rgba(255,255,255,0.5)" textAnchor="end">{data[data.length-1]?.day?.slice(5)}</text><text x={W-P} y={12} fontSize={11} fill="rgba(255,255,255,0.5)" textAnchor="end">{n(max)}</text>
+      </svg>;};
+      const Stat=({l,v,sub,c})=><div style={{...box,padding:"12px 14px"}}><p style={{margin:0,fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{l}</p><p style={{margin:"4px 0 0",fontSize:24,fontWeight:900,color:c||"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</p>{sub&&<p style={{margin:"2px 0 0",fontSize:11,color:"rgba(255,255,255,0.5)"}}>{sub}</p>}</div>;
+      const Post=({x})=>{const img=x.media_url||x.thumbnail_url;const tipo=x.media_type==="CAROUSEL_ALBUM"?"Carrusel":x.product_type==="REELS"?"Reel":"Posteo";return <a href={x.permalink||"#"} target="_blank" rel="noreferrer" style={{textDecoration:"none",color:"inherit",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+        <div style={{background:"#0b1220",aspectRatio:"1/1"}}>{img&&<img src={img} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} onError={e=>{e.currentTarget.style.display="none";}}/>}</div>
+        <div style={{padding:"8px 10px"}}>
+          <div style={{display:"flex",gap:5,alignItems:"center",marginBottom:4}}>{chip(tipo,"#60a5fa")}{x.piece_id&&chip("del estudio","#a78bfa")}<span style={{marginLeft:"auto",fontSize:10.5,color:"rgba(255,255,255,0.45)"}}>{x.posted_at?new Date(x.posted_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span></div>
+          <p style={{margin:"0 0 6px",fontSize:11.5,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{String(x.caption||"").split("\n")[0]||"(sin texto)"}</p>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",fontSize:11,color:"rgba(255,255,255,0.65)"}}><span title="Visualizaciones">👁 {n(x.views)}</span><span title="Alcance">📡 {n(x.reach)}</span><span title="Me gusta">♥ {n(x.like_count)}</span><span title="Guardados">🔖 {n(x.saved)}</span><span title="Compartidos">↗ {n(x.shares)}</span></div>
+        </div>
+      </a>;};
+      return <div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Instagram @{meta.instagram?.username||"argencargo_"} · datos {hace(an?.actualizado)} · se actualizan dos veces por día</span>
+          <span style={{marginLeft:"auto",display:"flex",gap:6}}><Btn small variant="secondary" onClick={loadAn} disabled={anLo}>↻</Btn><Btn small onClick={async()=>{await act("ig_refresh",{},x=>`Actualizado: ${x.media??0} publicaciones, ${x.historias??0} historias`);loadAn();}} disabled={!!busy}>{busy==="ig_refresh"?"Consultando a Meta…":"Actualizar ahora"}</Btn></span>
+        </div>
+        {!an&&<p style={{color:"rgba(255,255,255,0.4)"}}>{anLo?"Cargando…":"Sin datos todavía."}</p>}
+        {an&&!an.seguidores&&<p style={{fontSize:12,color:"#fbbf24"}}>Todavía no hay datos: tocá "Actualizar ahora". Hace falta el token de Facebook del radar (Conexión).</p>}
+        {an&&<>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10,marginBottom:14}}>
+            <Stat l="Seguidores" v={n(an.seguidores)} sub={`${an.nuevos_7d>=0?"+":""}${n(an.nuevos_7d)} en 7 días · ${an.nuevos_30d>=0?"+":""}${n(an.nuevos_30d)} en 30`} c="#E8C99B"/>
+            <Stat l="Alcance 30 días" v={n(an.alcance_30d)} sub={`${n(an.alcance_7d)} en los últimos 7`}/>
+            <Stat l="Visitas al perfil 30 d" v={n(an.visitas_perfil_30d)} sub={`${n(an.clics_web_30d)} clics a la web`}/>
+            <Stat l="Interacciones 30 d" v={n(an.interacciones_30d)} sub="me gusta, comentarios, guardados, compartidos"/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:14}}>
+            <div style={box}><p style={{margin:"0 0 6px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Crecimiento de seguidores</p>{serie.length>1?<Chart data={serie} k="f" color="#E8C99B"/>:<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Se va armando día a día.</p>}</div>
+            <div style={box}><p style={{margin:"0 0 6px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Alcance por día</p>{serie.length>1?<Chart data={serie} k="reach" color="#60a5fa" barras/>:<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Se va armando día a día.</p>}</div>
+          </div>
+          {Object.keys(an.por_formato||{}).length>0&&<div style={{...box,marginBottom:14}}>
+            <p style={{margin:"0 0 8px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Promedio por formato <span style={{fontWeight:600,color:"rgba(255,255,255,0.45)"}}>· últimos 60 días</span></p>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":`repeat(${Object.keys(an.por_formato).length+1},1fr)`,gap:8}}>
+              {Object.entries(an.por_formato).map(([k,v])=><div key={k} style={{padding:"8px 10px",borderRadius:9,background:"rgba(255,255,255,0.03)"}}><p style={{margin:"0 0 4px",fontSize:11,fontWeight:800,color:"#60a5fa",textTransform:"capitalize"}}>{k} <span style={{color:"rgba(255,255,255,0.4)",fontWeight:600}}>· {v.n}</span></p><p style={{margin:0,fontSize:11.5,color:"rgba(255,255,255,0.75)"}}>👁 {n(v.views)} · 📡 {n(v.reach)} · ♥ {n(v.likes)} · 🔖 {n(v.saved)} · ↗ {n(v.shares)}</p></div>)}
+              <div style={{padding:"8px 10px",borderRadius:9,background:"rgba(255,255,255,0.03)"}}><p style={{margin:"0 0 4px",fontSize:11,fontWeight:800,color:"#f472b6"}}>Historias <span style={{color:"rgba(255,255,255,0.4)",fontWeight:600}}>· {an.historias_prom.n}</span></p><p style={{margin:0,fontSize:11.5,color:"rgba(255,255,255,0.75)"}}>📡 {n(an.historias_prom.reach)} · 👁 {n(an.historias_prom.views)} · 💬 {n(an.historias_prom.replies)} respuestas</p></div>
+            </div>
+          </div>}
+          <p style={{margin:"0 0 8px",fontSize:12.5,fontWeight:800,color:"#4ade80"}}>Las que más rindieron <span style={{fontWeight:600,color:"rgba(255,255,255,0.45)"}}>· por visualizaciones, últimos 60 días</span></p>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(6,1fr)",gap:10,marginBottom:16}}>{an.mejores.map(x=><Post key={x.ig_media_id} x={x}/>)}{an.mejores.length===0&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Sin publicaciones con métricas todavía.</p>}</div>
+          <p style={{margin:"0 0 8px",fontSize:12.5,fontWeight:800,color:"#f87171"}}>Las que menos rindieron</p>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(6,1fr)",gap:10,marginBottom:16}}>{an.peores.map(x=><Post key={x.ig_media_id} x={x}/>)}</div>
+          {an.historias.length>0&&<div style={box}>
+            <p style={{margin:"0 0 8px",fontSize:12.5,fontWeight:800,color:"#fff"}}>Historias <span style={{fontWeight:600,color:"rgba(255,255,255,0.45)"}}>· Meta solo mide mientras están activas; el sistema las captura dos veces por día</span></p>
+            <div style={{display:"grid",gridTemplateColumns:isMobile?"repeat(3,1fr)":"repeat(8,1fr)",gap:8}}>
+              {an.historias.slice(0,16).map(x=><div key={x.ig_media_id} style={{borderRadius:8,overflow:"hidden",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)"}}><div style={{aspectRatio:"9/16",background:"#0b1220"}}>{(x.media_url||x.thumbnail_url)&&<img src={x.media_url||x.thumbnail_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} onError={e=>{e.currentTarget.style.display="none";}}/>}</div><div style={{padding:"5px 7px",fontSize:10.5,color:"rgba(255,255,255,0.7)"}}>{x.posted_at?new Date(x.posted_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""} · 📡 {n(x.reach)} · 👁 {n(x.views)}{x.replies?` · 💬 ${n(x.replies)}`:""}</div></div>)}
+            </div>
+          </div>}
+        </>}
+      </div>;})()}
 
     {tab==="contenido"&&<div>
       <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
