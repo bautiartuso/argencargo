@@ -4708,10 +4708,10 @@ function StudioPanel({token}){
               <div style={{display:"flex",gap:4,marginBottom:6}}>{chip(kindLabel(p),"#60a5fa")}</div>
               <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.headline||p.title||""}>{p.headline||p.title||"—"}</p>
               <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                <Btn small onClick={()=>setSched({p,date:new Date(Date.now()+86400000).toISOString().slice(0,10),hour:10,min:0})} disabled={!!busy}>📅</Btn>
-                {igOk&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?"))act("publish_now",{id:p.id},"Publicada en Instagram");}} disabled={!!busy}>⬆</Btn>}
-                {p.image_url&&<a href={p.image_url} download target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><Btn small variant="secondary">⬇</Btn></a>}
-                <Btn small variant="secondary" onClick={()=>copiar(p)}>📋</Btn>
+                <Btn small title="Programar: elegir día y hora" onClick={()=>setSched({p,date:new Date(Date.now()+86400000).toISOString().slice(0,10),hour:10,min:0})} disabled={!!busy}>📅</Btn>
+                {igOk&&<Btn small variant="secondary" title="Subir ahora a Instagram" onClick={async()=>{if(await confirmDialog("¿Publicar ahora en Instagram?"))act("publish_now",{id:p.id},"Publicada en Instagram");}} disabled={!!busy}>⬆</Btn>}
+                {p.image_url&&<a href={p.image_url} download target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><Btn small variant="secondary" title="Descargar la imagen">⬇</Btn></a>}
+                <Btn small variant="secondary" title="Copiar el texto del posteo (caption y hashtags)" onClick={()=>copiar(p)}>📋</Btn>
               </div>
             </div>)}
           </div>
