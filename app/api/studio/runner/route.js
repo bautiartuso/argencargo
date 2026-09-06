@@ -81,6 +81,11 @@ export async function POST(req) {
   // Nota de blog: se guarda el artículo; en modo automático sale publicada sin pasar por Contenido.
   const piece = Array.isArray(upd.body) && upd.body[0];
   if (piece?.kind === "blog") {
+    // Sin nota.md no hay nota: la pieza vuelve a la cola (runner viejo o redactor que no escribió).
+    if (!String(fd.get("content_md") || "").trim()) {
+      await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "generating", locked_at: null, error: "el redactor no entregó nota.md", updated_at: now }) });
+      return Response.json({ ok: false, error: "nota.md vacía: la pieza vuelve a la cola" }, { status: 422 });
+    }
     try {
       await guardarNota(piece, { content_md: String(fd.get("content_md") || ""), title: String(fd.get("title") || fd.get("headline") || ""), slug: String(fd.get("slug") || ""), excerpt: String(fd.get("excerpt") || ""), tags: String(fd.get("tags") || ""), seo_title: String(fd.get("seo_title") || ""), seo_description: String(fd.get("seo_description") || "") });
       const cfg = await blogSettings();
