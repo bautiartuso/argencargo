@@ -13,7 +13,7 @@
 // POST {action:"instagram", ig_user_id, access_token} / {action:"instagram_test"}
 // POST multipart {action:"asset", kind, file}       → sube logo o posteo de referencia
 
-import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername } from "../../../../lib/studio";
+import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername, borrarImagenesPieza } from "../../../../lib/studio";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -104,7 +104,21 @@ export async function POST(req) {
     if (p) appendHistorial(p).catch(() => {});
     return Response.json({ ok: true });
   }
-  if (a === "reject") { await patch(id, { status: "rejected" }); return Response.json({ ok: true }); }
+  // Rechazar borra las imágenes del storage (la fila queda para que el analista no repita el tema).
+  if (a === "reject") {
+    const r = await patch(id, { status: "rejected" });
+    const p = Array.isArray(r.body) && r.body[0];
+    if (p) await borrarImagenesPieza(p);
+    return Response.json({ ok: true });
+  }
+  if (a === "reject_all") {
+    const ids = (Array.isArray(body.ids) ? body.ids : []).map(String).filter(Boolean).slice(0, 100);
+    if (!ids.length) return Response.json({ error: "Nada para rechazar" }, { status: 400 });
+    const r = await sb(`/cs_pieces?id=in.(${ids.map(encodeURIComponent).join(",")})&status=eq.review`, { method: "PATCH", body: JSON.stringify({ status: "rejected", updated_at: now }) });
+    const rows = Array.isArray(r.body) ? r.body : [];
+    for (const p of rows) await borrarImagenesPieza(p);
+    return Response.json({ ok: true, rechazadas: rows.length });
+  }
   if (a === "regenerate") { await patch(id, { status: "generating", locked_at: null, attempts: 0, error: null, feedback: null }); return Response.json({ ok: true }); }
   if (a === "feedback") {
     const fb = String(body.feedback || "").trim();

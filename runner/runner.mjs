@@ -206,6 +206,15 @@ async function procesar(data) {
   log(`   ✅ lista para aprobar${n > 1 ? ` (${n} imágenes)` : ""}`);
 }
 
+// Limpieza: las carpetas de trabajo de más de 7 días se borran (cada pieza pesa unos MB).
+try {
+  const wd = path.join(WORK, "work");
+  for (const d of await fs.readdir(wd).catch(() => [])) {
+    const st = await fs.stat(path.join(wd, d)).catch(() => null);
+    if (st && Date.now() - st.mtimeMs > 7 * 86400000) await fs.rm(path.join(wd, d), { recursive: true, force: true }).catch(() => {});
+  }
+} catch {}
+
 const max = Number(cfg.maxPieces || 4);
 for (let i = 0; i < max; i++) {
   const r = await api("", {});

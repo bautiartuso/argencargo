@@ -8,7 +8,7 @@
 // POST ?op=error  (json: id, error) → suma intento; al 2º queda en 'error'.
 // Auth: header x-runner-secret = RUNNER_SECRET.
 
-import { sb, loadMemory, loadAssets, ejemplosAprobados, uploadStorage } from "../../../../lib/studio";
+import { sb, loadMemory, loadAssets, ejemplosAprobados, uploadStorage, borrarImagenesPieza } from "../../../../lib/studio";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -51,6 +51,9 @@ export async function POST(req) {
   for (let i = 1; i <= 10; i++) { const f = fd.get(`png_${i}`); if (f && typeof f !== "string") files.push({ f, html: String(fd.get(`html_${i}`) || "") }); else break; }
   if (!files.length) { const f = fd.get("png"); if (f && typeof f !== "string") files.push({ f, html: String(fd.get("html") || "") }); }
   if (!files.length) return Response.json({ error: "Faltan imágenes" }, { status: 400 });
+  // Si la pieza se está rehaciendo (pedido de cambio), las imágenes viejas se borran para no acumular.
+  const prev = await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}&select=id,image_url,images`);
+  if (Array.isArray(prev.body) && prev.body[0]) await borrarImagenesPieza(prev.body[0], { limpiarFila: false });
   const stamp = Date.now();
   const images = [];
   for (let i = 0; i < files.length; i++) {

@@ -4622,7 +4622,10 @@ function StudioPanel({token}){
       <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
         {[["todos","Todos"],["feed","Posteos"],["carousel","Carruseles"],["story","Historias"]].map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={{padding:"6px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${filtro===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:filtro===k?"rgba(96,165,250,0.15)":"transparent",color:filtro===k?"#60a5fa":"rgba(255,255,255,0.55)"}}>{l}</button>)}
         {generando>0&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>🎨 {generando} en la cola · tu Mac las diseña de a una (5 a 8 min cada una) mientras esté prendida.</span>}
-        <span style={{marginLeft:"auto",fontSize:11,color:"rgba(255,255,255,0.35)"}}>Tocá la imagen para verla grande</span>
+        <span style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
+          {review.filter(p=>p.status==="review").length>1&&<button onClick={async()=>{const ids=review.filter(p=>p.status==="review").map(p=>p.id);if(await confirmDialog(`¿Rechazar las ${ids.length} piezas que quedan sin aprobar? Se borran sus imágenes.`))act("reject_all",{ids},x=>`${x.rechazadas} rechazadas`);}} disabled={!!busy} style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:8,cursor:"pointer",border:"1px solid rgba(239,68,68,0.4)",background:"rgba(239,68,68,0.1)",color:"#f87171"}}>✕ Rechazar las restantes</button>}
+          <span style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>Tocá la imagen para verla grande</span>
+        </span>
       </div>
       {lo&&<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando…</p>}
       {!lo&&review.length===0&&<div style={{padding:30,textAlign:"center",color:"rgba(255,255,255,0.45)",border:"1px dashed rgba(255,255,255,0.12)",borderRadius:14}}>Nada para aprobar. Pedile ideas al Runner o charlá con el Chatbot.</div>}
