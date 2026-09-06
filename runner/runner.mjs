@@ -82,6 +82,7 @@ async function bajar(url, dest) {
 const nSlides = (p) => Math.max(1, Number(p.slides) || 1);
 function formatoLabel(p) {
   const n = nSlides(p);
+  if (p.kind === "blog") return "NOTA DE BLOG (nota.md + portada 1200×630)";
   if (p.kind === "carousel") return `CARRUSEL de ${n} imágenes de 1080×1350 (4:5)`;
   if (p.kind === "story") return n > 1 ? `SECUENCIA de ${n} HISTORIAS de 1080×1920 (se publican seguidas, en orden)` : "HISTORIA suelta de 1080×1920";
   return "POSTEO DE FEED de UNA sola imagen de 1080×1350 (4:5)";
@@ -101,7 +102,25 @@ ${n === 2 ? `   - slide-2: el desarrollo con lo concreto (qué cambió exactamen
   return `REGLAS DEL POSTEO SIMPLE: es UNA sola imagen. La idea cierra ahí. PROHIBIDO "Deslizá", "seguí leyendo", "ver más", flechas de continuar o numeración.`;
 }
 
+function promptRedactorBlog(p) {
+  return `Sos el redactor del blog de Argencargo (argencargo.com.ar/blog) y también su diseñador. Antes de empezar leé TODA la memoria de la marca en memoria/*.md (identidad, tono, audiencia, productos, dos-and-donts, aprendizajes) y el pedido en brief.md, que incluye el MATERIAL (una noticia leída de su fuente, o un tema pedido por Bautista).
+
+Escribí tres archivos en esta carpeta:
+1) nota.md — la nota en Markdown, 500 a 900 palabras, en español rioplatense claro (tono de tono.md, formal y útil, sin humor forzado):
+   - Empieza con "# " + un título propio, concreto y buscable (no el de la fuente).
+   - Un primer párrafo que diga en dos frases qué pasó y por qué le importa a quien importa desde China.
+   - Subtítulos "## " que ordenen: qué cambió exactamente (con los datos concretos del material: fechas, montos, organismos), a quién afecta (courier, e-commerce, monotributistas, RI…), qué conviene hacer, y un cierre corto.
+   - Es una nota PROPIA: explicá y opiná con criterio; NUNCA copies frases ni párrafos de la fuente (es un problema legal). Nada inventado: si un dato no está en el material, no lo afirmes.
+   - Reglas duras de dos-and-donts.md: jamás "aduana B" ni canales, jamás nombrar competidores, jamás prometer plazos o que no habrá retención, nada de facturación A/C, precios solo "desde".
+   - Cerrá con una línea de fuente: "Fuente: [nombre](url)" si el material tiene URL. Sin llamados a la acción agresivos; a lo sumo "Cualquier duda, escribinos".
+2) meta.json — {"title": "…", "slug": "titulo-en-kebab-sin-acentos", "excerpt": "1 o 2 frases (máx. 160 caracteres) que resuman la nota", "tags": "3 a 6 etiquetas separadas por coma", "seo_title": "máx. 60 caracteres", "seo_description": "máx. 155 caracteres", "headline": "titular corto para la portada (4 a 8 palabras)", "subheadline": "una línea para la portada"}
+3) slide-1.html — la PORTADA de la nota, 1200×630 px exactos (html y body con margin 0, width 1200px, height 630px, overflow hidden), sin JavaScript. Fuentes: <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">. Diseño editorial de marca (ver brand-kit.md): fondo claro (blanco) o navy, el headline grande en 'Bebas Neue' con una palabra resaltada en bloque #1E8BFF, el subheadline en 'Inter', una etiqueta chica "NOVEDADES · COMERCIO EXTERIOR" y el logo (brand/logo-completo.png, transparente; blanco con filter:brightness(0) invert(1) sobre navy). Sin fotos, sin imágenes externas, sin emojis. Márgenes de 70 px. Nada se corta ni se encima.
+
+Cuando termines, respondé solo: LISTO.`;
+}
+
 function promptDisenador(p, ctx) {
+  if (p.kind === "blog") return promptRedactorBlog(p);
   const W = p.width, H = p.height;
   const n = nSlides(p);
   return `Sos el diseñador y redactor de Argencargo. Antes de empezar leé TODA la memoria de la marca en memoria/*.md (identidad, tono, audiencia, productos, dos-and-donts, campanas, historial, brand-kit, referencias-estilo, aprendizajes) y el pedido en brief.md. memoria/aprendizajes.md son correcciones de Bautista a piezas anteriores: son ley, no repitas ninguno de esos errores. Tono: posteos y carruseles formales y serios; historias más descontracturadas sin exagerar (ver tono.md).
@@ -166,9 +185,10 @@ async function procesar(data) {
   }
   const n = nSlides(p);
   const plan = Array.isArray(p.slides_plan) && p.slides_plan.length ? `\n## Plan de imágenes (una línea por imagen, en orden; respetalo)\n${p.slides_plan.map((s, i) => `${i + 1}. ${s}`).join("\n")}\n` : "";
-  const brief = `# Pieza a crear\n\n- Formato: ${formatoLabel(p)}\n- Pilar: ${p.pillar || "(libre)"}\n- Título interno: ${p.title || ""}\n\n## Brief\n${p.brief || "(libre)"}\n${plan}${p.feedback ? `\n## CAMBIOS PEDIDOS POR BAUTISTA sobre la versión anterior (aplicalos todos)\n${p.feedback}\n\nVersión anterior: ${p.headline || ""} / ${p.subheadline || ""}\n` : ""}`;
+  const material = p.material ? `\n## MATERIAL (base para la nota; no copiar frases)\n${p.material}\n` : "";
+  const brief = `# Pieza a crear\n\n- Formato: ${formatoLabel(p)}\n- Pilar: ${p.pillar || "(libre)"}\n- Título interno: ${p.title || ""}\n\n## Brief\n${p.brief || "(libre)"}\n${plan}${material}${p.feedback ? `\n## CAMBIOS PEDIDOS POR BAUTISTA sobre la versión anterior (aplicalos todos)\n${p.feedback}\n\nVersión anterior: ${p.headline || ""} / ${p.subheadline || ""}\n` : ""}`;
   await fs.writeFile(path.join(dir, "brief.md"), brief);
-  await fs.writeFile(path.join(dir, "CLAUDE.md"), `Trabajás dentro de esta carpeta. Leé memoria/*.md y brief.md; mirá brand/, referencias/ y aprobados/. Escribí únicamente ${n > 1 ? `slide-1.html … slide-${n}.html` : "slide-1.html"} y meta.json (y corregilos cuando se te pida). No crees otros archivos ni salgas de la carpeta.`);
+  await fs.writeFile(path.join(dir, "CLAUDE.md"), `Trabajás dentro de esta carpeta. Leé memoria/*.md y brief.md; mirá brand/, referencias/ y aprobados/. Escribí únicamente ${p.kind === "blog" ? "nota.md, meta.json y slide-1.html" : `${n > 1 ? `slide-1.html … slide-${n}.html` : "slide-1.html"} y meta.json`} (y corregilos cuando se te pida). No crees otros archivos ni salgas de la carpeta.`);
 
   // Foto real: la genera la web (fal.ai) y se baja a fotos/foto.jpg. Si ya existe (rehacer diseño), se reutiliza.
   const pedirFoto = async (nota) => {
@@ -224,13 +244,19 @@ async function procesar(data) {
   const fd = new FormData();
   fd.append("id", p.id);
   for (const k of ["headline", "subheadline", "caption", "hashtags"]) fd.append(k, String(meta[k] || ""));
+  if (p.kind === "blog") {
+    let nota = ""; try { nota = await fs.readFile(path.join(dir, "nota.md"), "utf8"); } catch {}
+    if (!nota.trim()) throw new Error("el redactor no escribió nota.md");
+    fd.append("content_md", nota);
+    for (const k of ["title", "slug", "excerpt", "tags", "seo_title", "seo_description"]) fd.append(k, String(meta[k] || ""));
+  }
   for (let i = 0; i < slides.length; i++) {
     fd.append(`html_${i + 1}`, absoluto(await fs.readFile(slides[i].html, "utf8")));
     fd.append(`png_${i + 1}`, new Blob([await fs.readFile(slides[i].png)], { type: "image/png" }), `slide-${i + 1}.png`);
   }
   const up = await api("?op=done", { method: "POST", body: fd });
   if (!up.ok) throw new Error(`subida ${up.status}: ${(await up.text()).slice(0, 200)}`);
-  log(`   ✅ lista para aprobar${n > 1 ? ` (${n} imágenes)` : ""}${ctx.foto ? " · con foto real" : ""}`);
+  log(`   ✅ ${p.kind === "blog" ? "nota escrita, lista para publicar" : `lista para aprobar${n > 1 ? ` (${n} imágenes)` : ""}${ctx.foto ? " · con foto real" : ""}`}`);
 }
 
 // Limpieza: las carpetas de trabajo de más de 7 días se borran (cada pieza pesa unos MB).

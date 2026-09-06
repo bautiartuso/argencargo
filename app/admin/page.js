@@ -4567,7 +4567,7 @@ function StudioPanel({token}){
   const fmtDia=(d)=>d?new Date(d).toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"}):"";
   const slidesOf=(p)=>Array.isArray(p?.images)&&p.images.length?p.images.map(x=>typeof x==="string"?x:x?.url).filter(Boolean):(p?.image_url?[p.image_url]:[]);
   const nSlides=(p)=>Math.max(slidesOf(p).length,Number(p?.slides)||1);
-  const kindLabel=(p)=>p.kind==="carousel"?`Carrusel · ${nSlides(p)}`:p.kind==="story"?(nSlides(p)>1?`Historias · ${nSlides(p)}`:"Historia"):"Posteo";
+  const kindLabel=(p)=>p.kind==="blog"?"Nota de blog":p.kind==="carousel"?`Carrusel · ${nSlides(p)}`:p.kind==="story"?(nSlides(p)>1?`Historias · ${nSlides(p)}`:"Historia"):"Posteo";
   const conFoto=(p)=>!!(p?.photo_prompt);
   const IcoDescarga=()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>;
   const IcoInstagram=()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>;
@@ -4588,7 +4588,7 @@ function StudioPanel({token}){
   const enviarCambio=async()=>{const fb=(cambio?.texto||"").trim();if(!fb)return;const p=cambio.p;const nueva=!!cambio.foto;setCambio(null);await act("feedback",{id:p.id,feedback:fb,new_photo:nueva},nueva?"Se rehace con foto nueva y diseño nuevo (tu Mac, 5 a 8 min)":"Se rehace el diseño con tu cambio (tu Mac, 5 a 8 min)");};
   const copiar=async(p)=>{try{await navigator.clipboard.writeText(`${p.caption||""}\n\n${p.hashtags||""}`.trim());toast("Texto copiado","success");}catch{toast("No se pudo copiar","error");}};
   const Card=({p,children,compact})=><div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-    <div onClick={()=>p.image_url&&setPreview(p)} style={{position:"relative",background:"#0b1220",aspectRatio:p.kind==="story"?"9/16":"4/5",cursor:p.image_url?"zoom-in":"default",display:"flex",alignItems:"center",justifyContent:"center"}}>
+    <div onClick={()=>p.image_url&&setPreview(p)} style={{position:"relative",background:"#0b1220",aspectRatio:p.kind==="blog"?"1200/630":p.kind==="story"?"9/16":"4/5",cursor:p.image_url?"zoom-in":"default",display:"flex",alignItems:"center",justifyContent:"center"}}>
       {p.image_url?<img src={p.image_url} alt={p.title||""} style={{width:"100%",height:"100%",objectFit:"contain"}}/>:p.status==="generating"?<div style={{textAlign:"center",color:"rgba(255,255,255,0.5)",fontSize:12,padding:20}}><div style={{fontSize:26,marginBottom:6}}>🎨</div>{p.locked_at?(conFoto(p)&&!p.photo_url?"Generando la foto y diseñando en tu Mac…":"Diseñando en tu Mac…"):"En la cola (espera a tu Mac)"}<div style={{fontSize:10.5,marginTop:4,color:"rgba(255,255,255,0.35)"}}>{p.title}</div></div>:<div style={{color:"#f87171",fontSize:12,padding:16,textAlign:"center"}}>⚠ {p.error||"Sin imagen"}</div>}
       <div style={{position:"absolute",top:8,left:8,display:"flex",gap:5,flexWrap:"wrap"}}>{chip(kindLabel(p),"#60a5fa")}{conFoto(p)&&chip("📷 foto","#f472b6")}{p.pillar&&chip(p.pillar,"#E8C99B")}{p.source==="runner"&&chip("runner","#a78bfa")}{p.source==="chatbot"&&chip("chatbot","#34d399")}{p.source==="radar"&&chip("radar","#fb923c")}</div>
       {slidesOf(p).length>1&&<div style={{position:"absolute",bottom:8,left:0,right:0,display:"flex",justifyContent:"center",gap:4}}>{slidesOf(p).map((_,j)=><span key={j} style={{width:6,height:6,borderRadius:99,background:j===0?"#fff":"rgba(255,255,255,0.45)"}}/>)}</div>}
@@ -4689,7 +4689,7 @@ function StudioPanel({token}){
 
     {tab==="contenido"&&<div>
       <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
-        {(()=>{const rev=pieces.filter(p=>p.status==="review");const cnt=(k)=>k==="todos"?rev.length:rev.filter(p=>p.kind===k).length;return [["todos","Todos"],["feed","Posteos"],["carousel","Carruseles"],["story","Historias"]].map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={{padding:"6px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${filtro===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:filtro===k?"rgba(96,165,250,0.15)":"transparent",color:filtro===k?"#60a5fa":"rgba(255,255,255,0.55)",display:"inline-flex",alignItems:"center",gap:6}}>{l}{cnt(k)>0&&<span style={{fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:99,background:filtro===k?"rgba(96,165,250,0.35)":"rgba(255,255,255,0.1)",color:"#fff"}}>{cnt(k)}</span>}</button>);})()}
+        {(()=>{const rev=pieces.filter(p=>p.status==="review");const cnt=(k)=>k==="todos"?rev.length:rev.filter(p=>p.kind===k).length;return [["todos","Todos"],["feed","Posteos"],["carousel","Carruseles"],["story","Historias"],["blog","Blog"]].map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={{padding:"6px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${filtro===k?"rgba(96,165,250,0.5)":"rgba(255,255,255,0.1)"}`,background:filtro===k?"rgba(96,165,250,0.15)":"transparent",color:filtro===k?"#60a5fa":"rgba(255,255,255,0.55)",display:"inline-flex",alignItems:"center",gap:6}}>{l}{cnt(k)>0&&<span style={{fontSize:10,fontWeight:800,padding:"1px 6px",borderRadius:99,background:filtro===k?"rgba(96,165,250,0.35)":"rgba(255,255,255,0.1)",color:"#fff"}}>{cnt(k)}</span>}</button>);})()}
         {generando>0&&<span style={{fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>🎨 {generando} en la cola · tu Mac las diseña de a una (5 a 8 min cada una) mientras esté prendida.</span>}
         <span style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
           {review.filter(p=>p.status==="review").length>1&&<button onClick={async()=>{const ids=review.filter(p=>p.status==="review").map(p=>p.id);if(await confirmDialog(`¿Descartar las ${ids.length} piezas que quedan sin aprobar? Se borran sus imágenes; los temas quedan anotados para no repetirlos.`))act("reject_all",{ids},x=>`${x.rechazadas} descartadas`);}} disabled={!!busy} style={{padding:"5px 10px",fontSize:11,fontWeight:700,borderRadius:8,cursor:"pointer",border:"1px solid rgba(239,68,68,0.4)",background:"rgba(239,68,68,0.1)",color:"#f87171"}}>✕ Descartar las restantes</button>}
@@ -4702,7 +4702,7 @@ function StudioPanel({token}){
         {review.map(p=><Card key={p.id} p={p} compact>
           {p.status==="review"&&<div style={{display:"flex",gap:6,width:"100%"}}>
             {[
-              {ic:"✓",col:"#22c55e",tit:"Aprobar",fn:()=>act("approve",{id:p.id},"Aprobada ✅ · guardada como referencia")},
+              {ic:"✓",col:"#22c55e",tit:p.kind==="blog"?"Publicar en el blog":"Aprobar",fn:()=>act("approve",{id:p.id},p.kind==="blog"?"Publicada en argencargo.com.ar/blog":"Aprobada ✅ · guardada como referencia")},
               {ic:"✎",col:"#fbbf24",tit:"Pedir cambio",fn:()=>pedirCambio(p)},
               {ic:"✕",col:"#ef4444",tit:"Descartar",fn:()=>pedirDescarte(p)},
             ].map(b=><button key={b.tit} title={b.tit} onClick={b.fn} disabled={!!busy} style={{flex:1,height:38,borderRadius:9,border:`1px solid ${b.col}55`,background:`${b.col}1f`,color:b.col,fontSize:17,fontWeight:900,cursor:"pointer"}}>{b.ic}</button>)}
@@ -4713,7 +4713,7 @@ function StudioPanel({token}){
     </div>}
 
     {tab==="calendario"&&(()=>{
-      const sinFecha=pieces.filter(p=>p.status==="approved");
+      const sinFecha=pieces.filter(p=>p.status==="approved"&&p.kind!=="blog");
       const key=(dt)=>{const x=new Date(dt);return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;};
       const hoyK=key(new Date());
       const hora=(p)=>new Date(p.scheduled_at||p.published_at).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
@@ -4727,7 +4727,7 @@ function StudioPanel({token}){
       const Calendario=({kind,titulo})=>{
         const {y,m}=calMes[kind];
         const setMes=(f)=>setCalMes(c=>({...c,[kind]:f(c[kind])}));
-        const prog=pieces.filter(p=>["scheduled","published"].includes(p.status)&&(kind==="story"?p.kind==="story":p.kind!=="story"));
+        const prog=pieces.filter(p=>["scheduled","published"].includes(p.status)&&p.kind!=="blog"&&(kind==="story"?p.kind==="story":p.kind!=="story"));
         const first=new Date(y,m,1);const dow=(first.getDay()+6)%7;
         const dias=new Date(y,m+1,0).getDate();
         const celdas=[];for(let i=0;i<dow;i++)celdas.push(null);for(let d=1;d<=dias;d++)celdas.push(d);while(celdas.length%7)celdas.push(null);
@@ -5066,13 +5066,77 @@ function StudioPanel({token}){
     </div>}
     {preview&&<div onClick={()=>setPreview(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16,gap:16,flexWrap:isMobile?"wrap":"nowrap",overflowY:"auto"}}>
       {slidesView(preview,{maxW:isMobile?"100%":"60%"})}
-      {preview.kind!=="story"&&<div onClick={e=>e.stopPropagation()} style={{width:isMobile?"100%":340,maxHeight:"92vh",overflowY:"auto",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:14}}>
+      {preview.kind==="blog"&&<div onClick={e=>e.stopPropagation()} style={{width:isMobile?"100%":340,maxHeight:"92vh",overflowY:"auto",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:14}}>
+        <p style={{margin:"0 0 6px",fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Nota de blog</p>
+        <p style={{margin:"0 0 6px",fontSize:14,fontWeight:800,color:"#fff"}}>{preview.headline||preview.title}</p>
+        <p style={{margin:"0 0 10px",fontSize:12.5,color:"rgba(255,255,255,0.7)",lineHeight:1.45}}>{preview.subheadline||""}</p>
+        <p style={{margin:0,fontSize:11.5,color:"rgba(255,255,255,0.5)"}}>La nota completa se lee y se administra en la solapa <b>Blog</b> del menú. Con ✓ se publica en argencargo.com.ar/blog.</p>
+      </div>}
+      {preview.kind!=="story"&&preview.kind!=="blog"&&<div onClick={e=>e.stopPropagation()} style={{width:isMobile?"100%":340,maxHeight:"92vh",overflowY:"auto",background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,padding:14}}>
         <p style={{margin:"0 0 6px",fontSize:11,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Texto del posteo</p>
         <p style={{margin:"0 0 10px",fontSize:13,color:"#fff",whiteSpace:"pre-wrap",lineHeight:1.45}}>{preview.caption||"(sin texto)"}</p>
         <p style={{margin:"0 0 10px",fontSize:12,color:"#60a5fa",whiteSpace:"pre-wrap"}}>{preview.hashtags||""}</p>
         <Btn small variant="secondary" onClick={()=>copiar(preview)}>📋 Copiar texto</Btn>
       </div>}
     </div>}
+  </div>;
+}
+
+// Blog · argencargo.com.ar/blog: el radar elige noticias, tu Mac escribe la nota (claude -p), acá se administra.
+function BlogPanel({token}){
+  const [data,setData]=useState({settings:{auto:false,por_dia:1},notas:[],candidatos:null});
+  const [lo,setLo]=useState(true);const [busy,setBusy]=useState("");const [tema,setTema]=useState("");const [cfg,setCfg]=useState(null);
+  const api=async(qs="",opts={})=>{const r=await fetch(`/api/admin/studio${qs}`,{...opts,headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b;};
+  const load=async(cands)=>{setLo(true);try{const b=await api(`?view=blog${cands?"&candidatos=1":""}`);setData(d=>({...b,candidatos:b.candidatos??d.candidatos}));}catch(e){toast(e.message,"error");}finally{setLo(false);}};
+  useEffect(()=>{load(false);},[token]);
+  const act=async(action,extra={},msg)=>{setBusy(action);try{const b=await api("",{method:"POST",body:JSON.stringify({action,...extra})});if(msg)toast(msg,"success");await load(false);return b;}catch(e){toast(e.message,"error");}finally{setBusy("");}};
+  const s=cfg||data.settings;
+  const box={background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:14};
+  const inp={width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"#fff",fontSize:13,outline:"none",fontFamily:"inherit"};
+  const chip=(txt,col)=><span style={{fontSize:9.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:`${col}22`,color:col,border:`1px solid ${col}55`,letterSpacing:"0.04em",textTransform:"uppercase"}}>{txt}</span>;
+  const fmt=(d)=>d?new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit"}):"";
+  return <div style={{display:"grid",gap:14,maxWidth:1000}}>
+    <div style={box}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:8}}>
+        <p style={{margin:0,fontSize:13,fontWeight:800,color:"#fff"}}>Blog de novedades</p>
+        <a href="/blog" target="_blank" rel="noreferrer" style={{fontSize:12,color:"#60a5fa"}}>argencargo.com.ar/blog ↗</a>
+      </div>
+      <p style={{margin:"0 0 12px",fontSize:12,color:"rgba(255,255,255,0.55)"}}>Todos los días el radar elige noticias con sustancia (CDA y 14 fuentes), tu Mac escribe una nota propia con Claude (sin costo) y la portada, y la nota cae en Contenido para que la publiques con ✓. Si activás el modo automático, sale publicada sola.</p>
+      <div style={{display:"flex",gap:14,alignItems:"flex-end",flexWrap:"wrap"}}>
+        <div><p style={{margin:"0 0 4px",fontSize:10.5,fontWeight:800,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Notas por día</p><select value={s.por_dia} onChange={e=>setCfg({...s,por_dia:Number(e.target.value)})} style={{...inp,width:110}}>{[0,1,2,3].map(n=><option key={n} value={n}>{n===0?"Apagado":n}</option>)}</select></div>
+        <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12.5,color:"#fff",cursor:"pointer",paddingBottom:10}}><input type="checkbox" checked={!!s.auto} onChange={e=>setCfg({...s,auto:e.target.checked})}/> Publicar automáticamente (sin pasar por Contenido)</label>
+        <Btn small onClick={async()=>{await act("blog_settings",{auto:s.auto,por_dia:s.por_dia},"Guardado");setCfg(null);}} disabled={!!busy||!cfg}>Guardar</Btn>
+      </div>
+    </div>
+    <div style={box}>
+      <p style={{margin:"0 0 8px",fontSize:13,fontWeight:800,color:"#fff"}}>Escribir una nota sobre un tema</p>
+      <div style={{display:"flex",gap:8}}>
+        <input value={tema} onChange={e=>setTema(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&tema.trim()){act("blog_tema",{tema},"En cola: tu Mac la escribe en 5 a 10 minutos").then(()=>setTema(""));}}} placeholder="Ej: qué cambia con la nueva franquicia del régimen courier" style={inp}/>
+        <Btn onClick={()=>act("blog_tema",{tema},"En cola: tu Mac la escribe en 5 a 10 minutos").then(()=>setTema(""))} disabled={!!busy||!tema.trim()}>Escribir</Btn>
+      </div>
+    </div>
+    <div style={box}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><p style={{margin:0,fontSize:13,fontWeight:800,color:"#fff"}}>Noticias del radar</p><span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>últimos 7 días, con el artículo leído y sin nota todavía</span><span style={{marginLeft:"auto"}}><Btn small variant="secondary" onClick={()=>load(true)} disabled={lo}>{data.candidatos?"↻ Actualizar":"Ver candidatas"}</Btn></span></div>
+      {data.candidatos&&data.candidatos.length===0&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>No hay noticias nuevas con artículo legible.</p>}
+      {data.candidatos&&data.candidatos.map(c=><div key={c.url} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+        <div style={{minWidth:0,flex:1}}><p style={{margin:0,fontSize:12.5,color:"#fff"}}>{c.title}</p><p style={{margin:"2px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{c.source_name} · {Math.round(c.chars/1000)} k caracteres · <a href={c.url} target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>ver fuente</a></p></div>
+        <Btn small onClick={()=>act("blog_escribir",{url:c.url},"En cola: tu Mac la escribe en 5 a 10 minutos").then(()=>load(true))} disabled={!!busy}>Escribir nota</Btn>
+      </div>)}
+    </div>
+    <div style={box}>
+      <p style={{margin:"0 0 8px",fontSize:13,fontWeight:800,color:"#fff"}}>Notas <span style={{fontWeight:600,color:"rgba(255,255,255,0.45)"}}>· {data.notas.filter(n=>n.status==="published").length} publicadas</span></p>
+      {lo&&data.notas.length===0&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Cargando…</p>}
+      {!lo&&data.notas.length===0&&<p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.4)"}}>Todavía no hay notas. Pedí una arriba o esperá la corrida diaria.</p>}
+      {data.notas.map(n=><div key={n.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+        <div style={{width:64,height:34,borderRadius:6,overflow:"hidden",background:"#0b1220",flexShrink:0}}>{n.cover_url&&<img src={n.cover_url} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>}</div>
+        <div style={{minWidth:0,flex:1}}>
+          <p style={{margin:0,fontSize:12.5,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.status==="published"?<a href={`/blog/${n.slug}`} target="_blank" rel="noreferrer" style={{color:"#fff",textDecoration:"none"}}>{n.title}</a>:n.title}</p>
+          <p style={{margin:"2px 0 0",fontSize:11,color:"rgba(255,255,255,0.45)"}}>{chip(n.status==="published"?"Publicada":"En revisión",n.status==="published"?"#22c55e":"#fbbf24")} · {fmt(n.published_at||n.created_at)}{n.source_name?` · ${n.source_name}`:""}{n.status==="published"?` · ${n.views||0} vistas`:""}</p>
+        </div>
+        {n.status!=="published"&&n.piece_id&&<Btn small onClick={()=>act("blog_publicar",{piece_id:n.piece_id},"Publicada")} disabled={!!busy}>Publicar</Btn>}
+        {n.status==="published"&&<Btn small variant="secondary" onClick={async()=>{if(await confirmDialog("¿Despublicar esta nota?"))act("blog_despublicar",{id:n.id},"Despublicada");}} disabled={!!busy}>Despublicar</Btn>}
+      </div>)}
+    </div>
   </div>;
 }
 
@@ -14141,7 +14205,7 @@ function AdminDashboard({session,onLogout}){
   const isEmpleado=session?.profile?.role==="empleado";
   // El empleado tiene Operativa + Comercial + Ajustes (sin Finanzas ni GI): cualquier otra
   // pagina lo devuelve a Operaciones. Lo que muestra ganancia se tapa dentro de cada pantalla.
-  const EMP_PAGES=["operations","agents","maritime","agp","calc","entregas","bot","studio","quotes","comms","clients","settings"];
+  const EMP_PAGES=["operations","agents","maritime","agp","calc","entregas","bot","studio","blog","quotes","comms","clients","settings"];
   useEffect(()=>{if(isEmpleado&&!EMP_PAGES.includes(page)&&!selOp)setPage("operations");},[isEmpleado,page,selOp]);
   // Paginado con Range: PostgREST corta en 1000 filas por request y ya hay mas clientes que eso.
   useEffect(()=>{(async()=>{
@@ -14174,6 +14238,7 @@ function AdminDashboard({session,onLogout}){
     ]},
     {section:"Marketing",items:[
       {key:"studio",label:"Content Studio",p:["M4 4h16v12H4z","M8 20h8","M12 16v4","M8 8l3 3 2-2 3 3"]},
+      {key:"blog",label:"Blog",p:["M4 4h16v16H4z","M8 8h8","M8 12h8","M8 16h5"]},
     ]},
     {section:"Finanzas",items:[
       {key:"dashboard",label:"Dashboard",p:["M3 3v18h18","M18 17V9","M13 17V5","M8 17v-3"]},
@@ -14279,6 +14344,7 @@ function AdminDashboard({session,onLogout}){
       {page==="entregas"&&selOp&&<OperationEditor op={selOp} token={token} initialTab={selOpTab} onBack={()=>{setSelOp(null);setSelOpTab(null);}} onDelete={()=>{setSelOp(null);setSelOpTab(null);}}/>}
       {page==="bot"&&<BotPanel token={token}/>}
       {page==="studio"&&<StudioPanel token={token}/>}
+      {page==="blog"&&<BlogPanel token={token}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
       {page==="maritime"&&(mtLegacyOn()?<MaritimePanel token={token} allClients={allClients}/>:<MaritimePanel2 token={token} allClients={allClients}/>)}
       {page==="agp"&&<AgpPanel token={token} allClients={allClients}/>}

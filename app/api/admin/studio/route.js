@@ -16,6 +16,7 @@
 import { sb, loadMemory, loadAssets, runner, crearPiezas, appendHistorial, appendAprendizaje, chatIdea, uploadStorage, igSettings, igTest, igPublish, igConnect, normKind, igDiscoverySettings, loadCompetitors, discoverAccount, radarCompetencia, normUsername, borrarImagenesPieza, decidirFoto, estadoEstudio, avisarPublicada, publicarEnFacebook } from "../../../../lib/studio";
 import { tgConfigured, tgSettings, tgDiscoverChat, tgNotify, tgDisconnect } from "../../../../lib/telegram";
 import { analisis, actualizarInsights } from "../../../../lib/ig-insights";
+import { blogSettings, guardarBlogSettings, candidatosBlog, encolarNota, publicarNota, despublicarNota } from "../../../../lib/blog";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -55,6 +56,10 @@ export async function GET(req) {
       discovery: { connected: !!(disc.ig_user_id && disc.access_token), username: disc.username || null, page_name: disc.page_name || null, connected_at: disc.connected_at || null, facebook_publish: !!disc.facebook_publish, puede_publicar: (disc.scopes || []).includes("pages_manage_posts") }, competitors });
   }
   if (view === "analisis") { try { return Response.json(await analisis()); } catch (e) { return Response.json({ error: e.message }, { status: 500 }); } }
+  if (view === "blog") {
+    const [cfg, notas, cands] = await Promise.all([blogSettings(), sb(`/blog_posts?select=id,slug,title,excerpt,cover_url,status,views,published_at,created_at,source_name,source_url,piece_id&order=created_at.desc&limit=100`), url.searchParams.get("candidatos") ? candidatosBlog(8) : Promise.resolve(null)]);
+    return Response.json({ settings: cfg, notas: Array.isArray(notas.body) ? notas.body : [], candidatos: cands ? cands.map((c) => ({ title: c.title, source_name: c.source_name, url: c.url, chars: (c.detalle || "").length })) : null });
+  }
   if (view === "competencia") {
     const r = await sb(`/cs_competitor_posts?select=id,username,ig_media_id,media_type,caption,media_url,thumbnail_url,permalink,children,like_count,comments_count,posted_at,analysis,analyzed_at&order=posted_at.desc.nullslast&limit=80`);
     return Response.json({ posts: Array.isArray(r.body) ? r.body : [] });
@@ -116,11 +121,29 @@ export async function POST(req) {
     return Response.json(out);
   }
   if (a === "approve") {
+    const cur = await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}&select=kind`);
+    if (Array.isArray(cur.body) && cur.body[0]?.kind === "blog") { await publicarNota(id); return Response.json({ ok: true, blog: true }); }
     const r = await patch(id, { status: "approved", approved_at: now, approved_by: String(who) });
     const p = Array.isArray(r.body) && r.body[0];
     if (p) appendHistorial(p).catch(() => {});
     return Response.json({ ok: true });
   }
+  if (a === "blog_settings") { await guardarBlogSettings({ auto: body.auto, por_dia: body.por_dia }); return Response.json({ ok: true }); }
+  if (a === "blog_escribir") {
+    const cands = await candidatosBlog(12);
+    const c = cands.find((x) => x.url === body.url);
+    if (!c) return Response.json({ error: "No pude leer esa noticia (o ya tiene nota)" }, { status: 400 });
+    const p = await encolarNota(c, { source: "blog" });
+    return Response.json({ ok: true, id: p?.id });
+  }
+  if (a === "blog_tema") {
+    const tema = String(body.tema || "").trim();
+    if (!tema) return Response.json({ error: "Contame el tema" }, { status: 400 });
+    const p = await encolarNota({ title: tema.slice(0, 90), source_name: "Argencargo", url: "", detalle: `Tema pedido por Bautista: ${tema}` }, { source: "blog" });
+    return Response.json({ ok: true, id: p?.id });
+  }
+  if (a === "blog_publicar") { await publicarNota(String(body.piece_id || "")); return Response.json({ ok: true }); }
+  if (a === "blog_despublicar") { await despublicarNota(id); return Response.json({ ok: true }); }
   // Rechazar borra las imágenes del storage (la fila queda para que el analista no repita el tema).
   if (a === "reject") {
     const note = String(body.note || "").trim();

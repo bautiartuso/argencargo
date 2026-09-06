@@ -10,6 +10,7 @@
 // Auth: header x-runner-secret = RUNNER_SECRET.
 
 import { sb, loadMemory, loadAssets, ejemplosAprobados, uploadStorage, borrarImagenesPieza, generarFoto } from "../../../../lib/studio";
+import { guardarNota, publicarNota, blogSettings } from "../../../../lib/blog";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -72,10 +73,19 @@ export async function POST(req) {
     const url = await uploadStorage(`piezas/${id}-${stamp}${files.length > 1 ? `-${i + 1}` : ""}.png`, Buffer.from(await files[i].f.arrayBuffer()), "image/png");
     images.push({ url, html: files[i].html });
   }
-  await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({
+  const upd = await sb(`/cs_pieces?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({
     status: "review", image_url: images[0].url, images, slides: images.length, error: null, locked_at: null, feedback: null, updated_at: now,
     html: images[0].html, headline: String(fd.get("headline") || ""), subheadline: String(fd.get("subheadline") || ""),
     caption: String(fd.get("caption") || ""), hashtags: String(fd.get("hashtags") || ""),
   }) });
+  // Nota de blog: se guarda el artículo; en modo automático sale publicada sin pasar por Contenido.
+  const piece = Array.isArray(upd.body) && upd.body[0];
+  if (piece?.kind === "blog") {
+    try {
+      await guardarNota(piece, { content_md: String(fd.get("content_md") || ""), title: String(fd.get("title") || fd.get("headline") || ""), slug: String(fd.get("slug") || ""), excerpt: String(fd.get("excerpt") || ""), tags: String(fd.get("tags") || ""), seo_title: String(fd.get("seo_title") || ""), seo_description: String(fd.get("seo_description") || "") });
+      const cfg = await blogSettings();
+      if (cfg.auto) await publicarNota(piece.id);
+    } catch (e) { console.error("[runner] blog", e.message); }
+  }
   return Response.json({ ok: true, image_url: images[0].url, images: images.length });
 }
