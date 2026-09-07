@@ -180,7 +180,8 @@ export async function GET(req, { params }) {
         if (tasa > 0.005) rows.push([`Tasa estadística (${pct1(te * 100)}%)`, r2(tasa)]);
         if (iva > 0.005) rows.push([`IVA de Importación (${pct1(ivaR * 100)}%)`, r2(iva)]);
         suma += die + tasa + iva;
-        if (isAereoCh) { desembTot += getDes(cif) * pct; }
+        // Desaduanaje cargado a mano en el presupuesto (budget_tax_detail.desembolso_manual) pisa la tabla.
+        if (isAereoCh) { desembTot += (op.budget_tax_detail?.desembolso_manual ? Number(op.budget_tax_detail.desembolso || 0) : getDes(cif)) * pct; }
         else {
           const adR = (it.iva_additional_rate == null) ? 0.20 : Number(it.iva_additional_rate) / 100;
           const igR = (it.iigg_rate == null) ? 0.06 : Number(it.iigg_rate) / 100;

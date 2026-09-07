@@ -784,6 +784,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   };
   // El presupuesto se abre y se cierra: se edita a demanda y se guarda, no queda siempre editable.
   const [editandoPresu,setEditandoPresu]=useState(false);
+  const [manualTax,setManualTax]=useState(null); // aéreo A en edición: {base,des} = impuestos de importación y desaduanaje (sin IVA), como strings
   const askCobroDecision=(kind,diff)=>new Promise(resolve=>setCobroDecision({kind,diff,resolve}));
   // Resolucion del saldo al cerrar la OPERACION. La misma pregunta existia solo en el boton
   // "Cerrar cobro" de la solapa Finanzas, asi que cerrando la op desde Estado nunca aparecia y la
@@ -1876,6 +1877,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           budget_surcharge:isBlanco?0:r2(num(op.budget_surcharge)),
           budget_total:r2(num(op.budget_total)),
         };
+        if(manualTax&&op.channel==="aereo_blanco"){const des=r2(num(manualTax.des));body.budget_tax_detail={...(op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:{}),desembolso:des,ivaDesembolso:r2(des*0.21),desembolso_manual:true,impuestos_base_manual:r2(num(manualTax.base))};}
         await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body});
         setOp(p=>({...p,...body}));
         flash("Presupuesto manual guardado");
@@ -1902,6 +1904,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         const sum=components.reduce((s,f)=>s+(f===field?toNum(val):toNum(op[f])),0)+shipCost;
         chOp("budget_total")(Math.round(sum*100)/100);
       };
+      // Aéreo A: impuestos de importación + desaduanaje (sin IVA) → budget_taxes = base + desaduanaje × 1,21.
+      const handleTaxSplit=(field,val)=>{if(val!==""&&!/^\d*[.,]?\d*$/.test(val))return;const next={...(manualTax||{base:"",des:""}),[field]:val};setManualTax(next);handleManualChange("budget_taxes",String(Math.round((toNum(next.base)+toNum(next.des)*1.21)*100)/100));};
+      const f2=(v)=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
       // Estilo común reutilizable (sin redefinir componente — evita remount + pérdida de foco)
       const manualInputStyle={width:130,padding:"6px 9px",fontSize:13,fontWeight:600,border:`1px solid ${GOLD_LIGHT}55`,borderRadius:6,background:`${GOLD_LIGHT}0A`,color:"#fff",outline:"none",textAlign:"right",fontVariantNumeric:"tabular-nums"};
       // Si manual: usamos los valores guardados como los visualizados
@@ -1912,12 +1917,16 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           {isManual&&!editandoPresu&&<span title="Los valores están cargados a mano, no se recalculan solos" style={{fontSize:9.5,fontWeight:800,padding:"3px 9px",borderRadius:999,background:"rgba(251,146,60,0.14)",color:"#fb923c",border:"1px solid rgba(251,146,60,0.35)",letterSpacing:"0.07em"}}>MANUAL</span>}
           {editandoPresu
             ?<>
-              <button disabled={saving} onClick={async()=>{await reloadOp();setEditandoPresu(false);}} style={b("transparent","rgba(255,255,255,0.55)","1px solid rgba(255,255,255,0.12)")}>Cancelar</button>
-              <button disabled={saving} onClick={async()=>{await saveManualBudget();setEditandoPresu(false);}} style={b(`linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`,"#0A1628")}>💾 Guardar</button>
+              <button disabled={saving} onClick={async()=>{await reloadOp();setEditandoPresu(false);setManualTax(null);}} style={b("transparent","rgba(255,255,255,0.55)","1px solid rgba(255,255,255,0.12)")}>Cancelar</button>
+              <button disabled={saving} onClick={async()=>{await saveManualBudget();setEditandoPresu(false);setManualTax(null);}} style={b(`linear-gradient(135deg, ${GOLD_LIGHT}, ${GOLD})`,"#0A1628")}>💾 Guardar</button>
             </>
             :<>
               {isManual&&<button disabled={saving} title="Vuelve a calcular el presupuesto con la lógica del sistema" onClick={async()=>{if(!await confirmDialog("Se van a recalcular todos los valores con la lógica del sistema y se pierde lo que cargaste a mano. ¿Seguir?"))return;await setBudgetMode("auto");}} style={b("transparent","rgba(255,255,255,0.6)","1px solid rgba(255,255,255,0.12)")}>↻ Recalcular automático</button>}
-              <button disabled={saving} onClick={async()=>{if(!isManual)await setBudgetMode("manual");setEditandoPresu(true);}} style={b("rgba(255,255,255,0.07)","#fff","1px solid rgba(255,255,255,0.14)")}>✎ Editar presupuesto</button>
+              <button disabled={saving} onClick={async()=>{if(!isManual)await setBudgetMode("manual");
+                // Aéreo A: el editor parte el total en impuestos de importación + desaduanaje (editable, pedido 07/09/2026).
+                if(op.channel==="aereo_blanco"&&taxesBilledByArgencargo){const r2=(v)=>Math.round(Number(v||0)*100)/100;const td=op.budget_tax_detail&&typeof op.budget_tax_detail==="object"?op.budget_tax_detail:{};const taxesNow=isManual?Number(op.budget_taxes||0):r2(totalTax);let des=Number(td.desembolso)>0?Number(td.desembolso):getDesembolso(cif);if(taxesNow-des*1.21<-0.01)des=0;const st=(v)=>String(r2(v)).replace(".",",");setManualTax({des:st(des),base:st(Math.max(0,taxesNow-des*1.21))});}
+                else setManualTax(null);
+                setEditandoPresu(true);}} style={b("rgba(255,255,255,0.07)","#fff","1px solid rgba(255,255,255,0.14)")}>✎ Editar presupuesto</button>
             </>}
         </div>;})()
       }>
@@ -1974,7 +1983,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <b>Editando:</b> el total se recalcula solo al cambiar cualquier valor. Una vez guardado, el sistema deja de recalcularlo al tocar bultos o ítems — para eso está "Recalcular automático".
           </div>
           {isBlanco?<>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{taxesBilledByArgencargo?"Total Impuestos (USD)":<>Impuestos (USD) <span style={{color:"rgba(96,165,250,0.85)",fontSize:11,fontStyle:"italic"}}>— informativo, el RI paga directo</span></>}</span><input type="text" inputMode="decimal" value={op.budget_taxes??""} placeholder="0,00" onChange={e=>handleManualChange("budget_taxes",e.target.value)} style={manualInputStyle}/></div>
+            {manualTax&&op.channel==="aereo_blanco"&&taxesBilledByArgencargo?<>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",gap:12}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Impuestos de importación (USD) <span style={{color:"rgba(255,255,255,0.4)",fontSize:11,fontStyle:"italic"}}>derechos + estadística + IVA</span></span><input type="text" inputMode="decimal" value={manualTax.base} placeholder="0,00" onChange={e=>handleTaxSplit("base",e.target.value)} style={manualInputStyle}/></div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",gap:12}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Desaduanaje (USD, sin IVA) <span style={{color:"rgba(255,255,255,0.4)",fontSize:11,fontStyle:"italic"}}>gasto documental · + IVA 21 % = USD {f2(toNum(manualTax.des)*0.21)} · con IVA USD {f2(toNum(manualTax.des)*1.21)}</span></span><input type="text" inputMode="decimal" value={manualTax.des} placeholder="0,00" onChange={e=>handleTaxSplit("des",e.target.value)} style={manualInputStyle}/></div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.45)"}}>Total impuestos (USD)</span><span style={{fontSize:13,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{f2(toNum(op.budget_taxes))}</span></div>
+            </>:<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{taxesBilledByArgencargo?"Total Impuestos (USD)":<>Impuestos (USD) <span style={{color:"rgba(96,165,250,0.85)",fontSize:11,fontStyle:"italic"}}>— informativo, el RI paga directo</span></>}</span><input type="text" inputMode="decimal" value={op.budget_taxes??""} placeholder="0,00" onChange={e=>handleManualChange("budget_taxes",e.target.value)} style={manualInputStyle}/></div>}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Flete internacional (USD)</span><input type="text" inputMode="decimal" value={op.budget_flete??""} placeholder="0,00" onChange={e=>handleManualChange("budget_flete",e.target.value)} style={manualInputStyle}/></div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Seguro de carga (USD)</span><input type="text" inputMode="decimal" value={op.budget_seguro??""} placeholder="0,00" onChange={e=>handleManualChange("budget_seguro",e.target.value)} style={manualInputStyle}/></div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0"}}><span style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>Recargo por sobrepeso (USD)</span><input type="text" inputMode="decimal" value={op.budget_surcharge??""} placeholder="0,00" onChange={e=>handleManualChange("budget_surcharge",e.target.value)} style={manualInputStyle}/></div>
@@ -2033,8 +2046,9 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               const iibb=bi*tasaODefault(it.iibb_rate,TASA_IIBB);
               extra=adic+iigg+iibb;extraLbl="IVA adic + IIGG + IIBB";
             }else{
-              const des=getDesembolsoD(taxCifL)*pct;
-              extra=des+des*0.21;extraLbl="Desaduanaje (+IVA 21%)";
+              const desManualOp=op.budget_tax_detail?.desembolso_manual?Number(op.budget_tax_detail.desembolso||0):null;
+              const des=(desManualOp!=null?desManualOp:getDesembolsoD(taxCifL))*pct;
+              extra=des+des*0.21;extraLbl=desManualOp!=null?"Desaduanaje a mano (+IVA 21%)":"Desaduanaje (+IVA 21%)";
             }
             return {desc:it.description||"—",itemFob,iCif,dr,die,te,tasa,ivaR,iva,extra,extraLbl,tot:die+tasa+iva+extra};
           });
@@ -9256,7 +9270,7 @@ function AgentsPanel({token}){
         const die=iCif*dr,tasa=iCif*te,bi=iCif+die+tasa;derechos+=die;tasaE+=tasa;iva+=bi*ivaR;
       });
       const taxCif=taxFob!==totFob?taxFob+certFl+(taxFob+certFl)*0.01:cif;
-      const desembolso=getDes(taxCif);const ivaDesembolso=desembolso*0.21;
+      const desembolso=o.budget_tax_detail?.desembolso_manual?Number(o.budget_tax_detail.desembolso||0):getDes(taxCif);const ivaDesembolso=desembolso*0.21;
       printAereoAQuotePdf({
         clientName:client?`${client.first_name||""} ${client.last_name||""}`.trim():(o.clients?`${o.clients.first_name||""}`.trim():""),
         origin:o.origin||"China",fleteAmt:b.fleteAmt||Math.max(pf,aereoMinKg),
