@@ -15428,36 +15428,21 @@ function MtSearch({P,inputRef}){
   </div>;
 }
 
-// ── Tira de pipeline + fila HOY ──────────────────────────────────────────────
-function MtPipeline({P,stats,alerts,stageFocus,setStageFocus,mute}){
-  const cards=[
-    {k:"esperando",icon:"⏳",t:"Esperando al proveedor",col:MT_VI,big:stats.esp.n,sub:stats.esp.n?`${stats.esp.prom} d prom.`:"—",warn:stats.esp.viejos>0?`${stats.esp.viejos} con +14 d`:null,hint:stats.esp.oldest},
-    {k:"camino",icon:"🚚",t:"En camino al depósito",col:MT_GR,big:stats.cam.n,sub:stats.cam.viejos>0?`${stats.cam.viejos} con +20 d`:"en fecha",warn:null},
-    {k:"deposito",icon:"📦",t:"En depósito",col:MT_AM,big:stats.dep.n,sub:`${mtM3(stats.dep.cbm)} m³ · ${stats.dep.sinMedir} sin medir`,warn:null},
-    {k:"transito",icon:"🚢",t:"En tránsito",col:MT_AZ,big:stats.tr.conts,sub:`${stats.tr.n} cargas · ${mtM3(stats.tr.cbm)} m³`,warn:null,next:stats.tr.next,plata:P.plata&&stats.tr.importe!=null?`a cobrar est. ${mtUsd(stats.tr.importe)} · gan. est. ${mtUsd(stats.tr.gan)}`:null},
-    {k:"arribados",icon:"⚓",t:"Arribados",col:MT_VE,big:stats.arr.mes,sub:"este mes",warn:stats.arr.sinOperar>0?`${stats.arr.sinOperar} sin operar`:null,plata:P.plata&&stats.arr.ganMes!=null?`gan. real mes ${mtUsd(stats.arr.ganMes)}`:null},
-  ];
-  const tot=Math.max(stats.totCbm,0.0001);
-  const cbmDe={esperando:0,camino:0,deposito:stats.dep.cbm,transito:stats.tr.cbm,arribados:stats.arr.cbm};
-  return <div style={{marginBottom:14}}>
-    <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:4,scrollSnapType:"x mandatory"}}>
-      {cards.map(c=>{const on=stageFocus===c.k;const dim=stageFocus&&!on;return <div key={c.k} onClick={()=>setStageFocus(on?null:c.k)} style={{flex:"1 0 170px",minWidth:170,scrollSnapAlign:"start",padding:"10px 12px",borderRadius:12,cursor:"pointer",background:on?`${c.col}1f`:"rgba(255,255,255,0.03)",border:`1px solid ${on?c.col+"88":"rgba(255,255,255,0.08)"}`,opacity:dim?0.55:1,position:"relative",transition:"all 150ms"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:9.5,fontWeight:800,color:c.col,textTransform:"uppercase",letterSpacing:"0.07em"}}>{c.icon} {c.t}</span>{on&&<span title="Ver todo" style={{fontSize:12,color:c.col,fontWeight:800}}>×</span>}</div>
-        <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:4}}><span style={{fontSize:26,fontWeight:800,color:"#fff",lineHeight:1,...mtMono}}>{c.big}</span><span title={c.hint||undefined} style={{fontSize:11,color:mtDim(0.55)}}>{c.sub}</span></div>
-        {c.warn&&<p style={{fontSize:11,fontWeight:700,color:MT_RO,margin:"3px 0 0"}}>{c.warn}</p>}
-        {c.next&&<p onClick={e=>{e.stopPropagation();P.openContainer(c.next.id);}} style={{fontSize:11,color:MT_AZ,margin:"3px 0 0",cursor:"pointer",textDecoration:"underline dotted"}}>próximo: {c.next.code} en {c.next.dias} d</p>}
-        {c.plata&&<p style={{fontSize:10.5,fontWeight:700,color:"#4ade80",margin:"3px 0 0"}}>{c.plata}</p>}
-        <div style={{height:3,borderRadius:2,background:"rgba(255,255,255,0.06)",marginTop:8,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.min(100,(cbmDe[c.k]||0)/tot*100)}%`,background:c.col}}/></div>
-      </div>;})}
+// ── Resumen en una línea + avisos críticos (simplificado 07/09/2026: sin tarjetas de pipeline,
+// sin modo foco ni silenciar; solo se destacan contenedores vencidos y arribados sin operar) ──
+function MtResumen({stats,alerts}){
+  const it=(icon,n,label,extra)=><span style={{display:"inline-flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}><span>{icon}</span><b style={{color:"#fff",...mtMono}}>{n}</b><span>{label}</span>{extra||null}</span>;
+  const crit=alerts.filter(a=>a.id.startsWith("venc:")||a.id.startsWith("sinop:"));
+  return <div style={{marginBottom:12}}>
+    <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:12.5,color:mtDim(0.65),padding:"8px 12px",borderRadius:10,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)"}}>
+      {it("⏳",stats.esp.n,"esperando al proveedor",stats.esp.viejos>0&&<span style={{color:MT_RO,fontWeight:700}}>({stats.esp.viejos} con +14 d)</span>)}
+      {it("🚚",stats.cam.n,"en camino al depósito")}
+      {it("📦",stats.dep.n,"en depósito",stats.dep.sinMedir>0&&<span style={{color:MT_AM,fontWeight:700}}>({stats.dep.sinMedir} sin medir)</span>)}
+      {it("🚢",stats.tr.conts,mtPlural(stats.tr.conts,"contenedor en tránsito","contenedores en tránsito"),<span>· {stats.tr.n} {mtPlural(stats.tr.n,"carga")}</span>)}
+      {it("⚓",stats.arr.mes,"arribados este mes")}
     </div>
-    {/* Fila HOY */}
-    {alerts.length===0?<p style={{fontSize:12,color:MT_VE,margin:"8px 2px 0",fontWeight:600}}>✓ Todo en fecha</p>
-    :<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-      {alerts.map(a=><div key={a.id} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 8px 5px 10px",borderRadius:8,background:`${a.col}14`,border:`1px solid ${a.col}44`,fontSize:11.5,color:"rgba(255,255,255,0.85)"}}>
-        <span onClick={a.go} style={{cursor:a.go?"pointer":"default",fontWeight:600}}>{a.dot} {a.text}</span>
-        {(a.acts||[]).map((x,i)=><MtB key={i} col={x.col||a.col} disabled={x.disabled} onClick={x.onClick} style={{padding:"2px 7px",fontSize:10}}>{x.label}</MtB>)}
-        <button onClick={()=>mute(a.id)} title="Silenciar 24 h" style={{background:"transparent",border:"none",color:mtDim(0.4),cursor:"pointer",fontSize:13,padding:"0 2px",lineHeight:1}}>×</button>
-      </div>)}
+    {crit.length>0&&<div style={{display:"flex",flexDirection:"column",gap:4,marginTop:6}}>
+      {crit.map(a=><div key={a.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:12,color:MT_RO,fontWeight:600}}><span onClick={a.go} style={{cursor:"pointer"}}>{a.dot} {a.text}</span>{(a.acts||[]).map((x,i)=><MtB key={i} col={x.col||a.col} disabled={x.disabled} onClick={x.onClick} style={{padding:"2px 8px",fontSize:10.5}}>{x.label}</MtB>)}</div>)}
     </div>}
   </div>;
 }
@@ -15508,15 +15493,10 @@ function MtContCard({P,c,list,open,onToggle,showWh}){
   const sem=semaforoCont(c);const col=MT_SEMAF[sem.estado];
   const cbmC=list.reduce((s,sh)=>s+P.money.cbmOf(sh.id),0);const bulC=list.reduce((s,sh)=>s+P.money.bultosOf(sh.id),0);
   const sinMedir=list.filter(sh=>P.money.cbmOf(sh.id)===0).length;
-  const nCli=new Set(list.map(s=>s.client_id||s.client_name_snapshot)).size;
   const imp=P.plata?P.money.importeContainer(list):null;const cost=P.money.costContainer(list);const gan=imp!=null?imp-cost:null;
   const cap=Number(c.capacity_cbm||0);const pct=cap>0?Math.min(100,cbmC/cap*100):null;
   const eEta=mtEffEta(c),ent=mtEntregaEst(c),tb=Number(c.transbordo_dias||0);
   const semLabel=sem.estado==="vencido"?`VENCIDO hace ${sem.dias} d`:sem.estado==="pronto"?`llega en ${sem.dias} d`:sem.estado==="ok"?`llega en ${sem.dias} d`:"sin ETA";
-  // Progreso de viaje: zarpó→entrega est., pintado hasta HOY. Rojo pasada la ETA si está vencido.
-  const totalD=mtDiasEntre(c.departed_at,ent);const doneD=diasDesde(c.departed_at);
-  const prog=c.departed_at&&totalD>0?Math.max(0,Math.min(100,doneD/totalD*100)):null;
-  const nodes=[{l:"Zarpó",d:c.departed_at,col:mtDim(0.7)},...(tb>0?[{l:`Transbordo ${c.transbordo_lugar||"Brasil"} +${tb} d`,d:c.eta,col:MT_NA}]:[]),{l:"Puerto BA",d:eEta,col:sem.estado==="vencido"?MT_RO:"#93c5fd",click:()=>P.editContainer(c)},{l:"Entrega est.",d:ent,col:"#4ade80"}];
   const isFlash=P.flashId===`c:${c.id}`;
   // Agrupado por cliente con subtotal (admin: a cobrar por cliente).
   const groups=useMemo(()=>{const m={};list.forEach(sh=>{const k=sh.client_id||`snap:${sh.client_name_snapshot||"—"}`;(m[k]=m[k]||[]).push(sh);});return Object.entries(m).map(([k,ships])=>({k,ships,cbm:ships.reduce((s,x)=>s+P.money.cbmOf(x.id),0),imp:P.plata&&imp!=null?ships.reduce((s,x)=>s+P.money.importeOfShip(x,list),0):null})).sort((a,b)=>P.cliLabel(a.ships[0]).localeCompare(P.cliLabel(b.ships[0])));},[list,imp,P.plata]);
@@ -15530,38 +15510,25 @@ function MtContCard({P,c,list,open,onToggle,showWh}){
         {c.shipping_line?<span style={mtChipS("#93c5fd")}>⚓ {c.shipping_line}</span>:<span onClick={e=>{e.stopPropagation();P.editContainer(c);}} style={mtChipS(MT_GR,{cursor:"pointer"})} title="Cargar naviera">sin naviera</span>}
         {showWh&&<span style={{fontSize:11,color:mtDim(0.5)}}>{c.warehouse}</span>}
         <span style={mtChipS(col,{fontWeight:800})}>{semLabel}</span>
-        <span style={{fontSize:11,color:mtDim(0.6)}}>{nCli} {mtPlural(nCli,"cliente")} · {list.length} {mtPlural(list.length,"carga")} · {bulC} {mtPlural(bulC,"bulto")} · <strong style={{color:"#fff"}}>{mtM3(cbmC)} m³</strong>{sinMedir>0&&<span style={{color:MT_AM}}> (+{sinMedir} sin medir)</span>}</span>
-        {P.plata&&gan!=null&&<span title={`A cobrar est. ${mtUsd(imp)} · Costo est. ${mtUsd(cost)}`} style={mtChipS(gan>=0?"#4ade80":MT_RO)}>A cobrar {mtUsd(imp)} · Costo {mtUsd(cost)} · Gan. {mtUsd(gan)}{imp>0?` (${Math.round(gan/imp*100)} %)`:""}</span>}
+        <span style={{fontSize:11,color:mtDim(0.6)}}>{list.length} {mtPlural(list.length,"carga")} · {bulC} {mtPlural(bulC,"bulto")} · <strong style={{color:"#fff"}}>{mtM3(cbmC)} m³</strong>{sinMedir>0&&<span style={{color:MT_AM}}> (+{sinMedir} sin medir)</span>}</span>
+        {P.plata&&gan!=null&&<span title={`A cobrar est. ${mtUsd(imp)} · Costo est. ${mtUsd(cost)}`} style={mtChipS(gan>=0?"#4ade80":MT_RO)}>Gan. est. {mtUsd(gan)}</span>}
         <div style={{display:"flex",gap:5,marginLeft:"auto",flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
           {c.status==="en_transito"&&<MtB col={MT_VE} disabled={P.busy} onClick={()=>P.act.setContainerStatus(c,"arribado")} title={P.plata?"Marcar arribado: crea las operaciones y manda los mails de retiro":"Marcar arribado (las operaciones las crea Bautista)"}>{P.busy?"⏳":"⚓ Arribó"}</MtB>}
           <MtB col={MT_AZ} onClick={()=>setPicker(p=>!p)}>+ Agregar cargas</MtB>
-          <MtB col={MT_AZ} onClick={()=>P.editContainer(c)} title="Editar contenedor">✎</MtB>
-          {!P.isMobile&&<MtB col={GOLD_LIGHT} onClick={()=>P.downloadPdf(c.warehouse,{scope:c.id})} title="PDF de este contenedor">PDF</MtB>}
           <MtDrop label="⋯" right items={[
-            {label:"Notas / editar",onClick:()=>P.editContainer(c)},
-            ...(P.isMobile?[{label:"PDF del contenedor",onClick:()=>P.downloadPdf(c.warehouse,{scope:c.id})}]:[]),
+            {label:"Editar contenedor",sub:"naviera, fechas, tamaño, notas",onClick:()=>P.editContainer(c)},
+            {label:"PDF del contenedor",onClick:()=>P.downloadPdf(c.warehouse,{scope:c.id})},
             {label:"Bajar todas las cargas",sub:"vuelven a En depósito",disabled:list.length===0,onClick:()=>P.act.bajar(listIds,{confirm:true})},
             "-",{label:"Eliminar contenedor",danger:true,onClick:()=>P.act.delContainer(c)}]}/>
         </div>
       </div>
-      {/* Timeline */}
-      <div style={{display:"flex",flexDirection:P.isMobile?"column":"row",gap:P.isMobile?6:0,alignItems:P.isMobile?"stretch":"center",position:"relative"}}>
-        {!P.isMobile&&<div style={{position:"absolute",left:60,right:60,top:7,height:4,borderRadius:2,background:"rgba(255,255,255,0.08)",overflow:"hidden"}}>
-          {prog!=null&&<div style={{height:"100%",width:`${prog}%`,background:sem.estado==="vencido"?`linear-gradient(90deg,${GOLD} 0%,${GOLD} 70%,${MT_RO} 100%)`:GOLD_GRADIENT}}/>}
-          {prog!=null&&<div title="HOY" style={{position:"absolute",left:`calc(${prog}% - 1px)`,top:-2,width:2,height:8,background:"#fff"}}/>}
-        </div>}
-        {nodes.map((n,i)=><div key={i} onClick={n.click?e=>{e.stopPropagation();n.click();}:undefined} style={{flex:1,display:"flex",flexDirection:P.isMobile?"row":"column",alignItems:"center",gap:P.isMobile?8:3,position:"relative",zIndex:1,cursor:n.click?"pointer":"default"}}>
-          <span style={{width:14,height:14,borderRadius:"50%",background:n.d?n.col:"rgba(255,255,255,0.15)",border:"2px solid #0F1F3A",boxShadow:`0 0 0 1px ${n.d?n.col:"transparent"}`}}/>
-          <span style={{fontSize:10,color:mtDim(0.5),whiteSpace:"nowrap"}}>{n.l}</span>
-          <span style={{fontSize:11.5,fontWeight:700,color:n.d?n.col:mtDim(0.3),...mtMono}}>{n.d?mtFmtD(n.d):"—"}</span>
-        </div>)}
-        {!c.departed_at&&<span style={{fontSize:10.5,color:mtDim(0.4),fontStyle:"italic",whiteSpace:"nowrap"}}>sin fecha de salida</span>}
-      </div>
-      {/* Llenado */}
-      <div style={{display:"flex",alignItems:"center",gap:8}}>
-        <div style={{flex:1,height:6,borderRadius:3,background:"rgba(255,255,255,0.07)",overflow:"hidden"}}><div style={{height:"100%",width:`${pct??Math.min(100,cbmC/58*100)}%`,background:pct==null?"rgba(255,255,255,0.2)":pct>95?MT_RO:pct>80?MT_AM:MT_AZ}}/></div>
-        {pct!=null?<span style={{fontSize:11,color:mtDim(0.65),whiteSpace:"nowrap",...mtMono}}>{mtM3(cbmC,1)} / {mtM3(cap,0)} m³ ({Math.round(pct)} %)</span>
-        :<span style={{fontSize:11,color:mtDim(0.5),whiteSpace:"nowrap"}}>{mtM3(cbmC,1)} m³ · <span onClick={e=>{e.stopPropagation();P.editContainer(c);}} style={{color:MT_AZ,cursor:"pointer",textDecoration:"underline dotted"}}>definir tamaño</span></span>}
+      {/* Fechas del viaje en una línea (sin barra de progreso ni llenado: simplificado 07/09/2026) */}
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",fontSize:11.5,color:mtDim(0.6)}}>
+        <span>Zarpó <b style={{color:c.departed_at?"#fff":mtDim(0.35),...mtMono}}>{mtFmtD(c.departed_at)}</b></span><span style={{color:mtDim(0.3)}}>→</span>
+        {tb>0&&<><span style={{color:MT_NA}}>transbordo {c.transbordo_lugar||"Brasil"} +{tb} d</span><span style={{color:mtDim(0.3)}}>→</span></>}
+        <span onClick={e=>{e.stopPropagation();P.editContainer(c);}} style={{cursor:"pointer"}} title="Corregir ETA">Puerto BA <b style={{color:sem.estado==="vencido"?MT_RO:"#93c5fd",...mtMono}}>{mtFmtD(eEta)}</b></span><span style={{color:mtDim(0.3)}}>→</span>
+        <span>Entrega est. <b style={{color:"#4ade80",...mtMono}}>{mtFmtD(ent)}</b></span>
+        <span style={{marginLeft:"auto",...mtMono}}>{cap>0?`${mtM3(cbmC,1)} / ${mtM3(cap,0)} m³ (${Math.round(pct)} %)`:<>{mtM3(cbmC,1)} m³ · <span onClick={e=>{e.stopPropagation();P.editContainer(c);}} style={{color:MT_AZ,cursor:"pointer",textDecoration:"underline dotted"}}>definir tamaño</span></>}</span>
       </div>
       {c.notes&&<p style={{fontSize:10.5,color:mtDim(0.45),fontStyle:"italic",margin:0}}>■ {c.notes}</p>}
     </div>
@@ -15632,22 +15599,19 @@ function MtTrayDeposito({P,wh,list,open,onToggle,focus}){
   const key=`dep:${wh}`;const sel=P.sel[key]||new Set();const setSel=(s)=>P.setSelFor(key,s);
   const cbm=list.reduce((s,sh)=>s+P.money.cbmOf(sh.id),0);const sinMedir=list.filter(sh=>P.money.cbmOf(sh.id)===0).length;
   const conts=P.containers.filter(c=>c.warehouse===wh&&c.status==="en_transito");
-  // Sugerido = contenedor con más espacio libre (solo si tiene capacity_cbm).
-  const sug=conts.map(c=>{const cap=Number(c.capacity_cbm||0);if(!cap)return null;const used=P.shipments.filter(s=>s.container_id===c.id).reduce((s,x)=>s+P.money.cbmOf(x.id),0);return{c,libre:cap-used};}).filter(Boolean).sort((a,b)=>b.libre-a.libre)[0]||null;
   const selIds=[...sel].filter(id=>list.some(s=>s.id===id));const selCbm=selIds.reduce((s,id)=>s+P.money.cbmOf(id),0);
   const listIds=list.map(s=>s.id);
   return <MtTray title="📦 En depósito · sin contenedor" col={MT_AM} open={open} onToggle={onToggle} count={list.length}
-    summary={list.length?`${list.length} ${mtPlural(list.length,"carga")} · ${mtM3(cbm)} m³${sinMedir?` · ${sinMedir} sin medir`:""} · listo para armar: ${mtM3(cbm)} m³`:"0"}
+    summary={list.length?`${list.length} ${mtPlural(list.length,"carga")} · ${mtM3(cbm)} m³${sinMedir?` · ${sinMedir} sin medir`:""}`:"0"}
     empty={focus?"Nada en depósito. Las cargas aparecen acá al marcar Recibido en 'En camino al depósito'.":"📦 En depósito: 0"}
     right={list.length>0&&<MtB col={MT_GR} onClick={()=>setSel(selIds.length===list.length?new Set():new Set(listIds))} style={{fontSize:10}}>{selIds.length===list.length?"Ninguna":"Todas"}</MtB>}>
     {list.map(sh=>{const d=diasDesde(sh.received_at);const deuda=sh.status==="en_camino_ar";return <MtShipRow key={sh.id} P={P} sh={sh} listIds={listIds} check={sel.has(sh.id)} onCheck={()=>setSel(mtToggleSet(sel,sh.id))}
-      extra={<>{deuda&&<span style={mtChipS(MT_RO)}>EN TRÁNSITO SIN CONTENEDOR — asignar</span>}{sh.received_at?<span style={{color:d>40?MT_RO:d>20?MT_AM:mtDim(0.55)}}>recibido {mtFmtD(sh.received_at)} · hace {d} d</span>:<span style={{color:MT_AM}}>sin fecha</span>}{sug&&<span style={{color:mtDim(0.4)}}>sugerido → <span onClick={e=>{e.stopPropagation();P.act.subirA([sh.id],sug.c.id);}} style={{color:MT_AZ,cursor:"pointer"}}>{sug.c.code}</span> (libres {mtM3(sug.libre,1)} m³)</span>}</>}
+      extra={<>{deuda&&<span style={mtChipS(MT_RO)}>EN TRÁNSITO SIN CONTENEDOR — asignar</span>}{sh.received_at?<span style={{color:d>40?MT_RO:d>20?MT_AM:mtDim(0.55)}}>recibido {mtFmtD(sh.received_at)} · hace {d} d</span>:<span style={{color:MT_AM}}>sin fecha</span>}</>}
       actions={<>{P.money.cbmOf(sh.id)===0&&<MtB col={MT_AM} onClick={()=>P.openDrawer(sh.id,listIds,"bultos")}>MEDIR</MtB>}<MtDrop label="Subir a ▾" col={MT_AZ} right items={mtSubirItems(P,wh,[sh.id])}/></>}
       menu={[{label:"Ficha",onClick:()=>P.openDrawer(sh.id,listIds)},{label:"Volver a 'en camino'",sub:"status proveedor, limpia received_at",onClick:()=>P.act.volverACamino(sh)},{label:"Editar",onClick:()=>P.editShip(sh)},"-",{label:"Eliminar",danger:true,onClick:()=>P.act.delShipment(sh.id)}]}/>;})}
     {selIds.length>0&&<div style={{position:"sticky",bottom:0,padding:"8px 12px",background:"#14213a",borderTop:"1px solid rgba(184,149,106,0.35)",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderRadius:"0 0 12px 12px"}}>
       <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>{selIds.length} {mtPlural(selIds.length,"seleccionada")} · {mtM3(selCbm)} m³</span>
       <MtDrop label="Subir a ▾" col={MT_AZ} solid items={mtSubirItems(P,wh,selIds)}/>
-      <MtB col={MT_AZ} onClick={()=>P.act.nuevoContConCargas(selIds,wh)}>+ Nuevo contenedor con estas</MtB>
       {P.plata&&<MtB col={GOLD_LIGHT} disabled={P.busy} onClick={()=>P.act.createOperationFromShipments(selIds)}>{P.busy?"Creando…":"Crear op consolidada"}</MtB>}
       <MtB col={MT_GR} onClick={()=>setSel(new Set())} style={{border:"none"}}>Limpiar</MtB>
     </div>}
@@ -15855,7 +15819,7 @@ function MaritimePanel2({token,allClients=[]}){
   const p0=useRef(mtLoadPrefs()).current;
   const [tab,setTab]=useState(p0.tab==="analisis"&&!plata?"tablero":(p0.tab||"tablero"));
   const [whFilter,setWhFilter]=useState(p0.whFilter||"all");
-  const [stageFocus,setStageFocus]=useState(p0.stageFocus||null);
+  const [stageFocus,setStageFocus]=useState(null); // el modo foco se sacó (07/09/2026); queda el setter por los saltos de búsqueda
   const [openCont,setOpenCont]=useState(new Set(p0.openCont||[]));const [closedCont,setClosedCont]=useState(new Set(p0.closedCont||[]));
   const [openTrays,setOpenTrays]=useState(new Set(p0.openTrays||[]));const [closedTrays,setClosedTrays]=useState(new Set(p0.closedTrays||[]));
   const [muted,setMuted]=useState(p0.muted&&typeof p0.muted==="object"?p0.muted:{});
@@ -16269,7 +16233,6 @@ function MaritimePanel2({token,allClients=[]}){
       tr:{conts:trC.length,n:tr.length,cbm:trCbm,next:next?{id:next.c.id,code:next.c.code,dias:next.s.dias}:null,importe,gan},
       arr:{mes:arrMes.length,sinOperar:sinOperar.length,ganMes,cbm:arrCbm},totCbm:depCbm+trCbm+arrCbm};
   },[fShips,fConts,arrivedIds,money,plata,shipments]);
-  const mute=(id)=>setMuted(m=>({...m,[id]:Date.now()}));
   const alerts=useMemo(()=>{
     const out=[];const now=Date.now();const ok=(id)=>!(muted[id]&&now-muted[id]<864e5);
     fConts.filter(c=>c.status==="en_transito").forEach(c=>{const s=semaforoCont(c);
@@ -16297,7 +16260,6 @@ function MaritimePanel2({token,allClients=[]}){
 
   // ── Render ─────────────────────────────────────────────────────────────────
   const chip=(on,label,onClick,extra)=><button onClick={onClick} style={{padding:"5px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,border:`1px solid ${on?"rgba(184,149,106,0.6)":"rgba(255,255,255,0.1)"}`,background:on?"rgba(184,149,106,0.18)":"rgba(255,255,255,0.03)",color:on?GOLD_LIGHT:"rgba(255,255,255,0.65)",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit",position:"relative",flexShrink:0,...extra}}>{label}</button>;
-  const alertsByWh=(name)=>alerts.filter(a=>a.text.includes(name)||(a.id.split(":")[1]&&contById[a.id.split(":")[1]]?.warehouse===name)).length;
   const totalAct=whList.reduce((s,w)=>s+w.act,0);
   const drawerSh=drawer?shipments.find(s=>s.id===drawer.id):null;
   const emptyGlobal=loadedOnce.current&&active.length===0&&containers.length===0;
@@ -16309,27 +16271,20 @@ function MaritimePanel2({token,allClients=[]}){
     const cam=wsList.filter(s=>!esPlaceholder(s)&&s.status==="proveedor"&&!s.container_id).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
     const dep=wsList.filter(s=>!s.container_id&&(s.status==="en_deposito"||s.status==="en_camino_ar")).sort((a,b)=>String(a.received_at||"9").localeCompare(String(b.received_at||"9")));
     const real=wsList.filter(s=>!esPlaceholder(s));const cbm=real.reduce((s,x)=>s+money.cbmOf(x.id),0);const sinMedir=real.filter(x=>money.cbmOf(x.id)===0).length;
-    const tot=plata?money.whEnTransito(name):null;const rot=w.w.rotulo;
-    const show=(k)=>!stageFocus||stageFocus===k;
     return <div key={name} style={{marginBottom:18}}>
       <div style={{position:"sticky",top:isMobile?96:52,zIndex:4,background:"#0A1628",padding:"8px 0 6px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderBottom:"1px solid rgba(255,255,255,0.06)",marginBottom:8}}>
         <span style={{fontSize:14,fontWeight:800,color:MT_AZ}}>{name} {w.w.origin==="usa"?"🇺🇸":"🇨🇳"}</span>
         {w.w.archived&&<span style={mtChipS(MT_GR,{fontWeight:800})} title="Depósito archivado con actividad pendiente">ARCHIVADO</span>}
-        {rot&&<span style={{fontSize:11,color:mtDim(0.45),fontStyle:"italic",display:"inline-flex",gap:5,alignItems:"center",maxWidth:isMobile?"100%":320,overflow:"hidden"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>Rótulo: <span style={{color:IC,fontWeight:600}}>{rot}</span></span><span onClick={()=>copy(rot,"Rótulo copiado")} title="Copiar rótulo" style={{cursor:"pointer"}}>📋</span></span>}
-        <span style={{fontSize:11,color:mtDim(0.6)}}>{trConts.length} {mtPlural(trConts.length,"contenedor","contenedores")} · {real.length} {mtPlural(real.length,"carga")} · {mtM3(cbm)} m³{sinMedir?<span style={{color:MT_AM}}> (+{sinMedir} sin medir)</span>:null}{esp.length?<span style={{color:MT_VI}}> · +{esp.length} esperando al proveedor</span>:null}</span>
-        {tot&&tot.importe>0&&<span title={`A cobrar ${mtUsd(tot.importe)} · Costo ${mtUsd(tot.costo)}`} style={mtChipS(tot.ganancia>=0?"#4ade80":MT_RO)}>gan. est. en viaje {mtUsd(tot.ganancia)}</span>}
+        <span style={{fontSize:11.5,color:mtDim(0.6)}}>{real.length} {mtPlural(real.length,"carga")} · {trConts.length} {mtPlural(trConts.length,"contenedor en tránsito","contenedores en tránsito")}</span>
         <div style={{marginLeft:"auto",display:"flex",gap:5,flexWrap:"wrap"}}>
           <MtDrop label="PDF ▾" col={GOLD_LIGHT} right width={260}>{(close)=><MtPdfPop P={P} wh={name} close={close}/>}</MtDrop>
           <MtB col={MT_AZ} onClick={()=>setEditingContainer({warehouse:name})}>+ Contenedor</MtB>
-          {plata&&w.w.id&&<MtB col={MT_GR} onClick={()=>setEditingWh(w.w)} title="Editar depósito">✎</MtB>}
         </div>
       </div>
-      {show("transito")&&trConts.map(({c})=>{const list=wsList.filter(s=>s.container_id===c.id);return <MtContCard key={c.id} P={P} c={c} list={list} open={isContOpen(c.id,list.length)} onToggle={()=>toggleCont(c.id,list.length)} showWh={false}/>;})}
-      {show("transito")&&stageFocus==="transito"&&trConts.length===0&&<p style={{fontSize:11.5,color:mtDim(0.4),fontStyle:"italic",margin:"4px 0 10px"}}>Sin contenedores en tránsito.</p>}
-      {show("deposito")&&<MtTrayDeposito P={P} wh={name} list={dep} open={trayOpen(`dep:${name}`)} onToggle={()=>toggleTray(`dep:${name}`)} focus={stageFocus==="deposito"}/>}
-      {show("camino")&&<MtTrayCamino P={P} wh={name} list={cam} open={trayOpen(`cam:${name}`)} onToggle={()=>toggleTray(`cam:${name}`)} focus={stageFocus==="camino"}/>}
-      {show("esperando")&&<MtTrayEsperando P={P} wh={name} list={esp} open={trayOpen(`esp:${name}`)} onToggle={()=>toggleTray(`esp:${name}`)}/>}
-      {!stageFocus&&<button onClick={()=>setEditingContainer({warehouse:name})} style={{padding:"6px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1.5px dashed rgba(96,165,250,0.4)",background:"transparent",color:MT_AZ,cursor:"pointer",fontFamily:"inherit"}}>+ Contenedor en {name}</button>}
+      {trConts.map(({c})=>{const list=wsList.filter(s=>s.container_id===c.id);return <MtContCard key={c.id} P={P} c={c} list={list} open={isContOpen(c.id,list.length)} onToggle={()=>toggleCont(c.id,list.length)} showWh={false}/>;})}
+      <MtTrayDeposito P={P} wh={name} list={dep} open={trayOpen(`dep:${name}`)} onToggle={()=>toggleTray(`dep:${name}`)} focus={false}/>
+      <MtTrayCamino P={P} wh={name} list={cam} open={trayOpen(`cam:${name}`)} onToggle={()=>toggleTray(`cam:${name}`)} focus={false}/>
+      <MtTrayEsperando P={P} wh={name} list={esp} open={trayOpen(`esp:${name}`)} onToggle={()=>toggleTray(`esp:${name}`)}/>
     </div>;
   };
   const visibles=whList.filter(w=>inFilter(w.name));
@@ -16343,7 +16298,7 @@ function MaritimePanel2({token,allClients=[]}){
       <MtSearch P={P} inputRef={searchRef}/>
       <div style={{display:"flex",gap:6,overflowX:"auto",flex:isMobile?"1 1 auto":"0 1 auto",paddingBottom:2}}>
         {chip(whFilter==="all",`Todos · ${totalAct}`,()=>setWhFilter("all"))}
-        {whList.map(w=>{const n=alertsByWh(w.name);const dim=w.act===0&&w.tr===0;return <Fragment key={w.name}>{chip(whFilter===w.name,<span style={{opacity:dim?0.5:1}}>{w.name}{w.w.origin==="usa"?" 🇺🇸":""} · {w.act}{w.tr?` · ${w.tr}🚢`:""}{n>0&&<span style={{position:"absolute",top:-5,right:-5,background:MT_RO,color:"#fff",fontSize:9,fontWeight:800,borderRadius:8,padding:"0 5px",lineHeight:"14px"}}>{n}</span>}{plata&&(()=>{const t=money.whEnTransito(w.name);return t&&t.ganancia?<span style={{display:"block",fontSize:9,color:"#4ade80",fontWeight:700,lineHeight:1.2}}>gan. est. {mtUsd(t.ganancia)}</span>:null;})()}</span>,()=>setWhFilter(w.name))}</Fragment>;})}
+        {whList.map(w=>{const dim=w.act===0&&w.tr===0;return <Fragment key={w.name}>{chip(whFilter===w.name,<span style={{opacity:dim?0.5:1}}>{w.name}{w.w.origin==="usa"?" 🇺🇸":""} · {w.act}{w.tr?` · ${w.tr} 🚢`:""}</span>,()=>setWhFilter(w.name))}</Fragment>;})}
       </div>
       <div style={{display:"flex",gap:6,marginLeft:isMobile?0:"auto",flexShrink:0}}>
         <MtB col={GOLD_LIGHT} solid onClick={()=>newShip()}>+ Pedido</MtB>
@@ -16353,16 +16308,15 @@ function MaritimePanel2({token,allClients=[]}){
     </div>
     {loadErr&&!loadedOnce.current?<div style={{padding:"10px 14px",borderRadius:8,background:`${MT_RO}14`,border:`1px solid ${MT_RO}55`,color:MT_RO,fontSize:12,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}><span>No se pudo cargar Marítimos: {loadErr}</span><MtB col={MT_RO} onClick={()=>load()}>Reintentar</MtB></div>
     :lo&&!loadedOnce.current?<div>{[0,1,2].map(i=><div key={i} className="mtSkel" style={{height:i===0?90:140,marginBottom:12}}/>)}</div>:<>
-      {/* NIVEL 1 · pipeline + HOY */}
-      <MtPipeline P={P} stats={stats} alerts={alerts} stageFocus={stageFocus} setStageFocus={setStageFocus} mute={mute}/>
+      {/* NIVEL 1 · resumen en una línea + avisos críticos */}
+      <MtResumen stats={stats} alerts={alerts}/>
       {/* NIVEL 2 · tabs */}
       <div style={{display:"flex",gap:4,borderBottom:"1px solid rgba(255,255,255,0.08)",marginBottom:12,overflowX:"auto"}}>
         {[["tablero","Tablero"],["calendario","Calendario"],["historial","Historial"],...(plata?[["analisis","Análisis"]]:[])].map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{padding:"8px 14px",fontSize:12.5,fontWeight:700,border:"none",borderBottom:`2px solid ${tab===k?GOLD_LIGHT:"transparent"}`,background:"transparent",color:tab===k?GOLD_LIGHT:mtDim(0.55),cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{l}</button>)}
       </div>
       {tab==="tablero"&&(emptyGlobal?<div style={{textAlign:"center",padding:"40px 0",color:mtDim(0.5),fontSize:13}}>Todavía no hay pedidos marítimos activos<div style={{display:"flex",gap:8,justifyContent:"center",marginTop:12}}><MtB col={GOLD_LIGHT} solid onClick={()=>newShip()}>+ Pedido</MtB><MtB col={MT_AZ} onClick={()=>setEditingContainer({warehouse:whList[0]?.name||""})}>+ Contenedor</MtB></div></div>
       :<>
-        {stageFocus&&<p style={{fontSize:11.5,color:GOLD_LIGHT,margin:"0 0 8px"}}>Modo foco: {({esperando:"Esperando al proveedor",camino:"En camino al depósito",deposito:"En depósito",transito:"En tránsito",arribados:"Arribados"})[stageFocus]} · <span onClick={()=>setStageFocus(null)} style={{cursor:"pointer",textDecoration:"underline"}}>ver todo</span></p>}
-        {stageFocus==="arribados"?<p style={{fontSize:12,color:mtDim(0.5)}}>Los contenedores arribados viven en la pestaña <span onClick={()=>setTab("historial")} style={{color:MT_AZ,cursor:"pointer"}}>Historial</span>.</p>:conActividad.map(renderWh)}
+        {conActividad.map(renderWh)}
         {(showEmpty?vacios:[]).map(w=><div key={w.name} style={{padding:"8px 12px",marginBottom:8,fontSize:12,color:mtDim(0.45),borderRadius:10,border:"1px dashed rgba(255,255,255,0.1)",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><span style={{fontWeight:700,color:mtDim(0.6)}}>{w.name} {w.w.origin==="usa"?"🇺🇸":"🇨🇳"}</span> Sin actividad <MtB col={GOLD_LIGHT} onClick={()=>newShip({warehouse:w.name})}>+ Pedido</MtB><MtB col={MT_AZ} onClick={()=>setEditingContainer({warehouse:w.name})}>+ Contenedor</MtB></div>)}
         {vacios.length>0&&<button onClick={()=>setShowEmpty(s=>!s)} style={{background:"transparent",border:"none",color:mtDim(0.4),fontSize:11.5,cursor:"pointer",textDecoration:"underline dotted",fontFamily:"inherit",padding:"4px 0"}}>{showEmpty?"ocultar":"mostrar"} {vacios.length} {mtPlural(vacios.length,"depósito vacío","depósitos vacíos")}</button>}
       </>)}
