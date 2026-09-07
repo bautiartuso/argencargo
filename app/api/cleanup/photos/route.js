@@ -103,9 +103,13 @@ export async function GET(req) {
 
     // ── C) Huérfanos: archivos que ninguna fila referencia
     const referencias = new Set();
+    // OJO: toda columna que guarde una URL de este bucket tiene que estar acá. flights.dispatch_photo_url
+    // (foto del desglose de bultos que sube el agente al despachar, 02/09) no estaba y el cron borró
+    // esas fotos como huérfanas a los 2 días (detectado el 07/09/2026).
     for (const [tabla, col] of [
       ["operation_packages", "photo_url"], ["unassigned_packages", "photo_url"],
       ["gi_quote_products", "photo_url"], ["gi_quote_request_products", "photo_url"],
+      ["flights", "dispatch_photo_url"],
     ]) {
       const filas = await j(`/rest/v1/${tabla}?${col}=not.is.null&select=${col}`);
       for (const f of filas) { const p = storagePath(f[col]); if (p) referencias.add(p); }
