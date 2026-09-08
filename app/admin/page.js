@@ -9766,7 +9766,7 @@ function AgentsPanel({token}){
                 <col style={{width:100}}/>
               </colgroup>
               <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                {["✓","Op","Cliente","Mercadería","Bultos","Bruto","Fact. ÷5000","Fact. ÷6000","Días","Consolidación","WA"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
+                {["✓","Op","Cliente","Mercadería","Bultos","Bruto","Fact. ÷5000","Fact. ÷6000 ↑½","Días","Consolidación","WA"].map(h=><th key={h} title={h.startsWith("Fact. ÷6000")?"Volumétrico a 6000 con el redondeo del agente: cada bulto al medio kilo para arriba":undefined} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
               </tr></thead>
               <tbody>{grp.ops.map((o,oIdx)=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const opPkgs=opPackages(o.id);const pkgsCount=opPkgs.length;const lastPkgAt=opPkgs.reduce((mx,p)=>{const t=p.created_at?new Date(p.created_at).getTime():0;return t>mx?t:mx;},0);const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;const isExpanded=expandedOp===o.id;
               const sc=orderScore(o);const scMeta=SCORE_META[sc];
@@ -9776,8 +9776,9 @@ function AgentsPanel({token}){
               const grossW=opPkgs.reduce((s2,p2)=>s2+Number(p2.gross_weight_kg||0)*Number(p2.quantity||1),0);
               const payingVol=grossW>0&&w>grossW*1.15; // paga volumétrico: candidato a reempaque
               // Peso facturable con divisor 5000 y 6000 (pedido 07/09/2026): por bulto, el mayor entre bruto y volumétrico.
-              const factDiv=(div)=>opPkgs.reduce((s2,p2)=>{const q=Number(p2.quantity||1);const g=Number(p2.gross_weight_kg||0);const l=Number(p2.length_cm||0),wd=Number(p2.width_cm||0),h=Number(p2.height_cm||0);const v=l&&wd&&h?(l*wd*h)/div:0;return s2+Math.max(g,v)*q;},0);
-              const f5=factDiv(5000),f6=factDiv(6000);
+              // ÷6000 lleva el redondeo del agente: cada bulto al medio kilo para arriba (misma cuenta que en el vuelo).
+              const factDiv=(div,redondeo)=>opPkgs.reduce((s2,p2)=>{const q=Number(p2.quantity||1);const g=Number(p2.gross_weight_kg||0);const l=Number(p2.length_cm||0),wd=Number(p2.width_cm||0),h=Number(p2.height_cm||0);const v=l&&wd&&h?(l*wd*h)/div:0;const f=Math.max(g,v)*q;return s2+(redondeo?Math.ceil(f*2)/2:f);},0);
+              const f5=factDiv(5000,false),f6=factDiv(6000,true);
               const kgTxt=(v)=>v>0?`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—";
               const volBadge=(f)=>grossW>0&&f>grossW*1.15?<span title={`Paga volumétrico: bruto ${grossW.toLocaleString("es-AR",{maximumFractionDigits:1})} kg, factura ${f.toLocaleString("es-AR",{maximumFractionDigits:1})} kg — un reempaque puede ahorrar`} style={{display:"block",width:"fit-content",fontSize:8.5,fontWeight:800,padding:"1px 5px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.35)",marginTop:3,cursor:"help",letterSpacing:"0.03em"}}>▲VOL +{Math.round((f/grossW-1)*100)}%</span>:null;
               const lockedByAgent=canSelect&&selAgentId&&o.created_by_agent_id!==selAgentId;
