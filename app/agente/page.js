@@ -233,6 +233,8 @@ const I18N={
     opt_no:"No",
     intl_tracking:"Tracking internacional",
     courier:"Courier",
+    requested_carrier:"Enviar por",
+    requested_carrier_warn:"Argencargo pidió",
     payment_method_label:"Método de pago",
     method_cc:"Cuenta corriente",
     method_alibaba:"Alibaba",
@@ -501,6 +503,8 @@ const I18N={
     opt_no:"否",
     intl_tracking:"国际物流单号",
     courier:"快递",
+    requested_carrier:"请使用",
+    requested_carrier_warn:"Argencargo 要求使用",
     payment_method_label:"付款方式",
     method_cc:"往来账户",
     method_alibaba:"阿里巴巴",
@@ -844,6 +848,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
     return <div onClick={()=>setSelFlight(f.id)} className="ac-hover-card" style={{cursor:"pointer",background:cardBg,border:cardBorder,borderRadius:14,padding:"1rem 1.25rem"}}>
     {isReady&&<p style={{fontSize:13,fontWeight:700,color:"#22c55e",margin:"0 0 8px",display:"inline-flex",alignItems:"center",gap:6}}><span className="ac-live-dot" style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:"#22c55e",boxShadow:"0 0 8px rgba(34,197,94,0.6)"}}/>{t.ready_to_ship}</p>}
     {isWaiting&&<p style={{fontSize:13,fontWeight:700,color:"#fbbf24",margin:"0 0 8px"}}>{t.waiting_invoice}</p>}
+    {f.status==="preparando"&&f.requested_carrier&&<p style={{fontSize:12,fontWeight:700,color:"#93c5fd",margin:"0 0 8px",display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px",borderRadius:999,background:"rgba(96,165,250,0.12)",border:"1px solid rgba(96,165,250,0.35)"}}>✈️ {t.requested_carrier||"Enviar por"}: {f.requested_carrier==="FEDEX"?"FedEx (÷6000)":f.requested_carrier}</p>}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:8}}>
       <div style={{display:"flex",alignItems:"center",gap:10}}>
         <span style={{fontSize:14,fontWeight:700,color:"#fff",fontFamily:"'JetBrains Mono','SF Mono',monospace",letterSpacing:"0.04em"}}>{f.flight_code}</span>
@@ -1175,7 +1180,8 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
   // Peso facturable: el agente lo puede ajustar a mano (prefill con el calculado de los bultos).
   const [factKgInput,setFactKgInput]=useState("");
   const [tracking,setTracking]=useState(flight.international_tracking||"");
-  const [carrier,setCarrier]=useState(flight.international_carrier||"DHL");
+  const pedido=flight.requested_carrier==="FEDEX"?"FedEx":flight.requested_carrier==="DHL"?"DHL":null; // courier que pidió Argencargo
+  const [carrier,setCarrier]=useState(flight.international_carrier||pedido||"DHL");
   const [pmtMethod,setPmtMethod]=useState(flight.payment_method||"cuenta_corriente");
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
@@ -1468,9 +1474,10 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
           <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.courier}</label>
-            <select value={carrier} onChange={e=>setCarrier(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
+            <select value={carrier} onChange={e=>setCarrier(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:`1.5px solid ${pedido&&carrier!==pedido?"rgba(248,113,113,0.6)":"rgba(255,255,255,0.12)"}`,borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>
               {["DHL","FedEx","UPS"].map(c=><option key={c} value={c} style={{background:"#142038"}}>{c}</option>)}
             </select>
+            {pedido&&<p style={{fontSize:11,margin:"4px 0 0",color:carrier===pedido?"#93c5fd":"#f87171",fontWeight:600}}>{carrier===pedido?`✓ ${t.requested_carrier||"Enviar por"}: ${pedido}${pedido==="FedEx"?" (÷6000)":""}`:`⚠ ${t.requested_carrier_warn||"Argencargo pidió"} ${pedido}${pedido==="FedEx"?" (÷6000)":""}`}</p>}
           </div>
           <div style={{marginBottom:14}}><label style={{display:"block",fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)",marginBottom:5}}>{t.payment_method_label}</label>
             <select value={pmtMethod} onChange={e=>setPmtMethod(e.target.value)} style={{width:"100%",padding:"11px 14px",fontSize:14,boxSizing:"border-box",border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none"}}>

@@ -8737,6 +8737,9 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
       {flight.status==="preparando"&&flightOps.length>0&&<div style={{marginTop:-6,marginBottom:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 14px",background:"rgba(251,191,36,0.05)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:10}}>
         <span style={{fontSize:12,color:"rgba(255,255,255,0.65)"}}>🔄 ¿Conviene reembalar antes de despachar?</span>
         <Btn small variant="secondary" onClick={()=>setReembalaje(true)}>Pedir reembalaje al agente</Btn>
+        <span style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:"rgba(255,255,255,0.65)"}}>✈️ Courier pedido al agente:
+          {[["","Sin pedir"],["DHL","DHL"],["FEDEX","FedEx ÷6000"]].map(([v,l])=><button key={v||"none"} onClick={()=>updateFlight({requested_carrier:v||null})} title={v==="FEDEX"?"FedEx con volumétrico a 6000":v==="DHL"?"DHL":"El agente elige"} style={{padding:"4px 10px",fontSize:11.5,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${(flight.requested_carrier||"")===v?"rgba(96,165,250,0.7)":"rgba(255,255,255,0.12)"}`,background:(flight.requested_carrier||"")===v?"rgba(96,165,250,0.18)":"transparent",color:(flight.requested_carrier||"")===v?"#93c5fd":"rgba(255,255,255,0.6)"}}>{l}</button>)}
+        </span>
       </div>}
       {reembalaje&&<ReembalajeVueloModal flight={flight} token={token} onClose={()=>setReembalaje(false)} onDone={()=>{setReembalaje(false);onReload?.();}}/>}
     </Card>
