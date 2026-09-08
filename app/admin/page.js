@@ -7864,9 +7864,16 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
         fetch("/api/admin/extract-packages",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({flight_id:flight.id})}).then(x=>x.json()),
         opIds.length?dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,clients(client_code,first_name,last_name),operation_packages(package_number,quantity,gross_weight_kg,length_cm,width_cm,height_cm,national_tracking)&order=operation_code.asc`}):Promise.resolve([]),
       ]);
-      setViejos((Array.isArray(vs)?vs:[]).map(o=>({id:o.id,code:o.operation_code,cli:o.clients?.client_code||"",nombre:[o.clients?.first_name,o.clients?.last_name].filter(Boolean).join(" "),desc:o.description||"",pkgs:(o.operation_packages||[]).slice().sort((x,y)=>Number(x.package_number||0)-Number(y.package_number||0))})));
+      const vlist=(Array.isArray(vs)?vs:[]).map(o=>({id:o.id,code:o.operation_code,cli:o.clients?.client_code||"",nombre:[o.clients?.first_name,o.clients?.last_name].filter(Boolean).join(" "),desc:o.description||"",pkgs:(o.operation_packages||[]).slice().sort((x,y)=>Number(x.package_number||0)-Number(y.package_number||0))}));
+      setViejos(vlist);
       if(r.error){setErr(r.error);setCargando(false);return;}
-      setFilas(r.bultos.map(b=>({peso:b.peso_kg??"",l:b.largo_cm??"",a:b.ancho_cm??"",h:b.alto_cm??"",opId:unaOp||""})));
+      // Asistencia: un bulto leído que pesa lo mismo (±0,1 kg) y mide lo mismo (±1 cm por lado, en cualquier
+      // orden) que un bulto viejo NO cambió → se preasigna a esa op y conserva su tracking original.
+      const usados=new Set();
+      const igual=(f,pk)=>{const pw=Number(pk.gross_weight_kg||0),fw=Number(String(f.peso).replace(",","."))||0;if(!(pw>0&&fw>0)||Math.abs(pw-fw)>0.1||Number(pk.quantity||1)!==1)return false;const a=[pk.length_cm,pk.width_cm,pk.height_cm].map(Number);const b=[f.l,f.a,f.h].map(x=>Number(String(x).replace(",","."))||0);if(a.some(x=>!x)||b.some(x=>!x))return false;a.sort((x,y)=>x-y);b.sort((x,y)=>x-y);return a.every((x,i)=>Math.abs(x-b[i])<=1);};
+      setFilas(r.bultos.map(b=>{const f={peso:b.peso_kg??"",l:b.largo_cm??"",a:b.ancho_cm??"",h:b.alto_cm??"",opId:unaOp||"",match:null};
+        for(const o of vlist){const pk=o.pkgs.find(p2=>!usados.has(p2.id)&&igual(f,p2));if(pk){usados.add(pk.id);f.opId=o.id;f.match={pkgId:pk.id,opId:o.id,n:pk.package_number,trk:pk.national_tracking||null};break;}}
+        return f;}));
       setCargando(false);
     }catch(e){setErr("Error de red");setCargando(false);}
   })();},[flight.id]);
@@ -7885,15 +7892,20 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
       for(const [opId,fs] of Object.entries(porOp)){
         // Los bultos nuevos heredan la trazabilidad de los originales: los últimos 5 del
         // tracking de cada bulto viejo, unidos con "/" (ej. 97426/92587/85819/74902).
-        const orig=await dq("operation_packages",{token,filters:`?operation_id=eq.${opId}&select=national_tracking&order=package_number.asc`});
-        const trk=(Array.isArray(orig)?orig:[]).map(p2=>String(p2.national_tracking||"").trim()).filter(Boolean).map(t=>t.slice(-5)).join("/");
+        const orig=await dq("operation_packages",{token,filters:`?operation_id=eq.${opId}&select=id,national_tracking&order=package_number.asc`});
+        const igualesIds=new Set(fs.filter(f=>f.match&&f.match.opId===opId).map(f=>f.match.pkgId));
+        const cambiados=(Array.isArray(orig)?orig:[]).filter(p2=>!igualesIds.has(p2.id));
+        const base=cambiados.length?cambiados:(Array.isArray(orig)?orig:[]);
+        const trk=base.map(p2=>String(p2.national_tracking||"").trim()).filter(Boolean).map(t=>t.slice(-5)).join("/");
         await dq("operation_packages",{method:"DELETE",token,filters:`?operation_id=eq.${opId}`});
         for(let i=0;i<fs.length;i++){
           const f=fs[i];
-          await dq("operation_packages",{method:"POST",token,body:{operation_id:opId,package_number:i+1,quantity:1,gross_weight_kg:num(f.peso)||null,length_cm:num(f.l)||null,width_cm:num(f.a)||null,height_cm:num(f.h)||null,national_tracking:trk||null},headers:{Prefer:"return=representation"}});
+          const esIgual=f.match&&f.match.opId===opId;
+          await dq("operation_packages",{method:"POST",token,body:{operation_id:opId,package_number:i+1,quantity:1,gross_weight_kg:num(f.peso)||null,length_cm:num(f.l)||null,width_cm:num(f.a)||null,height_cm:num(f.h)||null,national_tracking:esIgual?(f.match.trk||trk||null):(trk||null)},headers:{Prefer:"return=representation"}});
         }
         const code=ops.find(o=>o.id===opId)?.code||"";
-        dq("op_communications",{method:"POST",token,body:{operation_id:opId,type:"note",direction:"in",content:`📷 Bultos reemplazados desde la foto del courier (${flight.flight_code}): ${fs.length} bulto${fs.length>1?"s":""}, ${fs.reduce((a2,f2)=>a2+num(f2.peso),0).toLocaleString("es-AR",{maximumFractionDigits:2})} kg reales. Revisar presupuesto de ${code}.`},headers:{Prefer:"return=representation"}}).catch(()=>{});
+        const nIg=fs.filter(f=>f.match&&f.match.opId===opId).length;
+        dq("op_communications",{method:"POST",token,body:{operation_id:opId,type:"note",direction:"in",content:`📷 Bultos reemplazados desde la foto del courier (${flight.flight_code}): ${fs.length} bulto${fs.length>1?"s":""}, ${fs.reduce((a2,f2)=>a2+num(f2.peso),0).toLocaleString("es-AR",{maximumFractionDigits:2})} kg reales${nIg?` (${nIg} sin cambios, conservan su tracking)`:""}. Revisar presupuesto de ${code}.`},headers:{Prefer:"return=representation"}}).catch(()=>{});
       }
       toast("Bultos reemplazados — revisá el presupuesto de las ops","success");
       onDone();
@@ -7923,8 +7935,8 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
             </div>
             {o.desc&&<p style={{margin:"0 0 5px",fontSize:10.5,color:"rgba(255,255,255,0.4)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.desc}</p>}
             {o.pkgs.length===0&&<p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.35)",fontStyle:"italic"}}>Sin bultos cargados</p>}
-            {o.pkgs.map((pk,pi)=>{const vol=volDe(pk);const g=Number(pk.gross_weight_kg||0);const q=Number(pk.quantity||1);return <div key={pi} style={{display:"grid",gridTemplateColumns:"26px 70px 1fr 70px",gap:6,alignItems:"center",fontSize:11.5,padding:"3px 0",color:"rgba(255,255,255,0.8)",fontFeatureSettings:'"tnum"'}}>
-              <span style={{color:colorOp(oi),fontWeight:700,fontFamily:"monospace"}}>#{pk.package_number||pi+1}{q>1?`×${q}`:""}</span>
+            {o.pkgs.map((pk,pi)=>{const vol=volDe(pk);const g=Number(pk.gross_weight_kg||0);const q=Number(pk.quantity||1);const nuevoIdx=(filas||[]).findIndex(f=>f.match&&f.match.pkgId===pk.id&&f.opId===o.id);return <div key={pi} title={nuevoIdx>=0?`Sin cambios: es el bulto nuevo #${nuevoIdx+1}. Conserva su tracking.`:undefined} style={{display:"grid",gridTemplateColumns:"26px 70px 1fr 70px",gap:6,alignItems:"center",fontSize:11.5,padding:"3px 0",color:"rgba(255,255,255,0.8)",fontFeatureSettings:'"tnum"',background:nuevoIdx>=0?"rgba(34,197,94,0.08)":"transparent",borderRadius:6}}>
+              <span style={{color:colorOp(oi),fontWeight:700,fontFamily:"monospace"}}>#{pk.package_number||pi+1}{q>1?`×${q}`:""}{nuevoIdx>=0&&<span style={{color:"#4ade80",marginLeft:4}} title="Igual al bulto nuevo">= {nuevoIdx+1}</span>}</span>
               <span style={{textAlign:"right",fontWeight:700,color:"#fff"}}>{g?kg(g):"—"}</span>
               <span style={{color:"rgba(255,255,255,0.6)"}}>{pk.length_cm&&pk.width_cm&&pk.height_cm?`${Number(pk.length_cm)}×${Number(pk.width_cm)}×${Number(pk.height_cm)} cm`:"sin medidas"}{vol>g&&g>0?<span style={{color:"#fbbf24",marginLeft:6}} title="Paga volumétrico">vol {vol.toLocaleString("es-AR",{maximumFractionDigits:1})}</span>:null}</span>
               <span style={{textAlign:"right",fontSize:10.5,color:"rgba(255,255,255,0.4)",fontFamily:"monospace"}} title={pk.national_tracking||""}>{pk.national_tracking?`…${String(pk.national_tracking).slice(-5)}`:""}</span>
@@ -7936,8 +7948,8 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
           <div style={{display:"grid",gridTemplateColumns:cols,gap:6,alignItems:"center",fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>
             <span>#</span><span style={{textAlign:"right"}}>Peso kg</span><span style={{textAlign:"right"}}>Largo</span><span style={{textAlign:"right"}}>Ancho</span><span style={{textAlign:"right"}}>Alto</span>{varias&&<span>Operación</span>}<span></span>
           </div>
-          {filas.map((f,i)=>{const oi=ops.findIndex(o=>o.id===f.opId);return <div key={i} style={{display:"grid",gridTemplateColumns:cols,gap:6,alignItems:"center",marginBottom:5}}>
-            <span style={{fontSize:12,fontWeight:700,color:oi>=0?colorOp(oi):"#E8C99B",fontFamily:"monospace"}}>{i+1}</span>
+          {filas.map((f,i)=>{const oi=ops.findIndex(o=>o.id===f.opId);const igualA=f.match&&f.match.opId===f.opId?f.match:null;return <div key={i} title={igualA?`Sin cambios: mismo peso y medidas que ${ops[oi]?.code||""} #${igualA.n}. Conserva su tracking.`:undefined} style={{display:"grid",gridTemplateColumns:cols,gap:6,alignItems:"center",marginBottom:5,background:igualA?"rgba(34,197,94,0.08)":"transparent",borderRadius:8}}>
+            <span style={{fontSize:12,fontWeight:700,color:oi>=0?colorOp(oi):"#E8C99B",fontFamily:"monospace"}}>{i+1}{igualA&&<span style={{display:"block",fontSize:8.5,color:"#4ade80",fontWeight:800,letterSpacing:"0.04em"}}>IGUAL</span>}</span>
             <input value={f.peso} onChange={e=>upd(i,"peso",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
             <input value={f.l} onChange={e=>upd(i,"l",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
             <input value={f.a} onChange={e=>upd(i,"a",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
@@ -7948,6 +7960,7 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
             </select>}
             <button onClick={()=>setFilas(p=>p.filter((_,j)=>j!==i))} title="Eliminar fila" style={{background:"transparent",border:"none",color:"rgba(248,113,113,0.7)",fontSize:15,cursor:"pointer",padding:0}}>✕</button>
           </div>;})}
+          {(()=>{const nIg=filas.filter(f=>f.match&&f.match.opId===f.opId).length;return nIg>0?<p style={{margin:"2px 0 6px",fontSize:11,color:"#4ade80"}}>✓ {nIg} {nIg===1?"bulto no cambió":"bultos no cambiaron"} (mismo peso y medidas): {nIg===1?"queda asignado":"quedan asignados"} y {nIg===1?"conserva":"conservan"} su tracking. Los demás son reembalados: asignalos vos.</p>:<p style={{margin:"2px 0 6px",fontSize:11,color:"rgba(255,255,255,0.4)"}}>Ningún bulto coincide exacto con los viejos: todos parecen reembalados.</p>;})()}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,padding:"9px 12px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:9}}>
             <span style={{fontSize:11,fontWeight:800,color:"#E8C99B",letterSpacing:"0.05em"}}>{filas.length} BULTOS</span>
             <span style={{fontSize:13,fontWeight:800,color:"#fff",fontFeatureSettings:'"tnum"'}}>{filas.reduce((a2,f2)=>a2+num(f2.peso),0).toLocaleString("es-AR",{maximumFractionDigits:2})} kg reales</span>
