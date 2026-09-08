@@ -691,7 +691,7 @@ function OperationDetail({op,token,client,onBack}){
         {l:t("imports.totalToPay"),v:(()=>{if(op.lost_in_customs_at)return "USD 0,00";const bt=Number(op.budget_total||0);if(bt<=0)return t("common.pending");const pmtTotal=pmts.filter(p=>!p.client_paid).reduce((s,p)=>s+Number(p.client_amount_usd||0),0);const pmtAnt=Number(op.total_anticipos||0);const cliPaid=cliPmts.reduce((s,p)=>s+Number(p.amount_usd||0),0);const saldo=Math.max(0,bt-cliPaid+Math.max(0,pmtTotal-pmtAnt));return `USD ${saldo.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;})(),a:true}
       ];
       return <div className="op-info" style={{display:"flex",gap:28,borderTop:"1px solid #F3F5F9",paddingTop:14,marginTop:4,flexWrap:"wrap"}}>
-        {(isGI?giFields:normalFields).map((x,i)=><div key={i}><span style={{fontSize:10,fontWeight:700,color:"rgba(10,22,40,0.55)",textTransform:"uppercase"}}>{x.l}</span><p style={{fontSize:13,fontWeight:600,color:x.a?GOLD_DEEP:"#fff",margin:"2px 0 0"}}>{x.v}</p></div>)}
+        {(isGI?giFields:normalFields).map((x,i)=><div key={i}><span style={{fontSize:10,fontWeight:700,color:"rgba(10,22,40,0.55)",textTransform:"uppercase"}}>{x.l}</span><p style={{fontSize:13,fontWeight:600,color:x.a?GOLD_DEEP:"#0A1628",margin:"2px 0 0"}}>{x.v}</p></div>)}
       </div>;})()}
     </div>
     {!loading&&op.channel==="aereo_blanco"&&op.status==="en_deposito_origen"&&!op.consolidation_confirmed&&!localConfirmed&&(waitingMore?<div style={{background:"linear-gradient(135deg,rgba(96,165,250,0.10),rgba(96,165,250,0.03))",border:"1.5px solid rgba(96,165,250,0.3)",borderRadius:14,padding:"1.25rem 1.5rem",marginBottom:16}}>
