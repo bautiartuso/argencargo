@@ -7847,21 +7847,34 @@ function CarrierPickupBlock({flight,token,onReload}){
 // reembalaje solo él sabe qué caja es de quién) y al aplicar se REEMPLAZAN los bultos de
 // esas ops. El presupuesto no se toca automáticamente: se avisa para revisarlo.
 function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
-  const ops=flightOps.map(fo=>({id:fo.operation_id,code:fo.operations?.operation_code||"?"}));
-  const unaOp=ops.length===1?ops[0].id:null;
+  const opIds=flightOps.map(fo=>fo.operation_id).filter(Boolean);
+  const unaOp=opIds.length===1?opIds[0]:null;
   const [filas,setFilas]=useState(null);const [cargando,setCargando]=useState(true);
+  const [viejos,setViejos]=useState([]); // ops del vuelo con sus bultos actuales (para comparar y asignar)
   const [err,setErr]=useState("");const [aplicando,setAplicando]=useState(false);
+  const [isMobile,setIsMobile]=useState(false);
+  useEffect(()=>{const f=()=>setIsMobile(window.innerWidth<820);f();window.addEventListener("resize",f);return()=>window.removeEventListener("resize",f);},[]);
+  const num=(v)=>Number(String(v).replace(",","."))||0;
+  const kg=(v)=>`${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
+  const volDe=(pk)=>{const l=Number(pk.length_cm||0),w=Number(pk.width_cm||0),h=Number(pk.height_cm||0);return l&&w&&h?(l*w*h)/5000:0;};
   useEffect(()=>{(async()=>{
     try{
-      const r=await fetch("/api/admin/extract-packages",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({flight_id:flight.id})}).then(x=>x.json());
+      // En paralelo: la lectura de la foto (IA) y los bultos que hoy tiene cada op del vuelo.
+      const [r,vs]=await Promise.all([
+        fetch("/api/admin/extract-packages",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({flight_id:flight.id})}).then(x=>x.json()),
+        opIds.length?dq("operations",{token,filters:`?id=in.(${opIds.join(",")})&select=id,operation_code,description,clients(client_code,first_name,last_name),operation_packages(package_number,quantity,gross_weight_kg,length_cm,width_cm,height_cm,national_tracking)&order=operation_code.asc`}):Promise.resolve([]),
+      ]);
+      setViejos((Array.isArray(vs)?vs:[]).map(o=>({id:o.id,code:o.operation_code,cli:o.clients?.client_code||"",nombre:[o.clients?.first_name,o.clients?.last_name].filter(Boolean).join(" "),desc:o.description||"",pkgs:(o.operation_packages||[]).slice().sort((x,y)=>Number(x.package_number||0)-Number(y.package_number||0))})));
       if(r.error){setErr(r.error);setCargando(false);return;}
       setFilas(r.bultos.map(b=>({peso:b.peso_kg??"",l:b.largo_cm??"",a:b.ancho_cm??"",h:b.alto_cm??"",opId:unaOp||""})));
       setCargando(false);
     }catch(e){setErr("Error de red");setCargando(false);}
   })();},[flight.id]);
+  const ops=viejos.length?viejos:flightOps.map(fo=>({id:fo.operation_id,code:fo.operations?.operation_code||"?",cli:fo.operations?.clients?.client_code||"",pkgs:[]}));
   const upd=(i,k,v)=>setFilas(p=>p.map((f,j)=>j===i?{...f,[k]:v}:f));
-  const num=(v)=>Number(String(v).replace(",","."))||0;
   const sinAsignar=(filas||[]).filter(f=>!f.opId).length;
+  // Balance por op: lo que había vs. lo que se le asigna de la foto.
+  const balance=ops.map(o=>{const antesN=o.pkgs.reduce((s2,pk)=>s2+Number(pk.quantity||1),0);const antesKg=o.pkgs.reduce((s2,pk)=>s2+Number(pk.gross_weight_kg||0)*Number(pk.quantity||1),0);const nuevos=(filas||[]).filter(f=>f.opId===o.id);const nuevoKg=nuevos.reduce((s2,f)=>s2+num(f.peso),0);return {...o,antesN,antesKg,nuevoN:nuevos.length,nuevoKg};});
   const aplicar=async()=>{
     setErr("");
     if(sinAsignar>0){setErr(`Asigná la operación de ${sinAsignar} bulto${sinAsignar>1?"s":""} (o eliminalos).`);return;}
@@ -7887,41 +7900,73 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
     }catch(e){setErr("Error aplicando: "+e.message);setAplicando(false);}
   };
   const inp={width:"100%",padding:"6px 8px",fontSize:12.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none",textAlign:"right"};
+  const varias=ops.length>1;
+  const cols=`26px 72px 62px 62px 62px ${varias?"minmax(150px,1fr)":""} 30px`;
+  const colorOp=(i)=>["#E8C99B","#60a5fa","#4ade80","#f472b6","#a78bfa","#fb923c","#22d3ee","#facc15"][i%8];
   return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"34px 16px",overflowY:"auto"}}>
-    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:640,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.35)",borderRadius:14,padding:"20px 22px",margin:"auto"}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:varias?1080:640,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.35)",borderRadius:14,padding:"20px 22px",margin:"auto"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
         <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>🔍 Bultos leídos de la foto · {flight.flight_code}</h3>
         <button onClick={onClose} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0}}>×</button>
       </div>
-      <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 12px",lineHeight:1.5}}>Revisá y corregí lo que leyó la IA{ops.length>1?" y asigná cada bulto a su operación (hubo reembalaje: solo vos sabés qué caja es de quién)":""}. Al aplicar se <b style={{color:"#fbbf24"}}>reemplazan</b> los bultos de las ops elegidas.</p>
+      <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 12px",lineHeight:1.5}}>Revisá y corregí lo que leyó la IA{varias?". A la izquierda tenés los bultos que hoy tiene cada operación: compará peso y medidas y asigná cada bulto nuevo a su operación (hubo reembalaje: solo vos sabés qué caja es de quién)":""}. Al aplicar se <b style={{color:"#fbbf24"}}>reemplazan</b> los bultos de las ops elegidas.</p>
       {cargando?<p style={{color:"rgba(255,255,255,0.5)",textAlign:"center",padding:"2rem 0"}}>🔍 Leyendo la foto…</p>
       :!filas?<p style={{color:"#f87171",fontSize:13,padding:"1rem 0"}}>{err}</p>
-      :<>
-        <div style={{display:"grid",gridTemplateColumns:`26px 1fr 72px 62px 62px 62px ${ops.length>1?"120px":""} 30px`,gap:6,alignItems:"center",fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>
-          <span>#</span><span></span><span style={{textAlign:"right"}}>Peso kg</span><span style={{textAlign:"right"}}>Largo</span><span style={{textAlign:"right"}}>Ancho</span><span style={{textAlign:"right"}}>Alto</span>{ops.length>1&&<span>Operación</span>}<span></span>
+      :<div style={{display:"grid",gridTemplateColumns:varias&&!isMobile?"minmax(300px,0.9fr) minmax(0,1.1fr)":"1fr",gap:18,alignItems:"start"}}>
+        {varias&&<div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"10px 12px"}}>
+          <p style={{margin:"0 0 8px",fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Bultos viejos · lo que hay hoy en cada op</p>
+          {balance.map((o,oi)=><div key={o.id} style={{marginBottom:10,paddingBottom:8,borderBottom:oi<balance.length-1?"1px solid rgba(255,255,255,0.06)":"none"}}>
+            <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap",marginBottom:4}}>
+              <span style={{fontSize:12.5,fontWeight:800,color:colorOp(oi),fontFamily:"monospace"}}>{o.code}</span>
+              <span style={{fontSize:11.5,color:"rgba(255,255,255,0.75)",fontWeight:600}}>{o.cli}{o.nombre?` · ${o.nombre}`:""}</span>
+              <span style={{marginLeft:"auto",fontSize:11,color:"rgba(255,255,255,0.55)",fontFeatureSettings:'"tnum"'}}>{o.antesN} {o.antesN===1?"bulto":"bultos"} · <b style={{color:"#fff"}}>{kg(o.antesKg)}</b></span>
+            </div>
+            {o.desc&&<p style={{margin:"0 0 5px",fontSize:10.5,color:"rgba(255,255,255,0.4)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.desc}</p>}
+            {o.pkgs.length===0&&<p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.35)",fontStyle:"italic"}}>Sin bultos cargados</p>}
+            {o.pkgs.map((pk,pi)=>{const vol=volDe(pk);const g=Number(pk.gross_weight_kg||0);const q=Number(pk.quantity||1);return <div key={pi} style={{display:"grid",gridTemplateColumns:"26px 70px 1fr 70px",gap:6,alignItems:"center",fontSize:11.5,padding:"3px 0",color:"rgba(255,255,255,0.8)",fontFeatureSettings:'"tnum"'}}>
+              <span style={{color:colorOp(oi),fontWeight:700,fontFamily:"monospace"}}>#{pk.package_number||pi+1}{q>1?`×${q}`:""}</span>
+              <span style={{textAlign:"right",fontWeight:700,color:"#fff"}}>{g?kg(g):"—"}</span>
+              <span style={{color:"rgba(255,255,255,0.6)"}}>{pk.length_cm&&pk.width_cm&&pk.height_cm?`${Number(pk.length_cm)}×${Number(pk.width_cm)}×${Number(pk.height_cm)} cm`:"sin medidas"}{vol>g&&g>0?<span style={{color:"#fbbf24",marginLeft:6}} title="Paga volumétrico">vol {vol.toLocaleString("es-AR",{maximumFractionDigits:1})}</span>:null}</span>
+              <span style={{textAlign:"right",fontSize:10.5,color:"rgba(255,255,255,0.4)",fontFamily:"monospace"}} title={pk.national_tracking||""}>{pk.national_tracking?`…${String(pk.national_tracking).slice(-5)}`:""}</span>
+            </div>;})}
+          </div>)}
+        </div>}
+        <div>
+          <p style={{margin:"0 0 6px",fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Bultos nuevos · leídos de la foto</p>
+          <div style={{display:"grid",gridTemplateColumns:cols,gap:6,alignItems:"center",fontSize:9.5,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:6}}>
+            <span>#</span><span style={{textAlign:"right"}}>Peso kg</span><span style={{textAlign:"right"}}>Largo</span><span style={{textAlign:"right"}}>Ancho</span><span style={{textAlign:"right"}}>Alto</span>{varias&&<span>Operación</span>}<span></span>
+          </div>
+          {filas.map((f,i)=>{const oi=ops.findIndex(o=>o.id===f.opId);return <div key={i} style={{display:"grid",gridTemplateColumns:cols,gap:6,alignItems:"center",marginBottom:5}}>
+            <span style={{fontSize:12,fontWeight:700,color:oi>=0?colorOp(oi):"#E8C99B",fontFamily:"monospace"}}>{i+1}</span>
+            <input value={f.peso} onChange={e=>upd(i,"peso",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
+            <input value={f.l} onChange={e=>upd(i,"l",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
+            <input value={f.a} onChange={e=>upd(i,"a",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
+            <input value={f.h} onChange={e=>upd(i,"h",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
+            {varias&&<select value={f.opId} onChange={e=>upd(i,"opId",e.target.value)} style={{...inp,textAlign:"left",padding:"6px 6px",borderColor:oi>=0?`${colorOp(oi)}88`:"rgba(255,255,255,0.12)",color:oi>=0?colorOp(oi):"#fff",fontWeight:oi>=0?700:400}}>
+              <option value="">— op —</option>
+              {balance.map(o=><option key={o.id} value={o.id}>{o.code} · {o.cli} · {o.antesN} {o.antesN===1?"bulto":"bultos"} · {o.antesKg.toLocaleString("es-AR",{maximumFractionDigits:1})} kg</option>)}
+            </select>}
+            <button onClick={()=>setFilas(p=>p.filter((_,j)=>j!==i))} title="Eliminar fila" style={{background:"transparent",border:"none",color:"rgba(248,113,113,0.7)",fontSize:15,cursor:"pointer",padding:0}}>✕</button>
+          </div>;})}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,padding:"9px 12px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:9}}>
+            <span style={{fontSize:11,fontWeight:800,color:"#E8C99B",letterSpacing:"0.05em"}}>{filas.length} BULTOS</span>
+            <span style={{fontSize:13,fontWeight:800,color:"#fff",fontFeatureSettings:'"tnum"'}}>{filas.reduce((a2,f2)=>a2+num(f2.peso),0).toLocaleString("es-AR",{maximumFractionDigits:2})} kg reales</span>
+          </div>
+          {varias&&<div style={{marginTop:8,display:"grid",gap:3}}>
+            {balance.map((o,oi)=>{const diff=o.antesKg>0?(o.nuevoKg/o.antesKg-1)*100:null;const ok=o.nuevoN>0&&(diff==null||Math.abs(diff)<=12);const col=o.nuevoN===0?"rgba(255,255,255,0.35)":ok?"#4ade80":"#fbbf24";return <div key={o.id} style={{display:"flex",gap:8,alignItems:"baseline",fontSize:11,fontFeatureSettings:'"tnum"'}}>
+              <span style={{fontWeight:800,color:colorOp(oi),fontFamily:"monospace",minWidth:64}}>{o.code}</span>
+              <span style={{color:"rgba(255,255,255,0.5)"}}>antes {o.antesN} · {kg(o.antesKg)}</span>
+              <span style={{color:"rgba(255,255,255,0.3)"}}>→</span>
+              <span style={{color:col,fontWeight:700}}>{o.nuevoN===0?"sin bultos asignados":`ahora ${o.nuevoN} · ${kg(o.nuevoKg)}${diff!=null?` (${diff>=0?"+":""}${diff.toFixed(0)} %)`:""}`}</span>
+            </div>;})}
+          </div>}
+          {err&&<p style={{fontSize:12,color:"#f87171",margin:"10px 0 0"}}>{err}</p>}
+          <div style={{display:"flex",gap:8,marginTop:14}}>
+            <Btn onClick={aplicar} disabled={aplicando||filas.length===0}>{aplicando?"Aplicando…":"✓ Reemplazar bultos en las ops"}</Btn>
+            <Btn variant="secondary" onClick={onClose}>Cancelar</Btn>
+          </div>
         </div>
-        {filas.map((f,i)=><div key={i} style={{display:"grid",gridTemplateColumns:`26px 1fr 72px 62px 62px 62px ${ops.length>1?"120px":""} 30px`,gap:6,alignItems:"center",marginBottom:5}}>
-          <span style={{fontSize:12,fontWeight:700,color:"#E8C99B",fontFamily:"monospace"}}>{i+1}</span><span></span>
-          <input value={f.peso} onChange={e=>upd(i,"peso",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
-          <input value={f.l} onChange={e=>upd(i,"l",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
-          <input value={f.a} onChange={e=>upd(i,"a",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
-          <input value={f.h} onChange={e=>upd(i,"h",e.target.value.replace(/[^0-9.,]/g,""))} inputMode="decimal" style={inp}/>
-          {ops.length>1&&<select value={f.opId} onChange={e=>upd(i,"opId",e.target.value)} style={{...inp,textAlign:"left",padding:"6px 6px"}}>
-            <option value="">— op —</option>
-            {ops.map(o=><option key={o.id} value={o.id}>{o.code}</option>)}
-          </select>}
-          <button onClick={()=>setFilas(p=>p.filter((_,j)=>j!==i))} title="Eliminar fila" style={{background:"transparent",border:"none",color:"rgba(248,113,113,0.7)",fontSize:15,cursor:"pointer",padding:0}}>✕</button>
-        </div>)}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,padding:"9px 12px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.3)",borderRadius:9}}>
-          <span style={{fontSize:11,fontWeight:800,color:"#E8C99B",letterSpacing:"0.05em"}}>{filas.length} BULTOS</span>
-          <span style={{fontSize:13,fontWeight:800,color:"#fff",fontFeatureSettings:'"tnum"'}}>{filas.reduce((a2,f2)=>a2+num(f2.peso),0).toLocaleString("es-AR",{maximumFractionDigits:2})} kg reales</span>
-        </div>
-        {err&&<p style={{fontSize:12,color:"#f87171",margin:"10px 0 0"}}>{err}</p>}
-        <div style={{display:"flex",gap:8,marginTop:14}}>
-          <Btn onClick={aplicar} disabled={aplicando||filas.length===0}>{aplicando?"Aplicando…":"✓ Reemplazar bultos en las ops"}</Btn>
-          <Btn variant="secondary" onClick={onClose}>Cancelar</Btn>
-        </div>
-      </>}
+      </div>}
     </div>
   </div>;
 }
