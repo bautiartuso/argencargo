@@ -3483,7 +3483,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
                   // Recibo numerado: el número se asigna la primera vez que se imprime (secuencia en DB).
                   let nro=p.receipt_number||null;
                   if(!nro){try{const r=await dq("rpc/next_receipt_number",{method:"POST",token,body:{p_payment_id:p.id}});nro=typeof r==="number"?r:Number(r)||null;}catch(e){console.error("receipt number",e);}}
-                  const st=await dq("gi_settings",{token,filters:"?select=receipt_issuer_name,receipt_issuer_doc,office_locality&limit=1"}).catch(()=>[]);
+                  const st=await dq("gi_settings",{token,filters:"?select=receipt_issuer_name,receipt_issuer_doc,office_locality,office_address&limit=1"}).catch(()=>[]);
                   const pagado=clientPayments.reduce((s2,x)=>s2+Number(x.amount_usd||0),0);
                   const saldo=Math.max(0,Number(op.budget_total||0)+Number(op.debt_applied_usd||0)-Number(op.total_anticipos||0)-Number(op.credit_applied_usd||0)-Number(op.discount_applied_usd||0)-pagado);
                   printReceiptPdf({op,payment:{...p,receipt_number:nro},client:opClient,settings:Array.isArray(st)&&st[0]?st[0]:{},saldoRestante:Math.round(saldo*100)/100});
