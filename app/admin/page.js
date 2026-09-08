@@ -324,7 +324,10 @@ function OperationsList({token,onSelect,onNew}){
     if(o.lost_in_customs_at)return 0;
     const bt=Number(o.budget_total||0);
     if(bt<=0)return null;
-    if(o.is_collected)return 0; // ya está cobrada, no hay saldo pendiente
+    // "Cobrada" solo si además el cobro cubre el presupuesto: en las ops abiertas el presupuesto puede crecer
+    // después del cobro (una GI a la que se le suman productos, AC-0047 08/09/2026) y el saldo tiene que volver a verse.
+    // En las cerradas la marca manda (son ops viejas cerradas a mano).
+    if(o.is_collected&&o.status==="operacion_cerrada")return 0;
     // Cash cobrado — para GI usa operation_client_payments, para ops regulares usa collected_amount
     // Los cobros registrados son la fuente de verdad para cualquier op, no solo GI: si hay filas
     // en operation_client_payments valen esas. collected_amount queda como respaldo para las ops
@@ -337,6 +340,7 @@ function OperationsList({token,onSelect,onNew}){
     const pmtTot=pmts.reduce((s,p)=>s+Number(p.client_amount_usd||0),0);
     const ant=Number(o.total_anticipos||0);
     const saldo=Math.max(0,(bt+debtApplied-cliPaid-creditApplied-discountApplied)+Math.max(0,pmtTot-ant));
+    if(o.is_collected&&saldo<=1)return 0; // marcada cobrada y cubre el presupuesto (tolerancia USD 1)
     return saldo;
   };
   const toggleStatus=(s)=>setFStatuses(p=>p.includes(s)?p.filter(x=>x!==s):[...p,s]);
