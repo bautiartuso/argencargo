@@ -1452,6 +1452,16 @@ function CalculatorPage({token,client}){
       else{setProducts(pr=>pr.map((x,j)=>j===idx?{...x,ncmLoading:false,ncmError:false,ncm:d}:x));}
     }catch{setProducts(pr=>pr.map((x,j)=>j===idx?{...x,ncmLoading:false,ncmError:true,ncm:null}:x));}};
 
+  // Un solo botón "Clasificar NCM" al pie (pedido 08/09/2026): clasifica en paralelo todos los
+  // productos con descripción que todavía no tienen NCM (los ya clasificados no se tocan).
+  const [classifyingAll,setClassifyingAll]=useState(false);
+  const classifyAll=async()=>{
+    const idxs=products.map((p,i)=>(!p.ncm&&p.description?.trim())?i:-1).filter(i=>i>=0);
+    if(!idxs.length)return;
+    setClassifyingAll(true);
+    try{await Promise.all(idxs.map(i=>classifyProduct(i)));}finally{setClassifyingAll(false);}
+  };
+
   // Clasificación por foto: convierte file a base64 y manda a /api/ncm con {image, description}
   // No persistimos la imagen — solo se usa en memoria del request.
   const classifyByPhoto=async(idx,file)=>{
@@ -1791,7 +1801,7 @@ function CalculatorPage({token,client}){
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             <input value={p.description||""} onChange={e=>chProd(i,"description",e.target.value)} placeholder="Sé específico. Ej: Auriculares inalámbricos bluetooth" style={{flex:1,minWidth:180,padding:"11px 14px",fontSize:14,border:"1.5px solid rgba(255,255,255,0.12)",borderRadius:10,background:"rgba(255,255,255,0.1)",color:"#fff",outline:"none"}} onFocus={e=>{e.target.style.borderColor=IC;}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";}}/>
             {!hasBrand&&<>
-              <button onClick={()=>classifyProduct(i)} disabled={p.ncmLoading||!p.description?.trim()} style={{padding:"11px 16px",fontSize:12,fontWeight:600,borderRadius:10,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW,whiteSpace:"nowrap",opacity:p.ncmLoading?0.6:1}}>{p.ncmLoading?"Clasificando...":"Clasificar"}</button>
+              {p.ncmLoading&&<span style={{alignSelf:"center",fontSize:12,color:IC,fontWeight:600,whiteSpace:"nowrap"}}>Clasificando…</span>}
               <input id={`photo-classify-${i}`} type="file" accept="image/*" capture="environment" onChange={e=>{const f=e.target.files?.[0];if(f){classifyByPhoto(i,f);e.target.value="";}}} style={{display:"none"}}/>
               <label htmlFor={`photo-classify-${i}`} title="Subí una foto del producto y la IA lo clasifica" style={{padding:"11px 14px",fontSize:12,fontWeight:600,borderRadius:10,cursor:p.ncmLoading?"not-allowed":"pointer",background:"rgba(96,165,250,0.1)",color:"#60a5fa",border:"1.5px solid rgba(96,165,250,0.4)",whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,opacity:p.ncmLoading?0.5:1}}>📸 Clasificar por foto</label>
             </>}
@@ -1813,8 +1823,9 @@ function CalculatorPage({token,client}){
       </>}
 
       {totalFob>0&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:12,marginTop:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Valor total mercadería</span><span style={{fontSize:16,fontWeight:700,color:IC}}>{usd(totalFob)}</span></div>}
-      {(()=>{const hasPriced=products.some(p=>toN(p.unit_price)>0);const pendingClass=!hasBrand&&products.some(p=>toN(p.unit_price)>0&&!p.ncm);const blocked=!hasPriced||pendingClass;return <>
-        {pendingClass&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:10,padding:"10px 14px",marginTop:14}}><p style={{fontSize:12,color:"#fb923c",margin:0,fontWeight:500}}>⚠️ Tenés que clasificar cada producto antes de avanzar. Usá el botón <strong>Clasificar</strong> o elegí <strong>"Usar valores estimados"</strong> si no podemos detectar el NCM.</p></div>}
+      {(()=>{const hasPriced=products.some(p=>toN(p.unit_price)>0);const sinNcm=products.filter(p=>p.description?.trim()&&!p.ncm&&!p.ncmLoading);const pendingClass=!hasBrand&&products.some(p=>toN(p.unit_price)>0&&!p.ncm);const blocked=!hasPriced||pendingClass;return <>
+        {!hasBrand&&sinNcm.length>0&&<button onClick={classifyAll} disabled={classifyingAll} style={{width:"100%",marginTop:14,padding:"14px",fontSize:14,fontWeight:800,letterSpacing:"0.06em",borderRadius:10,cursor:classifyingAll?"wait":"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW,opacity:classifyingAll?0.6:1}}>{classifyingAll?"CLASIFICANDO…":`CLASIFICAR NCM${sinNcm.length>1?` (${sinNcm.length} productos)`:""}`}</button>}
+        {pendingClass&&!classifyingAll&&<div style={{background:"rgba(251,146,60,0.08)",border:"1px solid rgba(251,146,60,0.2)",borderRadius:10,padding:"10px 14px",marginTop:14}}><p style={{fontSize:12,color:"#fb923c",margin:0,fontWeight:500}}>⚠️ Antes de avanzar hay que clasificar los productos: tocá <strong>CLASIFICAR NCM</strong>{sinNcm.length===0?" o elegí ":" o, si no detectamos el NCM, elegí "}<strong>"Usar valores estimados"</strong>.</p></div>}
         <div style={{display:"flex",gap:12,marginTop:16}}><button onClick={()=>setStep1Sub(1)} style={{padding:"12px 20px",fontSize:13,fontWeight:600,borderRadius:10,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)",border:"1.5px solid rgba(255,255,255,0.12)",cursor:"pointer"}}>← Atrás</button><button onClick={()=>setStep(2)} disabled={blocked} style={{padding:"12px 24px",fontSize:13,fontWeight:600,borderRadius:10,border:"none",cursor:blocked?"not-allowed":"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,boxShadow:GOLD_GLOW,opacity:blocked?0.4:1}}>Siguiente →</button></div>
       </>;})()}
       </>}
