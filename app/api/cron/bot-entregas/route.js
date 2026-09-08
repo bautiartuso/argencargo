@@ -21,7 +21,7 @@
 //
 // Sin credenciales de Meta todo es no-op. ?dry=1 devuelve qué mandaría sin mandar.
 
-import { sendWaTemplate, waConfigured, waNumber, ensureWaTemplate, WA_TEMPLATE_NAMES } from "../../../../lib/wa";
+import { sendWaTemplate, waConfigured, waNumber, ensureWaTemplate, WA_TEMPLATE_NAMES, uploadWaMedia, sendWaMediaTemplate } from "../../../../lib/wa";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -231,6 +231,42 @@ export async function GET(req) {
       if (cambios.length) await notifyAdmins("📋 Plantillas de WhatsApp", cambios.join("\n"));
       out.wa_templates = cambios;
     } catch (e) { console.error("[bot-entregas] templates", e.message); }
+  }
+
+  // ── Cola de comprobantes para reenviar a los internos (SolFin): los que fallaron por la
+  // ventana de 24 h salen con la plantilla apenas Meta la aprueba. Hasta 5 por corrida.
+  if (!dry && waConfigured()) {
+    try {
+      const q = await sb(`/wa_forward_queue?sent_at=is.null&attempts=lt.20&order=id.asc&limit=5`);
+      const pend = Array.isArray(q.body) ? q.body : [];
+      const destinos = String(process.env.WA_COMPROBANTES_TO || "").split(/[,;\s]+/).filter(Boolean);
+      if (pend.length && destinos.length) {
+        const stRes = await sb(`/wa_template_status?select=name,status`);
+        const st = {}; (Array.isArray(stRes.body) ? stRes.body : []).forEach((r) => { st[r.name] = r.status; });
+        for (const row of pend) {
+          const tpl = row.kind === "document" ? "comprobante_pdf_min" : "comprobante_img_min";
+          let status = st[tpl];
+          if (status !== "APPROVED") { status = await ensureWaTemplate(tpl); if (status) { st[tpl] = status; await sb(`/wa_template_status`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ name: tpl, status, updated_at: new Date().toISOString() }) }); } }
+          if (status !== "APPROVED") { out.cola_comprobantes = `esperando plantilla ${tpl} (${status || "sin estado"})`; break; }
+          let err = "";
+          try {
+            const f = await fetch(row.file_url);
+            if (!f.ok) throw new Error(`archivo ${f.status}`);
+            const mime = f.headers.get("content-type") || (row.kind === "document" ? "application/pdf" : "image/jpeg");
+            const mediaId = await uploadWaMedia(Buffer.from(await f.arrayBuffer()), mime, row.kind === "document" ? "comprobante.pdf" : "comprobante.jpg");
+            if (!mediaId) throw new Error("no se pudo subir el archivo a Meta");
+            const fallas = [];
+            for (const d of destinos) {
+              const r = await sendWaMediaTemplate(d, tpl, { kind: row.kind, mediaId }, Array.isArray(row.params) ? row.params : []);
+              if (!r?.ok) fallas.push(`${d}: ${r?.error?.message || r?.error || "?"}`);
+            }
+            if (fallas.length) err = fallas.join(" | ");
+          } catch (e) { err = e.message; }
+          await sb(`/wa_forward_queue?id=eq.${row.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(err ? { attempts: Number(row.attempts || 0) + 1, error: err.slice(0, 500) } : { sent_at: new Date().toISOString(), error: null }) });
+          out.cola_enviados = [...(out.cola_enviados || []), `${row.id}${err ? ` ✗ ${err.slice(0, 80)}` : " ✓"}`];
+        }
+      }
+    } catch (e) { console.error("[bot-entregas] cola comprobantes", e.message); }
   }
 
   // ── Ops cerradas solas (trigger DB al marcar entregada + cobrada): mandar el mail de cierre

@@ -496,7 +496,12 @@ export async function POST(req) {
               let r = await forwardWaMedia(d, mediaId, msg.type, "");
               if (!r?.ok && newId) r = await sendWaMediaTemplate(d, kind === "document" ? "comprobante_pdf_min" : "comprobante_img_min", { kind, mediaId: newId }, [quienCorto, opDest?.op || "sin identificar"]);
               if (!r?.ok && newId) r = await sendWaMediaTemplate(d, kind === "document" ? "aviso_comprobante_pdf" : "aviso_comprobante_img", { kind, mediaId: newId }, [opTxt, quien, resumen]);
-              if (!r?.ok) console.error("[bot/whatsapp] reenvío falló", d, r?.error);
+              if (!r?.ok) {
+                console.error("[bot/whatsapp] reenvío falló", d, r?.error);
+                // Queda en cola: el cron lo manda con la plantilla apenas Meta la apruebe (se reenvía a
+                // todos los destinos de WA_COMPROBANTES_TO en ese momento, así que se encola una vez).
+                if (guardado && d === destinos[0]) await sb(`/wa_forward_queue`, { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ file_url: guardado.split(" · ")[0], kind, params: [quienCorto, opDest?.op || "sin identificar"] }) }).catch(() => {});
+              }
             }
           }
         }
