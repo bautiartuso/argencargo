@@ -9754,17 +9754,19 @@ function AgentsPanel({token}){
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,tableLayout:"fixed"}}>
               <colgroup>
                 <col style={{width:44}}/>
-                <col style={{width:110}}/>
-                <col style={{width:200}}/>
+                <col style={{width:100}}/>
+                <col style={{width:190}}/>
                 <col/>
-                <col style={{width:72}}/>
-                <col style={{width:112}}/>
-                <col style={{width:58}}/>
-                <col style={{width:170}}/>
+                <col style={{width:62}}/>
+                <col style={{width:92}}/>
+                <col style={{width:104}}/>
+                <col style={{width:96}}/>
+                <col style={{width:56}}/>
+                <col style={{width:118}}/>
                 <col style={{width:100}}/>
               </colgroup>
               <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                {["✓","Op","Cliente","Mercadería","Bultos","P. bruto","Fact. ÷5000","Fact. ÷6000","Días","Consolidación","WA"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
+                {["✓","Op","Cliente","Mercadería","Bultos","Bruto","Fact. ÷5000","Fact. ÷6000","Días","Consolidación","WA"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
               </tr></thead>
               <tbody>{grp.ops.map((o,oIdx)=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const opPkgs=opPackages(o.id);const pkgsCount=opPkgs.length;const lastPkgAt=opPkgs.reduce((mx,p)=>{const t=p.created_at?new Date(p.created_at).getTime():0;return t>mx?t:mx;},0);const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;const isExpanded=expandedOp===o.id;
               const sc=orderScore(o);const scMeta=SCORE_META[sc];
@@ -9810,13 +9812,12 @@ function AgentsPanel({token}){
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{pkgsCount}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(grossW)}</td>
                 <td style={{padding:"10px 12px",color:"#fff",fontWeight:600,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(f5)}{volBadge(f5)}</td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(f6)}{volBadge(f6)}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(f6)}</td>
                 <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{days==null?<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>:<span title={`Último bulto recibido hace ${days} día${days!==1?"s":""}`} style={{fontSize:10,fontWeight:dCol.w,padding:"2px 7px",borderRadius:5,background:dCol.bg,color:dCol.c,fontFamily:"monospace",fontVariantNumeric:"tabular-nums"}}>{days}d</span>}</td>
                 <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>
                   {inFlight?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,whiteSpace:"nowrap"}}>EN VUELO</span>:
                   o.consolidation_confirmed&&opsWithDocs.has(o.id)?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(34,197,94,0.15)",color:"#22c55e",whiteSpace:"nowrap"}}>✓ LISTO</span>:
-                  o.consolidation_confirmed&&!opsWithDocs.has(o.id)?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(249,115,22,0.15)",color:"#f97316",whiteSpace:"nowrap"}}>📋 DOCS PENDIENTES</span>:
-                  <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",whiteSpace:"nowrap"}}>⏳ ESPERANDO</span>}
+                  <span title={o.consolidation_confirmed?"Faltan los documentos del cliente":"Falta confirmar la consolidación"} style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",whiteSpace:"nowrap"}}>⏳ ESPERANDO</span>}
                 </td>
                 <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{(()=>{
                   const clientWa=o.clients?.whatsapp?String(o.clients.whatsapp).replace(/[^0-9]/g,""):"";
