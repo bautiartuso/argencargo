@@ -8733,6 +8733,12 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
           </div>;
         })}
       </div>
+      {/* Reembalaje desde el vuelo: antes del despacho, un pedido por op (sin mezclar clientes) */}
+      {flight.status==="preparando"&&flightOps.length>0&&<div style={{marginTop:-6,marginBottom:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 14px",background:"rgba(251,191,36,0.05)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:10}}>
+        <span style={{fontSize:12,color:"rgba(255,255,255,0.65)"}}>🔄 ¿Conviene reembalar antes de despachar?</span>
+        <Btn small variant="secondary" onClick={()=>setReembalaje(true)}>Pedir reembalaje al agente</Btn>
+      </div>}
+      {reembalaje&&<ReembalajeVueloModal flight={flight} token={token} onClose={()=>setReembalaje(false)} onDone={()=>{setReembalaje(false);onReload?.();}}/>}
     </Card>
     <div id="fe-card-factura"/>
     <Card title="Factura de exportación (destinatario + items)" actions={<div style={{display:"flex",gap:8}}><Btn small variant="secondary" onClick={printInvoice} disabled={items.length===0}>📄 Ver / Imprimir</Btn></div>}>
@@ -9096,12 +9102,6 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
             </>;})()}
           </div>;
         })()}
-        {/* Reembalaje desde el vuelo: antes del despacho, un pedido por op (sin mezclar clientes) */}
-        {!flight.dispatched_at&&flightOps.length>0&&<div style={{marginTop:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 14px",background:"rgba(251,191,36,0.05)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:10}}>
-          <span style={{fontSize:12,color:"rgba(255,255,255,0.65)"}}>🔄 ¿Conviene reembalar antes de despachar?</span>
-          <Btn small variant="secondary" onClick={()=>setReembalaje(true)}>Pedir reembalaje al agente</Btn>
-        </div>}
-        {reembalaje&&<ReembalajeVueloModal flight={flight} token={token} onClose={()=>setReembalaje(false)} onDone={()=>{setReembalaje(false);onReload?.();}}/>}
         {/* Captura del courier con el desglose por bulto que subió el agente al despachar */}
         {flight.dispatch_photo_url&&<div style={{marginTop:14,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"12px 16px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:10}}>
