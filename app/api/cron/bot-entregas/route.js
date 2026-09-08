@@ -21,7 +21,7 @@
 //
 // Sin credenciales de Meta todo es no-op. ?dry=1 devuelve qué mandaría sin mandar.
 
-import { sendWaTemplate, waConfigured, waNumber, ensureWaTemplate } from "../../../../lib/wa";
+import { sendWaTemplate, waConfigured, waNumber, ensureWaTemplate, WA_TEMPLATE_NAMES } from "../../../../lib/wa";
 
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
@@ -215,6 +215,37 @@ export async function GET(req) {
       }
     }
   } catch (e) { console.error("[bot-entregas] ri_cobro", e.message); out.ri_error = e.message; }
+
+  // ── Plantillas de Meta: se crean solas y se avisa cuando cambian de estado (1 vez por hora) ──
+  if (!dry && waConfigured() && new Date(now).getUTCMinutes() < 5) {
+    try {
+      const prevRes = await sb(`/wa_template_status?select=name,status`);
+      const prev = {}; (Array.isArray(prevRes.body) ? prevRes.body : []).forEach((r) => { prev[r.name] = r.status; });
+      const cambios = [];
+      for (const name of WA_TEMPLATE_NAMES) {
+        const st = await ensureWaTemplate(name);
+        if (!st || st === prev[name]) continue;
+        cambios.push(`${name}: ${prev[name] ? `${prev[name]} → ` : ""}${st}`);
+        await sb(`/wa_template_status`, { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify({ name, status: st, updated_at: new Date().toISOString() }) });
+      }
+      if (cambios.length) await notifyAdmins("📋 Plantillas de WhatsApp", cambios.join("\n"));
+      out.wa_templates = cambios;
+    } catch (e) { console.error("[bot-entregas] templates", e.message); }
+  }
+
+  // ── Ops cerradas solas (trigger DB al marcar entregada + cobrada): mandar el mail de cierre
+  // como si la hubiera cerrado el admin. Se marca para no reintentar.
+  try {
+    const ac = await sb(`/operations?auto_closed_at=not.is.null&sent_notifications->>auto_close_notified=is.null&select=id,operation_code,sent_notifications&limit=10`);
+    for (const op of (Array.isArray(ac.body) ? ac.body : [])) {
+      out.auto_cerradas = [...(out.auto_cerradas || []), op.operation_code];
+      if (dry) continue;
+      try {
+        await fetch(`${BASE_URL}/api/notify`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.CRON_SECRET}` }, body: JSON.stringify({ op_id: op.id, trigger: "cerrada" }) });
+      } catch (e) { console.error("[bot-entregas] notify cerrada", op.operation_code, e.message); }
+      await sb(`/operations?id=eq.${op.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ sent_notifications: { ...(op.sent_notifications || {}), auto_close_notified: new Date().toISOString() } }) });
+    }
+  } catch (e) { console.error("[bot-entregas] auto-cerradas", e.message); }
 
   return Response.json(out);
 }
