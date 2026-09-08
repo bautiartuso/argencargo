@@ -907,7 +907,7 @@ function Dashboard({session,onLogout,lang,setLang,t}){
           <span style={{fontSize:24}}>🔄</span>
           <div>
             <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{t.repack_pending||"Reempaque pedido"} · <span style={{fontFamily:"monospace",color:"#fbbf24"}}>{r.operations?.operation_code}</span></p>
-            <p style={{fontSize:11,color:"rgba(255,255,255,0.7)",margin:"3px 0 0",lineHeight:1.5}}>{t.repack_current||"Peso actual"}: <strong>{Number(r.original_billable_kg||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong> ({r.original_pkg_count} {t.bultos||"bultos"}){r.reason?`\n${r.reason}`:""}</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.7)",margin:"3px 0 0",lineHeight:1.5,whiteSpace:"pre-wrap"}}>{t.repack_current||"Peso actual"}: <strong>{Number(r.original_billable_kg||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</strong> ({r.original_pkg_count} {t.bultos||"bultos"}){r.reason?`\n${r.reason}`:""}</p>
           </div>
         </div>
         <button onClick={()=>setRepackOpen(r.operation_id)} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:8,border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",cursor:"pointer"}}>🔄 {t.repack_open||"Reempaquetar"}</button>

@@ -7971,11 +7971,131 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
   </div>;
 }
 
+// ── Pedido de reembalaje desde el VUELO (08/09/2026) ─────────────────────────
+// Un solo cliente: se pide y listo. Varios clientes: un pedido por operación, siempre
+// respetando las cajas de cada cliente (nunca se mezclan). Opcional: indicar caja por caja
+// qué se reembala junto, qué va sola y qué no se toca.
+function ReembalajeVueloModal({flight,token,onClose,onDone}){
+  const [ops,setOps]=useState(null);const [err,setErr]=useState("");const [enviando,setEnviando]=useState(false);
+  const [motivo,setMotivo]=useState("");const [detalle,setDetalle]=useState(false);
+  const [asig,setAsig]=useState({}); // pkgId → "" (reembalar con las demás de su op) | "solo" | "no" | "g1".."g4"
+  useEffect(()=>{(async()=>{
+    const fo=await dq("flight_operations",{token,filters:`?flight_id=eq.${flight.id}&select=operation_id`});
+    const ids=(Array.isArray(fo)?fo:[]).map(x=>x.operation_id).filter(Boolean);
+    if(!ids.length){setOps([]);return;}
+    const [rows,pend]=await Promise.all([
+      dq("operations",{token,filters:`?id=in.(${ids.join(",")})&select=id,operation_code,description,created_by_agent_id,clients(client_code,first_name,last_name),operation_packages(id,package_number,quantity,gross_weight_kg,length_cm,width_cm,height_cm,national_tracking)&order=operation_code.asc`}),
+      dq("repack_requests",{token,filters:`?operation_id=in.(${ids.join(",")})&status=eq.pending&select=operation_id`}),
+    ]);
+    const pendSet=new Set((Array.isArray(pend)?pend:[]).map(r=>r.operation_id));
+    setOps((Array.isArray(rows)?rows:[]).map(o=>({...o,pkgs:(o.operation_packages||[]).slice().sort((a,b)=>Number(a.package_number||0)-Number(b.package_number||0)),pendiente:pendSet.has(o.id)})));
+  })();},[flight.id]);
+  const kg=(v)=>`${Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`;
+  const facturable=(pkgs,div=5000)=>pkgs.reduce((s2,p2)=>{const q=Number(p2.quantity||1),gw=Number(p2.gross_weight_kg||0),l=Number(p2.length_cm||0),w=Number(p2.width_cm||0),h=Number(p2.height_cm||0);return s2+Math.max(gw*q,l&&w&&h?((l*w*h)/div)*q:0);},0);
+  const varios=(ops||[]).length>1;
+  const colorG={g1:"#60a5fa",g2:"#4ade80",g3:"#f472b6",g4:"#a78bfa",solo:"#fbbf24",no:"rgba(255,255,255,0.35)"};
+  // Instrucciones por op en dos idiomas (el agente puede ser de habla china).
+  const instrucciones=(o)=>{
+    const val=(p2)=>asig[p2.id]||"";
+    const num=(p2)=>`#${p2.package_number}`;
+    const grupos=["g1","g2","g3","g4"].map(g=>o.pkgs.filter(p2=>val(p2)===g)).filter(l=>l.length);
+    const libres=o.pkgs.filter(p2=>val(p2)==="");const solas=o.pkgs.filter(p2=>val(p2)==="solo");const no=o.pkgs.filter(p2=>val(p2)==="no");
+    const lineas=[];
+    if(!detalle||(!grupos.length&&!solas.length&&!no.length)){lineas.push(`Reembalar todos los bultos de esta operación (${o.pkgs.length}) para bajar el volumétrico. / Repack all ${o.pkgs.length} boxes of this operation to reduce volumetric weight.`);}
+    else{
+      grupos.forEach((l,i)=>lineas.push(`Grupo ${i+1} · reembalar JUNTAS / pack TOGETHER: ${l.map(num).join(" + ")}`));
+      if(libres.length)lineas.push(`Reembalar (a criterio del depósito) / repack as you see fit: ${libres.map(num).join(", ")}`);
+      solas.forEach(p2=>lineas.push(`${num(p2)} · reembalar SOLA / repack ALONE`));
+      if(no.length)lineas.push(`NO reembalar / do NOT touch: ${no.map(num).join(", ")}`);
+    }
+    if(varios)lineas.push("Nunca mezclar con cajas de otros clientes. / Never mix with other clients' boxes.");
+    return lineas;
+  };
+  const enviar=async()=>{
+    setErr("");
+    const objetivo=ops.filter(o=>!o.pendiente&&o.pkgs.length>0&&o.pkgs.some(p2=>(asig[p2.id]||"")!=="no"));
+    if(!objetivo.length){setErr("No hay ninguna operación para reembalar.");return;}
+    setEnviando(true);
+    try{
+      const porAgente={};
+      for(const o of objetivo){
+        const pkgs=o.pkgs;const bill=facturable(pkgs);
+        const snap=pkgs.map(p2=>({package_number:p2.package_number,quantity:Number(p2.quantity||1),gross_weight_kg:p2.gross_weight_kg?Number(p2.gross_weight_kg):null,length_cm:p2.length_cm?Number(p2.length_cm):null,width_cm:p2.width_cm?Number(p2.width_cm):null,height_cm:p2.height_cm?Number(p2.height_cm):null,national_tracking:p2.national_tracking||null}));
+        const reason=[`[Vuelo ${flight.flight_code}]${motivo.trim()?` ${motivo.trim()}`:""}`,...instrucciones(o)].join("\n");
+        await dq("repack_requests",{method:"POST",token,body:{operation_id:o.id,status:"pending",reason,original_billable_kg:Math.round(bill*100)/100,original_pkg_count:pkgs.length,original_packages_snapshot:snap}});
+        dq("op_communications",{method:"POST",token,body:{operation_id:o.id,type:"note",content:`🔄 Pedido de reembalaje al agente desde el vuelo ${flight.flight_code}.\nPeso facturable actual: ${kg(bill)} (${pkgs.length} bultos)\n${instrucciones(o).join("\n")}`}}).catch(()=>{});
+        const ag=o.created_by_agent_id||flight.agent_id;if(ag)(porAgente[ag]=porAgente[ag]||[]).push(o.operation_code);
+      }
+      Object.entries(porAgente).forEach(([uid,codes])=>{fetch("/api/push/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:uid,portal:"agente",title:`🔄 Reembalaje · ${flight.flight_code}`,body:`${codes.length} ${codes.length===1?"operación":"operaciones"}: ${codes.join(", ")}${varios?" · sin mezclar clientes":""}`,url:"/agente?tab=deposit"})}).catch(()=>{});});
+      toast(`Pedido de reembalaje enviado (${objetivo.length} ${objetivo.length===1?"operación":"operaciones"})`,"success");
+      onDone();
+    }catch(e){setErr(`Error: ${e.message}`);setEnviando(false);}
+  };
+  const sel={padding:"5px 8px",fontSize:11.5,borderRadius:7,border:"1px solid rgba(255,255,255,0.14)",background:"#142038",color:"#fff",fontFamily:"inherit"};
+  const pendientes=(ops||[]).filter(o=>o.pendiente).length;
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(6px)",zIndex:1200,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"34px 16px",overflowY:"auto"}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:720,background:"linear-gradient(180deg,#142038,#0F1A2D)",border:"1px solid rgba(184,149,106,0.35)",borderRadius:14,padding:"20px 22px",margin:"auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+        <h3 style={{fontSize:16,fontWeight:800,color:"#fff",margin:0}}>🔄 Pedir reembalaje · {flight.flight_code}</h3>
+        <button onClick={onClose} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.5)",fontSize:20,cursor:"pointer",padding:0}}>×</button>
+      </div>
+      {!ops?<p style={{color:"rgba(255,255,255,0.5)",textAlign:"center",padding:"2rem 0"}}>Cargando bultos…</p>
+      :ops.length===0?<p style={{color:"rgba(255,255,255,0.5)",padding:"1rem 0"}}>El vuelo no tiene operaciones.</p>
+      :<>
+        <p style={{fontSize:11.5,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",lineHeight:1.5}}>
+          {varios?<>Hay <b style={{color:"#fff"}}>{ops.length} operaciones de distintos clientes</b>: se manda un pedido por operación y el agente reembala <b style={{color:"#fbbf24"}}>sin mezclar cajas de clientes distintos</b>. Si querés, indicá caja por caja qué va junto, qué va sola y qué no se toca.</>
+          :<>Un solo cliente: el agente reembala todos los bultos de la operación. Si querés, indicá caja por caja.</>}
+        </p>
+        <div style={{marginBottom:12}}>
+          <label style={{display:"block",fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Motivo (opcional)</label>
+          <input value={motivo} onChange={e=>setMotivo(e.target.value)} placeholder="Ej: bajar el volumétrico, cajas muy grandes para lo que pesan" style={{width:"100%",boxSizing:"border-box",padding:"9px 12px",fontSize:12.5,borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none",fontFamily:"inherit"}}/>
+        </div>
+        <label style={{display:"inline-flex",alignItems:"center",gap:8,fontSize:12,color:"rgba(255,255,255,0.75)",cursor:"pointer",marginBottom:10}}><input type="checkbox" checked={detalle} onChange={e=>setDetalle(e.target.checked)}/> Indicar caja por caja (opcional)</label>
+        <div style={{display:"grid",gap:10}}>
+          {ops.map(o=>{const bill=facturable(o.pkgs);const bruto=o.pkgs.reduce((s2,p2)=>s2+Number(p2.gross_weight_kg||0)*Number(p2.quantity||1),0);const todasNo=o.pkgs.length>0&&o.pkgs.every(p2=>asig[p2.id]==="no");return <div key={o.id} style={{background:"rgba(255,255,255,0.03)",border:`1px solid ${o.pendiente?"rgba(251,191,36,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:10,padding:"10px 12px",opacity:o.pendiente||todasNo?0.6:1}}>
+            <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:12.5,fontWeight:800,color:"#E8C99B",fontFamily:"monospace"}}>{o.operation_code}</span>
+              <span style={{fontSize:11.5,color:"rgba(255,255,255,0.75)",fontWeight:600}}>{o.clients?.client_code}{o.clients?.first_name?` · ${o.clients.first_name}${o.clients.last_name?` ${o.clients.last_name}`:""}`:""}</span>
+              <span style={{marginLeft:"auto",fontSize:11,color:"rgba(255,255,255,0.55)",fontFeatureSettings:'"tnum"'}}>{o.pkgs.length} {o.pkgs.length===1?"bulto":"bultos"} · bruto {kg(bruto)} · fact. <b style={{color:"#fff"}}>{kg(bill)}</b>{bill>bruto*1.15&&<span style={{color:"#fbbf24",marginLeft:6}}>▲VOL +{Math.round((bill/bruto-1)*100)}%</span>}</span>
+            </div>
+            {o.pendiente&&<p style={{margin:"5px 0 0",fontSize:11,color:"#fbbf24"}}>Ya tiene un pedido de reembalaje pendiente: no se manda otro.</p>}
+            {!o.pendiente&&o.pkgs.length===0&&<p style={{margin:"5px 0 0",fontSize:11,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin bultos cargados.</p>}
+            {detalle&&!o.pendiente&&o.pkgs.length>0&&<div style={{marginTop:8,display:"grid",gap:4}}>
+              {o.pkgs.map(p2=>{const v=asig[p2.id]||"";const q=Number(p2.quantity||1);const l=Number(p2.length_cm||0),w=Number(p2.width_cm||0),h=Number(p2.height_cm||0);const vol=l&&w&&h?(l*w*h)/5000*q:0;return <div key={p2.id} style={{display:"grid",gridTemplateColumns:"56px 80px 1fr 170px",gap:8,alignItems:"center",fontSize:11.5,color:"rgba(255,255,255,0.8)",fontFeatureSettings:'"tnum"'}}>
+                <span style={{fontWeight:700,fontFamily:"monospace",color:colorG[v]||"#fff"}}>#{p2.package_number}{q>1?`×${q}`:""}</span>
+                <span style={{textAlign:"right",fontWeight:700,color:"#fff"}}>{p2.gross_weight_kg?kg(Number(p2.gross_weight_kg)*q):"—"}</span>
+                <span style={{color:"rgba(255,255,255,0.55)"}}>{l&&w&&h?`${l}×${w}×${h} cm`:"sin medidas"}{vol>Number(p2.gross_weight_kg||0)*q&&vol>0?<span style={{color:"#fbbf24",marginLeft:6}}>vol {vol.toLocaleString("es-AR",{maximumFractionDigits:1})}</span>:null}</span>
+                <select value={v} onChange={e=>setAsig(a=>({...a,[p2.id]:e.target.value}))} style={{...sel,color:colorG[v]||"#fff",fontWeight:v?700:400}}>
+                  <option value="">Reembalar (con las demás)</option>
+                  <option value="g1">Juntas · grupo 1</option>
+                  <option value="g2">Juntas · grupo 2</option>
+                  <option value="g3">Juntas · grupo 3</option>
+                  <option value="g4">Juntas · grupo 4</option>
+                  <option value="solo">Sola</option>
+                  <option value="no">No reembalar</option>
+                </select>
+              </div>;})}
+              <div style={{marginTop:4,padding:"6px 10px",background:"rgba(0,0,0,0.2)",borderRadius:7,fontSize:11,color:"rgba(255,255,255,0.6)",whiteSpace:"pre-wrap",lineHeight:1.5}}>{instrucciones(o).join("\n")}</div>
+            </div>}
+          </div>;})}
+        </div>
+        {err&&<p style={{fontSize:12,color:"#f87171",margin:"10px 0 0"}}>{err}</p>}
+        <div style={{display:"flex",gap:8,marginTop:14,alignItems:"center",flexWrap:"wrap"}}>
+          <Btn onClick={enviar} disabled={enviando||ops.every(o=>o.pendiente||o.pkgs.length===0)}>{enviando?"Enviando…":`🔄 Pedir reembalaje${varios?` (${ops.filter(o=>!o.pendiente&&o.pkgs.length>0&&!o.pkgs.every(p2=>asig[p2.id]==="no")).length} ops)`:""}`}</Btn>
+          <Btn variant="secondary" onClick={onClose}>Cancelar</Btn>
+          {pendientes>0&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>{pendientes} con pedido pendiente</span>}
+        </div>
+      </>}
+    </div>
+  </div>;
+}
+
 function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOps,invoiceItems,depositPkgs,onReload,onFlash,onBack,usd}){
   // Comisión financiera aplicable: solo si el vuelo se pagó con la cuenta corriente del agente.
   const finK=flight.payment_method==="cuenta_corriente"?Number(finRate||0):0;
   const a=signups.find(s=>s.auth_user_id===flight.agent_id);
   const [extraerBultos,setExtraerBultos]=useState(false); // modal: leer bultos de la foto con IA
+  const [reembalaje,setReembalaje]=useState(false); // modal: pedir reembalaje al agente desde el vuelo
   // Peso facturable por paquete (max bruto vs volumétrico) — usado para $/kg y reparto de cost_share.
   const VOL_DIV=Number(a?.volumetric_divisor)||5000;
   // Bultos de las ops del vuelo: el panel solo baja los del depósito, así que el editor carga
@@ -8959,6 +9079,12 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
             </>;})()}
           </div>;
         })()}
+        {/* Reembalaje desde el vuelo: antes del despacho, un pedido por op (sin mezclar clientes) */}
+        {!flight.dispatched_at&&flightOps.length>0&&<div style={{marginTop:14,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 14px",background:"rgba(251,191,36,0.05)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:10}}>
+          <span style={{fontSize:12,color:"rgba(255,255,255,0.65)"}}>🔄 ¿Conviene reembalar antes de despachar?</span>
+          <Btn small variant="secondary" onClick={()=>setReembalaje(true)}>Pedir reembalaje al agente</Btn>
+        </div>}
+        {reembalaje&&<ReembalajeVueloModal flight={flight} token={token} onClose={()=>setReembalaje(false)} onDone={()=>{setReembalaje(false);onReload?.();}}/>}
         {/* Captura del courier con el desglose por bulto que subió el agente al despachar */}
         {flight.dispatch_photo_url&&<div style={{marginTop:14,background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,padding:"12px 16px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:10}}>
