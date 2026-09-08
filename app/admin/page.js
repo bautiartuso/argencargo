@@ -15504,7 +15504,7 @@ const mtErr=(r,fallback)=>(r&&!Array.isArray(r)&&(r.message||r.hint||r.details))
 // La usan el tablero (load/refetch/PATCH) y el hook del Historial cuando !verPlata. El admin pide "*".
 const MT_SH_COLS="id,shipment_code,tracking_number,product_description,origin,warehouse,warehouse_id,client_id,client_name_snapshot,is_fragile,is_repack,in_warehouse,notes,status,created_at,updated_at,received_at,shipped_to_ar_at,operation_id,container_id,awaiting_supplier";
 // Paleta (misma del admin)
-const MT_N="#c3ccd9";const MT_AZ=MT_N,MT_VE=MT_N,MT_AM=MT_N,MT_RO="#f87171",MT_VI=MT_N,MT_GR="#94a3b8",MT_NA=MT_N; // Muelle monocromo (08/09/2026): un solo gris, rojo solo para lo vencido
+const MT_AZ="#60a5fa",MT_VE="#22c55e",MT_AM="#fbbf24",MT_RO="#f87171",MT_VI="#a78bfa",MT_GR="#94a3b8",MT_NA="#fb923c";
 const mtChipS=(col,extra)=>({fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:`${col}22`,color:col,whiteSpace:"nowrap",display:"inline-block",lineHeight:1.5,...extra});
 const mtMono={fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace",fontFeatureSettings:'"tnum"'};
 const mtDim=(a=0.5)=>`rgba(255,255,255,${a})`;
@@ -15728,16 +15728,16 @@ function MtContCard({P,c,list,open,onToggle,showWh}){
   const groups=useMemo(()=>{const m={};list.forEach(sh=>{const k=sh.client_id||`snap:${sh.client_name_snapshot||"—"}`;(m[k]=m[k]||[]).push(sh);});return Object.entries(m).map(([k,ships])=>({k,ships,cbm:ships.reduce((s,x)=>s+P.money.cbmOf(x.id),0),imp:P.plata&&imp!=null?ships.reduce((s,x)=>s+P.money.importeOfShip(x,list),0):null})).sort((a,b)=>P.cliLabel(a.ships[0]).localeCompare(P.cliLabel(b.ships[0])));},[list,imp,P.plata]);
   const listIds=list.map(s=>s.id);
   const [picker,setPicker]=useState(false);
-  return <div ref={el=>P.reg(`c:${c.id}`,el)} className={isFlash?"mtFlash":undefined} style={{marginBottom:10,borderRadius:12,border:`1px solid ${sem.estado==="vencido"?"rgba(248,113,113,0.5)":"rgba(255,255,255,0.1)"}`,background:"rgba(255,255,255,0.025)",overflow:"visible"}}>
+  return <div ref={el=>P.reg(`c:${c.id}`,el)} className={isFlash?"mtFlash":undefined} style={{marginBottom:10,borderRadius:12,border:`1px solid ${sem.estado==="vencido"?"rgba(248,113,113,0.5)":"rgba(184,149,106,0.22)"}`,background:"rgba(184,149,106,0.04)",overflow:"visible"}}>
     <div onClick={onToggle} style={{padding:"10px 14px",cursor:"pointer",display:"flex",flexDirection:"column",gap:8}}>
       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-        <span style={{fontSize:11,color:"rgba(255,255,255,0.5)",transform:open?"rotate(90deg)":"none",display:"inline-block",transition:"transform 150ms"}}>▶</span>
-        <span style={{fontSize:15,fontWeight:800,color:"#fff",...mtMono}}>🚢 {c.code}</span>
-        {c.shipping_line?<span style={mtChipS("#e2e8f0")}>⚓ {c.shipping_line}</span>:<span onClick={e=>{e.stopPropagation();P.editContainer(c);}} style={mtChipS(MT_GR,{cursor:"pointer"})} title="Cargar naviera">sin naviera</span>}
+        <span style={{fontSize:11,color:IC,transform:open?"rotate(90deg)":"none",display:"inline-block",transition:"transform 150ms"}}>▶</span>
+        <span style={{fontSize:15,fontWeight:800,color:IC,...mtMono}}>🚢 {c.code}</span>
+        {c.shipping_line?<span style={mtChipS("#93c5fd")}>⚓ {c.shipping_line}</span>:<span onClick={e=>{e.stopPropagation();P.editContainer(c);}} style={mtChipS(MT_GR,{cursor:"pointer"})} title="Cargar naviera">sin naviera</span>}
         {showWh&&<span style={{fontSize:11,color:mtDim(0.5)}}>{c.warehouse}</span>}
         <span style={mtChipS(col,{fontWeight:800})}>{semLabel}</span>
         <span style={{fontSize:11,color:mtDim(0.6)}}>{list.length} {mtPlural(list.length,"carga")} · {bulC} {mtPlural(bulC,"bulto")} · <strong style={{color:"#fff"}}>{mtM3(cbmC)} m³</strong>{sinMedir>0&&<span style={{color:MT_AM}}> (+{sinMedir} sin medir)</span>}</span>
-        {P.plata&&gan!=null&&<span title={`A cobrar est. ${mtUsd(imp)} · Costo est. ${mtUsd(cost)}`} style={mtChipS(gan>=0?"#e2e8f0":MT_RO)}>Gan. est. {mtUsd(gan)}</span>}
+        {P.plata&&gan!=null&&<span title={`A cobrar est. ${mtUsd(imp)} · Costo est. ${mtUsd(cost)}`} style={mtChipS(gan>=0?"#4ade80":MT_RO)}>Gan. est. {mtUsd(gan)}</span>}
         <div style={{display:"flex",gap:5,marginLeft:"auto",flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
           {c.status==="en_transito"&&<MtB col={MT_VE} disabled={P.busy} onClick={()=>P.act.setContainerStatus(c,"arribado")} title={P.plata?"Marcar arribado: crea las operaciones y manda los mails de retiro":"Marcar arribado (las operaciones las crea Bautista)"}>{P.busy?"⏳":"⚓ Arribó"}</MtB>}
           <MtB col={MT_AZ} onClick={()=>setPicker(p=>!p)}>+ Agregar cargas</MtB>
@@ -15752,8 +15752,8 @@ function MtContCard({P,c,list,open,onToggle,showWh}){
       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",fontSize:11.5,color:mtDim(0.6)}}>
         <span>Zarpó <b style={{color:c.departed_at?"#fff":mtDim(0.35),...mtMono}}>{mtFmtD(c.departed_at)}</b></span><span style={{color:mtDim(0.3)}}>→</span>
         {tb>0&&<><span style={{color:MT_NA}}>transbordo {c.transbordo_lugar||"Brasil"} +{tb} d</span><span style={{color:mtDim(0.3)}}>→</span></>}
-        <span onClick={e=>{e.stopPropagation();P.editContainer(c);}} style={{cursor:"pointer"}} title="Corregir ETA">Puerto BA <b style={{color:sem.estado==="vencido"?MT_RO:"#e2e8f0",...mtMono}}>{mtFmtD(eEta)}</b></span><span style={{color:mtDim(0.3)}}>→</span>
-        <span>Entrega est. <b style={{color:"#e2e8f0",...mtMono}}>{mtFmtD(ent)}</b></span>
+        <span onClick={e=>{e.stopPropagation();P.editContainer(c);}} style={{cursor:"pointer"}} title="Corregir ETA">Puerto BA <b style={{color:sem.estado==="vencido"?MT_RO:"#93c5fd",...mtMono}}>{mtFmtD(eEta)}</b></span><span style={{color:mtDim(0.3)}}>→</span>
+        <span>Entrega est. <b style={{color:"#4ade80",...mtMono}}>{mtFmtD(ent)}</b></span>
         <span style={{marginLeft:"auto",...mtMono}}>{cap>0?`${mtM3(cbmC,1)} / ${mtM3(cap,0)} m³ (${Math.round(pct)} %)`:<>{mtM3(cbmC,1)} m³ · <span onClick={e=>{e.stopPropagation();P.editContainer(c);}} style={{color:MT_AZ,cursor:"pointer",textDecoration:"underline dotted"}}>definir tamaño</span></>}</span>
       </div>
       {c.notes&&<p style={{fontSize:10.5,color:mtDim(0.45),fontStyle:"italic",margin:0}}>■ {c.notes}</p>}
@@ -15762,7 +15762,7 @@ function MtContCard({P,c,list,open,onToggle,showWh}){
     {open&&<div style={{borderTop:"1px solid rgba(255,255,255,0.06)"}}>
       {list.length===0&&<p style={{padding:"10px 14px",fontSize:11.5,color:mtDim(0.4),fontStyle:"italic",margin:0}}>Sin cargas todavía · <span onClick={()=>setPicker(true)} style={{color:MT_AZ,cursor:"pointer"}}>+ Agregar cargas</span></p>}
       {groups.map(g=><div key={g.k}>
-        <div style={{padding:"6px 12px 4px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.75)",background:"rgba(255,255,255,0.02)",display:"flex",gap:8,flexWrap:"wrap"}}><span>{P.cliLabel(g.ships[0])}</span><span style={{color:mtDim(0.5),fontWeight:600}}>{g.ships.length} {mtPlural(g.ships.length,"carga")} · {mtM3(g.cbm)} m³</span>{g.imp!=null&&<span style={{color:"#e2e8f0",fontWeight:700}}>· a cobrar {mtUsd(g.imp)}</span>}</div>
+        <div style={{padding:"6px 12px 4px",fontSize:11,fontWeight:700,color:GOLD_LIGHT,background:"rgba(255,255,255,0.02)",display:"flex",gap:8,flexWrap:"wrap"}}><span>{P.cliLabel(g.ships[0])}</span><span style={{color:mtDim(0.5),fontWeight:600}}>{g.ships.length} {mtPlural(g.ships.length,"carga")} · {mtM3(g.cbm)} m³</span>{g.imp!=null&&<span style={{color:"#4ade80",fontWeight:700}}>· a cobrar {mtUsd(g.imp)}</span>}</div>
         {g.ships.map(sh=>{const dd=sh.received_at?mtDiasEntre(sh.received_at,c.departed_at||mtHoy()):null;return <MtShipRow key={sh.id} P={P} sh={sh} listIds={listIds}
           extra={sh.received_at?<span>recibido {mtFmtD(sh.received_at)}{dd!=null&&dd>=0?` · ${dd} d en depósito`:""}</span>:<span style={{color:MT_AM}}>sin fecha de recepción</span>}
           menu={[{label:"Ficha",onClick:()=>P.openDrawer(sh.id,listIds)},{label:"Bajar del contenedor",sub:"vuelve a En depósito",onClick:()=>P.act.bajar([sh.id])},{label:"Editar",onClick:()=>P.editShip(sh)},"-",{label:"Eliminar",danger:true,onClick:()=>P.act.delShipment(sh.id)}]}/>;})}
@@ -15952,13 +15952,13 @@ function MtDrawer({P,sh,listIds,section,onClose}){
         {!sh.operation_id&&<MtB col={MT_AM} style={{marginTop:6}} onClick={()=>setRows(pk.length?pk.map(p=>({quantity:p.quantity||1,length_cm:p.length_cm||"",width_cm:p.width_cm||"",height_cm:p.height_cm||""})):[{quantity:1,length_cm:"",width_cm:"",height_cm:""}])}>{pk.length?"✎ Editar bultos":"+ Bulto"}</MtB>}
       </div>}
       {H(`Mercadería (${its.length})`)}
-      {its.length===0?<p style={{fontSize:11.5,color:mtDim(0.4),margin:0,fontStyle:"italic"}}>Sin detalle cargado</p>:<div>{its.map(it=><div key={it.id} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:12,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><span style={{color:mtDim(0.8)}}>{it.description}</span><span style={{color:mtDim(0.55),whiteSpace:"nowrap",...mtMono}}>{it.quantity} u.{P.plata?` × ${mtUsd(it.unit_price_usd)}`:""}</span></div>)}{P.plata&&fob>0&&<p style={{fontSize:12,fontWeight:700,color:"#e2e8f0",margin:"6px 0 0",textAlign:"right"}}>Total FOB {mtUsd(fob)}</p>}</div>}
+      {its.length===0?<p style={{fontSize:11.5,color:mtDim(0.4),margin:0,fontStyle:"italic"}}>Sin detalle cargado</p>:<div>{its.map(it=><div key={it.id} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:12,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><span style={{color:mtDim(0.8)}}>{it.description}</span><span style={{color:mtDim(0.55),whiteSpace:"nowrap",...mtMono}}>{it.quantity} u.{P.plata?` × ${mtUsd(it.unit_price_usd)}`:""}</span></div>)}{P.plata&&fob>0&&<p style={{fontSize:12,fontWeight:700,color:"#4ade80",margin:"6px 0 0",textAlign:"right"}}>Total FOB {mtUsd(fob)}</p>}</div>}
       {P.plata&&!sh.operation_id&&<>
         {H("Plata (estimado)")}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,padding:"10px 12px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:8}}>
           <label style={{fontSize:11,color:mtDim(0.55)}}>Costo est. USD<br/><input key={`${sh.id}-c-${sh.cost_estimado??""}`} type="number" step="any" defaultValue={sh.cost_estimado??""} placeholder="0" title={sh.cost_manual?"A mano. Borrá para volver al automático.":`Automático: CBM × USD ${Number(sh.cost_per_cbm||0)} del depósito`} onBlur={e=>{if(String(e.target.value).trim()!==String(sh.cost_estimado??""))P.act.saveShipCost(sh,e.target.value);}} style={{...inpS,width:"100%",boxSizing:"border-box",marginTop:3,borderColor:sh.cost_manual?"rgba(251,191,36,0.4)":"rgba(255,255,255,0.15)"}}/><span style={{fontSize:9.5,color:sh.cost_manual?MT_AM:mtDim(0.35)}}>{sh.cost_manual?"a mano":"auto"}</span></label>
-          <label style={{fontSize:11,color:mtDim(0.55)}}>A cobrar est. USD<br/><input key={`${sh.id}-r-${sh.revenue_manual??""}`} type="number" step="any" defaultValue={sh.revenue_manual!=null?sh.revenue_manual:Math.round(imp*100)/100} placeholder="0" onBlur={e=>{const v=String(e.target.value).trim();const auto=String(Math.round(imp*100)/100);const man=sh.revenue_manual!=null;if(man?v!==String(sh.revenue_manual):(v!==""&&v!==auto))P.act.saveShipRevenue(sh,v);else if(man&&v==="")P.act.saveShipRevenue(sh,"");}} style={{...inpS,width:"100%",boxSizing:"border-box",marginTop:3,color:"#e2e8f0",borderColor:sh.revenue_manual!=null?"rgba(251,191,36,0.4)":"rgba(74,222,128,0.3)"}}/><span style={{fontSize:9.5,color:sh.revenue_manual!=null?MT_AM:mtDim(0.35)}}>{sh.revenue_manual!=null?"a mano":"auto · tarifa × CBM"}</span></label>
-          <p style={{gridColumn:"1 / -1",margin:0,fontSize:13,fontWeight:800,color:imp-cost>=0?"#e2e8f0":MT_RO}}>📈 Ganancia est. {mtUsd(imp-cost)}</p>
+          <label style={{fontSize:11,color:mtDim(0.55)}}>A cobrar est. USD<br/><input key={`${sh.id}-r-${sh.revenue_manual??""}`} type="number" step="any" defaultValue={sh.revenue_manual!=null?sh.revenue_manual:Math.round(imp*100)/100} placeholder="0" onBlur={e=>{const v=String(e.target.value).trim();const auto=String(Math.round(imp*100)/100);const man=sh.revenue_manual!=null;if(man?v!==String(sh.revenue_manual):(v!==""&&v!==auto))P.act.saveShipRevenue(sh,v);else if(man&&v==="")P.act.saveShipRevenue(sh,"");}} style={{...inpS,width:"100%",boxSizing:"border-box",marginTop:3,color:"#4ade80",borderColor:sh.revenue_manual!=null?"rgba(251,191,36,0.4)":"rgba(74,222,128,0.3)"}}/><span style={{fontSize:9.5,color:sh.revenue_manual!=null?MT_AM:mtDim(0.35)}}>{sh.revenue_manual!=null?"a mano":"auto · tarifa × CBM"}</span></label>
+          <p style={{gridColumn:"1 / -1",margin:0,fontSize:13,fontWeight:800,color:imp-cost>=0?"#4ade80":MT_RO}}>📈 Ganancia est. {mtUsd(imp-cost)}</p>
         </div>
       </>}
       {H("Notas y marcas")}
@@ -16499,7 +16499,7 @@ function MaritimePanel2({token,allClients=[]}){
     const real=wsList.filter(s=>!esPlaceholder(s));const cbm=real.reduce((s,x)=>s+money.cbmOf(x.id),0);const sinMedir=real.filter(x=>money.cbmOf(x.id)===0).length;
     return <div key={name} style={{marginBottom:18}}>
       <div style={{position:"sticky",top:isMobile?96:52,zIndex:4,background:"#0A1628",padding:"8px 0 6px",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",borderBottom:"1px solid rgba(255,255,255,0.06)",marginBottom:8}}>
-        <span style={{fontSize:14,fontWeight:800,color:"#fff"}}>{name} {w.w.origin==="usa"?"🇺🇸":"🇨🇳"}</span>
+        <span style={{fontSize:14,fontWeight:800,color:MT_AZ}}>{name} {w.w.origin==="usa"?"🇺🇸":"🇨🇳"}</span>
         {w.w.archived&&<span style={mtChipS(MT_GR,{fontWeight:800})} title="Depósito archivado con actividad pendiente">ARCHIVADO</span>}
         <span style={{fontSize:11.5,color:mtDim(0.6)}}>{real.length} {mtPlural(real.length,"carga")} · {trConts.length} {mtPlural(trConts.length,"contenedor en tránsito","contenedores en tránsito")}</span>
         <div style={{marginLeft:"auto",display:"flex",gap:5,flexWrap:"wrap"}}>
@@ -16586,7 +16586,7 @@ function MaritimePanel2({token,allClients=[]}){
 // Todo helper propio va prefijado mtx/Mtx para no chocar con el resto del panel.
 // ═══════════════════════════════════════════════════════════════════════════════════════
 
-const MTX={blue:"#c3ccd9",green:"#c3ccd9",amber:"#c3ccd9",red:"#f87171",violet:"#c3ccd9",orange:"#c3ccd9",dim:"rgba(255,255,255,0.5)",dim2:"rgba(255,255,255,0.32)",line:"rgba(255,255,255,0.08)",mono:"ui-monospace,Menlo,Consolas,monospace"};
+const MTX={blue:"#60a5fa",green:"#22c55e",amber:"#fbbf24",red:"#f87171",violet:"#a78bfa",orange:"#fb923c",dim:"rgba(255,255,255,0.5)",dim2:"rgba(255,255,255,0.32)",line:"rgba(255,255,255,0.08)",mono:"ui-monospace,Menlo,Consolas,monospace"};
 const MTX_PAGE=50; // filas por página del historial (Range de PostgREST)
 const MTX_LOTE=60; // ids por request en los in.(…) — uuids de 36 chars: 60 ids ≈ 2,2 KB de URL, lejos del tope
 const MTX_MESES=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
@@ -16678,7 +16678,7 @@ const mtxS={
 function MtxChip({on,onClick,children,color,title}){return <button title={title} onClick={onClick} style={mtxS.chip(on,color)}>{children}</button>;}
 function MtxBtn({onClick,color=MTX.blue,children,title,disabled}){return <button title={title} disabled={disabled} onClick={e=>{e.stopPropagation();if(!disabled)onClick?.(e);}} style={mtxS.miniBtn(color,disabled)}>{children}</button>;}
 function MtxEmpty({children}){return <div style={{padding:"28px 16px",textAlign:"center",color:MTX.dim,fontSize:13,fontStyle:"italic"}}>{children}</div>;}
-function MtxGan({v,bold}){const ok=Number(v||0)>=0;return <span style={{color:ok?"#e2e8f0":MTX.red,fontWeight:bold?800:700}}>{Number(v||0)<0?"−":""}USD {mtxN(Math.abs(v||0))}</span>;}
+function MtxGan({v,bold}){const ok=Number(v||0)>=0;return <span style={{color:ok?"#4ade80":MTX.red,fontWeight:bold?800:700}}>{Number(v||0)<0?"−":""}USD {mtxN(Math.abs(v||0))}</span>;}
 // Barra horizontal CSS (sin librerías): pct 0–100, opcionalmente apilada con segmentos [{pct,color,title}].
 function MtxBar({pct,color=IC,segments,height=10}){
   return <div style={{height,borderRadius:height,background:"rgba(255,255,255,0.06)",overflow:"hidden",display:"flex",width:"100%"}}>
@@ -16904,7 +16904,7 @@ function MtHistorial({ctx}){
               <tr onClick={()=>toggle(c.id)} style={{cursor:"pointer",background:isOpen?"rgba(255,255,255,0.03)":"transparent"}}>
                 <td style={mtxS.td}><span style={{color:MTX.dim2,marginRight:6,display:"inline-block",transition:"transform 150ms",transform:isOpen?"rotate(90deg)":"none"}}>▶</span><span style={{fontFamily:MTX.mono,fontWeight:800,color:"#fff"}}>{c.code}</span></td>
                 <td style={mtxS.td}>{c.warehouse||"—"}</td>
-                <td style={mtxS.td}>{c.shipping_line?<span style={{fontSize:10.5,fontWeight:700,padding:"2px 7px",borderRadius:4,background:`${MTX.blue}1f`,color:"#e2e8f0"}}>⚓ {c.shipping_line}</span>:<span style={{color:MTX.dim2}}>sin naviera</span>}</td>
+                <td style={mtxS.td}>{c.shipping_line?<span style={{fontSize:10.5,fontWeight:700,padding:"2px 7px",borderRadius:4,background:`${MTX.blue}1f`,color:"#93c5fd"}}>⚓ {c.shipping_line}</span>:<span style={{color:MTX.dim2}}>sin naviera</span>}</td>
                 <td style={mtxS.td}><span style={{color:MTX.blue}}>{fd(c.departed_at)}</span> → <span style={{color:MTX.dim}} title={Number(c.transbordo_dias||0)>0?`ETA ${fd(c.eta)} + ${c.transbordo_dias} d de transbordo`:"ETA a puerto"}>{r.puertoEst?fd(r.puertoEst):"—"}</span> → <span style={{color:MTX.green,fontWeight:700}}>{fd(c.arrived_at)}</span>{r.viaje!=null&&<span style={{color:MTX.dim2}}> ({r.viaje} d)</span>}</td>
                 <td style={{...mtxS.td,color:r.desv==null?MTX.dim2:r.desv>0?MTX.red:MTX.green,fontWeight:700}}>{mtxSigned(r.desv)}</td>
                 <td style={{...mtxS.td,textAlign:"right"}}>{r.n}</td>
