@@ -3479,7 +3479,16 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
               <td style={{padding:"9px 8px",whiteSpace:"nowrap",width:120}}>{p.receipt_url&&<a href={p.receipt_url} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.7)",textDecoration:"none"}}>📎 Comprobante</a>}</td>
               <td style={{padding:"9px 8px",textAlign:"right",fontSize:13,fontWeight:700,color:"#22c55e",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",width:120}}>USD {Number(p.amount_usd).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
               <td style={{padding:"9px 4px",textAlign:"right",width:70,whiteSpace:"nowrap"}}>
-                <button onClick={()=>printReceiptPdf({op,payment:p,client:opClient})} title="Generar recibo PDF" style={{background:"transparent",border:"none",color:"rgba(96,165,250,0.8)",cursor:"pointer",fontSize:13,padding:"0 3px"}}>📄</button>
+                <button onClick={async()=>{
+                  // Recibo numerado: el número se asigna la primera vez que se imprime (secuencia en DB).
+                  let nro=p.receipt_number||null;
+                  if(!nro){try{const r=await dq("rpc/next_receipt_number",{method:"POST",token,body:{p_payment_id:p.id}});nro=typeof r==="number"?r:Number(r)||null;}catch(e){console.error("receipt number",e);}}
+                  const st=await dq("gi_settings",{token,filters:"?select=receipt_issuer_name,receipt_issuer_doc,office_locality&limit=1"}).catch(()=>[]);
+                  const pagado=clientPayments.reduce((s2,x)=>s2+Number(x.amount_usd||0),0);
+                  const saldo=Math.max(0,Number(op.budget_total||0)+Number(op.debt_applied_usd||0)-Number(op.total_anticipos||0)-Number(op.credit_applied_usd||0)-Number(op.discount_applied_usd||0)-pagado);
+                  printReceiptPdf({op,payment:{...p,receipt_number:nro},client:opClient,settings:Array.isArray(st)&&st[0]?st[0]:{},saldoRestante:Math.round(saldo*100)/100});
+                  if(nro&&!p.receipt_number)setClientPayments(prev=>prev.map(x=>x.id===p.id?{...x,receipt_number:nro}:x));
+                }} title="Imprimir recibo" style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px",fontSize:11,fontWeight:600,borderRadius:6,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",whiteSpace:"nowrap"}}>🧾 Recibo{p.receipt_number?` ${String(p.receipt_number).padStart(5,"0")}`:""}</button>
                 <button onClick={()=>borrarCobro(p)} title="Eliminar cobro" style={{background:"transparent",border:"none",color:"rgba(255,80,80,0.7)",cursor:"pointer",fontSize:15,padding:"0 3px"}}>×</button>
               </td>
             </tr>;})}
