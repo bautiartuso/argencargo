@@ -556,12 +556,3 @@ html, body {
   .ac-bento .ac-bento-cell { grid-column: span 1 !important; }
   .ac-bento > div:first-child { grid-column: span 1 !important; }
 }
-
-/* ── Portal cliente · tarjetas "papel" (mix blanco sobre navy, 07/09/2026) ── */
-.ac-cli-op-card.ac-paper { background: #fff; border-color: rgba(255,255,255,0.85); box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
-.ac-cli-op-card.ac-paper:hover { background: #fff; border-color: rgba(184,149,106,0.7); box-shadow: 0 12px 30px rgba(0,0,0,0.35); }
-.ac-paper .ac-cli-op-code, .ac-paper .ac-cli-op-desc, .ac-paper .ac-cli-op-eta b, .ac-paper .ac-cli-op-foot-item .v { color: #0A1628; }
-.ac-paper .ac-cli-op-eta, .ac-paper .ac-cli-op-foot-item .l { color: rgba(10,22,40,0.55); }
-.ac-paper .ac-cli-op-foot-item .v.gold { color: #A68456; }
-.ac-paper .ac-cli-op-foot button { color: #A68456; border-color: rgba(166,132,86,0.45); }
-.ac-paper .ac-cli-op-foot button:hover { background: rgba(184,149,106,0.12); }
