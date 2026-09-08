@@ -70,16 +70,18 @@ export async function GET(req) {
   const cand = Array.isArray(r0.body) ? r0.body : [];
   // Sin NCM en algún producto, el presupuesto está incompleto (derechos 0 %): NO se avisa —
   // el cliente pagaría de menos (AC-0128, 04/09). Se avisa al admin una vez por día.
-  const itemsRes = cand.length ? await sb(`/operation_items?operation_id=in.(${cand.map((o) => o.id).join(",")})&select=operation_id,ncm_code`) : { body: [] };
+  const itemsRes = cand.length ? await sb(`/operation_items?operation_id=in.(${cand.map((o) => o.id).join(",")})&select=operation_id,ncm_code,import_duty_rate,statistics_rate`) : { body: [] };
   const itemsAll = Array.isArray(itemsRes.body) ? itemsRes.body : [];
-  const sinNcm = new Set(itemsAll.filter((i) => !String(i.ncm_code || "").trim()).map((i) => i.operation_id));
+  // NCM cargado pero sin alícuotas (derechos/estadística en null) cuenta como incompleto: el
+  // presupuesto sale sin derechos (AC-0145, 08/09: el cliente vio 308,55 y después 364,72).
+  const sinNcm = new Set(itemsAll.filter((i) => !String(i.ncm_code || "").trim() || i.import_duty_rate == null || i.statistics_rate == null).map((i) => i.operation_id));
   const conItems = new Set(itemsAll.map((i) => i.operation_id));
   for (const op of cand) {
     const c = op.clients || {};
     const riDir = op.ri_entrega_directa !== false && (op.ri_entrega_directa === true || c.tax_condition === "responsable_inscripto");
     if (riDir) continue;
     if (!c.email && !waNumber(c.whatsapp)) continue;
-    const bloqueo = sinNcm.has(op.id) ? "productos sin NCM (presupuesto incompleto)" : String(op.channel || "").includes("blanco") && !conItems.has(op.id) ? "sin productos cargados (el presupuesto queda en USD 0)" : !(Number(op.budget_total) > 0) ? "presupuesto en cero" : "";
+    const bloqueo = sinNcm.has(op.id) ? "productos sin NCM o sin alícuotas (presupuesto incompleto)" : String(op.channel || "").includes("blanco") && !conItems.has(op.id) ? "sin productos cargados (el presupuesto queda en USD 0)" : !(Number(op.budget_total) > 0) ? "presupuesto en cero" : "";
     if (bloqueo) {
       out.bloqueados = [...(out.bloqueados || []), `${op.operation_code}: ${bloqueo}`];
       const last = op.sent_notifications?.aviso_bloqueado_at ? new Date(op.sent_notifications.aviso_bloqueado_at).getTime() : 0;
