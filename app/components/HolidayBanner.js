@@ -77,7 +77,7 @@ export default function HolidayBanner() {
         const isActive = dStart <= 0 && dEnd >= 0;
         const flag = COUNTRY_FLAGS[h.country] || "🌍";
         const urgent = dStart >= 0 && dStart <= 7;
-        const color = isActive ? "#ef4444" : urgent ? "#c2410c" : "#b45309";
+        const color = isActive ? "#ef4444" : urgent ? "#fb923c" : "#fbbf24";
         const bg = isActive ? "rgba(239,68,68,0.08)" : urgent ? "rgba(251,146,60,0.08)" : "rgba(251,191,36,0.06)";
         const border = isActive ? "rgba(239,68,68,0.4)" : urgent ? "rgba(251,146,60,0.4)" : "rgba(251,191,36,0.3)";
         const headline = isActive
@@ -91,11 +91,11 @@ export default function HolidayBanner() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline", flexWrap: "wrap", marginBottom: 4 }}>
                 <p style={{ fontSize: 13, fontWeight: 700, color, margin: 0, letterSpacing: "-0.01em" }}>{headline}</p>
-                <p style={{ fontSize: 11, color: "rgba(10,22,40,0.68)", margin: 0, whiteSpace: "nowrap" }}>{formatDateRange(h.start_date, h.end_date)}</p>
+                <p style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", margin: 0, whiteSpace: "nowrap" }}>{formatDateRange(h.start_date, h.end_date)}</p>
               </div>
-              {h.description && <p style={{ fontSize: 12, color: "rgba(10,22,40,0.8)", margin: 0, lineHeight: 1.5 }}>{h.description}</p>}
+              {h.description && <p style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", margin: 0, lineHeight: 1.5 }}>{h.description}</p>}
             </div>
-            <button onClick={() => dismiss(h.id)} title="Ocultar este aviso" style={{ background: "transparent", border: "none", color: "rgba(10,22,40,0.55)", cursor: "pointer", fontSize: 18, padding: "0 4px", flexShrink: 0 }}>×</button>
+            <button onClick={() => dismiss(h.id)} title="Ocultar este aviso" style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 18, padding: "0 4px", flexShrink: 0 }}>×</button>
           </div>
         );
       })}
