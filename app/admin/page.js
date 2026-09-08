@@ -9719,7 +9719,7 @@ function AgentsPanel({token}){
                 <col style={{width:100}}/>
               </colgroup>
               <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                {["✓","Op","Cliente","Mercadería","Bultos","Peso","Días","Consolidación","WA"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase"}}>{h}</th>)}
+                {["✓","Op","Cliente","Mercadería","Bultos","P. bruto","Fact. ÷5000","Fact. ÷6000","Días","Consolidación","WA"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}
               </tr></thead>
               <tbody>{grp.ops.map((o,oIdx)=>{const inFlight=opsInFlightIds.has(o.id);const w=opWeight(o.id);const opPkgs=opPackages(o.id);const pkgsCount=opPkgs.length;const lastPkgAt=opPkgs.reduce((mx,p)=>{const t=p.created_at?new Date(p.created_at).getTime():0;return t>mx?t:mx;},0);const hasDocs=opsWithDocs.has(o.id);const canSelect=o.consolidation_confirmed&&hasDocs&&!inFlight;const isExpanded=expandedOp===o.id;
               const sc=orderScore(o);const scMeta=SCORE_META[sc];
@@ -9728,6 +9728,11 @@ function AgentsPanel({token}){
               const dCol=days==null?null:days>14?{c:"#ef4444",bg:"rgba(239,68,68,0.12)",w:800}:days>7?{c:"#fbbf24",bg:"rgba(251,191,36,0.12)",w:700}:{c:"rgba(255,255,255,0.45)",bg:"rgba(255,255,255,0.05)",w:600};
               const grossW=opPkgs.reduce((s2,p2)=>s2+Number(p2.gross_weight_kg||0)*Number(p2.quantity||1),0);
               const payingVol=grossW>0&&w>grossW*1.15; // paga volumétrico: candidato a reempaque
+              // Peso facturable con divisor 5000 y 6000 (pedido 07/09/2026): por bulto, el mayor entre bruto y volumétrico.
+              const factDiv=(div)=>opPkgs.reduce((s2,p2)=>{const q=Number(p2.quantity||1);const g=Number(p2.gross_weight_kg||0);const l=Number(p2.length_cm||0),wd=Number(p2.width_cm||0),h=Number(p2.height_cm||0);const v=l&&wd&&h?(l*wd*h)/div:0;return s2+Math.max(g,v)*q;},0);
+              const f5=factDiv(5000),f6=factDiv(6000);
+              const kgTxt=(v)=>v>0?`${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—";
+              const volBadge=(f)=>grossW>0&&f>grossW*1.15?<span title={`Paga volumétrico: bruto ${grossW.toLocaleString("es-AR",{maximumFractionDigits:1})} kg, factura ${f.toLocaleString("es-AR",{maximumFractionDigits:1})} kg — un reempaque puede ahorrar`} style={{display:"block",width:"fit-content",fontSize:8.5,fontWeight:800,padding:"1px 5px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.35)",marginTop:3,cursor:"help",letterSpacing:"0.03em"}}>▲VOL +{Math.round((f/grossW-1)*100)}%</span>:null;
               const lockedByAgent=canSelect&&selAgentId&&o.created_by_agent_id!==selAgentId;
               // Alerta DIE 0% para canal aéreo blanco (canal A): puede ser legítimo pero el admin tiene que revisarlo manual.
               const isAereoA=o.channel==="aereo_blanco";
@@ -9737,7 +9742,7 @@ function AgentsPanel({token}){
               const ivItems=itemsForOp.filter(i=>i.intervention?.required);
               const ivTypes=[...new Set(ivItems.flatMap(i=>i.intervention?.types||[]))];
               return <Fragment key={o.id}>
-              {showSep&&<tr><td colSpan={9} style={{padding:"5px 12px",fontSize:9,fontWeight:800,letterSpacing:"0.09em",color:scMeta.c,background:`${scMeta.c}0D`,borderBottom:"1px solid rgba(255,255,255,0.04)"}}>{scMeta.l}</td></tr>}
+              {showSep&&<tr><td colSpan={11} style={{padding:"5px 12px",fontSize:9,fontWeight:800,letterSpacing:"0.09em",color:scMeta.c,background:`${scMeta.c}0D`,borderBottom:"1px solid rgba(255,255,255,0.04)"}}>{scMeta.l}</td></tr>}
               <tr style={{borderBottom:isExpanded?"none":"1px solid rgba(255,255,255,0.04)",opacity:canSelect?1:inFlight?0.5:0.7,cursor:"pointer",background:isExpanded?"rgba(184,149,106,0.06)":"transparent",transition:"background 150ms"}} onClick={(e)=>{if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON"||e.target.closest("button"))return;setExpandedOp(isExpanded?null:o.id);}} onMouseEnter={e=>{if(!isExpanded)e.currentTarget.style.background="rgba(255,255,255,0.03)";}} onMouseLeave={e=>{if(!isExpanded)e.currentTarget.style.background="transparent";}}>
                 <td style={{padding:"10px 12px",boxShadow:`inset 3px 0 0 ${scMeta.c}${sc===0?"":"66"}`}}>{canSelect&&!lockedByAgent?(()=>{const isChecked=selectedOps.includes(o.id);return <label onClick={e=>e.stopPropagation()} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative",width:20,height:20}}>
                   <input type="checkbox" checked={isChecked} onChange={()=>toggleSelOp(o.id)} style={{position:"absolute",opacity:0,width:0,height:0,pointerEvents:"none"}}/>
@@ -9758,7 +9763,9 @@ function AgentsPanel({token}){
                   return <span title={fullList} style={{display:"block"}}><span style={{display:"inline-block",maxWidth:more>0?160:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",verticalAlign:"middle"}}>{first}</span>{more>0&&<span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,marginLeft:6,verticalAlign:"middle"}}>+{more}</span>}</span>;
                 })()}</td>
                 <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap"}}>{pkgsCount}</td>
-                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{w?`${w.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}{payingVol&&<span title={`Paga volumétrico: bruto ${grossW.toLocaleString("es-AR",{maximumFractionDigits:1})} kg pero factura ${w.toLocaleString("es-AR",{maximumFractionDigits:1})} kg — un reempaque puede ahorrar`} style={{display:"block",width:"fit-content",fontSize:8.5,fontWeight:800,padding:"1px 5px",borderRadius:4,background:"rgba(251,191,36,0.15)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.35)",marginTop:3,cursor:"help",letterSpacing:"0.03em"}}>▲VOL +{Math.round((w/grossW-1)*100)}%</span>}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(grossW)}</td>
+                <td style={{padding:"10px 12px",color:"#fff",fontWeight:600,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(f5)}{volBadge(f5)}</td>
+                <td style={{padding:"10px 12px",color:"rgba(255,255,255,0.6)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{kgTxt(f6)}{volBadge(f6)}</td>
                 <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{days==null?<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>:<span title={`Último bulto recibido hace ${days} día${days!==1?"s":""}`} style={{fontSize:10,fontWeight:dCol.w,padding:"2px 7px",borderRadius:5,background:dCol.bg,color:dCol.c,fontFamily:"monospace",fontVariantNumeric:"tabular-nums"}}>{days}d</span>}</td>
                 <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>
                   {inFlight?<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(184,149,106,0.15)",color:IC,whiteSpace:"nowrap"}}>EN VUELO</span>:
@@ -9791,7 +9798,7 @@ function AgentsPanel({token}){
                 const totalFob=itemsOfOp.reduce((s,i)=>s+Number(i.unit_price_usd||0)*Number(i.quantity||1),0);
                 const rpk=repackReqOf(o.id);
                 const canRepack=o.created_by_agent_id&&pkgsOfOp.length>0&&!["operacion_cerrada","cancelada","en_transito","arribo_argentina","en_aduana","entregada"].includes(o.status)&&(!rpk||rpk.status!=="pending");
-                return <tr><td colSpan={9} style={{padding:0,borderBottom:"1px solid rgba(184,149,106,0.2)"}}>
+                return <tr><td colSpan={11} style={{padding:0,borderBottom:"1px solid rgba(184,149,106,0.2)"}}>
                   <div style={{padding:"16px 18px",background:"rgba(184,149,106,0.04)"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
                       <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.05em"}}>Detalle de {o.operation_code}</span>
