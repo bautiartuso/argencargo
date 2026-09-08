@@ -6564,7 +6564,7 @@ function Calculator({token,clients}){
   const totalFob=products.reduce((s,p)=>s+(Number(p.unit_price||0)*Number(p.quantity||1)),0);
   const hasPhones=products.some(p=>p.type==="celulares");
 
-  const calcTotals=()=>{let tw=0,tv=0,tc=0;pkgs.forEach(pk=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0),gw=Number(pk.weight||0);tw+=gw*q;if(l&&w&&h){tv+=((l*w*h)/5000)*q;tc+=((l*w*h)/1000000)*q;}});return{totWeight:tw,totVol:tv,totCBM:tc,billable:Math.max(tw,tv)};};
+  const calcTotals=()=>{let tw=0,tv=0,tc=0;pkgs.forEach(pk=>{const q=(toN(pk.qty)||1),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height),gw=toN(pk.weight);tw+=gw*q;if(l&&w&&h){tv+=((l*w*h)/5000)*q;tc+=((l*w*h)/1000000)*q;}});return{totWeight:tw,totVol:tv,totCBM:tc,billable:Math.max(tw,tv)};};
 
   const getEffRate=(t)=>{const ov=overrides.find(o=>o.tariff_id===t.id);return ov?Number(ov.custom_rate):Number(t.rate);};
   // Cotización nueva → tarifa vigente HOY (ignora versiones históricas con effective_to pasado).
@@ -6591,7 +6591,7 @@ function Calculator({token,clients}){
       const getDesembolso=(cif)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(cif<max)return amt;return 120;};
 
       // Peso facturable per-bulto (same as client)
-      let fact=0;pkgs.forEach(pk=>{const q=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0),gw=Number(pk.weight||0);fact+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});
+      let fact=0;pkgs.forEach(pk=>{const q=(toN(pk.qty)||1),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height),gw=toN(pk.weight);fact+=Math.max(gw*q,l&&w&&h?((l*w*h)/5000)*q:0);});
 
       // Per-item tax helper (returns breakdown)
       const calcItemTax=(p,certFl,isMar,totalCif)=>{const itemFob=Number(p.unit_price||0)*Number(p.quantity||1);const pct=totalFob>0?itemFob/totalFob:1;
@@ -6619,7 +6619,7 @@ function Calculator({token,clients}){
         const impFict=sumItems(itemsFict,"totalImp");const impReal=sumItems(itemsReal,"totalImp");
         const battExtra=hasBattery?factBill*2:0;const gananciaImp=impFict-impReal;
         // Recargo por sobrepeso: USD 35 por pieza (>24 kg reales o girth L+2A+2H > 260 cm)
-        const owPieces=pkgs.reduce((n,pk)=>{const q=Number(pk.qty||1),gw=Number(pk.weight||0),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0);const g=l&&w&&h?l+2*(w+h):0;return n+((gw>24||g>260)?q:0);},0);const overweightSurcharge=owPieces*35;
+        const owPieces=pkgs.reduce((n,pk)=>{const q=(toN(pk.qty)||1),gw=toN(pk.weight),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const g=l&&w&&h?l+2*(w+h):0;return n+((gw>24||g>260)?q:0);},0);const overweightSurcharge=owPieces*35;
         channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días",isBlanco:true,
           flete,fCost,seguro:segFict,battExtra,overweightSurcharge,totalImp:impFict,totalSvc:flete+segFict+battExtra+overweightSurcharge,total:impFict+flete+segFict+battExtra+overweightSurcharge,
           derechos:sumItems(itemsFict,"derechos"),tasa_e:sumItems(itemsFict,"tasa_e"),iva:sumItems(itemsFict,"iva"),gastoDoc:sumItems(itemsFict,"desembolso"),ivaDesemb:sumItems(itemsFict,"ivaDesemb"),
@@ -13859,7 +13859,7 @@ function AdminCalculator({token}){
             products:products.map(pr=>({...pr,unit_price:toN(pr.unit_price)||pr.unit_price,quantity:Number(String(pr.quantity??"1").replace(",","."))||1})),
             packages:pkgs.map(pk=>({qty:Number(String(pk.qty??"1").replace(",","."))||1,length:toN(pk.length)||null,width:toN(pk.width)||null,height:toN(pk.height)||null,weight:toN(pk.weight)||null})),
             total_fob:results.totalFob,total_cbm:results.totCBM,
-            total_weight:pkgs.reduce((sm,pk)=>sm+toN(pk.weight)*Number(pk.qty||1),0)||null,
+            total_weight:pkgs.reduce((sm,pk)=>sm+toN(pk.weight)*(toN(pk.qty)||1),0)||null,
             total_cost:barata.totalAbonar,
             channel_alternatives:alts,
             visible_channels:canalesLink,
