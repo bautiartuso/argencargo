@@ -1949,6 +1949,12 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
           <span style={{fontSize:12.5,fontWeight:op.has_battery?700:600,color:op.has_battery?"#fb923c":"rgba(255,255,255,0.6)"}}>⚡ La carga contiene baterías</span>
           <span style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginLeft:"auto"}}>{op.has_battery?"Recargo USD 2/kg facturable aplicado":"Sin recargo"}</span>
         </div>}
+        {/* Aéreo A sin productos: el presupuesto que se ve acá es un cálculo en vivo (flete + seguro)
+            que NO se guarda en la base — queda USD 0 y así lo ven el link de retiro y el bot
+            (AC-0039, 08/09). Avisar claro. */}
+        {isBlanco&&!isManual&&items.length===0&&!(Number(op.budget_total||0)>0)&&<div style={{marginBottom:14,padding:"10px 14px",background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.35)",borderRadius:10,fontSize:12.5,color:"#fca5a5",lineHeight:1.45}}>
+          <b>⚠️ Sin productos cargados: este presupuesto no se guarda.</b> En la base queda USD 0, y así lo ven el link de retiro y el bot. Cargá los productos en la solapa Productos (con NCM) o, si no lleva impuestos, fijalo con "Editar presupuesto".
+        </div>}
         {/* Canal B con cargas maritimas linkeadas: el valor de mercaderia sale SOLO de lo que se
             anoto en el panel Maritimos, con su detalle (desc - cantidad - unitario). */}
         {!isBlanco&&mbItems.length>0&&(()=>{
@@ -5732,10 +5738,16 @@ function EntregasPanel({token,onOpenOp}){
   </div>;
 
   // Aviso real: /api/notify trigger retiro manda el mail "lista para retirar" y setea delivery_ready_at.
-  const enviarAviso=async(o)=>{
+  const enviarAviso=async(o,allowZero=false)=>{
     try{
-      const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:o.id,trigger:"retiro"})});
+      const r=await fetch("/api/notify",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op_id:o.id,trigger:"retiro",allow_zero:allowZero})});
       if(!r.ok)throw new Error("notify "+r.status);
+      const j=await r.json().catch(()=>({}));
+      if(j?.skipped==="presupuesto_cero"){
+        if(await confirmDialog(`El presupuesto de ${o.operation_code} está en USD 0: el cliente vería "total 0" en el link y el bot le diría que no debe nada. Si es aéreo A, seguramente faltan los productos. ¿Avisar igual con USD 0?`))return enviarAviso(o,true);
+        return;
+      }
+      if(j?.skipped&&j.skipped!=="already_sent"){toast("No se envió el aviso: "+j.skipped,"error");return;}
       toast("📨 Aviso enviado por mail y WhatsApp","success");
       setRows(p=>p.map(x=>x.id===o.id?{...x,delivery_ready_at:new Date().toISOString()}:x));
     }catch(e){toast("No se pudo enviar el aviso: "+e.message,"error");}

@@ -211,7 +211,7 @@ export async function POST(req) {
     if (!isAdmin) return Response.json({ error: "unauthorized" }, { status: 401 });
     if (!RESEND_KEY) return Response.json({ error: "RESEND_API_KEY no configurada" }, { status: 500 });
 
-    const { op_id, trigger, force } = await req.json();
+    const { op_id, trigger, force, allow_zero } = await req.json();
     if (!op_id || !trigger) return Response.json({ error: "op_id y trigger requeridos" }, { status: 400 });
     if (!["deposito", "arribo", "retiro", "cerrada"].includes(trigger))
       return Response.json({ error: "trigger inválido" }, { status: 400 });
@@ -227,6 +227,13 @@ export async function POST(req) {
     // retirar" no aplica (el link de pago lo dispara el sync de tracking al entregarse).
     if (trigger === "retiro" && op.ri_entrega_directa !== false && (op.ri_entrega_directa === true || client?.tax_condition === "responsable_inscripto")) {
       return Response.json({ skipped: "ri_entrega_directa" });
+    }
+
+    // Presupuesto en USD 0: el cliente vería "total 0" en el link y el bot le diría que no debe
+    // nada (AC-0039, 08/09: aéreo A sin productos cargados). Se frena salvo que el admin lo
+    // confirme (allow_zero) — ej. BAUART, que a veces va gratis.
+    if (trigger === "retiro" && !(Number(op.budget_total) > 0) && !allow_zero) {
+      return Response.json({ skipped: "presupuesto_cero" });
     }
 
     // Check ya enviado
