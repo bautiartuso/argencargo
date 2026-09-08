@@ -14637,7 +14637,7 @@ function AdminDashboard({session,onLogout}){
       {page==="studio"&&<StudioPanel token={token}/>}
       {page==="blog"&&<BlogPanel token={token}/>}
       {page==="agents"&&<AgentsPanel token={token}/>}
-      {page==="maritime"&&(mtLegacyOn()?<MaritimePanel token={token} allClients={allClients}/>:<MaritimePanel2 token={token} allClients={allClients}/>)}
+      {page==="maritime"&&(mtMuelleOn()?<MaritimePanel2 token={token} allClients={allClients}/>:<MaritimePanel token={token} allClients={allClients}/>)}
       {page==="agp"&&<AgpPanel token={token} allClients={allClients}/>}
       {page==="finance"&&<FinancePanel token={token}/>}
       {page==="tariffs"&&<TariffsManager token={token}/>}
@@ -14696,6 +14696,29 @@ function MaritimePanel({token,allClients=[]}){
     if(toStatus==="proveedor"){body.received_at=null;body.shipped_to_ar_at=null;}
     if(toStatus==="en_deposito")body.shipped_to_ar_at=null; // si retrocede desde en_camino_ar
     await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body});
+    load();
+  };
+  // Paso "Esperando al proveedor" (08/09/2026): el pedido existe pero el proveedor todavía no
+  // despachó (sin tracking real). Llegó el tracking → pasa a "proveedor" (en camino al depósito).
+  const fmtDD=(d)=>d?new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):"";
+  const llegoTrackingLegacy=async(sh)=>{
+    const t=await promptDialog(`Tracking real del proveedor para "${sh.product_description||"la carga"}"`,"");
+    if(!t||!t.trim())return;
+    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{tracking_number:t.trim(),awaiting_supplier:false,status:"proveedor"}});
+    toast("Tracking cargado: la carga pasa a en camino al depósito","success");load();
+  };
+  const volverAEsperando=async(sh)=>{
+    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{awaiting_supplier:true,status:"proveedor",received_at:null,shipped_to_ar_at:null}});
+    load();
+  };
+  const reclamarLegacy=async(sh)=>{
+    const c=allClients.find(x=>x.id===sh.client_id);const nom=c?.first_name||sh.client_name_snapshot||"";
+    const txt=`Hola ${nom}, ¿tu proveedor ya despachó ${sh.product_description||"tu pedido"}${sh.created_at?` (avisado el ${fmtDD(sh.created_at)})`:""}? Pasanos el tracking cuando lo tengas.`;
+    const num=String(c?.whatsapp||"").replace(/\D/g,"");
+    if(num.length>=8)window.open(`https://wa.me/${num}?text=${encodeURIComponent(txt)}`,"_blank","noopener");
+    else{try{await navigator.clipboard.writeText(txt);}catch{}toast("El cliente no tiene WhatsApp: texto copiado al portapapeles","warn");}
+    const linea=`Reclamado ${fmtDD(new Date())}`;
+    await dq("maritime_shipments",{method:"PATCH",token,filters:`?id=eq.${sh.id}`,body:{notes:sh.notes?`${sh.notes}\n${linea}`:linea}});
     load();
   };
 
@@ -15205,10 +15228,11 @@ function MaritimePanel({token,allClients=[]}){
           const whConts=containers.filter(c=>c.warehouse===wh&&c.status!=="arribado").sort((a,b)=>{const ea=effEta(a),eb=effEta(b);if(!ea&&!eb)return 0;if(!ea)return 1;if(!eb)return -1;return ea.localeCompare(eb);});
           const byCont={};wsList.forEach(s=>{
             if(s.container_id&&arrivedIds.has(s.container_id))return; // va al historial, no al activo
-            const k=s.container_id&&whConts.some(c=>c.id===s.container_id)?s.container_id:"__none";
+            const k=esPlaceholder(s)?"__esp":(s.container_id&&whConts.some(c=>c.id===s.container_id)?s.container_id:"__none");
             (byCont[k]=byCont[k]||[]).push(s);
           });
           const noneList=byCont.__none||[];
+          const espList=(byCont.__esp||[]).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
           const contChip=(st)=>st==="en_transito"?{l:"🚢 EN TRÁNSITO",bg:"rgba(96,165,250,0.15)",fg:"#60a5fa"}:{l:"⚓ ARRIBADO",bg:"rgba(34,197,94,0.15)",fg:"#22c55e"};
           const fmtD=(d)=>d?new Date(d+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):null;
           const renderTable=(list)=><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
@@ -15227,7 +15251,10 @@ function MaritimePanel({token,allClients=[]}){
             return <Fragment key={sh.id}>
               {(()=>{
                 const st=sh.status||(sh.received_at?"en_deposito":"proveedor");
-                const stChip=st==="proveedor"
+                const esp=esPlaceholder(sh);
+                const stChip=esp
+                  ?{label:"⏳ ESPERANDO AL PROVEEDOR",bg:"rgba(167,139,250,0.15)",fg:"#a78bfa"}
+                  :st==="proveedor"
                   ?{label:"🚚 PROVEEDOR",bg:"rgba(148,163,184,0.18)",fg:"#94a3b8"}
                   :st==="en_deposito"
                     ?{label:"📦 EN DEPÓSITO",bg:"rgba(34,197,94,0.15)",fg:"#22c55e"}
@@ -15253,7 +15280,12 @@ function MaritimePanel({token,allClients=[]}){
                   <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-start"}}>
                     <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:stChip.bg,color:stChip.fg,whiteSpace:"nowrap"}}>{stChip.label}</span>
                     {!hasOp&&<div style={{display:"flex",gap:3,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
-                      {st==="proveedor"&&<button onClick={()=>advanceShipment(sh,"en_deposito")} title="Marcar recibido en depósito" style={{padding:"2px 6px",fontSize:9,fontWeight:700,borderRadius:4,border:"1px solid rgba(34,197,94,0.35)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>→ Depósito</button>}
+                      {esp&&<>
+                        <button onClick={()=>llegoTrackingLegacy(sh)} title="Cargar el tracking real: pasa a en camino al depósito" style={{padding:"2px 6px",fontSize:9,fontWeight:700,borderRadius:4,border:"1px solid rgba(34,197,94,0.35)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>✓ Llegó tracking</button>
+                        <button onClick={()=>reclamarLegacy(sh)} title="Reclamar al cliente por WhatsApp (queda anotado en la carga)" style={{padding:"2px 6px",fontSize:9,fontWeight:700,borderRadius:4,border:"1px solid rgba(167,139,250,0.35)",background:"rgba(167,139,250,0.08)",color:"#a78bfa",cursor:"pointer",whiteSpace:"nowrap"}}>📲 Reclamar</button>
+                      </>}
+                      {st==="proveedor"&&!esp&&<button onClick={()=>volverAEsperando(sh)} title="El proveedor no despachó: vuelve a Esperando al proveedor" style={{padding:"2px 6px",fontSize:9,fontWeight:600,borderRadius:4,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.4)",cursor:"pointer",whiteSpace:"nowrap"}}>↶ Esperando</button>}
+                      {st==="proveedor"&&!esp&&<button onClick={()=>advanceShipment(sh,"en_deposito")} title="Marcar recibido en depósito" style={{padding:"2px 6px",fontSize:9,fontWeight:700,borderRadius:4,border:"1px solid rgba(34,197,94,0.35)",background:"rgba(34,197,94,0.08)",color:"#22c55e",cursor:"pointer",whiteSpace:"nowrap"}}>→ Depósito</button>}
                       {st==="en_deposito"&&<>
                         <button onClick={()=>advanceShipment(sh,"en_camino_ar")} title="Marcar despachado a Argentina" style={{padding:"2px 6px",fontSize:9,fontWeight:700,borderRadius:4,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",cursor:"pointer",whiteSpace:"nowrap"}}>→ En tránsito</button>
                         <button onClick={()=>advanceShipment(sh,"proveedor")} title="Volver a 'proveedor'" style={{padding:"2px 6px",fontSize:9,fontWeight:600,borderRadius:4,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.4)",cursor:"pointer",whiteSpace:"nowrap"}}>↶ Proveedor</button>
@@ -15340,6 +15372,19 @@ function MaritimePanel({token,allClients=[]}){
               {contHeader(c)}
               {expandedCont.has(c.id)&&((byCont[c.id]||[]).length>0?renderTable(byCont[c.id]):<p style={{padding:"10px 18px",fontSize:11.5,color:"rgba(255,255,255,0.35)",fontStyle:"italic",margin:0}}>Sin cargas asignadas — tildá cargas con el checkbox y usá el selector "🚢 Contenedor…" de la barra de selección.</p>)}
             </div>)}
+            {espList.length>0&&(()=>{
+              const espKey=`__esp_${wh}`;
+              const espCollapsed=!expandedCont.has(espKey);
+              const viejos=espList.filter(s=>(Date.now()-new Date(s.created_at).getTime())/86400000>14).length;
+              return <>
+                <div onClick={()=>toggleCont(espKey)} title={espCollapsed?"Abrir":"Cerrar"} style={{padding:"9px 18px",background:"rgba(167,139,250,0.05)",borderTop:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.05)",display:"flex",alignItems:"center",gap:8,cursor:"pointer",flexWrap:"wrap"}}>
+                  <span style={{fontSize:11,color:"rgba(255,255,255,0.5)",transition:"transform 200ms",transform:espCollapsed?"rotate(0deg)":"rotate(90deg)",display:"inline-block",userSelect:"none"}}>▶</span>
+                  <span style={{fontSize:12,fontWeight:800,color:"#a78bfa"}}>⏳ Esperando al proveedor</span>
+                  <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>{espList.length} pedido{espList.length!==1?"s":""} sin tracking todavía{viejos?` · ${viejos} con más de 14 días`:""}</span>
+                </div>
+                {!espCollapsed&&renderTable(espList)}
+              </>;
+            })()}
             {whConts.length>0&&noneList.length>0&&(()=>{
               const noneKey=`__none_${wh}`;
               const noneCollapsed=!expandedCont.has(noneKey);
@@ -15352,7 +15397,7 @@ function MaritimePanel({token,allClients=[]}){
                 {!noneCollapsed&&renderTable(noneList)}
               </>;
             })()}
-            {whConts.length===0&&wsList.length>0&&renderTable(wsList)}
+            {whConts.length===0&&wsList.some(s=>!esPlaceholder(s))&&renderTable(wsList.filter(s=>!esPlaceholder(s)))}
             <div style={{padding:"10px 18px",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
               <button onClick={()=>setEditingContainer({warehouse:wh})} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:7,border:"1.5px dashed rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.05)",color:"#60a5fa",cursor:"pointer"}}>+ 🚢 Nuevo contenedor en {wh}</button>
             </div>
@@ -15461,6 +15506,8 @@ function MaritimePanel({token,allClients=[]}){
 
 // Fallback al panel viejo de Marítimos: localStorage.mt_legacy="1"
 const mtLegacyOn=()=>{try{return typeof window!=="undefined"&&localStorage.getItem("mt_legacy")==="1";}catch{return false;}};
+// 08/09/2026: el panel clásico vuelve a ser el principal (el Muelle le resultó complejo). Muelle opcional con mt_muelle=1.
+const mtMuelleOn=()=>{try{return typeof window!=="undefined"&&localStorage.getItem("mt_muelle")==="1";}catch{return false;}};
 
 // ════════════════════════════════════════════════════════════════════════════
 // MARÍTIMOS · "MUELLE" — panel nuevo (tablero por etapa). El panel viejo (MaritimePanel)
