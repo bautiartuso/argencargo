@@ -484,7 +484,16 @@ export async function POST(req) {
           // Si la plantilla todavía no está aprobada, se intenta el reenvío libre (solo llega
           // si ese número le escribió al bot en las últimas 24 h).
           const destinos = String(process.env.WA_COMPROBANTES_TO || "").split(/[,;\s]+/).filter(Boolean);
-          if (destinos.length) {
+          // Comprobante repetido (misma referencia mandada por el mismo número en 48 h, o ya
+          // acreditado con esa referencia): no se reenvía otra vez a los internos (FERCUC, 09/09).
+          let repetido = !!acreditado?.duplicado;
+          const refDup = String(lectura?.referencia || "").replace(/[^A-Za-z0-9-]/g, "").trim();
+          if (!repetido && refDup.length >= 6) {
+            const prev = await sb(`/bot_messages?phone=eq.${phone}&role=eq.user&wamid=neq.${encodeURIComponent(msg.id || "")}&created_at=gte.${encodeURIComponent(new Date(Date.now() - 48 * 3600 * 1000).toISOString())}&content=ilike.*ref%20${encodeURIComponent(refDup)}*&select=id&limit=1`).catch(() => ({ body: [] }));
+            repetido = Array.isArray(prev?.body) && prev.body.length > 0;
+          }
+          if (repetido) console.log("[bot/whatsapp] comprobante repetido, no se reenvía", refDup);
+          if (destinos.length && !repetido) {
             const kind = media.mime.includes("pdf") ? "document" : "image";
             const newId = await uploadWaMedia(media.buffer, media.mime, kind === "document" ? "comprobante.pdf" : "comprobante.jpg");
             const opTxt = opDest ? `${opDest.op}${esperadoArs ? ` (esperado ARS ${esperadoArs.toLocaleString("es-AR")})` : ` (saldo USD ${opDest.saldo_usd})`}` : "sin operación identificada";
