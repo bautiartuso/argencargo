@@ -10,7 +10,7 @@
 // POST ?op=photo  (json: id, nota?) → genera la foto real con fal.ai (si la pieza la pide) → {photo_url}.
 // Auth: header x-runner-secret = RUNNER_SECRET.
 
-import { sb, loadMemory, loadAssets, ejemplosAprobados, uploadStorage, borrarImagenesPieza, generarFoto } from "../../../../lib/studio";
+import { sb, loadMemory, loadAssets, ejemplosAprobados, uploadStorage, borrarImagenesPieza, generarFoto, generarFotoRaw } from "../../../../lib/studio";
 import { guardarNota, publicarNota, blogSettings } from "../../../../lib/blog";
 import { liSettings, proximoSlotLinkedin } from "../../../../lib/linkedin";
 
@@ -42,6 +42,12 @@ export async function POST(req) {
   if (!okAuth(req)) return Response.json({ error: "unauthorized" }, { status: 401 });
   const op = new URL(req.url).searchParams.get("op") || "done";
   const now = new Date().toISOString();
+  // Foto suelta para campañas (sin pieza): prompt tal cual, logo de referencia, devuelve la URL de fal.
+  if (op === "photo_raw") {
+    const b = await req.json().catch(() => ({}));
+    try { const out = await generarFotoRaw(b); return Response.json({ ok: true, ...out }); }
+    catch (e) { return Response.json({ ok: false, error: e.message }, { status: 500 }); }
+  }
   if (op === "photo") {
     const b = await req.json().catch(() => ({}));
     const cur = await sb(`/cs_pieces?id=eq.${encodeURIComponent(b.id || "")}&select=id,kind,photo_prompt,photo_brand,photo_url,photo_note&limit=1`);
