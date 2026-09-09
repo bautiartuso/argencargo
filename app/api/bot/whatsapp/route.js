@@ -493,7 +493,13 @@ export async function POST(req) {
             // adjunto; y si esa todavía no está aprobada, la plantilla con detalle.
             const quienCorto = `${mias.cliente?.nombre || phone}${mias.cliente?.codigo ? ` (${mias.cliente.codigo})` : ""}`;
             for (const d of destinos) {
-              let r = await forwardWaMedia(d, mediaId, msg.type, "");
+              // Meta acepta el envío libre (devuelve id) aunque la ventana de 24 h esté cerrada, y recién
+              // después lo rechaza por webhook ("Re-engagement message"): el ok del envío no sirve para
+              // decidir. Se mira si ese número le escribió al bot en las últimas 23 h; si no, plantilla directo.
+              const numD = String(d).replace(/\D/g, "");
+              const ult = await sb(`/bot_messages?phone=eq.${numD}&role=eq.user&created_at=gte.${encodeURIComponent(new Date(Date.now() - 23 * 3600 * 1000).toISOString())}&select=id&limit=1`).catch(() => ({ body: [] }));
+              const ventanaAbierta = Array.isArray(ult?.body) && ult.body.length > 0;
+              let r = ventanaAbierta ? await forwardWaMedia(d, mediaId, msg.type, "") : null;
               if (!r?.ok && newId) r = await sendWaMediaTemplate(d, kind === "document" ? "comprobante_pdf_min" : "comprobante_img_min", { kind, mediaId: newId }, [quienCorto, opDest?.op || "sin identificar"]);
               if (!r?.ok && newId) r = await sendWaMediaTemplate(d, kind === "document" ? "aviso_comprobante_pdf" : "aviso_comprobante_img", { kind, mediaId: newId }, [opTxt, quien, resumen]);
               if (!r?.ok) {
