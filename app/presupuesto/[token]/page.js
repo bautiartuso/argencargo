@@ -53,7 +53,7 @@ const CSS = `
 .pz-row.head{border-top:none;padding:0 0 7px;font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(26,26,26,.5)}
 .pz-row.head>span{font-weight:800!important}
 .pz-row.tot{border-top:1.5px solid rgba(26,26,26,.18);font-weight:800}
-.pz-prod{grid-template-columns:1fr 44px 96px 104px}
+.pz-prod{grid-template-columns:1fr 92px 44px 96px 104px}
 .pz-bul{grid-template-columns:58px 38px 1fr 76px 72px 78px 76px 86px}
 .pz-bul .u{color:rgba(26,26,26,.5)}
 .pz-row>span:not(:first-child){text-align:right}
@@ -245,17 +245,18 @@ export default function PresupuestoPage({ params }) {
             {productos.length > 0 && (
               <div style={{ marginBottom: bultos.length ? 20 : 0 }}>
                 <p className="pz-sub">Mercadería</p>
-                <div className="pz-row pz-prod head"><span>Descripción</span><span>Cant.</span><span>Valor unit.</span><span>Valor total</span></div>
+                <div className="pz-row pz-prod head"><span>Descripción</span><span>NCM</span><span>Cant.</span><span>Valor unit.</span><span>Valor total</span></div>
                 {productos.map((p, i) => {
                   const c = num(p.quantity) || 1, u = num(p.unit_price);
                   return <div className="pz-row pz-prod" key={i}>
                     <span>{p.description || p.name || "Producto"}</span>
+                    <span style={{ fontFamily: "ui-monospace,Menlo,monospace", fontSize: 12 }}><i className="k">NCM</i>{p.ncm?.ncm_code || p.ncm_code || "—"}</span>
                     <span><i className="k">Cantidad</i>{c}</span>
                     <span><i className="k">Valor unitario</i>{usd(u)}</span>
                     <span><i className="k">Valor total</i>{usd(u * c)}</span>
                   </div>;
                 })}
-                <div className="pz-row pz-prod tot"><span>Total mercadería</span><span /><span /><span>{usd(totFob)}</span></div>
+                <div className="pz-row pz-prod tot"><span>Total mercadería</span><span /><span /><span /><span>{usd(totFob)}</span></div>
               </div>
             )}
 

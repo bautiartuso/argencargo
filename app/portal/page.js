@@ -1247,9 +1247,10 @@ function printPortalCalcPdf({ch,products,totalFob,origin,clientName,delivCost=0}
   const fleteAmt=isAereo?(ch.pesoFact||ch.pesoBruto||0):(ch.cbm||0);
   const fleteAmtLbl=isAereo?`${fmt(fleteAmt)} kg`:`${Number(fleteAmt||0).toFixed(4)} m³`;
   // Productos
-  const rows=(products||[]).filter(p=>Number(p.unit_price_usd||p.unit_price||0)>0).map(p=>{
-    const up=Number(p.unit_price_usd||p.unit_price||0);
-    const fob=up*Number(p.quantity||1);
+  // toN: el precio puede venir con coma ("2,9") desde el input — Number() lo tiraba a NaN y la fila desaparecía.
+  const rows=(products||[]).filter(p=>toN(p.unit_price_usd||p.unit_price)>0).map(p=>{
+    const up=toN(p.unit_price_usd||p.unit_price);
+    const fob=up*(toN(p.quantity)||1);
     return `<tr><td>${(p.description||"—").replace(/</g,"&lt;")}</td><td class="c">${p.quantity||1}</td><td class="r">USD ${fmt(up)}</td><td class="r">USD ${fmt(fob)}</td><td class="c mono">${p.ncm?.ncm_code||p.ncm_code||"—"}</td></tr>`;
   }).join("");
   // Aduana (solo canales A — isBlanco). Si el portal trae los items pre-agregados los uso directamente.
@@ -1971,7 +1972,7 @@ function CalculatorPage({token,client}){
             {row("TOTAL",modalCh.total+delivCost,true,true)}
           </div>}
           {/* Botón Exportar PDF — abre una hoja A4 imprimible idéntica al PDF del admin. */}
-          <button onClick={()=>printPortalCalcPdf({ch:modalCh,products,totalFob:results.totalFob,origin:results.origin,clientName:client?(`${client.first_name||""} ${client.last_name||""}`.trim()):"",delivCost})} style={{width:"100%",marginTop:18,padding:"13px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",letterSpacing:"0.04em",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+          <button onClick={()=>printPortalCalcPdf({ch:modalCh,products,totalFob:results.totalFob,origin:origin||results.origin,clientName:client?(`${client.first_name||""} ${client.last_name||""}`.trim()):"",delivCost})} style={{width:"100%",marginTop:18,padding:"13px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"1px solid rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:GOLD_LIGHT,cursor:"pointer",letterSpacing:"0.04em",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
             📄 Exportar PDF cotización
           </button>
         </div>
