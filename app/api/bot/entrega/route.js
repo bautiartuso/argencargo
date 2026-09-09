@@ -155,8 +155,16 @@ export async function GET(req) {
     // se compara solo por dígitos, matcheando el sufijo más largo (últimos 8+).
     const digits = String(wa).replace(/\D/g, "");
     if (digits.length < 8) return Response.json({ error: "WhatsApp inválido" }, { status: 400 });
-    const cRes = await sb(`/clients?whatsapp=not.is.null&select=id,first_name,last_name,client_code,whatsapp,email`);
-    const clients = (Array.isArray(cRes.body) ? cRes.body : []).filter((c) => {
+    // Supabase devuelve como máximo 1000 filas por pedido: con 1.300+ clientes, los últimos
+    // quedaban invisibles para el bot (ERIBLA, 09/09: comprobante sin acreditar). Se pagina.
+    const todos = [];
+    for (let from = 0; from < 20000; from += 1000) {
+      const cRes = await sb(`/clients?whatsapp=not.is.null&select=id,first_name,last_name,client_code,whatsapp,email&order=id.asc`, { headers: { Range: `${from}-${from + 999}` } });
+      const rows = Array.isArray(cRes.body) ? cRes.body : [];
+      todos.push(...rows);
+      if (rows.length < 1000) break;
+    }
+    const clients = todos.filter((c) => {
       const d = String(c.whatsapp || "").replace(/\D/g, "");
       return d.length >= 8 && (d.endsWith(digits.slice(-10)) || digits.endsWith(d.slice(-10)));
     });
