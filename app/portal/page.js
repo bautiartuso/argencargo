@@ -1338,7 +1338,7 @@ function printPortalCalcPdf({ch,products,totalFob,origin,clientName,delivCost=0}
     </div>
     <div class="note"><b>ℹ Aclaración:</b> a Argencargo solo pagás el <b>Costo de importación</b>. El <b>Costo puesto en Argentina</b> suma lo que ya pagaste al proveedor (FOB) — así sabés cuánto te termina costando la mercadería puesta en el país.</div>
     <div class="foot">Cotización estimativa. Los costos finales pueden variar según peso, volumen y valor reales al momento del despacho.</div>
-    <div class="brand"><img src="/argencargo-isologo.png" alt="Argencargo"/></div>
+    <div class="brand"><img src="https://www.argencargo.com.ar/logo_cotizaciones.png" alt="Argencargo"/></div>
     <script>window.onload=()=>setTimeout(()=>window.print(),300);</script>
   </body></html>`);
   w.document.close();
