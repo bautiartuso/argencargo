@@ -1396,11 +1396,15 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       } else {
         const totalOp=Number(op.budget_total||0);
         if(totalOp<=0)return;
-        const aplicar=Math.round(Math.min(bal,totalOp)*100)/100;
+        // Regla 10/09/2026: el saldo a favor va a la op abierta más vieja, sumándose a lo que ya tenga aplicado.
+        const yaAplicado=Number(op.credit_applied_usd||0);
+        const aplicar=Math.round(Math.min(bal,Math.max(0,totalOp+Number(op.debt_applied_usd||0)-yaAplicado-Number(op.discount_applied_usd||0)))*100)/100;
         if(aplicar<=0.01)return;
-        await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"applied",amount_usd:-aplicar,description:`Aplicado a ${op.operation_code}`}});
-        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{credit_applied_usd:aplicar}});
-        setOp(p=>({...p,credit_applied_usd:aplicar}));
+        const prevMov=await dq("client_account_movements",{token,filters:`?client_id=eq.${op.client_id}&operation_id=eq.${op.id}&type=eq.applied&select=id,amount_usd,description&limit=1`}).catch(()=>[]);
+        if(Array.isArray(prevMov)&&prevMov[0])await dq("client_account_movements",{method:"PATCH",token,filters:`?id=eq.${prevMov[0].id}`,body:{amount_usd:Number(prevMov[0].amount_usd||0)-aplicar,description:`${prevMov[0].description||""} · saldo a favor ${aplicar.toFixed(2)} aplicado`}});
+        else await dq("client_account_movements",{method:"POST",token,body:{client_id:op.client_id,operation_id:op.id,type:"applied",amount_usd:-aplicar,description:`Aplicado a ${op.operation_code}`}});
+        await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{credit_applied_usd:yaAplicado+aplicar}});
+        setOp(p=>({...p,credit_applied_usd:yaAplicado+aplicar}));
         flash(`Saldo a favor de USD ${aplicar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} aplicado automáticamente`);
       }
       const fresh=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=account_balance_usd`});
