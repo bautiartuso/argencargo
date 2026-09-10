@@ -3704,17 +3704,19 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         // o TC ARS → grabar entry pendiente de dollarizar (igual que impuestos / gasto doc).
         // Para los demás canales esos campos se graban directo en USD en costBody arriba (sin entry auto).
         const isMarBl=op.channel?.includes("maritimo")&&op.channel?.includes("blanco");
-        if(isMarBl){
-          // Flete ARS → dollarizar y persistir cost_flete USD final.
-          if((op.cost_flete_currency||"USD")==="ARS"){
-            const fArs=Number(op.cost_flete_ars||0);
-            const fRate=Number(op.cost_flete_exchange_rate||0);
-            if(fArs>0&&fRate>0){
-              const fUsd=Math.round((fArs/fRate)*100)/100;
-              await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{cost_flete:fUsd}});
-              setOp(p=>({...p,cost_flete:fUsd}));
-            }
+        // Flete ARS → dollarizar y persistir cost_flete USD final. Vale para marítimo blanco y para
+        // aéreo pagado por transferencia/contado (flete que no hizo el agente, 10/09/2026).
+        const fleteArsManual=(op.cost_flete_currency||"USD")==="ARS"&&(isMarBl||["transferencia","efectivo"].includes(op.cost_flete_method||""));
+        if(fleteArsManual){
+          const fArs=Number(op.cost_flete_ars||0);
+          const fRate=Number(op.cost_flete_exchange_rate||0);
+          if(fArs>0&&fRate>0){
+            const fUsd=Math.round((fArs/fRate)*100)/100;
+            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{cost_flete:fUsd}});
+            setOp(p=>({...p,cost_flete:fUsd}));
           }
+        }
+        if(isMarBl){
           // Impuestos USD: cost_impuestos_usd → cost_impuestos_reales directo (sin dolarizar) +
           // finance_entry USD directa, evitando que el flujo ARS de arriba la cree con ARS=0.
           if((op.cost_impuestos_currency||"ARS")==="USD"){
@@ -3894,10 +3896,14 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             ?[{value:"efectivo",label:"Contado"}]
             :isMaritimoBlanco
               ?[{value:"efectivo",label:"Contado"},{value:"transferencia",label:"Transferencia"}]
-              :[{value:"cuenta_corriente",label:"Cuenta Corriente (agente)"},{value:"tarjeta_credito",label:"Tarjeta de Crédito"},{value:"tarjeta_debito",label:"Tarjeta de Débito"},{value:"transferencia",label:"Transferencia"}];
+              // Aéreo (pedido 10/09/2026): dos opciones. "CC Agente" = automática (prorrateo del vuelo);
+              // "Transferencia / Contado" = el flete NO lo hizo el agente, se carga a mano en USD o ARS.
+              // Las tarjetas quedan solo para ops viejas que ya las tenían (no se ofrecen nuevas).
+              :[{value:"cuenta_corriente",label:"CC Agente (automática)"},{value:"transferencia",label:"Transferencia / Contado"},...(["tarjeta_credito","tarjeta_debito"].includes(rawFleteMethod)?[{value:rawFleteMethod,label:rawFleteMethod==="tarjeta_credito"?"Tarjeta de Crédito (legacy)":"Tarjeta de Débito (legacy)"}]:[])];
+          const fleteManual=!isCanalB&&(fleteMethod==="transferencia"||fleteMethod==="efectivo");
           return <>
         {/* Marítimo blanco: selector moneda + monto ARS / TC cuando aplica. Otros canales: solo USD. */}
-        {isMaritimoBlanco?(()=>{
+        {(isMaritimoBlanco||fleteManual)?(()=>{
           const cur=op.cost_flete_currency||"USD";
           const isArs=cur==="ARS";
           const ars=Number(op.cost_flete_ars||0);
