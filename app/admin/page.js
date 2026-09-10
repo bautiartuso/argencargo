@@ -7877,6 +7877,19 @@ function CarrierPickupBlock({flight,token,onReload}){
 // asigna cada bulto a la op que corresponda (los vuelos multi-op no se adivinan — si hubo
 // reembalaje solo él sabe qué caja es de quién) y al aplicar se REEMPLAZAN los bultos de
 // esas ops. El presupuesto no se toca automáticamente: se avisa para revisarlo.
+// Trackings de un bulto (pueden ser varios unidos con " + " tras un reempaque): chips compactos,
+// sin repetidos, y si son muchos se muestran 3 con "+N" (clic para ver todos).
+function TrackingChips({value,max=3}){
+  const [open,setOpen]=useState(false);
+  const list=[...new Set(String(value||"").split(" + ").map(t=>t.trim()).filter(Boolean))];
+  if(!list.length)return <span style={{color:"rgba(255,255,255,0.3)"}}>—</span>;
+  const shown=open?list:list.slice(0,max);
+  const chip={display:"inline-block",padding:"1px 6px",borderRadius:4,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",fontFamily:"monospace",fontSize:10,color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"};
+  return <span style={{display:"inline-flex",flexWrap:"wrap",gap:3,alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+    {shown.map(t=><span key={t} style={chip} title={t}>{t}</span>)}
+    {list.length>max&&<button onClick={()=>setOpen(o=>!o)} title={open?"Ver menos":list.slice(max).join("\n")} style={{...chip,cursor:"pointer",color:IC,borderColor:`${IC}55`,background:`${IC}14`}}>{open?"ver menos":`+${list.length-max}`}</button>}
+  </span>;
+}
 function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
   const opIds=flightOps.map(fo=>fo.operation_id).filter(Boolean);
   const unaOp=opIds.length===1?opIds[0]:null;
@@ -10093,7 +10106,7 @@ function AgentsPanel({token}){
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.65)",fontVariantNumeric:"tabular-nums"}}>{l&&wi&&h?`${l}×${wi}×${h}`:"—"}</td>
                               <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.75)",fontVariantNumeric:"tabular-nums"}}>{bruto?`${bruto.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
                               <td style={{padding:"6px 10px",color:fact>0?IC:"rgba(255,255,255,0.3)",fontVariantNumeric:"tabular-nums",fontWeight:600}}>{fact?`${fact.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
-                              <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.5)",fontFamily:"monospace",fontSize:10}}>{p.national_tracking||"—"}</td>
+                              <td style={{padding:"6px 10px",color:"rgba(255,255,255,0.5)",fontSize:10,maxWidth:260}}><TrackingChips value={p.national_tracking}/></td>
                               <td style={{padding:"6px 10px",textAlign:"right"}}><button onClick={(e)=>{e.stopPropagation();openMoveModal(p,o);}} title="Mover este bulto a otro cliente (el agente lo cargó al equivocado)" style={{fontSize:10,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer",fontWeight:600}}>↪ Mover</button></td>
                             </tr>;})}</tbody>
                           </table>
@@ -10262,7 +10275,7 @@ function AgentsPanel({token}){
             const stale=daysOld!=null&&daysOld>3;
             return <tr key={p.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <td style={{padding:"12px 14px"}}>{p.photo_url?<a href={p.photo_url} target="_blank" rel="noopener noreferrer"><img src={p.photo_url} alt="" style={{width:40,height:40,objectFit:"cover",borderRadius:6,border:"1px solid rgba(184,149,106,0.4)",cursor:"zoom-in"}}/></a>:<span style={{fontSize:11,color:"rgba(255,255,255,0.25)"}}>—</span>}</td>
-            <td style={{padding:"12px 14px",fontFamily:"monospace",fontSize:12,color:"#fff"}}>{p.national_tracking}</td>
+            <td style={{padding:"12px 14px",fontSize:12,color:"#fff",maxWidth:280}}><TrackingChips value={p.national_tracking}/></td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)"}}>#{p.package_number}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",fontVariantNumeric:"tabular-nums"}}>{p.gross_weight_kg?`${Number(p.gross_weight_kg).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg`:"—"}</td>
             <td style={{padding:"12px 14px",color:"rgba(255,255,255,0.5)",fontSize:11}}>{p.length_cm?`${p.length_cm}×${p.width_cm}×${p.height_cm}`:"—"}</td>

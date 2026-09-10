@@ -1621,7 +1621,9 @@ function RepackModal({opId,request,packages,divisor,token,userId,t,onClose,onDon
   const addBulto=()=>setNewBultos(p=>[...p,{weight:"",length:"",width:"",height:""}]);
   const rmBulto=(i)=>setNewBultos(p=>p.length>1?p.filter((_,j)=>j!==i):p);
   // Listado de trackings originales (sin REPACK-* viejos por si se reempaca dos veces).
-  const origTrackingsList=(packages||[]).map(p=>p.national_tracking).filter(t=>t&&!String(t).startsWith("REPACK-"));
+  // Sin repetidos: varios bultos originales suelen compartir tracking, y si ya hubo un reempaque
+  // vienen unidos con " + ". Se aplana y se deja cada código una sola vez.
+  const origTrackingsList=[...new Set((packages||[]).flatMap(p=>String(p.national_tracking||"").split(" + ")).map(t=>t.trim()).filter(t=>t&&!t.startsWith("REPACK-")))];
   // Tracking del nuevo bulto: los originales unidos con " + " (mismo string en todos los nuevos bultos si hay varios).
   // Esto preserva los códigos de seguimiento que el cliente y el sistema ya conocían.
   const mergedTracking=origTrackingsList.length>0?origTrackingsList.join(" + "):"";
