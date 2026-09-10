@@ -7928,11 +7928,11 @@ function ExtraerBultosModal({flight,flightOps,token,onClose,onDone}){
         const cambiados=(Array.isArray(orig)?orig:[]).filter(p2=>!igualesIds.has(p2.id));
         const base=cambiados.length?cambiados:(Array.isArray(orig)?orig:[]);
         const trk=base.map(p2=>String(p2.national_tracking||"").trim()).filter(Boolean).map(t=>t.slice(-5)).join("/");
-        await dq("operation_packages",{method:"DELETE",token,filters:`?operation_id=eq.${opId}`});
+        await dq("operation_packages",{method:"DELETE",token,filters:`?operation_id=eq.${opId}&or=(flight_id.is.null,flight_id.eq.${flight.id})`});
         for(let i=0;i<fs.length;i++){
           const f=fs[i];
           const esIgual=f.match&&f.match.opId===opId;
-          await dq("operation_packages",{method:"POST",token,body:{operation_id:opId,package_number:i+1,quantity:1,gross_weight_kg:num(f.peso)||null,length_cm:num(f.l)||null,width_cm:num(f.a)||null,height_cm:num(f.h)||null,national_tracking:esIgual?(f.match.trk||trk||null):(trk||null)},headers:{Prefer:"return=representation"}});
+          await dq("operation_packages",{method:"POST",token,body:{operation_id:opId,flight_id:flight.id,package_number:i+1,quantity:1,gross_weight_kg:num(f.peso)||null,length_cm:num(f.l)||null,width_cm:num(f.a)||null,height_cm:num(f.h)||null,national_tracking:esIgual?(f.match.trk||trk||null):(trk||null)},headers:{Prefer:"return=representation"}});
         }
         const code=ops.find(o=>o.id===opId)?.code||"";
         const nIg=fs.filter(f=>f.match&&f.match.opId===opId).length;
@@ -8166,7 +8166,10 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
     setFlightCliPmts(Array.isArray(cps)?cps:[]);
     // Bultos de las ops del vuelo: el panel solo carga los del depósito, así que un vuelo
     // (sobre todo uno ya recibido) trae los suyos por su cuenta.
-    const pks=await dq("operation_packages",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=*&order=package_number.asc`}).catch(()=>null);
+    const pksAll=await dq("operation_packages",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=*&order=package_number.asc`}).catch(()=>null);
+    // Una op puede viajar en más de un vuelo (AC-0047: FL-0028 y FL-0095). Cada bulto lleva flight_id
+    // desde el 10/09/2026: acá se muestran solo los de este vuelo o los que todavía no tienen vuelo.
+    const pks=Array.isArray(pksAll)?pksAll.filter(p=>!p.flight_id||p.flight_id===flight.id):pksAll;
     if(Array.isArray(pks))setFePkgs(pks);
     // Intervenciones guardadas al clasificar (createFlight/editor de op): el banner aparece
     // apenas se abre el vuelo, sin re-consultar a la IA.

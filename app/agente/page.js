@@ -1317,8 +1317,11 @@ function FlightDetail({token,flight,flightOps,packages:packagesProp,signup,t,onB
     await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:flightPatch});
     // 2. Distribuir costo según peso FACTURABLE (max bruto vs volumétrico) de cada op.
     for(const fo of flightOps){
-      const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id);
+      // Solo los bultos de este vuelo (o sin vuelo): una op puede tener bultos que ya viajaron en otro vuelo.
+      const opPkgs=packages.filter(p=>p.operation_id===fo.operation_id&&(!p.flight_id||p.flight_id===flight.id));
       const opFactW=opPkgs.reduce((s,p)=>s+pkgFact(p),0);
+      // Al despachar, los bultos quedan marcados con el vuelo en que viajaron.
+      await dq("operation_packages",{method:"PATCH",token,filters:`?operation_id=eq.${fo.operation_id}&flight_id=is.null`,body:{flight_id:flight.id}}).catch(()=>{});
       const share=autoFact>0?(opFactW/autoFact)*c:0;
       await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${fo.id}`,body:{weight_kg:opFactW,cost_share_usd:share}});
       await dq("operations",{method:"PATCH",token,filters:`?id=eq.${fo.operation_id}`,body:{status:"en_transito",international_tracking:tracking,international_carrier:carrier,cost_flete:share,cost_flete_method:pmtMethod}});
