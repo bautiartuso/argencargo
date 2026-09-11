@@ -152,6 +152,21 @@ async function applyEventsToOp(op, route, d) {
     if (m) patch.eta = m[1];
   }
 
+  // El courier marcó ENTREGADO → queda en el vuelo (carrier_delivered_at) para que las pelotitas del
+  // panel pasen a verde. El estado "recibido" lo pone el admin a mano (pedido 11/09/2026).
+  if (d.actualDelivery) {
+    try {
+      const m3 = String(d.actualDelivery).match(/^(\d{4}-\d{2}-\d{2})/);
+      const when = m3 ? `${m3[1]}T12:00:00Z` : new Date().toISOString();
+      const foR = await fetch(`${SB_URL}/rest/v1/flight_operations?operation_id=eq.${op.id}&select=flights(id,status,carrier_delivered_at)`, { headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}` } });
+      for (const fo of ((await foR.json()) || [])) {
+        const fl = fo.flights;
+        if (!fl || fl.status === "recibido" || fl.carrier_delivered_at) continue;
+        await fetch(`${SB_URL}/rest/v1/flights?id=eq.${fl.id}`, { method: "PATCH", headers: { apikey: SB_SERVICE, Authorization: `Bearer ${SB_SERVICE}`, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ carrier_delivered_at: when }) });
+      }
+    } catch (e) { console.error("[sync] carrier_delivered_at", e.message); }
+  }
+
   // RI con entrega directa: el courier (DHL/FedEx/UPS) entrega en el domicilio del cliente,
   // asi que al detectar la entrega real la op queda ENTREGADA en el sistema (pasa directo a
   // "A cobrar" del panel — no hay nada que coordinar). El mensaje al cliente (total en PESOS

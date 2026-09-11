@@ -10191,8 +10191,11 @@ function AgentsPanel({token}){
             // Pipeline visual del vuelo: Preparando → Factura lista → En tránsito → Aduana → Recibido.
             const enAduana=f.status==="despachado"&&ops.some(fo=>fo.operations?.status==="en_aduana");
             const nAduana=ops.filter(fo=>fo.operations?.status==="en_aduana").length;
-            const stepIdx=f.status==="recibido"?4:enAduana?3:f.status==="despachado"?2:f.invoice_presented_at?1:0;
-            const stepInfo=[{l:"Preparando",c:"#fbbf24"},{l:"⚡ Listo p/despachar",c:"#ec4899"},{l:"En tránsito",c:"#60a5fa"},{l:`En aduana (${nAduana}/${ops.length})`,c:"#f87171"},{l:"Recibido",c:"#22c55e"}][stepIdx];
+            // El courier ya entregó (DHL/FedEx por API): las pelotitas pasan a verde aunque el vuelo siga
+            // en tránsito/aduana; a "recibido" lo mueve Bautista a mano (pedido 11/09/2026).
+            const entregadoCourier=f.status!=="recibido"&&!!f.carrier_delivered_at;
+            const stepIdx=f.status==="recibido"||entregadoCourier?4:enAduana?3:f.status==="despachado"?2:f.invoice_presented_at?1:0;
+            const stepInfo=[{l:"Preparando",c:"#fbbf24"},{l:"⚡ Listo p/despachar",c:"#ec4899"},{l:"En tránsito",c:"#60a5fa"},{l:`En aduana (${nAduana}/${ops.length})`,c:"#f87171"},entregadoCourier?{l:`Entregado ${(f.international_carrier||"courier").toUpperCase()} · marcar recibido`,c:"#22c55e"}:{l:"Recibido",c:"#22c55e"}][stepIdx];
             // Pendientes accionables del vuelo (badges): derivados de datos ya cargados.
             const warns=[];
             if(f.status==="preparando"&&!f.invoice_presented_at)warns.push({t:"FACT",c:"#fbbf24",title:"Factura sin cerrar — el agente todavía no puede despachar"});
