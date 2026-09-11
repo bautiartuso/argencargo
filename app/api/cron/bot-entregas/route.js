@@ -283,6 +283,19 @@ export async function GET(req) {
     }
   } catch (e) { console.error("[bot-entregas] antidumping", e.message); }
 
+  // ── Cola de plantillas sueltas (p.ej. reenviar el link a un cliente con la ventana cerrada) ──
+  if (!dry && waConfigured()) {
+    try {
+      const q = await sb(`/wa_template_queue?sent_at=is.null&attempts=lt.10&order=id.asc&limit=10`);
+      for (const row of (Array.isArray(q.body) ? q.body : [])) {
+        const r = await sendWaTemplate(row.to_phone, row.template, Array.isArray(row.params) ? row.params : []);
+        const err = r?.ok ? null : String(r?.error?.message || r?.error || "sin respuesta").slice(0, 500);
+        await sb(`/wa_template_queue?id=eq.${row.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(err ? { attempts: Number(row.attempts || 0) + 1, error: err } : { sent_at: new Date().toISOString(), error: null }) });
+        out.plantillas_cola = [...(out.plantillas_cola || []), `${row.id} ${row.template}${err ? ` ✗ ${err.slice(0, 80)}` : " ✓"}`];
+      }
+    } catch (e) { console.error("[bot-entregas] cola plantillas", e.message); }
+  }
+
   // ── Ops cerradas solas (trigger DB al marcar entregada + cobrada): mandar el mail de cierre
   // como si la hubiera cerrado el admin. Se marca para no reintentar.
   try {
