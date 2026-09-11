@@ -13719,18 +13719,19 @@ function AdminCalculator({token}){
     <div style={{marginBottom:14}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><label style={{...labelStyle,marginBottom:0}}>Bultos (cm / kg)</label><button onClick={addPkg} style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,border:"1px dashed rgba(184,149,106,0.4)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>+ Bulto</button></div>
       {/* Inputs angostos y, a la derecha de cada bulto, bruto y volumétrico totales (× cantidad). Pedido 11/09/2026. */}
-      <div style={{display:"grid",gridTemplateColumns:"56px 96px 96px 96px 96px 30px 1fr",gap:8,padding:"0 12px",marginBottom:4}}>{["Cant.","Largo","Ancho","Alto","Peso kg","",""].map((h,j)=><span key={j} style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</span>)}</div>
-      {pkgs.map((pk,i)=>{const q=toN(pk.qty)||1,gw=toN(pk.weight),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const bruto=gw*q;const vol=(l&&w&&h)?((l*w*h)/5000)*q:0;const fact=Math.max(bruto,vol);return <div key={i} style={{padding:"8px 12px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,marginBottom:6,display:"grid",gridTemplateColumns:"56px 96px 96px 96px 96px 30px 1fr",gap:8,alignItems:"center"}}>
+      <div style={{display:"grid",gridTemplateColumns:"72px 1fr 1fr 1fr 1fr 34px 330px",gap:8,padding:"0 12px",marginBottom:4}}>{["Cant.","Largo","Ancho","Alto","Peso kg","",""].map((h,j)=><span key={j} style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.05em",textAlign:"center"}}>{h}</span>)}</div>
+      {pkgs.map((pk,i)=>{const q=toN(pk.qty)||1,gw=toN(pk.weight),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const bruto=gw*q;const vol=(l&&w&&h)?((l*w*h)/5000)*q:0;const fact=Math.max(bruto,vol);return <div key={i} style={{padding:"8px 12px",background:"rgba(0,0,0,0.18)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,marginBottom:6,display:"grid",gridTemplateColumns:"72px 1fr 1fr 1fr 1fr 34px 330px",gap:8,alignItems:"center"}}>
         <input value={pk.qty} onChange={e=>chPkg(i,"qty",e.target.value)} placeholder="1" style={inputStyle}/>
         <input value={pk.length} onChange={e=>chPkg(i,"length",e.target.value)} placeholder="cm" style={inputStyle}/>
         <input value={pk.width} onChange={e=>chPkg(i,"width",e.target.value)} placeholder="cm" style={inputStyle}/>
         <input value={pk.height} onChange={e=>chPkg(i,"height",e.target.value)} placeholder="cm" style={inputStyle}/>
         <input value={pk.weight} onChange={e=>chPkg(i,"weight",e.target.value)} placeholder="kg" style={inputStyle}/>
         <div>{pkgs.length>1&&<button onClick={()=>rmPkg(i)} style={{padding:"7px 9px",fontSize:11,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>×</button>}</div>
-        <div style={{display:"flex",gap:18,justifyContent:"flex-end",alignItems:"center",fontSize:11.5,color:"rgba(255,255,255,0.5)",whiteSpace:"nowrap",flexWrap:"wrap"}}>
-          <span>Bruto total <strong style={{color:fact===bruto&&bruto>0?IC:"#fff"}}>{fmt(bruto)} kg</strong></span>
-          <span>Volumétrico total <strong style={{color:vol>bruto?IC:"#fff"}}>{vol>0?`${fmt(vol)} kg`:"—"}</strong></span>
-          {q>1&&<span style={{color:"rgba(255,255,255,0.35)"}}>× {q}</span>}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+          {[["Bruto",bruto>0?`${fmt(bruto)} kg`:"—",false],["Volumétrico",vol>0?`${fmt(vol)} kg`:"—",false],["Facturable",fact>0?`${fmt(fact)} kg`:"—",true]].map(([l,v,hi])=><div key={l} style={{padding:"5px 8px",borderRadius:6,background:hi?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.03)",border:`1px solid ${hi?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.06)"}`,textAlign:"center"}}>
+            <div style={{fontSize:8.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{l}{q>1?` ×${q}`:""}</div>
+            <div style={{fontSize:12.5,fontWeight:700,color:hi?IC:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</div>
+          </div>)}
         </div>
       </div>;})}
       {(()=>{const _gw=pkgs.reduce((s,p)=>s+toN(p.weight)*Number(p.qty||1),0);const _pf=pkgs.reduce((s,p)=>{const q=Number(p.qty||1),gw=toN(p.weight),l=toN(p.length),w=toN(p.width),h=toN(p.height);return s+Math.max(gw*q,(l&&w&&h)?((l*w*h)/5000)*q:0);},0);return <p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"4px 0 0"}}>FOB total: <strong style={{color:IC}}>USD {fmt(totalFob)}</strong> · CBM total: <strong style={{color:IC}}>{totCBM.toFixed(4)} m³</strong> · Peso facturable: <strong style={{color:IC}}>{fmt(_pf)} kg</strong> · Peso bruto: <strong style={{color:IC}}>{fmt(_gw)} kg</strong></p>;})()}
