@@ -13430,7 +13430,7 @@ function AdminCalculator({token}){
   const [desembolsoOverride,setDesembolsoOverride]=useState({}); // {[chKey]: string}
   // Override manual del valor USD/kg del Courier Comercial para esta cotización puntual
   // (no toca la tarifa general ni la del cliente, solo esta cotización).
-  const [rateOverride,setRateOverride]=useState({}); // {[chKey]: string}
+  const [rateOverride,setRateOverride]=useState({});const [costOverride,setCostOverride]=useState({}); // costo del agente editable por cotización (USD/kg o USD/m³) // {[chKey]: string}
   const toN=(v)=>{const n=Number(String(v||"").replace(",","."));return isNaN(n)?0:n;};
   // Desglose por canal: mismo math que calc.js, expone los componentes (derechos, tasa estadística, IVA,
   // adicionales marítimos, desaduanaje) para mostrar y permitir override del desaduanaje.
@@ -13829,6 +13829,30 @@ function AdminCalculator({token}){
             <p style={{fontSize:20,fontWeight:800,color:IC,margin:"2px 0 0",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {fmt(effTotal)}</p>
           </div>
           <button onClick={()=>printPdf(hasRateOv?{...ch,flete:fleteEff,fleteRate:fleteRateEff}:ch,{desEff,ivaDesEff,effTotalImp,effTotal,bd})} style={{width:"100%",padding:"9px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1.5px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>📄 Exportar PDF cotización</button>
+          {/* Costo estimado (solo admin, pedido 11/09/2026): flete del agente a costo × kg o m³ (editable,
+              default en calc_config cost_*) + impuestos/despacho que pasan al costo en canales A. */}
+          {!esEmpleado()&&(()=>{
+            const isAer=ch.key==="aereo_a_china";
+            const costKey=isAer?"cost_aereo_usd_kg":ch.key==="maritimo_a_china"?"cost_maritimo_a_usd_cbm":"cost_maritimo_b_usd_cbm";
+            const unit=isAer?"kg":"m³";
+            const qty=isAer?Number(ch.fleteAmt||0):Number(ch.cbm||ch.fleteAmt||0);
+            const ovC=costOverride[ch.key];
+            const rate=ovC!=null&&String(ovC).trim()!==""?toN(ovC):Number(config[costKey]||0);
+            const cFlete=qty*rate;
+            const cImp=bd.isBlanco?effTotalImp:0;
+            const costo=cFlete+cImp;const gan=effTotal-costo;const pct=effTotal>0?gan/effTotal*100:0;
+            const row=(l,v,st)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:11.5,padding:"3px 0",...(st||{})}}><span style={{color:"rgba(255,255,255,0.55)"}}>{l}</span><span style={{fontVariantNumeric:"tabular-nums",fontWeight:600,color:"#fff"}}>{v}</span></div>;
+            return <div style={{marginTop:10,padding:"10px 12px",background:"rgba(255,255,255,0.03)",border:"1px dashed rgba(255,255,255,0.14)",borderRadius:8}}>
+              <p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Costo estimado <span style={{opacity:0.6}}>· solo admin</span></p>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:11.5,padding:"3px 0"}}>
+                <span style={{color:"rgba(255,255,255,0.55)"}}>Flete agente · {isAer?fmt(qty):qty.toFixed(4)} {unit} ×</span>
+                <span style={{display:"inline-flex",alignItems:"center",gap:6}}><input value={ovC??(config[costKey]??"")} onChange={e=>setCostOverride(o=>({...o,[ch.key]:e.target.value}))} placeholder={String(config[costKey]??"")} style={{width:64,padding:"4px 8px",fontSize:12,fontWeight:700,textAlign:"right",borderRadius:6,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(0,0,0,0.3)",color:"#fff",outline:"none"}}/><span style={{fontSize:10.5,color:"rgba(255,255,255,0.45)"}}>USD/{unit}</span><strong style={{fontVariantNumeric:"tabular-nums",color:"#fff",minWidth:70,textAlign:"right"}}>USD {fmt(cFlete)}</strong></span>
+              </div>
+              {bd.isBlanco&&row("Impuestos + despacho (pasan al costo)",`USD ${fmt(cImp)}`)}
+              {row("Costo estimado",`USD ${fmt(costo)}`,{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:6})}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:12,padding:"3px 0"}}><span style={{color:"rgba(255,255,255,0.65)",fontWeight:600}}>Ganancia estimada</span><span style={{fontVariantNumeric:"tabular-nums",fontWeight:800,color:gan>=0?"#4ade80":"#f87171"}}>USD {fmt(gan)} <span style={{fontSize:10.5,fontWeight:600,opacity:0.8}}>· {pct.toFixed(0)}%</span></span></div>
+            </div>;
+          })()}
         </div>;
       })}
     </div>}
