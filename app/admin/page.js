@@ -1945,6 +1945,16 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             <span style={{fontSize:12.5,color:"rgba(255,255,255,0.75)"}}>Argencargo cobra los impuestos de esta op <span style={{color:"rgba(255,255,255,0.45)"}}>(excepción — por defecto el RI los abona directo al despachante/transportista)</span></span>
           </label>
         </div>}
+        {/* RI: ¿el courier entrega directo en el domicilio o la carga baja a la oficina? (pedido 11/09/2026).
+            null = automático (RI → directa). false = viene a la oficina: flujo normal de "lista para retirar"
+            con link, sin el mensaje de "entregada en tu domicilio" ni el cobro en pesos automático. */}
+        {isRI&&op.channel==="aereo_blanco"&&(()=>{const dir=op.ri_entrega_directa!==false;const set=async(v)=>{if(saving)return;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{ri_entrega_directa:v}});setOp(p=>({...p,ri_entrega_directa:v}));flash(v?"Entrega directa del courier en el domicilio del cliente":"La carga viene a la oficina: flujo de retiro normal");setSaving(false);};
+          return <div style={{marginBottom:14,padding:"10px 14px",background:dir?"rgba(96,165,250,0.05)":"rgba(184,149,106,0.06)",border:`1px solid ${dir?"rgba(96,165,250,0.15)":"rgba(184,149,106,0.25)"}`,borderRadius:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:12.5,color:"rgba(255,255,255,0.75)",flex:"1 1 260px"}}>Entrega de esta carga (RI) <span style={{color:"rgba(255,255,255,0.45)"}}>· define qué le dice el bot al cliente cuando el courier marca entregado</span></span>
+            <div style={{display:"flex",gap:6}}>
+              {[[true,"Directa al domicilio"],[false,"Viene a la oficina"]].map(([v,l])=><button key={String(v)} disabled={saving} onClick={()=>set(v)} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:7,cursor:"pointer",border:`1px solid ${dir===v?IC:"rgba(255,255,255,0.14)"}`,background:dir===v?"rgba(184,149,106,0.18)":"transparent",color:dir===v?IC:"rgba(255,255,255,0.55)"}}>{l}</button>)}
+            </div>
+          </div>;})()}
         {/* Aereo A: recargo por baterias, como toggle discreto adentro del presupuesto (antes era
             un selector gigante en General). Cambiarlo recalcula el presupuesto al toque. */}
         {op.channel==="aereo_blanco"&&<div onClick={async()=>{if(saving)return;const v=!op.has_battery;setSaving(true);await dq("operations",{method:"PATCH",token,filters:`?id=eq.${op.id}`,body:{has_battery:v}});setOp(p=>({...p,has_battery:v}));await autoSyncBudget(true);flash(v?"Recargo por baterías activado (USD 2/kg)":"Recargo por baterías quitado");setSaving(false);}} style={{marginBottom:14,padding:"9px 14px",background:op.has_battery?"rgba(251,146,60,0.07)":"rgba(255,255,255,0.025)",border:`1px solid ${op.has_battery?"rgba(251,146,60,0.3)":"rgba(255,255,255,0.07)"}`,borderRadius:10,display:"flex",alignItems:"center",gap:11,cursor:saving?"wait":"pointer",userSelect:"none",transition:"all 160ms"}}>
