@@ -1384,7 +1384,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const cl=await dq("clients",{token,filters:`?id=eq.${op.client_id}&select=account_balance_usd&limit=1`});
       const bal=Number((Array.isArray(cl)?cl[0]:null)?.account_balance_usd||0);
       if(Math.abs(bal)<0.01)return;
-      const abiertas=await dq("operations",{token,filters:`?client_id=eq.${op.client_id}&status=not.in.(operacion_cerrada,cancelada)&is_collected=is.false&select=id&order=created_at.asc&limit=1`});
+      // Regla 11/09/2026: el saldo va a la op LISTA PARA RETIRAR (entregada) que lleva más tiempo esperando.
+      const abiertas=await dq("operations",{token,filters:`?client_id=eq.${op.client_id}&status=eq.entregada&is_collected=is.false&budget_total=gt.0&select=id&order=delivery_ready_at.asc.nullslast,created_at.asc&limit=1`});
       const primera=Array.isArray(abiertas)&&abiertas[0]?abiertas[0].id:null;
       if(primera!==op.id)return;
       if(bal<0){
