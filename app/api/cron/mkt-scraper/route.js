@@ -6,7 +6,7 @@
 const SB_URL = "https://nhfslvixhlbiyfmedmbr.supabase.co";
 const SB_SERVICE = process.env.SUPABASE_SERVICE_ROLE;
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 async function sb(path, opts = {}) {
   const r = await fetch(`${SB_URL}${path}`, {
@@ -22,7 +22,11 @@ async function sb(path, opts = {}) {
     console.error("sb error", path, r.status, await r.text());
     return null;
   }
-  return r.json();
+  // PATCH/POST sin body (204) o body vacío: no intentar parsear (esto tiraba una excepción
+  // después de la primera fuente y el cron cortaba ahí — solo CDA traía noticias, 11/09/2026).
+  const txt = await r.text();
+  if (!txt) return {};
+  try { return JSON.parse(txt); } catch { return {}; }
 }
 
 function decodeEntities(s) {
@@ -158,8 +162,10 @@ export async function GET(req) {
   let totalNew = 0;
   const results = [];
 
-  for (const src of sources) {
-    const html = await fetchHtml(src.url);
+  // Las fuentes se bajan en paralelo (15 fuentes × hasta 8 s cada una no entran en serie).
+  const htmls = await Promise.all(sources.map((src) => fetchHtml(src.url)));
+  for (const [idx, src] of sources.entries()) {
+    const html = htmls[idx];
     if (!html) {
       // Marcamos last_fetched_at igualmente para no quedarnos con NULL forever (telemetría)
       await sb(`/rest/v1/mkt_sources?id=eq.${src.id}`, { method: "PATCH", body: JSON.stringify({ last_fetched_at: new Date().toISOString() }) });
