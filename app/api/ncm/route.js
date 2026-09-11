@@ -218,6 +218,24 @@ function enforceInterventionByNcm(ncm_code, currentIntervention) {
   return currentIntervention || { required: false, types: [], reason: null };
 }
 
+
+// Alerta antidumping (tabla antidumping_ncm, editable): si el NCM cae en un prefijo con medida
+// para origen China, la respuesta trae { antidumping: { producto, nota } } para que las calculadoras
+// y la op lo muestren. Best effort: si falla la consulta, no bloquea la clasificación.
+let _adCache = { at: 0, rows: [] };
+async function addAntidumping(obj) {
+  try {
+    if (!obj?.ncm_code) return obj;
+    if (Date.now() - _adCache.at > 5 * 60000) {
+      const r = await fetch(`${SB_URL}/rest/v1/antidumping_ncm?activo=eq.true&select=ncm_prefix,producto,nota`, { headers: { apikey: SB_KEY } });
+      _adCache = { at: Date.now(), rows: r.ok ? await r.json() : _adCache.rows };
+    }
+    const d = String(obj.ncm_code).replace(/\D/g, "");
+    const hit = _adCache.rows.map((a) => ({ ...a, p: String(a.ncm_prefix).replace(/\D/g, "") })).filter((a) => a.p && d.startsWith(a.p)).sort((a, b) => b.p.length - a.p.length)[0];
+    return hit ? { ...obj, antidumping: { producto: hit.producto, nota: hit.nota || "" } } : obj;
+  } catch { return obj; }
+}
+
 export async function POST(req) {
   try {
     const { description, image, image_mime, check_ncm_only } = await req.json();
@@ -227,7 +245,7 @@ export async function POST(req) {
     // así el chequeo de intervención sigue el código ACTUAL en vez de quedar pegado al viejo.
     if (check_ncm_only) {
       const intervention = enforceInterventionByNcm(check_ncm_only, { required: false, types: [], reason: null });
-      return Response.json({ ncm_code: check_ncm_only, intervention, source: "rules-only" });
+      return Response.json(await addAntidumping({ ncm_code: check_ncm_only, intervention, source: "rules-only" }));
     }
 
     if (!description && !image) return Response.json({ error: "Description or image required" }, { status: 400 });
@@ -235,7 +253,7 @@ export async function POST(req) {
     // Si NO hay imagen, primero probar overrides por descripción (rápido y barato)
     if (!image && description) {
       const override = checkOverride(description);
-      if (override) return Response.json(override);
+      if (override) return Response.json(await addAntidumping(override));
     }
 
     // Clasificar: con imagen → vision, sin imagen → texto
@@ -251,9 +269,9 @@ export async function POST(req) {
       // como "wellness" sin la palabra "médico").
       const enforcedIntervention = enforceInterventionByNcm(claudeResult.ncm_code, claudeResult.intervention);
       const results = await searchDB(claudeResult.ncm_code);
-      if (results.length > 0) return Response.json({ ...pickBest(results, enforcedIntervention), ...extras });
+      if (results.length > 0) return Response.json(await addAntidumping({ ...pickBest(results, enforcedIntervention), ...extras }));
       // No match en DB pero tenemos NCM de Claude — devolver con defaults
-      return Response.json({
+      return Response.json(await addAntidumping({
         ncm_code: claudeResult.ncm_code,
         ncm_description: null,
         import_duty_rate: 35,
@@ -262,7 +280,7 @@ export async function POST(req) {
         intervention: enforcedIntervention,
         source: image ? "claude-vision" : "claude",
         ...extras,
-      });
+      }));
     }
 
     return Response.json({ error: "No se pudo clasificar la mercadería", fallback: true }, { status: 200 });

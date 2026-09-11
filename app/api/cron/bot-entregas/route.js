@@ -269,6 +269,20 @@ export async function GET(req) {
     } catch (e) { console.error("[bot-entregas] cola comprobantes", e.message); }
   }
 
+  // ── Antidumping: aviso al admin por cada producto nuevo con NCM bajo medida (ops abiertas) ──
+  try {
+    const ad = await sb(`/operation_items?antidumping_note=not.is.null&antidumping_alerted_at=is.null&select=id,description,ncm_code,antidumping_note,operations!inner(operation_code,status,clients(client_code,first_name))&operations.status=not.in.(operacion_cerrada,cancelada)&limit=20`);
+    const items = Array.isArray(ad.body) ? ad.body : [];
+    if (items.length) {
+      out.antidumping = items.map((i) => `${i.operations?.operation_code}: ${i.description} (${i.ncm_code})`);
+      if (!dry) {
+        const lineas = items.map((i) => `• ${i.operations?.operation_code} (${i.operations?.clients?.client_code || "?"}): ${String(i.description || "").slice(0, 60)} · NCM ${i.ncm_code} → ${i.antidumping_note}`);
+        await notifyAdmins("⚠️ Antidumping: revisar antes de cotizar", `${lineas.join("\n")}\n\nChequeá derechos específicos y valores criterio. La lista de posiciones está en la tabla antidumping_ncm.`);
+        await sb(`/operation_items?id=in.(${items.map((i) => i.id).join(",")})`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ antidumping_alerted_at: new Date().toISOString() }) });
+      }
+    }
+  } catch (e) { console.error("[bot-entregas] antidumping", e.message); }
+
   // ── Ops cerradas solas (trigger DB al marcar entregada + cobrada): mandar el mail de cierre
   // como si la hubiera cerrado el admin. Se marca para no reintentar.
   try {
