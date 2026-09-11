@@ -13728,7 +13728,7 @@ function AdminCalculator({token}){
         <input value={pk.weight} onChange={e=>chPkg(i,"weight",e.target.value)} placeholder="kg" style={inputStyle}/>
         <div>{pkgs.length>1&&<button onClick={()=>rmPkg(i)} style={{padding:"7px 9px",fontSize:11,borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>×</button>}</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
-          {[["Bruto",bruto>0?`${fmt(bruto)} kg`:"—",false],["Volumétrico",vol>0?`${fmt(vol)} kg`:"—",false],["Facturable",fact>0?`${fmt(fact)} kg`:"—",true]].map(([l,v,hi])=><div key={l} style={{padding:"5px 8px",borderRadius:6,background:hi?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.03)",border:`1px solid ${hi?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.06)"}`,textAlign:"center"}}>
+          {(()=>{const cbm=(l&&w&&h)?((l*w*h)/1000000)*q:0;const brutoGana=bruto>0&&bruto>=vol;const volGana=vol>0&&vol>bruto;return [["Bruto",bruto>0?`${fmt(bruto)} kg`:"—",brutoGana],["Volumétrico",vol>0?`${fmt(vol)} kg`:"—",volGana],["m³",cbm>0?`${cbm.toFixed(4)} m³`:"—",false]];})().map(([l,v,hi])=><div key={l} style={{padding:"5px 8px",borderRadius:6,background:hi?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.03)",border:`1px solid ${hi?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.06)"}`,textAlign:"center"}}>
             <div style={{fontSize:8.5,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.06em"}}>{l}{q>1?` ×${q}`:""}</div>
             <div style={{fontSize:12.5,fontWeight:700,color:hi?IC:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</div>
           </div>)}
