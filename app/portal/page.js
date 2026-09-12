@@ -1627,13 +1627,18 @@ function CalculatorPage({token,client,preset}){
   // fila. "Nueva cotización" resetea el id y la próxima crea otra fila.
   const savedQuoteIdRef=useRef(null);
   const saveChainRef=useRef(Promise.resolve());
+  // Desglose línea por línea de cada vía (se guarda en channel_alternatives.detail: lo lee Mis cotizaciones y el link público).
+  const detailOf=(ch)=>{const its=ch.items||[];const sm=f=>its.reduce((a,it)=>a+Number(f(it)||0),0);const d=[];
+    if(ch.isBlanco){d.push(["Flete internacional",Number(ch.flete||0)]);if(Number(ch.battExtra)>0)d.push(["Recargo por baterías",Number(ch.battExtra)]);if(Number(ch.overweightSurcharge)>0)d.push(["Recargo por sobrepeso",Number(ch.overweightSurcharge)]);d.push(["Seguro (1%)",Number(ch.seguro||0)]);d.push(["Derechos de importación",sm(it=>it.derechos)]);d.push(["Tasa estadística",sm(it=>it.tasa_e)]);d.push(["IVA",sm(it=>it.iva)]);if(ch.isMar)d.push(["IVA adicional + IIGG + IIBB",sm(it=>(it.ivaAdic||0)+(it.iigg||0)+(it.iibb||0))]);else{d.push(["Gasto documental",sm(it=>it.desembolso)]);if(sm(it=>it.ivaDesemb)>0)d.push(["IVA sobre gasto documental",sm(it=>it.ivaDesemb)]);}}
+    else{d.push([ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Servicio integral de importación",Number(ch.flete||0)+Number(ch.surcharge||0)]);if(Number(ch.battExtra)>0)d.push(["Recargo por baterías",Number(ch.battExtra)]);if(Number(ch.overweightSurcharge)>0)d.push(["Recargo por sobrepeso",Number(ch.overweightSurcharge)]);}
+    return d.map(([l,v])=>[l,Math.round(v*100)/100]);};
   const buildQuoteBody=(channels,chosen)=>{
     const{totWeight,totCBM}=calcTotals();const delivCost=getShipCost(delivery,totWeight);
     const productsToSave=products.map(p=>({...p,unit_price:toN(p.unit_price),quantity:toN(p.quantity)||1}));
     const calc=channels.filter(c=>!c.noCalc);
-    const alts=calc.map(ch=>({key:ch.key,name:ch.name,info:transitOf(ch),totalAbonar:ch.total+delivCost,flete:Number(ch.flete||0)+Number(ch.surcharge||0),seguro:Number(ch.seguro||0),totalTax:Number(ch.totalImp||0),shipCost:delivCost,overweight:Number(ch.overweightSurcharge||0)}));
+    const alts=calc.map(ch=>({key:ch.key,name:ch.name,info:transitOf(ch),totalAbonar:ch.total+delivCost,flete:Number(ch.flete||0)+Number(ch.surcharge||0),seguro:Number(ch.seguro||0),totalTax:Number(ch.totalImp||0),shipCost:delivCost,overweight:Number(ch.overweightSurcharge||0),detail:detailOf(ch),isBlanco:!!ch.isBlanco}));
     const main=chosen||(calc.length?calc.reduce((a,b)=>a.total<b.total?a:b):null);
-    return{client_id:client?.id||null,client_name:client?`${client.first_name} ${client.last_name}`:"Anónimo",client_code:client?.client_code||"—",origin,channel_key:main?.key||null,channel_name:main?.name||null,products:productsToSave,packages:pkgs,delivery,total_fob:totalFob,total_weight:totWeight,total_cbm:totCBM,total_cost:main?main.total+delivCost:0,channel_alternatives:alts,expires_at:new Date(Date.now()+15*864e5).toISOString(),...(chosen?{client_selected_channel:chosen.key}:{})};
+    return{client_id:client?.id||null,client_name:client?`${client.first_name} ${client.last_name}`:"Anónimo",client_code:client?.client_code||"—",origin,channel_key:main?.key||null,channel_name:main?.name||null,products:productsToSave,packages:pkgs,delivery,total_fob:totalFob,total_weight:totWeight,total_cbm:totCBM,total_cost:main?main.total+delivCost:0,channel_alternatives:alts,has_battery:!!hasBattery,expires_at:new Date(Date.now()+15*864e5).toISOString(),...(chosen?{client_selected_channel:chosen.key}:{})};
   };
   const persistQuote=(body)=>{
     saveChainRef.current=saveChainRef.current.then(async()=>{
@@ -1650,7 +1655,7 @@ function CalculatorPage({token,client,preset}){
   useEffect(()=>{if(!preset)return;
     const prods=(typeof preset.products==="string"?JSON.parse(preset.products):preset.products)||[];
     const pk=(typeof preset.packages==="string"?JSON.parse(preset.packages):preset.packages)||[];
-    setResults(null);setExpandedCh(null);setOrigin(preset.origin||"China");setHasBattery(null);setStep(1);
+    setResults(null);setExpandedCh(null);setOrigin(preset.origin||"China");setHasBattery(preset.has_battery??false);setStep(1);
     setProducts(prods.length?prods.map(p=>({type:p.type||"general",description:p.description||"",unit_price:p.unit_price!=null?String(p.unit_price).replace(".",","):"",quantity:p.quantity!=null?String(p.quantity):"1",ncm:p.ncm||null,ncmLoading:false,ncmError:false,ncm_hint:p.ncm_hint||""})):[{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false,ncm_hint:""}]);
     setPkgs(pk.length?pk.map(x=>({qty:x.qty!=null?String(x.qty):"1",length:x.length!=null?String(x.length):"",width:x.width!=null?String(x.width):"",height:x.height!=null?String(x.height):"",weight:x.weight!=null?String(x.weight):"",product_ids:Array.isArray(x.product_ids)?x.product_ids:null})):[{qty:"1",length:"",width:"",height:"",weight:"",product_ids:null}]);
     setNoDims(!pk.some(x=>Number(x.length)>0&&Number(x.width)>0&&Number(x.height)>0)&&pk.some(x=>Number(x.weight)>0));
@@ -1979,7 +1984,8 @@ function CalculatorPage({token,client,preset}){
   </div>;
 }
 function QuotesPage({token,client,onEdit}){
-  const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [openId,setOpenId]=useState(null);
+  const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [openId,setOpenId]=useState(null);const [openAlt,setOpenAlt]=useState(null);
+  const numOf=q=>q.quote_number?`AGC-${String(q.quote_number).padStart(4,"0")}`:null;
   useEffect(()=>{if(!client?.id){setLo(false);return;}(async()=>{const q=await dq("quotes",{token,filters:`?client_id=eq.${client.id}&select=*&order=created_at.desc`});setQuotes(Array.isArray(q)?q:[]);setLo(false);})();},[token,client?.id]);
   const HAIR="1px solid rgba(255,255,255,0.13)";
   const PANEL={background:"linear-gradient(180deg, rgba(13,24,45,0.96), rgba(8,16,32,0.96))",border:HAIR,borderRadius:16,padding:"20px 24px",marginBottom:14,boxShadow:"0 14px 34px rgba(0,0,0,0.28)"};
@@ -2004,7 +2010,7 @@ function QuotesPage({token,client,onEdit}){
   const choose=async(q,a)=>{try{await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${q.id}`,body:{client_selected_channel:a.key,channel_key:a.key,channel_name:a.name,total_cost:a.totalAbonar}});setQuotes(p=>p.map(x=>x.id===q.id?{...x,client_selected_channel:a.key,channel_key:a.key,channel_name:a.name,total_cost:a.totalAbonar}:x));toast(`Elegiste ${a.name}`,"success");}catch(e){toast("No se pudo guardar la elección","error");}};
   const delQuote=async(q)=>{if(!await confirmDialog("¿Eliminar esta cotización? No se puede deshacer.",{confirmText:"Eliminar",danger:true}))return;await dq("quotes",{method:"DELETE",token,filters:`?id=eq.${q.id}`});setQuotes(p=>p.filter(x=>x.id!==q.id));toast("Cotización eliminada","success");};
   const sendWA=(q)=>{const a=chosenOf(q)||cheapestOf(q);const prods=prodsOf(q);const summary=prods.map(p=>`${p.description||p.type} x${p.quantity}`).join(", ");const isAereo=(a?.key||"").includes("aereo");
-    const msg=encodeURIComponent(`Hola Bautista! Quiero avanzar con una cotización que tengo guardada en el portal.\n\nOrigen: *${q.origin}* ${flagOf(q.origin)}\nMercadería: *${summary}*\nVía: *${a?.name||"—"}*\nValor FOB: *${usd(q.total_fob)}*\n${isAereo?`Peso: *${fmt2(q.total_weight)} kg*`:`Volumen: *${Number(q.total_cbm||0).toFixed(3)} m³*`}\nCosto de importación: *${usd(a?.totalAbonar??q.total_cost)}*\nCotizada el ${fmtDate(q.created_at)} · válida hasta ${fmtDate(expiryOf(q))}\n\nCódigo cliente: *${q.client_code}*`);
+    const msg=encodeURIComponent(`Hola Bautista! Quiero avanzar con la cotización ${numOf(q)||fmtDate(q.created_at)} que tengo guardada en el portal.\n\nOrigen: *${q.origin}* ${flagOf(q.origin)}\nMercadería: *${summary}*\nVía: *${a?.name||"—"}*\nValor FOB: *${usd(q.total_fob)}*\n${isAereo?`Peso: *${fmt2(q.total_weight)} kg*`:`Volumen: *${Number(q.total_cbm||0).toFixed(3)} m³*`}\nCosto de importación: *${usd(a?.totalAbonar??q.total_cost)}*\nCotizada el ${fmtDate(q.created_at)} · válida hasta ${fmtDate(expiryOf(q))}\n\nCódigo cliente: *${q.client_code}*`);
     window.open(`https://wa.me/5491125088580?text=${msg}`,"_blank");};
   if(lo)return <p style={{color:"rgba(255,255,255,0.6)",textAlign:"center",padding:"3rem 0"}}>Cargando…</p>;
   return <div>
@@ -2019,9 +2025,9 @@ function QuotesPage({token,client,onEdit}){
         <div className="rs-head" style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
           <span style={{width:44,height:44,borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{flagOf(q.origin)}</span>
           <div style={{flex:1,minWidth:220}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:14,fontWeight:800,color:"#fff",letterSpacing:"0.06em",textTransform:"uppercase"}}>Cotización del {fmtDate(q.created_at)}</span>{pill(stL,stC)}</div>
-            <p style={{margin:"4px 0 0",fontSize:13,color:"#fff",fontWeight:500}}>{summary||"Sin productos"}</p>
-            <p style={{margin:"3px 0 0",fontSize:12,color:expired?"#f87171":SKY,fontWeight:600}}>{expired?`Venció el ${fmtDate(expiryOf(q))}`:`Válida hasta el ${fmtDate(expiryOf(q))}`} · FOB {usd(q.total_fob)} · {nPk} {nPk===1?"bulto":"bultos"}</p>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:15,fontWeight:800,color:"#fff",letterSpacing:"0.08em",textTransform:"uppercase"}}>Cotización {numOf(q)||fmtDate(q.created_at)}</span>{pill(stL,stC)}<span style={{fontSize:11.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"5px 11px",borderRadius:8,color:expired?"#fca5a5":GOLD_LIGHT,background:expired?"rgba(248,113,113,0.14)":"rgba(184,149,106,0.18)",border:`1px solid ${expired?"rgba(248,113,113,0.5)":"rgba(232,208,152,0.55)"}`,whiteSpace:"nowrap"}}>{expired?"Venció el":"Válida hasta el"} {fmtDate(expiryOf(q))}</span></div>
+            <p style={{margin:"6px 0 0",fontSize:13.5,color:"#fff",fontWeight:600}}>{summary||"Sin productos"}</p>
+            <p style={{margin:"3px 0 0",fontSize:12,color:SKY,fontWeight:600}}>Cotizada el {fmtDate(q.created_at)} · FOB {usd(q.total_fob)} · {nPk} {nPk===1?"bulto":"bultos"}</p>
           </div>
           <div style={{textAlign:"right"}}>
             <p style={{...LBL,fontSize:10}}>{chosen?"Vía elegida":"Desde"}</p>
@@ -2041,16 +2047,25 @@ function QuotesPage({token,client,onEdit}){
 
           <p style={{...LBL,margin:"18px 0 8px"}}>Vías de importación</p>
           {alts.length===0&&<p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:0}}>Esta cotización no tiene vías guardadas.</p>}
-          {alts.map((a,i)=>{const on=chosen?.key===a.key;const [big,small]=chTitle(a);const isAereo=(a.key||"").includes("aereo");const isCheap=alts.length>1&&cheapest&&a.key===cheapest.key;
-            return <div key={a.key||i} style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",padding:"14px 16px",borderRadius:12,marginTop:i?8:0,border:`1px solid ${on?"rgba(232,208,152,0.65)":"rgba(140,200,245,0.25)"}`,background:on?"rgba(184,149,106,0.12)":"rgba(140,200,245,0.06)"}}>
-              <span style={{fontSize:20,width:36,textAlign:"center"}}>{isAereo?"✈️":"🚢"}</span>
-              <div style={{flex:1,minWidth:200}}><p style={{margin:0,fontSize:15,color:"#fff"}}><b style={{fontWeight:800,letterSpacing:"0.02em"}}>{big}</b><span style={{color:"rgba(255,255,255,0.45)",margin:"0 8px"}}>—</span>{small}{isCheap&&<span style={{marginLeft:10,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 8px",borderRadius:999,background:"rgba(34,197,94,0.2)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.5)"}}>Más económica</span>}</p>{a.info&&<p style={{margin:"3px 0 0",fontSize:12,color:SKY}}>Llega en {a.info}</p>}</div>
-              <span style={{fontSize:22,fontWeight:900,color:on?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}><span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",marginRight:6}}>USD</span>{fmt2(a.totalAbonar)}</span>
-              {on?pill("Elegida",GOLD_LIGHT):btn("Elegir esta vía",()=>choose(q,a),"ghost",expired)}
+          {alts.map((a,i)=>{const on=chosen?.key===a.key;const [big,small]=chTitle(a);const isAereo=(a.key||"").includes("aereo");const isCheap=alts.length>1&&cheapest&&a.key===cheapest.key;const dk=`${q.id}:${a.key}`;const dOpen=openAlt===dk;
+            const detail=Array.isArray(a.detail)&&a.detail.length?a.detail:[Number(a.flete)>0&&["Flete + servicio",a.flete],Number(a.seguro)>0&&["Seguro",a.seguro],Number(a.overweight)>0&&["Recargo por sobrepeso",a.overweight],Number(a.totalTax)>0&&["Impuestos y gastos de aduana",a.totalTax],Number(a.shipCost)>0&&["Envío a domicilio",a.shipCost]].filter(Boolean);
+            return <div key={a.key||i} style={{borderRadius:12,marginTop:i?8:0,border:`1px solid ${on?"rgba(232,208,152,0.65)":"rgba(140,200,245,0.25)"}`,background:on?"rgba(184,149,106,0.12)":"rgba(140,200,245,0.06)"}}>
+              <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",padding:"14px 16px"}}>
+                <span style={{fontSize:20,width:36,textAlign:"center"}}>{isAereo?"✈️":"🚢"}</span>
+                <div style={{flex:1,minWidth:200}}><p style={{margin:0,fontSize:15,color:"#fff"}}><b style={{fontWeight:800,letterSpacing:"0.02em"}}>{big}</b><span style={{color:"rgba(255,255,255,0.45)",margin:"0 8px"}}>—</span>{small}{isCheap&&<span style={{marginLeft:10,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 8px",borderRadius:999,background:"rgba(34,197,94,0.2)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.5)"}}>Más económica</span>}</p>{a.info&&<p style={{margin:"3px 0 0",fontSize:12,color:SKY}}>Llega en {a.info}</p>}</div>
+                <span style={{fontSize:22,fontWeight:900,color:on?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}><span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",marginRight:6}}>USD</span>{fmt2(a.totalAbonar)}</span>
+                {detail.length>0&&btn(dOpen?"Ocultar ▲":"Desglose ▼",()=>setOpenAlt(dOpen?null:dk),"sky")}
+                {on?pill("Elegida",GOLD_LIGHT):btn("Elegir esta vía",()=>choose(q,a),"ghost",expired)}
+              </div>
+              {dOpen&&<div style={{margin:"0 16px 14px",padding:"6px 16px 10px",borderRadius:10,background:"rgba(11,22,40,0.85)",border:HAIR}}>
+                {detail.map(([l,v],k)=><div key={k} style={{display:"flex",justifyContent:"space-between",gap:12,padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.08)"}}><span style={{fontSize:13,color:"#fff",opacity:0.92}}>{l}</span><span style={{fontSize:13.5,fontWeight:600,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(v)}</span></div>)}
+                <div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"12px 0 2px"}}><span style={{fontSize:14,fontWeight:700,color:"#fff"}}>Total</span><span style={{fontSize:18,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>{usd(a.totalAbonar)}</span></div>
+                {a.isBlanco===false&&<p style={{fontSize:12,color:SKY,margin:"8px 0 0"}}>Tarifa ALL IN: es todo lo que pagás, sin costos adicionales.</p>}
+              </div>}
             </div>;})}
 
           <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:18,paddingTop:16,borderTop:HAIR,alignItems:"center"}}>
-            {expired?btn("Recotizar en la calculadora →",()=>onEdit?.(q),"gold"):<>{btn("Avanzar por WhatsApp →",()=>sendWA(q),"green")}{btn("Editar en la calculadora",()=>onEdit?.(q),"ghost")}</>}
+            {expired?btn("Recotizar en la calculadora →",()=>onEdit?.(q),"gold"):<>{btn(chosen?`Avanzar por WhatsApp con ${chosen.name} →`:"Avanzar por WhatsApp →",()=>sendWA(q),"green")}{btn("Editar en la calculadora",()=>onEdit?.(q),"ghost")}</>}
             <span style={{flex:1}}/>
             {btn("Eliminar",()=>delQuote(q),"red")}
           </div>
