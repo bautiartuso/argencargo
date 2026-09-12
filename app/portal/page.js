@@ -1690,6 +1690,8 @@ function CalculatorPage({token,client}){
   const PK_COLS=multi?"minmax(240px,1.2fr) 72px 1fr 1fr 1fr 1fr 34px 330px":"72px 1fr 1fr 1fr 1fr 34px 330px";
   const [pkOpen,setPkOpen]=useState(null); // índice del bulto con el desplegable de mercaderías abierto
   const [helpOpen,setHelpOpen]=useState(false);
+  const helpShownRef=useRef(false);
+  useEffect(()=>{if(!multi||helpShownRef.current)return;helpShownRef.current=true;try{const k=`ac_calc_help_${client?.id||"anon"}`;const n=Number(localStorage.getItem(k)||0);if(n<3){localStorage.setItem(k,String(n+1));setHelpOpen(true);}}catch{}},[multi]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(()=>{if(delivery!=="oficina")setDelivery("oficina");},[delivery]); // sin bloque de entrega: el envío a domicilio se habla cuando llega la carga
   const pkIds=pk=>Array.isArray(pk.product_ids)?pk.product_ids.filter(i=>validIdx.includes(i)):[];
   const togglePkProd=(i,idx)=>setPkgs(p=>p.map((x,j)=>{if(j!==i)return x;const cur=pkIds(x);return{...x,product_ids:cur.includes(idx)?cur.filter(k=>k!==idx):[...cur,idx]};}));
@@ -1739,7 +1741,7 @@ function CalculatorPage({token,client}){
     const hasAereo=calc.some(c=>c.key.includes("aereo")),hasMar=calc.some(c=>c.key.includes("maritimo"));
     const noDimsReason=noDims||tot.totCBM===0;
     const unavailable=[];
-    if(isChina&&!hasAereo)unavailable.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",motivo:owPk?`Un bulto de ${fmt2(toN(owPk.weight))} kg supera los 50 kg por pieza que admite el courier. Si lo dividís en dos bultos de menor peso, sí puede ir por esta vía.`:"No cargaste el peso ni las medidas de los bultos."});
+    if(isChina&&!hasAereo)unavailable.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",motivo:owPk?<>Uno de los bultos de tu envío ({fmt2(toN(owPk.weight))} kg) supera los 50 kg por pieza.<br/>El régimen courier establece un máximo de 50 kg por bulto.<br/>Para avanzar vía Courier comercial, dividí la carga en bultos cuyo peso unitario no supere los 50 kg.</>:"No cargaste el peso ni las medidas de los bultos."});
     if(!hasMar)unavailable.push({key:"maritimo_b",name:"Marítimo Integral AC",motivo:noDimsReason?"No colocaste las dimensiones de los bultos: sin volumen (m³) no se puede cotizar el marítimo.":"Esta carga no aplica para la vía marítima."});
     const ordered=[...calc.filter(c=>c.key.includes("aereo")),...calc.filter(c=>!c.key.includes("aereo"))];
     const RES_PANEL={...PANEL,padding:"24px"};
@@ -1768,42 +1770,39 @@ function CalculatorPage({token,client}){
       {line("Total",total,{total:true})}
       {!ch.isBlanco&&<p style={{fontSize:12,color:SUB,margin:"10px 0 0",lineHeight:1.5}}>Tarifa ALL IN: ese número es todo lo que pagás por la importación. No hay costos adicionales ni sorpresas al llegar.</p>}
     </div>;};
-    const aMedida=()=>{const prodLines=products.filter(p=>(p.description||"").trim()||toN(p.unit_price)>0).map((p,i)=>`🏷️ *Mercadería ${i+1}*\nDescripción: ${p.description||"—"}\nCantidad: ${p.quantity||1}\nValor unitario: USD ${fmt2(toN(p.unit_price))}`).join("\n\n");
+    const waMedidaMsg=(()=>{const prodLines=products.filter(p=>(p.description||"").trim()||toN(p.unit_price)>0).map((p,i)=>`🏷️ *Mercadería ${i+1}*\nDescripción: ${p.description||"—"}\nCantidad: ${p.quantity||1}\nValor unitario: USD ${fmt2(toN(p.unit_price))}`).join("\n\n");
       const pkgLines=pkgs.filter(p=>toN(p.weight)>0||toN(p.length)>0).map((p,i)=>{const dims=(toN(p.length)&&toN(p.width)&&toN(p.height))?`${p.length}×${p.width}×${p.height} cm`:"sin dimensiones";return `📦 *Bulto ${i+1}*\nDimensiones: ${dims}\nPeso unitario: ${toN(p.weight)||0} kg\nCantidad: ${p.qty||1}`;}).join("\n\n");
-      const waMsg=`Hola! Coticé en el portal pero mi carga necesita cotización a medida.${prodLines?`\n\n${prodLines}`:""}${pkgLines?`\n\n${pkgLines}`:""}`;
-      return <div style={{...RES_PANEL,textAlign:"center",padding:"36px 24px"}}>
-        <p style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 8px"}}>Esta carga necesita cotización a medida</p>
-        <p style={{fontSize:13,color:SUB,margin:"0 auto 14px",maxWidth:480,lineHeight:1.6}}>Por las características de tu carga ninguna vía automática aplica. Escribinos y te armamos la mejor opción en minutos.</p>
-        {unavailable.length>0&&<div style={{margin:"0 auto 18px",maxWidth:560,textAlign:"left",borderRadius:10,border:HAIR,padding:"10px 14px"}}>{unavailable.map((u,i)=><p key={i} style={{fontSize:12.5,color:"#fff",margin:i?"6px 0 0":0,lineHeight:1.5}}><strong style={{color:"#fbbf24"}}>{u.name}:</strong> {u.motivo}</p>)}</div>}
-        <a href={`https://wa.me/5491125088580?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"12px 26px",fontSize:14,fontWeight:800,borderRadius:10,background:"#22c55e",color:"#062012",textDecoration:"none",boxShadow:"0 6px 22px rgba(34,197,94,0.35)"}}>Cotizar por WhatsApp</a>
-      </div>;};
+      return encodeURIComponent(`Hola! Coticé en el portal pero mi carga necesita cotización a medida.${prodLines?`\n\n${prodLines}`:""}${pkgLines?`\n\n${pkgLines}`:""}`);})();
     const chHead=(ch,extraRight,sub,dim)=>{const isAereo=ch.key.includes("aereo");const [big,small]=chTitle(ch);return <>
       <span style={{width:44,height:44,borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0,opacity:dim?0.5:1}}>{isAereo?"✈️":"🚢"}</span>
       <span style={{flex:1,minWidth:0}}>
         <span style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:16,color:"#fff",letterSpacing:"-0.01em",opacity:dim?0.7:1}}><b style={{fontWeight:800,letterSpacing:"0.02em"}}>{big}</b><span style={{color:"rgba(255,255,255,0.45)",margin:"0 8px"}}>—</span><span style={{fontWeight:500}}>{small}</span></span>{extraRight}</span>
-        <span style={{display:"block",fontSize:12.5,color:dim?"#fbbf24":SKY,marginTop:4,lineHeight:1.45}}>{sub}</span>
+        <span style={{display:"block",fontSize:12.5,color:dim?"#fca5a5":SKY,marginTop:4,lineHeight:1.5}}>{sub}</span>
       </span>
     </>;};
+    const unavailRow=(list)=>list.map(u=><div key={u.key} className="rs-head" style={{display:"flex",alignItems:"center",gap:16,padding:"18px 20px",border:"1px dashed rgba(248,113,113,0.5)",borderRadius:14,marginTop:10,background:"rgba(248,113,113,0.06)"}}>
+      {chHead(u,null,<><strong style={{color:"#f87171"}}>Motivo:</strong> {u.motivo}</>,true)}
+      <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"6px 10px",borderRadius:999,background:"rgba(248,113,113,0.16)",color:"#f87171",border:"1px solid rgba(248,113,113,0.5)",whiteSpace:"nowrap"}}>Vía no disponible</span>
+    </div>);
     const tagPill=(tag)=><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"4px 9px",borderRadius:999,background:tag==="Más económica"?"rgba(34,197,94,0.2)":"rgba(184,149,106,0.24)",color:tag==="Más económica"?"#4ade80":GOLD_LIGHT,border:`1px solid ${tag==="Más económica"?"rgba(34,197,94,0.5)":"rgba(232,208,152,0.55)"}`}}>{tag}</span>;
     return <div ref={resultsRef}>
       <div style={{marginBottom:16}}>{btnGhost("← Volver a editar",()=>{setResults(null);setExpandedCh(null);})}</div>
-      {calc.length===0?aMedida():<>
       <div style={RES_PANEL}>
         <div className="rs-stats" style={{display:"flex",justifyContent:"center",flexWrap:"wrap",marginBottom:20,padding:"14px 0",borderRadius:12,background:"rgba(255,255,255,0.05)",border:HAIR}}>
           {[["Total FOB",usd(totalFob)],["Peso facturable",facturable>0?`${fmt2(facturable)} kg`:"—"],["Volumen",!noDims&&tot.totCBM>0?`${tot.totCBM.toFixed(3)} m³`:"—"]].map(([l,v],i)=><div key={i} style={{flex:"1 1 140px",textAlign:"center",padding:"4px 16px",borderLeft:i?"1px solid rgba(255,255,255,0.16)":"none"}}><p style={{...LBL,fontSize:10,color:SKY}}>{l}</p><p style={{margin:"5px 0 0",fontSize:19,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>{v}</p></div>)}
         </div>
         {ordered.map((ch,i)=>{const open=expandedCh===ch.key;const total=ch.total+delivCost;const tag=calc.length>1&&cheapest&&ch.key===cheapest.key?"Más económica":calc.length>1&&ch.key==="aereo_a_china"?"Más rápida":null;
           const its=ch.items||[];const svc=Number(ch.flete||0)+Number(ch.surcharge||0)+Number(ch.seguro||0)+Number(ch.battExtra||0)+Number(ch.overweightSurcharge||0);const imp=ch.isBlanco?sum(its,it=>it.totalImp):0;
-          const mini=(l,v,hot)=><span style={{display:"inline-flex",alignItems:"center",gap:10,height:38,padding:"0 14px",borderRadius:9,border:`1px solid ${hot?"rgba(232,208,152,0.5)":"rgba(255,255,255,0.18)"}`,background:hot?"rgba(184,149,106,0.14)":"rgba(255,255,255,0.06)"}}><span style={{fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:hot?GOLD_LIGHT:SKY}}>{l}</span><span style={{fontSize:14,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{usd(v)}</span></span>;
+          const half=(l,v,extra)=><div style={{flex:"1 1 260px",padding:"16px 18px",borderRadius:12,border:"1px solid rgba(255,255,255,0.18)",background:"rgba(255,255,255,0.06)",textAlign:"center"}}><p style={{...LBL,fontSize:11,color:SKY}}>{l}</p>{v!=null&&<p style={{margin:"8px 0 0",fontSize:24,fontWeight:900,color:"#fff",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>{usd(v)}</p>}{extra}</div>;
           return <div key={ch.key} style={{border:`1px solid ${open?"rgba(232,208,152,0.65)":"rgba(255,255,255,0.2)"}`,borderRadius:16,marginTop:i?14:0,background:open?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.06)",transition:"border-color 150ms",boxShadow:"0 10px 26px rgba(0,0,0,0.28)"}}>
-            <button onClick={()=>setExpandedCh(open?null:ch.key)} className="rs-head" style={{width:"100%",display:"flex",alignItems:"center",gap:18,padding:"20px 22px 12px",background:"transparent",border:"none",cursor:"pointer",textAlign:"left"}}>
+            <div className="rs-head" style={{display:"flex",alignItems:"center",gap:18,padding:"20px 22px 14px"}}>
               {chHead(ch,tag&&tagPill(tag),`Llega en ${transitOf(ch)}`,false)}
               <span className="rs-price" style={{fontSize:30,fontWeight:900,color:"#fff",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em",whiteSpace:"nowrap"}}><span style={{fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.7)",marginRight:8,letterSpacing:"0.06em"}}>USD</span>{fmt2(total)}</span>
-              <span style={{...SMALL_GOLD,height:40,padding:"0 18px",fontSize:13,fontWeight:800,background:open?GOLD_GRADIENT:"rgba(184,149,106,0.2)",color:open?"#0A1628":GOLD_LIGHT,borderColor:"rgba(232,208,152,0.7)"}}>{open?"Ocultar":"Ver desglose"}</span>
-            </button>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap",padding:"0 22px 18px"}}>
-              {ch.isBlanco?<>{mini("Flete + seguro",svc,false)}{mini("Impuestos",imp,true)}</>:<>{mini(ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Servicio integral de importación",svc,false)}<span style={{fontSize:12,fontWeight:700,color:SKY,letterSpacing:"0.04em"}}>Tarifa ALL IN · sin costos adicionales</span></>}
             </div>
+            <div style={{display:"flex",gap:12,flexWrap:"wrap",padding:"0 22px 14px"}}>
+              {ch.isBlanco?<>{half("Flete + seguro",svc)}{half("Impuestos",imp)}</>:<>{half(ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Servicio integral de importación",svc)}{half("Tarifa ALL IN",null,<p style={{margin:"8px 0 0",fontSize:13,color:"#fff",lineHeight:1.55,fontWeight:500}}>Nuestro servicio Marítimo Integral AC te permite importar a un costo final cerrado: ese es todo lo que pagás, sin costos adicionales.</p>)}</>}
+            </div>
+            <div style={{padding:"0 22px 18px"}}><button onClick={()=>setExpandedCh(open?null:ch.key)} style={{width:"100%",height:44,borderRadius:10,fontSize:13.5,fontWeight:800,letterSpacing:"0.04em",cursor:"pointer",border:"1px solid rgba(232,208,152,0.7)",background:open?GOLD_GRADIENT:"rgba(184,149,106,0.2)",color:open?"#0A1628":GOLD_LIGHT}}>{open?"Ocultar desglose ▲":"Ver desglose ▼"}</button></div>
             {open&&<div style={{padding:"0 22px 20px"}}>
               {breakdown(ch,total)}
               <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap"}}>
@@ -1812,14 +1811,17 @@ function CalculatorPage({token,client}){
               </div>
             </div>}
           </div>;})}
-        {unavailable.map(u=><div key={u.key} className="rs-head" style={{display:"flex",alignItems:"center",gap:16,padding:"16px 18px",border:"1px dashed rgba(251,191,36,0.4)",borderRadius:14,marginTop:10,background:"rgba(251,191,36,0.05)"}}>
-          {chHead(u,null,<><strong style={{color:"#fbbf24"}}>Motivo:</strong> {u.motivo}</>,true)}
-          <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"6px 10px",borderRadius:999,background:"rgba(251,191,36,0.16)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.45)",whiteSpace:"nowrap"}}>Vía no disponible</span>
-        </div>)}
+        {unavailRow(unavailable)}
       </div>
 
-      {/* Cálculo de rentabilidad: separado de la cotización */}
-      {validIdx.length>0&&<div style={RES_PANEL}>
+      {calc.length===0&&<div style={{...RES_PANEL,textAlign:"center",padding:"32px 24px"}}>
+        <p style={{fontSize:14,fontWeight:800,color:"#fff",margin:"0 0 8px",letterSpacing:"0.14em",textTransform:"uppercase"}}>Cotización a medida</p>
+        <p style={{fontSize:13.5,color:SUB,margin:"0 auto 18px",maxWidth:560,lineHeight:1.6}}>Ninguna de las vías automáticas aplica para esta carga. Chateá con nosotros por WhatsApp y te armamos la mejor opción en minutos.</p>
+        <a href={`https://wa.me/5491125088580?text=${waMedidaMsg}`} target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"13px 28px",fontSize:14.5,fontWeight:800,borderRadius:10,background:"#22c55e",color:"#062012",textDecoration:"none",boxShadow:"0 6px 22px rgba(34,197,94,0.35)"}}>Chatear por WhatsApp para avanzar con la cotización a medida →</a>
+      </div>}
+
+      {/* Cálculo de costos: separado de la cotización */}
+      {calc.length>0&&validIdx.length>0&&<div style={RES_PANEL}>
         <p style={{fontSize:16,fontWeight:800,color:"#fff",margin:"0 0 6px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>Cálculo unitario de costos</p>
         <p style={{fontSize:13,color:SUB,margin:"0 auto 18px",lineHeight:1.5,textAlign:"center",maxWidth:760}}>Cuánto te cuesta cada producto puesto en Argentina según la vía de importación. Costo unitario = lo que le pagás al proveedor (FOB) · Importación = flete, seguro, impuestos y gastos{multi?(anyAssigned?", prorrateados por los bultos asignados a cada mercadería":", prorrateados por valor FOB"):""}.</p>
         {ordered.map((ch,i)=>{const cpp=costPerProduct(ch);const [big,small]=chTitle(ch);return <div key={ch.key} style={{marginTop:i?16:0}}>
@@ -1830,7 +1832,6 @@ function CalculatorPage({token,client}){
           </table></div>
         </div>;})}
       </div>}
-      </>}
     </div>;
   }
 
@@ -1838,7 +1839,7 @@ function CalculatorPage({token,client}){
   const flagBg=(k)=>k==="China"
     ?<div aria-hidden style={{position:"absolute",inset:0,background:"#C8102E",opacity:0.55}}><span style={{position:"absolute",left:14,top:2,fontSize:42,color:"#FFDE00",lineHeight:1}}>★</span>{[[62,6],[72,16],[72,30],[62,40]].map(([x,y],i)=><span key={i} style={{position:"absolute",left:x,top:y,fontSize:12,color:"#FFDE00",lineHeight:1}}>★</span>)}</div>
     :<div aria-hidden style={{position:"absolute",inset:0,background:"repeating-linear-gradient(180deg,#B22234 0 7.69%,#FFFFFF 7.69% 15.38%)",opacity:0.55}}><div style={{position:"absolute",left:0,top:0,width:"40%",height:"53.8%",background:"#3C3B6E",backgroundImage:"radial-gradient(circle,#fff 1.1px,transparent 1.6px)",backgroundSize:"10px 10px",backgroundPosition:"5px 5px"}}/></div>;
-  return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 20px",letterSpacing:"-0.02em"}}>{t("calc.title")}</h2>
+  return <div><h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 22px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>{t("calc.title")}</h2>
 
     {/* País de origen */}
     <div style={PANEL}>
@@ -1854,10 +1855,10 @@ function CalculatorPage({token,client}){
 
     {/* Batería (solo China) */}
     {isChina&&<div style={PANEL}>
-      <p style={{fontSize:16,fontWeight:800,color:"#fff",margin:"0 0 14px",textAlign:"center"}}>¿Tu producto contiene baterías?</p>
+      <p style={{fontSize:14,fontWeight:800,color:"#fff",margin:"0 0 14px",textAlign:"center",letterSpacing:"0.14em",textTransform:"uppercase"}}>¿Tu producto contiene baterías?</p>
       <div className="batt-picker" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,maxWidth:680,margin:"0 auto"}}>{[[true,"⚡","Sí, tiene batería","Recargable · litio"],[false,"✓","No tiene batería","Producto estándar"]].map(([v,ic,l,sub])=>{const on=hasBattery===v;return <button key={String(v)} onClick={()=>setHasBattery(v)} style={{position:"relative",overflow:"hidden",padding:"18px 74px",borderRadius:14,border:`2px solid ${on?GOLD_LIGHT:"rgba(255,255,255,0.22)"}`,background:v?"radial-gradient(220px 120px at 8% 50%, rgba(251,191,36,0.28), rgba(11,22,40,0) 70%), #0B1628":"radial-gradient(220px 120px at 8% 50%, rgba(140,200,245,0.22), rgba(11,22,40,0) 70%), #0B1628",cursor:"pointer",textAlign:"center",boxShadow:on?"0 0 0 3px rgba(232,208,152,0.25), 0 12px 28px rgba(0,0,0,0.35)":"0 8px 20px rgba(0,0,0,0.25)",transition:"all 160ms"}}>
         <span style={{position:"absolute",left:16,top:"50%",transform:"translateY(-50%)",width:44,height:44,borderRadius:"50%",border:`1px solid ${on?"rgba(232,208,152,0.7)":"rgba(255,255,255,0.25)"}`,background:"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:v?21:19,color:on?GOLD_LIGHT:"#fff",boxShadow:on&&v?"0 0 18px rgba(232,208,152,0.45)":"none"}}>{ic}</span>
-        <span style={{display:"block",fontSize:15,fontWeight:800,color:"#fff"}}>{l}</span><span style={{display:"block",fontSize:12.5,color:SKY,marginTop:3}}>{sub}</span>
+        <span style={{display:"block",fontSize:14,fontWeight:800,color:"#fff",letterSpacing:"0.1em",textTransform:"uppercase"}}>{l}</span><span style={{display:"block",fontSize:12.5,color:SKY,marginTop:3}}>{sub}</span>
       </button>;})}</div>
       {hasBattery===true&&<p style={{fontSize:13,color:"#fff",margin:"20px 0 4px",lineHeight:1.5,textAlign:"center",opacity:0.92}}>Los productos con batería llevan un recargo de <strong style={{color:GOLD_LIGHT}}>USD {battRate} por kg</strong> facturable.</p>}
     </div>}
@@ -1916,10 +1917,16 @@ function CalculatorPage({token,client}){
         </div>
         <div className="pk-head" style={{display:"grid",gridTemplateColumns:PK_COLS,gap:8,padding:"0 4px 6px"}}>{[...(multi?["Mercadería"]:[]),"Cant.","Largo","Ancho","Alto","Peso kg","",""].map((h,i)=><span key={i} style={{...LBL,fontSize:10,color:SKY,textAlign:"center",position:"relative"}}>{h}{multi&&i===0&&<span style={{position:"relative",display:"inline-block",marginLeft:8,verticalAlign:"middle"}}>
           <button onClick={()=>setHelpOpen(v=>!v)} title="¿Para qué sirve?" style={{width:18,height:18,borderRadius:"50%",border:`1px solid ${helpOpen?GOLD_LIGHT:"rgba(140,200,245,0.7)"}`,background:helpOpen?"rgba(184,149,106,0.25)":"rgba(140,200,245,0.15)",color:helpOpen?GOLD_LIGHT:SKY,fontSize:11,fontWeight:800,cursor:"pointer",lineHeight:1,padding:0}}>?</button>
-          {helpOpen&&<><div onClick={()=>setHelpOpen(false)} style={{position:"fixed",inset:0,zIndex:40}}/><div style={{position:"absolute",left:0,top:26,zIndex:41,width:320,padding:"14px 16px",borderRadius:12,background:"#0E1B30",border:"1px solid rgba(232,208,152,0.5)",boxShadow:"0 16px 40px rgba(0,0,0,0.55)",textAlign:"left",textTransform:"none",letterSpacing:0}}>
-            <p style={{fontSize:13,fontWeight:800,color:GOLD_LIGHT,margin:"0 0 6px"}}>¿Para qué asignar mercaderías a cada bulto?</p>
-            <p style={{fontSize:12.5,color:"#fff",margin:0,lineHeight:1.55,fontWeight:500}}>Es opcional. Si indicás qué mercadería viaja en cada bulto, el flete y el seguro se reparten según el peso real de cada una y el <strong>cálculo unitario de costos</strong> te muestra cuánto te cuesta cada producto puesto en Argentina con precisión. Un bulto puede llevar varias mercaderías. Si no asignás nada, el costo se reparte por valor FOB (estimado).</p>
-          </div></>}
+          {helpOpen&&<div onClick={()=>setHelpOpen(false)} style={{position:"fixed",inset:0,zIndex:1000,background:"rgba(4,10,22,0.78)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,textTransform:"none",letterSpacing:0,textAlign:"left"}}>
+            <div onClick={e=>e.stopPropagation()} style={{width:"min(560px, 100%)",padding:"28px 30px",borderRadius:18,background:"linear-gradient(180deg,#132340,#0B1628)",border:"1px solid rgba(232,208,152,0.55)",boxShadow:"0 30px 70px rgba(0,0,0,0.6)"}}>
+              <p style={{fontSize:13,fontWeight:800,color:GOLD_LIGHT,margin:"0 0 14px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>Calculá el costo unitario de cada mercadería</p>
+              <p style={{fontSize:14,color:"#fff",margin:"0 0 12px",lineHeight:1.65,fontWeight:500}}>Cuando cargás más de un producto, podés indicar en qué bulto viaja cada mercadería. Un bulto puede llevar una o varias.</p>
+              <p style={{fontSize:14,color:"#fff",margin:"0 0 12px",lineHeight:1.65,fontWeight:500}}>Con ese dato, en el paso siguiente te calculamos automáticamente cuánto te cuesta cada producto puesto en Argentina: lo que le pagás al proveedor más el flete, el seguro, los impuestos y los gastos que le corresponden.</p>
+              <p style={{fontSize:14,color:"#fff",margin:"0 0 12px",lineHeight:1.65,fontWeight:500}}><strong style={{color:GOLD_LIGHT}}>¿Para qué sirve?</strong> Para conocer el costo real de cada producto y definir a qué precio te conviene venderlo.</p>
+              <p style={{fontSize:12.5,color:SKY,margin:"0 0 20px",lineHeight:1.6}}>Es opcional. Si no asignás nada, el costo se reparte entre los productos por su valor FOB (estimado).</p>
+              <div style={{display:"flex",justifyContent:"center"}}>{btnGold("Entendido",()=>setHelpOpen(false))}</div>
+            </div>
+          </div>}
         </span>}</span>)}</div>
         {pkgs.map((pk,i)=>{const q=toN(pk.qty)||1,l=toN(pk.length),w=toN(pk.width),h=toN(pk.height),gw=toN(pk.weight);const bruto=gw*q;const vol=!noDims&&l&&w&&h?((l*w*h)/5000)*q:0;const m3=!noDims&&l&&w&&h?((l*w*h)/1e6)*q:0;const ids=pkIds(pk);
           return <div key={i} className="pk-row" style={{display:"grid",gridTemplateColumns:PK_COLS,gap:8,alignItems:"center",padding:"6px 4px",borderTop:i>0?HAIR:"none"}}>
@@ -1949,7 +1956,7 @@ function CalculatorPage({token,client}){
             <span style={{fontSize:12.5,color:noDims?"#fdba74":"#fff",lineHeight:1.35}}>Desconozco las medidas{noDims&&<span style={{display:"block",fontSize:11,opacity:0.85}}>Sin medidas no se cotiza el marítimo.</span>}</span>
           </div>
         </div>
-        {owPk&&isChina&&<p style={{fontSize:12,color:"#fbbf24",margin:"12px 0 0",lineHeight:1.5}}>⚠ Un bulto de <strong>{toN(owPk.weight)} kg</strong> supera los 50 kg y no puede ir por Courier Comercial aéreo. Si podés dividirlo en dos bultos de menor peso, sí podría. Mientras tanto te mostramos las opciones marítimas.</p>}
+        {owPk&&isChina&&<div style={{margin:"14px 0 0",padding:"12px 16px",borderRadius:10,border:"1px solid rgba(251,146,60,0.55)",background:"rgba(251,146,60,0.12)"}}><p style={{fontSize:13.5,fontWeight:700,color:"#fdba74",margin:0,lineHeight:1.55}}>⚠ Uno de los bultos de tu envío ({fmt2(toN(owPk.weight))} kg) supera los 50 kg por pieza. El régimen courier establece un máximo de 50 kg por bulto, así que esta carga no puede ir por Courier comercial aéreo. Si la dividís en bultos de hasta 50 kg cada uno, sí puede.</p></div>}
         <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:12,marginTop:22,paddingTop:18,borderTop:HAIR,flexWrap:"wrap"}}>
           {!canCalc&&hasPriced&&<span style={{fontSize:12,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"#f87171",textAlign:"right"}}>{pendingClass?"Clasificá los productos para calcular":!pkgOk?"Cargá el peso o las medidas de un bulto":unassignedProds.length?`Falta asignar a un bulto: ${unassignedProds.map(idx=>products[idx].description||`Producto ${idx+1}`).join(", ")}`:""}</span>}
           {btnGold("Calcular costos →",doCalc,!canCalc)}
