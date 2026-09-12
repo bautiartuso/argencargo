@@ -1379,7 +1379,7 @@ function CalculatorPage({token,client}){
   const addProduct=()=>setProducts(p=>[...p,{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false,ncm_hint:""}]);
   const rmProduct=i=>setProducts(p=>p.filter((_,j)=>j!==i));
   const chProd=(i,f,v)=>setProducts(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
-  const addPkg=()=>setPkgs(p=>[...p,{qty:"1",length:"",width:"",height:"",weight:"",product_idx:""}]);
+  const addPkg=()=>setPkgs(p=>[...p,{qty:"1",length:"",width:"",height:"",weight:"",product_ids:[]}]);
   const rmPkg=i=>setPkgs(p=>p.filter((_,j)=>j!==i));
   const chPkg=(i,f,v)=>setPkgs(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));
 
@@ -1659,41 +1659,48 @@ function CalculatorPage({token,client}){
   const usd=v=>`USD ${v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const row=(l,v,bold,accent)=><div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",...(bold?{borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4,paddingTop:8}:{})}}><span style={{fontSize:12,color:bold?"#fff":"rgba(255,255,255,0.45)",fontWeight:bold?700:400}}>{l}</span><span style={{fontSize:12,fontWeight:bold?700:600,color:accent?IC:bold?"#fff":"rgba(255,255,255,0.7)"}}>{usd(v)}</span></div>;
 
-  // ───────────────────────── UI (rediseño 11/09/2026 v3: una sola pantalla progresiva, resultados en vista aparte) ─────────────────────────
-  const HAIR="1px solid rgba(255,255,255,0.12)";
-  const PANEL={background:"#101F37",border:HAIR,borderRadius:16,padding:"22px 24px",marginBottom:14,boxShadow:"0 10px 30px rgba(0,0,0,0.18)"};
-  const LBL={fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,255,255,0.78)",margin:0};
-  const SUB="rgba(255,255,255,0.72)";
-  const INP={width:"100%",boxSizing:"border-box",height:40,padding:"0 12px",fontSize:14,border:"1px solid rgba(255,255,255,0.18)",borderRadius:9,background:"rgba(255,255,255,0.08)",color:"#fff",outline:"none",fontVariantNumeric:"tabular-nums",transition:"border-color 150ms, background 150ms",textAlign:"center"};
-  const onF=e=>{e.target.style.borderColor="rgba(232,208,152,0.8)";e.target.style.background="rgba(255,255,255,0.11)";};
-  const onB=e=>{e.target.style.borderColor="rgba(255,255,255,0.18)";e.target.style.background="rgba(255,255,255,0.08)";};
+  // ───────────────────────── UI (rediseño 11/09/2026 v4: una sola pantalla progresiva, resultados en vista aparte, rentabilidad separada) ─────────────────────────
+  const HAIR="1px solid rgba(255,255,255,0.13)";
+  const PANEL={background:"linear-gradient(180deg, rgba(13,24,45,0.96), rgba(8,16,32,0.96))",border:HAIR,borderRadius:16,padding:"22px 24px",marginBottom:14,boxShadow:"0 14px 34px rgba(0,0,0,0.28)"};
+  const LBL={fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#fff",margin:0};
+  const SUB="rgba(255,255,255,0.8)";
+  const SKY="#8CC8F5";
+  const INP={width:"100%",boxSizing:"border-box",height:40,padding:"0 12px",fontSize:14,border:"1px solid rgba(255,255,255,0.2)",borderRadius:9,background:"rgba(255,255,255,0.07)",color:"#fff",outline:"none",fontVariantNumeric:"tabular-nums",transition:"border-color 150ms, background 150ms",textAlign:"center"};
+  const onF=e=>{e.target.style.borderColor="rgba(232,208,152,0.85)";e.target.style.background="rgba(255,255,255,0.1)";};
+  const onB=e=>{e.target.style.borderColor="rgba(255,255,255,0.2)";e.target.style.background="rgba(255,255,255,0.07)";};
   const decOk=v=>v===""||/^\d*[.,]?\d*$/.test(v);
   const numIn=({value,onChange,placeholder,disabled,style,className})=><input className={className} type="text" inputMode="decimal" disabled={disabled} value={value||""} onChange={e=>{if(decOk(e.target.value))onChange(e.target.value);}} placeholder={placeholder} style={{...INP,...(disabled?{opacity:0.35,cursor:"not-allowed"}:{}),...style}} onFocus={onF} onBlur={onB}/>;
   const fmt2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
-  const SMALL_GHOST={height:32,padding:"0 12px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.22)",background:"rgba(255,255,255,0.1)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,textDecoration:"none"};
-  const SMALL_GOLD={...SMALL_GHOST,border:"1px solid rgba(232,208,152,0.5)",background:"rgba(184,149,106,0.14)",color:GOLD_LIGHT};
-  const btnGhost=(label,onClick)=><button onClick={onClick} style={{padding:"11px 18px",fontSize:13,fontWeight:600,borderRadius:10,background:"rgba(255,255,255,0.08)",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",cursor:"pointer"}}>{label}</button>;
+  const SMALL_GHOST={height:32,padding:"0 12px",fontSize:12,fontWeight:600,borderRadius:8,border:"1px solid rgba(255,255,255,0.24)",background:"rgba(255,255,255,0.1)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:6,textDecoration:"none"};
+  const SMALL_GOLD={...SMALL_GHOST,border:"1px solid rgba(232,208,152,0.55)",background:"rgba(184,149,106,0.16)",color:GOLD_LIGHT};
+  const btnGhost=(label,onClick)=><button onClick={onClick} style={{padding:"11px 18px",fontSize:13,fontWeight:600,borderRadius:10,background:"rgba(255,255,255,0.09)",color:"#fff",border:"1px solid rgba(255,255,255,0.22)",cursor:"pointer"}}>{label}</button>;
   const btnGold=(label,onClick,disabled)=><button onClick={onClick} disabled={disabled} style={{padding:"12px 26px",fontSize:13.5,fontWeight:800,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:disabled?"not-allowed":"pointer",background:GOLD_GRADIENT,color:"#0A1628",opacity:disabled?0.4:1,boxShadow:disabled?"none":GOLD_GLOW_STRONG}}>{label}</button>;
-  const delBtn=(onClick,disabled)=><button onClick={onClick} disabled={disabled} title="Quitar" style={{width:32,height:32,borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.7)",cursor:disabled?"default":"pointer",fontSize:16,lineHeight:1,opacity:disabled?0.25:1,flexShrink:0}}>×</button>;
-  const lockedRow=(label)=><div style={{...PANEL,padding:"14px 24px",opacity:0.5,boxShadow:"none"}}><p style={{...LBL,color:"rgba(255,255,255,0.5)"}}>{label}</p></div>;
+  const delBtn=(onClick,disabled)=><button onClick={onClick} disabled={disabled} title="Quitar" style={{width:32,height:32,borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.8)",cursor:disabled?"default":"pointer",fontSize:16,lineHeight:1,opacity:disabled?0.25:1,flexShrink:0}}>×</button>;
+  const lockedRow=(label)=><div style={{...PANEL,padding:"14px 24px",opacity:0.5,boxShadow:"none"}}><p style={{...LBL,color:"rgba(255,255,255,0.6)"}}>{label}</p></div>;
   const isChina=origin==="China";
   const isRI=client?.tax_condition==="responsable_inscripto";
   const battRate=isRI?2:1;
   const flagOf=o=>o==="China"?"🇨🇳":o==="España"?"🇪🇸":"🇺🇸";
   const chTitle=ch=>({aereo_a_china:["AÉREO","Courier comercial"],maritimo_a_china:["MARÍTIMO","Carga FCL/LCL"],maritimo_b:["MARÍTIMO","Integral AC"],aereo_b_spain:["AÉREO","Integral AC"],aereo_b_usa:["AÉREO","Integral AC"]})[ch.key]||[ch.key?.includes("aereo")?"AÉREO":"MARÍTIMO",ch.name];
-  const resetAll=()=>{setResults(null);setOrigin("");setStep(0);setProducts([{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false,ncm_hint:""}]);setPkgs([{qty:"1",length:"",width:"",height:"",weight:"",product_idx:""}]);setNoDims(false);setDelivery("oficina");setHasBattery(null);setExpandedCh(null);savedQuoteIdRef.current=null;if(typeof window!=="undefined")window.scrollTo({top:0,behavior:"smooth"});};
+  const resetAll=()=>{setResults(null);setOrigin("");setStep(0);setProducts([{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false,ncm_hint:""}]);setPkgs([{qty:"1",length:"",width:"",height:"",weight:"",product_ids:[]}]);setNoDims(false);setDelivery("oficina");setHasBattery(null);setExpandedCh(null);savedQuoteIdRef.current=null;if(typeof window!=="undefined")window.scrollTo({top:0,behavior:"smooth"});};
   const pickOrigin=k=>{if(k===origin)return;setOrigin(k);setHasBattery(null);setResults(null);setExpandedCh(null);setStep(1);};
   const PROD_COLS=isChina?"1fr 110px 90px 150px 170px":"1fr 110px 90px 230px";
-  const multi=products.filter(p=>toN(p.unit_price)>0).length>1;
-  const PK_COLS=multi?"180px 72px 1fr 1fr 1fr 1fr 34px 330px":"72px 1fr 1fr 1fr 1fr 34px 330px";
+  const validIdx=products.map((p,i)=>toN(p.unit_price)>0?i:-1).filter(i=>i>=0);
+  const multi=validIdx.length>1;
+  const PK_COLS=multi?"minmax(240px,1.2fr) 72px 1fr 1fr 1fr 1fr 34px 330px":"72px 1fr 1fr 1fr 1fr 34px 330px";
+  const pkIds=pk=>Array.isArray(pk.product_ids)?pk.product_ids.filter(i=>validIdx.includes(i)):[];
+  const togglePkProd=(i,idx)=>setPkgs(p=>p.map((x,j)=>{if(j!==i)return x;const cur=pkIds(x);return{...x,product_ids:cur.includes(idx)?cur.filter(k=>k!==idx):[...cur,idx]};}));
+  const clearPkProd=(i)=>setPkgs(p=>p.map((x,j)=>j===i?{...x,product_ids:[]}:x));
 
   // Desbloqueo progresivo
-  const hasPriced=products.some(p=>toN(p.unit_price)>0);
+  const hasPriced=validIdx.length>0;
   const sinNcm=isChina?products.filter(p=>p.description?.trim()&&!p.ncm&&!p.ncmLoading):[];
   const pendingClass=isChina&&products.some(p=>toN(p.unit_price)>0&&!p.ncm);
   const pkgOk=pkgs.some(p=>toN(p.weight)>0||(toN(p.length)>0&&toN(p.width)>0&&toN(p.height)>0));
+  const anyAssigned=multi&&pkgs.some(pk=>pkIds(pk).length>0);
+  const unassignedProds=anyAssigned?validIdx.filter(idx=>!pkgs.some(pk=>pkIds(pk).includes(idx))):[];
   const unlockProducts=!!origin&&(!isChina||hasBattery!==null);
-  const canCalc=unlockProducts&&hasPriced&&!pendingClass&&pkgOk;
+  const canCalc=unlockProducts&&hasPriced&&!pendingClass&&pkgOk&&unassignedProds.length===0;
   const tot=calcTotals();
   const volWins=!noDims&&tot.totVol>tot.totWeight;
   const owPk=pkgs.find(pk=>toN(pk.weight)>=46);
@@ -1701,167 +1708,175 @@ function CalculatorPage({token,client}){
 
   // ── Costo por producto puesto en Argentina ──
   // Impuestos: por producto (items del canal). Servicio (flete, seguro, recargos): prorrateado por el
-  // peso facturable (aéreo) o m³ (marítimo) de los bultos asignados a cada mercadería; los bultos sin
-  // asignar (o si no se asignó ninguno) se reparten por valor FOB.
+  // peso facturable (aéreo) o m³ (marítimo) de los bultos asignados a cada mercadería (si un bulto tiene
+  // varias, se reparte entre ellas por FOB). Sin asignación → todo se reparte por valor FOB.
   const costPerProduct=(ch)=>{
-    const valid=products.map((p,i)=>({p,i})).filter(({p})=>toN(p.unit_price)>0);
+    const valid=validIdx.map(i=>({p:products[i],i}));
     if(!valid.length)return[];
     const isAereo=ch.key.includes("aereo");
     const fobOf=({p})=>toN(p.unit_price)*(toN(p.quantity)||1);
     const fobTot=valid.reduce((s,v)=>s+fobOf(v),0)||1;
     const wOf=pk=>{const q=toN(pk.qty)||1,l=toN(pk.length),w=toN(pk.width),h=toN(pk.height),gw=toN(pk.weight);const dims=!noDims&&l&&w&&h;return isAereo?Math.max(gw*q,dims?((l*w*h)/5000)*q:0):(dims?((l*w*h)/1e6)*q:0);};
     const assigned={};let unassigned=0,wTot=0;
-    pkgs.forEach(pk=>{const w=wOf(pk);wTot+=w;const idx=multi&&pk.product_idx!==""&&pk.product_idx!=null?Number(pk.product_idx):null;if(idx!=null&&valid.some(v=>v.i===idx))assigned[idx]=(assigned[idx]||0)+w;else unassigned+=w;});
+    pkgs.forEach(pk=>{const w=wOf(pk);wTot+=w;const ids=multi?pkIds(pk):[];if(!ids.length){unassigned+=w;return;}const sub=valid.filter(v=>ids.includes(v.i));const subFob=sub.reduce((s,v)=>s+fobOf(v),0)||1;sub.forEach(v=>{assigned[v.i]=(assigned[v.i]||0)+w*(fobOf(v)/subFob);});});
     const items=ch.items||[];
     const impOf=(k)=>ch.isBlanco?Number(items[k]?.totalImp||0):0;
     const service=Number(ch.total||0)-(ch.isBlanco?items.reduce((s,it)=>s+Number(it.totalImp||0),0):0);
     return valid.map((v,k)=>{const fobShare=fobOf(v)/fobTot;const share=wTot>0?((assigned[v.i]||0)+unassigned*fobShare)/wTot:fobShare;const qty=toN(v.p.quantity)||1;const imp=service*share+impOf(k);const fob=fobOf(v);
       return{desc:v.p.description||`Producto ${v.i+1}`,qty,fob,fobUnit:fob/qty,imp,impUnit:imp/qty,total:fob+imp,totalUnit:(fob+imp)/qty};});
   };
-  const anyAssigned=multi&&pkgs.some(pk=>pk.product_idx!==""&&pk.product_idx!=null);
 
   // ══════════ VISTA RESULTADOS ══════════
   if(results){
     const delivCost=getShipCost(delivery,tot.totWeight);
     const chans=results.channels||[];const calc=chans.filter(c=>!c.noCalc);
     const cheapest=calc.length?calc.reduce((a,b)=>a.total<b.total?a:b):null;
-    const ordered=[...calc.filter(c=>c.key.includes("aereo")),...calc.filter(c=>!c.key.includes("aereo"))];
-    const aereos=calc.filter(c=>c.key.includes("aereo")),maritimos=calc.filter(c=>c.key.includes("maritimo"));
-    const noAereoReason=isChina&&aereos.length===0?(owPk?`Un bulto de ${toN(owPk.weight)} kg supera los 50 kg y no puede importarse por Courier Comercial aéreo. Si podés dividirlo en dos bultos de menor peso, sí podría.`:!pkgs.some(p=>toN(p.weight)>0)?"Para cotizar el aéreo hace falta el peso de los bultos.":null):null;
-    const noMaritimoReason=maritimos.length===0?(noDims?"Marcaste “Desconozco las medidas”: sin dimensiones no se puede calcular el envío marítimo.":results.totCBM===0?"No cargaste dimensiones de bultos: sin volumen (m³) no se puede calcular el envío marítimo.":null):null;
     const facturable=Math.max(tot.totWeight,noDims?0:tot.totVol);
+    // Vías no disponibles: se muestran igual, con el motivo (solo dos motivos posibles).
+    const hasAereo=calc.some(c=>c.key.includes("aereo")),hasMar=calc.some(c=>c.key.includes("maritimo"));
+    const noDimsReason=noDims||tot.totCBM===0;
+    const unavailable=[];
+    if(isChina&&!hasAereo)unavailable.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",motivo:owPk?`Un bulto de ${fmt2(toN(owPk.weight))} kg supera los 50 kg por pieza que admite el courier. Si lo dividís en dos bultos de menor peso, sí puede ir por esta vía.`:"No cargaste el peso ni las medidas de los bultos."});
+    if(!hasMar)unavailable.push({key:"maritimo_b",name:"Marítimo Integral AC",motivo:noDimsReason?"No colocaste las dimensiones de los bultos: sin volumen (m³) no se puede cotizar el marítimo.":"Esta carga no aplica para la vía marítima."});
+    const ordered=[...calc.filter(c=>c.key.includes("aereo")),...calc.filter(c=>!c.key.includes("aereo"))];
     const RES_PANEL={...PANEL,padding:"24px"};
-    const line=(l,v,opts={})=><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,padding:opts.total?"12px 0 0":"7px 0",borderTop:opts.total?"1px solid rgba(255,255,255,0.2)":"none",marginTop:opts.total?8:0}}><span style={{fontSize:opts.total?14:13,color:opts.total?"#fff":"rgba(255,255,255,0.88)",fontWeight:opts.total?700:500}}>{l}</span><span style={{fontSize:opts.total?18:13.5,fontWeight:opts.total?800:600,color:opts.total?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(v)}</span></div>;
+    const line=(l,v,opts={})=><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,padding:opts.total?"12px 0 0":"7px 0",borderTop:opts.total?"1px solid rgba(255,255,255,0.22)":"none",marginTop:opts.total?8:0}}><span style={{fontSize:opts.total?14:13,color:"#fff",fontWeight:opts.total?700:500,opacity:opts.total?1:0.92}}>{l}</span><span style={{fontSize:opts.total?18:13.5,fontWeight:opts.total?800:600,color:opts.total?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{usd(v)}</span></div>;
     const sum=(items,f)=>items.reduce((s,it)=>s+Number(f(it)||0),0);
-    const BOX={padding:"6px 16px 12px",borderRadius:12,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.14)"};
-    const TH=(h,i)=><th key={i} style={{textAlign:i?"right":"left",padding:"7px 8px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.7)",borderBottom:"1px solid rgba(255,255,255,0.18)",whiteSpace:"nowrap"}}>{h}</th>;
-    const TD=(c,ci,hot,last)=><td key={ci} style={{textAlign:ci?"right":"left",padding:"8px 8px",color:hot?GOLD_LIGHT:"#fff",fontWeight:hot?800:ci?500:600,borderBottom:last?"none":"1px solid rgba(255,255,255,0.1)",fontVariantNumeric:"tabular-nums",whiteSpace:ci?"nowrap":"normal"}}>{c}</td>;
-    const breakdown=(ch,total)=>{const its=ch.items||[];const cpp=costPerProduct(ch);return <div>
-      <div style={BOX}>
-        {ch.isBlanco?<>
-          {line("Flete internacional",ch.flete)}
-          {ch.battExtra>0&&line("Recargo por baterías",ch.battExtra)}
-          {Number(ch.overweightSurcharge||0)>0&&line("Recargo por sobrepeso",ch.overweightSurcharge)}
-          {line("Seguro (1%)",ch.seguro)}
-          {line(its.length===1?`Derechos de importación (${its[0].drPct}%)`:"Derechos de importación",sum(its,it=>it.derechos))}
-          {line(its.length===1?`Tasa estadística (${its[0].tePct}%)`:"Tasa estadística",sum(its,it=>it.tasa_e))}
-          {line(its.length===1?`IVA (${its[0].ivaPct}%)`:"IVA",sum(its,it=>it.iva))}
-          {ch.isMar?line("IVA adicional + IIGG + IIBB",sum(its,it=>(it.ivaAdic||0)+(it.iigg||0)+(it.iibb||0))):<>{line("Gasto documental",sum(its,it=>it.desembolso))}{sum(its,it=>it.ivaDesemb)>0&&line("IVA sobre gasto documental",sum(its,it=>it.ivaDesemb))}</>}
-          {delivCost>0&&line("Envío a domicilio",delivCost)}
-        </>:<>
-          {line(ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Servicio integral de importación",Number(ch.flete||0)+Number(ch.surcharge||0))}
-          {ch.battExtra>0&&line("Recargo por baterías",ch.battExtra)}
-          {Number(ch.overweightSurcharge||0)>0&&line("Recargo por sobrepeso",ch.overweightSurcharge)}
-          {delivCost>0&&line("Envío a domicilio",delivCost)}
-        </>}
-        {line("Total",total,{total:true})}
-        {!ch.isBlanco&&<p style={{fontSize:12,color:SUB,margin:"10px 0 0",lineHeight:1.5}}>Tarifa ALL IN: ese número es todo lo que pagás por la importación. No hay costos adicionales ni sorpresas al llegar.</p>}
-      </div>
-      {ch.isBlanco&&its.length>1&&<div style={{marginTop:12}}>
-        <p style={{...LBL,fontSize:10,margin:"0 0 6px"}}>Impuestos por producto</p>
-        <div style={{...BOX,padding:"4px 8px",overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:520}}>
-          <thead><tr>{["Producto","Derechos","Tasa est.","IVA",ch.isMar?"IVA ad. + IIGG + IIBB":"Gasto doc.","Total"].map(TH)}</tr></thead>
-          <tbody>{its.map((it,ii)=><tr key={ii}>{[it.desc,fmt2(it.derechos),fmt2(it.tasa_e),fmt2(it.iva),fmt2(ch.isMar?(it.ivaAdic||0)+(it.iigg||0)+(it.iibb||0):(it.desembolso||0)+(it.ivaDesemb||0)),fmt2(it.totalImp)].map((c,ci)=>TD(c,ci,ci===5,ii===its.length-1))}</tr>)}</tbody>
-        </table></div>
-      </div>}
-      {cpp.length>0&&<div style={{marginTop:14}}>
-        <p style={{...LBL,fontSize:10,margin:"0 0 6px"}}>Costo puesto en Argentina</p>
-        <div style={{...BOX,padding:"4px 8px",overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:cpp.length>1?640:0}}>
-          <thead><tr>{["Producto","Cant.","Proveedor (FOB) c/u","Argencargo c/u","Puesto en Argentina c/u","Total"].map(TH)}</tr></thead>
-          <tbody>{cpp.map((r,ri)=><tr key={ri}>{[r.desc,String(r.qty),usd(r.fobUnit),usd(r.impUnit),usd(r.totalUnit),usd(r.total)].map((c,ci)=>TD(c,ci,ci===4,ri===cpp.length-1))}</tr>)}</tbody>
-        </table></div>
-        <p style={{fontSize:11.5,color:SUB,margin:"8px 0 0",lineHeight:1.5}}>Proveedor = valor FOB de la mercadería · Argencargo = costo de importación (flete, seguro, impuestos y gastos){cpp.length>1?anyAssigned?" · El flete y el seguro se prorratean por los bultos asignados a cada mercadería.":" · Prorrateado por valor FOB. Para más precisión, asigná cada bulto a su mercadería.":""}</p>
-      </div>}
+    const BOX={padding:"6px 16px 12px",borderRadius:12,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.14)"};
+    const TH=(h,i)=><th key={i} style={{textAlign:i?"right":"left",padding:"8px 8px",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY,borderBottom:"1px solid rgba(255,255,255,0.18)",whiteSpace:"nowrap"}}>{h}</th>;
+    const TD=(c,ci,hot,last)=><td key={ci} style={{textAlign:ci?"right":"left",padding:"9px 8px",color:hot?GOLD_LIGHT:"#fff",fontWeight:hot?800:ci?500:600,borderBottom:last?"none":"1px solid rgba(255,255,255,0.1)",fontVariantNumeric:"tabular-nums",whiteSpace:ci?"nowrap":"normal"}}>{c}</td>;
+    const breakdown=(ch,total)=>{const its=ch.items||[];return <div style={BOX}>
+      {ch.isBlanco?<>
+        {line("Flete internacional",ch.flete)}
+        {ch.battExtra>0&&line("Recargo por baterías",ch.battExtra)}
+        {Number(ch.overweightSurcharge||0)>0&&line("Recargo por sobrepeso",ch.overweightSurcharge)}
+        {line("Seguro (1%)",ch.seguro)}
+        {line(its.length===1?`Derechos de importación (${its[0].drPct}%)`:"Derechos de importación",sum(its,it=>it.derechos))}
+        {line(its.length===1?`Tasa estadística (${its[0].tePct}%)`:"Tasa estadística",sum(its,it=>it.tasa_e))}
+        {line(its.length===1?`IVA (${its[0].ivaPct}%)`:"IVA",sum(its,it=>it.iva))}
+        {ch.isMar?line("IVA adicional + IIGG + IIBB",sum(its,it=>(it.ivaAdic||0)+(it.iigg||0)+(it.iibb||0))):<>{line("Gasto documental",sum(its,it=>it.desembolso))}{sum(its,it=>it.ivaDesemb)>0&&line("IVA sobre gasto documental",sum(its,it=>it.ivaDesemb))}</>}
+        {delivCost>0&&line("Envío a domicilio",delivCost)}
+      </>:<>
+        {line(ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Servicio integral de importación",Number(ch.flete||0)+Number(ch.surcharge||0))}
+        {ch.battExtra>0&&line("Recargo por baterías",ch.battExtra)}
+        {Number(ch.overweightSurcharge||0)>0&&line("Recargo por sobrepeso",ch.overweightSurcharge)}
+        {delivCost>0&&line("Envío a domicilio",delivCost)}
+      </>}
+      {line("Total",total,{total:true})}
+      {!ch.isBlanco&&<p style={{fontSize:12,color:SUB,margin:"10px 0 0",lineHeight:1.5}}>Tarifa ALL IN: ese número es todo lo que pagás por la importación. No hay costos adicionales ni sorpresas al llegar.</p>}
     </div>;};
     const aMedida=()=>{const prodLines=products.filter(p=>(p.description||"").trim()||toN(p.unit_price)>0).map((p,i)=>`🏷️ *Mercadería ${i+1}*\nDescripción: ${p.description||"—"}\nCantidad: ${p.quantity||1}\nValor unitario: USD ${fmt2(toN(p.unit_price))}`).join("\n\n");
       const pkgLines=pkgs.filter(p=>toN(p.weight)>0||toN(p.length)>0).map((p,i)=>{const dims=(toN(p.length)&&toN(p.width)&&toN(p.height))?`${p.length}×${p.width}×${p.height} cm`:"sin dimensiones";return `📦 *Bulto ${i+1}*\nDimensiones: ${dims}\nPeso unitario: ${toN(p.weight)||0} kg\nCantidad: ${p.qty||1}`;}).join("\n\n");
       const waMsg=`Hola! Coticé en el portal pero mi carga necesita cotización a medida.${prodLines?`\n\n${prodLines}`:""}${pkgLines?`\n\n${pkgLines}`:""}`;
-      const motivos=[noAereoReason,noMaritimoReason,!isChina&&chans.some(c=>c.noCalc)?"Sin las medidas de las cajas no se puede calcular el marítimo.":null].filter(Boolean);
       return <div style={{...RES_PANEL,textAlign:"center",padding:"36px 24px"}}>
         <p style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 8px"}}>Esta carga necesita cotización a medida</p>
-        <p style={{fontSize:13,color:SUB,margin:"0 auto 14px",maxWidth:480,lineHeight:1.6}}>Por las características de tu carga ningún canal automático aplica. Escribinos y te armamos la mejor opción en minutos.</p>
-        {motivos.length>0&&<div style={{margin:"0 auto 18px",maxWidth:520,textAlign:"left",borderRadius:10,border:HAIR,padding:"10px 14px"}}>{motivos.map((m,i)=><p key={i} style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",margin:i?"6px 0 0":0,lineHeight:1.5}}>• {m}</p>)}</div>}
+        <p style={{fontSize:13,color:SUB,margin:"0 auto 14px",maxWidth:480,lineHeight:1.6}}>Por las características de tu carga ninguna vía automática aplica. Escribinos y te armamos la mejor opción en minutos.</p>
+        {unavailable.length>0&&<div style={{margin:"0 auto 18px",maxWidth:560,textAlign:"left",borderRadius:10,border:HAIR,padding:"10px 14px"}}>{unavailable.map((u,i)=><p key={i} style={{fontSize:12.5,color:"#fff",margin:i?"6px 0 0":0,lineHeight:1.5}}><strong style={{color:"#fbbf24"}}>{u.name}:</strong> {u.motivo}</p>)}</div>}
         <a href={`https://wa.me/5491125088580?text=${encodeURIComponent(waMsg)}`} target="_blank" rel="noreferrer" style={{display:"inline-block",padding:"12px 26px",fontSize:14,fontWeight:800,borderRadius:10,background:"#22c55e",color:"#062012",textDecoration:"none",boxShadow:"0 6px 22px rgba(34,197,94,0.35)"}}>Cotizar por WhatsApp</a>
       </div>;};
+    const chHead=(ch,extraRight,sub,dim)=>{const isAereo=ch.key.includes("aereo");const [big,small]=chTitle(ch);return <>
+      <span style={{width:44,height:44,borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0,opacity:dim?0.5:1}}>{isAereo?"✈️":"🚢"}</span>
+      <span style={{flex:1,minWidth:0}}>
+        <span style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:16,color:"#fff",letterSpacing:"-0.01em",opacity:dim?0.7:1}}><b style={{fontWeight:800,letterSpacing:"0.02em"}}>{big}</b><span style={{color:"rgba(255,255,255,0.45)",margin:"0 8px"}}>—</span><span style={{fontWeight:500}}>{small}</span></span>{extraRight}</span>
+        <span style={{display:"block",fontSize:12.5,color:dim?"#fbbf24":SKY,marginTop:4,lineHeight:1.45}}>{sub}</span>
+      </span>
+    </>;};
+    const tagPill=(tag)=><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"4px 9px",borderRadius:999,background:tag==="Más económica"?"rgba(34,197,94,0.2)":"rgba(184,149,106,0.24)",color:tag==="Más económica"?"#4ade80":GOLD_LIGHT,border:`1px solid ${tag==="Más económica"?"rgba(34,197,94,0.5)":"rgba(232,208,152,0.55)"}`}}>{tag}</span>;
     return <div ref={resultsRef}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:18}}>
-        <div style={{display:"flex",alignItems:"center",gap:14}}>{btnGhost("← Volver a editar",()=>{setResults(null);setExpandedCh(null);})}<h2 style={{fontSize:24,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Resultados</h2></div>
-        <button onClick={resetAll} style={{fontSize:13,color:"#fff",background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0,opacity:0.8}}>Nueva cotización</button>
-      </div>
-      {calc.length===0?aMedida():<div style={RES_PANEL}>
-        <div className="rs-stats" style={{display:"flex",justifyContent:"center",flexWrap:"wrap",marginBottom:20,padding:"14px 0",borderRadius:12,background:"rgba(255,255,255,0.06)",border:HAIR}}>
-          {[["Total FOB",usd(totalFob)],["Peso facturable",facturable>0?`${fmt2(facturable)} kg`:"—"],["Volumen",!noDims&&tot.totCBM>0?`${tot.totCBM.toFixed(3)} m³`:"—"]].map(([l,v],i)=><div key={i} style={{flex:"1 1 140px",textAlign:"center",padding:"4px 16px",borderLeft:i?"1px solid rgba(255,255,255,0.14)":"none"}}><p style={{...LBL,fontSize:10}}>{l}</p><p style={{margin:"5px 0 0",fontSize:19,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>{v}</p></div>)}
+      <div style={{marginBottom:16}}>{btnGhost("← Volver a editar",()=>{setResults(null);setExpandedCh(null);})}</div>
+      <h2 style={{fontSize:24,fontWeight:700,color:"#fff",margin:"0 0 16px",letterSpacing:"-0.02em"}}>Resultados</h2>
+      {calc.length===0?aMedida():<>
+      <div style={RES_PANEL}>
+        <div className="rs-stats" style={{display:"flex",justifyContent:"center",flexWrap:"wrap",marginBottom:20,padding:"14px 0",borderRadius:12,background:"rgba(255,255,255,0.05)",border:HAIR}}>
+          {[["Total FOB",usd(totalFob)],["Peso facturable",facturable>0?`${fmt2(facturable)} kg`:"—"],["Volumen",!noDims&&tot.totCBM>0?`${tot.totCBM.toFixed(3)} m³`:"—"]].map(([l,v],i)=><div key={i} style={{flex:"1 1 140px",textAlign:"center",padding:"4px 16px",borderLeft:i?"1px solid rgba(255,255,255,0.16)":"none"}}><p style={{...LBL,fontSize:10,color:SKY}}>{l}</p><p style={{margin:"5px 0 0",fontSize:19,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>{v}</p></div>)}
         </div>
-        {results.blockMaritimoLclRestricted&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",margin:"0 0 14px",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.1)",lineHeight:1.5}}>Desde el 01/05/2026 la importación marítima de prendas, textiles y calzado solo se permite por <strong style={{color:"#93c5fd"}}>Marítimo Integral AC</strong>, salvo cargas de más de 5 m³. Por eso no aparece Marítimo Carga FCL/LCL.</p>}
-        {ordered.map((ch,i)=>{const open=expandedCh===ch.key;const total=ch.total+delivCost;const isAereo=ch.key.includes("aereo");const [big,small]=chTitle(ch);const tag=calc.length>1&&cheapest&&ch.key===cheapest.key?"Más económica":calc.length>1&&ch.key==="aereo_a_china"?"Más rápida":null;
-          return <div key={ch.key} style={{border:`1px solid ${open?"rgba(232,208,152,0.55)":"rgba(255,255,255,0.16)"}`,borderRadius:14,marginTop:i?10:0,background:open?"rgba(184,149,106,0.08)":"rgba(255,255,255,0.06)",transition:"border-color 150ms"}}>
+        {ordered.map((ch,i)=>{const open=expandedCh===ch.key;const total=ch.total+delivCost;const tag=calc.length>1&&cheapest&&ch.key===cheapest.key?"Más económica":calc.length>1&&ch.key==="aereo_a_china"?"Más rápida":null;
+          return <div key={ch.key} style={{border:`1px solid ${open?"rgba(232,208,152,0.6)":"rgba(255,255,255,0.18)"}`,borderRadius:14,marginTop:i?10:0,background:open?"rgba(184,149,106,0.09)":"rgba(255,255,255,0.05)",transition:"border-color 150ms"}}>
             <button onClick={()=>setExpandedCh(open?null:ch.key)} className="rs-head" style={{width:"100%",display:"flex",alignItems:"center",gap:16,padding:"16px 18px",background:"transparent",border:"none",cursor:"pointer",textAlign:"left"}}>
-              <span style={{width:44,height:44,borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{isAereo?"✈️":"🚢"}</span>
-              <span style={{flex:1,minWidth:0}}>
-                <span style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:16,color:"#fff",letterSpacing:"-0.01em"}}><b style={{fontWeight:800,letterSpacing:"0.02em"}}>{big}</b><span style={{color:"rgba(255,255,255,0.45)",margin:"0 8px"}}>—</span><span style={{fontWeight:500}}>{small}</span></span>{tag&&<span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"4px 9px",borderRadius:999,background:tag==="Más económica"?"rgba(34,197,94,0.18)":"rgba(184,149,106,0.22)",color:tag==="Más económica"?"#4ade80":GOLD_LIGHT,border:`1px solid ${tag==="Más económica"?"rgba(34,197,94,0.45)":"rgba(232,208,152,0.5)"}`}}>{tag}</span>}</span>
-                <span style={{display:"block",fontSize:12.5,color:SUB,marginTop:4}}>Llega en {transitOf(ch)}</span>
-              </span>
-              <span className="rs-price" style={{fontSize:24,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em",whiteSpace:"nowrap"}}><span style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.6)",marginRight:6,letterSpacing:"0.06em"}}>USD</span>{fmt2(total)}</span>
-              <span style={{...SMALL_GHOST,height:36,padding:"0 16px",fontSize:12.5,fontWeight:700,background:open?"rgba(184,149,106,0.2)":"rgba(255,255,255,0.16)",color:open?GOLD_LIGHT:"#fff",borderColor:open?"rgba(232,208,152,0.55)":"rgba(255,255,255,0.32)"}}>{open?"Ocultar":"Ver desglose"}</span>
+              {chHead(ch,tag&&tagPill(tag),`Llega en ${transitOf(ch)}`,false)}
+              <span className="rs-price" style={{fontSize:24,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em",whiteSpace:"nowrap"}}><span style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.65)",marginRight:6,letterSpacing:"0.06em"}}>USD</span>{fmt2(total)}</span>
+              <span style={{...SMALL_GHOST,height:36,padding:"0 16px",fontSize:12.5,fontWeight:700,background:open?"rgba(184,149,106,0.22)":"rgba(255,255,255,0.16)",color:open?GOLD_LIGHT:"#fff",borderColor:open?"rgba(232,208,152,0.6)":"rgba(255,255,255,0.34)"}}>{open?"Ocultar":"Ver desglose"}</span>
             </button>
             {open&&<div style={{padding:"0 18px 18px"}}>
               {breakdown(ch,total)}
               <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap"}}>
                 <a href={`https://wa.me/5491125088580?text=${makeWAMsg(ch)}`} onClick={()=>saveQuote(ch)} target="_blank" rel="noopener noreferrer" style={{flex:"1 1 240px",padding:"14px 18px",fontSize:14.5,fontWeight:800,borderRadius:10,background:"#22c55e",color:"#062012",textAlign:"center",textDecoration:"none",letterSpacing:"0.01em",boxShadow:"0 6px 22px rgba(34,197,94,0.35)"}}>Avanzar con esta opción →</a>
-                <button onClick={()=>printPortalCalcPdf({ch,products,totalFob:results.totalFob??totalFob,origin:origin||results.origin,clientName:client?(`${client.first_name||""} ${client.last_name||""}`.trim()):"",delivCost})} style={{padding:"13px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"1px solid rgba(255,255,255,0.3)",background:"rgba(255,255,255,0.14)",color:"#fff",cursor:"pointer"}}>📄 Exportar PDF</button>
+                <button onClick={()=>printPortalCalcPdf({ch,products,totalFob:results.totalFob??totalFob,origin:origin||results.origin,clientName:client?(`${client.first_name||""} ${client.last_name||""}`.trim()):"",delivCost})} style={{padding:"13px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:"1px solid rgba(255,255,255,0.32)",background:"rgba(255,255,255,0.14)",color:"#fff",cursor:"pointer"}}>📄 Exportar PDF</button>
               </div>
             </div>}
           </div>;})}
-        {noAereoReason&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",margin:"14px 0 0",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(251,191,36,0.35)",background:"rgba(251,191,36,0.08)",lineHeight:1.5}}><strong style={{color:"#fbbf24"}}>No aparece el Aéreo Courier Comercial.</strong> {noAereoReason}</p>}
-        {noMaritimoReason&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",margin:"14px 0 0",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(96,165,250,0.35)",background:"rgba(96,165,250,0.08)",lineHeight:1.5}}><strong style={{color:"#93c5fd"}}>No aparecen opciones marítimas.</strong> {noMaritimoReason}</p>}
+        {unavailable.map(u=><div key={u.key} className="rs-head" style={{display:"flex",alignItems:"center",gap:16,padding:"16px 18px",border:"1px dashed rgba(251,191,36,0.4)",borderRadius:14,marginTop:10,background:"rgba(251,191,36,0.05)"}}>
+          {chHead(u,null,<><strong style={{color:"#fbbf24"}}>Motivo:</strong> {u.motivo}</>,true)}
+          <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"6px 10px",borderRadius:999,background:"rgba(251,191,36,0.16)",color:"#fbbf24",border:"1px solid rgba(251,191,36,0.45)",whiteSpace:"nowrap"}}>Vía no disponible</span>
+        </div>)}
+      </div>
+
+      {/* Cálculo de rentabilidad: separado de la cotización */}
+      {validIdx.length>0&&<div style={RES_PANEL}>
+        <p style={{fontSize:18,fontWeight:800,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.01em"}}>Cálculo de rentabilidad</p>
+        <p style={{fontSize:13,color:SUB,margin:"0 0 16px",lineHeight:1.5}}>Cuánto te cuesta cada producto puesto en Argentina según la vía de importación. Costo unitario = lo que le pagás al proveedor (FOB) · Importación = flete, seguro, impuestos y gastos{multi?(anyAssigned?", prorrateados por los bultos asignados a cada mercadería":", prorrateados por valor FOB"):""}.</p>
+        {ordered.map((ch,i)=>{const cpp=costPerProduct(ch);const [big,small]=chTitle(ch);return <div key={ch.key} style={{marginTop:i?16:0}}>
+          <p style={{margin:"0 0 8px",fontSize:13.5,color:"#fff"}}><span style={{marginRight:8}}>{ch.key.includes("aereo")?"✈️":"🚢"}</span><b style={{fontWeight:800,letterSpacing:"0.02em"}}>{big}</b><span style={{color:"rgba(255,255,255,0.45)",margin:"0 8px"}}>—</span>{small}</p>
+          <div style={{...BOX,padding:"4px 8px",overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:640}}>
+            <thead><tr>{["Producto","Cantidad","Costo unitario","Importación unitaria","Puesto en Argentina unitario","Total"].map(TH)}</tr></thead>
+            <tbody>{cpp.map((r,ri)=><tr key={ri}>{[r.desc,String(r.qty),usd(r.fobUnit),usd(r.impUnit),usd(r.totalUnit),usd(r.total)].map((c,ci)=>TD(c,ci,ci===4,ri===cpp.length-1))}</tr>)}</tbody>
+          </table></div>
+        </div>;})}
       </div>}
+      </>}
+      <div style={{display:"flex",justifyContent:"center",marginTop:6}}>{btnGhost("Nueva cotización",resetAll)}</div>
     </div>;
   }
 
   // ══════════ VISTA CARGA ══════════
-  const pickCard=(on,dim)=>({display:"flex",alignItems:"center",justifyContent:"center",gap:14,padding:"14px 18px",borderRadius:12,border:`1px solid ${on?"rgba(232,208,152,0.6)":"rgba(255,255,255,0.16)"}`,background:on?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.06)",opacity:dim?0.55:1,boxShadow:on?GOLD_GLOW:"none",cursor:"pointer",textAlign:"left",position:"relative",overflow:"hidden",transition:"all 160ms"});
+  const flagBg=(k)=>k==="China"
+    ?<div aria-hidden style={{position:"absolute",inset:0,background:"#C8102E",opacity:0.55}}><span style={{position:"absolute",left:14,top:2,fontSize:42,color:"#FFDE00",lineHeight:1}}>★</span>{[[62,6],[72,16],[72,30],[62,40]].map(([x,y],i)=><span key={i} style={{position:"absolute",left:x,top:y,fontSize:12,color:"#FFDE00",lineHeight:1}}>★</span>)}</div>
+    :<div aria-hidden style={{position:"absolute",inset:0,background:"repeating-linear-gradient(180deg,#B22234 0 7.69%,#FFFFFF 7.69% 15.38%)",opacity:0.55}}><div style={{position:"absolute",left:0,top:0,width:"40%",height:"53.8%",background:"#3C3B6E",backgroundImage:"radial-gradient(circle,#fff 1.1px,transparent 1.6px)",backgroundSize:"10px 10px",backgroundPosition:"5px 5px"}}/></div>;
   return <div><h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:"0 0 20px",letterSpacing:"-0.02em"}}>{t("calc.title")}</h2>
 
-    {/* Origen */}
+    {/* País de origen */}
     <div style={PANEL}>
-      <p style={{fontSize:16,fontWeight:800,color:"#fff",margin:"0 0 14px",textAlign:"center",letterSpacing:"0.02em"}}>Origen</p>
-      <div className="origin-picker" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,maxWidth:640,margin:"0 auto"}}>{[["China","🐉"],["USA","🗽"]].map(([k,sym])=>{const on=origin===k;const dim=!!origin&&!on;return <button key={k} onClick={()=>pickOrigin(k)} style={pickCard(on,dim)} onMouseEnter={e=>{if(!on){e.currentTarget.style.borderColor="rgba(232,208,152,0.45)";e.currentTarget.style.opacity=1;}}} onMouseLeave={e=>{if(!on){e.currentTarget.style.borderColor="rgba(255,255,255,0.16)";e.currentTarget.style.opacity=dim?0.55:1;}}}>
-        <span aria-hidden style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",fontSize:40,lineHeight:1,opacity:on?0.75:0.45,pointerEvents:"none",filter:on?"none":"saturate(0.7)"}}>{sym}</span>
-        <span style={{width:42,height:42,borderRadius:"50%",background:"rgba(255,255,255,0.08)",border:HAIR,display:"flex",alignItems:"center",justifyContent:"center",fontSize:21,flexShrink:0}}>{flagOf(k)}</span>
-        <span style={{fontSize:16,fontWeight:800,color:"#fff",letterSpacing:"0.14em",textTransform:"uppercase"}}>{k}</span>
+      <p style={{fontSize:14,fontWeight:800,color:"#fff",margin:"0 0 14px",textAlign:"center",letterSpacing:"0.14em",textTransform:"uppercase"}}>País de origen</p>
+      <div className="origin-picker" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,maxWidth:680,margin:"0 auto"}}>{["China","USA"].map(k=>{const on=origin===k;const dim=!!origin&&!on;return <button key={k} onClick={()=>pickOrigin(k)} style={{position:"relative",overflow:"hidden",height:96,borderRadius:14,border:`2px solid ${on?GOLD_LIGHT:"rgba(255,255,255,0.22)"}`,background:"#0B1628",cursor:"pointer",padding:0,opacity:dim?0.5:1,boxShadow:on?"0 0 0 3px rgba(232,208,152,0.25), 0 12px 28px rgba(0,0,0,0.35)":"0 8px 20px rgba(0,0,0,0.25)",transition:"all 160ms"}}>
+        {flagBg(k)}
+        <span aria-hidden style={{position:"absolute",inset:0,background:"linear-gradient(180deg, rgba(6,12,24,0.25), rgba(6,12,24,0.7))"}}/>
+        <span style={{position:"relative",display:"flex",alignItems:"center",justifyContent:"center",gap:16,height:"100%"}}>
+          <span style={{fontSize:26,filter:"drop-shadow(0 2px 4px rgba(0,0,0,0.6))"}}>{flagOf(k)}</span>
+          <span style={{fontSize:30,fontWeight:900,color:"#fff",letterSpacing:"0.2em",textTransform:"uppercase",textShadow:"0 2px 10px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.9)"}}>{k}</span>
+          <span style={{fontSize:26,filter:"drop-shadow(0 2px 4px rgba(0,0,0,0.6))"}}>{flagOf(k)}</span>
+        </span>
       </button>;})}</div>
     </div>
 
     {/* Batería (solo China) */}
     {isChina&&<div style={PANEL}>
       <p style={{fontSize:16,fontWeight:800,color:"#fff",margin:"0 0 14px",textAlign:"center"}}>¿Tu producto contiene baterías?</p>
-      <div className="batt-picker" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,maxWidth:640,margin:"0 auto"}}>{[[true,"⚡","Sí, tiene batería","Recargable · litio"],[false,"✓","No tiene batería","Producto estándar"]].map(([v,ic,l,sub])=>{const on=hasBattery===v;return <button key={String(v)} onClick={()=>setHasBattery(v)} style={pickCard(on,false)}>
-        <span style={{width:40,height:40,borderRadius:"50%",border:`1px solid ${on?"rgba(232,208,152,0.55)":"rgba(255,255,255,0.18)"}`,background:on?"rgba(184,149,106,0.18)":"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:v?19:17,color:on?GOLD_LIGHT:"#fff",boxShadow:on&&v?"0 0 18px rgba(232,208,152,0.4)":"none",flexShrink:0}}>{ic}</span>
-        <span><span style={{display:"block",fontSize:14,fontWeight:700,color:"#fff"}}>{l}</span><span style={{display:"block",fontSize:12,color:SUB,marginTop:2}}>{sub}</span></span>
+      <div className="batt-picker" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,maxWidth:680,margin:"0 auto"}}>{[[true,"⚡","Sí, tiene batería","Recargable · litio"],[false,"✓","No tiene batería","Producto estándar"]].map(([v,ic,l,sub])=>{const on=hasBattery===v;return <button key={String(v)} onClick={()=>setHasBattery(v)} style={{position:"relative",overflow:"hidden",padding:"18px 18px 18px 74px",borderRadius:14,border:`2px solid ${on?GOLD_LIGHT:"rgba(255,255,255,0.22)"}`,background:v?"radial-gradient(220px 120px at 8% 50%, rgba(251,191,36,0.28), rgba(11,22,40,0) 70%), #0B1628":"radial-gradient(220px 120px at 8% 50%, rgba(140,200,245,0.22), rgba(11,22,40,0) 70%), #0B1628",cursor:"pointer",textAlign:"center",boxShadow:on?"0 0 0 3px rgba(232,208,152,0.25), 0 12px 28px rgba(0,0,0,0.35)":"0 8px 20px rgba(0,0,0,0.25)",transition:"all 160ms"}}>
+        <span style={{position:"absolute",left:16,top:"50%",transform:"translateY(-50%)",width:44,height:44,borderRadius:"50%",border:`1px solid ${on?"rgba(232,208,152,0.7)":"rgba(255,255,255,0.25)"}`,background:"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:v?21:19,color:on?GOLD_LIGHT:"#fff",boxShadow:on&&v?"0 0 18px rgba(232,208,152,0.45)":"none"}}>{ic}</span>
+        <span style={{display:"block",fontSize:15,fontWeight:800,color:"#fff"}}>{l}</span><span style={{display:"block",fontSize:12.5,color:SKY,marginTop:3}}>{sub}</span>
       </button>;})}</div>
-      {hasBattery===true&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",margin:"12px 0 0",lineHeight:1.5,textAlign:"center"}}>Los productos con batería llevan un recargo de <strong style={{color:GOLD_LIGHT}}>USD {battRate} por kg</strong> facturable.</p>}
+      {hasBattery===true&&<p style={{fontSize:12.5,color:"#fff",margin:"12px 0 0",lineHeight:1.5,textAlign:"center",opacity:0.9}}>Los productos con batería llevan un recargo de <strong style={{color:GOLD_LIGHT}}>USD {battRate} por kg</strong> facturable.</p>}
     </div>}
 
     {/* Productos + bultos */}
     {!unlockProducts?lockedRow("Productos y bultos"):(()=>{
-      const chip=(l,v,hot)=><div style={{flex:"1 1 120px",padding:"10px 14px",borderRadius:10,border:`1px solid ${hot?"rgba(232,208,152,0.5)":"rgba(255,255,255,0.14)"}`,background:hot?"rgba(184,149,106,0.12)":"rgba(255,255,255,0.06)"}}><p style={{...LBL,fontSize:10}}>{l}</p><p style={{margin:"4px 0 0",fontSize:16,fontWeight:700,color:hot?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</p></div>;
+      const chip=(l,v,hot)=><div style={{flex:"1 1 120px",padding:"10px 14px",borderRadius:10,border:`1px solid ${hot?"rgba(232,208,152,0.55)":"rgba(255,255,255,0.16)"}`,background:hot?"rgba(184,149,106,0.14)":"rgba(255,255,255,0.05)"}}><p style={{...LBL,fontSize:10,color:hot?GOLD_LIGHT:SKY}}>{l}</p><p style={{margin:"4px 0 0",fontSize:16,fontWeight:700,color:hot?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</p></div>;
       const ncmCell=(p)=>p.ncmLoading?<span style={{fontSize:11.5,color:GOLD_LIGHT,fontWeight:600,whiteSpace:"nowrap"}}>Clasificando…</span>
-        :p.ncm?.ncm_code?<span style={{height:40,display:"inline-flex",alignItems:"center",padding:"0 12px",borderRadius:9,background:"rgba(184,149,106,0.14)",border:"1px solid rgba(232,208,152,0.45)",color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}}>{p.ncm.ncm_code==="MANUAL"?"Estimado":p.ncm.ncm_code}{p.ncm.antidumping&&<span title="Antidumping" style={{marginLeft:6,color:"#f87171"}}>⚠</span>}</span>
-        :<span style={{height:40,display:"inline-flex",alignItems:"center",padding:"0 12px",borderRadius:9,border:"1px dashed rgba(255,255,255,0.3)",color:"rgba(255,255,255,0.55)",fontSize:11,fontWeight:600,letterSpacing:"0.05em",whiteSpace:"nowrap"}}>PENDIENTE</span>;
-      const typeCell=(p,i)=><div style={{display:"inline-flex",background:"rgba(255,255,255,0.06)",border:HAIR,borderRadius:9,padding:2,flex:1,justifyContent:"center"}}>{(origin==="España"?[["general","Carga general"]]:[["general","Carga general"],["celulares","Celulares"]]).map(([k,l])=><button key={k} onClick={()=>chProd(i,"type",k)} style={{padding:"7px 10px",fontSize:11.5,fontWeight:600,borderRadius:7,border:"none",cursor:"pointer",background:p.type===k?"rgba(184,149,106,0.22)":"transparent",color:p.type===k?GOLD_LIGHT:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}>{l}</button>)}</div>;
-      const validIdx=products.map((p,i)=>toN(p.unit_price)>0?i:-1).filter(i=>i>=0);
+        :p.ncm?.ncm_code?<span style={{height:40,display:"inline-flex",alignItems:"center",padding:"0 12px",borderRadius:9,background:"rgba(184,149,106,0.16)",border:"1px solid rgba(232,208,152,0.5)",color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}}>{p.ncm.ncm_code==="MANUAL"?"Estimado":p.ncm.ncm_code}{p.ncm.antidumping&&<span title="Antidumping" style={{marginLeft:6,color:"#f87171"}}>⚠</span>}</span>
+        :<span style={{height:40,display:"inline-flex",alignItems:"center",padding:"0 12px",borderRadius:9,border:"1px dashed rgba(255,255,255,0.35)",color:"rgba(255,255,255,0.7)",fontSize:11,fontWeight:700,letterSpacing:"0.05em",whiteSpace:"nowrap"}}>PENDIENTE</span>;
+      const typeCell=(p,i)=><div style={{display:"inline-flex",background:"rgba(255,255,255,0.06)",border:HAIR,borderRadius:9,padding:2,flex:1,justifyContent:"center"}}>{(origin==="España"?[["general","Carga general"]]:[["general","Carga general"],["celulares","Celulares"]]).map(([k,l])=><button key={k} onClick={()=>chProd(i,"type",k)} style={{padding:"7px 10px",fontSize:11.5,fontWeight:600,borderRadius:7,border:"none",cursor:"pointer",background:p.type===k?"rgba(184,149,106,0.24)":"transparent",color:p.type===k?GOLD_LIGHT:"rgba(255,255,255,0.75)",whiteSpace:"nowrap"}}>{l}</button>)}</div>;
       return <div style={PANEL}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:12,flexWrap:"wrap"}}>
-          <p style={LBL}>Productos</p>
+          <p style={{...LBL,fontSize:13}}>Productos</p>
           <button onClick={addProduct} style={SMALL_GOLD}>+ Producto</button>
         </div>
-        <div className="pc-head" style={{display:"grid",gridTemplateColumns:PROD_COLS,gap:8,padding:"0 4px 6px"}}>{(isChina?["Descripción","USD c/u","Cantidad","NCM / HS sugerida","NCM Argencargo"]:["Descripción","USD c/u","Cantidad","Tipo"]).map((h,i)=><span key={i} style={{...LBL,fontSize:10,textAlign:i>0?"center":"left",paddingRight:i===(isChina?4:3)?40:0}}>{h}</span>)}</div>
+        <div className="pc-head" style={{display:"grid",gridTemplateColumns:PROD_COLS,gap:8,padding:"0 4px 6px"}}>{(isChina?["Descripción","USD c/u","Cantidad","NCM / HS sugerida","NCM Argencargo"]:["Descripción","USD c/u","Cantidad","Tipo"]).map((h,i)=><span key={i} style={{...LBL,fontSize:10,color:SKY,textAlign:i>0?"center":"left",paddingRight:i===(isChina?4:3)?40:0}}>{h}</span>)}</div>
         {products.map((p,i)=><div key={i}>
           <div className="pc-row" style={{display:"grid",gridTemplateColumns:PROD_COLS,gap:8,alignItems:"center",padding:"6px 4px",borderTop:i>0?HAIR:"none"}}>
             <input className="pc-desc" value={p.description||""} onChange={e=>chProd(i,"description",e.target.value)} placeholder={isChina?"Sé específico. Ej: Auriculares inalámbricos bluetooth":"Ej: Fundas de silicona para celular"} style={{...INP,textAlign:"left"}} onFocus={onF} onBlur={onB}/>
             {numIn({value:p.unit_price,onChange:v=>chProd(i,"unit_price",v),placeholder:"USD c/u"})}
             {numIn({value:p.quantity,onChange:v=>chProd(i,"quantity",v),placeholder:"Cant."})}
-            {isChina&&<input className="pc-hint" value={p.ncm_hint||""} onChange={e=>{const v=e.target.value;if(/^[\d.]*$/.test(v))chProd(i,"ncm_hint",v);}} placeholder="Opcional" title="Si tenés la posición arancelaria que te pasó el proveedor, cargala: Argencargo la valida" style={{...INP,fontFamily:"'JetBrains Mono',monospace",fontSize:13}} onFocus={onF} onBlur={onB}/>}
+            {isChina&&<input className="pc-hint" value={p.ncm_hint||""} onChange={e=>{const v=e.target.value;if(/^[\d.]*$/.test(v))chProd(i,"ncm_hint",v);}} placeholder="(OPCIONAL)" title="Si tenés la posición arancelaria que te pasó el proveedor, cargala: Argencargo la valida" style={{...INP,fontFamily:"'JetBrains Mono',monospace",fontSize:13}} onFocus={onF} onBlur={onB}/>}
             <div className={isChina?"pc-tail":"pc-tail pc-tail-full"} style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center",minWidth:0}}>
               {isChina?ncmCell(p):typeCell(p,i)}
               {delBtn(()=>rmProduct(i),products.length<=1)}
@@ -1869,7 +1884,7 @@ function CalculatorPage({token,client}){
           </div>
           {isChina&&(()=>{const est=()=>chProd(i,"ncm",{ncm_code:"MANUAL",ncm_description:p.description,import_duty_rate:35,statistics_rate:3,iva_rate:21});const n=p.ncm;
             return <div style={{padding:"0 4px 8px"}}>
-              {n?.ncm_code&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>{[["Derechos",n.import_duty_rate],["Tasa estadística",n.statistics_rate],["IVA",n.iva_rate]].map(([l,v])=><span key={l} style={{display:"inline-flex",alignItems:"center",gap:8,height:30,padding:"0 12px",borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.07)"}}><span style={{fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.75)"}}>{l}</span><span style={{fontSize:13,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}%</span></span>)}</div>}
+              {n?.ncm_code&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>{[["Derechos",n.import_duty_rate],["Tasa estadística",n.statistics_rate],["IVA",n.iva_rate]].map(([l,v])=><span key={l} style={{display:"inline-flex",alignItems:"center",gap:8,height:30,padding:"0 12px",borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.07)"}}><span style={{fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:SKY}}>{l}</span><span style={{fontSize:13,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}%</span></span>)}</div>}
               {n?.hint_verdict==="diff"&&<p style={{fontSize:12,color:"#fbbf24",margin:"6px 0 0",lineHeight:1.5}}>Tu posición sugerida ({n.hint_code}) no corresponde para esta mercadería{n.hint_note?`: ${n.hint_note}`:"."}</p>}
               {n?.hint_verdict==="ok"&&<p style={{fontSize:12,color:"#4ade80",margin:"6px 0 0"}}>Coincide con la posición que sugeriste.</p>}
               {n?.antidumping&&<p style={{fontSize:12,color:"#f87171",margin:"6px 0 0",lineHeight:1.5}}>⚠ Este producto tiene medidas antidumping para origen China ({n.antidumping.producto}). La cotización es estimativa: el equipo la revisa antes de confirmar.</p>}
@@ -1884,42 +1899,45 @@ function CalculatorPage({token,client}){
               </div>}
             </div>;})()}
         </div>)}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:10,paddingTop:12,borderTop:HAIR}}>
-          <div><span style={{fontSize:12.5,color:"rgba(255,255,255,0.85)",fontWeight:600}}>FOB mercadería</span><span style={{marginLeft:10,fontSize:17,fontWeight:800,color:totalFob>0?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums"}}>{totalFob>0?usd(totalFob):"—"}</span></div>
-          {isChina&&sinNcm.length>0&&<button onClick={classifyAll} disabled={classifyingAll} style={{height:38,padding:"0 18px",fontSize:12.5,fontWeight:800,letterSpacing:"0.06em",borderRadius:9,cursor:classifyingAll?"wait":"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,opacity:classifyingAll?0.6:1}}>{classifyingAll?"CLASIFICANDO…":`CLASIFICAR NCM${sinNcm.length>1?` (${sinNcm.length})`:""}`}</button>}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginTop:10,paddingTop:14,borderTop:HAIR}}>
+          <div style={{display:"inline-flex",alignItems:"center",gap:14,padding:"8px 16px",borderRadius:10,border:"1px solid rgba(232,208,152,0.35)",background:"rgba(184,149,106,0.1)"}}><span style={{fontSize:13,fontWeight:800,color:"#fff",letterSpacing:"0.08em",textTransform:"uppercase",lineHeight:1}}>FOB mercadería</span><span style={{fontSize:22,fontWeight:800,color:totalFob>0?GOLD_LIGHT:"rgba(255,255,255,0.4)",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{totalFob>0?usd(totalFob):"—"}</span></div>
+          {isChina&&sinNcm.length>0&&<button onClick={classifyAll} disabled={classifyingAll} style={{height:40,padding:"0 20px",fontSize:12.5,fontWeight:800,letterSpacing:"0.06em",borderRadius:9,cursor:classifyingAll?"wait":"pointer",background:GOLD_GRADIENT,color:"#0A1628",border:`1px solid ${GOLD_DEEP}`,opacity:classifyingAll?0.6:1,boxShadow:GOLD_GLOW}}>{classifyingAll?"CLASIFICANDO…":`CLASIFICAR NCM${sinNcm.length>1?` (${sinNcm.length})`:""}`}</button>}
         </div>
         {pendingClass&&!classifyingAll&&<p style={{fontSize:12,color:"#fbbf24",margin:"8px 0 0"}}>Antes de avanzar hay que clasificar los productos: tocá <strong>CLASIFICAR NCM</strong> o elegí “Usar valores estimados”.</p>}
 
         {/* Bultos */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:22,paddingTop:20,borderTop:HAIR,marginBottom:12}}>
-          <p style={LBL}>Bultos <span style={{color:"rgba(255,255,255,0.5)",letterSpacing:0,textTransform:"none",fontWeight:500}}>· cm / kg</span></p>
+          <p style={{...LBL,fontSize:13}}>Bultos <span style={{color:SKY,letterSpacing:0,textTransform:"none",fontWeight:500}}>· cm / kg</span></p>
           <button onClick={addPkg} style={SMALL_GOLD}>+ Bulto</button>
         </div>
-        {multi&&<p style={{fontSize:12,color:SUB,margin:"-4px 0 10px",lineHeight:1.5}}>Opcional: indicá a qué mercadería pertenece cada bulto para ver el costo unitario de cada producto puesto en Argentina.</p>}
-        <div className="pk-head" style={{display:"grid",gridTemplateColumns:PK_COLS,gap:8,padding:"0 4px 6px"}}>{[...(multi?["Mercadería"]:[]),"Cant.","Largo","Ancho","Alto","Peso kg","",""].map((h,i)=><span key={i} style={{...LBL,fontSize:10,textAlign:"center"}}>{h}</span>)}</div>
-        {pkgs.map((pk,i)=>{const q=toN(pk.qty)||1,l=toN(pk.length),w=toN(pk.width),h=toN(pk.height),gw=toN(pk.weight);const bruto=gw*q;const vol=!noDims&&l&&w&&h?((l*w*h)/5000)*q:0;const m3=!noDims&&l&&w&&h?((l*w*h)/1e6)*q:0;
+        {multi&&<p style={{fontSize:12.5,color:SUB,margin:"-4px 0 10px",lineHeight:1.5}}>Opcional: marcá qué mercaderías van en cada bulto para ver el costo unitario de cada producto puesto en Argentina. Si asignás una, todas tienen que quedar en algún bulto.</p>}
+        <div className="pk-head" style={{display:"grid",gridTemplateColumns:PK_COLS,gap:8,padding:"0 4px 6px"}}>{[...(multi?["Mercadería"]:[]),"Cant.","Largo","Ancho","Alto","Peso kg","",""].map((h,i)=><span key={i} style={{...LBL,fontSize:10,color:SKY,textAlign:"center"}}>{h}</span>)}</div>
+        {pkgs.map((pk,i)=>{const q=toN(pk.qty)||1,l=toN(pk.length),w=toN(pk.width),h=toN(pk.height),gw=toN(pk.weight);const bruto=gw*q;const vol=!noDims&&l&&w&&h?((l*w*h)/5000)*q:0;const m3=!noDims&&l&&w&&h?((l*w*h)/1e6)*q:0;const ids=pkIds(pk);
           return <div key={i} className="pk-row" style={{display:"grid",gridTemplateColumns:PK_COLS,gap:8,alignItems:"center",padding:"6px 4px",borderTop:i>0?HAIR:"none"}}>
-          {multi&&<select className="pk-prod" value={pk.product_idx??""} onChange={e=>chPkg(i,"product_idx",e.target.value)} style={{...INP,textAlign:"left",appearance:"auto",cursor:"pointer",color:pk.product_idx!==""&&pk.product_idx!=null?"#fff":"rgba(255,255,255,0.6)"}}><option value="">Varios / sin asignar</option>{validIdx.map(pi=><option key={pi} value={pi}>{products[pi].description||`Producto ${pi+1}`}</option>)}</select>}
+          {multi&&<div className="pk-prod" style={{display:"flex",flexWrap:"wrap",gap:4,alignItems:"center",minHeight:40,padding:"4px 6px",borderRadius:9,border:HAIR,background:"rgba(255,255,255,0.04)"}}>
+            <button onClick={()=>clearPkProd(i)} style={{height:28,padding:"0 9px",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",border:`1px solid ${ids.length===0?"rgba(140,200,245,0.6)":"rgba(255,255,255,0.18)"}`,background:ids.length===0?"rgba(140,200,245,0.18)":"transparent",color:ids.length===0?SKY:"rgba(255,255,255,0.65)",whiteSpace:"nowrap"}}>Varios / sin asignar</button>
+            {validIdx.map(idx=>{const on=ids.includes(idx);const d=products[idx].description||`Producto ${idx+1}`;return <button key={idx} onClick={()=>togglePkProd(i,idx)} title={d} style={{height:28,padding:"0 9px",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",border:`1px solid ${on?"rgba(232,208,152,0.7)":"rgba(255,255,255,0.18)"}`,background:on?"rgba(184,149,106,0.22)":"transparent",color:on?GOLD_LIGHT:"rgba(255,255,255,0.75)",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{on?"✓ ":""}{d}</button>;})}
+          </div>}
           {numIn({value:pk.qty,onChange:v=>chPkg(i,"qty",v),placeholder:"1"})}
           {numIn({value:pk.length,onChange:v=>chPkg(i,"length",v),placeholder:noDims?"—":"cm",disabled:noDims})}
           {numIn({value:pk.width,onChange:v=>chPkg(i,"width",v),placeholder:noDims?"—":"cm",disabled:noDims})}
           {numIn({value:pk.height,onChange:v=>chPkg(i,"height",v),placeholder:noDims?"—":"cm",disabled:noDims})}
           {numIn({value:pk.weight,onChange:v=>chPkg(i,"weight",v),placeholder:"kg"})}
           {delBtn(()=>rmPkg(i),pkgs.length<=1)}
-          <div className="pk-info" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,minWidth:0}}>{[["Peso bruto",bruto>0?`${fmt2(bruto)} kg`:"—",bruto>0&&bruto>=vol],["Peso volumétrico",vol>0?`${fmt2(vol)} kg`:"—",vol>bruto],["m³",m3>0?`${m3.toFixed(3)}`:"—",false]].map(([l,v,hot])=><span key={l} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:40,padding:"0 6px",borderRadius:8,border:`1px solid ${hot?"rgba(232,208,152,0.55)":"rgba(255,255,255,0.16)"}`,background:hot?"rgba(184,149,106,0.14)":"rgba(255,255,255,0.07)",minWidth:0}}><span style={{fontSize:8.5,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:"rgba(255,255,255,0.72)",whiteSpace:"nowrap"}}>{l}</span><span style={{fontSize:12,fontWeight:700,color:hot?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</span></span>)}</div>
+          <div className="pk-info" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,minWidth:0}}>{[["Peso bruto",bruto>0?`${fmt2(bruto)} kg`:"—",bruto>0&&bruto>=vol],["Peso volumétrico",vol>0?`${fmt2(vol)} kg`:"—",vol>bruto],["m³",m3>0?`${m3.toFixed(3)}`:"—",false]].map(([l,v,hot])=><span key={l} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:40,padding:"0 6px",borderRadius:8,border:`1px solid ${hot?"rgba(232,208,152,0.6)":"rgba(255,255,255,0.18)"}`,background:hot?"rgba(184,149,106,0.16)":"rgba(255,255,255,0.07)",minWidth:0}}><span style={{fontSize:8.5,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:hot?GOLD_LIGHT:SKY,whiteSpace:"nowrap"}}>{l}</span><span style={{fontSize:12,fontWeight:700,color:hot?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</span></span>)}</div>
         </div>;})}
         <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap",alignItems:"stretch"}}>
           {chip("Peso bruto total",tot.totWeight>0?`${fmt2(tot.totWeight)} kg`:"—",tot.totWeight>0&&!volWins)}
           {chip("Peso volumétrico total",!noDims&&tot.totVol>0?`${fmt2(tot.totVol)} kg`:"—",volWins)}
           {chip("Volumen total",!noDims&&tot.totCBM>0?`${tot.totCBM.toFixed(3)} m³`:"—",false)}
-          <div onClick={()=>setNoDims(!noDims)} style={{flex:"1 1 200px",display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:10,border:`1px solid ${noDims?"rgba(251,146,60,0.45)":"rgba(255,255,255,0.14)"}`,cursor:"pointer",background:noDims?"rgba(251,146,60,0.1)":"rgba(255,255,255,0.06)",userSelect:"none"}}>
-            <span style={{width:30,height:17,borderRadius:999,background:noDims?"#fb923c":"rgba(255,255,255,0.2)",position:"relative",flexShrink:0,transition:"background 180ms"}}><span style={{position:"absolute",top:2,left:noDims?15:2,width:13,height:13,borderRadius:"50%",background:"#fff",transition:"left 180ms"}}/></span>
-            <span style={{fontSize:12,color:noDims?"#fdba74":"rgba(255,255,255,0.85)",lineHeight:1.35}}>Desconozco las medidas{noDims&&<span style={{display:"block",fontSize:11,opacity:0.85}}>Sin medidas no se cotiza el marítimo.</span>}</span>
+          <div onClick={()=>setNoDims(!noDims)} style={{flex:"1 1 200px",display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:10,border:`1px solid ${noDims?"rgba(251,146,60,0.5)":"rgba(255,255,255,0.16)"}`,cursor:"pointer",background:noDims?"rgba(251,146,60,0.12)":"rgba(255,255,255,0.05)",userSelect:"none"}}>
+            <span style={{width:30,height:17,borderRadius:999,background:noDims?"#fb923c":"rgba(255,255,255,0.22)",position:"relative",flexShrink:0,transition:"background 180ms"}}><span style={{position:"absolute",top:2,left:noDims?15:2,width:13,height:13,borderRadius:"50%",background:"#fff",transition:"left 180ms"}}/></span>
+            <span style={{fontSize:12.5,color:noDims?"#fdba74":"#fff",lineHeight:1.35}}>Desconozco las medidas{noDims&&<span style={{display:"block",fontSize:11,opacity:0.85}}>Sin medidas no se cotiza el marítimo.</span>}</span>
           </div>
         </div>
         {owPk&&isChina&&<p style={{fontSize:12,color:"#fbbf24",margin:"12px 0 0",lineHeight:1.5}}>⚠ Un bulto de <strong>{toN(owPk.weight)} kg</strong> supera los 50 kg y no puede ir por Courier Comercial aéreo. Si podés dividirlo en dos bultos de menor peso, sí podría. Mientras tanto te mostramos las opciones marítimas.</p>}
-        <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:12,marginTop:22,paddingTop:18,borderTop:HAIR}}>
-          {!canCalc&&hasPriced&&<span style={{fontSize:12,color:SUB}}>{pendingClass?"Clasificá los productos para calcular":!pkgOk?"Cargá el peso o las medidas de un bulto":""}</span>}
+        <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:12,marginTop:22,paddingTop:18,borderTop:HAIR,flexWrap:"wrap"}}>
+          {!canCalc&&hasPriced&&<span style={{fontSize:12.5,color:"#fbbf24"}}>{pendingClass?"Clasificá los productos para calcular":!pkgOk?"Cargá el peso o las medidas de un bulto":unassignedProds.length?`Falta asignar a un bulto: ${unassignedProds.map(idx=>products[idx].description||`Producto ${idx+1}`).join(", ")}`:""}</span>}
           {btnGold("Calcular costos →",doCalc,!canCalc)}
         </div>
       </div>;})()}
@@ -2510,7 +2528,7 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
       <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.32)",margin:"0 0 6px",padding:"0 14px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{sec.section}</p>
       {sec.items.map(item=>{const active=page===item.key;return <button key={item.key} onClick={()=>{setPage(item.key);setMobOpen(false);}} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"8px 14px",marginBottom:1,borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:active?700:500,letterSpacing:"-0.005em",background:active?"linear-gradient(90deg, rgba(184,149,106,0.10), rgba(184,149,106,0.02))":"transparent",color:active?"#fff":"rgba(255,255,255,0.55)",transition:"all 150ms",position:"relative"}} onMouseEnter={e=>{if(!active){e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="rgba(255,255,255,0.9)";}}} onMouseLeave={e=>{if(!active){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.55)";}}}>{active&&<span style={{position:"absolute",left:-10,top:6,bottom:6,width:3,background:GOLD_GRADIENT,borderRadius:"0 3px 3px 0"}}/>}<svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={active?GOLD_LIGHT:"rgba(255,255,255,0.5)"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:active?1:0.9}}>{item.p.map((d,i)=><path key={i} d={d}/>)}</svg><span style={{flex:1,textAlign:"left",lineHeight:1.25}}>{item.tkey?t(item.tkey):item.label}</span></button>;})}
     </div>)}</nav>
-    <div style={{padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.06)"}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}><div style={{width:34,height:34,borderRadius:"50%",background:"linear-gradient(135deg, rgba(184,149,106,0.2), rgba(184,149,106,0.08))",border:"1px solid rgba(184,149,106,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12,color:GOLD_LIGHT,letterSpacing:"0.03em"}}>{(client?.first_name?.[0]||"U").toUpperCase()}{(client?.last_name?.[0]||"").toUpperCase()}</div><div style={{flex:1,minWidth:0}}><p style={{fontSize:12.5,fontWeight:600,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</p><p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"1px 0 0",letterSpacing:"0.04em"}}>{t("common.client")}</p></div></div>
+    <div style={{padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.06)"}}><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}><div style={{width:34,height:34,borderRadius:"50%",background:"linear-gradient(135deg, rgba(184,149,106,0.2), rgba(184,149,106,0.08))",border:"1px solid rgba(184,149,106,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:12,color:GOLD_LIGHT,letterSpacing:"0.03em"}}>{(client?.first_name?.[0]||"U").toUpperCase()}{(client?.last_name?.[0]||"").toUpperCase()}</div><div style={{flex:1,minWidth:0}}><p style={{fontSize:12.5,fontWeight:600,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</p><p style={{fontSize:10.5,color:"rgba(255,255,255,0.4)",margin:"1px 0 0",letterSpacing:"0.04em"}}>{t("common.client")}</p></div>{token&&<div className="desktop-notif-bell"><NotifBell token={token}/></div>}</div>
     <div style={{display:"flex",gap:4,marginBottom:10}}>{LANGS.map(L=><button key={L.code} onClick={()=>setLang(L.code)} title={L.label} style={{flex:1,padding:"5px 0",fontSize:14,background:lang===L.code?"rgba(184,149,106,0.18)":"rgba(255,255,255,0.03)",border:`1px solid ${lang===L.code?"rgba(184,149,106,0.35)":"rgba(255,255,255,0.06)"}`,borderRadius:6,cursor:"pointer",color:"#fff"}}>{L.flag}</button>)}</div>
     <button onClick={onLogout} style={{width:"100%",padding:"8px 10px",fontSize:11.5,background:"transparent",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"rgba(255,255,255,0.5)",cursor:"pointer",fontWeight:600,letterSpacing:"0.04em",transition:"all 150ms"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(184,149,106,0.35)";e.currentTarget.style.color=GOLD_LIGHT;}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.color="rgba(255,255,255,0.5)";}}>{t("common.logout")}</button>
     <a href="/terminos" target="_blank" rel="noopener" style={{display:"block",marginTop:8,fontSize:10,color:"rgba(255,255,255,0.3)",textDecoration:"none",textAlign:"center"}}>Términos y condiciones</a></div>
@@ -2518,6 +2536,7 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
   return <div style={{minHeight:"100vh",fontFamily:"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",background:DARK_BG,position:"relative"}}><div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0}}><WorldMap/></div>
     <style>{`
       @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:0.85;transform:scale(1.05);}}
+      .pc-hint::placeholder{color:rgba(232,208,152,0.85);font-weight:700;letter-spacing:0.08em;font-family:Inter,sans-serif;font-size:11px}
       @media(max-width:768px){
         .sidebar-desktop{display:none!important}
         .mob-header{display:flex!important}
@@ -2545,6 +2564,7 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
         .pc-desc,.pc-tail-full{grid-column:1/-1!important}
         .pk-row{grid-template-columns:1fr 1fr 1fr!important}
         .pk-info,.pk-prod{grid-column:1/-1!important}
+        .rs-head{flex-wrap:wrap!important}
         .batt-picker{grid-template-columns:1fr!important}
         .rs-head{flex-wrap:wrap!important;gap:10px!important}
         .rs-price{flex-basis:100%!important;order:3;padding-left:60px!important;font-size:20px!important}
@@ -2584,7 +2604,6 @@ function DashShell({children,page,setPage,role,client,user,onLogout,token}){
     <div className="sidebar-desktop" style={{width:240,position:"fixed",top:0,left:0,bottom:0,background:"rgba(0,0,0,0.35)",backdropFilter:"blur(12px)",borderRight:"1px solid rgba(255,255,255,0.07)",display:"flex",flexDirection:"column",zIndex:10,overflow:"auto"}}>{sidebarContent}</div>
     <div className="main-content" style={{marginLeft:240,minHeight:"100vh",position:"relative",zIndex:1}}>
       {/* Bell flotante en lugar de sticky bar — alineado con el saludo del cabezal de cada página. */}
-      {token&&<div className="desktop-notif-bell" style={{position:"absolute",top:30,right:32,zIndex:20}}><NotifBell token={token}/></div>}
       <div className="main-inner" style={{maxWidth:1200,margin:"0 auto",padding:"30px 32px"}}>{children}</div></div>
     <WhatsAppFab message={`Hola Argencargo! 👋 Soy ${client?.first_name||""} ${client?.last_name||""}${client?.client_code?` (${client.client_code})`:""}, tengo una consulta.`}/>
     {/* Bottom nav mobile (≤768px) — 5 acciones más usadas. El resto via "más" → sidebar */}
