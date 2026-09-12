@@ -1406,6 +1406,8 @@ function CalculatorPage({token,client,preset}){
   // comen el ahorro vs aéreo/courier). Ej: 0,5 m³ → mín. USD 125; 3 m³ → mín. USD 750.
   // Peso facturable mínimo para aéreo desde China (canal A Courier y canal B Integral): 5 kg.
   const MIN_KG_AEREO_CHINA=5;
+  // Courier comercial desde USA (habilitado 12/09/2026): misma tarifa que China, mínimo 25 kg.
+  const MIN_KG_AEREO_USA=25;
   const isRestricted=products.some(p=>{
     const ncm=(p.ncm?.ncm_code||"").replace(/[^0-9]/g,"");
     const chapter=ncm.slice(0,2);
@@ -1419,16 +1421,6 @@ function CalculatorPage({token,client,preset}){
   const tariffNowOk=t=>{const n=Date.now();return (t.effective_from==null||Date.parse(t.effective_from)<=n)&&(t.effective_to==null||n<Date.parse(t.effective_to));};
   const getFleteRate=(svcKey,amount)=>{const rates=tariffs.filter(t=>t.service_key===svcKey&&t.type==="rate"&&tariffNowOk(t));for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amount>=min&&amount<max)return getEffRate(r);}return rates.length?getEffRate(rates[rates.length-1]):0;};
   const getSurcharge=(svcKey,totalVal,amount)=>{const surcharges=tariffs.filter(t=>t.service_key===svcKey&&t.type==="surcharge").sort((a,b)=>Number(b.min_qty)-Number(a.min_qty));if(amount<=0)return{pct:0,amt:0};const vpu=totalVal/amount;for(const s of surcharges){if(vpu>=Number(s.min_qty))return{pct:Number(s.rate),amt:totalVal*(Number(s.rate)/100)};}return{pct:0,amt:0};};
-
-  const calculateUSA=()=>{
-    const{totWeight,totVol,totCBM,billable}=calcTotals();const channels=[];
-    // En USA solo hay marítimo Integral AC, que SIEMPRE permite ropa (no aplica restricción del 01/05)
-    // Marítimo Integral AC — solo si NO es celulares. Si totCBM>0 hay dimensiones cargadas.
-    if(!hasPhones&&totCBM>0){const fleteRate=getFleteRate("maritimo_b",totCBM);const flete=totCBM*fleteRate;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
-      channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",flete,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totCBM.toFixed(4)} CBM`});}
-    else if(!hasPhones&&totCBM===0){channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",noCalc:true,total:0,unit:"—"});}
-    setResults({channels,totWeight,totVol,totCBM,billable,isRestricted});setStep(4);
-  };
 
   const calculateSpain=()=>{
     const{totWeight,totVol,totCBM,billable}=calcTotals();const channels=[];
@@ -1499,8 +1491,12 @@ function CalculatorPage({token,client,preset}){
     }catch(e){setProducts(pr=>pr.map((x,j)=>j===idx?{...x,ncmLoading:false,ncmError:true,ncm:null}:x));}
   };
 
+  // China y USA comparten flujo y tarifas. Unica diferencia: USA no tiene Maritimo LCL/FCL
+  // y su minimo facturable aereo es de 25 kg.
   const calculateChina=()=>{
     const{totWeight,totCBM}=calcTotals();const channels=[];
+    const conLcl=origin==="China";
+    const minKgAereo=origin==="USA"?MIN_KG_AEREO_USA:MIN_KG_AEREO_CHINA;
     // Peso facturable = suma del max(bruto, vol) POR BULTO, no global
     let facturable=0;let volWeightTotal=0;
     const pkgDetails=pkgs.map(pk=>{const q=(toN(pk.qty)||1),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height),gw=toN(pk.weight);
@@ -1539,7 +1535,7 @@ function CalculatorPage({token,client,preset}){
     // Omitido si: hay marca registrada, o algún bulto unitario supera los 45 kg
     // (límite operativo del canal courier — no importa el total, sino el peso por bulto)
     const overweightPkg=pkgs.find(pk=>toN(pk.weight)>=46);
-    if(!hasBrand&&!overweightPkg&&facturable>0){const facturableBill=Math.max(facturable,MIN_KG_AEREO_CHINA);const fleteRate=getFleteRate("aereo_a_china",facturableBill);const flete=facturableBill*fleteRate;
+    if(!hasBrand&&!overweightPkg&&facturable>0){const facturableBill=Math.max(facturable,minKgAereo);const fleteRate=getFleteRate("aereo_a_china",facturableBill);const flete=facturableBill*fleteRate;
       const certFlete=isRI?(totWeight*certAerReal):(facturableBill*certAerFict);
       const seguro=(totalFob+certFlete)*0.01;const battExtra=hasBattery?facturableBill*(isRI?2:1):0; // 11/09/2026: USD 2/kg RI, USD 1/kg monotributista o consumidor final
       const validProds=products.filter(p=>toN(p.unit_price)>0);
@@ -1574,7 +1570,7 @@ function CalculatorPage({token,client,preset}){
 
     // Marítimo Carga LCL/FCL (A) — SIEMPRE ficticio. Omitido si hay marca o si es ropa/calzado <5 CBM.
     // Si totCBM>0 hay dimensiones cargadas (noDims puede haber quedado true del UX previo, lo ignoramos).
-    if(!hasBrand&&!blockMaritimoLclRestricted&&!blockMaritimoLclLowFob&&!blockMaritimoLclMinCbm&&totCBM>0){const cbmFact=Math.max(totCBM,1);const fleteRate=getFleteRate("maritimo_a_china",cbmFact);const flete=cbmFact*fleteRate;
+    if(conLcl&&!hasBrand&&!blockMaritimoLclRestricted&&!blockMaritimoLclLowFob&&!blockMaritimoLclMinCbm&&totCBM>0){const cbmFact=Math.max(totCBM,1);const fleteRate=getFleteRate("maritimo_a_china",cbmFact);const flete=cbmFact*fleteRate;
       const certFlete=totCBM*certMarFict;
       const seguro=(totalFob+certFlete)*0.01;
       const validProdsMar=products.filter(p=>toN(p.unit_price)>0);
@@ -1598,9 +1594,9 @@ function CalculatorPage({token,client,preset}){
       //  (Con marca o ropa/calzado <5 m³ el LCL no se ofrece y el Integral queda solo.)
       const mBlanco=channels.find(c=>c.key==="maritimo_a_china");
       let hideNegro=false;
-      if(isRI){
+      if(conLcl&&isRI){
         hideNegro=totCBM>=0.5;
-      }else if(totCBM>=0.5&&mBlanco){
+      }else if(conLcl&&totCBM>=0.5&&mBlanco){
         if(mBlanco.total<negroTotal)hideNegro=true;
         else channels.splice(channels.indexOf(mBlanco),1); // gana el Integral: fuera el LCL
       }
@@ -1693,7 +1689,8 @@ function CalculatorPage({token,client,preset}){
   const btnGold=(label,onClick,disabled)=><button onClick={onClick} disabled={disabled} style={{padding:"12px 26px",fontSize:13.5,fontWeight:800,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:disabled?"not-allowed":"pointer",background:GOLD_GRADIENT,color:"#0A1628",opacity:disabled?0.4:1,boxShadow:disabled?"none":GOLD_GLOW_STRONG}}>{label}</button>;
   const delBtn=(onClick,disabled)=><button onClick={onClick} disabled={disabled} title="Quitar" style={{width:32,height:32,borderRadius:8,border:HAIR,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.8)",cursor:disabled?"default":"pointer",fontSize:16,lineHeight:1,opacity:disabled?0.25:1,flexShrink:0}}>×</button>;
   const lockedRow=(label)=><div style={{...PANEL,padding:"14px 24px",opacity:0.5,boxShadow:"none"}}><p style={{...LBL,color:"rgba(255,255,255,0.6)"}}>{label}</p></div>;
-  const isChina=origin==="China";
+  // China y USA comparten todo el flujo: NCM, pregunta de baterias y Courier comercial.
+  const isChina=origin==="China"||origin==="USA";
   const isRI=client?.tax_condition==="responsable_inscripto";
   const battRate=isRI?2:1;
   const flagOf=o=>o==="China"?"🇨🇳":o==="España"?"🇪🇸":"🇺🇸";
@@ -1728,7 +1725,7 @@ function CalculatorPage({token,client,preset}){
   const tot=calcTotals();
   const volWins=!noDims&&tot.totVol>tot.totWeight;
   const owPk=pkgs.find(pk=>toN(pk.weight)>=46);
-  const doCalc=()=>origin==="España"?calculateSpain():origin==="USA"?calculateUSA():calculateChina();
+  const doCalc=()=>origin==="España"?calculateSpain():calculateChina();
 
   // ── Costo por producto puesto en Argentina ──
   // Impuestos: por producto (items del canal). Servicio (flete, seguro, recargos): prorrateado por el
@@ -1888,7 +1885,7 @@ function CalculatorPage({token,client,preset}){
       const ncmCell=(p)=>p.ncmLoading?<span style={{fontSize:11.5,color:GOLD_LIGHT,fontWeight:600,whiteSpace:"nowrap"}}>Clasificando…</span>
         :p.ncm?.ncm_code?<span style={{height:40,display:"inline-flex",alignItems:"center",padding:"0 12px",borderRadius:9,background:"rgba(184,149,106,0.16)",border:"1px solid rgba(232,208,152,0.5)",color:GOLD_LIGHT,fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}}>{p.ncm.ncm_code==="MANUAL"?"Estimado":p.ncm.ncm_code}{p.ncm.antidumping&&<span title="Antidumping" style={{marginLeft:6,color:"#f87171"}}>⚠</span>}</span>
         :<span style={{height:40,display:"inline-flex",alignItems:"center",padding:"0 12px",borderRadius:9,border:"1px dashed rgba(255,255,255,0.35)",color:"rgba(255,255,255,0.7)",fontSize:11,fontWeight:700,letterSpacing:"0.05em",whiteSpace:"nowrap"}}>PENDIENTE</span>;
-      const typeCell=(p,i)=><div style={{display:"inline-flex",background:"rgba(255,255,255,0.06)",border:HAIR,borderRadius:9,padding:2,flex:1,justifyContent:"center"}}>{(origin==="España"?[["general","Carga general"]]:[["general","Carga general"],["celulares","Celulares"]]).map(([k,l])=><button key={k} onClick={()=>chProd(i,"type",k)} style={{padding:"7px 10px",fontSize:11.5,fontWeight:600,borderRadius:7,border:"none",cursor:"pointer",background:p.type===k?"rgba(184,149,106,0.24)":"transparent",color:p.type===k?GOLD_LIGHT:"rgba(255,255,255,0.75)",whiteSpace:"nowrap"}}>{l}</button>)}</div>;
+      const typeCell=(p,i)=><div style={{display:"inline-flex",background:"rgba(255,255,255,0.06)",border:HAIR,borderRadius:9,padding:2,flex:1,justifyContent:"center"}}>{[["general","Carga general"]].map(([k,l])=><button key={k} onClick={()=>chProd(i,"type",k)} style={{padding:"7px 10px",fontSize:11.5,fontWeight:600,borderRadius:7,border:"none",cursor:"pointer",background:p.type===k?"rgba(184,149,106,0.24)":"transparent",color:p.type===k?GOLD_LIGHT:"rgba(255,255,255,0.75)",whiteSpace:"nowrap"}}>{l}</button>)}</div>;
       return <div style={PANEL}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:12,flexWrap:"wrap"}}>
           <p style={{...LBL,fontSize:13}}>Productos</p>

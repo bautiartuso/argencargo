@@ -120,7 +120,7 @@ const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE
 const CM={aereo_blanco:"Aéreo A",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B"};
 const STATUSES=Object.keys(SM);
 const CHANNELS=Object.keys(CM);
-const SERVICES=[{key:"aereo_a_china",label:"Aéreo A — China",unit:"kg",info:"7-10 días hábiles"},{key:"maritimo_a_china",label:"Marítimo A — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo B — China/USA",unit:"cbm",info:""}];
+const SERVICES=[{key:"aereo_a_china",label:"Aéreo A — China/USA",unit:"kg",info:"7-10 días hábiles"},{key:"maritimo_a_china",label:"Marítimo A — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo B — China/USA",unit:"cbm",info:""}];
 // Forma válida de un código NCM: dígitos, con o sin puntos (ej. "8517.62.72" o "84099910").
 const isValidNcmCode=(v)=>!!v&&/^\d{4}(\.?\d{2}){0,2}$/.test(String(v).trim());
 // Un item "necesita clasificación" si no tiene NCM con forma válida (ej. quedó "—" de una
@@ -593,8 +593,8 @@ function NewOperation({token,clients,onBack,onCreated}){
     <Card>
       <Sel label="Cliente" value={form.client_id} onChange={ch("client_id")} options={clients.map(c=>({value:c.id,label:`${c.client_code} — ${c.first_name} ${c.last_name}`}))} ph="Seleccionar cliente"/>
       <Sel label="Tipo de servicio" value={form.service_type} onChange={ch("service_type")} options={[{value:"courier",label:"Courier — cliente compra, nosotros despachamos"},{value:"gestion_integral",label:"Gestión Integral — nosotros compramos y vendemos puesto en Argentina"}]}/>
-      <Sel label="Origen" value={form.origin} onChange={v=>{ch("origin")(v);if(v==="USA"&&form.channel!=="maritimo_negro")ch("channel")("maritimo_negro");}} options={[{value:"China",label:"China"},{value:"USA",label:"USA"}]}/>
-      <Sel label="Canal" value={form.channel} onChange={ch("channel")} options={form.origin==="USA"?[{value:"maritimo_negro",label:"Marítimo B"}]:CHANNELS.map(c=>({value:c,label:CM[c]}))}/>
+      <Sel label="Origen" value={form.origin} onChange={v=>{ch("origin")(v);if(v==="USA"&&form.channel==="maritimo_blanco")ch("channel")("aereo_blanco");}} options={[{value:"China",label:"China"},{value:"USA",label:"USA"}]}/>
+      <Sel label="Canal" value={form.channel} onChange={ch("channel")} options={(form.origin==="USA"?["aereo_blanco","maritimo_negro"]:CHANNELS).map(c=>({value:c,label:CM[c]}))}/>
       {form.service_type==="gestion_integral"&&<div style={{background:"rgba(168,85,247,0.08)",border:"1px solid rgba(168,85,247,0.2)",borderRadius:8,padding:"10px 12px",margin:"8px 0 12px",fontSize:12,color:"rgba(255,255,255,0.7)"}}>
         <b style={{color:"#c084fc"}}>Gestión Integral:</b> al cliente le cotizás un precio final puesto en Argentina (<code>budget_total</code>). Vos pagás al proveedor (<code>cost_producto_usd</code>) y asumís flete + impuestos. Ganancia = precio cliente − todos los costos. Lo configurás en el detalle de la op.
       </div>}
@@ -1773,10 +1773,10 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       } else {
       // Flete (uses client custom rate if available)
       const svcKey=op.channel==="aereo_blanco"?"aereo_a_china":op.channel==="maritimo_blanco"?"maritimo_a_china":"maritimo_b";
-      // Aéreo: peso facturable (pf) con mínimo (China 5 kg / USA 1 kg). Marítimo LCL: mínimo 1 m³.
+      // Aéreo: peso facturable (pf) con mínimo (China 5 kg / USA 25 kg). Marítimo LCL: mínimo 1 m³.
       // Espejo de lib/calc.js — esta copia inline se había quedado sin los mínimos y el
       // "Total a abonar" difería del presupuesto guardado (AC-0328, 11/08).
-      const aereoMinKg=op.origin==="USA"?1:5;
+      const aereoMinKg=op.origin==="USA"?25:5;
       const fleteAmt=op.channel?.includes("aereo")?Math.max(pf,aereoMinKg):(op.channel==="maritimo_blanco"?Math.max(totCBM,1):totCBM);
       const tRefMs=op.created_at?Date.parse(op.created_at):Date.now();
       const tActive=t=>(t.effective_from==null||Date.parse(t.effective_from)<=tRefMs)&&(t.effective_to==null||tRefMs<Date.parse(t.effective_to));
@@ -2047,7 +2047,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
         {isBlanco&&items.length>0&&(()=>{
           const fmt2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
           const isAereoOp=op.channel?.includes("aereo");
-          const aereoMinKg=op.origin==="USA"?1:5; // mismo mínimo facturable que lib/calc.js
+          const aereoMinKg=op.origin==="USA"?25:5; // mismo mínimo facturable que lib/calc.js
           const certFlRate=isAereoOp?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
           const certFlAmt=isAereoOp?(isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate):totCBM*certFlRate;
           const segLocal=(totalFob+certFlAmt)*0.01;
@@ -6616,11 +6616,9 @@ function Calculator({token,clients}){
 
   const calculate=()=>{
     const{totWeight,totCBM}=calcTotals();const channels=[];
-    if(origin==="USA"){
-      if(!hasPhones&&!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_b",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;const sur=getSurcharge("maritimo_b",totalFob,totCBM);
-        channels.push({key:"maritimo_b",name:"Marítimo Integral AC",info:"",isBlanco:false,flete,fCost,surcharge:sur.amt,surchargePct:sur.pct,total:flete+sur.amt,unit:`${totCBM.toFixed(4)} CBM`});}
-    }
-    if(origin==="China"){
+    // China y USA comparten flujo y tarifas; USA no tiene LCL/FCL y su minimo aereo es 25 kg.
+    const conLcl=origin==="China";
+    if(origin==="China"||origin==="USA"){
       const certAerReal=config.cert_flete_aereo_real||2.5;const certAerFict=config.cert_flete_aereo_ficticio||3.5;
       const certMarReal=config.cert_flete_maritimo_real||50;const certMarFict=config.cert_flete_maritimo_ficticio||100;
       const getDesembolso=(cif)=>{const t=[[5,0],[9,36],[20,50],[50,58],[100,65],[400,72],[800,84],[1000,96],[Infinity,120]];for(const[max,amt]of t)if(cif<max)return amt;return 120;};
@@ -6644,8 +6642,8 @@ function Calculator({token,clients}){
         return br;};
       const sumItems=(items,k)=>items.reduce((s,it)=>s+(it[k]||0),0);
 
-      // Aéreo Courier Comercial (A) — omitido si hay marca. Peso facturable mínimo 5 kg (China).
-      if(!hasBrand&&fact>0){const factBill=Math.max(fact,5);const{rate,cost}=getFleteRate("aereo_a_china",factBill);const flete=factBill*rate;const fCost=factBill*cost;
+      // Aéreo Courier Comercial (A) — omitido si hay marca. Mínimo facturable: 5 kg China, 25 kg USA.
+      if(!hasBrand&&fact>0){const factBill=Math.max(fact,origin==="USA"?25:5);const{rate,cost}=getFleteRate("aereo_a_china",factBill);const flete=factBill*rate;const fCost=factBill*cost;
         const certFlFict=factBill*certAerFict;const segFict=(totalFob+certFlFict)*0.01;const cifFict=totalFob+certFlFict+segFict;
         const certFlReal=totWeight*certAerReal;const segReal=(totalFob+certFlReal)*0.01;const cifReal=totalFob+certFlReal+segReal;
         const validProds=products.filter(p=>Number(p.unit_price)>0);
@@ -6660,7 +6658,7 @@ function Calculator({token,clients}){
           derechos:sumItems(itemsFict,"derechos"),tasa_e:sumItems(itemsFict,"tasa_e"),iva:sumItems(itemsFict,"iva"),gastoDoc:sumItems(itemsFict,"desembolso"),ivaDesemb:sumItems(itemsFict,"ivaDesemb"),
           items:itemsFict,cifReal,cifFict,impReal,impFict,gananciaImp,unit:`${factBill.toFixed(1)} kg`});}
       // Marítimo Carga LCL/FCL (A) — omitido si hay marca
-      if(!hasBrand&&!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_a_china",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;
+      if(conLcl&&!hasBrand&&!noDims&&totCBM>0){const{rate,cost}=getFleteRate("maritimo_a_china",totCBM);const flete=totCBM*rate;const fCost=totCBM*cost;
         const certFlFict=totCBM*certMarFict;const segFict=(totalFob+certFlFict)*0.01;const cifFict=totalFob+certFlFict+segFict;
         const certFlReal=totCBM*certMarReal;const segReal=(totalFob+certFlReal)*0.01;const cifReal=totalFob+certFlReal+segReal;
         const validProds=products.filter(p=>Number(p.unit_price)>0);
@@ -6692,70 +6690,7 @@ function Calculator({token,clients}){
 
     {step===0&&<div style={{display:"flex",gap:24,justifyContent:"center",padding:"2rem 0"}}>{[{k:"China",flag:"\ud83c\udde8\ud83c\uddf3"},{k:"USA",flag:"\ud83c\uddfa\ud83c\uddf8"}].map(c=><div key={c.k} onClick={()=>{setOrigin(c.k);setStep(1);}} style={{width:200,padding:"2.5rem 1.5rem",background:"rgba(255,255,255,0.028)",border:"1.5px solid rgba(255,255,255,0.08)",borderRadius:16,cursor:"pointer",textAlign:"center"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=IC;e.currentTarget.style.background="rgba(184,149,106,0.08)";}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)";e.currentTarget.style.background="rgba(255,255,255,0.028)";}}><p style={{fontSize:52,margin:"0 0 16px"}}>{c.flag}</p><p style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{c.k}</p></div>)}</div>}
 
-    {step===1&&origin==="USA"&&<Card title="PRODUCTOS">
-      {products.map((p,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:IC}}>Producto {i+1}</span>{products.length>1&&<Btn onClick={()=>rmProduct(i)} small variant="danger">Eliminar</Btn>}</div>
-        <div style={{display:"flex",gap:12,marginBottom:12}}>{[{k:"general",l:"Carga General"},{k:"celulares",l:"Celulares"}].map(t=><div key={t.k} onClick={()=>chProd(i,"type",t.k)} style={{flex:1,padding:"12px",textAlign:"center",borderRadius:10,border:`1.5px solid ${p.type===t.k?IC:"rgba(255,255,255,0.08)"}`,background:p.type===t.k?"rgba(184,149,106,0.1)":"transparent",cursor:"pointer"}}><span style={{fontSize:13,fontWeight:600,color:p.type===t.k?IC:"rgba(255,255,255,0.4)"}}>{t.l}</span></div>)}</div>
-        {p.type==="general"&&<Inp label="Descripción" value={p.description} onChange={v=>chProd(i,"description",v)} placeholder="Ej: Fundas de silicona"/>}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}><Inp label="Precio unit. (USD)" type="number" value={p.unit_price} onChange={v=>chProd(i,"unit_price",v)} placeholder="3.50"/><Inp label="Cantidad" type="number" value={p.quantity} onChange={v=>chProd(i,"quantity",v)} placeholder="1"/></div>
-      </div>)}
-      <button onClick={addProduct} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar producto</button>
-      {totalFob>0&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:8,padding:12,marginTop:16,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.4)"}}>Valor total</span><span style={{fontSize:16,fontWeight:700,color:IC}}>{usd(totalFob)}</span></div>}
-      <div style={{display:"flex",gap:12,marginTop:16}}><Btn variant="secondary" onClick={()=>{setStep(0);setOrigin("");}}>← Origen</Btn><Btn onClick={()=>setStep(2)} disabled={!products.some(p=>Number(p.unit_price)>0)}>Siguiente →</Btn></div>
-    </Card>}
-
-    {step===2&&origin==="USA"&&<Card title="PACKING LIST">
-      {pkgs.map((pk,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:IC}}>Bulto {i+1}</span>{pkgs.length>1&&<Btn onClick={()=>rmPkg(i)} small variant="danger">Eliminar</Btn>}</div>
-        <div style={{display:"grid",gridTemplateColumns:noDims?"1fr 1fr":"1fr 1fr 1fr 1fr 1fr",gap:"0 10px"}}>
-          <Inp label="Cant." type="number" value={pk.qty} onChange={v=>chPkg(i,"qty",v)} placeholder="1"/>
-          {!noDims&&<><Inp label="Largo cm" type="number" value={pk.length} onChange={v=>chPkg(i,"length",v)} placeholder="60"/><Inp label="Ancho cm" type="number" value={pk.width} onChange={v=>chPkg(i,"width",v)} placeholder="40"/><Inp label="Alto cm" type="number" value={pk.height} onChange={v=>chPkg(i,"height",v)} placeholder="35"/></>}
-          <Inp label="Peso kg" type="number" value={pk.weight} onChange={v=>chPkg(i,"weight",v)}/>
-        </div>
-      </div>)}
-      <button onClick={addPkg} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,borderRadius:8,border:"1.5px dashed rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer",marginTop:8}}>+ Agregar bulto</button>
-      <div style={{marginTop:12}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={noDims} onChange={e=>setNoDims(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>Sin medidas (solo aéreo)</span></label></div>
-      <div style={{display:"flex",gap:12,marginTop:16}}><Btn variant="secondary" onClick={()=>setStep(1)}>← Atrás</Btn><Btn onClick={()=>setStep(3)} disabled={!pkgs.some(p=>Number(p.weight)>0)}>Siguiente →</Btn></div>
-    </Card>}
-
-    {step===3&&origin==="USA"&&<Card title="ENTREGA EN DESTINO">
-      <div style={{display:"flex",gap:12,marginBottom:16}}>{[{k:"oficina",l:"Retiro por Oficina",sub:"Gratis"},{k:"caba",l:"Envío CABA",sub:"$20"},{k:"gba",l:"Envío a todo el país",sub:"A cotizar"}].map(d=><div key={d.k} onClick={()=>setDelivery(d.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:10,border:`1.5px solid ${delivery===d.k?IC:"rgba(255,255,255,0.08)"}`,background:delivery===d.k?"rgba(184,149,106,0.1)":"transparent",cursor:"pointer"}}><p style={{fontSize:14,fontWeight:700,color:delivery===d.k?IC:"rgba(255,255,255,0.5)",margin:"0 0 2px"}}>{d.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{d.sub}</p></div>)}</div>
-      <div style={{display:"flex",gap:12}}><Btn variant="secondary" onClick={()=>setStep(2)}>← Atrás</Btn><Btn onClick={calculate}>Calcular costos →</Btn></div>
-    </Card>}
-
-    {step===4&&results&&<div>
-      <div style={{display:"flex",gap:12,marginBottom:16}}><button onClick={()=>setStep(3)} style={{fontSize:13,color:IC,background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>← Volver</button><span style={{color:"rgba(255,255,255,0.1)"}}>|</span><button onClick={()=>{setStep(0);setResults(null);setOrigin("");setProducts([{type:"general",description:"",unit_price:"",quantity:"1",ncm:null,ncmLoading:false,ncmError:false}]);setPkgs([{qty:"1",length:"",width:"",height:"",weight:""}]);setNoDims(false);setDelivery("oficina");setHasBattery(false);setHasBrand(false);}} style={{fontSize:13,color:"rgba(255,255,255,0.4)",background:"none",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>Nueva cotización</button></div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>{results.channels.map(ch=>{const delivCost=delivery==="caba"?20:0;const clientTotal=ch.total+delivCost;const gananciaFlete=ch.flete-(ch.fCost||0);const gananciaImp=ch.gananciaImp||0;const gananciaTotal=gananciaFlete+gananciaImp;return <div key={ch.key} style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",padding:"1.5rem"}}>
-        <p style={{fontSize:17,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{ch.name}</p>
-        {ch.info&&<span style={{fontSize:11,color:"rgba(255,255,255,0.45)",padding:"3px 10px",background:"rgba(255,255,255,0.028)",borderRadius:4}}>{ch.info}</span>}
-        <div style={{marginTop:14}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>COTIZACIÓN CLIENTE</p>
-          {ch.isBlanco?<>
-            {row(ch.key==="maritimo_a_china"?"Servicio marítimo de importación":"Flete",ch.flete)}{ch.battExtra>0&&row("Recargo por baterías",ch.battExtra)}{Number(ch.overweightSurcharge||0)>0&&row("Recargo por sobrepeso",ch.overweightSurcharge)}{row("Seguro",ch.seguro)}
-            {row(`Derechos (${ncm?.import_duty_rate||0}%)`,ch.derechos)}{row(`TE (${ncm?.statistics_rate||0}%)`,ch.tasa_e)}{row(`IVA (${ncm?.iva_rate??21}%)`,ch.iva)}
-            {ch.isMar?<>{row("IVA Adic. (20%)",ch.ivaAdic)}{row("IIGG (6%)",ch.iigg)}{row("IIBB (5%)",ch.iibb)}</>:<>{row("Gasto doc.",ch.gastoDoc)}{row("IVA desemb.",ch.ivaDesemb)}</>}
-          </>:<>
-            {row("Servicio Integral de importación",Number(ch.flete||0)+Number(ch.surcharge||0))}
-          </>}
-          {delivCost>0&&row("Envío CABA",delivCost)}
-          {row("TOTAL CLIENTE",clientTotal,true,true)}
-        </div>
-        <div style={{marginTop:16,background:"rgba(34,197,94,0.06)",borderRadius:10,border:"1px solid rgba(34,197,94,0.15)",padding:14}}>
-          <p style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 8px"}}>RENTABILIDAD</p>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Ganancia flete</span><span style={{fontSize:12,fontWeight:600,color:"#22c55e"}}>{usd(gananciaFlete)}</span></div>
-          {ch.isBlanco&&gananciaImp>0&&<>
-            <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0"}}><span style={{fontSize:12,color:"rgba(255,255,255,0.5)"}}>Ganancia oculta (CIF)</span><span style={{fontSize:12,fontWeight:600,color:"#22c55e"}}>{usd(gananciaImp)}</span></div>
-            <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span style={{fontSize:10,color:"rgba(255,255,255,0.45)"}}>CIF real: {usd(ch.cifReal||0)} → Imp real: {usd(ch.impReal||0)}</span></div>
-            <div style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}><span style={{fontSize:10,color:"rgba(255,255,255,0.45)"}}>CIF ficticio: {usd(ch.cifFict||0)} → Imp ficticio: {usd(ch.impFict||0)}</span></div>
-          </>}
-          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderTop:"1px solid rgba(255,255,255,0.08)",marginTop:4}}><span style={{fontSize:14,fontWeight:700,color:"#fff"}}>GANANCIA TOTAL</span><span style={{fontSize:16,fontWeight:700,color:gananciaTotal>0?"#22c55e":"#ff6b6b"}}>{usd(gananciaTotal)}</span></div>
-          {clientTotal>0&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",margin:"2px 0 0"}}>Margen: {((gananciaTotal/clientTotal)*100).toFixed(1)}%</p>}
-        </div>
-      </div>})}</div>
-    </div>}
-
-    {/* CHINA FLOW - Step 1: brand + battery cards + per-product NCM */}
-    {step===1&&origin==="China"&&<Card>
+    {step===1&&!!origin&&<Card>
       <h3 style={{fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 12px"}}>¿Los productos tienen marca?</h3>
       <div style={{display:"flex",gap:12,marginBottom:12}}>{[{k:true,icon:"®",l:"Sí, con marca",sub:"Productos branded / licencia"},{k:false,icon:"✓",l:"Sin marca",sub:"Productos genéricos"}].map(o=><div key={String(o.k)} onClick={()=>setHasBrand(o.k)} style={{flex:1,padding:"20px",textAlign:"center",borderRadius:12,border:`1.5px solid ${hasBrand===o.k?IC:"rgba(255,255,255,0.08)"}`,background:hasBrand===o.k?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.028)",cursor:"pointer"}}><p style={{fontSize:24,margin:"0 0 8px"}}>{o.icon}</p><p style={{fontSize:14,fontWeight:700,color:hasBrand===o.k?IC:"rgba(255,255,255,0.6)",margin:"0 0 4px"}}>{o.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{o.sub}</p></div>)}</div>
       {hasBrand&&<div style={{background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.15)",borderRadius:10,padding:"12px 16px",marginBottom:20}}><p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:0}}>Las importaciones con marca se despachan solo por canal <strong style={{color:IC}}>Integral AC</strong> (courier). No es necesario clasificar NCM.</p></div>}
@@ -6780,7 +6715,7 @@ function Calculator({token,clients}){
         <div style={{display:"flex",gap:12,marginTop:16}}><Btn variant="secondary" onClick={()=>{setStep(0);setOrigin("");}}>← Origen</Btn><Btn onClick={()=>setStep(2)} disabled={blocked}>Siguiente →</Btn></div>
       </>;})()}
     </Card>}
-    {step===2&&origin==="China"&&<Card title="PACKING LIST">
+    {step===2&&!!origin&&<Card title="PACKING LIST">
       {pkgs.map((pk,i)=><div key={i} style={{borderTop:i>0?"1px solid rgba(255,255,255,0.06)":"none",padding:i>0?"16px 0 0":"0"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><span style={{fontSize:13,fontWeight:600,color:IC}}>Bulto {i+1}</span>{pkgs.length>1&&<Btn onClick={()=>rmPkg(i)} small variant="danger">Eliminar</Btn>}</div>
         <div style={{display:"grid",gridTemplateColumns:noDims?"1fr 1fr":"1fr 1fr 1fr 1fr 1fr",gap:"0 10px"}}>
@@ -6793,7 +6728,7 @@ function Calculator({token,clients}){
       <div style={{marginTop:12}}><label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><input type="checkbox" checked={noDims} onChange={e=>setNoDims(e.target.checked)}/><span style={{fontSize:13,color:"rgba(255,255,255,0.5)"}}>Sin medidas (solo aéreo)</span></label></div>
       <div style={{display:"flex",gap:12,marginTop:16}}><Btn variant="secondary" onClick={()=>setStep(1)}>← Atrás</Btn><Btn onClick={()=>setStep(3)} disabled={!pkgs.some(p=>Number(p.weight)>0)}>Siguiente →</Btn></div>
     </Card>}
-    {step===3&&origin==="China"&&<Card title="ENTREGA EN DESTINO">
+    {step===3&&!!origin&&<Card title="ENTREGA EN DESTINO">
       <div style={{display:"flex",gap:12,marginBottom:16}}>{[{k:"oficina",l:"Retiro por Oficina",sub:"Gratis"},{k:"caba",l:"Envío CABA",sub:"$20"},{k:"gba",l:"Envío a todo el país",sub:"A cotizar"}].map(d=><div key={d.k} onClick={()=>setDelivery(d.k)} style={{flex:1,padding:"14px",textAlign:"center",borderRadius:10,border:`1.5px solid ${delivery===d.k?IC:"rgba(255,255,255,0.08)"}`,background:delivery===d.k?"rgba(184,149,106,0.1)":"transparent",cursor:"pointer"}}><p style={{fontSize:14,fontWeight:700,color:delivery===d.k?IC:"rgba(255,255,255,0.5)",margin:"0 0 2px"}}>{d.l}</p><p style={{fontSize:12,color:"rgba(255,255,255,0.45)",margin:0}}>{d.sub}</p></div>)}</div>
       <div style={{display:"flex",gap:12}}><Btn variant="secondary" onClick={()=>setStep(2)}>← Atrás</Btn><Btn onClick={calculate}>Calcular costos →</Btn></div>
     </Card>}
@@ -9529,7 +9464,7 @@ function AgentsPanel({token}){
       const isUSA=o.origin==="USA",isRI=client?.tax_condition==="responsable_inscripto";
       let pf=0,totGW=0;pkgs.forEach(p=>{const q=Number(p.quantity||1),gw=Number(p.gross_weight_kg||0),l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const bk=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(bk,v);totGW+=bk;});
       const totFob=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
-      const aereoMinKg=isUSA?1:5;
+      const aereoMinKg=isUSA?25:5;
       const certFlRate=isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5);
       const certFl=isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate;
       const seguroB=(totFob+certFl)*0.01;const cif=totFob+certFl+seguroB;
@@ -12984,7 +12919,9 @@ function QuotesList({token}){
   const CHANNEL_MAP={aereo_a_china:"aereo_blanco",maritimo_a_china:"maritimo_blanco",maritimo_b:"maritimo_negro"};
   // Canales disponibles según origen.
   const channelsForOrigin=(origin)=>{
+    // USA: Courier comercial + Integral AC. No hay LCL/FCL desde USA.
     if(origin==="USA")return[
+      {key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles",type:"aereo_a"},
       {key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días",type:"maritimo_b"},
     ];
     // China (default)
@@ -13591,7 +13528,7 @@ function AdminCalculator({token}){
     let pf=0,totCBM=0,totGW=0;
     pks.forEach(p=>{const q=Number(p.quantity||1);const gw=Number(p.gross_weight_kg||0);const l=Number(p.length_cm||0),w=Number(p.width_cm||0),h=Number(p.height_cm||0);const b=gw*q;const v=l&&w&&h?((l*w*h)/5000)*q:0;pf+=Math.max(b,v);totGW+=b;totCBM+=l&&w&&h?((l*w*h)/1000000)*q:0;});
     const totFob=items.reduce((s,it)=>s+Number(it.unit_price_usd||0)*Number(it.quantity||1),0);
-    const aereoMinKg=isUSA?1:5;
+    const aereoMinKg=isUSA?25:5;
     const certFlRate=isAereo?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
     const certFl=isAereo?(isRI?totGW*certFlRate:Math.max(pf,aereoMinKg)*certFlRate):totCBM*certFlRate;
     const seguro=(totFob+certFl)*0.01;
@@ -13631,7 +13568,7 @@ function AdminCalculator({token}){
   };
   const CHANNEL_MAP={aereo_a_china:"aereo_blanco",maritimo_a_china:"maritimo_blanco",maritimo_b:"maritimo_negro"};
   const channelsForOrigin=(o)=>o==="USA"
-    ?[{key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días"}]
+    ?[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles"},{key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días"}]
     :[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles"},{key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"60-70 días"},{key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días"}];
   const totalFob=products.reduce((s,p)=>s+toN(p.unit_price)*Number(p.quantity||1),0);
   const totCBM=pkgs.reduce((s,p)=>{const q=Number(p.qty||1),l=toN(p.length),w=toN(p.width),h=toN(p.height);return s+(l&&w&&h?((l*w*h)/1000000)*q:0);},0);
