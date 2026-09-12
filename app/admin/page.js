@@ -12917,7 +12917,7 @@ function QuotesList({token}){
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");const [selQuote,setSelQuote]=useState(null);const [clientsMap,setClientsMap]=useState({});
   const [busq,setBusq]=useState("");const [verTodas,setVerTodas]=useState(false);const [sel,setSel]=useState([]);const [borrando,setBorrando]=useState(false);
   const [ops,setOps]=useState([]);const [vista,setVista]=useState("cotis");const [sub,setSub]=useState("vig");const [verMas,setVerMas]=useState({});const [segF,setSegF]=useState("");
-  const [editOrigin,setEditOrigin]=useState("China");const [editBatt,setEditBatt]=useState(false);
+  const [editOrigin,setEditOrigin]=useState("China");const [editBatt,setEditBatt]=useState(false);const [openAlt,setOpenAlt]=useState(null);
   const [editProds,setEditProds]=useState([]);const [editPkgs,setEditPkgs]=useState([]);const [editTotalCost,setEditTotalCost]=useState("");const [dirty,setDirty]=useState(false);const [saving,setSaving]=useState(false);const [savedAt,setSavedAt]=useState(null);
   const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [quoteOverrides,setQuoteOverrides]=useState([]);
   useEffect(()=>{(async()=>{const [q,cl,tf,cc,op]=await Promise.all([
@@ -13362,7 +13362,7 @@ function QuotesList({token}){
           <div style={{flex:"0 0 auto",padding:"12px 16px",borderRadius:12,border:HR,background:"rgba(255,255,255,0.04)"}}>
             <p style={lbl}>Origen</p>
             <select value={editOrigin} onChange={e=>{setEditOrigin(e.target.value);setDirty(true);}} style={{...inp,marginTop:5,width:130,cursor:"pointer"}}>
-              {["China","USA","España"].map(o=><option key={o} value={o} style={{background:"#142038"}}>{o}</option>)}
+              {["China","USA"].map(o=><option key={o} value={o} style={{background:"#142038"}}>{o}</option>)}
             </select>
           </div>
           <div style={{flex:"0 0 auto",padding:"12px 16px",borderRadius:12,border:HR,background:"rgba(255,255,255,0.04)"}}>
