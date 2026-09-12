@@ -772,7 +772,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
   const [declaredItems,setDeclaredItems]=useState([]); // flight_invoice_items de esta op (valor declarado a Aduana, para RI)
   // flightInfo: solo GI, alimenta la fila virtual de flete en Costos. opFlight: cualquier canal,
   // se usa para saber si la op ya tiene vuelo asignado (criterio del cartel de NCM faltante).
-  const [flightInfo,setFlightInfo]=useState(null);const [opFlight,setOpFlight]=useState(null);
+  const [flightInfo,setFlightInfo]=useState(null);const [opFlight,setOpFlight]=useState(null);const [opFlights,setOpFlights]=useState([]);
   // Despacho REAL (RI): valores copiados de la factura del despachante/DHL. Si están cargados,
   // los impuestos del presupuesto los toman de acá (no de la fórmula).
   const [despacho,setDespacho]=useState({die:initOp.despacho_die_usd??"",est:initOp.despacho_estadistica_usd??"",des:initOp.despacho_desaduanaje_usd??"",iva:initOp.despacho_iva_usd??""});
@@ -984,7 +984,7 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
     const pm=await dq("payment_management",{token,filters:`?operation_id=eq.${op.id}&select=*&order=created_at.asc`});setPayments(Array.isArray(pm)?pm:[]);
     const sp=await dq("operation_supplier_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setSupplierPayments(Array.isArray(sp)?sp:[]);
     // Vuelo de la op (para mostrar el flete como fila virtual en Costos GI: fecha + código de vuelo).
-    const fo=await dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=cost_share_usd,flights(flight_code,dispatched_at,created_at,payment_method)`}).catch(()=>[]);const foRow=Array.isArray(fo)&&fo[0]?fo[0]:null;setOpFlight(foRow);setFlightInfo(op.service_type==="gestion_integral"?foRow:null);
+    const fo=await dq("flight_operations",{token,filters:`?operation_id=eq.${op.id}&select=cost_share_usd,tax_share_usd,tax_share_ars,flights(flight_code,dispatched_at,created_at,payment_method)`}).catch(()=>[]);const foRow=Array.isArray(fo)&&fo[0]?fo[0]:null;setOpFlight(foRow);setOpFlights(Array.isArray(fo)?fo:[]);setFlightInfo(op.service_type==="gestion_integral"?foRow:null);
     const cp=await dq("operation_client_payments",{token,filters:`?operation_id=eq.${op.id}&select=*&order=payment_date.asc`});setClientPayments(Array.isArray(cp)?cp:[]);
     await loadCCBalance();setLo(false);
     // Auto-sincronizar el presupuesto después de cargar la op (en caso de que esté desactualizado).
@@ -4026,7 +4026,11 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
             const shown=livePreview!=null?livePreview:Number(op.cost_impuestos_reales||0);
             const stored=Number(op.cost_impuestos_reales||0);
             const stale=livePreview!=null&&stored>0&&Math.abs(livePreview-stored)>0.01;
-            return <p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:(op.cost_impuestos_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (valor previo USD {stored.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})</span>:""}</p>;
+            return <><p style={{fontSize:11,fontWeight:600,color:shown>0?IC:"#fbbf24",margin:"8px 0 0"}}>USD equivalente: {shown>0?`USD ${shown.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:(op.cost_impuestos_method==="tarjeta_credito"?"Pendiente de dollarización":"Se calcula al guardar")}{stale?<span style={{color:"#fbbf24",fontWeight:500,marginLeft:6}}>· se actualiza al guardar (valor previo USD {stored.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})})</span>:""}</p>
+            {(()=>{const conImp=opFlights.filter(f=>Number(f.tax_share_usd||0)>0);if(conImp.length<2)return null;
+              const tot=conImp.reduce((a,f)=>a+Number(f.tax_share_usd||0),0);
+              return <p style={{fontSize:11,color:"rgba(96,165,250,0.9)",margin:"6px 0 0",lineHeight:1.5}}>Esta op viajó partida en {conImp.length} vuelos: el impuesto suma el despacho de cada uno — {conImp.map(f=>`${f.flights?.flight_code||"vuelo"} USD ${Number(f.tax_share_usd||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`).join(" + ")} = <strong style={{color:"#fff"}}>USD {tot.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></p>;
+            })()}</>;
           })()}
         </div>
         {!(op.channel?.includes("maritimo")&&op.channel?.includes("blanco"))&&<div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:12,marginBottom:16}}>
@@ -8184,6 +8188,8 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
   const [flightOpsData,setFlightOpsData]=useState([]);
   const [flightCliPmts,setFlightCliPmts]=useState([]);
   const [impArs,setImpArs]=useState(null);const [impTc,setImpTc]=useState(null);const [impFecha,setImpFecha]=useState(null);const [prorrateando,setProrrateando]=useState(false);
+  // Impuesto que las ops de este vuelo ya tienen prorrateado de OTROS vuelos (ops partidas).
+  const [otrosVuelos,setOtrosVuelos]=useState({});
   useEffect(()=>{(async()=>{
     const opIds=flightOps.map(fo=>fo.operation_id).filter(Boolean);
     if(opIds.length===0){setFlightOpsData([]);return;}
@@ -8193,6 +8199,9 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
     // al calcular lo cobrado NETO en el detalle financiero.
     const cps=await dq("operation_client_payments",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=operation_id,amount_usd,amount_ars,exchange_rate,currency,commission_pct`}).catch(()=>[]);
     setFlightCliPmts(Array.isArray(cps)?cps:[]);
+    const fos=await dq("flight_operations",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=operation_id,flight_id,tax_share_usd`}).catch(()=>[]);
+    const acc={};(Array.isArray(fos)?fos:[]).forEach(x=>{if(x.flight_id!==flight.id)acc[x.operation_id]=(acc[x.operation_id]||0)+Number(x.tax_share_usd||0);});
+    setOtrosVuelos(acc);
     // Bultos de las ops del vuelo: el panel solo carga los del depósito, así que un vuelo
     // (sobre todo uno ya recibido) trae los suyos por su cuenta.
     const pksAll=await dq("operation_packages",{token,filters:`?operation_id=in.(${opIds.join(",")})&select=*&order=package_number.asc`}).catch(()=>null);
@@ -8940,20 +8949,36 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
       const reparto=participan.map(o=>{
         const base=Number(o.budget_taxes||0);
         const pct=baseTotal>0?base/baseTotal:(participan.length?1/participan.length:0);
-        return {op:o,base,pct,usd:Math.round(usdTotal*pct*100)/100};
+        // Lo que la op ya tiene de OTROS vuelos: se suma, no se reemplaza.
+        const otros=Math.round((otrosVuelos[o.id]||0)*100)/100;
+        return {op:o,base,pct,usd:Math.round(usdTotal*pct*100)/100,otros};
       });
+      const partidas=reparto.filter(r=>r.otros>0);
       const puedeProrratear=usdTotal>0&&participan.length>0;
       const prorratear=async()=>{
         if(!puedeProrratear)return;
         if(baseTotal<=0&&!await confirmDialog("Ninguna op del vuelo tiene impuesto calculado, así que el reparto va a ser en partes iguales.\n\n¿Continuar?"))return;
-        const detalle=reparto.map(r=>`${r.op.operation_code}: USD ${r.usd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`).join("\n");
-        if(!await confirmDialog(`Se va a escribir el impuesto real de ${reparto.length} operación${reparto.length!==1?"es":""}:\n\n${detalle}\n\nEsto reemplaza el costo de impuestos que tengan cargado.`))return;
+        const detalle=reparto.map(r=>`${r.op.operation_code}: USD ${r.usd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}${r.otros>0?` (+ USD ${r.otros.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de otros vuelos)`:""}`).join("\n");
+        if(!await confirmDialog(`Se va a escribir el impuesto real de ${reparto.length} operación${reparto.length!==1?"es":""}:\n\n${detalle}\n\nReemplaza el impuesto que cada op tenga de ESTE vuelo; lo de otros vuelos se mantiene y se suma.`))return;
         setProrrateando(true);
         try{
           await dq("flights",{method:"PATCH",token,filters:`?id=eq.${flight.id}`,body:{cost_impuestos_ars:arsPagado,cost_impuestos_exchange_rate:tcUsado,cost_impuestos_usd:Math.round(usdTotal*100)/100,impuestos_prorated_at:new Date().toISOString()}});
           const fechaPago=impFecha||new Date().toISOString().slice(0,10);
+          // El impuesto se guarda por VUELO (flight_operations.tax_share_*) y el costo de la op es la
+          // suma de todos sus vuelos. Una op partida en dos vuelos acumula los dos despachos en vez de
+          // que el ultimo prorrateo borre el anterior (caso AC-0047, FL-0028 + FL-0095).
           for(const r of reparto){
-            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${r.op.id}`,body:{cost_impuestos_reales:r.usd,cost_impuestos_currency:"USD",cost_impuestos_ars:Math.round(arsPagado*r.pct*100)/100,cost_impuestos_exchange_rate:tcUsado,cost_impuestos_method:"efectivo",cost_impuestos_paid_at:fechaPago,cost_impuestos_credit_card_id:null,cost_impuestos_card_closing:null}});
+            const foRow=flightOps.find(x=>x.operation_id===r.op.id);
+            if(foRow)await dq("flight_operations",{method:"PATCH",token,filters:`?id=eq.${foRow.id}`,body:{tax_share_usd:r.usd,tax_share_ars:Math.round(arsPagado*r.pct*100)/100,tax_exchange_rate:tcUsado,tax_prorated_at:new Date().toISOString()}});
+          }
+          for(const r of reparto){
+            // Suma de todos los vuelos de esta op (el de ahora ya quedo guardado arriba).
+            const suyos=await dq("flight_operations",{token,filters:`?operation_id=eq.${r.op.id}&select=tax_share_usd,tax_share_ars`}).catch(()=>[]);
+            const filas=Array.isArray(suyos)?suyos:[];
+            const totUsd=Math.round(filas.reduce((a,x)=>a+Number(x.tax_share_usd||0),0)*100)/100;
+            const totArs=Math.round(filas.reduce((a,x)=>a+Number(x.tax_share_ars||0),0)*100)/100;
+            const tcProm=totUsd>0?Math.round((totArs/totUsd)*100)/100:tcUsado;
+            await dq("operations",{method:"PATCH",token,filters:`?id=eq.${r.op.id}`,body:{cost_impuestos_reales:totUsd||r.usd,cost_impuestos_currency:"USD",cost_impuestos_ars:totArs||Math.round(arsPagado*r.pct*100)/100,cost_impuestos_exchange_rate:tcProm,cost_impuestos_method:"efectivo",cost_impuestos_paid_at:fechaPago,cost_impuestos_credit_card_id:null,cost_impuestos_card_closing:null}});
           }
           onFlash(`✓ Impuestos prorrateados entre ${reparto.length} op${reparto.length!==1?"s":""}`);
           onReload();
@@ -8986,9 +9011,13 @@ function FlightEditor({token,flight,finRate=0,signups,flightOps,depositOps,allOp
                 <td style={{padding:"7px 8px",fontSize:11,color:"rgba(255,255,255,0.4)",textAlign:"right",whiteSpace:"nowrap"}}>calc. USD {r.base.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                 <td style={{padding:"7px 8px",fontSize:11.5,color:"rgba(255,255,255,0.5)",textAlign:"right",whiteSpace:"nowrap"}}>{(r.pct*100).toLocaleString("es-AR",{minimumFractionDigits:1,maximumFractionDigits:1})}%</td>
                 <td style={{padding:"7px 8px",fontSize:13,fontWeight:700,color:"#22c55e",textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>USD {r.usd.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                {partidas.length>0&&<td style={{padding:"7px 8px",fontSize:11,textAlign:"right",whiteSpace:"nowrap",color:r.otros>0?"rgba(96,165,250,0.9)":"rgba(255,255,255,0.25)"}}>{r.otros>0?`+ USD ${r.otros.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} de otros vuelos = USD ${(r.usd+r.otros).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"}</td>}
               </tr>)}
             </tbody>
           </table>
+          {partidas.length>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"9px 0 0",fontStyle:"italic",lineHeight:1.5}}>
+            {partidas.map(r=>r.op.operation_code).join(", ")} {partidas.length===1?"viaja":"viajan"} partida en más de un vuelo: el impuesto de este despacho se <strong style={{color:"#fff"}}>suma</strong> al que ya tiene de los otros, no lo reemplaza.
+          </p>}
           {excluidas.length>0&&<p style={{fontSize:11,color:"rgba(96,165,250,0.85)",margin:"9px 0 0",fontStyle:"italic",lineHeight:1.5}}>
             Fuera del reparto por ser Responsable Inscripto ({excluidas.map(o=>o.operation_code).join(", ")}): abonan los impuestos directo a la aerolínea. Si en alguna los pagaste vos, cargalo en esa op.
           </p>}
