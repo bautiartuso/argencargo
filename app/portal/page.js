@@ -2406,8 +2406,9 @@ function InternationalPaymentsPage({client,token}){
   const onAmount=v=>{if(v===""||/^\d*\.?\d*$/.test(v))setAmountStr(v);};
   const amount=Number(amountStr)||0;
   // Tarifas
-  const pctArgencargo=0.0325;                  // 3.25%
-  const fixedUsd=origin==="usa"?100:origin==="china"?125:0;
+  const pctArgencargo=0.0225;                  // 2,25% (bajó de 3,25% el 12/09/2026)
+  const FIXED_USD=100;                         // cargo fijo por operación, igual para China y USA
+  const fixedUsd=origin?FIXED_USD:0;
   const commission=amount*pctArgencargo;
   const pctTransfer=method==="transfer"?0.025:0; // recargo 2.5% si paga por transferencia
   const transferSurcharge=(amount+commission+fixedUsd)*pctTransfer;
@@ -2447,90 +2448,97 @@ function InternationalPaymentsPage({client,token}){
     return encodeURIComponent(lines.join("\n"));
   };
 
+  // Paleta local del rediseño (12/09/2026): celeste para etiquetas, dorado solo para importes.
+  const SKYP="#8CC8F5";
+  const HAIRP="1px solid rgba(255,255,255,0.13)";
+  const PANELP={background:"linear-gradient(180deg, rgba(13,24,45,0.96), rgba(8,16,32,0.96))",border:HAIRP,borderRadius:18,padding:"26px 28px",boxShadow:"0 16px 40px rgba(0,0,0,0.3)"};
+  const LBLP={fontSize:10.5,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:SKYP,margin:0,textAlign:"center"};
+  const usdP=n=>n.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  // Fondo de bandera traslúcido, igual que en la calculadora.
+  const flagBgP=(k)=>k==="china"
+    ?{backgroundImage:"radial-gradient(circle at 16% 26%, #FFDE00 0 5px, transparent 5px), radial-gradient(circle at 30% 14%, #FFDE00 0 2.5px, transparent 2.5px), radial-gradient(circle at 36% 24%, #FFDE00 0 2.5px, transparent 2.5px), radial-gradient(circle at 34% 38%, #FFDE00 0 2.5px, transparent 2.5px), radial-gradient(circle at 26% 46%, #FFDE00 0 2.5px, transparent 2.5px), linear-gradient(#C8102E, #C8102E)"}
+    :{backgroundImage:"repeating-linear-gradient(180deg, #B22234 0 8%, #fff 8% 16%), linear-gradient(#B22234,#B22234)"};
+
   return <div>
-    <div style={{marginBottom:24}}>
-      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>{t("pay.title")}</h2>
-      <p style={{fontSize:13,color:"rgba(255,255,255,0.5)",margin:"4px 0 0",lineHeight:1.5}}>{t("pay.calc")}</p>
-    </div>
+    <h2 style={{fontSize:22,fontWeight:800,color:"#fff",margin:"0 0 22px",letterSpacing:"0.14em",textTransform:"uppercase",textAlign:"center"}}>{t("pay.title")}</h2>
 
-    {/* STEP 1: Origen */}
-    <div style={{marginBottom:22}}>
-      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.12em"}}>{t("pay.step1")}</p>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+    <div style={PANELP}>
+      {/* PASO 1 · Origen */}
+      <p style={LBLP}>{t("pay.step1")}</p>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}}>
         {[
-          {k:"china",flag:"🇨🇳",label:t("origin.china"),sub:"SWIFT · 3.25% + USD 125"},
-          {k:"usa",flag:"🇺🇸",label:t("origin.usa"),sub:"WIRE · 3.25% + USD 100"},
-        ].map(o=>{const active=origin===o.k;return <div key={o.k} onClick={()=>setOrigin(o.k)} style={{padding:"18px 20px",border:`1px solid ${active?GOLD_DEEP:"rgba(255,255,255,0.08)"}`,borderRadius:14,cursor:"pointer",background:active?"rgba(184,149,106,0.08)":"rgba(255,255,255,0.025)",transition:"all 150ms",position:"relative",overflow:"hidden",boxShadow:active?GOLD_GLOW:"none"}}>
-          {active&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT}}/>}
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{fontSize:28,lineHeight:1}}>{o.flag}</span>
-            <div>
-              <p style={{fontSize:15,fontWeight:700,color:"#fff",margin:0}}>{o.label}</p>
-              <p style={{fontSize:11,color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",margin:"3px 0 0",fontWeight:500}}>{o.sub}</p>
-            </div>
+          {k:"china",label:t("origin.china"),via:"SWIFT"},
+          {k:"usa",label:t("origin.usa"),via:"WIRE"},
+        ].map(o=>{const active=origin===o.k;return <div key={o.k} onClick={()=>setOrigin(o.k)} style={{position:"relative",overflow:"hidden",borderRadius:14,cursor:"pointer",border:`1px solid ${active?"rgba(232,208,152,0.7)":"rgba(255,255,255,0.16)"}`,boxShadow:active?GOLD_GLOW:"none",transition:"border-color 160ms"}}>
+          <span style={{position:"absolute",inset:0,...flagBgP(o.k),opacity:active?0.5:0.26}}/>
+          <span style={{position:"absolute",inset:0,background:active?"linear-gradient(180deg, rgba(6,12,24,0.42), rgba(6,12,24,0.76))":"linear-gradient(180deg, rgba(6,12,24,0.58), rgba(6,12,24,0.84))"}}/>
+          <div style={{position:"relative",padding:"20px 16px",textAlign:"center"}}>
+            <p style={{margin:0,fontSize:17,fontWeight:900,color:"#fff",letterSpacing:"0.09em",textTransform:"uppercase",textShadow:"0 1px 2px rgba(0,0,0,0.9), 0 2px 10px rgba(0,0,0,0.8), 0 0 26px rgba(0,0,0,0.7)"}}>{o.label}</p>
+            <p style={{margin:"7px 0 0",fontSize:11.5,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:active?GOLD_LIGHT:SKYP,textShadow:"0 1px 3px rgba(0,0,0,0.9)"}}>{o.via} · {(pctArgencargo*100).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}% + USD {FIXED_USD}</p>
           </div>
         </div>;})}
       </div>
+
+      {/* PASO 2 · Importe */}
+      {origin&&<>
+        <p style={{...LBLP,marginTop:26}}>{t("pay.step2")}</p>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginTop:12,padding:"16px 20px",background:"rgba(255,255,255,0.05)",border:HAIRP,borderRadius:14}}>
+          <span style={{fontSize:13,fontWeight:800,color:GOLD_LIGHT,letterSpacing:"0.1em"}}>USD</span>
+          <input type="text" inputMode="decimal" value={amountStr} onChange={e=>onAmount(e.target.value)} placeholder="0,00" style={{width:"100%",maxWidth:320,background:"transparent",border:"none",outline:"none",color:"#fff",fontSize:30,fontWeight:900,fontVariantNumeric:"tabular-nums",padding:0,letterSpacing:"-0.02em",textAlign:"center"}}/>
+        </div>
+      </>}
+
+      {/* PASO 3 · Método de pago a Argencargo */}
+      {origin&&amount>0&&<>
+        <p style={{...LBLP,marginTop:26}}>{t("pay.step3")}</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}}>
+          {[
+            {k:"cash",label:t("pay.cash"),sub:t("pay.cashSub"),icon:"💵"},
+            {k:"transfer",label:t("pay.transfer"),sub:t("pay.transferSub"),icon:"🏦"},
+          ].map(o=>{const active=method===o.k;return <div key={o.k} onClick={()=>setMethod(o.k)} style={{padding:"16px 18px",borderRadius:14,cursor:"pointer",textAlign:"center",border:`1px solid ${active?"rgba(232,208,152,0.7)":"rgba(255,255,255,0.16)"}`,background:active?"rgba(184,149,106,0.14)":"rgba(255,255,255,0.05)",boxShadow:active?GOLD_GLOW:"none"}}>
+            <span style={{fontSize:22,lineHeight:1}}>{o.icon}</span>
+            <p style={{fontSize:14.5,fontWeight:800,color:"#fff",margin:"7px 0 0",letterSpacing:"0.05em",textTransform:"uppercase"}}>{o.label}</p>
+            <p style={{fontSize:11.5,fontWeight:700,color:active?GOLD_LIGHT:SKYP,margin:"4px 0 0"}}>{o.sub}</p>
+          </div>;})}
+        </div>
+      </>}
+
+      {/* Resumen */}
+      {canAdvance&&<div style={{marginTop:26,borderRadius:14,border:HAIRP,background:"rgba(8,15,29,0.7)",overflow:"hidden"}}>
+        <p style={{...LBLP,padding:"14px 0 0"}}>{t("pay.summary")}</p>
+        <div style={{padding:"10px 20px 16px"}}>
+          {[
+            {l:t("pay.amountToSupplier"),v:amount},
+            {l:`${wireLabel} (${(pctArgencargo*100).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}%)`,v:commission},
+            {l:t("pay.fixedCharge"),v:fixedUsd},
+            ...(pctTransfer>0?[{l:t("pay.transferSurcharge"),v:transferSurcharge}]:[]),
+          ].map((r,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:12,padding:"9px 0",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+            <span style={{fontSize:13,color:"#fff",opacity:0.92}}>{r.l}</span>
+            <span style={{fontSize:13.5,fontWeight:600,color:"#fff",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>USD {usdP(r.v)}</span>
+          </div>)}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",padding:"14px 20px",background:GOLD_GRADIENT}}>
+          <span style={{fontSize:11.5,fontWeight:900,color:"#0A1628",textTransform:"uppercase",letterSpacing:"0.11em"}}>{t("pay.totalToArgencargo")}</span>
+          <span style={{fontSize:26,fontWeight:900,color:"#0A1628",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em",whiteSpace:"nowrap"}}>USD {usdP(total)}</span>
+        </div>
+      </div>}
+
+      {/* CTA */}
+      {canAdvance&&!showForm&&<div style={{display:"flex",justifyContent:"center",marginTop:20}}>
+        <button onClick={()=>setShowForm(true)} style={{padding:"14px 34px",fontSize:13.5,fontWeight:900,letterSpacing:"0.07em",textTransform:"uppercase",borderRadius:12,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW}}>{t("pay.advance")} →</button>
+      </div>}
+
+      {/* PASO 4 · Datos del proveedor */}
+      {showForm&&<div style={{marginTop:26,paddingTop:22,borderTop:HAIRP}}>
+        <p style={LBLP}>{t("pay.step4")}</p>
+        <p style={{fontSize:12.5,color:"rgba(255,255,255,0.62)",margin:"8px 0 14px",lineHeight:1.55,textAlign:"center"}}>{t("pay.supplierInfoNote")}</p>
+        <textarea value={bankInfo} onChange={e=>setBankInfo(e.target.value)} placeholder={t("pay.supplierPlaceholder")} rows={7} style={{width:"100%",padding:"14px 16px",fontSize:13.5,boxSizing:"border-box",border:HAIRP,borderRadius:12,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none",resize:"vertical",fontFamily:"inherit",lineHeight:1.6}}/>
+        <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap",justifyContent:"center"}}>
+          <a href={`https://wa.me/${WA_PHONE}?text=${buildWAMessage()}`} target="_blank" rel="noopener noreferrer" style={{padding:"13px 26px",fontSize:13.5,fontWeight:800,borderRadius:11,cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:8,boxShadow:"0 6px 22px rgba(37,211,102,0.3)"}}>{t("pay.sendWA")}</a>
+          <button onClick={resetAll} style={{padding:"13px 22px",fontSize:13,fontWeight:700,borderRadius:11,border:HAIRP,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>{t("pay.startOver")}</button>
+        </div>
+      </div>}
     </div>
-
-    {/* STEP 2: Monto */}
-    {origin&&<div style={{marginBottom:22}}>
-      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.12em"}}>{t("pay.step2")}</p>
-      <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 18px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14}}>
-        <span style={{fontSize:14,fontWeight:700,color:GOLD_LIGHT,letterSpacing:"0.04em"}}>USD</span>
-        <input type="text" inputMode="decimal" value={amountStr} onChange={e=>onAmount(e.target.value)} placeholder="0.00" style={{flex:1,background:"transparent",border:"none",outline:"none",color:"#fff",fontSize:24,fontWeight:700,fontVariantNumeric:"tabular-nums",padding:0,letterSpacing:"-0.01em"}}/>
-      </div>
-    </div>}
-
-    {/* STEP 3: Método de pago */}
-    {origin&&amount>0&&<div style={{marginBottom:22}}>
-      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.12em"}}>{t("pay.step3")}</p>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-        {[
-          {k:"cash",label:t("pay.cash"),sub:t("pay.cashSub"),icon:"💵"},
-          {k:"transfer",label:t("pay.transfer"),sub:t("pay.transferSub"),icon:"🏦"},
-        ].map(o=>{const active=method===o.k;return <div key={o.k} onClick={()=>setMethod(o.k)} style={{padding:"16px 20px",border:`1px solid ${active?GOLD_DEEP:"rgba(255,255,255,0.08)"}`,borderRadius:14,cursor:"pointer",background:active?"rgba(184,149,106,0.08)":"rgba(255,255,255,0.025)",transition:"all 150ms",display:"flex",alignItems:"center",gap:12}}>
-          <span style={{fontSize:22,lineHeight:1}}>{o.icon}</span>
-          <div>
-            <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0}}>{o.label}</p>
-            <p style={{fontSize:11,color:active?GOLD_LIGHT:"rgba(255,255,255,0.5)",margin:"2px 0 0",fontWeight:500}}>{o.sub}</p>
-          </div>
-        </div>;})}
-      </div>
-    </div>}
-
-    {/* Resumen + total */}
-    {canAdvance&&<div style={{marginBottom:22,padding:"20px 24px",background:"linear-gradient(135deg, rgba(184,149,106,0.1) 0%, rgba(255,255,255,0.02) 100%)",border:`1px solid ${GOLD_DEEP}`,borderRadius:16,boxShadow:GOLD_GLOW,position:"relative",overflow:"hidden"}}>
-      <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT}}/>
-      <p style={{fontSize:10,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 14px",textTransform:"uppercase",letterSpacing:"0.14em"}}>{t("pay.summary")}</p>
-      {[
-        {l:t("pay.amountToSupplier"),v:amount},
-        {l:`${wireLabel} (${(pctArgencargo*100).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}%)`,v:commission},
-        {l:t("pay.fixedCharge"),v:fixedUsd},
-        ...(pctTransfer>0?[{l:t("pay.transferSurcharge"),v:transferSurcharge}]:[]),
-      ].map((r,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13,color:"rgba(255,255,255,0.75)"}}>
-        <span>{r.l}</span>
-        <span style={{fontVariantNumeric:"tabular-nums"}}>USD {r.v.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-      </div>)}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0 2px",borderTop:"1px solid rgba(184,149,106,0.3)",marginTop:8}}>
-        <span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.1em"}}>{t("pay.totalToArgencargo")}</span>
-        <span style={{fontSize:24,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>USD {total.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-      </div>
-    </div>}
-
-    {/* CTA Avanzar */}
-    {canAdvance&&!showForm&&<button onClick={()=>setShowForm(true)} style={{padding:"14px 28px",fontSize:14,fontWeight:700,borderRadius:12,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW,letterSpacing:"0.02em"}}>{t("pay.advance")} →</button>}
-
-    {/* STEP 4: Datos del proveedor (libre) */}
-    {showForm&&<div style={{marginTop:20,padding:"24px 26px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16}}>
-      <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.12em"}}>{t("pay.step4")}</p>
-      <p style={{fontSize:12,color:"rgba(255,255,255,0.5)",margin:"0 0 14px",lineHeight:1.5}}>{t("pay.supplierInfoNote")}</p>
-      <textarea value={bankInfo} onChange={e=>setBankInfo(e.target.value)} placeholder={t("pay.supplierPlaceholder")} rows={7} style={{width:"100%",padding:"14px 16px",fontSize:13.5,boxSizing:"border-box",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,background:"rgba(255,255,255,0.04)",color:"#fff",outline:"none",transition:"all 180ms",fontFamily:"inherit",lineHeight:1.55,resize:"vertical"}} onFocus={e=>{e.target.style.borderColor=GOLD;e.target.style.boxShadow="0 0 0 3px rgba(184,149,106,0.18)";e.target.style.background="rgba(255,255,255,0.07)";}} onBlur={e=>{e.target.style.borderColor="rgba(255,255,255,0.12)";e.target.style.boxShadow="none";e.target.style.background="rgba(255,255,255,0.04)";}}/>
-      <div style={{display:"flex",gap:10,marginTop:14,flexWrap:"wrap"}}>
-        <a href={`https://wa.me/${WA_PHONE}?text=${buildWAMessage()}`} target="_blank" rel="noopener noreferrer" style={{padding:"13px 24px",fontSize:14,fontWeight:700,borderRadius:10,cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:10,boxShadow:"0 4px 14px rgba(37,211,102,0.25)",letterSpacing:"0.02em"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>{t("pay.sendWA")}</a>
-        <button onClick={resetAll} style={{padding:"13px 20px",fontSize:13,fontWeight:600,borderRadius:10,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer",letterSpacing:"0.02em"}}>{t("pay.startOver")}</button>
-      </div>
-    </div>}
 
     {/* Historial de gestiones de pago del cliente. La calculadora de arriba es para estimar; esto es
         lo que ya se le gestionó, con su código AGP. */}
