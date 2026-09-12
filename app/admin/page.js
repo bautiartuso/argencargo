@@ -12916,15 +12916,15 @@ function AdminTasks({token}){
 function QuotesList({token}){
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");const [selQuote,setSelQuote]=useState(null);const [clientsMap,setClientsMap]=useState({});
   const [busq,setBusq]=useState("");const [verTodas,setVerTodas]=useState(false);const [sel,setSel]=useState([]);const [borrando,setBorrando]=useState(false);
-  const [ops,setOps]=useState([]);const [vista,setVista]=useState("cotis");const [verMas,setVerMas]=useState({});const [segF,setSegF]=useState("");
+  const [ops,setOps]=useState([]);const [vista,setVista]=useState("cotis");const [sub,setSub]=useState("vig");const [verMas,setVerMas]=useState({});const [segF,setSegF]=useState("");
   const [editProds,setEditProds]=useState([]);const [editPkgs,setEditPkgs]=useState([]);const [editTotalCost,setEditTotalCost]=useState("");const [dirty,setDirty]=useState(false);const [saving,setSaving]=useState(false);const [savedAt,setSavedAt]=useState(null);
   const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [quoteOverrides,setQuoteOverrides]=useState([]);
   useEffect(()=>{(async()=>{const [q,cl,tf,cc,op]=await Promise.all([
     dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),
-    dqTodos("operations",{token,filters:"?select=id,client_id,operation_code,created_at,status,declared_value_usd"}),
     dqTodos("clients",{token,filters:"?select=id,first_name,last_name,whatsapp,client_code,tax_condition&order=client_code.asc"}),
     dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),
-    dq("calc_config",{token,filters:"?select=*"})
+    dq("calc_config",{token,filters:"?select=*"}),
+    dqTodos("operations",{token,filters:"?select=id,client_id,operation_code,created_at,status,declared_value_usd"})
   ]);setQuotes(Array.isArray(q)?q:[]);setOps(Array.isArray(op)?op:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);setLo(false);})();},[token]);
   useEffect(()=>{
     if(!selQuote){setEditProds([]);setEditPkgs([]);setEditTotalCost("");setDirty(false);setSavedAt(null);setQuoteOverrides([]);return;}
@@ -13241,27 +13241,30 @@ function QuotesList({token}){
         <div style={{flex:1}}/>
         <button disabled={borrando} onClick={()=>borrarQuotes(sel,`¿Eliminar ${sel.length} cotizacion${sel.length>1?"es":""}? No se puede deshacer.`)} style={{fontSize:11.5,fontWeight:700,padding:"6px 14px",borderRadius:7,border:"1px solid rgba(248,113,113,0.4)",background:"rgba(248,113,113,0.15)",color:"#fca5a5",cursor:borrando?"wait":"pointer"}}>{borrando?"Eliminando…":`Eliminar ${sel.length}`}</button>
       </div>}
-      {tabla({k:"vig",titulo:"Vigentes",sub:"las más próximas a vencer, arriba",color:"#4ade80",rows:vig})}
-      {tabla({k:"ven",titulo:"Vencidas",sub:"las que vencieron hace menos, arriba",color:"#f87171",rows:ven,vencidas:true})}
-      {tabla({k:"link",titulo:"Enviadas por link",sub:"armadas a mano desde la calculadora del admin",color:IC,rows:links,link:true})}
+      <div style={{display:"flex",gap:6,padding:5,marginBottom:16,borderRadius:12,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.07)",width:"fit-content",maxWidth:"100%",flexWrap:"wrap"}}>
+        {[["vig","Vigentes",vig.length,"#4ade80"],["ven","Vencidas",ven.length,"#f87171"],["link","Manuales",links.length,IC]].map(([k,l,n,c])=>
+          <button key={k} onClick={()=>setSub(k)} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 18px",fontSize:12.5,fontWeight:700,borderRadius:9,cursor:"pointer",border:"none",background:sub===k?"rgba(255,255,255,0.09)":"transparent",color:sub===k?"#fff":"rgba(255,255,255,0.5)",boxShadow:sub===k?"inset 0 0 0 1px rgba(255,255,255,0.12)":"none"}}>
+            <span style={{width:7,height:7,borderRadius:"50%",background:c,boxShadow:sub===k?`0 0 8px ${c}`:"none",opacity:sub===k?1:0.55}}/>{l}
+            <span style={{fontSize:11.5,fontWeight:800,padding:"2px 7px",borderRadius:999,color:sub===k?c:"rgba(255,255,255,0.45)",background:sub===k?`${c}22`:"rgba(255,255,255,0.06)"}}>{n}</span>
+          </button>)}
+      </div>
+      {sub==="vig"&&tabla({k:"vig",titulo:"Vigentes",sub:"las más próximas a vencer, arriba",color:"#4ade80",rows:vig})}
+      {sub==="ven"&&tabla({k:"ven",titulo:"Vencidas",sub:"las que vencieron hace menos, arriba",color:"#f87171",rows:ven,vencidas:true})}
+      {sub==="link"&&tabla({k:"link",titulo:"Manuales",sub:"armadas a mano desde la calculadora del admin y enviadas por link",color:IC,rows:links,link:true})}
     </>:<>
-      <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Qué hace cada cliente con lo que cotiza. Cruza las cotizaciones del portal con las operaciones reales: sirve para encontrar a los que calculan impuestos acá y después importan por otro lado.</p>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
         <button onClick={()=>setSegF("")} style={{padding:"7px 13px",fontSize:12,fontWeight:700,borderRadius:999,cursor:"pointer",border:`1px solid ${!segF?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.1)"}`,background:!segF?"rgba(255,255,255,0.1)":"transparent",color:"#fff"}}>Todos · {analisis.length}</button>
         {Object.entries(SEG).map(([k,v])=><button key={k} onClick={()=>setSegF(segF===k?"":k)} style={{padding:"7px 13px",fontSize:12,fontWeight:700,borderRadius:999,cursor:"pointer",border:`1px solid ${v.c}${segF===k?"99":"44"}`,background:segF===k?`${v.c}26`:"transparent",color:v.c}}>{v.l} · {segCount[k]}</button>)}
       </div>
       <div style={{background:"linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02))",borderRadius:14,border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden",boxShadow:"0 10px 30px rgba(0,0,0,0.25)"}}>
         {anaVis.length===0?<p style={{margin:0,padding:"22px 18px",fontSize:12.5,color:"rgba(255,255,255,0.4)"}}>Ningún cliente en este grupo.</p>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)",background:"rgba(0,0,0,0.28)"}}>{["Cliente","Cotizaciones","Última coti","Operaciones","Última op","FOB cotizado","FOB importado","Conversión","Lectura","Acción"].map((h,i)=><th key={i} style={{...thStyle,textAlign:[5,6].includes(i)?"right":"left"}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)",background:"rgba(0,0,0,0.28)"}}>{["Cliente","Cotizaciones","Última coti","Operaciones","% Conversión","Estado","Acción"].map((h,i)=><th key={i} style={thStyle}>{h}</th>)}</tr></thead>
           <tbody>{(verMas.ana?anaVis:anaVis.slice(0,60)).map(c=>{const sg=SEG[c.seg];
             return <tr key={c.id} style={{borderBottom:"1px solid rgba(255,255,255,0.05)"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
               <td style={tdStyle}><span style={{fontFamily:"monospace",fontWeight:700,color:IC,fontSize:12}}>{c.code}</span><br/><span style={{fontSize:11.5,color:"rgba(255,255,255,0.6)"}}>{c.nombre}</span></td>
               <td style={{...tdStyle,whiteSpace:"nowrap"}}><span style={{fontSize:16,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{c.cotis.length}</span>{c.c90>0&&<span style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",marginLeft:7}}>{c.c90} en 90 d</span>}</td>
               <td style={{...tdStyle,color:"rgba(255,255,255,0.7)",fontSize:12.5,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fShort(c.ultC)}</td>
-              <td style={{...tdStyle,whiteSpace:"nowrap"}} title={c.ops.map(x=>x.operation_code).join(", ")}><span style={{fontSize:16,fontWeight:800,color:c.ops.length?"#4ade80":"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{c.ops.length}</span></td>
-              <td style={{...tdStyle,color:"rgba(255,255,255,0.7)",fontSize:12.5,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{c.ultO?fShort(c.ultO):<span style={{color:"rgba(255,255,255,0.3)"}}>nunca</span>}</td>
-              <td style={{...tdStyle,textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",color:"#fff",fontWeight:600}}>{fmtN(c.fobC)}</td>
-              <td style={{...tdStyle,textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",color:c.fobO>0?"#4ade80":"rgba(255,255,255,0.35)",fontWeight:600}}>{c.fobO>0?fmtN(c.fobO):"—"}</td>
+              <td style={{...tdStyle,whiteSpace:"nowrap"}} title={c.ops.map(x=>x.operation_code).join(", ")}><span style={{fontSize:16,fontWeight:800,color:c.ops.length?"#4ade80":"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{c.ops.length}</span>{c.ultO&&<span style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",marginLeft:7}}>últ. {fShort(c.ultO)}</span>}</td>
               <td style={{...tdStyle,whiteSpace:"nowrap"}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{width:56,height:6,borderRadius:999,background:"rgba(255,255,255,0.1)",overflow:"hidden"}}><span style={{display:"block",width:`${c.conv}%`,height:"100%",background:sg.c}}/></span><span style={{fontSize:12,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{c.conv}%</span></div></td>
               <td style={tdStyle}>{chip(sg.l,sg.c,true)}</td>
               <td style={{...tdStyle,whiteSpace:"nowrap"}}><div style={{display:"flex",gap:6,alignItems:"center"}}>{waBtn(c.wa,msgAna(c),"Charlar")}<button onClick={()=>{setBusq(c.code);setVista("cotis");}} style={{padding:"6px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>Ver cotis</button></div></td>
