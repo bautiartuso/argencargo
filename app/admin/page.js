@@ -13166,35 +13166,29 @@ function QuotesList({token}){
     :<span style={{fontSize:11,color:"rgba(255,255,255,0.3)",whiteSpace:"nowrap"}}>Sin WhatsApp</span>;
   const trashBtn=(q)=><button title="Eliminar cotización" disabled={borrando} onClick={e=>{e.stopPropagation();borrarQuotes([q.id],`¿Eliminar la cotización ${numQ(q)} de ${q.client_name||"sin cliente"}? No se puede deshacer.`);}}
     style={{width:32,height:32,display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:8,border:"1px solid rgba(248,113,113,0.25)",background:"rgba(248,113,113,0.08)",color:"#f87171",cursor:borrando?"wait":"pointer"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>;
-  const tabla=({k,titulo,sub,color,rows,vencidas,link})=>{const vis=verMas[k]?rows:rows.slice(0,40);
+  const tabla=({k,sub,color,rows,vencidas,link})=>{const vis=verMas[k]?rows:rows.slice(0,40);
     const cols=["Cotización","Fecha","Cliente","Mercadería","FOB",vencidas?"Vencimiento":"Días restantes",...(link?["Link"]:[]),"Seguimiento",""];
+    const tdC={...tdStyle,textAlign:"center"};
     return <div style={{marginBottom:26}}>
-      <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:10,padding:"0 4px"}}>
-        <span style={{width:9,height:9,borderRadius:"50%",background:color,boxShadow:`0 0 10px ${color}`,alignSelf:"center"}}/>
-        <h3 style={{fontSize:14,fontWeight:800,color:"#fff",margin:0,letterSpacing:"0.08em",textTransform:"uppercase"}}>{titulo}</h3>
-        <span style={{fontSize:13,fontWeight:700,color:color}}>{rows.length}</span>
-        {sub&&<span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>· {sub}</span>}
-      </div>
+      {sub&&<p style={{margin:"0 0 10px",padding:"0 4px",fontSize:12,color:"rgba(255,255,255,0.45)"}}>{sub}</p>}
       <div style={{background:"linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02))",borderRadius:14,border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden",boxShadow:"0 10px 30px rgba(0,0,0,0.25)"}}>
         {rows.length===0?<p style={{margin:0,padding:"22px 18px",fontSize:12.5,color:"rgba(255,255,255,0.4)"}}>Nada por acá.</p>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)",background:"rgba(0,0,0,0.28)"}}>
-            <th style={{...thStyle,width:34,paddingRight:0}}><input type="checkbox" title="Seleccionar todo lo visible" style={{cursor:"pointer"}} checked={vis.length>0&&vis.every(q=>sel.includes(q.id))} onChange={e=>{const ids=vis.map(q=>q.id);setSel(e.target.checked?[...new Set([...sel,...ids])]:sel.filter(id=>!ids.includes(id)));}}/></th>
-            {cols.map((h,i)=><th key={i} style={{...thStyle,textAlign:h==="FOB"?"right":"left"}}>{h}</th>)}
+            {cols.map((h,i)=><th key={i} style={{...thStyle,textAlign:"center"}}>{h}</th>)}
           </tr></thead>
           <tbody>{vis.map(q=>{const li=link?linkInfo(q):null;const d=diasQ(q);
             return <tr key={q.id} style={{borderBottom:"1px solid rgba(255,255,255,0.05)",cursor:"pointer"}} onClick={()=>setSelQuote(q)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-              <td style={{...tdStyle,paddingRight:0}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={sel.includes(q.id)} style={{cursor:"pointer"}} onChange={e=>setSel(p=>e.target.checked?[...p,q.id]:p.filter(x=>x!==q.id))}/></td>
-              <td style={{...tdStyle,whiteSpace:"nowrap"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:800,fontSize:12.5,color:"#fff",letterSpacing:"0.04em"}}>{numQ(q)}</span></td>
-              <td style={{...tdStyle,color:"rgba(255,255,255,0.7)",fontSize:12.5,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fShort(q.created_at)}</td>
-              <td style={tdStyle}>{q.client_code||q.client_name
+              <td style={{...tdC,whiteSpace:"nowrap"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:800,fontSize:12.5,color:"#fff",letterSpacing:"0.04em"}}>{numQ(q)}</span></td>
+              <td style={{...tdC,color:"rgba(255,255,255,0.7)",fontSize:12.5,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fShort(q.created_at)}</td>
+              <td style={tdC}>{q.client_code||q.client_name
                 ?<><span style={{fontFamily:"monospace",fontWeight:700,color:IC,fontSize:12}}>{q.client_code||"—"}</span><br/><span style={{fontSize:11.5,color:"rgba(255,255,255,0.6)"}}>{q.client_name||""}</span></>
                 :<span style={{fontSize:12,color:"rgba(255,255,255,0.3)",fontStyle:"italic"}}>Sin cliente</span>}</td>
-              <td style={{...tdStyle,maxWidth:300}}><span style={{color:"#fff",fontWeight:500,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={mercQ(q)}>{mercQ(q)}</span><span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{q.origin||""}{q.channel_name?` · ${q.channel_name}`:""}</span></td>
-              <td style={{...tdStyle,textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}><span style={{fontSize:10,color:"rgba(255,255,255,0.45)",marginRight:5}}>USD</span><span style={{fontWeight:700,color:"#fff"}}>{fmtN(q.total_fob)}</span></td>
-              <td style={tdStyle}>{chipDias(q)}{vencidas&&<><br/><span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>el {fShort(venceQ(q))}</span></>}</td>
-              {link&&<td style={tdStyle}>{li?chip(li.t,li.c,li.fuerte):<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>}</td>}
-              <td style={tdStyle} onClick={e=>e.stopPropagation()}>{waBtn(waQ(q),msgSeg(q,d<=0))}</td>
-              <td style={{...tdStyle,paddingLeft:0,width:40}} onClick={e=>e.stopPropagation()}>{trashBtn(q)}</td>
+              <td style={{...tdStyle,textAlign:"left",maxWidth:300}}><span style={{color:"#fff",fontWeight:500,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={mercQ(q)}>{mercQ(q)}</span><span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{q.origin||""}{q.channel_name?` · ${q.channel_name}`:""}</span></td>
+              <td style={{...tdC,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}><span style={{fontSize:10,color:"rgba(255,255,255,0.45)",marginRight:5}}>USD</span><span style={{fontWeight:700,color:"#fff"}}>{fmtN(q.total_fob)}</span></td>
+              <td style={tdC}>{chipDias(q)}{vencidas&&<><br/><span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>el {fShort(venceQ(q))}</span></>}</td>
+              {link&&<td style={tdC}>{li?chip(li.t,li.c,li.fuerte):<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>}</td>}
+              <td style={tdC} onClick={e=>e.stopPropagation()}>{waBtn(waQ(q),msgSeg(q,d<=0))}</td>
+              <td style={{...tdC,paddingLeft:0,width:40}} onClick={e=>e.stopPropagation()}>{trashBtn(q)}</td>
             </tr>;})}</tbody>
         </table></div>}
       </div>
@@ -13226,21 +13220,12 @@ function QuotesList({token}){
     return `${s} Soy Bautista, de Argencargo. Te escribo para agradecerte la confianza: ya hicimos ${mo} ${mo===1?"importación":"importaciones"} juntos. Si tenés alguna carga nueva en vista o querés que revisemos condiciones por volumen, avisame y lo vemos.\n\nSaludos,\nBautista · Argencargo`;};
   const tabBtn=(k,l)=><button onClick={()=>setVista(k)} style={{padding:"9px 18px",fontSize:12.5,fontWeight:700,borderRadius:9,cursor:"pointer",border:`1px solid ${vista===k?"rgba(232,208,152,0.55)":"rgba(255,255,255,0.1)"}`,background:vista===k?"rgba(184,149,106,0.16)":"transparent",color:vista===k?IC:"rgba(255,255,255,0.55)"}}>{l}</button>;
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap",marginBottom:18}}>
-      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Cotizaciones</h2>
-      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-        <input value={busq} onChange={e=>setBusq(e.target.value)} placeholder={vista==="cotis"?"Buscar cliente, número, producto…":"Buscar cliente…"}
-          style={{padding:"8px 12px",fontSize:12,width:240,border:"1px solid rgba(255,255,255,0.12)",borderRadius:9,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none"}}/>
-        {tabBtn("cotis","Cotizaciones")}{tabBtn("analisis","Análisis de clientes")}
-      </div>
+    <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
+      <input value={busq} onChange={e=>setBusq(e.target.value)} placeholder={vista==="cotis"?"Buscar cliente, número, producto…":"Buscar cliente…"}
+        style={{padding:"8px 12px",fontSize:12,width:240,border:"1px solid rgba(255,255,255,0.12)",borderRadius:9,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none"}}/>
+      {tabBtn("cotis","Cotizaciones")}{tabBtn("analisis","Análisis de clientes")}
     </div>
     {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:vista==="cotis"?<>
-      {sel.length>0&&<div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",marginBottom:14,borderRadius:10,background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.28)"}}>
-        <span style={{fontSize:12.5,fontWeight:600,color:"#fca5a5"}}>{sel.length} seleccionada{sel.length>1?"s":""}</span>
-        <button onClick={()=>setSel([])} style={{fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer"}}>Deseleccionar</button>
-        <div style={{flex:1}}/>
-        <button disabled={borrando} onClick={()=>borrarQuotes(sel,`¿Eliminar ${sel.length} cotizacion${sel.length>1?"es":""}? No se puede deshacer.`)} style={{fontSize:11.5,fontWeight:700,padding:"6px 14px",borderRadius:7,border:"1px solid rgba(248,113,113,0.4)",background:"rgba(248,113,113,0.15)",color:"#fca5a5",cursor:borrando?"wait":"pointer"}}>{borrando?"Eliminando…":`Eliminar ${sel.length}`}</button>
-      </div>}
       <div style={{display:"flex",gap:6,padding:5,marginBottom:16,borderRadius:12,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.07)",width:"fit-content",maxWidth:"100%",flexWrap:"wrap"}}>
         {[["vig","Vigentes",vig.length,"#4ade80"],["ven","Vencidas",ven.length,"#f87171"],["link","Manuales",links.length,IC]].map(([k,l,n,c])=>
           <button key={k} onClick={()=>setSub(k)} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 18px",fontSize:12.5,fontWeight:700,borderRadius:9,cursor:"pointer",border:"none",background:sub===k?"rgba(255,255,255,0.09)":"transparent",color:sub===k?"#fff":"rgba(255,255,255,0.5)",boxShadow:sub===k?"inset 0 0 0 1px rgba(255,255,255,0.12)":"none"}}>
@@ -13248,9 +13233,9 @@ function QuotesList({token}){
             <span style={{fontSize:11.5,fontWeight:800,padding:"2px 7px",borderRadius:999,color:sub===k?c:"rgba(255,255,255,0.45)",background:sub===k?`${c}22`:"rgba(255,255,255,0.06)"}}>{n}</span>
           </button>)}
       </div>
-      {sub==="vig"&&tabla({k:"vig",titulo:"Vigentes",sub:"las más próximas a vencer, arriba",color:"#4ade80",rows:vig})}
-      {sub==="ven"&&tabla({k:"ven",titulo:"Vencidas",sub:"las que vencieron hace menos, arriba",color:"#f87171",rows:ven,vencidas:true})}
-      {sub==="link"&&tabla({k:"link",titulo:"Manuales",sub:"armadas a mano desde la calculadora del admin y enviadas por link",color:IC,rows:links,link:true})}
+      {sub==="vig"&&tabla({k:"vig",sub:"Las más próximas a vencer, arriba.",color:"#4ade80",rows:vig})}
+      {sub==="ven"&&tabla({k:"ven",sub:"Las que vencieron hace menos, arriba.",color:"#f87171",rows:ven,vencidas:true})}
+      {sub==="link"&&tabla({k:"link",sub:"Armadas a mano desde la calculadora del admin y enviadas por link.",color:IC,rows:links,link:true})}
     </>:<>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
         <button onClick={()=>setSegF("")} style={{padding:"7px 13px",fontSize:12,fontWeight:700,borderRadius:999,cursor:"pointer",border:`1px solid ${!segF?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.1)"}`,background:!segF?"rgba(255,255,255,0.1)":"transparent",color:"#fff"}}>Todos · {analisis.length}</button>
