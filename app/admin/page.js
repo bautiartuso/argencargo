@@ -12916,14 +12916,16 @@ function AdminTasks({token}){
 function QuotesList({token}){
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");const [selQuote,setSelQuote]=useState(null);const [clientsMap,setClientsMap]=useState({});
   const [busq,setBusq]=useState("");const [verTodas,setVerTodas]=useState(false);const [sel,setSel]=useState([]);const [borrando,setBorrando]=useState(false);
+  const [ops,setOps]=useState([]);const [vista,setVista]=useState("cotis");const [verMas,setVerMas]=useState({});const [segF,setSegF]=useState("");
   const [editProds,setEditProds]=useState([]);const [editPkgs,setEditPkgs]=useState([]);const [editTotalCost,setEditTotalCost]=useState("");const [dirty,setDirty]=useState(false);const [saving,setSaving]=useState(false);const [savedAt,setSavedAt]=useState(null);
   const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [quoteOverrides,setQuoteOverrides]=useState([]);
-  useEffect(()=>{(async()=>{const [q,cl,tf,cc]=await Promise.all([
+  useEffect(()=>{(async()=>{const [q,cl,tf,cc,op]=await Promise.all([
     dq("quotes",{token,filters:"?select=*&order=created_at.desc"}),
+    dqTodos("operations",{token,filters:"?select=id,client_id,operation_code,created_at,status,declared_value_usd"}),
     dqTodos("clients",{token,filters:"?select=id,first_name,last_name,whatsapp,client_code,tax_condition&order=client_code.asc"}),
     dq("tariffs",{token,filters:"?select=*&order=sort_order.asc"}),
     dq("calc_config",{token,filters:"?select=*"})
-  ]);setQuotes(Array.isArray(q)?q:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);setLo(false);})();},[token]);
+  ]);setQuotes(Array.isArray(q)?q:[]);setOps(Array.isArray(op)?op:[]);const cm={};(Array.isArray(cl)?cl:[]).forEach(c=>{cm[c.id]=c;});setClientsMap(cm);setTariffs(Array.isArray(tf)?tf:[]);const cfg={};(Array.isArray(cc)?cc:[]).forEach(r=>{cfg[r.key]=Number(r.value);});setConfig(cfg);setLo(false);})();},[token]);
   useEffect(()=>{
     if(!selQuote){setEditProds([]);setEditPkgs([]);setEditTotalCost("");setDirty(false);setSavedAt(null);setQuoteOverrides([]);return;}
     const p=typeof selQuote.products==="string"?JSON.parse(selQuote.products):selQuote.products||[];
@@ -13136,96 +13138,137 @@ function QuotesList({token}){
     }
     return Number(q.total_cost||0);
   };
-  const conFiltro=quotes.filter(q=>{
-    if(fStatus&&q.status!==fStatus)return false;
-    const t=busq.trim().toLowerCase();
-    if(!t)return true;
-    return [q.client_name,q.client_code,q.channel_name,q.origin,desc(q)].some(v=>norm(v).includes(t));
-  });
-  const filtered=verTodas?conFiltro:conFiltro.slice(0,60);
-  const thStyle={padding:"11px 14px",textAlign:"left",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"};
-  const tdStyle={padding:"11px 14px",verticalAlign:"middle"};
+  // ── Cotizaciones (12/09/2026): sin estados, ordenadas por vencimiento, portal vs link, y análisis de clientes ──
+  const numQ=q=>q.quote_number?`AGC-${String(q.quote_number).padStart(5,"0")}`:"—";
+  const venceQ=q=>q.expires_at?new Date(q.expires_at):new Date(new Date(q.created_at).getTime()+15*864e5);
+  const diasQ=q=>Math.ceil((venceQ(q)-Date.now())/864e5);
+  const colorDias=d=>d<=5?"#f87171":d<=9?"#fbbf24":"#4ade80";
+  const fShort=d=>{const x=new Date(d);return `${String(x.getDate()).padStart(2,"0")}/${String(x.getMonth()+1).padStart(2,"0")}/${String(x.getFullYear()).slice(2)}`;};
+  const mercQ=q=>{const p=typeof q.products==="string"?JSON.parse(q.products):q.products;const a=Array.isArray(p)?p.map(x=>x.description||x.type).filter(Boolean):[];return a.length>3?`Consolidado · ${a.length} productos`:(a.join(", ")||"—");};
+  const nombreQ=q=>{const cl=q.client_id?clientsMap[q.client_id]:null;return String(cl?.first_name||String(q.client_name||"").split(" ")[0]||"").trim();};
+  const waQ=q=>{const cl=q.client_id?clientsMap[q.client_id]:null;return String(cl?.whatsapp||"").replace(/[^0-9]/g,"");};
+  const msgSeg=(q,vencida)=>{const n=nombreQ(q);const saludo=n?`Hola ${n}!`:"Hola!";const m=mercQ(q);const fob=fmtN(q.total_fob);
+    if(vencida)return `${saludo} Te escribo por la cotización ${numQ(q)} que armaste en el portal el ${fShort(q.created_at)} (${m}, FOB USD ${fob}).\n\nLa cotización venció el ${fShort(venceQ(q))}, pero si todavía te interesa avanzar con esa importación la revisamos juntos y te paso los valores actualizados. Cualquier duda que tengas, me consultás por acá.\n\nSaludos,\nBautista · Argencargo`;
+    return `${saludo} Te escribo por la cotización ${numQ(q)} que armaste en el portal el ${fShort(q.created_at)} (${m}, FOB USD ${fob}).\n\nQuería saber qué te pareció y si te quedó alguna duda sobre los costos o sobre cómo sigue el proceso. Los valores están vigentes hasta el ${fShort(venceQ(q))}, así que si querés avanzar te ayudo a coordinar todo. Cualquier consulta, me escribís por acá.\n\nSaludos,\nBautista · Argencargo`;};
+  const t=busq.trim().toLowerCase();
+  const pasa=q=>!t||[q.client_name,q.client_code,numQ(q),mercQ(q),q.channel_name].some(v=>norm(v).includes(t));
+  const base=quotes.filter(pasa);
+  const portal=base.filter(q=>!q.public_token),porLink=base.filter(q=>!!q.public_token);
+  const vig=portal.filter(q=>diasQ(q)>0).sort((a,b)=>diasQ(a)-diasQ(b));
+  const ven=portal.filter(q=>diasQ(q)<=0).sort((a,b)=>diasQ(b)-diasQ(a));
+  const links=[...porLink.filter(q=>diasQ(q)>0).sort((a,b)=>diasQ(a)-diasQ(b)),...porLink.filter(q=>diasQ(q)<=0).sort((a,b)=>diasQ(b)-diasQ(a))];
+  const thStyle={padding:"12px 14px",textAlign:"left",fontSize:10.5,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.09em",whiteSpace:"nowrap"};
+  const tdStyle={padding:"13px 14px",verticalAlign:"middle"};
+  const chip=(l,c,strong)=><span style={{display:"inline-block",fontSize:11,fontWeight:800,letterSpacing:"0.04em",padding:"4px 10px",borderRadius:999,whiteSpace:"nowrap",color:c,background:`${c}${strong?"26":"18"}`,border:`1px solid ${c}${strong?"77":"44"}`}}>{l}</span>;
+  const chipDias=q=>{const d=diasQ(q);if(d<=0)return chip(d===0?"Venció hoy":`Venció hace ${-d} d`,"#f87171");return chip(`${d} ${d===1?"día":"días"}`,colorDias(d),true);};
+  const waBtn=(num,msg,label="WhatsApp")=>num
+    ?<a href={`https://wa.me/${num}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",whiteSpace:"nowrap",boxShadow:"0 4px 14px rgba(37,211,102,0.25)"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.1-1.8-.9-2-1-.3-.1-.5-.1-.7.1-.2.3-.8 1-.9 1.2-.2.2-.3.2-.6.1-.3-.1-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6l.4-.5c.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5l-.9-2.2c-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5.1 4.5 2.5 1 3 .8 3.6.8.6-.1 1.8-.7 2-1.4.3-.7.3-1.3.2-1.4-.1-.2-.3-.2-.6-.4zM12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2c-1.5 0-3-.4-4.3-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2z"/></svg>{label}</a>
+    :<span style={{fontSize:11,color:"rgba(255,255,255,0.3)",whiteSpace:"nowrap"}}>Sin WhatsApp</span>;
+  const trashBtn=(q)=><button title="Eliminar cotización" disabled={borrando} onClick={e=>{e.stopPropagation();borrarQuotes([q.id],`¿Eliminar la cotización ${numQ(q)} de ${q.client_name||"sin cliente"}? No se puede deshacer.`);}}
+    style={{width:32,height:32,display:"inline-flex",alignItems:"center",justifyContent:"center",borderRadius:8,border:"1px solid rgba(248,113,113,0.25)",background:"rgba(248,113,113,0.08)",color:"#f87171",cursor:borrando?"wait":"pointer"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>;
+  const tabla=({k,titulo,sub,color,rows,vencidas,link})=>{const vis=verMas[k]?rows:rows.slice(0,40);
+    const cols=["Cotización","Fecha","Cliente","Mercadería","FOB",vencidas?"Vencimiento":"Días restantes",...(link?["Link"]:[]),"Seguimiento",""];
+    return <div style={{marginBottom:26}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:10,padding:"0 4px"}}>
+        <span style={{width:9,height:9,borderRadius:"50%",background:color,boxShadow:`0 0 10px ${color}`,alignSelf:"center"}}/>
+        <h3 style={{fontSize:14,fontWeight:800,color:"#fff",margin:0,letterSpacing:"0.08em",textTransform:"uppercase"}}>{titulo}</h3>
+        <span style={{fontSize:13,fontWeight:700,color:color}}>{rows.length}</span>
+        {sub&&<span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>· {sub}</span>}
+      </div>
+      <div style={{background:"linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02))",borderRadius:14,border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden",boxShadow:"0 10px 30px rgba(0,0,0,0.25)"}}>
+        {rows.length===0?<p style={{margin:0,padding:"22px 18px",fontSize:12.5,color:"rgba(255,255,255,0.4)"}}>Nada por acá.</p>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)",background:"rgba(0,0,0,0.28)"}}>
+            <th style={{...thStyle,width:34,paddingRight:0}}><input type="checkbox" title="Seleccionar todo lo visible" style={{cursor:"pointer"}} checked={vis.length>0&&vis.every(q=>sel.includes(q.id))} onChange={e=>{const ids=vis.map(q=>q.id);setSel(e.target.checked?[...new Set([...sel,...ids])]:sel.filter(id=>!ids.includes(id)));}}/></th>
+            {cols.map((h,i)=><th key={i} style={{...thStyle,textAlign:h==="FOB"?"right":"left"}}>{h}</th>)}
+          </tr></thead>
+          <tbody>{vis.map(q=>{const li=link?linkInfo(q):null;const d=diasQ(q);
+            return <tr key={q.id} style={{borderBottom:"1px solid rgba(255,255,255,0.05)",cursor:"pointer"}} onClick={()=>setSelQuote(q)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+              <td style={{...tdStyle,paddingRight:0}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={sel.includes(q.id)} style={{cursor:"pointer"}} onChange={e=>setSel(p=>e.target.checked?[...p,q.id]:p.filter(x=>x!==q.id))}/></td>
+              <td style={{...tdStyle,whiteSpace:"nowrap"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:800,fontSize:12.5,color:"#fff",letterSpacing:"0.04em"}}>{numQ(q)}</span></td>
+              <td style={{...tdStyle,color:"rgba(255,255,255,0.7)",fontSize:12.5,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fShort(q.created_at)}</td>
+              <td style={tdStyle}>{q.client_code||q.client_name
+                ?<><span style={{fontFamily:"monospace",fontWeight:700,color:IC,fontSize:12}}>{q.client_code||"—"}</span><br/><span style={{fontSize:11.5,color:"rgba(255,255,255,0.6)"}}>{q.client_name||""}</span></>
+                :<span style={{fontSize:12,color:"rgba(255,255,255,0.3)",fontStyle:"italic"}}>Sin cliente</span>}</td>
+              <td style={{...tdStyle,maxWidth:300}}><span style={{color:"#fff",fontWeight:500,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={mercQ(q)}>{mercQ(q)}</span><span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{q.origin||""}{q.channel_name?` · ${q.channel_name}`:""}</span></td>
+              <td style={{...tdStyle,textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}><span style={{fontSize:10,color:"rgba(255,255,255,0.45)",marginRight:5}}>USD</span><span style={{fontWeight:700,color:"#fff"}}>{fmtN(q.total_fob)}</span></td>
+              <td style={tdStyle}>{chipDias(q)}{vencidas&&<><br/><span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>el {fShort(venceQ(q))}</span></>}</td>
+              {link&&<td style={tdStyle}>{li?chip(li.t,li.c,li.fuerte):<span style={{color:"rgba(255,255,255,0.25)"}}>—</span>}</td>}
+              <td style={tdStyle} onClick={e=>e.stopPropagation()}>{waBtn(waQ(q),msgSeg(q,d<=0))}</td>
+              <td style={{...tdStyle,paddingLeft:0,width:40}} onClick={e=>e.stopPropagation()}>{trashBtn(q)}</td>
+            </tr>;})}</tbody>
+        </table></div>}
+      </div>
+      {rows.length>vis.length&&<button onClick={()=>setVerMas(p=>({...p,[k]:true}))} style={{display:"block",margin:"10px auto 0",padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Ver las {rows.length-vis.length} restantes</button>}
+    </div>;};
+  // Análisis: qué hace cada cliente con lo que cotiza. La pregunta de fondo es quién usa el
+  // cotizador para calcular impuestos y después importa por otro lado.
+  const hoy=Date.now();
+  const SEG={nunca:{l:"Cotiza y nunca importó",c:"#f87171"},nuevo:{l:"Todavía no importó",c:"#8CC8F5"},poco:{l:"Importa menos de lo que cotiza",c:"#fbbf24"},volvio:{l:"Volvió a cotizar",c:"#a78bfa"},fiel:{l:"Convierte bien",c:"#4ade80"}};
+  const analisis=(()=>{const m={};
+    quotes.forEach(q=>{if(!q.client_id)return;(m[q.client_id]||(m[q.client_id]={id:q.client_id,cotis:[],ops:[]})).cotis.push(q);});
+    ops.forEach(o=>{if(!o.client_id||!m[o.client_id])return;m[o.client_id].ops.push(o);});
+    return Object.values(m).map(c=>{const cl=clientsMap[c.id]||{};
+      const ultC=Math.max(...c.cotis.map(q=>+new Date(q.created_at)));const ultO=c.ops.length?Math.max(...c.ops.map(x=>+new Date(x.created_at))):null;
+      const c90=c.cotis.filter(q=>hoy-new Date(q.created_at)<90*864e5).length;
+      const fobC=c.cotis.reduce((s,q)=>s+Number(q.total_fob||0),0);const fobO=c.ops.reduce((s,x)=>s+Number(x.declared_value_usd||0),0);
+      const conv=Math.min(100,Math.round(c.ops.length/c.cotis.length*100));
+      const seg=!c.ops.length?(c.cotis.length>=3?"nunca":"nuevo"):c.cotis.length>=c.ops.length*3?"poco":(ultO&&hoy-ultO>120*864e5&&c90>0)?"volvio":"fiel";
+      const nombre=[cl.first_name,cl.last_name].filter(Boolean).join(" ")||c.cotis[0].client_name||"";
+      return {...c,code:cl.client_code||c.cotis[0].client_code||"—",nombre,primer:String(cl.first_name||nombre.split(" ")[0]||"").trim(),wa:String(cl.whatsapp||"").replace(/[^0-9]/g,""),ultC,ultO,c90,fobC,fobO,conv,seg};
+    }).sort((a,b)=>b.cotis.length-a.cotis.length||b.ultC-a.ultC);})();
+  const segCount=Object.fromEntries(Object.keys(SEG).map(k=>[k,analisis.filter(c=>c.seg===k).length]));
+  const anaVis=analisis.filter(c=>(!segF||c.seg===segF)&&(!t||[c.code,c.nombre].some(v=>norm(v).includes(t))));
+  const msgAna=c=>{const s=c.primer?`Hola ${c.primer}!`:"Hola!";const n=c.cotis.length;const mo=c.ops.length;
+    if(c.seg==="nunca")return `${s} Soy Bautista, de Argencargo. Vi que armaste ${n} cotizaciones en nuestro portal (la última el ${fShort(c.ultC)}) y todavía no hicimos ninguna importación juntos.\n\nMe gustaría entender qué te frenó: si fue el costo, los tiempos, alguna duda con el proceso o si estás importando por otro lado. Tu respuesta me sirve mucho y, si hay algo que podamos ajustar para que te cierre, lo vemos. ¿Tenés unos minutos para contarme?\n\nSaludos,\nBautista · Argencargo`;
+    if(c.seg==="nuevo")return `${s} Soy Bautista, de Argencargo. Vi que cotizaste en nuestro portal el ${fShort(c.ultC)} y quería saber si te quedó alguna duda o si necesitás una mano para avanzar con la importación. Si querés, la repasamos juntos y te cuento cómo sigue el proceso.\n\nSaludos,\nBautista · Argencargo`;
+    if(c.seg==="poco")return `${s} Soy Bautista, de Argencargo. En este tiempo hiciste ${n} cotizaciones en el portal y avanzamos con ${mo} ${mo===1?"importación":"importaciones"}. Quería preguntarte cómo venís con el resto: si son cargas que quedaron en pausa, si las resolviste por otro lado o si hubo algo de nuestra propuesta que no te cerró. Si hay algo que podamos mejorar en precio o en servicio, me interesa saberlo.\n\nSaludos,\nBautista · Argencargo`;
+    if(c.seg==="volvio")return `${s} Soy Bautista, de Argencargo. Qué bueno verte de vuelta cotizando en el portal. La última importación que hicimos juntos fue el ${fShort(c.ultO)}; si estás preparando una carga nueva, avisame y te ayudo a coordinarla para que salga rápido.\n\nSaludos,\nBautista · Argencargo`;
+    return `${s} Soy Bautista, de Argencargo. Te escribo para agradecerte la confianza: ya hicimos ${mo} ${mo===1?"importación":"importaciones"} juntos. Si tenés alguna carga nueva en vista o querés que revisemos condiciones por volumen, avisame y lo vemos.\n\nSaludos,\nBautista · Argencargo`;};
+  const tabBtn=(k,l)=><button onClick={()=>setVista(k)} style={{padding:"9px 18px",fontSize:12.5,fontWeight:700,borderRadius:9,cursor:"pointer",border:`1px solid ${vista===k?"rgba(232,208,152,0.55)":"rgba(255,255,255,0.1)"}`,background:vista===k?"rgba(184,149,106,0.16)":"transparent",color:vista===k?IC:"rgba(255,255,255,0.55)"}}>{l}</button>;
   return <div>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap",marginBottom:16}}>
-      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Cotizaciones <span style={{fontSize:16,fontWeight:600,color:"rgba(255,255,255,0.35)"}}>({conFiltro.length})</span></h2>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap",marginBottom:18}}>
+      <h2 style={{fontSize:26,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.02em"}}>Cotizaciones</h2>
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-        <input value={busq} onChange={e=>{setBusq(e.target.value);setVerTodas(false);}} placeholder="Buscar cliente, producto, canal…"
-          style={{padding:"7px 12px",fontSize:12,width:230,border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none"}}/>
-        {[{k:"",l:"Todas"},{k:"pending",l:"Pendientes"},{k:"accepted",l:"Aceptadas"},{k:"contacted",l:"Contactados"},{k:"converted",l:"Convertidas"}].map(s=>
-          <button key={s.k} onClick={()=>{setFStatus(s.k);setVerTodas(false);}} style={{padding:"7px 14px",fontSize:12,fontWeight:600,borderRadius:8,cursor:"pointer",border:`1px solid ${fStatus===s.k?"rgba(184,149,106,0.5)":"rgba(255,255,255,0.08)"}`,background:fStatus===s.k?"rgba(184,149,106,0.12)":"transparent",color:fStatus===s.k?IC:"rgba(255,255,255,0.5)"}}>{s.l}</button>)}
+        <input value={busq} onChange={e=>setBusq(e.target.value)} placeholder={vista==="cotis"?"Buscar cliente, número, producto…":"Buscar cliente…"}
+          style={{padding:"8px 12px",fontSize:12,width:240,border:"1px solid rgba(255,255,255,0.12)",borderRadius:9,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none"}}/>
+        {tabBtn("cotis","Cotizaciones")}{tabBtn("analisis","Análisis de clientes")}
       </div>
     </div>
-    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:filtered.length===0?<p style={{color:"rgba(255,255,255,0.45)",textAlign:"center",padding:"2rem 0"}}>No hay cotizaciones{busq?" que coincidan con la búsqueda":""}.</p>:<>
-    {sel.length>0&&<div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",marginBottom:10,borderRadius:10,background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.28)"}}>
-      <span style={{fontSize:12.5,fontWeight:600,color:"#fca5a5"}}>{sel.length} seleccionada{sel.length>1?"s":""}</span>
-      <button onClick={()=>setSel([])} style={{fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer"}}>Deseleccionar</button>
-      <div style={{flex:1}}/>
-      <button disabled={borrando} onClick={()=>borrarQuotes(sel,`¿Eliminar ${sel.length} cotizacion${sel.length>1?"es":""}? No se puede deshacer.`)}
-        style={{fontSize:11.5,fontWeight:700,padding:"6px 14px",borderRadius:7,border:"1px solid rgba(248,113,113,0.4)",background:"rgba(248,113,113,0.15)",color:"#fca5a5",cursor:borrando?"wait":"pointer"}}>
-        {borrando?"Eliminando…":`Eliminar ${sel.length}`}
-      </button>
-    </div>}
-    <div style={{background:"rgba(255,255,255,0.028)",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-        <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.25)"}}>
-          <th style={{...thStyle,width:34,paddingRight:0}}>
-            <input type="checkbox" title="Seleccionar todo lo visible" style={{cursor:"pointer"}}
-              checked={filtered.length>0&&filtered.every(q=>sel.includes(q.id))}
-              onChange={e=>{const ids=filtered.map(q=>q.id);setSel(e.target.checked?[...new Set([...sel,...ids])]:sel.filter(id=>!ids.includes(id)));}}/>
-          </th>
-          {["Fecha","Cliente","Qué cotizó","FOB","Cotizado","Link","Estado"].map(h=><th key={h} style={{...thStyle,textAlign:h==="FOB"||h==="Cotizado"?"right":"left"}}>{h}</th>)}
-        </tr></thead>
-        <tbody>{filtered.map(q=>{
-          const cl=q.client_id?clientsMap[q.client_id]:null;
-          const wa=cl?.whatsapp?.replace(/[^0-9]/g,"");
-          const ageH=(Date.now()-new Date(q.created_at))/3600000;
-          const abandonada=q.status==="pending"&&ageH>=48;
-          const li=linkInfo(q);
-          const d=desc(q);
-          return <tr key={q.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>setSelQuote(q)} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-            <td style={{...tdStyle,paddingRight:0}} onClick={e=>e.stopPropagation()}>
-              <input type="checkbox" checked={sel.includes(q.id)} style={{cursor:"pointer"}}
-                onChange={e=>setSel(p=>e.target.checked?[...p,q.id]:p.filter(x=>x!==q.id))}/>
-            </td>
-            <td style={{...tdStyle,color:"rgba(255,255,255,0.5)",fontSize:12,whiteSpace:"nowrap"}}>
-              {fechaCorta(q.created_at)}
-              {abandonada&&<><br/><span style={{fontSize:10,color:"#fbbf24",fontWeight:600}}>sin respuesta</span></>}
-            </td>
-            <td style={tdStyle}>
-              {q.client_code||q.client_name
-                ?<><span style={{fontFamily:"monospace",fontWeight:700,color:IC,fontSize:12}}>{q.client_code||"—"}</span><br/><span style={{fontSize:11,color:"rgba(255,255,255,0.55)"}}>{q.client_name||""}</span></>
-                :<span style={{fontSize:12,color:"rgba(255,255,255,0.3)",fontStyle:"italic"}}>Sin cliente</span>}
-            </td>
-            <td style={{...tdStyle,maxWidth:280}}>
-              <span style={{color:"rgba(255,255,255,0.85)"}}>{d?(d.length>44?d.slice(0,44)+"…":d):"—"}</span><br/>
-              <span style={{fontSize:10.5,color:"rgba(255,255,255,0.4)"}}>{q.channel_name||"—"}{q.origin?` · ${q.origin}`:""}</span>
-            </td>
-            <td style={{...tdStyle,color:"rgba(255,255,255,0.8)",fontWeight:600,textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fmtN(q.total_fob)}</td>
-            <td style={{...tdStyle,color:IC,fontWeight:700,textAlign:"right",fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fmtN(totalCotizado(q))}</td>
-            <td style={tdStyle}>
-              {li
-                ?<span style={{fontSize:10.5,fontWeight:700,padding:"3px 9px",borderRadius:999,whiteSpace:"nowrap",color:li.c,background:`${li.c}1a`,border:`1px solid ${li.c}44`}}>{li.t}</span>
-                :<span style={{fontSize:11,color:"rgba(255,255,255,0.25)"}}>—</span>}
-            </td>
-            <td style={tdStyle} onClick={e=>e.stopPropagation()}>
-              <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                {abandonada&&wa&&(()=>{const msg=encodeURIComponent(`Hola ${q.client_name}! Hace unos días cotizaste *${d}* por *${q.channel_name}* (USD ${fmtN(totalCotizado(q))}).\n\n¿Pudiste revisarla? Si querés avanzar esta semana te agilizo el proceso. Cualquier duda me escribís.`);
-                  return <a href={`https://wa.me/${wa}?text=${msg}`} target="_blank" rel="noopener noreferrer" title="Recordar por WhatsApp" style={{padding:"4px 8px",fontSize:10,fontWeight:700,borderRadius:6,cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none",whiteSpace:"nowrap"}}>📱</a>;})()}
-                <select value={q.status} onChange={e=>updateStatus(q.id,e.target.value)} style={{padding:"4px 8px",fontSize:11,fontWeight:600,border:`1px solid ${(ST[q.status]||{}).c||"rgba(255,255,255,0.1)"}55`,borderRadius:6,background:`${(ST[q.status]||{}).c||"#fff"}14`,color:(ST[q.status]||{}).c||"#fff",outline:"none",cursor:"pointer"}}>
-                  {Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038",color:"#fff"}}>{v.l}</option>)}
-                </select>
-                <button title="Eliminar cotización" disabled={borrando}
-                  onClick={()=>borrarQuotes([q.id],`¿Eliminar la cotización de ${q.client_name||"sin cliente"}? No se puede deshacer.`)}
-                  style={{padding:"4px 8px",fontSize:11,fontWeight:700,borderRadius:6,border:"1px solid rgba(248,113,113,0.25)",background:"rgba(248,113,113,0.08)",color:"#f87171",cursor:borrando?"wait":"pointer"}}>✕</button>
-              </div>
-            </td>
-          </tr>;})}</tbody>
-      </table>
-    </div>
-    {!verTodas&&conFiltro.length>filtered.length&&
-      <button onClick={()=>setVerTodas(true)} style={{display:"block",margin:"14px auto 0",padding:"9px 20px",fontSize:12,fontWeight:600,borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>
-        Ver las {conFiltro.length-filtered.length} restantes
-      </button>}
+    {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:vista==="cotis"?<>
+      {sel.length>0&&<div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",marginBottom:14,borderRadius:10,background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.28)"}}>
+        <span style={{fontSize:12.5,fontWeight:600,color:"#fca5a5"}}>{sel.length} seleccionada{sel.length>1?"s":""}</span>
+        <button onClick={()=>setSel([])} style={{fontSize:11.5,fontWeight:600,padding:"4px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.12)",background:"transparent",color:"rgba(255,255,255,0.55)",cursor:"pointer"}}>Deseleccionar</button>
+        <div style={{flex:1}}/>
+        <button disabled={borrando} onClick={()=>borrarQuotes(sel,`¿Eliminar ${sel.length} cotizacion${sel.length>1?"es":""}? No se puede deshacer.`)} style={{fontSize:11.5,fontWeight:700,padding:"6px 14px",borderRadius:7,border:"1px solid rgba(248,113,113,0.4)",background:"rgba(248,113,113,0.15)",color:"#fca5a5",cursor:borrando?"wait":"pointer"}}>{borrando?"Eliminando…":`Eliminar ${sel.length}`}</button>
+      </div>}
+      {tabla({k:"vig",titulo:"Vigentes",sub:"las más próximas a vencer, arriba",color:"#4ade80",rows:vig})}
+      {tabla({k:"ven",titulo:"Vencidas",sub:"las que vencieron hace menos, arriba",color:"#f87171",rows:ven,vencidas:true})}
+      {tabla({k:"link",titulo:"Enviadas por link",sub:"armadas a mano desde la calculadora del admin",color:IC,rows:links,link:true})}
+    </>:<>
+      <p style={{fontSize:13,color:"rgba(255,255,255,0.6)",margin:"0 0 14px",lineHeight:1.5}}>Qué hace cada cliente con lo que cotiza. Cruza las cotizaciones del portal con las operaciones reales: sirve para encontrar a los que calculan impuestos acá y después importan por otro lado.</p>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+        <button onClick={()=>setSegF("")} style={{padding:"7px 13px",fontSize:12,fontWeight:700,borderRadius:999,cursor:"pointer",border:`1px solid ${!segF?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.1)"}`,background:!segF?"rgba(255,255,255,0.1)":"transparent",color:"#fff"}}>Todos · {analisis.length}</button>
+        {Object.entries(SEG).map(([k,v])=><button key={k} onClick={()=>setSegF(segF===k?"":k)} style={{padding:"7px 13px",fontSize:12,fontWeight:700,borderRadius:999,cursor:"pointer",border:`1px solid ${v.c}${segF===k?"99":"44"}`,background:segF===k?`${v.c}26`:"transparent",color:v.c}}>{v.l} · {segCount[k]}</button>)}
+      </div>
+      <div style={{background:"linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02))",borderRadius:14,border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden",boxShadow:"0 10px 30px rgba(0,0,0,0.25)"}}>
+        {anaVis.length===0?<p style={{margin:0,padding:"22px 18px",fontSize:12.5,color:"rgba(255,255,255,0.4)"}}>Ningún cliente en este grupo.</p>:<div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)",background:"rgba(0,0,0,0.28)"}}>{["Cliente","Cotizaciones","Última coti","Operaciones","Última op","FOB cotizado","FOB importado","Conversión","Lectura","Acción"].map((h,i)=><th key={i} style={{...thStyle,textAlign:[5,6].includes(i)?"right":"left"}}>{h}</th>)}</tr></thead>
+          <tbody>{(verMas.ana?anaVis:anaVis.slice(0,60)).map(c=>{const sg=SEG[c.seg];
+            return <tr key={c.id} style={{borderBottom:"1px solid rgba(255,255,255,0.05)"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+              <td style={tdStyle}><span style={{fontFamily:"monospace",fontWeight:700,color:IC,fontSize:12}}>{c.code}</span><br/><span style={{fontSize:11.5,color:"rgba(255,255,255,0.6)"}}>{c.nombre}</span></td>
+              <td style={{...tdStyle,whiteSpace:"nowrap"}}><span style={{fontSize:16,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{c.cotis.length}</span>{c.c90>0&&<span style={{fontSize:10.5,color:"rgba(255,255,255,0.45)",marginLeft:7}}>{c.c90} en 90 d</span>}</td>
+              <td style={{...tdStyle,color:"rgba(255,255,255,0.7)",fontSize:12.5,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fShort(c.ultC)}</td>
+              <td style={{...tdStyle,whiteSpace:"nowrap"}} title={c.ops.map(x=>x.operation_code).join(", ")}><span style={{fontSize:16,fontWeight:800,color:c.ops.length?"#4ade80":"rgba(255,255,255,0.35)",fontVariantNumeric:"tabular-nums"}}>{c.ops.length}</span></td>
+              <td style={{...tdStyle,color:"rgba(255,255,255,0.7)",fontSize:12.5,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{c.ultO?fShort(c.ultO):<span style={{color:"rgba(255,255,255,0.3)"}}>nunca</span>}</td>
+              <td style={{...tdStyle,textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",color:"#fff",fontWeight:600}}>{fmtN(c.fobC)}</td>
+              <td style={{...tdStyle,textAlign:"right",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",color:c.fobO>0?"#4ade80":"rgba(255,255,255,0.35)",fontWeight:600}}>{c.fobO>0?fmtN(c.fobO):"—"}</td>
+              <td style={{...tdStyle,whiteSpace:"nowrap"}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{width:56,height:6,borderRadius:999,background:"rgba(255,255,255,0.1)",overflow:"hidden"}}><span style={{display:"block",width:`${c.conv}%`,height:"100%",background:sg.c}}/></span><span style={{fontSize:12,fontWeight:700,color:"#fff",fontVariantNumeric:"tabular-nums"}}>{c.conv}%</span></div></td>
+              <td style={tdStyle}>{chip(sg.l,sg.c,true)}</td>
+              <td style={{...tdStyle,whiteSpace:"nowrap"}}><div style={{display:"flex",gap:6,alignItems:"center"}}>{waBtn(c.wa,msgAna(c),"Charlar")}<button onClick={()=>{setBusq(c.code);setVista("cotis");}} style={{padding:"6px 10px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.06)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>Ver cotis</button></div></td>
+            </tr>;})}</tbody>
+        </table></div>}
+      </div>
+      {!verMas.ana&&anaVis.length>60&&<button onClick={()=>setVerMas(p=>({...p,ana:true}))} style={{display:"block",margin:"10px auto 0",padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Ver los {anaVis.length-60} restantes</button>}
     </>}
     {/* Quote detail modal */}
     {selQuote&&(()=>{const q=selQuote;const prods=typeof q.products==="string"?JSON.parse(q.products):q.products||[];const pkgs=typeof q.packages==="string"?JSON.parse(q.packages):q.packages||[];const st=ST[q.status]||{l:q.status,c:"#999"};
@@ -13233,7 +13276,7 @@ function QuotesList({token}){
       <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}/>
       <div style={{position:"relative",maxWidth:700,width:"90%",maxHeight:"85vh",overflow:"auto",background:"#142038",borderRadius:20,border:"1px solid rgba(255,255,255,0.06)",padding:"2rem",boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-          <div><h3 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Cotización</h3><p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>{formatDate(q.created_at)}</p></div>
+          <div><h3 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Cotización {numQ(q)}</h3><p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>{formatDate(q.created_at)}</p></div>
           <div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:6,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>{st.l}</span><button onClick={()=>setSelQuote(null)} style={{fontSize:20,background:"none",border:"none",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>✕</button></div>
         </div>
         {/* CLIENTE + meta */}
