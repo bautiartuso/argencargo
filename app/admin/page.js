@@ -12917,6 +12917,7 @@ function QuotesList({token}){
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [fStatus,setFStatus]=useState("");const [selQuote,setSelQuote]=useState(null);const [clientsMap,setClientsMap]=useState({});
   const [busq,setBusq]=useState("");const [verTodas,setVerTodas]=useState(false);const [sel,setSel]=useState([]);const [borrando,setBorrando]=useState(false);
   const [ops,setOps]=useState([]);const [vista,setVista]=useState("cotis");const [sub,setSub]=useState("vig");const [verMas,setVerMas]=useState({});const [segF,setSegF]=useState("");
+  const [editOrigin,setEditOrigin]=useState("China");const [editBatt,setEditBatt]=useState(false);
   const [editProds,setEditProds]=useState([]);const [editPkgs,setEditPkgs]=useState([]);const [editTotalCost,setEditTotalCost]=useState("");const [dirty,setDirty]=useState(false);const [saving,setSaving]=useState(false);const [savedAt,setSavedAt]=useState(null);
   const [tariffs,setTariffs]=useState([]);const [config,setConfig]=useState({});const [quoteOverrides,setQuoteOverrides]=useState([]);
   useEffect(()=>{(async()=>{const [q,cl,tf,cc,op]=await Promise.all([
@@ -12938,11 +12939,14 @@ function QuotesList({token}){
     setEditProds(JSON.parse(JSON.stringify((Array.isArray(p)?p:[]).map(normProd))));
     setEditPkgs(JSON.parse(JSON.stringify((Array.isArray(pk)?pk:[]).map(normPkg))));
     setEditTotalCost(String(selQuote.total_cost||""));
+    setEditOrigin(selQuote.origin||"China");setEditBatt(!!selQuote.has_battery);
     setDirty(false);setSavedAt(null);
     if(selQuote.client_id)dq("client_tariff_overrides",{token,filters:`?client_id=eq.${selQuote.client_id}&select=*`}).then(ov=>setQuoteOverrides(Array.isArray(ov)?ov:[]));
     else setQuoteOverrides([]);
   },[selQuote?.id,token]);
   const chProd=(i,f,v)=>{setEditProds(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));setDirty(true);};
+  const addProd=()=>{setEditProds(p=>[...p,{description:"",unit_price:"",quantity:"1",ncm:{}}]);setDirty(true);};
+  const rmProd=(i)=>{setEditProds(p=>p.filter((_,j)=>j!==i));setDirty(true);};
   const chNcm=(i,f,v)=>{setEditProds(p=>p.map((x,j)=>j===i?{...x,ncm:{...(x.ncm||{}),[f]:v,ncm_code:x.ncm?.ncm_code||"MANUAL"}}:x));setDirty(true);};
   const chPkg=(i,f,v)=>{setEditPkgs(p=>p.map((x,j)=>j===i?{...x,[f]:v}:x));setDirty(true);};
   const addPkg=()=>{setEditPkgs(p=>[...p,{qty:"1",length:"",width:"",height:"",weight:""}]);setDirty(true);};
@@ -12983,7 +12987,7 @@ function QuotesList({token}){
     try{
       const ck=channelKey||selQuote.channel_key;
       const quoteClient=selQuote.client_id?clientsMap[selQuote.client_id]:null;
-      const opLike={channel:CHANNEL_MAP[ck]||"aereo_blanco",origin:selQuote.origin,shipping_to_door:selQuote.delivery&&selQuote.delivery!=="oficina",shipping_cost:0,has_battery:false};
+      const opLike={channel:CHANNEL_MAP[ck]||"aereo_blanco",origin:editOrigin,shipping_to_door:selQuote.delivery&&selQuote.delivery!=="oficina",shipping_cost:0,has_battery:editBatt};
       const items=editProds.map(p=>({unit_price_usd:p.unit_price,quantity:p.quantity,import_duty_rate:p.ncm?.import_duty_rate||0,statistics_rate:p.ncm?.statistics_rate||0,iva_rate:p.ncm?.iva_rate??21,iva_additional_rate:20,iigg_rate:6,iibb_rate:5,ncm_code:p.ncm?.ncm_code||null}));
       const pks=editPkgs.map(p=>({quantity:Number(p.qty||1),gross_weight_kg:Number(p.weight||0),length_cm:Number(p.length||0),width_cm:Number(p.width||0),height_cm:Number(p.height||0)}));
       const shipC=calcShippingCost(pks);
@@ -12994,7 +12998,7 @@ function QuotesList({token}){
   };
   // Compute para TODOS los canales según origen
   const computeAllChannels=()=>{
-    const chs=channelsForOrigin(selQuote?.origin||"China");
+    const chs=channelsForOrigin(editOrigin);
     return chs.map(ch=>{const br=computeBreakdown(ch.key);return br?{...ch,...br}:{...ch,error:true};}).filter(x=>!x.error);
   };
   // Totales agregados de bultos
@@ -13042,8 +13046,22 @@ function QuotesList({token}){
     });
     // El "canal seleccionado" de la quote se mantiene para PDF + UI. Si el admin no tocó, conserva el original.
     const currentBr=computeBreakdown(selQuote.channel_key);
-    const body={products:editProds,packages:editPkgs,total_fob:newFob,total_cost:currentBr?.totalAbonar||Number(editTotalCost)||selQuote.total_cost,total_weight:totW,total_cbm:totCBM,tax_breakdown:currentBr?{totalTax:currentBr.totalTax,flete:currentBr.flete,seguro:currentBr.seguro,shipCost:currentBr.shipCost}:null,channel_alternatives:channelAlternatives};
+    const body={products:editProds,packages:editPkgs,total_fob:newFob,origin:editOrigin,has_battery:editBatt,total_cost:currentBr?.totalAbonar||Number(editTotalCost)||selQuote.total_cost,total_weight:totW,total_cbm:totCBM,tax_breakdown:currentBr?{totalTax:currentBr.totalTax,flete:currentBr.flete,seguro:currentBr.seguro,shipCost:currentBr.shipCost}:null,channel_alternatives:channelAlternatives};
     await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${selQuote.id}`,body});setQuotes(p=>p.map(q=>q.id===selQuote.id?{...q,...body}:q));setSelQuote(p=>({...p,...body}));setDirty(false);setSavedAt(new Date().toISOString());setSaving(false);
+    return true;
+  };
+  // Editar una cotizacion del portal la convierte en una cotizacion manual: se guarda y se genera
+  // (o regenera) el link publico con 10 dias de validez, listo para mandarle al cliente.
+  const guardarYLink=async()=>{
+    if(!selQuote)return;
+    await saveQuoteEdit();
+    const tok=selQuote.public_token||`${Date.now().toString(36)}${Math.random().toString(36).slice(2,12)}`;
+    const body={public_token:tok,sent_at:new Date().toISOString(),expires_at:new Date(Date.now()+10*864e5).toISOString()};
+    await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${selQuote.id}`,body});
+    setSelQuote(p=>({...p,...body}));setQuotes(ps=>ps.map(x=>x.id===selQuote.id?{...x,...body}:x));
+    const url=`https://argencargo.com.ar/presupuesto/${tok}`;
+    navigator.clipboard?.writeText(url);
+    toast("Cotización guardada · link copiado, válido 10 días","success");
   };
   const updateStatus=async(id,status)=>{await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${id}`,body:{status}});setQuotes(p=>p.map(q=>q.id===id?{...q,status}:q));};
   const borrarQuotes=async(ids,texto)=>{
@@ -13220,19 +13238,23 @@ function QuotesList({token}){
     return `${s} Soy Bautista, de Argencargo. Te escribo para agradecerte la confianza: ya hicimos ${mo} ${mo===1?"importación":"importaciones"} juntos. Si tenés alguna carga nueva en vista o querés que revisemos condiciones por volumen, avisame y lo vemos.\n\nSaludos,\nBautista · Argencargo`;};
   const tabBtn=(k,l)=><button onClick={()=>setVista(k)} style={{padding:"9px 18px",fontSize:12.5,fontWeight:700,borderRadius:9,cursor:"pointer",border:`1px solid ${vista===k?"rgba(232,208,152,0.55)":"rgba(255,255,255,0.1)"}`,background:vista===k?"rgba(184,149,106,0.16)":"transparent",color:vista===k?IC:"rgba(255,255,255,0.55)"}}>{l}</button>;
   return <div>
-    <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
-      <input value={busq} onChange={e=>setBusq(e.target.value)} placeholder={vista==="cotis"?"Buscar cliente, número, producto…":"Buscar cliente…"}
-        style={{padding:"8px 12px",fontSize:12,width:240,border:"1px solid rgba(255,255,255,0.12)",borderRadius:9,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none"}}/>
-      {tabBtn("cotis","Cotizaciones")}{tabBtn("analisis","Análisis de clientes")}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
+      {vista==="cotis"
+        ?<div style={{display:"flex",gap:6,padding:5,borderRadius:12,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.07)",flexWrap:"wrap"}}>
+          {[["vig","Vigentes",vig.length,"#4ade80"],["ven","Vencidas",ven.length,"#f87171"],["link","Manuales",links.length,IC]].map(([k,l,n,c])=>
+            <button key={k} onClick={()=>setSub(k)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",fontSize:12.5,fontWeight:700,borderRadius:9,cursor:"pointer",border:"none",background:sub===k?"rgba(255,255,255,0.09)":"transparent",color:sub===k?"#fff":"rgba(255,255,255,0.5)",boxShadow:sub===k?"inset 0 0 0 1px rgba(255,255,255,0.12)":"none"}}>
+              <span style={{width:7,height:7,borderRadius:"50%",background:c,boxShadow:sub===k?`0 0 8px ${c}`:"none",opacity:sub===k?1:0.55}}/>{l}
+              <span style={{fontSize:11.5,fontWeight:800,padding:"2px 7px",borderRadius:999,color:sub===k?c:"rgba(255,255,255,0.45)",background:sub===k?`${c}22`:"rgba(255,255,255,0.06)"}}>{n}</span>
+            </button>)}
+        </div>
+        :<span/>}
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <input value={busq} onChange={e=>setBusq(e.target.value)} placeholder={vista==="cotis"?"Buscar cliente, número, producto…":"Buscar cliente…"}
+          style={{padding:"8px 12px",fontSize:12,width:240,border:"1px solid rgba(255,255,255,0.12)",borderRadius:9,background:"rgba(255,255,255,0.05)",color:"#fff",outline:"none"}}/>
+        {tabBtn("cotis","Cotizaciones")}{tabBtn("analisis","Análisis de clientes")}
+      </div>
     </div>
     {lo?<p style={{color:"rgba(255,255,255,0.4)"}}>Cargando...</p>:vista==="cotis"?<>
-      <div style={{display:"flex",gap:6,padding:5,marginBottom:16,borderRadius:12,background:"rgba(0,0,0,0.3)",border:"1px solid rgba(255,255,255,0.07)",width:"fit-content",maxWidth:"100%",flexWrap:"wrap"}}>
-        {[["vig","Vigentes",vig.length,"#4ade80"],["ven","Vencidas",ven.length,"#f87171"],["link","Manuales",links.length,IC]].map(([k,l,n,c])=>
-          <button key={k} onClick={()=>setSub(k)} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 18px",fontSize:12.5,fontWeight:700,borderRadius:9,cursor:"pointer",border:"none",background:sub===k?"rgba(255,255,255,0.09)":"transparent",color:sub===k?"#fff":"rgba(255,255,255,0.5)",boxShadow:sub===k?"inset 0 0 0 1px rgba(255,255,255,0.12)":"none"}}>
-            <span style={{width:7,height:7,borderRadius:"50%",background:c,boxShadow:sub===k?`0 0 8px ${c}`:"none",opacity:sub===k?1:0.55}}/>{l}
-            <span style={{fontSize:11.5,fontWeight:800,padding:"2px 7px",borderRadius:999,color:sub===k?c:"rgba(255,255,255,0.45)",background:sub===k?`${c}22`:"rgba(255,255,255,0.06)"}}>{n}</span>
-          </button>)}
-      </div>
       {sub==="vig"&&tabla({k:"vig",sub:"Las más próximas a vencer, arriba.",color:"#4ade80",rows:vig})}
       {sub==="ven"&&tabla({k:"ven",sub:"Las que vencieron hace menos, arriba.",color:"#f87171",rows:ven,vencidas:true})}
       {sub==="link"&&tabla({k:"link",sub:"Armadas a mano desde la calculadora del admin y enviadas por link.",color:IC,rows:links,link:true})}
@@ -13258,180 +13280,232 @@ function QuotesList({token}){
       </div>
       {!verMas.ana&&anaVis.length>60&&<button onClick={()=>setVerMas(p=>({...p,ana:true}))} style={{display:"block",margin:"10px auto 0",padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:9,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.65)",cursor:"pointer"}}>Ver los {anaVis.length-60} restantes</button>}
     </>}
-    {/* Quote detail modal */}
-    {selQuote&&(()=>{const q=selQuote;const prods=typeof q.products==="string"?JSON.parse(q.products):q.products||[];const pkgs=typeof q.packages==="string"?JSON.parse(q.packages):q.packages||[];const st=ST[q.status]||{l:q.status,c:"#999"};
+    {/* Detalle de la cotización: el mismo desglose que ve el cliente en la calculadora, editable */}
+    {selQuote&&(()=>{const q=selQuote;
+      const SKY="#8CC8F5";const HR="1px solid rgba(255,255,255,0.12)";
+      const cl=q.client_id?clientsMap[q.client_id]:null;const wa=(cl?.whatsapp||"").replace(/[^0-9]/g,"");
+      const isRIq=cl?.tax_condition==="responsable_inscripto";
+      const inp={padding:"9px 11px",fontSize:12.5,border:HR,borderRadius:8,background:"rgba(255,255,255,0.07)",color:"#fff",outline:"none",width:"100%",boxSizing:"border-box",fontFamily:"inherit"};
+      const lbl={fontSize:9.5,fontWeight:700,letterSpacing:"0.09em",textTransform:"uppercase",color:SKY,margin:0};
+      const sec=(t,extra)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,margin:"24px 0 10px"}}><h4 style={{fontSize:11.5,fontWeight:800,color:"#fff",margin:0,letterSpacing:"0.1em",textTransform:"uppercase"}}>{t}</h4>{extra}</div>;
+      const u2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+      const totFobEdit=editProds.reduce((s,p)=>s+Number(p.unit_price||0)*Number(p.quantity||1),0);
+      const tt=computePackagesTotals();
+      const dias=diasQ(q);
+      // ── Disponibilidad de cada vía: mismas reglas que la calculadora del cliente ──
+      const CAP_REST=new Set(["50","51","52","53","54","55","56","57","58","59","60","61","62","63","64","65"]);
+      const esRestringido=editProds.some(p=>CAP_REST.has(String(p.ncm?.ncm_code||"").replace(/[^0-9]/g,"").slice(0,2)));
+      const owPk=editPkgs.find(pk=>Number(pk.weight||0)>=46);
+      const ALL3=[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles",type:"aereo_a"},
+                  {key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"60-70 días",type:"maritimo_a"},
+                  {key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días",type:"maritimo_b"}];
+      const enOrigen=channelsForOrigin(editOrigin).map(c=>c.key);
+      const motivoDe=(k)=>{
+        if(!enOrigen.includes(k))return `No operamos esta vía desde ${editOrigin}.`;
+        if(k==="aereo_a_china"){
+          if(owPk)return `Un bulto de ${u2(owPk.weight)} kg supera los 50 kg por pieza que permite el régimen courier. Dividiendo la carga en bultos de hasta 50 kg, la vía vuelve a estar disponible.`;
+          if(!(tt.billable>0))return "Falta el peso o las medidas de los bultos: sin peso facturable no se puede cotizar el aéreo.";
+          return null;
+        }
+        if(k==="maritimo_a_china"){
+          if(!(tt.cbm>0))return "Sin las dimensiones de los bultos no hay volumen (m³) para cotizar el marítimo.";
+          if(esRestringido&&tt.cbm<5)return `Textiles o calzado (capítulos 50 a 65) por LCL/FCL necesitan 5 m³ como mínimo y esta carga tiene ${tt.cbm.toFixed(3)} m³. Por debajo de eso va por Integral AC.`;
+          if(tt.cbm<0.5)return `El marítimo LCL/FCL arranca en 0,5 m³ y esta carga tiene ${tt.cbm.toFixed(3)} m³.`;
+          return null;
+        }
+        if(k==="maritimo_b"&&!(tt.cbm>0))return "Sin las dimensiones de los bultos no hay volumen (m³) para cotizar el marítimo.";
+        return null;
+      };
+      const canales=ALL3.map(ch=>{const motivo=motivoDe(ch.key);if(motivo)return{...ch,motivo};
+        const br=computeBreakdown(ch.key);
+        return br?{...ch,...br}:{...ch,motivo:"No se pudo calcular esta vía con los datos cargados."};});
+      const okCanales=canales.filter(c=>!c.motivo);
+      const barata=okCanales.length>1?okCanales.reduce((a,b)=>a.totalAbonar<=b.totalAbonar?a:b):null;
+      // Desglose línea por línea, igual que el link público
+      const rateU=(fld,def)=>{const set=[...new Set(editProds.filter(p=>Number(p.unit_price)>0).map(p=>{const v=p.ncm?.[fld];return (v==null||v==="")?def:Number(v);}))];return set.length===1?set[0]:null;};
+      const pctL=(l,r)=>r!=null?`${l} (${String(r).replace(".",",")}%)`:l;
+      const detalleDe=(c)=>{const isB=c.type==="maritimo_b"||c.type==="aereo_b";const td=c.taxDetail||{};const ow=Number(c.overweightSurcharge||0);const bat=Number(c.battExtra||0);
+        let d=[];
+        if(isB){d=[["Servicio integral de importación",Number(c.flete||0)]];}
+        else if(c.type==="aereo_a"){d=[["Flete aéreo internacional",Number(c.flete||0)-bat],["Recargo por baterías",bat],["Recargo por sobrepeso",ow],["Seguro (1%)",c.seguro||0],[pctL("Derechos de importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de importación",rateU("iva_rate",21)),td.iva||0],["Desaduanaje",td.desembolso||0],["IVA 21% sobre desaduanaje",td.ivaDesembolso||0]];}
+        else{d=[["Servicio marítimo de importación",Number(c.flete||0)],["Seguro (1%)",c.seguro||0],[pctL("Derechos de importación",rateU("import_duty_rate",0)),td.derechos||0],[pctL("Tasa estadística",rateU("statistics_rate",0)),td.tasaE||0],[pctL("IVA de importación",rateU("iva_rate",21)),td.iva||0],["IVA adicional (20%)",td.ivaAdic||0],["Ganancias IIGG (6%)",td.iigg||0],["Ingresos brutos IIBB (5%)",td.iibb||0]];}
+        if(Number(c.shipCost||0)>0)d.push(["Envío a domicilio",c.shipCost]);
+        return d.filter(([l,v])=>/^(Derechos|Tasa estad)/.test(String(l))||Number(v||0)>0.005).map(([l,v])=>[l,Math.round(Number(v)*100)/100]);};
+      const alts=Array.isArray(q.channel_alternatives)?q.channel_alternatives:[];
+      const visibles=Array.isArray(q.visible_channels)&&q.visible_channels.length>0?q.visible_channels:alts.map(a=>a.key);
+      const toggleVis=async(k)=>{const next=visibles.includes(k)?visibles.filter(x=>x!==k):[...visibles,k];
+        if(next.length===0){toast("Tiene que quedar al menos una opción visible","error");return;}
+        await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${q.id}`,body:{visible_channels:next}});
+        setSelQuote(p=>({...p,visible_channels:next}));setQuotes(ps=>ps.map(x=>x.id===q.id?{...x,visible_channels:next}:x));};
+      const link=q.public_token?`https://argencargo.com.ar/presupuesto/${q.public_token}`:null;
+      const prodDesc=editProds.map(p=>p.description||p.type).filter(Boolean).join(", ");
     return <div style={{position:"fixed",inset:0,zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setSelQuote(null)}>
-      <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}/>
-      <div style={{position:"relative",maxWidth:700,width:"90%",maxHeight:"85vh",overflow:"auto",background:"#142038",borderRadius:20,border:"1px solid rgba(255,255,255,0.06)",padding:"2rem",boxShadow:"0 30px 60px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-          <div><h3 style={{fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>Cotización {numQ(q)}</h3><p style={{fontSize:12,color:"rgba(255,255,255,0.4)",margin:0}}>{formatDate(q.created_at)}</p></div>
-          <div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:6,color:st.c,background:`${st.c}15`,border:`1px solid ${st.c}33`}}>{st.l}</span><button onClick={()=>setSelQuote(null)} style={{fontSize:20,background:"none",border:"none",color:"rgba(255,255,255,0.4)",cursor:"pointer"}}>✕</button></div>
-        </div>
-        {/* CLIENTE + meta */}
-        <div style={{padding:"16px 18px",background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-          <div>
-            <p style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Cliente</p>
-            <p style={{fontSize:17,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.01em"}}>{q.client_name}</p>
-            <p style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:IC,margin:"3px 0 0",letterSpacing:"0.04em"}}>{q.client_code}</p>
+      <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.72)",backdropFilter:"blur(4px)"}}/>
+      <div style={{position:"relative",maxWidth:1180,width:"95%",maxHeight:"92vh",overflow:"auto",background:"linear-gradient(180deg, #16243E, #101B31)",borderRadius:20,border:"1px solid rgba(255,255,255,0.09)",padding:"26px 30px 30px",boxShadow:"0 30px 70px rgba(0,0,0,0.55)"}} onClick={e=>e.stopPropagation()}>
+        {/* Encabezado */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:14,flexWrap:"wrap",paddingBottom:16,borderBottom:HR}}>
+          <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+            <h3 style={{fontSize:22,fontWeight:800,color:"#fff",margin:0,letterSpacing:"0.04em",fontFamily:"'JetBrains Mono',monospace"}}>{numQ(q)}</h3>
+            {chipDias(q)}
+            {q.public_token&&<span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"4px 10px",borderRadius:999,color:IC,background:"rgba(184,149,106,0.16)",border:"1px solid rgba(184,149,106,0.45)"}}>Manual · con link</span>}
+            <span style={{fontSize:12,color:"rgba(255,255,255,0.45)"}}>Cotizada el {fShort(q.created_at)}</span>
           </div>
-          <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
-            <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Origen</p><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{q.origin}</p></div>
-            <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Entrega</p><p style={{fontSize:13,fontWeight:600,color:"#fff",margin:0,textTransform:"capitalize"}}>{q.delivery||"oficina"}</p></div>
+          <button onClick={()=>setSelQuote(null)} style={{width:34,height:34,borderRadius:9,fontSize:17,background:"rgba(255,255,255,0.06)",border:HR,color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>✕</button>
+        </div>
+        {/* Cliente + origen + baterías, compactos */}
+        <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"stretch",marginTop:16}}>
+          <div style={{flex:"1 1 260px",padding:"12px 16px",borderRadius:12,border:HR,background:"rgba(255,255,255,0.04)"}}>
+            <p style={lbl}>Cliente</p>
+            <p style={{fontSize:16,fontWeight:700,color:"#fff",margin:"4px 0 0"}}>{q.client_name||"Sin cliente"}</p>
+            <p style={{fontSize:11.5,fontFamily:"monospace",color:IC,margin:"2px 0 0"}}>{q.client_code||"—"}{cl?` · ${isRIq?"Responsable inscripto":cl.tax_condition==="monotributista"?"Monotributista":"Consumidor final"}`:""}</p>
+          </div>
+          <div style={{flex:"0 0 auto",padding:"12px 16px",borderRadius:12,border:HR,background:"rgba(255,255,255,0.04)"}}>
+            <p style={lbl}>Origen</p>
+            <select value={editOrigin} onChange={e=>{setEditOrigin(e.target.value);setDirty(true);}} style={{...inp,marginTop:5,width:130,cursor:"pointer"}}>
+              {["China","USA","España"].map(o=><option key={o} value={o} style={{background:"#142038"}}>{o}</option>)}
+            </select>
+          </div>
+          <div style={{flex:"0 0 auto",padding:"12px 16px",borderRadius:12,border:HR,background:"rgba(255,255,255,0.04)"}}>
+            <p style={lbl}>Baterías</p>
+            <div style={{display:"flex",gap:6,marginTop:5}}>
+              {[[true,"Sí"],[false,"No"]].map(([v,l])=><button key={l} onClick={()=>{setEditBatt(v);setDirty(true);}} style={{padding:"8px 16px",fontSize:12.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${editBatt===v?(v?"rgba(251,146,60,0.6)":"rgba(74,222,128,0.5)"):"rgba(255,255,255,0.14)"}`,background:editBatt===v?(v?"rgba(251,146,60,0.16)":"rgba(74,222,128,0.14)"):"transparent",color:editBatt===v?(v?"#fdba74":"#4ade80"):"rgba(255,255,255,0.5)"}}>{l}</button>)}
+            </div>
+          </div>
+          <div style={{flex:"0 0 auto",padding:"12px 16px",borderRadius:12,border:HR,background:"rgba(255,255,255,0.04)"}}>
+            <p style={lbl}>Entrega</p>
+            <p style={{fontSize:14,fontWeight:700,color:"#fff",margin:"6px 0 0",textTransform:"capitalize"}}>{q.delivery||"oficina"}</p>
           </div>
         </div>
-        {editProds.length>0&&(()=>{
-          // Desaduanaje a nivel operación: se calcula sobre el CIF TOTAL (aprox = FOB total),
-          // se le agrega 21% de IVA, y se prorratea a cada producto según su share de FOB.
-          const isAereoA=selQuote.channel_key==="aereo_a_china";
-          const totalFobAll=editProds.reduce((s,p)=>s+Number(p.unit_price||0)*Number(p.quantity||1),0);
-          const desembBase=isAereoA?desembolsoForCif(totalFobAll):0;
-          const desembConIVA=desembBase*1.21;
-          return <div style={{marginBottom:16}}>
-          <h4 style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Productos</h4>
-          {editProds.map((p,i)=>{const fobItem=Number(p.unit_price||0)*Number(p.quantity||1);const nc=p.ncm||{};const inpStyle={padding:"7px 10px",fontSize:11.5,border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",width:"100%",boxSizing:"border-box",fontFamily:"inherit"};
-            // Prorrateo del desaduanaje total (con IVA) según share de FOB del ítem
-            const share=totalFobAll>0?fobItem/totalFobAll:0;
-            const desemb=isAereoA?desembConIVA*share:null;
-            return <div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:"16px 18px",marginBottom:10}}>
-            {/* Header: Descripción grande */}
-            <p style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 10px",letterSpacing:"-0.01em"}}>{p.description||p.type||"Producto sin descripción"}</p>
-            {/* Cantidad + Unitario + Total FOB */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1.2fr",gap:12,marginBottom:14,padding:"12px 14px",background:"rgba(0,0,0,0.2)",borderRadius:8}}>
-              <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Cantidad</p><p style={{fontSize:16,fontWeight:700,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{p.quantity}</p></div>
-              <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.45)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Precio unitario</p><p style={{fontSize:16,fontWeight:700,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>USD {Number(p.unit_price||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
-              <div style={{textAlign:"right"}}><p style={{fontSize:9.5,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total FOB</p><p style={{fontSize:18,fontWeight:800,color:GOLD_LIGHT,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>USD {fobItem.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
+        {/* PRODUCTOS — tabla como la ve el cliente */}
+        {sec("Productos",<button onClick={addProd} style={{fontSize:11.5,fontWeight:700,padding:"7px 14px",borderRadius:9,border:"1px dashed rgba(184,149,106,0.45)",background:"rgba(184,149,106,0.07)",color:IC,cursor:"pointer"}}>+ Producto</button>)}
+        <div style={{borderRadius:12,border:HR,background:"rgba(255,255,255,0.03)",padding:"14px 16px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"minmax(0,2.4fr) 0.8fr 0.7fr 1fr 1.6fr 34px",gap:8,marginBottom:8}}>
+            {["Descripción","USD c/u","Cantidad","NCM","Descripción NCM",""].map((h,i)=><p key={i} style={{...lbl,textAlign:i===0||i===4?"left":"center"}}>{h}</p>)}
+          </div>
+          {editProds.length===0&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.4)",margin:0}}>Sin productos cargados.</p>}
+          {editProds.map((p,i)=>{const nc=p.ncm||{};const fobItem=Number(p.unit_price||0)*Number(p.quantity||1);
+            return <div key={i} style={{paddingBottom:12,marginBottom:12,borderBottom:i===editProds.length-1?"none":"1px solid rgba(255,255,255,0.07)"}}>
+              <div style={{display:"grid",gridTemplateColumns:"minmax(0,2.4fr) 0.8fr 0.7fr 1fr 1.6fr 34px",gap:8,alignItems:"center"}}>
+                <input value={p.description||p.type||""} onChange={e=>chProd(i,"description",e.target.value)} style={inp} placeholder="Descripción de la mercadería"/>
+                <input value={p.unit_price??""} onChange={e=>chProd(i,"unit_price",e.target.value)} style={{...inp,textAlign:"center"}} placeholder="0,00"/>
+                <input value={p.quantity??""} onChange={e=>chProd(i,"quantity",e.target.value)} style={{...inp,textAlign:"center"}} placeholder="1"/>
+                <input value={nc.ncm_code||""} onChange={e=>chNcm(i,"ncm_code",e.target.value)} style={{...inp,textAlign:"center",fontFamily:"'JetBrains Mono',monospace",color:IC,fontWeight:700}} placeholder="0000.00.00"/>
+                <input value={nc.ncm_description||""} onChange={e=>chNcm(i,"ncm_description",e.target.value)} style={inp} placeholder="—"/>
+                <button onClick={()=>rmProd(i)} style={{width:32,height:32,borderRadius:8,border:HR,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:13}}>✕</button>
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8,alignItems:"center"}}>
+                {[["Derechos","import_duty_rate",0],["Tasa estadística","statistics_rate",0],["IVA","iva_rate",21]].map(([l,f,def])=>
+                  <span key={f} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"5px 10px",borderRadius:8,border:HR,background:"rgba(255,255,255,0.05)"}}>
+                    <span style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:SKY}}>{l}</span>
+                    <input type="number" step="0.1" value={nc[f]??""} onChange={e=>chNcm(i,f,Number(e.target.value)||0)} placeholder={String(def)} style={{width:52,padding:"2px 4px",fontSize:12.5,fontWeight:700,textAlign:"right",border:"none",borderBottom:"1px solid rgba(255,255,255,0.2)",background:"transparent",color:"#fff",outline:"none"}}/>
+                    <span style={{fontSize:12,fontWeight:700,color:"#fff"}}>%</span>
+                  </span>)}
+                <span style={{flex:1}}/>
+                <span style={{fontSize:12.5,color:"rgba(255,255,255,0.55)"}}>FOB <b style={{color:"#fff",fontVariantNumeric:"tabular-nums"}}>USD {u2(fobItem)}</b></span>
+              </div>
+            </div>;})}
+          <div style={{display:"inline-flex",alignItems:"center",gap:12,marginTop:4,padding:"9px 16px",borderRadius:10,border:"1px solid rgba(232,208,152,0.4)",background:"rgba(184,149,106,0.12)"}}>
+            <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"#fff"}}>FOB mercadería</span>
+            <span style={{fontSize:19,fontWeight:900,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>USD {u2(totFobEdit)}</span>
+          </div>
+        </div>
+        {/* BULTOS */}
+        {sec(<>Bultos <span style={{fontWeight:600,color:"rgba(255,255,255,0.4)",letterSpacing:0,textTransform:"none"}}>· cm / kg</span></>,<button onClick={addPkg} style={{fontSize:11.5,fontWeight:700,padding:"7px 14px",borderRadius:9,border:"1px dashed rgba(184,149,106,0.45)",background:"rgba(184,149,106,0.07)",color:IC,cursor:"pointer"}}>+ Bulto</button>)}
+        <div style={{borderRadius:12,border:HR,background:"rgba(255,255,255,0.03)",padding:"14px 16px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"0.7fr 0.8fr 0.8fr 0.8fr 0.8fr 34px minmax(0,2.4fr)",gap:8,marginBottom:8}}>
+            {["Cant.","Largo","Ancho","Alto","Peso kg","",""].map((h,i)=><p key={i} style={{...lbl,textAlign:"center"}}>{h}</p>)}
+          </div>
+          {editPkgs.length===0&&<p style={{fontSize:12.5,color:"rgba(255,255,255,0.4)",margin:0}}>Sin bultos cargados.</p>}
+          {editPkgs.map((pk,i)=>{const cant=Number(pk.qty||1),l=Number(pk.length||0),w=Number(pk.width||0),h=Number(pk.height||0),kg=Number(pk.weight||0);
+            const bruto=kg*cant,vol=l&&w&&h?((l*w*h)/5000)*cant:0,m3=l&&w&&h?((l*w*h)/1e6)*cant:0;
+            return <div key={i} style={{display:"grid",gridTemplateColumns:"0.7fr 0.8fr 0.8fr 0.8fr 0.8fr 34px minmax(0,2.4fr)",gap:8,alignItems:"center",marginBottom:9}}>
+              {["qty","length","width","height","weight"].map(f=><input key={f} type="number" value={pk[f]??""} onChange={e=>chPkg(i,f,e.target.value)} style={{...inp,textAlign:"center"}} placeholder={f==="qty"?"1":"—"}/>)}
+              <button onClick={()=>rmPkg(i)} style={{width:32,height:32,borderRadius:8,border:HR,background:"rgba(255,255,255,0.05)",color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:13}}>✕</button>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+                {[["Peso bruto",bruto>0?`${u2(bruto)} kg`:"—",bruto>0&&bruto>=vol],["Peso volumétrico",vol>0?`${u2(vol)} kg`:"—",vol>bruto],["m³",m3>0?m3.toFixed(3):"—",false]].map(([t,v,hot])=>
+                  <span key={t} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:38,borderRadius:8,border:`1px solid ${hot?"rgba(232,208,152,0.55)":"rgba(255,255,255,0.14)"}`,background:hot?"rgba(184,149,106,0.14)":"rgba(255,255,255,0.05)"}}>
+                    <span style={{fontSize:8.5,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",color:hot?GOLD_LIGHT:SKY,whiteSpace:"nowrap"}}>{t}</span>
+                    <span style={{fontSize:11.5,fontWeight:700,color:hot?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</span>
+                  </span>)}
+              </div>
+            </div>;})}
+          <div style={{display:"flex",gap:9,flexWrap:"wrap",marginTop:10}}>
+            {[["Peso bruto total",`${u2(tt.gross)} kg`,tt.gross>=tt.volumetric],["Peso volumétrico total",`${u2(tt.volumetric)} kg`,tt.volumetric>tt.gross],["Volumen total",`${tt.cbm.toFixed(3)} m³`,false],["Kg facturable",`${u2(tt.billable)} kg`,true]].map(([t,v,hot])=>
+              <div key={t} style={{flex:"1 1 150px",padding:"10px 14px",borderRadius:10,border:`1px solid ${hot?"rgba(232,208,152,0.4)":"rgba(255,255,255,0.14)"}`,background:hot?"rgba(184,149,106,0.1)":"rgba(255,255,255,0.04)"}}>
+                <p style={{...lbl,color:hot?GOLD_LIGHT:SKY}}>{t}</p>
+                <p style={{margin:"4px 0 0",fontSize:16,fontWeight:800,color:hot?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums"}}>{v}</p>
+              </div>)}
+          </div>
+        </div>
+        {/* VÍAS DE IMPORTACIÓN — las 3, con el motivo si alguna no está disponible */}
+        {sec("Vías de importación",<span style={{fontSize:11.5,color:"rgba(255,255,255,0.45)"}}>{okCanales.length} de 3 disponibles</span>)}
+        {canales.map(c=>{const isB=c.type==="maritimo_b"||c.type==="aereo_b";const emo=c.type.includes("aereo")?"✈️":"🚢";
+          if(c.motivo)return <div key={c.key} style={{display:"flex",alignItems:"flex-start",gap:14,padding:"16px 18px",marginBottom:10,borderRadius:13,border:"1px dashed rgba(248,113,113,0.5)",background:"rgba(248,113,113,0.06)"}}>
+            <span style={{fontSize:20,opacity:0.5}}>{emo}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <p style={{margin:0,fontSize:14.5,fontWeight:700,color:"rgba(255,255,255,0.75)"}}>{c.name} <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:"#f87171",marginLeft:8}}>No disponible</span></p>
+              <p style={{margin:"5px 0 0",fontSize:12.5,color:"#fca5a5",lineHeight:1.5}}><b>Motivo:</b> {c.motivo}</p>
             </div>
-            {/* NCM + impuestos (editables) */}
-            <p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.4)",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Clasificación e impuestos</p>
-            <div style={{display:"grid",gridTemplateColumns:"1.1fr 2fr 0.8fr 0.8fr 0.8fr",gap:8,alignItems:"end",fontSize:11}}>
-              <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>NCM</label><input value={nc.ncm_code||""} onChange={e=>chNcm(i,"ncm_code",e.target.value)} style={{...inpStyle,fontFamily:"'JetBrains Mono',monospace",color:GOLD_LIGHT,fontWeight:600,letterSpacing:"0.04em"}} placeholder="8471.30.00"/></div>
-              <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Descripción NCM</label><input value={nc.ncm_description||""} onChange={e=>chNcm(i,"ncm_description",e.target.value)} style={inpStyle} placeholder="..."/></div>
-              <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Derechos %</label><input type="number" value={nc.import_duty_rate??""} onChange={e=>chNcm(i,"import_duty_rate",Number(e.target.value)||0)} style={inpStyle} step="0.1"/></div>
-              <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>TE %</label><input type="number" value={nc.statistics_rate??""} onChange={e=>chNcm(i,"statistics_rate",Number(e.target.value)||0)} style={inpStyle} step="0.1"/></div>
-              <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>IVA %</label><input type="number" value={nc.iva_rate??""} onChange={e=>chNcm(i,"iva_rate",Number(e.target.value)||0)} style={inpStyle} step="0.1"/></div>
+          </div>;
+          const esBarata=barata&&c.key===barata.key;const dOpen=openAlt===`m:${c.key}`;const det=detalleDe(c);
+          const visible=alts.length>0?visibles.includes(c.key):null;
+          return <div key={c.key} style={{marginBottom:10,borderRadius:13,border:`1px solid ${esBarata?"rgba(232,208,152,0.5)":"rgba(140,200,245,0.25)"}`,background:esBarata?"rgba(184,149,106,0.09)":"rgba(140,200,245,0.05)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"15px 18px"}}>
+              <span style={{fontSize:20}}>{emo}</span>
+              <div style={{flex:1,minWidth:190}}>
+                <p style={{margin:0,fontSize:14.5,color:"#fff",fontWeight:700}}>{c.name}
+                  {esBarata&&<span style={{marginLeft:9,fontSize:9.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 8px",borderRadius:999,background:"rgba(34,197,94,0.2)",color:"#4ade80",border:"1px solid rgba(34,197,94,0.5)"}}>Más económica</span>}
+                  {visible===false&&<span style={{marginLeft:9,fontSize:9.5,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 8px",borderRadius:999,background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.5)",border:HR}}>Oculta al cliente</span>}
+                </p>
+                <p style={{margin:"3px 0 0",fontSize:11.5,color:SKY}}>Llega en {c.info}</p>
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <div style={{padding:"8px 14px",borderRadius:10,border:HR,background:"rgba(0,0,0,0.25)",minWidth:112}}>
+                  <p style={lbl}>{isB?"Tarifa ALL IN":"Flete + seguro"}</p>
+                  <p style={{margin:"3px 0 0",fontSize:15,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>USD {u2(Number(c.flete||0)+Number(c.seguro||0)+Number(c.overweightSurcharge||0))}</p>
+                </div>
+                {!isB&&<div style={{padding:"8px 14px",borderRadius:10,border:HR,background:"rgba(0,0,0,0.25)",minWidth:112}}>
+                  <p style={lbl}>Impuestos</p>
+                  <p style={{margin:"3px 0 0",fontSize:15,fontWeight:800,color:"#fff",fontVariantNumeric:"tabular-nums"}}>USD {u2(c.totalTax)}</p>
+                </div>}
+                <div style={{padding:"8px 14px",borderRadius:10,border:"1px solid rgba(232,208,152,0.45)",background:"rgba(184,149,106,0.14)",minWidth:126}}>
+                  <p style={{...lbl,color:GOLD_LIGHT}}>Total a abonar</p>
+                  <p style={{margin:"3px 0 0",fontSize:18,fontWeight:900,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>USD {u2(c.totalAbonar)}</p>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                {det.length>0&&<button onClick={()=>setOpenAlt(dOpen?null:`m:${c.key}`)} style={{padding:"9px 14px",fontSize:11.5,fontWeight:700,borderRadius:9,border:"1px solid rgba(140,200,245,0.6)",background:"rgba(140,200,245,0.14)",color:SKY,cursor:"pointer",whiteSpace:"nowrap"}}>{dOpen?"Ocultar ▲":"Ver desglose ▼"}</button>}
+                {alts.length>0&&<button onClick={()=>toggleVis(c.key)} title="Mostrar u ocultar esta vía en el link del cliente" style={{padding:"9px 14px",fontSize:11.5,fontWeight:700,borderRadius:9,cursor:"pointer",whiteSpace:"nowrap",border:`1px solid ${visible?"rgba(34,197,94,0.55)":"rgba(255,255,255,0.18)"}`,background:visible?"rgba(34,197,94,0.14)":"rgba(255,255,255,0.05)",color:visible?"#4ade80":"rgba(255,255,255,0.5)"}}>{visible?"✓ Visible":"Oculta"}</button>}
+              </div>
             </div>
-            {/* Desaduanaje prorrateado (sólo aéreo A) */}
-            {isAereoA&&<div style={{marginTop:8,padding:"8px 12px",background:"rgba(184,149,106,0.08)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}}>
-              <span style={{color:"rgba(255,255,255,0.6)"}}>Desaduanaje (prorrateado · {(share*100).toFixed(1)}% del total)</span>
-              <span style={{color:GOLD_LIGHT,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {desemb.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+            {dOpen&&<div style={{margin:"0 18px 15px",padding:"8px 16px 12px",borderRadius:11,background:"rgba(8,15,29,0.85)",border:HR}}>
+              {det.map(([l,v],k)=><div key={k} style={{display:"flex",justifyContent:"space-between",gap:12,padding:"7px 0",borderBottom:"1px solid rgba(255,255,255,0.08)"}}><span style={{fontSize:12.5,color:"rgba(255,255,255,0.9)"}}>{l}</span><span style={{fontSize:13,fontWeight:600,color:"#fff",fontVariantNumeric:"tabular-nums"}}>USD {u2(v)}</span></div>)}
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"12px 0 2px"}}><span style={{fontSize:13.5,fontWeight:700,color:"#fff"}}>Total</span><span style={{fontSize:17,fontWeight:800,color:GOLD_LIGHT,fontVariantNumeric:"tabular-nums"}}>USD {u2(c.totalAbonar)}</span></div>
+              {isB&&<p style={{fontSize:11.5,color:SKY,margin:"8px 0 0"}}>Tarifa ALL IN: es todo lo que paga el cliente, sin costos adicionales.</p>}
             </div>}
           </div>;})}
-          {isAereoA&&editProds.length>1&&<div style={{marginTop:6,padding:"8px 12px",background:"rgba(255,255,255,0.025)",border:"1px dashed rgba(184,149,106,0.25)",borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11}}>
-            <span style={{color:"rgba(255,255,255,0.45)"}}>Desaduanaje total de la operación (USD {desembBase.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} + 21% IVA)</span>
-            <span style={{color:GOLD_LIGHT,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>USD {desembConIVA.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        {/* Link del cliente + acciones */}
+        <div style={{marginTop:22,paddingTop:18,borderTop:HR}}>
+          {q.accepted_at&&<p style={{fontSize:13,color:"#4ade80",margin:"0 0 12px",fontWeight:700}}>✓ El cliente eligió {alts.find(a=>a.key===q.client_selected_channel)?.name||q.client_selected_channel} el {fShort(q.accepted_at)}</p>}
+          {link&&<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:14,padding:"12px 15px",borderRadius:11,background:"rgba(96,165,250,0.06)",border:"1px solid rgba(96,165,250,0.2)"}}>
+            <span style={{fontSize:10.5,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)"}}>Link del cliente</span>
+            <code style={{fontSize:11.5,color:"#60a5fa",fontFamily:"monospace",wordBreak:"break-all"}}>{link}</code>
+            <span style={{flex:1}}/>
+            <button onClick={()=>{navigator.clipboard?.writeText(link);toast("Link copiado","success");}} style={{padding:"7px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.12)",color:"#60a5fa",cursor:"pointer"}}>Copiar</button>
+            <a href={link} target="_blank" rel="noopener noreferrer" style={{padding:"7px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:HR,background:"transparent",color:"rgba(255,255,255,0.6)",textDecoration:"none"}}>Ver</a>
+            {wa&&<a href={`https://wa.me/${wa}?text=${encodeURIComponent(`Hola ${q.client_name||""}! Te paso la cotización ${numQ(q)} para que veas las opciones y elijas la que te sirva:\n\n${link}\n\nLos valores están vigentes por 10 días.`)}`} target="_blank" rel="noopener noreferrer" style={{padding:"7px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"none",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none"}}>Enviar</a>}
           </div>}
-        </div>;})()}
-        {/* Bultos editables + totales */}
-        <div style={{marginBottom:16}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <h4 style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:0,textTransform:"uppercase",letterSpacing:"0.1em"}}>Bultos</h4>
-            <button onClick={addPkg} style={{fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:8,border:"1px dashed rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.05)",color:IC,cursor:"pointer"}}>+ Bulto</button>
+          {dirty&&<p style={{fontSize:12,color:"#fdba74",margin:"0 0 10px",fontWeight:600}}>Hay cambios sin guardar. Guardá y generá el link para mandarle al cliente la cotización nueva.</p>}
+          {savedAt&&!dirty&&<p style={{fontSize:12,color:"#4ade80",margin:"0 0 10px",fontWeight:600}}>✓ Guardado.</p>}
+          <div style={{display:"flex",gap:9,flexWrap:"wrap",alignItems:"center"}}>
+            <button onClick={guardarYLink} disabled={saving||okCanales.length===0} style={{padding:"11px 20px",fontSize:13,fontWeight:800,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:saving?"wait":"pointer",background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW,opacity:okCanales.length===0?0.5:1}}>{saving?"Guardando…":link?"Guardar y regenerar link":"Guardar y generar link"}</button>
+            <button onClick={saveQuoteEdit} disabled={saving} style={{padding:"11px 18px",fontSize:12.5,fontWeight:700,borderRadius:10,border:HR,background:"rgba(255,255,255,0.06)",color:"#fff",cursor:saving?"wait":"pointer"}}>Guardar sin link</button>
+            <button onClick={()=>downloadPdf(q)} style={{padding:"11px 16px",fontSize:12.5,fontWeight:700,borderRadius:10,border:"1px solid rgba(184,149,106,0.35)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>Descargar PDF</button>
+            {wa&&<a href={`https://wa.me/${wa}?text=${encodeURIComponent(msgSeg(q,dias<=0))}`} target="_blank" rel="noopener noreferrer" style={{padding:"11px 16px",fontSize:12.5,fontWeight:700,borderRadius:10,border:"1px solid rgba(37,211,102,0.35)",background:"rgba(37,211,102,0.1)",color:"#25D366",textDecoration:"none"}}>Seguimiento por WhatsApp</a>}
+            <span style={{flex:1}}/>
+            <button onClick={()=>{borrarQuotes([q.id],`¿Eliminar la cotización ${numQ(q)}? No se puede deshacer.`);}} style={{padding:"11px 16px",fontSize:12.5,fontWeight:700,borderRadius:10,border:"1px solid rgba(248,113,113,0.35)",background:"rgba(248,113,113,0.08)",color:"#f87171",cursor:"pointer"}}>Eliminar</button>
           </div>
-          {editPkgs.length===0&&<p style={{fontSize:12,color:"rgba(255,255,255,0.4)",fontStyle:"italic",margin:"4px 0 0"}}>Sin bultos cargados</p>}
-          {editPkgs.map((pk,i)=>{const inpStyle={padding:"7px 10px",fontSize:11.5,border:"1px solid rgba(255,255,255,0.12)",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",width:"100%",boxSizing:"border-box"};return <div key={i} style={{background:"rgba(255,255,255,0.025)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"12px 14px",marginBottom:8}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <span style={{fontSize:12,fontWeight:700,color:GOLD_LIGHT,letterSpacing:"0.02em"}}>Bulto {i+1}</span>
-              <button onClick={()=>rmPkg(i)} style={{fontSize:10,fontWeight:600,padding:"3px 10px",borderRadius:6,border:"1px solid rgba(255,80,80,0.25)",background:"rgba(255,80,80,0.08)",color:"#ff6b6b",cursor:"pointer"}}>Eliminar</button>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:8}}>
-              <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Cant.</label><input type="number" value={pk.qty||""} onChange={e=>chPkg(i,"qty",e.target.value)} style={inpStyle} placeholder="1"/></div>
-              <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Largo cm</label><input type="number" value={pk.length||""} onChange={e=>chPkg(i,"length",e.target.value)} style={inpStyle} placeholder="60"/></div>
-              <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Ancho cm</label><input type="number" value={pk.width||""} onChange={e=>chPkg(i,"width",e.target.value)} style={inpStyle} placeholder="40"/></div>
-              <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Alto cm</label><input type="number" value={pk.height||""} onChange={e=>chPkg(i,"height",e.target.value)} style={inpStyle} placeholder="35"/></div>
-              <div><label style={{fontSize:9.5,color:"rgba(255,255,255,0.45)",display:"block",marginBottom:3}}>Peso kg</label><input type="number" value={pk.weight||""} onChange={e=>chPkg(i,"weight",e.target.value)} style={inpStyle}/></div>
-            </div>
-          </div>;})}
-          {/* Totales de bultos */}
-          {editPkgs.length>0&&(()=>{const t=computePackagesTotals();return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,padding:"12px 14px",background:"rgba(184,149,106,0.06)",border:"1px solid rgba(184,149,106,0.2)",borderRadius:10,marginTop:4}}>
-            <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>CBM total</p><p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{t.cbm.toFixed(4)} m³</p></div>
-            <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Kg bruto</p><p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{t.gross.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div>
-            <div><p style={{fontSize:9.5,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Kg volumétrico</p><p style={{fontSize:14,fontWeight:700,color:"#fff",margin:0,fontVariantNumeric:"tabular-nums"}}>{t.volumetric.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div>
-            <div><p style={{fontSize:9.5,fontWeight:700,color:GOLD_LIGHT,margin:"0 0 3px",textTransform:"uppercase",letterSpacing:"0.08em"}}>Kg facturable</p><p style={{fontSize:14,fontWeight:800,color:GOLD_LIGHT,margin:0,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>{t.billable.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})} kg</p></div>
-          </div>;})()}
         </div>
-        {/* COSTOS POR CANAL — las 4 opciones */}
-        {(()=>{const channels=computeAllChannels();if(!channels.length)return null;
-          const best=channels.reduce((min,ch)=>ch.totalAbonar<(min?.totalAbonar||Infinity)?ch:min,null);
-          return <div style={{marginBottom:16}}>
-            <h4 style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.55)",margin:"0 0 12px",textTransform:"uppercase",letterSpacing:"0.1em"}}>Costos por canal disponibles</h4>
-            <div style={{display:"grid",gridTemplateColumns:channels.length<=2?"1fr 1fr":"1fr 1fr",gap:10}}>
-              {channels.map(ch=>{const isB=ch.type==="aereo_b"||ch.type==="maritimo_b";const isBest=best&&ch.key===best.key&&channels.length>1;const row=(l,v)=><div style={{display:"flex",justifyContent:"space-between",padding:"3px 0",fontSize:11}}><span style={{color:"rgba(255,255,255,0.5)"}}>{l}</span><span style={{color:"rgba(255,255,255,0.85)",fontVariantNumeric:"tabular-nums"}}>USD {Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>;
-              return <div key={ch.key} style={{padding:"14px 16px",background:isBest?"linear-gradient(135deg, rgba(184,149,106,0.12) 0%, rgba(255,255,255,0.02) 100%)":"rgba(255,255,255,0.025)",border:`1px solid ${isBest?"rgba(184,149,106,0.4)":"rgba(255,255,255,0.08)"}`,borderRadius:12,position:"relative",overflow:"hidden",boxShadow:isBest?GOLD_GLOW:"none"}}>
-                {isBest&&<div style={{position:"absolute",top:0,left:0,right:0,height:2,background:GOLD_GRADIENT}}/>}
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,gap:8}}>
-                  <div><p style={{fontSize:12.5,fontWeight:700,color:"#fff",margin:0}}>{ch.name}</p><p style={{fontSize:10,color:"rgba(255,255,255,0.45)",margin:"2px 0 0"}}>{ch.info}</p></div>
-                  {isBest&&<span style={{fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:999,background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.08em",textTransform:"uppercase"}}>Mejor</span>}
-                </div>
-                {!isB&&row("Impuestos",ch.totalTax)}
-                {row(isB?"Servicio Integral":"Flete internacional",Number(ch.flete||0)-Number(ch.battExtra||0))}
-                {Number(ch.battExtra||0)>0&&row("Recargo por baterías",ch.battExtra)}
-                {Number(ch.overweightSurcharge||0)>0&&row("Recargo por sobrepeso",ch.overweightSurcharge)}
-                {!isB&&row("Seguro",ch.seguro)}
-                {ch.shipCost>0&&row("Envío a domicilio",ch.shipCost)}
-                <div style={{display:"flex",justifyContent:"space-between",padding:"9px 0 0",borderTop:`1px solid ${isBest?"rgba(184,149,106,0.3)":"rgba(255,255,255,0.08)"}`,marginTop:6}}>
-                  <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Total DDP</span>
-                  <span style={{fontSize:16,fontWeight:800,color:isBest?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>USD {ch.totalAbonar.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-                </div>
-              </div>;})}
-            </div>
-          </div>;})()}
-        {(()=>{const cl=q.client_id?clientsMap[q.client_id]:null;const wa=cl?.whatsapp;const prodDesc=Array.isArray(editProds)?editProds.map(p=>p.description||p.type).join(", "):"";
-          const waConsulta=encodeURIComponent(`Hola ${q.client_name}! Vi que cotizaste una importación de *${prodDesc}* por *${q.channel_name}* desde *${q.origin}* el ${formatDate(q.created_at)}.\n\n¿Pudiste avanzar con la operación? ¿Necesitás más información?\n\nQuedo a disposición!`);
-          const waUpdate=encodeURIComponent(`Hola ${q.client_name}! Revisamos y ajustamos tu cotización de *${prodDesc}* por *${q.channel_name}* con la clasificación arancelaria precisa.\n\n📄 *Costo total actualizado: USD ${Number(q.total_cost||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}*\n\nEntrá a tu portal para ver el detalle por producto (NCM + derechos + tasa estadística + IVA), o si preferís te paso el PDF.\n\nQuedo a disposición para avanzar!`);
-          return <div style={{marginTop:20,paddingTop:16,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
-            {/* Link para el cliente. Reemplaza al PDF cuando hay mas de una alternativa: en vez de
-                mandarle un precio cerrado, compara tiempos y costos y elige. Se puede decidir cuales
-                mostrarle — no siempre conviene ofrecer las tres. */}
-            {(()=>{
-              const alts=Array.isArray(q.channel_alternatives)?q.channel_alternatives:[];
-              if(alts.length===0)return <p style={{fontSize:11.5,color:"rgba(255,255,255,0.4)",margin:"0 0 14px",fontStyle:"italic"}}>Guardá la cotización para poder generar el link con las alternativas.</p>;
-              const visibles=Array.isArray(q.visible_channels)&&q.visible_channels.length>0?q.visible_channels:alts.map(a=>a.key);
-              const toggle=async(k)=>{
-                const next=visibles.includes(k)?visibles.filter(x=>x!==k):[...visibles,k];
-                if(next.length===0){toast("Tiene que quedar al menos una opción visible","error");return;}
-                await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${q.id}`,body:{visible_channels:next}});
-                setSelQuote(p=>({...p,visible_channels:next}));setQuotes(ps=>ps.map(x=>x.id===q.id?{...x,visible_channels:next}:x));
-              };
-              const generar=async()=>{
-                const tok=`${Date.now().toString(36)}${Math.random().toString(36).slice(2,12)}`;
-                const exp=new Date(Date.now()+10*24*60*60*1000).toISOString();
-                const body={public_token:tok,sent_at:new Date().toISOString(),expires_at:exp,visible_channels:visibles};
-                await dq("quotes",{method:"PATCH",token,filters:`?id=eq.${q.id}`,body});
-                setSelQuote(p=>({...p,...body}));setQuotes(ps=>ps.map(x=>x.id===q.id?{...x,...body}:x));
-                toast("Link generado · válido 10 días","success");
-              };
-              const link=q.public_token?`https://argencargo.com.ar/presupuesto/${q.public_token}`:null;
-              const vencido=q.expires_at&&new Date(q.expires_at).getTime()<Date.now();
-              return <div style={{marginBottom:16,padding:"13px 15px",borderRadius:11,background:"rgba(96,165,250,0.05)",border:"1px solid rgba(96,165,250,0.18)"}}>
-                <p style={{fontSize:10.5,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:"rgba(255,255,255,0.5)",margin:"0 0 8px"}}>Link para el cliente</p>
-                <p style={{fontSize:11.5,color:"rgba(255,255,255,0.5)",margin:"0 0 9px"}}>Qué opciones le mostramos:</p>
-                <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:11}}>
-                  {alts.map(a=>{const on=visibles.includes(a.key);return <button key={a.key} onClick={()=>toggle(a.key)} style={{padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,cursor:"pointer",border:`1px solid ${on?"#22c55e":"rgba(255,255,255,0.15)"}`,background:on?"rgba(34,197,94,0.12)":"transparent",color:on?"#22c55e":"rgba(255,255,255,0.45)"}}>{on?"✓ ":""}{a.name} · USD {Number(a.totalAbonar||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}</button>;})}
-                </div>
-                {q.accepted_at
-                  ?<p style={{fontSize:12.5,color:"#22c55e",margin:0,fontWeight:600}}>✓ El cliente eligió {alts.find(a=>a.key===q.client_selected_channel)?.name||q.client_selected_channel} · {formatDate(q.accepted_at)}</p>
-                  :<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                    {!link&&<Btn small onClick={generar}>🔗 Generar link</Btn>}
-                    {link&&<>
-                      <button onClick={()=>{navigator.clipboard?.writeText(link);toast("Link copiado","success");}} style={{padding:"7px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(96,165,250,0.4)",background:"rgba(96,165,250,0.1)",color:"#60a5fa",cursor:"pointer"}}>📋 Copiar link</button>
-                      <a href={link} target="_blank" rel="noopener noreferrer" style={{padding:"7px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"rgba(255,255,255,0.6)",textDecoration:"none"}}>👁 Ver</a>
-                      {wa&&<a href={`https://wa.me/${wa.replace(/[^0-9]/g,"")}?text=${encodeURIComponent(`Hola ${q.client_name||""}! Te paso la cotización para que veas las opciones y elijas la que te sirva:\n\n${link}\n\nPrecios válidos por 10 días.`)}`} target="_blank" rel="noopener noreferrer" style={{padding:"7px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid rgba(34,197,94,0.4)",background:"rgba(34,197,94,0.1)",color:"#22c55e",textDecoration:"none"}}>💬 Enviar por WhatsApp</a>}
-                      <Btn small variant="secondary" onClick={generar}>↻ Regenerar</Btn>
-                      <span style={{fontSize:11,color:vencido?"#f87171":"rgba(255,255,255,0.4)"}}>{vencido?"Venció":`Vence ${formatDate(q.expires_at)}`}</span>
-                    </>}
-                  </div>}
-              </div>;
-            })()}
-            {savedAt&&!dirty&&<p style={{fontSize:11,color:"#22c55e",margin:"0 0 10px",fontWeight:600}}>✓ Guardado. Ahora podés avisar al cliente.</p>}
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-              <button onClick={saveQuoteEdit} disabled={saving} style={{padding:"10px 18px",fontSize:13,fontWeight:700,borderRadius:10,border:`1px solid ${GOLD_DEEP}`,cursor:"pointer",background:GOLD_GRADIENT,color:"#0A1628",letterSpacing:"0.02em",boxShadow:GOLD_GLOW}}>{saving?"Guardando…":"💾 Guardar cotización"}</button>
-              <button onClick={()=>downloadPdf(q)} style={{padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:10,border:"1.5px solid rgba(184,149,106,0.3)",background:"rgba(184,149,106,0.08)",color:IC,cursor:"pointer"}}>📄 Descargar PDF</button>
-              {wa&&<a href={`https://wa.me/${wa.replace(/[^0-9]/g,"")}?text=${waUpdate}`} target="_blank" rel="noopener noreferrer" style={{padding:"10px 16px",fontSize:12,fontWeight:700,borderRadius:10,border:"none",cursor:"pointer",background:"linear-gradient(135deg,#25D366,#128C7E)",color:"#fff",textDecoration:"none"}}>Avisar cotización actualizada</a>}
-              {wa&&<a href={`https://wa.me/${wa.replace(/[^0-9]/g,"")}?text=${waConsulta}`} target="_blank" rel="noopener noreferrer" style={{padding:"10px 16px",fontSize:12,fontWeight:600,borderRadius:10,border:"1px solid rgba(37,211,102,0.3)",background:"rgba(37,211,102,0.08)",color:"#25D366",textDecoration:"none"}}>Consultar (seguimiento)</a>}
-              {!wa&&<p style={{fontSize:11,color:"rgba(255,255,255,0.4)",fontStyle:"italic"}}>Sin WhatsApp en el cliente</p>}
-              <select value={q.status} onChange={e=>{updateStatus(q.id,e.target.value);setSelQuote({...q,status:e.target.value});}} style={{padding:"10px 14px",fontSize:12,fontWeight:600,border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,background:"rgba(255,255,255,0.06)",color:"#fff",outline:"none",marginLeft:"auto"}}>{Object.entries(ST).map(([k,v])=><option key={k} value={k} style={{background:"#142038"}}>{v.l}</option>)}</select>
-            </div>
-          </div>;})()}
       </div>
     </div>;})()}
   </div>;
