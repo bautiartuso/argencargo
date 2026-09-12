@@ -1985,7 +1985,7 @@ function CalculatorPage({token,client,preset}){
 }
 function QuotesPage({token,client,onEdit}){
   const [quotes,setQuotes]=useState([]);const [lo,setLo]=useState(true);const [openId,setOpenId]=useState(null);const [openAlt,setOpenAlt]=useState(null);
-  const numOf=q=>q.quote_number?`AGC-${String(q.quote_number).padStart(4,"0")}`:null;
+  const numOf=q=>q.quote_number?`AGC-${String(q.quote_number).padStart(5,"0")}`:null;
   useEffect(()=>{if(!client?.id){setLo(false);return;}(async()=>{const q=await dq("quotes",{token,filters:`?client_id=eq.${client.id}&select=*&order=created_at.desc`});setQuotes(Array.isArray(q)?q:[]);setLo(false);})();},[token,client?.id]);
   const HAIR="1px solid rgba(255,255,255,0.13)";
   const PANEL={background:"linear-gradient(180deg, rgba(13,24,45,0.96), rgba(8,16,32,0.96))",border:HAIR,borderRadius:16,padding:"20px 24px",marginBottom:14,boxShadow:"0 14px 34px rgba(0,0,0,0.28)"};
@@ -1995,7 +1995,7 @@ function QuotesPage({token,client,onEdit}){
   const fmt2=v=>Number(v||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
   const fmtDate=d=>d?new Date(d).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"}):"—";
   const expiryOf=q=>q.expires_at?new Date(q.expires_at):new Date(new Date(q.created_at).getTime()+15*864e5);
-  const isExpired=q=>q.status==="pending"&&expiryOf(q).getTime()<Date.now();
+  const isExpired=q=>expiryOf(q).getTime()<Date.now();
   const chTitle=a=>({aereo_a_china:["AÉREO","Courier comercial"],maritimo_a_china:["MARÍTIMO","Carga FCL/LCL"],maritimo_b:["MARÍTIMO","Integral AC"],aereo_b_spain:["AÉREO","Integral AC"],aereo_b_usa:["AÉREO","Integral AC"]})[a.key]||[a.key?.includes("aereo")?"AÉREO":"MARÍTIMO",a.name];
   const flagOf=o=>o==="USA"?"🇺🇸":o==="España"?"🇪🇸":"🇨🇳";
   const altsOf=q=>{const a=Array.isArray(q.channel_alternatives)?q.channel_alternatives:[];if(a.length)return a;return q.channel_key?[{key:q.channel_key,name:q.channel_name,info:"",totalAbonar:q.total_cost}]:[];};
@@ -2003,7 +2003,6 @@ function QuotesPage({token,client,onEdit}){
   const pkgsOf=q=>{const p=typeof q.packages==="string"?JSON.parse(q.packages):q.packages;return Array.isArray(p)?p:[];};
   const chosenOf=q=>q.client_selected_channel?altsOf(q).find(a=>a.key===q.client_selected_channel)||null:null;
   const cheapestOf=q=>{const a=altsOf(q);return a.length?a.reduce((x,y)=>Number(x.totalAbonar||0)<=Number(y.totalAbonar||0)?x:y):null;};
-  const ST={pending:["Pendiente","#fbbf24"],contacted:["Contactada",SKY],converted:["Convertida","#4ade80"],rejected:["Rechazada","#f87171"]};
   const pill=(l,c)=><span style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",padding:"4px 10px",borderRadius:999,color:c,background:`${c}22`,border:`1px solid ${c}66`,whiteSpace:"nowrap"}}>{l}</span>;
   const btn=(label,onClick,kind="ghost",disabled)=><button onClick={onClick} disabled={disabled} style={{height:40,padding:"0 18px",fontSize:13,fontWeight:800,borderRadius:10,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.45:1,whiteSpace:"nowrap",
     ...(kind==="gold"?{border:`1px solid ${GOLD_DEEP}`,background:GOLD_GRADIENT,color:"#0A1628",boxShadow:GOLD_GLOW}:kind==="green"?{border:"none",background:"#22c55e",color:"#062012",boxShadow:"0 6px 22px rgba(34,197,94,0.35)"}:kind==="red"?{border:"1px solid rgba(248,113,113,0.45)",background:"rgba(248,113,113,0.1)",color:"#f87171"}:kind==="sky"?{border:"1px solid rgba(140,200,245,0.7)",background:"rgba(140,200,245,0.16)",color:SKY}:{border:"1px solid rgba(255,255,255,0.22)",background:"rgba(255,255,255,0.09)",color:"#fff"})}}>{label}</button>;
@@ -2018,20 +2017,17 @@ function QuotesPage({token,client,onEdit}){
     {quotes.length===0?<div style={{...PANEL,textAlign:"center",padding:"40px 24px"}}>
       <p style={{fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 6px"}}>Todavía no tenés cotizaciones guardadas</p>
       <p style={{fontSize:13,color:"rgba(255,255,255,0.7)",margin:0}}>Cada vez que calculás una importación en la calculadora, la cotización se guarda acá automáticamente.</p>
-    </div>:quotes.map(q=>{const open=openId===q.id;const prods=prodsOf(q);const pkgs=pkgsOf(q);const alts=altsOf(q);const chosen=chosenOf(q);const cheapest=cheapestOf(q);const expired=isExpired(q);const [stL,stC]=expired?["Vencida","#f87171"]:(ST[q.status]||[q.status,"#fff"]);
-      const summary=prods.map(p=>p.description||p.type).filter(Boolean).slice(0,3).join(" · ")+(prods.length>3?` · +${prods.length-3}`:"");
+    </div>:quotes.map(q=>{const open=openId===q.id;const prods=prodsOf(q);const pkgs=pkgsOf(q);const alts=altsOf(q);const chosen=chosenOf(q);const cheapest=cheapestOf(q);const expired=isExpired(q);
+      const summary=prods.length>3?"Consolidado":(prods.map(p=>p.description||p.type).filter(Boolean).join(" · ")||"Sin productos");
       const nPk=pkgs.reduce((s,p)=>s+(Number(String(p.qty??"1").replace(",","."))||1),0);
       return <div key={q.id} style={{...PANEL,border:open?"1px solid rgba(232,208,152,0.5)":HAIR}}>
         <div className="rs-head" style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
           <span style={{width:44,height:44,borderRadius:12,border:HAIR,background:"rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{flagOf(q.origin)}</span>
           <div style={{flex:1,minWidth:220}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:15,fontWeight:800,color:"#fff",letterSpacing:"0.08em",textTransform:"uppercase"}}>Cotización {numOf(q)||fmtDate(q.created_at)}</span>{pill(stL,stC)}<span style={{fontSize:11.5,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"5px 11px",borderRadius:8,color:expired?"#fca5a5":GOLD_LIGHT,background:expired?"rgba(248,113,113,0.14)":"rgba(184,149,106,0.18)",border:`1px solid ${expired?"rgba(248,113,113,0.5)":"rgba(232,208,152,0.55)"}`,whiteSpace:"nowrap"}}>{expired?"Venció el":"Válida hasta el"} {fmtDate(expiryOf(q))}</span></div>
-            <p style={{margin:"6px 0 0",fontSize:13.5,color:"#fff",fontWeight:600}}>{summary||"Sin productos"}</p>
-            <p style={{margin:"3px 0 0",fontSize:12,color:SKY,fontWeight:600}}>Cotizada el {fmtDate(q.created_at)} · FOB {usd(q.total_fob)} · {nPk} {nPk===1?"bulto":"bultos"}</p>
-          </div>
-          <div style={{textAlign:"right"}}>
-            <p style={{...LBL,fontSize:10}}>{chosen?"Vía elegida":"Desde"}</p>
-            <p style={{margin:"3px 0 0",fontSize:24,fontWeight:900,color:chosen?GOLD_LIGHT:"#fff",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em",whiteSpace:"nowrap"}}><span style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",marginRight:6}}>USD</span>{fmt2((chosen||cheapest)?.totalAbonar??q.total_cost)}</p>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:19,fontWeight:900,color:"#fff",letterSpacing:"0.07em",fontVariantNumeric:"tabular-nums"}}>{numOf(q)||"AGC-—"}</span>{pill(expired?"Vencida":"Lista para importar",expired?"#f87171":"#4ade80")}</div>
+            <p style={{margin:"8px 0 0",fontSize:14.5,color:"#fff",fontWeight:700,lineHeight:1.4}}>{summary}</p>
+            <p style={{margin:"7px 0 0",fontSize:12,fontWeight:800,letterSpacing:"0.07em",textTransform:"uppercase",color:"#f87171"}}>{expired?"Venció el":"Válida hasta el"} {fmtDate(expiryOf(q))}</p>
+            <p style={{margin:"5px 0 0",fontSize:12,color:SKY,fontWeight:600}}>Cotizada el {fmtDate(q.created_at)} · FOB {usd(q.total_fob)} · {nPk} {nPk===1?"bulto":"bultos"}</p>
           </div>
           {btn(open?"Ocultar ▲":"Ver detalle ▼",()=>setOpenId(open?null:q.id),"sky")}
         </div>
