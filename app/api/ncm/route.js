@@ -84,10 +84,15 @@ FORMATO DE SALIDA (JSON estricto, sin markdown):
   }
 }`;
 
-async function classifyWithClaude(description) {
+async function classifyWithClaude(description, hint) {
+  // hint: posición arancelaria sugerida por el cliente (muchas veces la que le pasó el proveedor,
+  // que NO necesariamente es correcta para Argentina). La IA la evalúa, no la copia.
+  const hintTxt = hint
+    ? `\nEl cliente sugiere la posición ${hint} (suele ser el HS code que le pasó el proveedor, no necesariamente correcto). Evaluá si esa posición corresponde a esta mercadería según la nomenclatura del Mercosur: si es correcta, devolvela; si no, devolvé la correcta. Agregá al JSON el campo "hint_note": una frase corta (máx. 140 caracteres, en español) que diga si la posición sugerida es correcta o por qué no.`
+    : "";
   const text = await callClaudeText({
     system: SYSTEM_PROMPT,
-    user: `Clasificá: "${description}"`,
+    user: `Clasificá: "${description}"${hintTxt}`,
     max_tokens: 500,
   });
   return parseClaudeResponse(text);
@@ -238,7 +243,17 @@ async function addAntidumping(obj) {
 
 export async function POST(req) {
   try {
-    const { description, image, image_mime, check_ncm_only } = await req.json();
+    const { description, image, image_mime, check_ncm_only, hint } = await req.json();
+    const hintDigits = String(hint || "").replace(/\D/g, "").slice(0, 8);
+    const hintCode = hintDigits.length >= 4 ? hintDigits.replace(/^(\d{4})(\d{0,2})(\d{0,2})$/, (m, a, b, c) => [a, b, c].filter(Boolean).join(".")) : null;
+    // Compara la sugerencia del cliente con el resultado final (sobre los dígitos que el cliente cargó, mínimo 6).
+    const withHint = (obj) => {
+      if (!hintCode) return obj;
+      const res = String(obj?.ncm_code || "").replace(/\D/g, "");
+      const n = Math.min(Math.max(hintDigits.length, 6), 8);
+      const ok = res && res.slice(0, n) === hintDigits.padEnd(n, "0").slice(0, n);
+      return { ...obj, hint_code: hintCode, hint_verdict: ok ? "ok" : "diff" };
+    };
 
     // Modo "solo chequear intervención de un NCM ya asignado" — no reclasifica, no llama a la IA.
     // Se usa para revisar items que el usuario ya reclasificó manualmente con otro código,
@@ -253,25 +268,25 @@ export async function POST(req) {
     // Si NO hay imagen, primero probar overrides por descripción (rápido y barato)
     if (!image && description) {
       const override = checkOverride(description);
-      if (override) return Response.json(await addAntidumping(override));
+      if (override) return Response.json(withHint(await addAntidumping(override)));
     }
 
     // Clasificar: con imagen → vision, sin imagen → texto
     const claudeResult = image
       ? await classifyWithClaudeVision(image, description, image_mime).catch(e => { console.error("Claude vision error:", e?.status||"", e.message); return null; })
-      : await classifyWithClaude(description).catch(e => { console.error("Claude error:", e?.status||"", e.message); return null; });
+      : await classifyWithClaude(description, hintCode).catch(e => { console.error("Claude error:", e?.status||"", e.message); return null; });
 
     if (claudeResult?.ncm_code) {
       // Si vino guess_description de visión, lo devolvemos para que el cliente rellene el campo
-      const extras = claudeResult.guess_description ? { guess_description: claudeResult.guess_description } : {};
+      const extras = { ...(claudeResult.guess_description ? { guess_description: claudeResult.guess_description } : {}), ...(claudeResult.hint_note ? { hint_note: String(claudeResult.hint_note).slice(0, 200) } : {}) };
       // Forzamos intervención por prefijo de NCM (la IA suele subdetectar ortopedia,
       // suplementos, cosméticos, etc., especialmente cuando el producto se vende
       // como "wellness" sin la palabra "médico").
       const enforcedIntervention = enforceInterventionByNcm(claudeResult.ncm_code, claudeResult.intervention);
       const results = await searchDB(claudeResult.ncm_code);
-      if (results.length > 0) return Response.json(await addAntidumping({ ...pickBest(results, enforcedIntervention), ...extras }));
+      if (results.length > 0) return Response.json(withHint(await addAntidumping({ ...pickBest(results, enforcedIntervention), ...extras })));
       // No match en DB pero tenemos NCM de Claude — devolver con defaults
-      return Response.json(await addAntidumping({
+      return Response.json(withHint(await addAntidumping({
         ncm_code: claudeResult.ncm_code,
         ncm_description: null,
         import_duty_rate: 35,
@@ -280,7 +295,7 @@ export async function POST(req) {
         intervention: enforcedIntervention,
         source: image ? "claude-vision" : "claude",
         ...extras,
-      }));
+      })));
     }
 
     return Response.json({ error: "No se pudo clasificar la mercadería", fallback: true }, { status: 200 });

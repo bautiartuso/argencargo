@@ -1782,8 +1782,8 @@ function OperationEditor({op:initOp,token,initialTab,onBack,onDelete}){
       const tActive=t=>(t.effective_from==null||Date.parse(t.effective_from)<=tRefMs)&&(t.effective_to==null||tRefMs<Date.parse(t.effective_to));
       const getRate=(sk,amt)=>{const rates=tariffs.filter(t=>t.service_key===sk&&t.type==="rate"&&tActive(t));for(const r of rates){const min=Number(r.min_qty||0),max=r.max_qty!=null?Number(r.max_qty):Infinity;if(amt>=min&&amt<max){const ov=clientOverrides.find(o=>o.tariff_id===r.id);return ov?Number(ov.custom_rate):Number(r.rate);}}return rates.length?Number(rates[rates.length-1].rate):0;};
       const fleteRate=getRate(svcKey,fleteAmt);flete=fleteAmt*fleteRate;
-      // Recargo baterías solo en aéreo A (Courier Comercial) - $2 por kg
-      if(op.channel==="aereo_blanco"&&op.has_battery)flete+=fleteAmt*2;
+      // Recargo baterías solo en aéreo A (Courier Comercial): USD 2/kg si es RI, USD 1/kg monotributista o consumidor final (11/09/2026)
+      if(op.channel==="aereo_blanco"&&op.has_battery)flete+=fleteAmt*(isRI?2:1);
       // CIF: RI sees real, others see ficticio. Marítimo always ficticio.
       const isAereoOp=op.channel?.includes("aereo");
       const certFlRate=isAereoOp?(isRI?(config.cert_flete_aereo_real||2.5):(config.cert_flete_aereo_ficticio||3.5)):(config.cert_flete_maritimo_ficticio||100);
@@ -6648,7 +6648,7 @@ function Calculator({token,clients}){
         const itemsFict=validProds.map(p=>calcItemTax(p,certFlFict,false,cifFict));
         const itemsReal=validProds.map(p=>calcItemTax(p,certFlReal,false,cifReal));
         const impFict=sumItems(itemsFict,"totalImp");const impReal=sumItems(itemsReal,"totalImp");
-        const battExtra=hasBattery?factBill*2:0;const gananciaImp=impFict-impReal;
+        const battExtra=hasBattery?factBill*(client?.tax_condition==="responsable_inscripto"?2:1):0;const gananciaImp=impFict-impReal;
         // Recargo por sobrepeso: USD 35 por pieza (>24 kg reales o girth L+2A+2H > 260 cm)
         const owPieces=pkgs.reduce((n,pk)=>{const q=(toN(pk.qty)||1),gw=toN(pk.weight),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const g=l&&w&&h?l+2*(w+h):0;return n+((gw>24||g>260)?q:0);},0);const overweightSurcharge=owPieces*35;
         channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días",isBlanco:true,
