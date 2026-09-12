@@ -120,7 +120,7 @@ const SM={pendiente:{l:"PROVEEDOR",c:"#94a3b8"},en_deposito_origen:{l:"WAREHOUSE
 const CM={aereo_blanco:"Aéreo A",maritimo_blanco:"Marítimo A",maritimo_negro:"Marítimo B"};
 const STATUSES=Object.keys(SM);
 const CHANNELS=Object.keys(CM);
-const SERVICES=[{key:"aereo_a_china",label:"Aéreo A — China/USA",unit:"kg",info:"7-10 días hábiles"},{key:"maritimo_a_china",label:"Marítimo A — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo B — China/USA",unit:"cbm",info:""}];
+const SERVICES=[{key:"aereo_a_china",label:"Aéreo A — China/USA",unit:"kg",info:"7-10 días hábiles desde China · 3-5 desde USA"},{key:"maritimo_a_china",label:"Marítimo A — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo B — China/USA",unit:"cbm",info:""}];
 // Forma válida de un código NCM: dígitos, con o sin puntos (ej. "8517.62.72" o "84099910").
 const isValidNcmCode=(v)=>!!v&&/^\d{4}(\.?\d{2}){0,2}$/.test(String(v).trim());
 // Un item "necesita clasificación" si no tiene NCM con forma válida (ej. quedó "—" de una
@@ -6653,7 +6653,7 @@ function Calculator({token,clients}){
         const battExtra=hasBattery?factBill*(client?.tax_condition==="responsable_inscripto"?2:1):0;const gananciaImp=impFict-impReal;
         // Recargo por sobrepeso: USD 35 por pieza (>24 kg reales o girth L+2A+2H > 260 cm)
         const owPieces=pkgs.reduce((n,pk)=>{const q=(toN(pk.qty)||1),gw=toN(pk.weight),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const g=l&&w&&h?l+2*(w+h):0;return n+((gw>24||g>260)?q:0);},0);const overweightSurcharge=owPieces*35;
-        channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días",isBlanco:true,
+        channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:origin==="USA"?"3-5 días hábiles":"7-10 días",isBlanco:true,
           flete,fCost,seguro:segFict,battExtra,overweightSurcharge,totalImp:impFict,totalSvc:flete+segFict+battExtra+overweightSurcharge,total:impFict+flete+segFict+battExtra+overweightSurcharge,
           derechos:sumItems(itemsFict,"derechos"),tasa_e:sumItems(itemsFict,"tasa_e"),iva:sumItems(itemsFict,"iva"),gastoDoc:sumItems(itemsFict,"desembolso"),ivaDesemb:sumItems(itemsFict,"ivaDesemb"),
           items:itemsFict,cifReal,cifFict,impReal,impFict,gananciaImp,unit:`${factBill.toFixed(1)} kg`});}
@@ -12921,7 +12921,7 @@ function QuotesList({token}){
   const channelsForOrigin=(origin)=>{
     // USA: Courier comercial + Integral AC. No hay LCL/FCL desde USA.
     if(origin==="USA")return[
-      {key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles",type:"aereo_a"},
+      {key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"3-5 días hábiles",type:"aereo_a"},
       {key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días",type:"maritimo_b"},
     ];
     // China (default)
@@ -13262,7 +13262,7 @@ function QuotesList({token}){
       const CAP_REST=new Set(["50","51","52","53","54","55","56","57","58","59","60","61","62","63","64","65"]);
       const esRestringido=editProds.some(p=>CAP_REST.has(String(p.ncm?.ncm_code||"").replace(/[^0-9]/g,"").slice(0,2)));
       const owPk=editPkgs.find(pk=>Number(pk.weight||0)>=46);
-      const ALL3=[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles",type:"aereo_a"},
+      const ALL3=[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:editOrigin==="USA"?"3-5 días hábiles":"7-10 días hábiles",type:"aereo_a"},
                   {key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"60-70 días",type:"maritimo_a"},
                   {key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días",type:"maritimo_b"}];
       const enOrigen=channelsForOrigin(editOrigin).map(c=>c.key);
@@ -13568,7 +13568,7 @@ function AdminCalculator({token}){
   };
   const CHANNEL_MAP={aereo_a_china:"aereo_blanco",maritimo_a_china:"maritimo_blanco",maritimo_b:"maritimo_negro"};
   const channelsForOrigin=(o)=>o==="USA"
-    ?[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles"},{key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días"}]
+    ?[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"3-5 días hábiles"},{key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días"}]
     :[{key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles"},{key:"maritimo_a_china",name:"Marítimo Carga LCL/FCL",info:"60-70 días"},{key:"maritimo_b",name:"Marítimo Integral AC",info:"60-70 días"}];
   const totalFob=products.reduce((s,p)=>s+toN(p.unit_price)*Number(p.quantity||1),0);
   const totCBM=pkgs.reduce((s,p)=>{const q=Number(p.qty||1),l=toN(p.length),w=toN(p.width),h=toN(p.height);return s+(l&&w&&h?((l*w*h)/1000000)*q:0);},0);

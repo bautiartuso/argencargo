@@ -1210,7 +1210,7 @@ function ProfilePage({client,token}){
     </div>
   </div>;
 }
-const SERVICES_C=[{key:"aereo_a_china",label:"Aéreo Courier Comercial — China",info:"Demora 7-10 días hábiles",unit:"kg"},{key:"maritimo_a_china",label:"Marítimo Carga LCL/FCL — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo Integral AC",unit:"cbm",info:""}];
+const SERVICES_C=[{key:"aereo_a_china",label:"Aéreo Courier Comercial — China / USA",info:"Demora 7-10 días hábiles desde China · 3-5 desde USA",unit:"kg"},{key:"maritimo_a_china",label:"Marítimo Carga LCL/FCL — China",unit:"cbm",info:""},{key:"maritimo_b",label:"Marítimo Integral AC",unit:"cbm",info:""}];
 function RatesPage({token,client}){
   const {t:tr}=useT();
   const [tariffs,setTariffs]=useState([]);const [overrides,setOverrides]=useState([]);const [lo,setLo]=useState(true);
@@ -1497,6 +1497,7 @@ function CalculatorPage({token,client,preset}){
     const{totWeight,totCBM}=calcTotals();const channels=[];
     const conLcl=origin==="China";
     const minKgAereo=origin==="USA"?MIN_KG_AEREO_USA:MIN_KG_AEREO_CHINA;
+    const transitoAereo=origin==="USA"?"3-5 días hábiles":"7-10 días hábiles";
     // Peso facturable = suma del max(bruto, vol) POR BULTO, no global
     let facturable=0;let volWeightTotal=0;
     const pkgDetails=pkgs.map(pk=>{const q=(toN(pk.qty)||1),l=toN(pk.length),w=toN(pk.width),h=toN(pk.height),gw=toN(pk.weight);
@@ -1549,7 +1550,7 @@ function CalculatorPage({token,client,preset}){
       const owPieces=pkgs.reduce((n,pk)=>{const q=(toN(pk.qty)||1);const gw=toN(pk.weight);const l=toN(pk.length),w=toN(pk.width),h=toN(pk.height);const girth=l&&w&&h?l+2*(w+h):0;return n+((gw>24||girth>260)?q:0);},0);
       const overweightSurcharge=owPieces*35;
       const totalSvc=flete+seguro+battExtra+overweightSurcharge;
-      channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:"7-10 días hábiles",isBlanco:true,
+      channels.push({key:"aereo_a_china",name:"Aéreo Courier Comercial",info:transitoAereo,isBlanco:true,
         flete,seguro,battExtra,overweightSurcharge,owPieces,totalImp,totalSvc,total:totalImp+totalSvc,items,
         pesoBruto:totWeight,pesoVol:volWeightTotal,pesoFact:facturableBill,pkgDetails,unit:`${facturableBill.toFixed(1)} kg`});}
 
@@ -1617,7 +1618,7 @@ function CalculatorPage({token,client,preset}){
   const DELIV={oficina:"Retiro por Oficina (Gratis)",caba:"Envío CABA",coordinar:"Envío a coordinar"};
   const [savedMsg,setSavedMsg]=useState("");
   // Tiempo de tránsito por canal (para la lista de resultados y la cotización guardada).
-  const transitOf=ch=>ch?.info||({aereo_a_china:"7-10 días hábiles",maritimo_a_china:"60-70 días",maritimo_b:"60-70 días",aereo_b_usa:"48-72 hs",aereo_b_spain:"5-7 días hábiles"})[ch?.key]||"";
+  const transitOf=ch=>ch?.info||({aereo_a_china:origin==="USA"?"3-5 días hábiles":"7-10 días hábiles",maritimo_a_china:"60-70 días",maritimo_b:"60-70 días",aereo_b_usa:"48-72 hs",aereo_b_spain:"5-7 días hábiles"})[ch?.key]||"";
   // Guardado automático (11/09/2026): al llegar a Resultados se guarda UNA cotización con todas las
   // alternativas (channel_alternatives). Si el cliente vuelve atrás y recalcula, se actualiza la misma
   // fila. "Nueva cotización" resetea el id y la próxima crea otra fila.
